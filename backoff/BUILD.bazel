@@ -1,0 +1,27 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "__init___py",
+    srcs = ["__init__.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+# PEP 561 marker file; tells tools that type information is available.
+genrule(
+    name = "py_typed",
+    srcs = [],
+    outs = ["py.typed"],
+    cmd = "echo '# Marker file for PEP 561.' > $@",
+)
+
+py_library(
+    name = "python",
+    data = [
+        ":py_typed",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":__init___py",
+    ],
+)
