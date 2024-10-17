@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.app.name }}
+spec:
+  selector:
+    matchLabels:
+      # Has to match `.spec.template.metadata.labels`.
+      app: {{ .Values.app.name }}
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        # Has to match `.spec.selector.matchLabels`.
+        app: {{ .Values.app.name }}
+    spec:
+      containers:
+        - name: {{ .Values.app.name }}
+          image: {{ .Values.app.image }}
+          args:
+            - "rbt"
+            - "serve"
+            - "--port=9989"
+            - "--directory={{ .Values.app.storage.directory }}"
+          env:
+            - name: PORT
+              value: "9989"
+          ports:
+            - containerPort: 9989
+              name: public
+          volumeMounts:
+            - name: state
+              mountPath: {{ .Values.app.storage.directory }}
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: {{ .Values.app.name }}-persistent-volume-claim

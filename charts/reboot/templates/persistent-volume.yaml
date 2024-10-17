@@ -1,0 +1,33 @@
+{{- if eq .Values.app.storage.type "existing-efs" }}
+# Note: Configured without the CSI driver, as described in:
+# https://medium.com/survata-engineering-blog/using-efs-storage-in-kubernetes-e9c22ce9b500
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: "{{ .Values.app.name }}-efs-persistent-volume"
+spec:
+  capacity:
+    # NB: This value is unused with EFS, and we set a very low to
+    # validate that.
+    storage: 1Ki
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  nfs:
+    # Path within the EFS file system to mount. The application separately
+    # isolates itself under an `app.storage.directory` below this path.
+    path: /
+  mountOptions:
+    # https://docs.aws.amazon.com/efs/latest/ug/mounting-fs-mount-cmd-general.html
+    - nfsvers=4.1
+    - rsize=1048576
+    - wsize=1048576
+    - hard
+    - timeo=600
+    - retrans=2
+    - noresvport
+    - _netdev
+  claimRef:
+    name: {{ .Values.app.name }}-persistent-volume-claim
+    namespace: {{ .Release.Namespace }}
+{{- end }}

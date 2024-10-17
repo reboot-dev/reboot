@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.app.name }}-persistent-volume-claim
+spec:
+  {{- if and (not (eq .Values.app.storage.existingStorageClass nil)) (eq .Values.app.storage.existingEfs nil) }}
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: {{ .Values.app.storage.existingStorageClass.name }}
+    resources:
+      requests:
+        storage: {{ .Values.app.storage.existingStorageClass.storageRequest }}
+  {{- else if and (not (eq .Values.app.storage.existingEfs nil)) (eq .Values.app.storage.existingStorageClass nil) }}
+    accessModes:
+      - ReadWriteMany
+    # Explicitly empty: using volumeName instead.
+    storageClassName: ""
+    # Defined in `persistent-volume.yaml`.
+    volumeName: "{{ .Values.app.name }}-efs-persistent-volume"
+    resources:
+      requests:
+        # NB: This value is unused with EFS, and we set a very low to
+        # validate that.
+        storage: 1Ki
+  {{- else }}
+  {{- fail "Exactly one of `app.storage.existingStorageClass` or `app.storage.existingEfs` must be defined." }}
+  {{- end }}
