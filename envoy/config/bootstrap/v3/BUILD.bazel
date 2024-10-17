@@ -1,0 +1,9 @@
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
+
+py_proto_library(
+    name = "bootstrapv3_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@buf_deps_envoy//envoy/config/bootstrap/v3:bootstrapv3_proto",
+    ],
+)

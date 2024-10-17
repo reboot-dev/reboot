@@ -1,0 +1,9 @@
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
+
+py_proto_library(
+    name = "http_connection_managerv3_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@buf_deps_envoy//envoy/extensions/filters/network/http_connection_manager/v3:http_connection_managerv3_proto",
+    ],
+)

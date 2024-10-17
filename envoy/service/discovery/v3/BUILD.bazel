@@ -1,0 +1,20 @@
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_grpc_library", "py_proto_library")
+
+py_proto_library(
+    name = "discoveryv3_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@buf_deps_envoy//envoy/service/discovery/v3:discoveryv3_proto",
+    ],
+)
+
+py_grpc_library(
+    name = "discoveryv3_py_grpc",
+    srcs = [
+        "@buf_deps_envoy//envoy/service/discovery/v3:discoveryv3_proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":discoveryv3_py_proto",
+    ],
+)

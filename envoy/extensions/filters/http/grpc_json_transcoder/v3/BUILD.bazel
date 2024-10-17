@@ -1,0 +1,9 @@
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
+
+py_proto_library(
+    name = "grpc_json_transcoderv3_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@buf_deps_envoy//envoy/extensions/filters/http/grpc_json_transcoder/v3:grpc_json_transcoderv3_proto",
+    ],
+)
