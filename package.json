@@ -1,0 +1,20 @@
+{
+  "private": true,
+  "dependencies": {
+    "@reboot-dev/reboot-api": "workspace:*",
+    "react-dom": "18.2.0",
+    "@bufbuild/protobuf": "1.3.2",
+    "@bufbuild/protoc-gen-es": "1.3.2",
+    "@bufbuild/protoplugin": "1.3.2",
+    "@types/react": "^18.2.22",
+    "@types/uuid": "^9.0.4",
+    "@types/node": "20.11.5",
+    "js-sha1": "0.7.0",
+    "react": "^18.2.0",
+    "typescript": "4.9.3",
+    "tslib": "^2.6.2",
+    "uuid": "9.0.1",
+    "@typescript/vfs": "*",
+    "chalk": "^4.1.2"
+  }
+}

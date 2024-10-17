@@ -1,0 +1,12 @@
+# Ignore files in other bazel workspaces and those not built with bazel.
+# Note when editing this file: Should your changes also be applied to the
+# other .\*ignore files?
+submodules/
+
+# Required for npm_translate_lock.verify_node_modules_ignored.
+node_modules/
+rbt/v1alpha1/node_modules/
+reboot/inspect/node_modules/
+reboot/nodejs/node_modules/
+reboot/web/node_modules/
+tests/reboot/node_modules/

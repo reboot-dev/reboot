@@ -1,0 +1,27 @@
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_grpc_library", "py_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+proto_library(
+    name = "export_import_proto",
+    srcs = [
+        ":export_import.proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:descriptor_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_proto_library(
+    name = "export_import_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":export_import_proto"],
+)
+
+py_grpc_library(
+    name = "export_import_py_grpc",
+    srcs = [":export_import_proto"],
+    visibility = ["//visibility:public"],
+    deps = [":export_import_py_proto"],
+)
