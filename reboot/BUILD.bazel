@@ -44,3 +44,11 @@ py_binary(
         ":protoc_gen_es_with_deps_py",
     ],
 )
+
+py_library(
+    name = "log_py",
+    srcs = ["log.py"],
+    data = [":py_typed"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)

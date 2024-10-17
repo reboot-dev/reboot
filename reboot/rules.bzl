@@ -142,7 +142,7 @@ def py_reboot_library(
             requirement("googleapis-common-protos"),
             requirement("protobuf"),
             "@com_github_reboot_dev_reboot//backoff:python",
-            "//reboot:log_py",
+            "@com_github_reboot_dev_reboot//reboot:log_py",
             "//reboot/aio:call_py",
             "//reboot/aio:contexts_py",
             "//reboot/aio:headers_py",
