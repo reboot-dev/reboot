@@ -1,0 +1,26 @@
+{
+  "exclude": ["dist", "node_modules"],
+  "compilerOptions": {
+    "module": "nodenext",
+    "target": "es2020",
+    "lib": ["dom", "esnext"],
+    "importHelpers": false,
+    "declaration": true,
+    // IMPORTANT: sourceMap must be set to false. The source map is not
+    // correctly finding the 'src' folder.
+    // TODO(riley): fix this OR brain trust not publishing source maps.
+    // ISSUE: #2129
+    "sourceMap": false,
+    "outDir": "dist",
+    "strict": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "moduleResolution": "nodenext",
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  }
+}

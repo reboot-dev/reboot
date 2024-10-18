@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+package rbt.v1alpha1;
+
+import "google/api/annotations.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+message QueryRequest {
+  // Fully-qualified name of a Reboot unary reader method, e.g.,
+  // `my.package.Service.ReaderMethod`. Only unary reader methods are
+  // supported.
+  string method = 1;
+
+  // Serialized request to be passed to the above method. The same
+  // request is used each time we invoke the method.
+  bytes request = 2;
+}
+
+message QueryResponse {
+  // Serialized response from the method specified in the request.
+  optional bytes response = 1;
+
+  // Set of idempotency keys that caused mutations since the last time
+  // that a response was returned.
+  // TODO(benh): send these as bytes?
+  repeated string idempotency_keys = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// TODO(benh): support batch, e.g., create a `MutateRequests` which
+// takes a repeated `MutateRequest`.
+
+message MutateRequest {
+  // Fully-qualified name of a Reboot mutator (writer or
+  // transaction) method, e.g., `my.package.Service.MutatorMethod`.
+  string method = 1;
+
+  // JSON request to be passed to the above method. The same
+  // request is used each time we invoke the method.
+  bytes request = 2;
+
+  // Idempotency key for this mutation.
+  //
+  // TODO(benh): send this as bytes?
+  string idempotency_key = 3;
+
+  // Authorization bearer token.
+  optional string bearer_token = 4;
+}
+
+message MutateResponse {
+  oneof response_or_status {
+    // Serialized response from the method specified in the request.
+    bytes response = 1;
+
+    // JSON representation of `google.rpc.Status`.
+    //
+    // TODO(benh): this is sent as JSON because `protoc-gen-es`
+    // doesn't have `google.rpc.Status` and so we have our own
+    // implementation which only has JSON support for now.
+    string status = 2;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message WebSocketsConnectionRequest {}
+
+message WebSocketsConnectionResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+service React {
+  // Allows users to "watch" the response of a unary reader method for
+  // changes. The current response of the method is sent when the
+  // stream is opened, then a new response is sent whenever the
+  // state changes in a way that causes the method's response to change.
+  //
+  // NOTE: the service name and state ID is expected to be part of the
+  // gRPC metadata, exactly like any other reboot requests.
+  rpc Query(QueryRequest) returns (stream QueryResponse) {
+    option (google.api.http) = {
+      post: "/rbt.v1alpha1.React/Query"
+    };
+  }
+
+  // All connections must be HTTP/2 (h2), but the WebSocket protocol
+  // is inherently HTTP/1.1. RFC 8441
+  // (https://datatracker.ietf.org/doc/html/rfc8441) introduced
+  // support for running the WebSocket Protocol over a single stream
+  // of an HTTP/2 connection and all of the top browsers implement it.
+  //
+  // The caveat is that we need the HTTP/2 connection to exist in
+  // order for websockets to use the existing HTTP/2 connection, hence
+  // this method!
+  //
+  // For example usage, see corresponding code in the generated
+  // TypeScript for React.
+  rpc WebSocketsConnection(WebSocketsConnectionRequest) returns (
+      WebSocketsConnectionResponse) {
+    option (google.api.http) = {
+      post: "/rbt.v1alpha1.React/WebSocketsConnection"
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////

@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+// To build this proto with bazel, the proto and bazel rule must be in the same
+// package, which means that the proto file must have a package declaration
+// matching the Bazel workspace's folder structure.
+package rbt.v1alpha1;
+
+// Import a skeleton message representation of Kubernetes `V1ObjectMeta`. Note
+// this message is missing a lot of fields compared to the native Kubernetes
+// object and is only intended for serialization.
+import "rbt/v1alpha1/kubernetes_helpers.proto";
+
+message ApplicationConfig {
+  // Message detailing the current state of the `ApplicationConfig`.
+  message Status {
+    // Message detailing the "failed" state.
+    message Failed {}
+    // Message detailing the "deploying" state.
+    message Deploying {}
+    // Message detailing the "deployed" state.
+    message Deployed {}
+
+    // The state of the `ApplicationConfig` is provided through a `oneof` field.
+    // State specific information is provided through the state specific
+    // messages.
+    oneof state_oneof {
+      // If the controller can not transition the `ApplicationConfig` to the
+      // state `deployed`, it will transition it to the state `failed`.
+      Failed failed = 1;
+      // When a `ApplicationConfig` is created or updated, the controller will
+      // attempt to create corresponding Kubernetes `Deployment`(s). Until this
+      // has either succeeded or failed the state of the `ApplicationConfig` is
+      // `deploying`.
+      Deploying deploying = 2;
+      // When the corresponding Kubernetes `Deployment`(s) has been created, the
+      // `ApplicationConfig` is `deployed`.
+      Deployed deployed = 3;
+    }
+
+    // Status message providing additional information.
+    string reason = 4;
+
+    // Metadata object of the corresponding Kubernetes `Deployment` object, if
+    // any. The `Deployment` objects pointed to are the ones corresponding to
+    // the last successfully "deployed" state. i.e., if we transition back to
+    // "deploying" (and optionally to "failed") due to a `ApplicationConfig`
+    // update we are still pointing to the last successfully created or updated
+    // `Deployment`s.
+    repeated V1ObjectMeta deployments = 5;
+  }
+
+  // Status of the `ApplicationConfig` reported by the reboot controller.
+  Status status = 1;
+
+  message Spec {
+    // A serialized `FileDescriptorSet`. Its content is plain bytes, not base64,
+    // but note that (since this is a `bytes` field) when the
+    // `ApplicationConfig` is written to Kubernetes, this field (like any other
+    // `bytes` field) will be base64 encoded then.
+    bytes file_descriptor_set = 3;
+
+    // Name of the user image being deployed; e.g. registry.k8s.io/myserver:1.4.
+    // Matches the corresponding ApplicationDeployment.
+    string container_image_name = 4;
+
+    // The names of all the Reboot services served by this server.
+    repeated string service_names = 5;
+
+    // A unique string representing the revision of this config. When the
+    // config's contents change, this string MUST also change. This string MAY
+    // change even when the contents of the config do not.
+    string revision = 6;
+
+    // The number of consensuses to run for this application.
+    // NOTE: Must be a power of 2.
+    // Unset means: use default.
+    optional uint32 consensuses = 7;
+  }
+
+  Spec spec = 2;
+}

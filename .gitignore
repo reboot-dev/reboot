@@ -1,0 +1,57 @@
+# Note when editing this file: Should your changes also be applied to the
+# other .*ignore files?
+
+# Test artifacts.
+.DS_Store
+__pycache__/
+/logs/
+
+# Files that store credentials.
+*credentials.json
+
+# Emacs temporary files.
+*~
+
+# Vim temporary files.
+*.swp
+*.swo
+
+# Personal preferences.
+user.bazelrc
+
+# Bazel generated directories.
+/bazel-*
+
+# Python virtual environments.
+/.venv/
+
+# Temporary file of make_time.py.
+make_time.json
+
+# VSCode log files.
+.vscode/*.log
+
+# Generated Docker images.
+dist/**/*.tar
+
+# Generated build information. Must match file path defined in the Makefile's
+# dist/build_info rule.
+dist/build_info/source_info.txt
+
+# Generated binaries.
+bin/
+/reboot/*.whl
+
+# Files inside submodules. This is moot for git itself, since it knows that
+# these are submodules and that any file inside a submodule should be treated
+# as being in a separate repo (with its own .gitignore) but it is useful for
+# other tools that don't know about submodules, notably isort.
+submodules/*
+examples/*
+# TODO(rjh): once `reboot/boutique` is stand-alone, include it here.
+
+# Directory created from using the 'rbt' CLI tool.
+.rbt/
+
+# Modules installed for node builds.
+node_modules/

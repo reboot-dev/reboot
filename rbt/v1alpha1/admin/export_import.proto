@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package rbt.v1alpha1.admin;
+
+import "google/protobuf/struct.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+message ListConsensusesRequest {}
+message ListConsensusesResponse {
+  repeated string consensus_ids = 1;
+}
+
+message ExportRequest {
+  string consensus_id = 1;
+}
+
+message ExportImportItem {
+  string state_type = 1;
+  string state_ref = 2;
+  oneof item {
+    google.protobuf.Struct state = 3;
+    bytes sorted_map_entry = 4;
+    google.protobuf.Struct task = 5;
+    google.protobuf.Struct idempotent_mutation = 6;
+  }
+}
+
+message ImportResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+service ExportImport {
+  rpc ListConsensuses(ListConsensusesRequest)
+      returns (ListConsensusesResponse);
+  rpc Export(ExportRequest) returns (stream ExportImportItem);
+  rpc Import(stream ExportImportItem) returns (ImportResponse);
+}
+
+////////////////////////////////////////////////////////////////////////
