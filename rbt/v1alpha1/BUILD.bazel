@@ -86,6 +86,32 @@ py_proto_library(
 )
 
 proto_library(
+    name = "auth_proto",
+    srcs = [":auth.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_proto_library(
+    name = "auth_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":auth_proto"],
+)
+
+js_proto_library(
+    name = "auth_js_proto",
+    package_json = ":package.json",
+    proto = ":auth.proto",
+    proto_deps = [
+        ":auth_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+proto_library(
     name = "config_mode_proto",
     srcs = [":config_mode.proto"],
     deps = [":application_config_proto"],
@@ -312,6 +338,7 @@ ts_config(
 ts_project(
     name = "package_ts",
     srcs = [
+        ":auth_js_proto",
         ":errors_js_proto",
         ":index.ts",
         ":react_js_proto",
@@ -364,6 +391,7 @@ genrule(
 filegroup(
     name = "reboot_dev_reboot_api_js_proto_files",
     srcs = [
+        ":auth_js_proto.files",
         ":errors_js_proto.files",
         ":react_js_proto.files",
         ":tasks_js_proto.files",
