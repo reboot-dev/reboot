@@ -3,7 +3,6 @@ aiohttp==3.10.5 # Latest as of 2024/09/16, matching `respect/requirements.in`.
 colorama==0.4.6 # Latest as of 2023/06/02, matching `tests/requirements.in`.
 cryptography==42.0.2 # Latest as of 2024/02/09.
 cffi==1.16.0 # Aligns with `cryptography`.
-gitpython==3.1.31 # Latest as of 2023/06/04.
 googleapis-common-protos==1.65.0 # Latest as of 2024/08/27.
 grpc-interceptor==0.15.4 # Latest as of 2023/12/12.
 grpcio==1.60.2  # Matching `respect/requirements.in` and `pulumi`.

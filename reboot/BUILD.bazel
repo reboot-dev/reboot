@@ -1,7 +1,7 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("@rules_python//python:pip.bzl", "compile_pip_requirements")
 
-# Run 'bazel run rbt:requirements.update' to update the lock file.
+# Run 'bazel run reboot:requirements.update' to update the lock file.
 compile_pip_requirements(
     name = "requirements",
     src = ":requirements.in",
