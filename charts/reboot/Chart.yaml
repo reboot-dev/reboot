@@ -1,0 +1,13 @@
+apiVersion: 3.3.2
+name: reboot
+version: "0.18.0"
+description: Reboot is a programming framework that enables transactional microservices built with the developer in mind.
+type: application
+keywords:
+  - transactional
+  - microservices
+  - serverless
+  - scalable
+  - reactive
+home: https://docs.reboot.dev/
+appVersion: "0.18.0"

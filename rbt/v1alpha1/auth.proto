@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package rbt.v1alpha1;
+
+import "google/protobuf/struct.proto";
+
+message Auth {
+  optional string user_id = 1;
+  google.protobuf.Struct properties = 2;
+}

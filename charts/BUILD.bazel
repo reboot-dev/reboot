@@ -1,0 +1,7 @@
+filegroup(
+    name = "everything",
+    srcs = glob(
+        ["**/*"],
+    ),
+    visibility = ["//visibility:public"],
+)

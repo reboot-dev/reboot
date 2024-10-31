@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package rbt.v1alpha1.inspect;
+
+import "google/api/annotations.proto";
+import "google/api/httpbody.proto";
+import "google/protobuf/struct.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+message GetAllStatesRequest {
+  // If set, only return actors held by the given consensus ID. If not set (or
+  // left at default), return all actors held by all consensuses.
+  string only_consensus_id = 1;
+}
+
+message GetAllStatesResponse {
+  // We don't know the state types of the all of the actors, thus
+  // we're using a "struct". It is of the form:
+  //
+  // { "service1": { "actor1": { ... }, "actor2": { ... }, ... }, ... }
+  google.protobuf.Struct actors = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+service Inspect {
+  // Get all actors.
+  rpc GetAllStates(GetAllStatesRequest) returns (stream GetAllStatesResponse) {
+  }
+
+  // Serve a web dashboard. Uses `HttpBody` to return arbitrary content (HTML,
+  // JS) to callers; see `httpbody.proto` for more details.
+  rpc WebDashboard(WebDashboardRequest) returns (google.api.HttpBody) {
+    option (google.api.http) = {
+      get: "/__/inspect"
+      additional_bindings {
+        // The 'index.html' will want to load a few further files,
+        // most notably 'bundle.js'.
+        get: "/__/inspect/{file=*}"
+      }
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message WebDashboardRequest {
+  string file = 1;
+}

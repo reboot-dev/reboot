@@ -1,0 +1,145 @@
+try-import submodules/dev-tools/.bazelrc
+
+# Use the more efficient C++ protobuf library for Python. This is a
+# Bazel specific configurable build attribute
+# (https://bazel.build/docs/configurable-attributes) defined in the
+# protocol buffers library (see
+# https://github.com/protocolbuffers/protobuf/blob/22d0a354a05a5e8d6f43edaf5ea4f4dbd9dfb8a7/python/BUILD.bazel#L33).
+#
+# It not only improves performance generally, but also allows moving
+# protobufs between Python and C++ without copying when using pybind.
+#
+# TODO(benh): revisit how this works when users Python libraries
+# depend on our libraries (i.e., through pip) and those libraries are
+# not using the C++ protobufs.
+build --define=use_fast_cpp_protos=true
+
+# We cannot build in any of the sandbox environments (including `linux`) that restrict
+# access to the network or filesystem.
+# Arrow, jemalloc, backward_cpp, etc will need to change to allow filesystem sandboxing.
+# TODO: Implement a more restrictive sandboxing strategy than `processwrapper-sandbox`.
+#
+# https://bazel.build/docs/sandboxing#sandboxing-strategies
+build --spawn_strategy=processwrapper-sandbox
+
+# When we use C++, we use C++17.
+build --cxxopt='-std=c++17'
+build --host_cxxopt='-std=c++17'
+
+# Build with clang (rather than the default of gcc) since clang compiles
+# templates faster and produces better error messages.
+build --action_env=CC=clang
+
+# We need to always use position independent code because when
+# compiling in optimized mode we've run into issues where
+# `rules_foreign_cc` requires it for linking.
+build --force_pic
+
+# By default run both (target) compilation mode and host compilation
+# mode in 'fastbuild' so that any "tools" that get build (which are
+# built for the host) don't require building things a second time.
+build --compilation_mode=fastbuild
+build --host_compilation_mode=fastbuild
+
+# Explicitly disable the remote cache. It's not on by default, but this is
+# useful either for CI that normally _would_ use a remote cache, or for
+# developers who want to be really extra sure they're not using one.
+build:no-remote-cache --remote_cache=""
+
+# To debug errors using the remote cache we need the `--verbose_failures` flag to
+# get any useful information whatsoever.
+build --verbose_failures
+
+# Generate source-level debug information and never strip it from binaries.
+#
+# NOTE: using '--compilation_mode=dbg' will ensure we're in a separate
+# output directory (with a 'dbg' suffix) so that we don't clobber the
+# cache.
+build:debug --compilation_mode=dbg --copt="-g" --strip="never"
+
+# Add an 'asan' suffix to the output directories that we build with so
+# that an '--config=asan' build doesn't clobber the cache.
+build:asan --platform_suffix=asan
+
+# Always run tests with 'PYTHONUNBUFFERED=1' so that we don't lose any
+# output that might help us debug!
+#
+# Note that this test-only flag is specified on `build` so that the analysis
+# cache is maintained between a `bazel build ...` and a `bazel test ...`. See:
+#   https://github.com/bazelbuild/bazel/issues/7450.
+build --test_env=PYTHONUNBUFFERED=1
+
+# Run mypy whenever we build Python code.
+build --aspects @mypy_integration//:mypy.bzl%mypy_aspect
+build --output_groups=+mypy
+build --@mypy_integration//:mypy_config=//:mypy.ini
+
+# In Python there is the concept of a "namespace package", which is a single
+# package that's spread across multiple directories. This is useful for e.g. all
+# of the various Google libraries, that come in different PyPI packages like
+# `kubernetes` or `google-cloud-storage` as well as from direct Bazel
+# dependencies like `com_google_protobuf`, all of which contain a `google`
+# module. In order for us to find all the various Google modules (e.g.
+# `google.api` and `google.auth` in different `google/` folders) and not only
+# those in the first `google` module we find, all Google modules need to be
+# namespace packages.
+#
+# There are two ways to make a package a namespace package:
+# 1. Have code in the package's `__init__.py` that makes it so; see
+#    https://peps.python.org/pep-0420/#namespace-packages-today for details.
+# 2. Omit the `__init__.py` from the package entirely. That makes it an
+#    "implicit" namespace package; details are at
+#    https://packaging.python.org/en/latest/guides/packaging-namespace-packages/#native-namespace-packages.
+#
+# When we import a package via `rules_python` (e.g. `requirement('grpcio')`),
+# the `rules_python` code will conveniently set it up for case (1).
+#
+# When we import a package via direct Bazel dependency (like we do with
+# `@com_google_protobuf`), it is very important that it also uses one of these
+# cases. However, if (like `@com_google_protobuf`) it uses case (2) meaning it
+# does not have an `__init__.py`, then Bazel will automatically create an empty
+# `__init__.py` for it (!!) thereby completely ruining everything. See:
+#   https://github.com/bazelbuild/bazel/issues/7386
+#
+# Fortunately we can disable this behavior by setting the following flag, which
+# will let libraries like `@com_google_protobuf` be implicit namespace packages.
+build --incompatible_default_to_explicit_init_py
+
+# Configs to simplify debugging tests. Use via `bazel --config=k8s-debug`.
+test:k8s-debug --test_output=streamed
+test:k8s-debug --nocache_test_results
+test:k8s-debug --test_env=LOCAL_KUBERNETES_TEST_FORCE_COLOR=true
+
+# Use via `bazel --config=k8s-debug-verbose`.
+test:k8s-debug-verbose --config=k8s-debug
+test:k8s-debug-verbose --test_env=LOCAL_KUBERNETES_TEST_VERBOSE=true
+
+# Config to reuse an existing registry.
+test:k8s-reuse-registry --test_env=LOCAL_KUBERNETES_TEST_REUSE_REGISTRY=true
+
+# Config to reuse an existing cluster.
+test:k8s-reuse-cluster --test_env=LOCAL_KUBERNETES_TEST_REUSE_CLUSTER=true
+
+# Config to reuse an existing cluster and registry.
+test:k8s-reuse --config=k8s-reuse-registry --config=k8s-reuse-cluster
+
+# Defaults for using 'rules_ts'.
+build --@aspect_rules_ts//ts:skipLibCheck=honor_tsconfig
+fetch --@aspect_rules_ts//ts:skipLibCheck=honor_tsconfig
+
+build --@aspect_rules_ts//ts:default_to_tsc_transpiler
+fetch --@aspect_rules_ts//ts:default_to_tsc_transpiler
+
+# Use a hardcoded action $PATH. Otherwise, every time $PATH changes, Bazel will
+# rebuild every target. This is a problem because $PATH changes all the time;
+# most notably VSCode makes changes to $PATH every time it starts up; e.g. to
+# add lines like:
+#   /vscode/bin/linux-x64/abd2f3db4bdb28f9e95536dfa84d8479f1eb312d/bin/remote-cli
+build --incompatible_strict_action_env
+# TODO: By default, Bazel uses the reverse order of this PATH (with `/bin` first),
+# but our workaround for https://github.com/reboot-dev/respect/issues/2652 involves
+# creating symlinks in `/usr/local/bin`, which we always want to be loaded first.
+build --action_env=PATH=/usr/local/bin:/usr/bin:/bin
+
+# Allow users to add local preferences that override the above.
+try-import %workspace%/user.bazelrc

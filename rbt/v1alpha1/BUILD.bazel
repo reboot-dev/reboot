@@ -1,0 +1,401 @@
+load("@aspect_rules_js//npm:defs.bzl", "npm_package")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config", "ts_project")
+load("@com_github_3rdparty_eventuals//bazel:cc_eventuals_library.bzl", "cc_eventuals_library")
+load("@com_github_grpc_grpc//bazel:cc_grpc_library.bzl", "cc_grpc_library")
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_grpc_library", "py_proto_library")
+load("@com_github_reboot_dev_reboot//reboot:rules.bzl", "js_proto_library")
+load("@com_github_reboot_dev_reboot//reboot:versions.bzl", "REBOOT_VERSION")
+load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+npm_link_all_packages()
+
+# Protos that users can import and use in their own `.proto` files. These will
+# be made available when running `rbt protoc`.
+filegroup(
+    name = "protos",
+    srcs = [
+        "options.proto",
+        "tasks.proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+proto_library(
+    name = "options_proto",
+    srcs = [":options.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+)
+
+# We need the standard python grpc headers (i.e., the outout of
+# `py_proto_library`) for our `protoc` plugin.
+py_proto_library(
+    name = "options_py_proto",
+    deps = [":options_proto"],
+)
+
+py_grpc_library(
+    name = "options_py_grpc",
+    srcs = [":options_proto"],
+    visibility = ["//visibility:public"],
+    deps = [":options_py_proto"],
+)
+
+proto_library(
+    name = "placement_planner_proto",
+    srcs = ["placement_planner.proto"],
+    deps = [],
+)
+
+py_proto_library(
+    name = "placement_planner_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":placement_planner_proto"],
+)
+
+py_grpc_library(
+    name = "placement_planner_py_grpc",
+    srcs = [":placement_planner_proto"],
+    visibility = ["//visibility:public"],
+    deps = [":placement_planner_py_proto"],
+)
+
+proto_library(
+    name = "kubernetes_helpers_proto",
+    srcs = [":kubernetes_helpers.proto"],
+    visibility = ["//visibility:public"],
+)
+
+proto_library(
+    name = "application_config_proto",
+    srcs = [":application_config.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":kubernetes_helpers_proto",
+    ],
+)
+
+py_proto_library(
+    name = "application_config_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":application_config_proto"],
+)
+
+proto_library(
+    name = "auth_proto",
+    srcs = [":auth.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_proto_library(
+    name = "auth_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":auth_proto"],
+)
+
+js_proto_library(
+    name = "auth_js_proto",
+    package_json = ":package.json",
+    proto = ":auth.proto",
+    proto_deps = [
+        ":auth_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+proto_library(
+    name = "config_mode_proto",
+    srcs = [":config_mode.proto"],
+    deps = [":application_config_proto"],
+)
+
+py_proto_library(
+    name = "config_mode_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":config_mode_proto"],
+)
+
+py_grpc_library(
+    name = "config_mode_py_grpc",
+    srcs = [":config_mode_proto"],
+    visibility = ["//visibility:public"],
+    deps = [":config_mode_py_proto"],
+)
+
+proto_library(
+    name = "consensus_manager_proto",
+    srcs = [":consensus_manager.proto"],
+)
+
+py_proto_library(
+    name = "consensus_manager_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":consensus_manager_proto"],
+)
+
+proto_library(
+    name = "sidecar_proto",
+    srcs = [":sidecar.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tasks_proto",
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:descriptor_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "sidecar_cc_proto",
+    visibility = ["//visibility:public"],
+    deps = [":sidecar_proto"],
+)
+
+cc_grpc_library(
+    name = "sidecar_cc_grpc",
+    srcs = [":sidecar_proto"],
+    grpc_only = True,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":sidecar_cc_proto",
+        "@com_github_grpc_grpc//:grpc++",
+    ],
+)
+
+cc_eventuals_library(
+    name = "sidecar_eventuals_generated",
+    srcs = [":sidecar.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":sidecar_proto",
+        # We need to repeat all of the dependencies of `sidecar_proto` here.
+        # ISSUE(https://github.com/3rdparty/eventuals/issues/483)
+        ":tasks_proto",
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:timestamp_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+)
+
+cc_library(
+    name = "sidecar_eventuals",
+    srcs = [":sidecar_eventuals_generated"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":sidecar_cc_grpc",
+        "@com_github_3rdparty_eventuals//eventuals/grpc",
+    ],
+)
+
+py_proto_library(
+    name = "sidecar_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":sidecar_proto"],
+)
+
+py_grpc_library(
+    name = "sidecar_py_grpc",
+    srcs = [":sidecar_proto"],
+    visibility = ["//visibility:public"],
+    deps = [":sidecar_py_proto"],
+)
+
+proto_library(
+    name = "tasks_proto",
+    srcs = [":tasks.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:any_proto",
+    ],
+)
+
+py_proto_library(
+    name = "tasks_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":tasks_proto"],
+)
+
+js_proto_library(
+    name = "tasks_js_proto",
+    package_json = ":package.json",
+    proto = "tasks.proto",
+    proto_deps = [
+        ":tasks_proto",
+        # ISSUE(https://github.com/reboot-dev/respect/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "@com_google_protobuf//:any_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_grpc_library(
+    name = "tasks_py_grpc",
+    srcs = [":tasks_proto"],
+    visibility = ["//visibility:public"],
+    deps = [":tasks_py_proto"],
+)
+
+cc_proto_library(
+    name = "tasks_cc_proto",
+    visibility = ["//visibility:public"],
+    deps = [":tasks_proto"],
+)
+
+proto_library(
+    name = "transactions_proto",
+    srcs = [":transactions.proto"],
+    visibility = ["//visibility:public"],
+)
+
+py_proto_library(
+    name = "transactions_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":transactions_proto"],
+)
+
+py_grpc_library(
+    name = "transactions_py_grpc",
+    srcs = [":transactions_proto"],
+    visibility = ["//visibility:public"],
+    deps = [":transactions_py_proto"],
+)
+
+proto_library(
+    name = "react_proto",
+    srcs = [":react.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@googleapis//google/api:annotations_proto",
+    ],
+)
+
+py_proto_library(
+    name = "react_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":react_proto"],
+)
+
+py_grpc_library(
+    name = "react_py_grpc",
+    srcs = [":react_proto"],
+    visibility = ["//visibility:public"],
+    deps = [":react_py_proto"],
+)
+
+js_proto_library(
+    name = "react_js_proto",
+    package_json = ":package.json",
+    proto = ":react.proto",
+    proto_deps = [
+        ":react_proto",
+        # ISSUE(https://github.com/reboot-dev/respect/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "@googleapis//google/api:annotations_proto",
+        "@googleapis//google/api:http_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+proto_library(
+    name = "errors_proto",
+    srcs = [":errors.proto"],
+    visibility = ["//visibility:public"],
+)
+
+py_proto_library(
+    name = "errors_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":errors_proto"],
+)
+
+js_proto_library(
+    name = "errors_js_proto",
+    package_json = ":package.json",
+    proto = ":errors.proto",
+    proto_deps = [
+        ":errors_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+    visibility = ["//visibility:public"],
+)
+
+ts_project(
+    name = "package_ts",
+    srcs = [
+        ":auth_js_proto",
+        ":errors_js_proto",
+        ":index.ts",
+        ":react_js_proto",
+        ":tasks_js_proto",
+    ],
+    declaration = True,
+    tsconfig = ":tsconfig",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+    ],
+)
+
+npm_package(
+    name = "v1alpha1",
+    srcs = [
+        ":package.json",
+        ":package_ts",
+        ":tsconfig",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "reboot-dev-reboot-api",
+    srcs = [
+        ":v1alpha1",
+    ],
+    outs = ["reboot-dev-reboot-api-" + REBOOT_VERSION + ".tgz"],
+    cmd = """
+        npm_binary_path=$$(realpath $(execpath @node//:npm))
+        working_folder=$$(dirname $(location :v1alpha1))
+        pushd $$working_folder
+        mkdir -p build && cd build
+        cp ../v1alpha1/* .
+        $$npm_binary_path pack --pack-destination .
+        path=$$(realpath reboot-dev-reboot-api-{reboot_version}.tgz)
+        popd
+        mv $$path $(@D)
+        rm -rf $$working_folder/build
+    """.format(
+        reboot_version = REBOOT_VERSION,
+    ),
+    tools = [
+        "@node//:npm",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "reboot_dev_reboot_api_js_proto_files",
+    srcs = [
+        ":auth_js_proto.files",
+        ":errors_js_proto.files",
+        ":react_js_proto.files",
+        ":tasks_js_proto.files",
+    ],
+)
+
+exports_files(["package.json"])
