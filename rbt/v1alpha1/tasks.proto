@@ -3,6 +3,7 @@ syntax = "proto3";
 package rbt.v1alpha1;
 
 import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -10,6 +11,36 @@ message TaskId {
   string state_type = 1;
   string state_ref = 2;
   bytes task_uuid = 3;
+}
+
+message TaskInfo {
+  enum Status {
+    UNKNOWN = 0;
+    STARTED = 1;
+    // If task is SCHEDULED, it means that it was scheduled and is waiting
+    // for its turn to be executed for the first time.
+    SCHEDULED = 2;
+    // If task is SCHEDULED_RETRY, it means that it was scheduled, but
+    // failed and is waiting for some backoff before retrying.
+    SCHEDULED_RETRY = 3;
+    // If task is CANCELLED, it means that it was cancelled before it was
+    // completed by a tasks service.
+    CANCELLED = 4;
+    // If task is COMPLETED, it means that it was executed and completed
+    // successfully.
+    COMPLETED = 5;
+  }
+  Status status = 1;
+  TaskId task_id = 2;
+  string method = 3;
+  // When we got to this state. Always there.
+  google.protobuf.Timestamp occurred_at = 4;
+  // When we expect to next transition. Only for scheduled statuses.
+  google.protobuf.Timestamp scheduled_at = 5;
+  uint64 iterations = 6;
+  // Number of runs that failed in a retry loop recently (since the consensus
+  // most recently came up).
+  uint64 num_runs_failed_recently = 7;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -31,14 +62,14 @@ message WaitResponse {
 
 ////////////////////////////////////////////////////////////////////////
 
-message ListPendingTasksRequest {
+message ListTasksRequest {
   // If set, only return pending tasks held by the given consensus ID. If not
   // set (or left at default), return all pending tasks held by all consensuses.
   optional string only_consensus_id = 1;
 }
 
-message ListPendingTasksResponse {
-  repeated TaskId task_ids = 1;
+message ListTasksResponse {
+  repeated TaskInfo tasks = 1;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -63,8 +94,8 @@ message TaskCancelledError {
 
 service Tasks {
   rpc Wait(WaitRequest) returns (WaitResponse);
-  rpc ListPendingTasks(ListPendingTasksRequest)
-      returns (ListPendingTasksResponse);
+  rpc ListTasks(ListTasksRequest)
+      returns (ListTasksResponse);
   rpc CancelTask(CancelTaskRequest) returns (CancelTaskResponse);
 }
 

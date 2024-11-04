@@ -710,6 +710,10 @@ six==1.16.0 \
     # via
     #   kubernetes-asyncio
     #   python-dateutil
+tabulate==0.9.0 \
+    --hash=sha256:0095b12bf5966de529c0feb1fa08671671b3368eec77d7ef7ab114be2c068b3c \
+    --hash=sha256:024ca478df22e9340661486f85298cff5f6dcdba14f3813e8830015b9ed1948f
+    # via -r reboot/requirements.in
 types-protobuf==4.24.0.20240129 \
     --hash=sha256:23be68cc29f3f5213b5c5878ac0151706182874040e220cfb11336f9ee642ead \
     --hash=sha256:8a83dd3b9b76a33e08d8636c5daa212ace1396418ed91837635fcd564a624891

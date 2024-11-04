@@ -22,11 +22,10 @@ class Backoff:
 
         self._retry_attempts = 0
 
-    def clear(self) -> None:
-        self._retry_attempts = 0
+        self._next_backoff_seconds = 1.0
 
-    async def __call__(self):
-        backoff_seconds = random.uniform(
+    def calculate_next_backoff(self) -> None:
+        self._next_backoff_seconds = random.uniform(
             0,
             min(
                 self._initial_backoff_seconds *
@@ -35,6 +34,17 @@ class Backoff:
             )
         )
 
-        await asyncio.sleep(backoff_seconds)
+    @property
+    def next_backoff_seconds(self) -> float:
+        return self._next_backoff_seconds
+
+    def clear(self) -> None:
+        self._retry_attempts = 0
+
+    async def __call__(self):
+
+        await asyncio.sleep(self._next_backoff_seconds)
 
         self._retry_attempts += 1
+
+        self.calculate_next_backoff()
