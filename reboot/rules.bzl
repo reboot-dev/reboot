@@ -55,26 +55,26 @@ _mypy_files = create_protoc_plugin_rule(
 def py_proto_with_grpc_library_typed(
         name,
         proto,
-        deps = [],
+        proto_library,
         visibility = None):
     """Helper for generating better proto libraries.
 
     Args:
         name: target name.
         proto: '.proto' file.
-        deps: `proto_library` dependencies.
+        proto_library: a `proto_library` containing the `.proto` file.
         visibility: bazel visibility.
     """
 
     py_proto_library(
         name = name + "_pb2_py",
-        deps = deps,
+        deps = [proto_library],
     )
 
     _mypy_files(
         name = name + "_pb2_pyi_files",
         srcs = [proto],
-        deps = deps,
+        deps = [proto_library],
     )
 
     wrapped_pyi(
@@ -85,7 +85,7 @@ def py_proto_with_grpc_library_typed(
 
     py_grpc_library(
         name = name + "_pb2_grpc_py",
-        srcs = deps,
+        srcs = [proto_library],
         deps = [
             ":" + name + "_pb2_py",
         ],
@@ -107,21 +107,30 @@ def py_proto_with_grpc_library_typed(
 def py_reboot_library(
         name,
         proto,
-        deps,
+        proto_library = "",
+        py_deps = [],
         visibility = None):
     """
     Helper macro for invoking 'protoc' using the 'protoc-gen-reboot_python' plugin.
+
+    Args:
+        name: name of the library.
+        proto: the `.proto` file producing the library.
+        proto_library: label of a `proto_library` containing the `proto` file.
+        py_deps: python dependencies of the produced library.
+        visibility: Bazel visibility.
     """
+
     _py_reboot_files(
         name = name + "_files",
         srcs = [proto],
-        deps = deps,
+        deps = [proto_library],
     )
 
     py_proto_with_grpc_library_typed(
         name = name + "_library",
         proto = proto,
-        deps = deps,
+        proto_library = proto_library,
         visibility = visibility,
     )
 
@@ -155,7 +164,7 @@ def py_reboot_library(
             "//reboot/aio:types_py",
             "//reboot/aio:external_py",
             ":" + name + "_library",
-        ],
+        ] + py_deps,
     )
 
 _ts_reboot_react_files = create_protoc_plugin_rule(
@@ -354,8 +363,19 @@ def _js_proto_files(
               --es_out=. \
               {descriptor_set_in} \
               $$proto_path
-            cp {package_name}/*.js $$(dirname $(locations {proto_pb_js}))
-            cp {package_name}/*.d.ts $$(dirname $(locations {proto_pb_d_ts}))
+            # Not every `.proto` file contains `message`s, so not every `.proto`
+            # file produces an output from the `es` protoc plugin. Bazel still
+            # expects to see a file though, so the fallback is to create an
+            # empty module.
+            proto_pb_js_dir="$$(dirname $(locations {proto_pb_js}))"
+            proto_pb_d_ts_dir="$$(dirname $(locations {proto_pb_d_ts}))"
+            if ls {package_name}/*.js 1>/dev/null 2>&1; then
+                cp {package_name}/*.js $$proto_pb_js_dir
+                cp {package_name}/*.d.ts $$proto_pb_d_ts_dir
+            else
+                echo "export {{}};" > "$$proto_pb_js_dir/{proto_pb_js}"
+                echo "export {{}};" > "$$proto_pb_d_ts_dir/{proto_pb_d_ts}"
+            fi
         """.format(
             descriptor_set_in = descriptor_set_in,
             proto = proto,
@@ -467,7 +487,7 @@ _py_boilerplate_reboot_files = create_protoc_plugin_rule(
 def py_boilerplate_reboot_library(
         name,
         proto,
-        deps,
+        proto_library,
         visibility = None):
     """
     Helper macro for invoking 'protoc' using the 'protoc-gen-reboot_python' plugin.
@@ -475,13 +495,13 @@ def py_boilerplate_reboot_library(
     _py_boilerplate_reboot_files(
         name = name + "_py_boilerplate_reboot_files",
         srcs = [proto],
-        deps = deps,
+        deps = [proto_library],
     )
 
     py_reboot_library(
         name = name + "_py_reboot",
         proto = proto,
-        deps = deps,
+        proto_library = proto_library,
         visibility = visibility,
     )
 

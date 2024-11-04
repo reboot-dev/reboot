@@ -76,8 +76,13 @@ extend google.protobuf.MethodOptions {
 }
 
 message ServiceOptions {
-  reserved 1;
-  reserved "state";
+  // The name of the Reboot state `message` that this service supplies methods
+  // for. May be omitted if the system's default naming convention is
+  // acceptable. If supplied, the name is looked up using protobuf's normal
+  // rules: relative names are resolved in the same package, while absolute
+  // names may refer to any package.
+  string state = 1;
+
   // Whether or not this service can be default constructed via just
   // calling a writer even if some methods are specified as constructors.
   bool default_constructible = 2;
@@ -91,7 +96,13 @@ extend google.protobuf.ServiceOptions {
   ServiceOptions service = 50000;
 }
 
-message StateOptions {}
+message StateOptions {
+  // A list of names of Reboot method definition `service`s that provide this
+  // state `message` with methods. May be omitted if the system's default naming
+  // convention is acceptable. Each named service must, in turn, have their
+  // `state` option set to point at this state.
+  repeated string implements = 1;
+}
 
 extend google.protobuf.MessageOptions {
   // TODO: once these options are stable, register field numbers for them in the

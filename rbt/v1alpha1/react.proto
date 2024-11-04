@@ -7,8 +7,8 @@ import "google/api/annotations.proto";
 ////////////////////////////////////////////////////////////////////////
 
 message QueryRequest {
-  // Fully-qualified name of a Reboot unary reader method, e.g.,
-  // `my.package.Service.ReaderMethod`. Only unary reader methods are
+  // Unqualified name of a Reboot unary reader method, e.g. `MyReaderMethod`,
+  // NOT `my.package.Service.MyReaderMethod`. Only unary reader methods are
   // supported.
   string method = 1;
 
@@ -33,8 +33,8 @@ message QueryResponse {
 // takes a repeated `MutateRequest`.
 
 message MutateRequest {
-  // Fully-qualified name of a Reboot mutator (writer or
-  // transaction) method, e.g., `my.package.Service.MutatorMethod`.
+  // Unqualified name of a Reboot mutator (writer or transaction) method, e.g.
+  // `MyMutatorMethod`, NOT `my.package.Service.MyMutatorMethod`.
   string method = 1;
 
   // JSON request to be passed to the above method. The same

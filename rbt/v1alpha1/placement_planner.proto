@@ -30,8 +30,11 @@ message Plan {
     repeated Shard shards = 3;  // Sorted by `range.first_key`.
 
     message Service {
-      // The fully qualified name of the service. E.g. "hello.v1.Hello".
-      string name = 1;
+      // The fully qualified name of the service. E.g. "hello.v1.HelloMethods".
+      string full_name = 1;
+      // The fully qualified name of the state hosting this service; E.g.
+      // "hello.v1.Hello". May be empty if the service is a legacy gRPC service.
+      string state_type_full_name = 2;
     }
 
     message Shard {

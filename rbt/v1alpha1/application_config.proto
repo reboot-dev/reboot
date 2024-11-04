@@ -53,6 +53,15 @@ message ApplicationConfig {
   Status status = 1;
 
   message Spec {
+    message State {
+      // Fully-qualified state type name; e.g. "hello.v1.Hello".
+      string state_type_full_name = 1;
+
+      // Fully-qualified names of services hosted by this state type; e.g.
+      // "hello.v1.HelloMethods".
+      repeated string service_full_names = 2;
+    }
+
     // A serialized `FileDescriptorSet`. Its content is plain bytes, not base64,
     // but note that (since this is a `bytes` field) when the
     // `ApplicationConfig` is written to Kubernetes, this field (like any other
@@ -64,7 +73,17 @@ message ApplicationConfig {
     string container_image_name = 4;
 
     // The names of all the Reboot services served by this server.
+    //
+    // TODO(rjh): this field has been superseded by `states` and
+    //   `legacy_grpc_service_full_names`; remove this field once all callers
+    //   provide those fields.
     repeated string service_names = 5;
+
+    // All of the Reboot state types served by this server.
+    repeated State states = 8;
+
+    // Legacy gRPC services hosted by this server.
+    repeated string legacy_grpc_service_full_names = 9;
 
     // A unique string representing the revision of this config. When the
     // config's contents change, this string MUST also change. This string MAY
