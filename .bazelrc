@@ -143,3 +143,8 @@ build --action_env=PATH=/usr/local/bin:/usr/bin:/bin
 
 # Allow users to add local preferences that override the above.
 try-import %workspace%/user.bazelrc
+
+# When tests fail, print their error logs to stderr. This is necessary in CI for
+# us to debug failed tests, since we don't have `bazel-testlogs/` available when
+# debugging.
+test --test_output=errors
