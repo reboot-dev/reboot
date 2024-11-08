@@ -1,0 +1,8 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "options_py",
+    srcs = ["options.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
