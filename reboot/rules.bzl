@@ -43,12 +43,12 @@ wrapped_pyi = rule(
 )
 
 _py_reboot_files = create_protoc_plugin_rule(
-    "@com_github_reboot_dev_respect//reboot:protoc-gen-reboot_python",
+    "@com_github_reboot_dev_mono//reboot:protoc-gen-reboot_python",
     extensions = ("_rbt.py",),
 )
 
 _mypy_files = create_protoc_plugin_rule(
-    "@com_github_reboot_dev_respect//reboot:protoc-gen-mypy",
+    "@com_github_reboot_dev_mono//reboot:protoc-gen-mypy",
     extensions = ("_pb2.pyi",),
 )
 
@@ -143,7 +143,7 @@ def py_reboot_library(
         # PYTHONPATH, while generating a bootstrap python for the 'py_binary'.
         # We had an issue about using two versions of the 'cygrpc.so' which
         # are coming from 'grpcio' and the 'com_github_grpc_grpc' repo.
-        # See https://github.com/reboot-dev/respect/issues/2347
+        # See https://github.com/reboot-dev/mono/issues/2347
         # TODO: Make this match the imports in reboot.py.j2.
         deps = [
             requirement("grpcio"),
@@ -168,7 +168,7 @@ def py_reboot_library(
     )
 
 _ts_reboot_react_files = create_protoc_plugin_rule(
-    "@com_github_reboot_dev_respect//reboot:protoc-gen-reboot_react",
+    "@com_github_reboot_dev_mono//reboot:protoc-gen-reboot_react",
     extensions = ("_rbt_react.ts",),
 )
 
@@ -215,7 +215,7 @@ def js_reboot_react_library(
     )
 
 _ts_reboot_files = create_protoc_plugin_rule(
-    "@com_github_reboot_dev_respect//reboot:protoc-gen-reboot_nodejs",
+    "@com_github_reboot_dev_mono//reboot:protoc-gen-reboot_nodejs",
     extensions = ("_rbt.ts",),
 )
 
@@ -480,7 +480,7 @@ def write_merged_source_files(name, write_path, srcs = None, output_groups = [""
     )
 
 _py_boilerplate_reboot_files = create_protoc_plugin_rule(
-    "@com_github_reboot_dev_respect//reboot:protoc-gen-reboot_python_boilerplate",
+    "@com_github_reboot_dev_mono//reboot:protoc-gen-reboot_python_boilerplate",
     extensions = ("_servicer.py",),
 )
 
@@ -515,7 +515,7 @@ def py_boilerplate_reboot_library(
     )
 
 _ts_boilerplate_reboot_files = create_protoc_plugin_rule(
-    "@com_github_reboot_dev_respect//reboot:protoc-gen-reboot_nodejs_boilerplate",
+    "@com_github_reboot_dev_mono//reboot:protoc-gen-reboot_nodejs_boilerplate",
     extensions = ("_servicer.ts",),
 )
 

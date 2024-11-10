@@ -230,7 +230,7 @@ js_proto_library(
     proto = "tasks.proto",
     proto_deps = [
         ":tasks_proto",
-        # ISSUE(https://github.com/reboot-dev/respect/issues/3218): Until we can
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
         # use `create_protoc_plugin_rule` we need to repeat the dependencies of
         # the `proto_libraries` here.
         "@com_google_protobuf//:any_proto",
@@ -299,7 +299,7 @@ js_proto_library(
     proto = ":react.proto",
     proto_deps = [
         ":react_proto",
-        # ISSUE(https://github.com/reboot-dev/respect/issues/3218): Until we can
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
         # use `create_protoc_plugin_rule` we need to repeat the dependencies of
         # the `proto_libraries` here.
         "@googleapis//google/api:annotations_proto",

@@ -137,7 +137,7 @@ fetch --@aspect_rules_ts//ts:default_to_tsc_transpiler
 #   /vscode/bin/linux-x64/abd2f3db4bdb28f9e95536dfa84d8479f1eb312d/bin/remote-cli
 build --incompatible_strict_action_env
 # TODO: By default, Bazel uses the reverse order of this PATH (with `/bin` first),
-# but our workaround for https://github.com/reboot-dev/respect/issues/2652 involves
+# but our workaround for https://github.com/reboot-dev/mono/issues/2652 involves
 # creating symlinks in `/usr/local/bin`, which we always want to be loaded first.
 build --action_env=PATH=/usr/local/bin:/usr/bin:/bin
 

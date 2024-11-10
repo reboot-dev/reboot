@@ -36,7 +36,7 @@ js_proto_library(
     proto = ":inspect.proto",
     proto_deps = [
         ":inspect_proto",
-        # ISSUE(https://github.com/reboot-dev/respect/issues/3218): Until we can
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
         # use `create_protoc_plugin_rule` we need to repeat the dependencies of
         # the `proto_libraries` here.
         "@com_google_protobuf//:any_proto",
