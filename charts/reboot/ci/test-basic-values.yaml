@@ -2,7 +2,7 @@ app:
   name: "hello"
   # TODO: Using a static image, rather than an image built from the base-image
   # on `main`.
-  image: "ghcr.io/reboot-dev/reboot/examples/hello@sha256:b3420ac1507ac66f977b77ba65f1ed6264e229a9d1812b9801e7cbef11dbcb83"
+  image: "ghcr.io/reboot-dev/reboot/examples/hello@sha256:c81fbbb47b3466349a655adee2dfb21c9cd3ae1f11d294d183d46d776097b081"
   storage:
     existingStorageClass:
       # `k3d`'s local path storage.

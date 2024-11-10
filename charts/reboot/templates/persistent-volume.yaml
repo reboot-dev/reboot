@@ -15,7 +15,7 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   nfs:
     # Path within the EFS file system to mount. The application separately
-    # isolates itself under an `app.storage.directory` below this path.
+    # isolates itself under an `app.storage.stateDirectory` below this path.
     path: /
   mountOptions:
     # https://docs.aws.amazon.com/efs/latest/ug/mounting-fs-mount-cmd-general.html

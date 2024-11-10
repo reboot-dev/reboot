@@ -12,6 +12,9 @@ app:
   # Example: "ghcr.io/reboot-dev/reboot/examples/hello@sha256:b3420ac1507ac66f977b77ba65f1ed6264e229a9d1812b9801e7cbef11dbcb83"
   image: null
 
+  # The port on which the Reboot application will serve traffic.
+  port: 9989
+
   # Configures the persistent storage for the application.
   #
   # Exactly one of the following keys must be defined in order to choose the
@@ -49,8 +52,7 @@ app:
     # This storage type currently has no options, so set it to `{}` to enable it.
     existingEfs: null
 
-    # The directory name to use for Reboot application state inside of
-    # persisted storage.
+    # The directory in which to store Reboot application state.
     #
-    # NOTE: Cannot be changed once data has been stored!
-    directory: "/app/state"
+    # NOTE: do not change once data has been stored!
+    stateDirectory: "/app/state"

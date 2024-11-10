@@ -18,19 +18,14 @@ spec:
         - name: {{ .Values.app.name }}
           image: {{ .Values.app.image }}
           args:
-            - "rbt"
-            - "serve"
-            - "--port=9989"
-            - "--directory={{ .Values.app.storage.directory }}"
-          env:
-            - name: PORT
-              value: "9989"
+            - "--port={{ .Values.app.port }}"
+            - "--state-directory={{ .Values.app.storage.stateDirectory }}"
           ports:
-            - containerPort: 9989
+            - containerPort: {{ .Values.app.port }}
               name: public
           volumeMounts:
             - name: state
-              mountPath: {{ .Values.app.storage.directory }}
+              mountPath: {{ .Values.app.storage.stateDirectory }}
       volumes:
         - name: state
           persistentVolumeClaim:
