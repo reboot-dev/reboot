@@ -15,14 +15,29 @@ message QueryRequest {
   // Serialized request to be passed to the above method. The same
   // request is used each time we invoke the method.
   bytes request = 2;
+
+  // Authorization bearer token.
+  optional string bearer_token = 3;
 }
 
 message QueryResponse {
-  // Serialized response from the method specified in the request.
-  optional bytes response = 1;
+  oneof response_or_status {
+    // Serialized response from the method specified in the request.
+    bytes response = 1;
+
+    // JSON representation of `google.rpc.Status`.
+    //
+    // TODO(benh): this is sent as JSON because `protoc-gen-es`
+    // doesn't have `google.rpc.Status` and so we have our own
+    // implementation which only has JSON support for now.
+    string status = 3;
+  }
 
   // Set of idempotency keys that caused mutations since the last time
   // that a response was returned.
+  //
+  // Only expected if `response` is present above.
+  //
   // TODO(benh): send these as bytes?
   repeated string idempotency_keys = 2;
 }
