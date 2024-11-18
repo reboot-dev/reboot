@@ -1,0 +1,50 @@
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_grpc_library", "py_proto_library")
+load("@com_github_reboot_dev_reboot//reboot:rules.bzl", "js_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+proto_library(
+    name = "inspect_proto",
+    srcs = [
+        ":inspect.proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:descriptor_proto",
+        "@com_google_protobuf//:struct_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@googleapis//google/api:http_proto",
+        "@googleapis//google/api:httpbody_proto",
+    ],
+)
+
+py_proto_library(
+    name = "inspect_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":inspect_proto"],
+)
+
+py_grpc_library(
+    name = "inspect_py_grpc",
+    srcs = [":inspect_proto"],
+    visibility = ["//visibility:public"],
+    deps = [":inspect_py_proto"],
+)
+
+js_proto_library(
+    name = "inspect_js_proto",
+    package_json = ":package.json",
+    proto = ":inspect.proto",
+    proto_deps = [
+        ":inspect_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:descriptor_proto",
+        "@com_google_protobuf//:struct_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@googleapis//google/api:http_proto",
+        "@googleapis//google/api:httpbody_proto",
+    ],
+    visibility = ["//visibility:public"],
+)

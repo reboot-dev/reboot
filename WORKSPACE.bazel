@@ -1,0 +1,160 @@
+workspace(name = "com_github_reboot_dev_reboot")
+
+########################################################################
+
+# We pull in the following repositories as local repositories pointing to their
+# git submodules that we have so that we can do do more efficient development
+# between the two repositories.
+
+local_repository(
+    name = "com_github_3rdparty_eventuals",
+    path = "submodules/eventuals",
+)
+
+# Technically it's **unnecessary** to add 'stout' because we
+# transitively get it from eventuals, but because we directly depend
+# on it we're being explicit here to avoid future bugs if, for
+# example, eventuals stopped depending on it (or we need a different
+# version). Note that this needs to be done _before_ calling
+# 'eventuals_submodules()' below.
+local_repository(
+    name = "com_github_3rdparty_stout",
+    path = "submodules/eventuals/submodules/stout",
+)
+
+# As with `stout` above, we could get `pyprotoc_plugin` as a transitive
+# dependency from `eventuals`, but we're being explicit here since we rely
+# on `pyprotoc_plugin` directly.
+local_repository(
+    name = "com_github_reboot_dev_pyprotoc_plugin",
+    path = "submodules/pyprotoc-plugin",
+)
+
+load("@com_github_3rdparty_eventuals//bazel:submodules.bzl", eventuals_submodules = "submodules")
+
+eventuals_submodules()
+
+########################################################################
+
+load("//bazel:repos.bzl", "repos")
+
+repos()
+
+load("//bazel:py_toolchains.bzl", reboot_py_toolchains = "py_toolchains")
+
+reboot_py_toolchains()
+
+load("//bazel:pypi_repos.bzl", reboot_pypi_repos = "pypi_repos")
+
+reboot_pypi_repos()
+
+########################################################################
+
+# rules_docker requires more than one stage of dependency fetching unfortunately.
+load("@io_bazel_rules_docker//repositories:repositories.bzl", container_repos = "repositories")
+
+container_repos()
+
+########################################################################
+
+load("//bazel:deps.bzl", "deps")
+
+deps()
+
+########################################################################
+
+# grpc requires more than one stage of dependency fetching unfortunately.
+load("@com_github_grpc_grpc//bazel:grpc_extra_deps.bzl", "grpc_extra_deps")
+
+grpc_extra_deps()
+
+########################################################################
+
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+########################################################################
+# aspect_rules_ts setup, done here instead of splitting between
+# 'bazel/repos.bzl' and 'bazel/deps.bzl' as this requires multiple
+# "depths" of 'load(...)' calls. Ultimately it's time to move to Bazel
+# modules as well.
+
+http_archive(
+    name = "aspect_rules_ts",
+    sha256 = "8aabb2055629a7becae2e77ae828950d3581d7fc3602fe0276e6e039b65092cb",
+    strip_prefix = "rules_ts-2.0.0",
+    url = "https://github.com/aspect-build/rules_ts/releases/download/v2.0.0/rules_ts-v2.0.0.tar.gz",
+)
+
+load("@aspect_rules_ts//ts:repositories.bzl", "rules_ts_dependencies")
+
+rules_ts_dependencies(
+    ts_version_from = "//:package.json",
+)
+
+load("@aspect_rules_js//js:repositories.bzl", "rules_js_dependencies")
+
+rules_js_dependencies()
+
+load("@bazel_features//:deps.bzl", "bazel_features_deps")
+
+bazel_features_deps()
+
+########################################################################
+
+load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
+
+# The 'node_respositories' dict specifiying Nodejs v20.9.0 information comes
+# from:
+# https://github.com/bazelbuild/rules_nodejs/blob/main/nodejs/private/node_versions.bzl
+# We have to do this explicitly because the default Nodejs version is 16. We
+# need a Nodejs version >=18.
+# The name 'node' for this toolchain is important, since it's how we refer
+# to it in several other Bazel files.
+nodejs_register_toolchains(
+    name = "node",
+    node_repositories = {
+        "20.9.0-darwin_amd64": ("node-v20.9.0-darwin-x64.tar.gz", "node-v20.9.0-darwin-x64", "fc5b73f2a78c17bbe926cdb1447d652f9f094c79582f1be6471b4b38a2e1ccc8"),
+        "20.9.0-darwin_arm64": ("node-v20.9.0-darwin-arm64.tar.gz", "node-v20.9.0-darwin-arm64", "31d2d46ae8d8a3982f54e2ff1e60c2e4a8e80bf78a3e8b46dcaac95ac5d7ce6a"),
+        "20.9.0-linux_amd64": ("node-v20.9.0-linux-x64.tar.xz", "node-v20.9.0-linux-x64", "9033989810bf86220ae46b1381bdcdc6c83a0294869ba2ad39e1061f1e69217a"),
+        "20.9.0-linux_arm64": ("node-v20.9.0-linux-arm64.tar.xz", "node-v20.9.0-linux-arm64", "ced3ecece4b7c3a664bca3d9e34a0e3b9a31078525283a6fdb7ea2de8ca5683b"),
+        "20.9.0-linux_ppc64le": ("node-v20.9.0-linux-ppc64le.tar.xz", "node-v20.9.0-linux-ppc64le", "3c6cea5d614cfbb95d92de43fbc2f8ecd66e431502fe5efc4f3c02637897bd45"),
+        "20.9.0-linux_s390x": ("node-v20.9.0-linux-s390x.tar.xz", "node-v20.9.0-linux-s390x", "af1f4e63756ff685d452166c4d5ba93a308e816ee7c46015b5e086163d9f011b"),
+        "20.9.0-windows_amd64": ("node-v20.9.0-win-x64.zip", "node-v20.9.0-win-x64", "70d87dad2378c63216ff83d5a754c61d2886fc39d32ce0d2ea6de763a22d3780"),
+    },
+    node_version = "20.9.0",
+)
+
+load("@aspect_rules_js//npm:repositories.bzl", "npm_translate_lock")
+
+npm_translate_lock(
+    name = "npm",
+    pnpm_lock = "//:pnpm-lock.yaml",
+    verify_node_modules_ignored = "//:.bazelignore",
+)
+
+load("@npm//:repositories.bzl", "npm_repositories")
+
+npm_repositories()
+
+########################################################################
+
+http_archive(
+    name = "aspect_rules_esbuild",
+    sha256 = "84419868e43c714c0d909dca73039e2f25427fc04f352d2f4f7343ca33f60deb",
+    strip_prefix = "rules_esbuild-0.15.3",
+    url = "https://github.com/aspect-build/rules_esbuild/releases/download/v0.15.3/rules_esbuild-v0.15.3.tar.gz",
+)
+
+load("@aspect_rules_esbuild//esbuild:dependencies.bzl", "rules_esbuild_dependencies")
+
+rules_esbuild_dependencies()
+
+# Register a toolchain containing esbuild npm package and native bindings
+load("@aspect_rules_esbuild//esbuild:repositories.bzl", "LATEST_ESBUILD_VERSION", "esbuild_register_toolchains")
+
+esbuild_register_toolchains(
+    name = "esbuild",
+    esbuild_version = LATEST_ESBUILD_VERSION,
+)
+
+########################################################################

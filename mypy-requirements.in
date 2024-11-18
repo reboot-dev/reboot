@@ -1,0 +1,1 @@
+mypy==1.2.0  # Keep in sync with your workstation's mypy version.

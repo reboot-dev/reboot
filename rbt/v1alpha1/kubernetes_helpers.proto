@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+// To build this proto with bazel, the proto and bazel rule must be in the same
+// package, which means that the proto file must have a package declaration
+// matching the Bazel workspace's folder structure.
+package rbt.v1alpha1;
+
+// Kubernetes does not provide proto definitions for its objects, but we need to
+// be able to express kubernetes metadata in our custom objects. Thus, for that
+// purpose we introduce a shallow representation of the kubernetes
+// `V1ObjectMeta` object for use with our custom objects.
+// NOTE: This representation is missing many fields that the Kubernetes type
+// contains, and it should *only* be used for serialization.
+message V1ObjectMeta {
+  string namespace = 1;
+  string name = 2;
+  string uid = 3;
+}
