@@ -1,0 +1,21 @@
+load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@rules_python//python:pip.bzl", "compile_pip_requirements")
+
+# Run 'bazel run mypy-requirements.update' to update the lock file.
+# If the lock file is empty, need to turn off mypy-integration for bazel
+# to be able to run update script, otherwise it will try to find the
+# empty dependencies for mypy and fail.
+compile_pip_requirements(
+    name = "mypy-requirements",
+    src = ":mypy-requirements.in",
+    requirements_txt = ":mypy-requirements_lock.txt",
+)
+
+npm_link_all_packages()
+
+# Make mypy config available to the `mypy_integration` for Bazel, to configure
+# its mypy type checking.
+exports_files([
+    "mypy.ini",
+    "mypy-requirements_lock.txt",
+])

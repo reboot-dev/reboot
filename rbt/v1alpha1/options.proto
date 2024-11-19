@@ -1,0 +1,113 @@
+syntax = "proto3";
+
+package rbt.v1alpha1;
+
+import "google/protobuf/descriptor.proto";
+
+message ReaderMethodOptions {
+  // Option specifying how to pass the state to this method. By
+  // default, unary methods get passed a unary state, but a method may
+  // override that default (by setting this option to 'STREAMING') to
+  // get streaming state. Likewise, by default, streaming methods get
+  // streaming state, but a method may override that default (by
+  // setting this option to 'UNARY') to get unary state.
+  enum State {
+    DEFAULT = 0;
+    UNARY = 1;
+    STREAMING = 2;
+  }
+  State state = 3;
+}
+
+message WriterMethodOptions {
+  reserved 1;
+  // If set, indicates this writer can be used to construct a new actor,
+  // and an actor can not be _implicitly_ constructed but instead
+  // must be constructed via a constructor.
+  optional ConstructorMethodOptions constructor = 2;
+}
+
+message TransactionMethodOptions {
+  reserved 1;
+  // If set, indicates this transaction can be used to construct a new actor,
+  // and an actor can not be _implicitly_ constructed but instead
+  // must be constructed via a constructor.
+  optional ConstructorMethodOptions constructor = 2;
+}
+
+message WorkflowMethodOptions {
+  // Nothing here yet, but is a placeholder for describing things.
+}
+
+message ConstructorMethodOptions {
+  // Nothing here yet, but is a placeholder for describing things like
+  // "recallable" constructors, etc.
+}
+
+message MethodOptions {
+  reserved 6;
+  // The `kind` field specifies what kind of reboot function the method is.
+  // Method kind specific annotations are set in the nested object.
+  oneof kind {
+    ReaderMethodOptions reader = 1;
+    WriterMethodOptions writer = 2;
+    TransactionMethodOptions transaction = 3;
+    WorkflowMethodOptions workflow = 4;
+    // TODO: SagaMethodOptions saga = 5;
+  }
+
+  // Possible error message types that may be raised.
+  //
+  // Name resolution is done in accordance with proto3 definitions,
+  // see comment in ServiceOptions for more details.
+  repeated string errors = 7;
+
+  // The "task" annotation was deprecated in favour of the new task api.
+  reserved "task";
+  reserved 8;
+}
+
+extend google.protobuf.MethodOptions {
+  // TODO: once these options are stable, register field numbers for them in the
+  //       official protobuf global extension registry:
+  //       https://github.com/protocolbuffers/protobuf/blob/main/docs/options.md
+  //       For now we use the 50000-99999 range for "in-house" applications.
+  MethodOptions method = 50000;
+}
+
+message ServiceOptions {
+  // The name of the Reboot state `message` that this service supplies methods
+  // for. May be omitted if the system's default naming convention is
+  // acceptable. If supplied, the name is looked up using protobuf's normal
+  // rules: relative names are resolved in the same package, while absolute
+  // names may refer to any package.
+  string state = 1;
+
+  // Whether or not this service can be default constructed via just
+  // calling a writer even if some methods are specified as constructors.
+  bool default_constructible = 2;
+}
+
+extend google.protobuf.ServiceOptions {
+  // TODO: once these options are stable, register field numbers for them in the
+  //       official protobuf global extension registry:
+  //       https://github.com/protocolbuffers/protobuf/blob/main/docs/options.md
+  //       For now we use the 50000-99999 range for "in-house" applications.
+  ServiceOptions service = 50000;
+}
+
+message StateOptions {
+  // A list of names of Reboot method definition `service`s that provide this
+  // state `message` with methods. May be omitted if the system's default naming
+  // convention is acceptable. Each named service must, in turn, have their
+  // `state` option set to point at this state.
+  repeated string implements = 1;
+}
+
+extend google.protobuf.MessageOptions {
+  // TODO: once these options are stable, register field numbers for them in the
+  //       official protobuf global extension registry:
+  //       https://github.com/protocolbuffers/protobuf/blob/main/docs/options.md
+  //       For now we use the 50000-99999 range for "in-house" applications.
+  StateOptions state = 50000;
+}

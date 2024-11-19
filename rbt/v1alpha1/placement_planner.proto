@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+// To build this proto with bazel, the proto and bazel rule must be in the same
+// package, which means that the proto file must have a package declaration
+// matching the Bazel workspace's folder structure.
+package rbt.v1alpha1;
+
+service PlacementPlanner {
+  rpc ListenForPlan(ListenForPlanRequest) returns (
+      stream ListenForPlanResponse);
+}
+
+message ListenForPlanRequest {}
+
+message ListenForPlanResponse {
+  Plan plan = 1;
+  // TODO: drop the following field here. Instead, have a stand-alone service
+  //       that tracks consensuses (and other things, like shards).
+  repeated Consensus consensuses = 2;
+}
+
+message Plan {
+  // This version must strictly increase from plan to plan.
+  int64 version = 1;
+  repeated Application applications = 2;
+
+  message Application {
+    string id = 1;
+    repeated Service services = 2;
+    repeated Shard shards = 3;  // Sorted by `range.first_key`.
+
+    message Service {
+      // The fully qualified name of the service. E.g. "hello.v1.HelloMethods".
+      string full_name = 1;
+      // The fully qualified name of the state hosting this service; E.g.
+      // "hello.v1.Hello". May be empty if the service is a legacy gRPC service.
+      string state_type_full_name = 2;
+    }
+
+    message Shard {
+      string id = 1;
+      KeyRange range = 2;
+      string consensus_id = 3;
+
+      message KeyRange {
+        bytes first_key = 1;  // Inclusive.
+        // The range is considered to end at the last key before the `first_key`
+        // of the next shard in the list, or at the end of the key space if this
+        // is the last shard.
+      }
+    }
+  }
+}
+
+message Consensus {
+  // E.g. "c1234". Matches `ShardAssignment.consensus_id`.
+  string id = 1;
+
+  string application_id = 5;
+
+  // The routable address for this consensus.
+  Address address = 2;
+
+  // The kubernetes namespace in which the consensus lives. Unused if not on
+  // kubernetes.
+  string namespace = 4;
+
+  // TODO: consider consolidating with Respect's NetworkAddress?
+  message Address {
+    // E.g. "c1234.mynamespace.svc.cluster.local", or "localhost".
+    string host = 1;
+    int32 port = 2;
+  }
+}

@@ -1,0 +1,351 @@
+syntax = "proto3";
+
+package rbt.v1alpha1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/descriptor.proto";
+import "google/protobuf/timestamp.proto";
+import "rbt/v1alpha1/tasks.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+message PersistenceVersion {
+  uint32 version = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message ShardInfo {
+  string shard_id = 1;
+  bytes shard_first_key = 2;
+}
+
+message ConsensusInfo {
+  repeated ShardInfo shard_infos = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Actor {
+  string state_type = 1;
+  string state_ref = 2;
+  // We make 'state' explicitly optional because we use 'Actor' both as a way
+  // to identify an actor instance by the tuple (state_type, state_ref) and as a
+  // container for passing around the state associated with the actor identified
+  // by that tuple.
+  //
+  optional bytes state = 3;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// Sidecar specific transaction message, not used by the 'Coordinator'
+// or 'Participant' services defined in 'transactions.proto'.
+message Transaction {
+  string state_type = 1;
+  string state_ref = 2;
+
+  repeated bytes transaction_ids = 3;
+
+  string coordinator_state_type = 4;
+  string coordinator_state_ref = 5;
+
+  // During recovery any transactions that were not prepared must
+  // abort because rocksdb only persists transactions that have been
+  // prepared.
+  //
+  // TODO(benh): consider a more robust approach in the future that
+  // persists each state update such that transactions can still be
+  // prepared/committed even after a participant restarts.
+  bool prepared = 6;
+
+  // Tasks that will need to be dispatched if the transaction commits.
+  repeated Task uncommitted_tasks = 7;
+
+  // Uncommitted idempotent mutations made within this transaction.
+  repeated IdempotentMutation uncommitted_idempotent_mutations = 8;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// NOTE: Tasks are exported as JSON in backups, as well as on disk in the
+// sidecar.
+message Task {
+  reserved 8;
+
+  enum Status {
+    UNKNOWN = 0;
+    PENDING = 1;
+    COMPLETED = 2;
+  }
+
+  TaskId task_id = 1;
+  string method = 2;
+  Status status = 3;
+  bytes request = 4;  // Serialized proto message.
+  optional google.protobuf.Timestamp timestamp = 5;
+
+  // Invariant: response_or_error is unset until the Task status is COMPLETED,
+  // and reflects the returned method response once the Task status is
+  // COMPLETED.
+  // NOTE: This does not use `message TaskResponseOrError` for backwards
+  // compatibility reasons.
+  oneof response_or_error {
+    google.protobuf.Any response = 6;
+    google.protobuf.Any error = 9;
+  }
+
+  // For control loops, the number of iterations the task has completed.
+  uint64 iteration = 7;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// NOTE: "wrapper" message of all the transaction participants for
+// storing in database.
+message Participants {
+  message StateRefs {
+    repeated string state_refs = 1;
+  }
+
+  map<string, StateRefs> participants = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// NOTE: IdempotentMutations are exported as JSON in backups, as
+// well as on disk in the sidecar.
+message IdempotentMutation {
+  // NOTE: The state_type and state_ref were added in persistence version 1
+  // to allow mutations to be partitioned during import/export.
+  string state_type = 4;
+  string state_ref = 5;
+  bytes key = 1;
+
+  // TODO(benh): also store the fully qualified method name so that we
+  // can detect user errors.
+  //
+  // string method = 2;
+
+  // TODO(benh): also include whether or not this mutation occurred
+  // within a transaction so we can detect user errors, e.g., we can
+  // raise a helpful error if a duplicate mutation is encountered
+  // where the original was performed within a transaction but the
+  // current one is not.
+
+  // TODO(benh): also store the request, or a hash of the request if
+  // that is smaller, so that we can validate when idempotent mutations
+  // are made with the same idempotency key but a different request.
+  //
+  // oneof request {
+  //   bytes request = 3;
+  //   bytes request_hash = 4;
+  // }
+
+  bytes response = 2;
+
+  // Any tasks that were scheduled as part of this mutation.
+  repeated TaskId task_ids = 3;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// A request for a range of colocated data of a particular type.
+//
+// The start key is inclusive, and the end key is exclusive. If the start or
+// end are unset, then the range is unbounded in that direction.
+message ColocatedRangeRequest {
+  // The state machine type that is being scanned: this corresponds to the
+  // column family that we will scan in.
+  string state_type = 1;
+  // The parent state machine id that we will range in. Must be non-empty.
+  // Note: The type of the parent state machine id is not relevant currently,
+  // because data is not interleaved. All data of a particular state_type is
+  // always stored in a type-specific column family.
+  string parent_state_ref = 2;
+  // The optional start and end of the range within the parent_state_ref.
+  optional string start = 3;
+  optional string end = 4;
+  // A required limit on the count of records returned, to avoid exhausting
+  // memory in the client or server. A zero limit is not special cased: no
+  // records will be returned for `limit=0`.
+  uint32 limit = 5;
+  optional Transaction transaction = 6;
+}
+
+message ColocatedRangeResponse {
+  // NOTE: We do not use a `map`, because it does not preserve order.
+  repeated string keys = 1;
+  repeated bytes values = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message LoadRequest {
+  // Invariant: actor's 'state' is expected to be unset.
+  repeated Actor actors = 1;
+  repeated TaskId task_ids = 2;
+}
+
+message LoadResponse {
+  // Invariant: actor's 'state' is expected to be set, although it may be empty.
+  repeated Actor actors = 1;
+  repeated Task tasks = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// A special cased (#2983) colocated upsert.
+//
+// TODO: Merge with `actor_upserts` when we support colocation of arbitrary
+// state machines. See #2983.
+message ColocatedUpsert {
+  string state_type = 1;
+  string key = 2;
+  // If the value is unset, then the key will be deleted.
+  optional bytes value = 3;
+}
+
+message StoreRequest {
+  // Invariant: actor's 'state' is expected to be set, although it may be empty.
+  repeated Actor actor_upserts = 1;
+  repeated Task task_upserts = 2;
+  repeated ColocatedUpsert colocated_upserts = 6;
+  optional Transaction transaction = 3;
+  optional IdempotentMutation idempotent_mutation = 4;
+  optional google.protobuf.FileDescriptorSet file_descriptor_set = 5;
+  bool sync = 7;
+}
+
+message StoreResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message RecoverRequest {
+  // Mapping from fully qualified state type names to state tags (as defined in
+  // `reboot.aio.types`). Used to implement backwards compatibility from
+  // persistence version 0 to version 1.
+  map<string, string> state_tags_by_state_type = 1;
+}
+
+message RecoverResponse {
+  repeated Actor actors = 6;
+  repeated Task pending_tasks = 1;
+  repeated Transaction participant_transactions = 2;
+
+  // Transaction UUID -> Participants for every transaction that a
+  // coordinator completed the prepare phase of two phase commit.
+  //
+  // NOTE: because a map key can not be bytes we pass a stringified
+  // UUID where as other places we pass the UUID in its bytes form.
+  map<string, Participants> prepared_coordinator_transactions = 3;
+
+  repeated IdempotentMutation idempotent_mutations = 4;
+  optional google.protobuf.FileDescriptorSet file_descriptor_set = 5;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message TransactionParticipantPrepareRequest {
+  string state_type = 1;
+  string state_ref = 2;
+}
+
+message TransactionParticipantPrepareResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message TransactionParticipantCommitRequest {
+  string state_type = 1;
+  string state_ref = 2;
+}
+
+message TransactionParticipantCommitResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message TransactionParticipantAbortRequest {
+  string state_type = 1;
+  string state_ref = 2;
+}
+
+message TransactionParticipantAbortResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message TransactionCoordinatorPreparedRequest {
+  bytes transaction_id = 1;
+  Participants participants = 2;
+}
+
+message TransactionCoordinatorPreparedResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message TransactionCoordinatorCleanupRequest {
+  bytes transaction_id = 1;
+}
+
+message TransactionCoordinatorCleanupResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message ExportRequest {
+  string state_type = 1;
+}
+
+message ExportItem {
+  oneof item {
+    Actor actor = 3;
+    Task task = 4;
+    IdempotentMutation idempotent_mutation = 5;
+  }
+}
+
+message ExportResponse {
+  repeated ExportItem items = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// NOTE: This sidecar API expects each `ApplicationDeployment` to get its own
+// sidecar. If we want to allow two different consensuses for two different
+// `ApplicationDeployment`s to use the same sidecar, we will need to add
+// disambiguation for `ApplicationDeployment`-level information (such as encoded
+// `FileDescriptorSet`s).
+service Sidecar {
+  // Returns one page of interleaved state machines from the datastore.
+  rpc ColocatedRange(ColocatedRangeRequest)
+      returns (ColocatedRangeResponse);
+
+  // Returns an actor state data, or empty data if no such actor yet
+  // exists.
+  rpc Load(LoadRequest) returns (LoadResponse);
+
+  // Stores the specified data.
+  rpc Store(StoreRequest) returns (StoreResponse);
+
+  // Returns state needed to recover the server after a potential restart.
+  rpc Recover(RecoverRequest) returns (RecoverResponse);
+
+  rpc TransactionParticipantPrepare(TransactionParticipantPrepareRequest)
+      returns (TransactionParticipantPrepareResponse);
+
+  rpc TransactionParticipantCommit(TransactionParticipantCommitRequest)
+      returns (TransactionParticipantCommitResponse);
+
+  rpc TransactionParticipantAbort(TransactionParticipantAbortRequest)
+      returns (TransactionParticipantAbortResponse);
+
+  rpc TransactionCoordinatorPrepared(TransactionCoordinatorPreparedRequest)
+      returns (TransactionCoordinatorPreparedResponse);
+
+  rpc TransactionCoordinatorCleanup(TransactionCoordinatorCleanupRequest)
+      returns (TransactionCoordinatorCleanupResponse);
+
+  // TODO: This should be streaming: see #3329.
+  rpc Export(ExportRequest)
+      returns (ExportResponse);
+}
+
+////////////////////////////////////////////////////////////////////////

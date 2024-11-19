@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+// To build this proto with bazel, the proto and bazel rule must be in the same
+// package, which means that the proto file must have a package declaration
+// matching the Bazel workspace's folder structure.
+package rbt.v1alpha1;
+
+import "rbt/v1alpha1/application_config.proto";
+
+service Config {
+  rpc Get(GetConfigRequest) returns (GetConfigResponse);
+}
+
+message GetConfigRequest {}
+
+message GetConfigResponse {
+  ApplicationConfig application_config = 1;
+}

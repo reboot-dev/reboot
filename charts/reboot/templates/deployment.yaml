@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.app.name }}
+spec:
+  selector:
+    matchLabels:
+      # Has to match `.spec.template.metadata.labels`.
+      app: {{ .Values.app.name }}
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        # Has to match `.spec.selector.matchLabels`.
+        app: {{ .Values.app.name }}
+    spec:
+      containers:
+        - name: {{ .Values.app.name }}
+          image: {{ .Values.app.image }}
+          args:
+            - "--port={{ .Values.app.port }}"
+            - "--state-directory={{ .Values.app.storage.stateDirectory }}"
+          ports:
+            - containerPort: {{ .Values.app.port }}
+              name: public
+          volumeMounts:
+            - name: state
+              mountPath: {{ .Values.app.storage.stateDirectory }}
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: {{ .Values.app.name }}-persistent-volume-claim

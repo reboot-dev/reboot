@@ -1,0 +1,58 @@
+# A Reboot application.
+app:
+  # Set to the name of your Reboot application.
+  #
+  # Example: "hello"
+  name: null
+
+  # Set to the Docker image containing your application.
+  #
+  # Your image should derive from a `ghcr.io/reboot-dev/reboot-base` image.
+  #
+  # Example: "ghcr.io/reboot-dev/reboot/examples/hello@sha256:b3420ac1507ac66f977b77ba65f1ed6264e229a9d1812b9801e7cbef11dbcb83"
+  image: null
+
+  # The port on which the Reboot application will serve traffic.
+  port: 9989
+
+  # Configures the persistent storage for the application.
+  #
+  # Exactly one of the following keys must be defined in order to choose the
+  # storage mechanism that will be used:
+  # - "existingStorageClass" - An explicit, pre-defined storage-class is
+  #   used for storage.
+  # - "existingEfs" - A pre-created Amazon EFS filesystem is used for
+  #   storage.
+  storage:
+    # When set, an explicitly specified storage class will be used as storage.
+    #
+    # See the comment nested below this key for its required nested values.
+    existingStorageClass:
+      null
+      # The storage-class name to use, which should already exist on your cluster.
+      #
+      # name: null
+      #########################################################################
+      # The amount of storage to request from the storage class.
+      #
+      # Example: "100Gi"
+      #
+      # storageRequest: null
+      #########################################################################
+
+    # When set, an existing EFS filesystem will be used as storage.
+    #
+    # The EFS filesystem must be created externally, following the model from:
+    # https://medium.com/survata-engineering-blog/using-efs-storage-in-kubernetes-e9c22ce9b500
+    #
+    # Note that you might need to set up a security group which allows your
+    # cluster to access the filesystem: see:
+    # https://github.com/kubernetes-sigs/aws-efs-csi-driver/blob/29583689482f8677ab3c8efc04274a75b447e197/docs/efs-create-filesystem.md
+    #
+    # This storage type currently has no options, so set it to `{}` to enable it.
+    existingEfs: null
+
+    # The directory in which to store Reboot application state.
+    #
+    # NOTE: do not change once data has been stored!
+    stateDirectory: "/app/state"
