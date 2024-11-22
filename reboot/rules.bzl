@@ -150,7 +150,7 @@ def py_reboot_library(
             requirement("grpcio-status"),
             requirement("googleapis-common-protos"),
             requirement("protobuf"),
-            "@com_github_reboot_dev_reboot//backoff:python",
+            "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
             "@com_github_reboot_dev_reboot//reboot:log_py",
             "//reboot/aio:call_py",
             "//reboot/aio:contexts_py",
@@ -163,6 +163,7 @@ def py_reboot_library(
             "//reboot/aio:tasks_py",
             "//reboot/aio:types_py",
             "//reboot/aio:external_py",
+            "//reboot/aio:tracing_py",
             ":" + name + "_library",
         ] + py_deps,
     )
