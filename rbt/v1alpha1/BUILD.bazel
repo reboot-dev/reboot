@@ -1,12 +1,11 @@
 load("@aspect_rules_js//npm:defs.bzl", "npm_package")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config", "ts_project")
-load("@com_github_3rdparty_eventuals//bazel:cc_eventuals_library.bzl", "cc_eventuals_library")
 load("@com_github_grpc_grpc//bazel:cc_grpc_library.bzl", "cc_grpc_library")
 load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_grpc_library", "py_proto_library")
 load("@com_github_reboot_dev_reboot//reboot:rules.bzl", "js_proto_library")
 load("@com_github_reboot_dev_reboot//reboot:versions.bzl", "REBOOT_VERSION")
 load("@npm//:defs.bzl", "npm_link_all_packages")
-load("@rules_cc//cc:defs.bzl", "cc_library", "cc_proto_library")
+load("@rules_cc//cc:defs.bzl", "cc_proto_library")
 load("@rules_proto//proto:defs.bzl", "proto_library")
 
 npm_link_all_packages()
@@ -167,31 +166,6 @@ cc_grpc_library(
     deps = [
         ":sidecar_cc_proto",
         "@com_github_grpc_grpc//:grpc++",
-    ],
-)
-
-cc_eventuals_library(
-    name = "sidecar_eventuals_generated",
-    srcs = [":sidecar.proto"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":sidecar_proto",
-        # We need to repeat all of the dependencies of `sidecar_proto` here.
-        # ISSUE(https://github.com/3rdparty/eventuals/issues/483)
-        ":tasks_proto",
-        "@com_google_protobuf//:any_proto",
-        "@com_google_protobuf//:timestamp_proto",
-        "@com_google_protobuf//:descriptor_proto",
-    ],
-)
-
-cc_library(
-    name = "sidecar_eventuals",
-    srcs = [":sidecar_eventuals_generated"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":sidecar_cc_grpc",
-        "@com_github_3rdparty_eventuals//eventuals/grpc",
     ],
 )
 
