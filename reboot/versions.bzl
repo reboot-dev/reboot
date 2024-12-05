@@ -34,4 +34,4 @@ packages in multiple BUILD.bazel files.
 #
 # NOTE: if this variable name is ever changed, it must also be updated in
 # tests/reboot/versions_test.py.
-REBOOT_VERSION = "0.19.2"
+REBOOT_VERSION = "0.20.0"
