@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package rbt.v1alpha1.rootpage;
+
+import "google/api/annotations.proto";
+import "google/api/httpbody.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service RootPage {
+  // Serves a webpage to anyone requesting the `/` path of the backend.
+  rpc RootPage(RootPageRequest) returns (google.api.HttpBody) {
+    option (google.api.http) = {
+      get: "/"
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message RootPageRequest {}
