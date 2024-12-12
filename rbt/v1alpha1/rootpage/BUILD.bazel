@@ -1,0 +1,29 @@
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_grpc_library", "py_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+proto_library(
+    name = "rootpage_proto",
+    srcs = [
+        ":rootpage.proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:descriptor_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@googleapis//google/api:http_proto",
+        "@googleapis//google/api:httpbody_proto",
+    ],
+)
+
+py_proto_library(
+    name = "rootpage_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":rootpage_proto"],
+)
+
+py_grpc_library(
+    name = "rootpage_py_grpc",
+    srcs = [":rootpage_proto"],
+    visibility = ["//visibility:public"],
+    deps = [":rootpage_py_proto"],
+)
