@@ -150,9 +150,10 @@ message IdempotentMutation {
 
 ////////////////////////////////////////////////////////////////////////
 
-// A request for a range of colocated data of a particular type.
+// A request for a range of colocated data of a particular type, where `start` <
+// `end`. Returns results in ascending key order.
 //
-// The start key is inclusive, and the end key is exclusive. If the start or
+// The start key is inclusive and the end key is exclusive. If the start or
 // end are unset, then the range is unbounded in that direction.
 message ColocatedRangeRequest {
   // The state machine type that is being scanned: this corresponds to the
@@ -174,6 +175,38 @@ message ColocatedRangeRequest {
 }
 
 message ColocatedRangeResponse {
+  // NOTE: We do not use a `map`, because it does not preserve order.
+  repeated string keys = 1;
+  repeated bytes values = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// A request for a range of colocated data of a particular type, where `start` >
+// `end`. Returns results in descending key order.
+//
+// The start key is inclusive and the end key is exclusive. If the start or
+// end are unset, then the range is unbounded in that direction.
+message ColocatedReverseRangeRequest {
+  // The state machine type that is being scanned: this corresponds to the
+  // column family that we will scan in.
+  string state_type = 1;
+  // The parent state machine id that we will range in. Must be non-empty.
+  // Note: The type of the parent state machine id is not relevant currently,
+  // because data is not interleaved. All data of a particular state_type is
+  // always stored in a type-specific column family.
+  string parent_state_ref = 2;
+  // The optional start and end of the range within the parent_state_ref.
+  optional string start = 3;
+  optional string end = 4;
+  // A required limit on the count of records returned, to avoid exhausting
+  // memory in the client or server. A zero limit is not special cased: no
+  // records will be returned for `limit=0`.
+  uint32 limit = 5;
+  optional Transaction transaction = 6;
+}
+
+message ColocatedReverseRangeResponse {
   // NOTE: We do not use a `map`, because it does not preserve order.
   repeated string keys = 1;
   repeated bytes values = 2;
@@ -317,6 +350,10 @@ service Sidecar {
   // Returns one page of interleaved state machines from the datastore.
   rpc ColocatedRange(ColocatedRangeRequest)
       returns (ColocatedRangeResponse);
+
+  // Returns one page of interleaved state machines from the datastore.
+  rpc ColocatedReverseRange(ColocatedReverseRangeRequest)
+      returns (ColocatedReverseRangeResponse);
 
   // Returns an actor state data, or empty data if no such actor yet
   // exists.
