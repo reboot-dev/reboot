@@ -172,6 +172,9 @@ def py_reboot_library(
 _ts_reboot_react_files = create_protoc_plugin_rule(
     "@com_github_reboot_dev_mono//reboot:protoc-gen-reboot_react",
     extensions = ("_rbt_react.ts",),
+    env = {
+        "REBOOT_REACT_EXTENSIONS": "true",
+    },
 )
 
 def js_reboot_react_library(
@@ -219,6 +222,9 @@ def js_reboot_react_library(
 _ts_reboot_files = create_protoc_plugin_rule(
     "@com_github_reboot_dev_mono//reboot:protoc-gen-reboot_nodejs",
     extensions = ("_rbt.ts",),
+    env = {
+        "REBOOT_NODEJS_EXTENSIONS": "true",
+    },
 )
 
 def js_reboot_library(
