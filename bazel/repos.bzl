@@ -144,16 +144,12 @@ def repos(repo_mapping = {}):
         ],
     )
 
-    # Using a specific commit to avoid a breaking change in the
-    # `hermetic_cc_toolchain` repo suggested import way.
-    # Using the '2.0.0' version, which is the latest version that
-    # uses 'WORKSPACE' instead of 'MODULE' files.
     maybe(
         git_repository,
         name = "hermetic_cc_toolchain",
         remote = "https://github.com/uber/hermetic_cc_toolchain.git",
-        commit = "9f2456cb09fc4be74621e6b84aecae44ce0530d5",
-        shallow_since = "1685445262 +0300",
+        commit = "0e98778e4e8b60c1c773199cfb340de66d62d485",
+        shallow_since = "1726954863 +0000",
     )
 
     maybe(
