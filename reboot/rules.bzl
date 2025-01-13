@@ -152,7 +152,7 @@ def py_reboot_library(
             requirement("protobuf"),
             "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
             "@com_github_reboot_dev_reboot//log:log_py",
-            "//reboot:version_py",
+            "//reboot:versioning_py",
             "//reboot/aio:call_py",
             "//reboot/aio:contexts_py",
             "//reboot/aio:headers_py",
