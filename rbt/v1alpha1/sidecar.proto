@@ -3,7 +3,6 @@ syntax = "proto3";
 package rbt.v1alpha1;
 
 import "google/protobuf/any.proto";
-import "google/protobuf/descriptor.proto";
 import "google/protobuf/timestamp.proto";
 import "rbt/v1alpha1/tasks.proto";
 
@@ -240,13 +239,14 @@ message ColocatedUpsert {
 }
 
 message StoreRequest {
+  reserved 5;
+
   // Invariant: actor's 'state' is expected to be set, although it may be empty.
   repeated Actor actor_upserts = 1;
   repeated Task task_upserts = 2;
   repeated ColocatedUpsert colocated_upserts = 6;
   optional Transaction transaction = 3;
   optional IdempotentMutation idempotent_mutation = 4;
-  optional google.protobuf.FileDescriptorSet file_descriptor_set = 5;
   bool sync = 7;
 }
 
@@ -262,6 +262,8 @@ message RecoverRequest {
 }
 
 message RecoverResponse {
+  reserved 5;
+
   repeated Actor actors = 6;
   repeated Task pending_tasks = 1;
   repeated Transaction participant_transactions = 2;
@@ -274,7 +276,6 @@ message RecoverResponse {
   map<string, Participants> prepared_coordinator_transactions = 3;
 
   repeated IdempotentMutation idempotent_mutations = 4;
-  optional google.protobuf.FileDescriptorSet file_descriptor_set = 5;
 }
 
 ////////////////////////////////////////////////////////////////////////
