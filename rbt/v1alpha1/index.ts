@@ -360,7 +360,3 @@ export type CallOptions = {
   schedule?: ScheduleOptions;
   bearerToken?: string;
 };
-
-export type TaskEffect = {
-  taskId: tasks_pb.TaskId;
-};
