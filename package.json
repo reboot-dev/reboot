@@ -15,6 +15,7 @@
     "tslib": "^2.6.2",
     "uuid": "9.0.1",
     "@typescript/vfs": "*",
-    "chalk": "^4.1.2"
+    "chalk": "^4.1.2",
+    "vitest": "^2.1.5"
   }
 }

@@ -130,14 +130,17 @@ py_grpc_library(
 )
 
 proto_library(
-    name = "consensus_manager_proto",
-    srcs = [":consensus_manager.proto"],
+    name = "application_metadata_proto",
+    srcs = [":application_metadata.proto"],
+    deps = [
+        "@com_google_protobuf//:descriptor_proto",
+    ],
 )
 
 py_proto_library(
-    name = "consensus_manager_py_proto",
+    name = "application_metadata_py_proto",
     visibility = ["//visibility:public"],
-    deps = [":consensus_manager_proto"],
+    deps = [":application_metadata_proto"],
 )
 
 proto_library(
@@ -147,7 +150,6 @@ proto_library(
     deps = [
         ":tasks_proto",
         "@com_google_protobuf//:any_proto",
-        "@com_google_protobuf//:descriptor_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
 )
