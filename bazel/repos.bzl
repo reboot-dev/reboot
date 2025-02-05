@@ -12,7 +12,8 @@
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
-load("@com_github_3rdparty_eventuals//bazel:repos.bzl", eventuals_repos = "repos")
+load("@com_github_3rdparty_bazel_rules_jemalloc//bazel:repos.bzl", jemalloc_repos = "repos")
+load("@com_github_3rdparty_stout//bazel:repos.bzl", stout_repos = "repos")
 load("@com_github_reboot_dev_pyprotoc_plugin//bazel:repos.bzl", pyprotoc_plugin_repos = "repos")
 
 def repos(repo_mapping = {}):
@@ -20,7 +21,7 @@ def repos(repo_mapping = {}):
 
     Args:
         repo_mapping: passed through to all other functions that expect/use
-            repo_mapping, e.g., 'eventuals_repos'
+            repo_mapping, e.g., 'stout_repos'
     """
 
     # Official Python rules for Bazel.
@@ -33,7 +34,7 @@ def repos(repo_mapping = {}):
         repo_mapping = repo_mapping,
     )
 
-    # Declare a specific gRPC version *first*, before eventuals have a chance
+    # Declare a specific gRPC version *first*, before another dependency has a chance
     # to define an alternative incompatible version.
     # TODO(Issue #644, Xander): Fix the compilation errors caused by combining newer
     # gRPC versions with `io_bazel_rules_go` repos (brought in via the
@@ -46,11 +47,15 @@ def repos(repo_mapping = {}):
         sha256 = "ec19657a677d49af59aa806ec299c070c882986c9fcc022b1c22c2a3caf01bcd",
     )
 
+    stout_repos(
+        repo_mapping = repo_mapping,
+    )
+
     pyprotoc_plugin_repos(
         repo_mapping = repo_mapping,
     )
 
-    eventuals_repos(
+    jemalloc_repos(
         repo_mapping = repo_mapping,
     )
 

@@ -2,9 +2,12 @@
 
 load("@aspect_bazel_lib//lib:repositories.bzl", "aspect_bazel_lib_dependencies")
 load("@bazel_skylib//:workspace.bzl", "bazel_skylib_workspace")
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
 load("@buildifier_prebuilt//:defs.bzl", "buildifier_prebuilt_register_toolchains")
 load("@buildifier_prebuilt//:deps.bzl", "buildifier_prebuilt_deps")
-load("@com_github_3rdparty_eventuals//bazel:deps.bzl", eventuals_deps = "deps")
+load("@com_github_3rdparty_bazel_rules_jemalloc//bazel:deps.bzl", jemalloc_deps = "deps")
+load("@com_github_3rdparty_stout//bazel:deps.bzl", stout_deps = "deps")
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
 load("@com_github_reboot_dev_pyprotoc_plugin//bazel:deps.bzl", pyprotoc_plugin_deps = "deps")
 load("@hermetic_cc_toolchain//toolchain:defs.bzl", zig_toolchains = "toolchains")
@@ -28,13 +31,28 @@ def deps(repo_mapping = {}):
 
     Args:
         repo_mapping: passed through to all other functions that expect/use
-            repo_mapping, e.g., 'eventuals_deps'
+            repo_mapping, e.g., 'stout_deps'
     """
+    stout_deps(
+        repo_mapping = repo_mapping,
+    )
+
     pyprotoc_plugin_deps(
         repo_mapping = repo_mapping,
     )
 
-    eventuals_deps(
+    # TODO: BoringSSL is pulled in by some transitive dependency but the version
+    # that is dependened on fails to build on certain platforms (e.g., OSX
+    # x86-64). For now, workaround this by pinning a specific version.
+    maybe(
+        git_repository,
+        name = "boringssl",
+        # BoringSSL doesn't usually cut releases, so we use a commit
+        # from the 'main-with-bazel' branch, that has bazel rules for
+        # it's dependencies.
+        commit = "652d66d1feb8ba612e776e03182fa1c8f716d265",
+        remote = "https://boringssl.googlesource.com/boringssl",
+        shallow_since = "1705953338 +0000",
         repo_mapping = repo_mapping,
     )
 
@@ -47,6 +65,10 @@ def deps(repo_mapping = {}):
     rules_pkg_dependencies()
 
     grpc_deps()
+
+    jemalloc_deps(
+        repo_mapping = repo_mapping,
+    )
 
     dockerfile_image(
         name = "respect_base_image",

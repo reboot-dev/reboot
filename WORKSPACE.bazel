@@ -7,32 +7,19 @@ workspace(name = "com_github_reboot_dev_reboot")
 # between the two repositories.
 
 local_repository(
-    name = "com_github_3rdparty_eventuals",
-    path = "submodules/eventuals",
-)
-
-# Technically it's **unnecessary** to add 'stout' because we
-# transitively get it from eventuals, but because we directly depend
-# on it we're being explicit here to avoid future bugs if, for
-# example, eventuals stopped depending on it (or we need a different
-# version). Note that this needs to be done _before_ calling
-# 'eventuals_submodules()' below.
-local_repository(
     name = "com_github_3rdparty_stout",
     path = "submodules/eventuals/submodules/stout",
 )
 
-# As with `stout` above, we could get `pyprotoc_plugin` as a transitive
-# dependency from `eventuals`, but we're being explicit here since we rely
-# on `pyprotoc_plugin` directly.
 local_repository(
     name = "com_github_reboot_dev_pyprotoc_plugin",
     path = "submodules/pyprotoc-plugin",
 )
 
-load("@com_github_3rdparty_eventuals//bazel:submodules.bzl", eventuals_submodules = "submodules")
-
-eventuals_submodules()
+local_repository(
+    name = "com_github_3rdparty_bazel_rules_jemalloc",
+    path = "submodules/eventuals/submodules/bazel-rules-jemalloc",
+)
 
 ########################################################################
 
