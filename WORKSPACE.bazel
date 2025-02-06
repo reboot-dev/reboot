@@ -8,7 +8,7 @@ workspace(name = "com_github_reboot_dev_reboot")
 
 local_repository(
     name = "com_github_3rdparty_stout",
-    path = "submodules/eventuals/submodules/stout",
+    path = "submodules/stout",
 )
 
 local_repository(
@@ -18,7 +18,7 @@ local_repository(
 
 local_repository(
     name = "com_github_3rdparty_bazel_rules_jemalloc",
-    path = "submodules/eventuals/submodules/bazel-rules-jemalloc",
+    path = "submodules/bazel-rules-jemalloc",
 )
 
 ########################################################################
