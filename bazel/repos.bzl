@@ -143,10 +143,11 @@ def repos(repo_mapping = {}):
     maybe(
         http_archive,
         name = "io_bazel_rules_webtesting",
-        sha256 = "e9abb7658b6a129740c0b3ef6f5a2370864e102a5ba5ffca2cea565829ed825a",
+        sha256 = "db4ffb24f7846978307b0e3ee984c1bf7594de3013e4c0edb898a36e81dc8e86",
         urls = [
-            "https://github.com/bazelbuild/rules_webtesting/releases/download/0.3.5/rules_webtesting.tar.gz",
+            "https://github.com/bazelbuild/rules_webtesting/archive/d8208bddac1e44b3327430cc422f952b3244536a.zip",
         ],
+        strip_prefix = "rules_webtesting-d8208bddac1e44b3327430cc422f952b3244536a",
     )
 
     maybe(

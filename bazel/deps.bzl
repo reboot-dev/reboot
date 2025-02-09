@@ -15,7 +15,8 @@ load("@io_bazel_rules_docker//cc:image.bzl", _cc_image_repos = "repositories")
 load("@io_bazel_rules_docker//contrib:dockerfile_build.bzl", "dockerfile_image")
 load("@io_bazel_rules_docker//python3:image.bzl", _py_image_repos = "repositories")
 load("@io_bazel_rules_docker//repositories:deps.bzl", container_deps = "deps")
-load("@io_bazel_rules_webtesting//web:py_repositories.bzl", web_test_py_respositories = "py_repositories")
+load("@io_bazel_rules_webtesting//web:go_repositories.bzl", web_test_go_repositories = "go_internal_repositories")
+load("@io_bazel_rules_webtesting//web:py_repositories.bzl", web_test_py_repositories = "py_repositories")
 load("@io_bazel_rules_webtesting//web:repositories.bzl", "web_test_repositories")
 load("@io_bazel_rules_webtesting//web/versioned:browsers-0.3.3.bzl", "browser_repositories")
 load("@mypy_integration//repositories:repositories.bzl", mypy_integration_repositories = "repositories")
@@ -42,7 +43,7 @@ def deps(repo_mapping = {}):
     )
 
     # TODO: BoringSSL is pulled in by some transitive dependency but the version
-    # that is dependened on fails to build on certain platforms (e.g., OSX
+    # that is depended on fails to build on certain platforms (e.g., OSX
     # x86-64). For now, workaround this by pinning a specific version.
     maybe(
         git_repository,
@@ -117,7 +118,8 @@ def deps(repo_mapping = {}):
 
     # Dependencies for WebDriver.
     web_test_repositories()
-    web_test_py_respositories()
+    web_test_go_repositories()
+    web_test_py_repositories()
 
     # For Chromium to work, a local version must be found on the workstation.
     # This is likely true for other browsers as well.
