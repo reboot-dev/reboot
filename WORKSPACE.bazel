@@ -90,7 +90,7 @@ bazel_features_deps()
 
 load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
 
-# The 'node_respositories' dict specifiying Nodejs v20.9.0 information comes
+# The 'node_repositories' dict specifiying Nodejs v20.9.0 information comes
 # from:
 # https://github.com/bazelbuild/rules_nodejs/blob/main/nodejs/private/node_versions.bzl
 # We have to do this explicitly because the default Nodejs version is 16. We
