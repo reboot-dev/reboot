@@ -24,6 +24,48 @@ def repos(repo_mapping = {}):
             repo_mapping, e.g., 'stout_repos'
     """
 
+    # Pull specific version of the 'abseil', that doesn't contain code
+    # which triggers 'deprecated-builtins' warnings on the modern Xcode.
+    # Took the version from
+    # https://github.com/grpc/grpc/blob/v1.55.0/bazel/grpc_deps.bzl#L339
+    # Doing that we won't spam the CI runner logs.
+    # TODO: remove and let the 'grpc' bring the 'abseil' library when the
+    # 'grpc' library is updated.
+    maybe(
+        http_archive,
+        name = "com_google_absl",
+        sha256 = "5366d7e7fa7ba0d915014d387b66d0d002c03236448e1ba9ef98122c13b35c36",
+        strip_prefix = "abseil-cpp-20230125.3",
+        urls = [
+            "https://storage.googleapis.com/grpc-bazel-mirror/github.com/abseil/abseil-cpp/archive/20230125.3.tar.gz",
+            "https://github.com/abseil/abseil-cpp/archive/20230125.3.tar.gz",
+        ],
+    )
+
+    # Declare the 'upb' dependency explicitly to apply a patch and ignore
+    # the version of the 'upb' that is pulled by the 'grpc' dependency.
+    # Took the commit from there:
+    # https://github.com/grpc/grpc/blob/v1.45.0/bazel/grpc_deps.bzl#L340
+    # We need that to avoid build error on the modern Xcode, see more:
+    # https://github.com/reboot-dev/mono/issues/4280
+    # TODO: Remove the patch once the 'grpc' library is upgraded.
+    maybe(
+        http_archive,
+        name = "upb",
+        sha256 = "1cd33bf607ebc83acf71b6078c1d4361ffa49d647a2ce792a557ae98f75500ad",
+        strip_prefix = "upb-a02d92e0257a35f11d4a58b6a932506cbdbb2f29",
+        urls = [
+            "https://storage.googleapis.com/grpc-bazel-mirror/github.com/protocolbuffers/upb/archive/a02d92e0257a35f11d4a58b6a932506cbdbb2f29.tar.gz",
+            "https://github.com/protocolbuffers/upb/archive/a02d92e0257a35f11d4a58b6a932506cbdbb2f29.tar.gz",
+        ],
+        # Before we update the version of the 'grpc', which pulls the old
+        # version of the 'upb' which is causing the Reboot build error we
+        # can apply the patch to ignore that errors to make the Reboot be able
+        # to build with Xcode 16.
+        patches = ["@com_github_reboot_dev_reboot//bazel/upb:upb-ignore-modern-xcode-errors.patch"],
+        patch_args = ["-p1"],
+    )
+
     # Official Python rules for Bazel.
     maybe(
         http_archive,
