@@ -41,6 +41,13 @@ build --force_pic
 build --compilation_mode=fastbuild
 build --host_compilation_mode=fastbuild
 
+# Disable the use of module maps. This is necessary for now, since old
+# 'grpc' version has a bug in its module map that causes a build failure.
+# TODO: Remove this once we upgrade to a newer version of 'grpc'.
+#       See more https://github.com/reboot-dev/mono/issues/644
+build --features=-module_maps
+build  --copt=-Wno-error=int-conversion
+
 # Explicitly disable the remote cache. It's not on by default, but this is
 # useful either for CI that normally _would_ use a remote cache, or for
 # developers who want to be really extra sure they're not using one.
