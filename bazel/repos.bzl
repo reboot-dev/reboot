@@ -203,7 +203,7 @@ def repos(repo_mapping = {}):
     maybe(
         http_archive,
         name = "aspect_bazel_lib",
-        sha256 = "e3151d87910f69cf1fc88755392d7c878034a69d6499b287bcfc00b1cf9bb415",
-        strip_prefix = "bazel-lib-1.32.1",
-        url = "https://github.com/aspect-build/bazel-lib/releases/download/v1.32.1/bazel-lib-v1.32.1.tar.gz",
+        sha256 = "04feedcd06f71d0497a81fdd3220140a373ff9d2bff94620fbd50b774f96d8e0",
+        strip_prefix = "bazel-lib-1.40.2",
+        url = "https://github.com/aspect-build/bazel-lib/releases/download/v1.40.2/bazel-lib-v1.40.2.tar.gz",
     )

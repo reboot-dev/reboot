@@ -67,9 +67,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "aspect_rules_ts",
-    sha256 = "8aabb2055629a7becae2e77ae828950d3581d7fc3602fe0276e6e039b65092cb",
-    strip_prefix = "rules_ts-2.0.0",
-    url = "https://github.com/aspect-build/rules_ts/releases/download/v2.0.0/rules_ts-v2.0.0.tar.gz",
+    sha256 = "b11f5bd59983a58826842029b99240fd0eeb6f1291d710db10f744b327701646",
+    strip_prefix = "rules_ts-2.3.0",
+    url = "https://github.com/aspect-build/rules_ts/releases/download/v2.3.0/rules_ts-v2.3.0.tar.gz",
 )
 
 load("@aspect_rules_ts//ts:repositories.bzl", "rules_ts_dependencies")
@@ -127,9 +127,9 @@ npm_repositories()
 
 http_archive(
     name = "aspect_rules_esbuild",
-    sha256 = "84419868e43c714c0d909dca73039e2f25427fc04f352d2f4f7343ca33f60deb",
-    strip_prefix = "rules_esbuild-0.15.3",
-    url = "https://github.com/aspect-build/rules_esbuild/releases/download/v0.15.3/rules_esbuild-v0.15.3.tar.gz",
+    sha256 = "46aab76044f040c1c0bd97672d56324619af4913cb9e96606ec37ddd4605831d",
+    strip_prefix = "rules_esbuild-0.16.0",
+    url = "https://github.com/aspect-build/rules_esbuild/releases/download/v0.16.0/rules_esbuild-v0.16.0.tar.gz",
 )
 
 load("@aspect_rules_esbuild//esbuild:dependencies.bzl", "rules_esbuild_dependencies")
