@@ -155,3 +155,10 @@ try-import %workspace%/user.bazelrc
 # us to debug failed tests, since we don't have `bazel-testlogs/` available when
 # debugging.
 test --test_output=errors
+
+# When running tests, set the timezone to the local machine's timezone. This is
+# useful for potentially catching timezone related bugs during development if we
+# run tests on a machine with a non-UTC timezone. This is also useful because one
+# of our GitHub Actions is configured to have a non-UTC local timezone which can
+# help us catch timezone related bugs before they reach production.
+test --test_env=TZ
