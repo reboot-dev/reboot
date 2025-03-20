@@ -150,7 +150,6 @@ def py_reboot_library(
             requirement("grpcio-status"),
             requirement("googleapis-common-protos"),
             requirement("protobuf"),
-            requirement("tzlocal"),
             "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
             "@com_github_reboot_dev_reboot//log:log_py",
             "//reboot:versioning_py",

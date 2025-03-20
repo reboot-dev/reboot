@@ -783,10 +783,6 @@ typing-extensions==4.9.0 \
     # via
     #   -r reboot/requirements.in
     #   opentelemetry-sdk
-tzlocal==5.3 \
-    --hash=sha256:2fafbfc07e9d8b49ade18f898d6bcd37ae88ce3ad6486842a2e4f03af68323d2 \
-    --hash=sha256:3814135a1bb29763c6e4f08fd6e41dbb435c7a60bfbb03270211bcc537187d8c
-    # via -r reboot/requirements.in
 urllib3==1.26.15 \
     --hash=sha256:8a388717b9476f934a21484e8c8e61875ab60644d29b9b39e11e4b9dc1c6b305 \
     --hash=sha256:aa751d169e23c7479ce47a0cb0da579e3ede798f994f5816a74e4f4500dcea42
