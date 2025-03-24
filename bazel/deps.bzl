@@ -1,6 +1,7 @@
 """Dependency specific initialization."""
 
 load("@aspect_bazel_lib//lib:repositories.bzl", "aspect_bazel_lib_dependencies")
+load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
 load("@bazel_skylib//:workspace.bzl", "bazel_skylib_workspace")
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
@@ -11,10 +12,7 @@ load("@com_github_3rdparty_stout//bazel:deps.bzl", stout_deps = "deps")
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
 load("@com_github_reboot_dev_pyprotoc_plugin//bazel:deps.bzl", pyprotoc_plugin_deps = "deps")
 load("@hermetic_cc_toolchain//toolchain:defs.bzl", zig_toolchains = "toolchains")
-load("@io_bazel_rules_docker//cc:image.bzl", _cc_image_repos = "repositories")
-load("@io_bazel_rules_docker//contrib:dockerfile_build.bzl", "dockerfile_image")
-load("@io_bazel_rules_docker//python3:image.bzl", _py_image_repos = "repositories")
-load("@io_bazel_rules_docker//repositories:deps.bzl", container_deps = "deps")
+load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
 load("@io_bazel_rules_webtesting//web:go_repositories.bzl", web_test_go_repositories = "go_internal_repositories")
 load("@io_bazel_rules_webtesting//web:py_repositories.bzl", web_test_py_repositories = "py_repositories")
 load("@io_bazel_rules_webtesting//web:repositories.bzl", "web_test_repositories")
@@ -23,9 +21,11 @@ load("@mypy_integration//repositories:repositories.bzl", mypy_integration_reposi
 load("@mypy_integration_pip_deps//:requirements.bzl", mypy_integration_pypi_deps = "install_deps")
 load("@rules_buf//buf:defs.bzl", "buf_dependencies")
 load("@rules_buf//buf:repositories.bzl", "rules_buf_dependencies", "rules_buf_toolchains")
+load("@rules_oci//oci:dependencies.bzl", "rules_oci_dependencies")
 load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
 load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies", "rules_proto_toolchains")
 load("//bazel:detect_host_arch.bzl", "detect_host_arch")
+load("//bazel:dockerfile_oci_image.bzl", "dockerfile_oci_image")
 
 def deps(repo_mapping = {}):
     """Adds external repositories/archives needed by respect (phase 2).
@@ -57,21 +57,22 @@ def deps(repo_mapping = {}):
         repo_mapping = repo_mapping,
     )
 
-    _cc_image_repos()
-
-    container_deps()
-
-    _py_image_repos()
+    rules_oci_dependencies()
 
     rules_pkg_dependencies()
 
     grpc_deps()
 
+    go_rules_dependencies()
+    go_register_toolchains()
+
+    gazelle_dependencies()
+
     jemalloc_deps(
         repo_mapping = repo_mapping,
     )
 
-    dockerfile_image(
+    dockerfile_oci_image(
         name = "respect_base_image",
         # Refer to the Dockerfile file we'll use by its bazel label. Note that
         # this a bazel path to a file, not a bazel target. See
@@ -80,7 +81,7 @@ def deps(repo_mapping = {}):
         target = "respect-base-image",
     )
 
-    dockerfile_image(
+    dockerfile_oci_image(
         name = "envoy_base_image",
         # Refer to the Dockerfile file we'll use by its bazel label. Note that
         # this a bazel path to a file, not a bazel target. See

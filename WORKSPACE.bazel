@@ -37,13 +37,6 @@ reboot_pypi_repos()
 
 ########################################################################
 
-# rules_docker requires more than one stage of dependency fetching unfortunately.
-load("@io_bazel_rules_docker//repositories:repositories.bzl", container_repos = "repositories")
-
-container_repos()
-
-########################################################################
-
 load("//bazel:deps.bzl", "deps")
 
 deps()

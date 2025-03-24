@@ -103,20 +103,42 @@ def repos(repo_mapping = {}):
 
     maybe(
         http_archive,
-        name = "io_bazel_rules_docker",
-        sha256 = "b1e80761a8a8243d03ebca8845e9cc1ba6c82ce7c5179ce2b295cd36f7e394bf",
-        # 0.25.0 is the latest release as of 2022/07/25.
-        urls = ["https://github.com/bazelbuild/rules_docker/releases/download/v0.25.0/rules_docker-v0.25.0.tar.gz"],
+        name = "rules_oci",
+        sha256 = "46ce9edcff4d3d7b3a550774b82396c0fa619cc9ce9da00c1b09a08b45ea5a14",
+        strip_prefix = "rules_oci-1.8.0",
+        url = "https://github.com/bazel-contrib/rules_oci/releases/download/v1.8.0/rules_oci-v1.8.0.tar.gz",
         repo_mapping = repo_mapping,
+    )
+
+    # Gazell and rules_go are not true dependencies, but they are needed by
+    # another one of our transitive dependencies that does not properly load
+    # its own dependencies.
+    maybe(
+        http_archive,
+        name = "bazel_gazelle",
+        sha256 = "cdb02a887a7187ea4d5a27452311a75ed8637379a1287d8eeb952138ea485f7d",
+        urls = ["https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.21.1/bazel-gazelle-v0.21.1.tar.gz"],
+        repo_mapping = repo_mapping,
+    )
+
+    maybe(
+        http_archive,
+        name = "io_bazel_rules_go",
+        sha256 = "08c3cd71857d58af3cda759112437d9e63339ac9c6e0042add43f4d94caf632d",
+        urls = [
+            "https://storage.googleapis.com/bazel-mirror/github.com/bazelbuild/rules_go/releases/download/v0.24.2/rules_go-v0.24.2.tar.gz",
+            "https://github.com/bazelbuild/rules_go/releases/download/v0.24.2/rules_go-v0.24.2.tar.gz",
+        ],
     )
 
     maybe(
         http_archive,
         name = "rules_pkg",
         urls = [
-            "https://github.com/bazelbuild/rules_pkg/releases/download/1.1.0/rules_pkg-1.1.0.tar.gz",
+            "https://mirror.bazel.build/github.com/bazelbuild/rules_pkg/releases/download/1.0.1/rules_pkg-1.0.1.tar.gz",
+            "https://github.com/bazelbuild/rules_pkg/releases/download/1.0.1/rules_pkg-1.0.1.tar.gz",
         ],
-        sha256 = "b7215c636f22c1849f1c3142c72f4b954bb12bb8dcf3cbe229ae6e69cc6479db",
+        sha256 = "d20c951960ed77cb7b341c2a59488534e494d5ad1d30c4818c736d57772a9fef",
         repo_mapping = repo_mapping,
     )
 
