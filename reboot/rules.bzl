@@ -150,6 +150,7 @@ def py_reboot_library(
             requirement("grpcio-status"),
             requirement("googleapis-common-protos"),
             requirement("protobuf"),
+            requirement("tzlocal"),
             "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
             "@com_github_reboot_dev_reboot//log:log_py",
             "//reboot:versioning_py",
@@ -366,7 +367,28 @@ def _js_proto_files(
             fi
 
             node_binary_path=$(execpath @node//:node)
-            PATH=$$PATH:$$(dirname "$$node_binary_path"):$(locations @com_github_reboot_dev_reboot//:node_modules/@bufbuild/protoc-gen-es)/bin NODE_PATH=$$(dirname $$(dirname $(locations @com_github_reboot_dev_reboot//:node_modules/@bufbuild/protobuf))) $(locations @com_google_protobuf//:protoc) \
+            PATH="$$PATH:$$(dirname $$node_binary_path)"
+
+            # These execpath expression return multiple paths in Bazel 6+, but the
+            # different locations should be equivalent (due to symlinking). Add
+            # them all to PATH / NODE_PATH just to be safe.
+            protoc_gen_es_paths="$(execpaths @com_github_reboot_dev_reboot//:node_modules/@bufbuild/protoc-gen-es)"
+            for p in $$protoc_gen_es_paths; do
+              PATH="$$PATH:$$p/bin"
+            done
+
+            protobuf_paths="$(execpaths @com_github_reboot_dev_reboot//:node_modules/@bufbuild/protobuf)"
+            NODE_PATH=""
+            for p in $$protobuf_paths; do
+              if [[ -z "$$NODE_PATH" ]]; then
+                NODE_PATH="$$(dirname $$(dirname $$p))"
+              else
+                NODE_PATH="$$NODE_PATH:$$(dirname $$(dirname $$p))"
+              fi
+            done
+            export NODE_PATH
+
+            $(execpath @com_google_protobuf//:protoc) \
               --plugin=protoc-gen-es=$(execpath @com_github_reboot_dev_reboot//reboot:protoc-gen-es_with_deps) \
               --es_out=. \
               {descriptor_set_in} \

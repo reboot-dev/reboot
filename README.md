@@ -1,9 +1,12 @@
 # Reboot
 
-A better way to build safe and scalable cloud-native applications.
+React apps, meet your bullet-proof backend.
 
-Reboot is a programming framework that enables _transactional_ microservices built
-with the developer in mind.
+Reboot is a framework for building reactive backends out of durable data
+structures that safely compose into scalable distributed systems.
+
+With Reboot, you just write code. No more duct-taping your apps together with
+databases, caches, queues...
 
 [![Reboot](https://docs.reboot.dev/img/reboot-logo-green.svg)](https://reboot.dev/)
 

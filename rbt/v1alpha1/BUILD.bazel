@@ -34,14 +34,8 @@ proto_library(
 # `py_proto_library`) for our `protoc` plugin.
 py_proto_library(
     name = "options_py_proto",
-    deps = [":options_proto"],
-)
-
-py_grpc_library(
-    name = "options_py_grpc",
-    srcs = [":options_proto"],
     visibility = ["//visibility:public"],
-    deps = [":options_py_proto"],
+    deps = [":options_proto"],
 )
 
 proto_library(

@@ -247,6 +247,7 @@ message StoreRequest {
   repeated ColocatedUpsert colocated_upserts = 6;
   optional Transaction transaction = 3;
   optional IdempotentMutation idempotent_mutation = 4;
+  repeated string ensure_state_types_created = 8;
   bool sync = 7;
 }
 
