@@ -7,32 +7,19 @@ workspace(name = "com_github_reboot_dev_reboot")
 # between the two repositories.
 
 local_repository(
-    name = "com_github_3rdparty_eventuals",
-    path = "submodules/eventuals",
-)
-
-# Technically it's **unnecessary** to add 'stout' because we
-# transitively get it from eventuals, but because we directly depend
-# on it we're being explicit here to avoid future bugs if, for
-# example, eventuals stopped depending on it (or we need a different
-# version). Note that this needs to be done _before_ calling
-# 'eventuals_submodules()' below.
-local_repository(
     name = "com_github_3rdparty_stout",
-    path = "submodules/eventuals/submodules/stout",
+    path = "submodules/stout",
 )
 
-# As with `stout` above, we could get `pyprotoc_plugin` as a transitive
-# dependency from `eventuals`, but we're being explicit here since we rely
-# on `pyprotoc_plugin` directly.
 local_repository(
     name = "com_github_reboot_dev_pyprotoc_plugin",
     path = "submodules/pyprotoc-plugin",
 )
 
-load("@com_github_3rdparty_eventuals//bazel:submodules.bzl", eventuals_submodules = "submodules")
-
-eventuals_submodules()
+local_repository(
+    name = "com_github_3rdparty_bazel_rules_jemalloc",
+    path = "submodules/bazel-rules-jemalloc",
+)
 
 ########################################################################
 
@@ -50,23 +37,15 @@ reboot_pypi_repos()
 
 ########################################################################
 
-# rules_docker requires more than one stage of dependency fetching unfortunately.
-load("@io_bazel_rules_docker//repositories:repositories.bzl", container_repos = "repositories")
-
-container_repos()
-
-########################################################################
-
 load("//bazel:deps.bzl", "deps")
 
 deps()
 
 ########################################################################
 
-# grpc requires more than one stage of dependency fetching unfortunately.
-load("@com_github_grpc_grpc//bazel:grpc_extra_deps.bzl", "grpc_extra_deps")
+load("//bazel:extra_deps.bzl", "extra_deps")
 
-grpc_extra_deps()
+extra_deps()
 
 ########################################################################
 
@@ -80,9 +59,9 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "aspect_rules_ts",
-    sha256 = "8aabb2055629a7becae2e77ae828950d3581d7fc3602fe0276e6e039b65092cb",
-    strip_prefix = "rules_ts-2.0.0",
-    url = "https://github.com/aspect-build/rules_ts/releases/download/v2.0.0/rules_ts-v2.0.0.tar.gz",
+    sha256 = "b11f5bd59983a58826842029b99240fd0eeb6f1291d710db10f744b327701646",
+    strip_prefix = "rules_ts-2.3.0",
+    url = "https://github.com/aspect-build/rules_ts/releases/download/v2.3.0/rules_ts-v2.3.0.tar.gz",
 )
 
 load("@aspect_rules_ts//ts:repositories.bzl", "rules_ts_dependencies")
@@ -103,7 +82,7 @@ bazel_features_deps()
 
 load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
 
-# The 'node_respositories' dict specifiying Nodejs v20.9.0 information comes
+# The 'node_repositories' dict specifiying Nodejs v20.9.0 information comes
 # from:
 # https://github.com/bazelbuild/rules_nodejs/blob/main/nodejs/private/node_versions.bzl
 # We have to do this explicitly because the default Nodejs version is 16. We
@@ -140,9 +119,9 @@ npm_repositories()
 
 http_archive(
     name = "aspect_rules_esbuild",
-    sha256 = "84419868e43c714c0d909dca73039e2f25427fc04f352d2f4f7343ca33f60deb",
-    strip_prefix = "rules_esbuild-0.15.3",
-    url = "https://github.com/aspect-build/rules_esbuild/releases/download/v0.15.3/rules_esbuild-v0.15.3.tar.gz",
+    sha256 = "ce206c03e27a702ba2a480ee0a1e4f8db124f3595460a77a3ae1e465243c7a73",
+    strip_prefix = "rules_esbuild-0.19.0",
+    url = "https://github.com/aspect-build/rules_esbuild/releases/download/v0.19.0/rules_esbuild-v0.19.0.tar.gz",
 )
 
 load("@aspect_rules_esbuild//esbuild:dependencies.bzl", "rules_esbuild_dependencies")

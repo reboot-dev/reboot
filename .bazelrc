@@ -41,6 +41,13 @@ build --force_pic
 build --compilation_mode=fastbuild
 build --host_compilation_mode=fastbuild
 
+# Disable the use of module maps. This is necessary for now, since old
+# 'grpc' version has a bug in its module map that causes a build failure.
+# TODO: Remove this once we upgrade to a newer version of 'grpc'.
+#       See more https://github.com/reboot-dev/mono/issues/644
+build --features=-module_maps
+build  --copt=-Wno-error=int-conversion
+
 # Explicitly disable the remote cache. It's not on by default, but this is
 # useful either for CI that normally _would_ use a remote cache, or for
 # developers who want to be really extra sure they're not using one.
@@ -148,3 +155,10 @@ try-import %workspace%/user.bazelrc
 # us to debug failed tests, since we don't have `bazel-testlogs/` available when
 # debugging.
 test --test_output=errors
+
+# When running tests, set the timezone to the local machine's timezone. This is
+# useful for potentially catching timezone related bugs during development if we
+# run tests on a machine with a non-UTC timezone. This is also useful because one
+# of our GitHub Actions is configured to have a non-UTC local timezone which can
+# help us catch timezone related bugs before they reach production.
+test --test_env=TZ

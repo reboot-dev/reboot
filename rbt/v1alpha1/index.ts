@@ -1,6 +1,5 @@
 import { MessageType } from "@bufbuild/protobuf";
 import * as errors_pb from "./errors_pb.js";
-import * as tasks_pb from "./tasks_pb.js";
 
 export * as protobuf_es from "@bufbuild/protobuf";
 export * as auth_pb from "./auth_pb.js";
@@ -359,8 +358,4 @@ export type CallOptions = {
   idempotency?: IdempotencyOptions;
   schedule?: ScheduleOptions;
   bearerToken?: string;
-};
-
-export type TaskEffect = {
-  taskId: tasks_pb.TaskId;
 };

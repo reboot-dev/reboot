@@ -16,6 +16,6 @@
     "uuid": "9.0.1",
     "@typescript/vfs": "*",
     "chalk": "^4.1.2",
-    "vitest": "^2.1.5"
+    "vitest": "^2.1.9"
   }
 }
