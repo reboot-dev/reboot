@@ -166,6 +166,7 @@ def py_reboot_library(
             "//reboot/aio:types_py",
             "//reboot/aio:external_py",
             "//reboot/aio:tracing_py",
+            "//reboot/nodejs:python_py",
             ":" + name + "_library",
         ] + py_deps,
     )
