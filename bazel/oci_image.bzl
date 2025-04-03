@@ -4,6 +4,22 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_tarball")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary")
 
+def oci_image_with_tar(name, visibility, **kwargs):
+    """Constructs an OCI container image and a tarball of it.
+
+    Args:
+        name: Name of the rule.
+        visibility: Visibility of the rule.
+        **kwargs: See oci_image.
+    """
+    oci_image(
+        name = name,
+        visibility = visibility,
+        **kwargs
+    )
+
+    _oci_image_tar(name, ":" + name, visibility)
+
 def py_oci_image(name, main, srcs, deps, base, env = None, **kwargs):
     """Constructs an OCI container image wrapping a py_binary target.
 
@@ -18,9 +34,6 @@ def py_oci_image(name, main, srcs, deps, base, env = None, **kwargs):
     """
     binary_name = name + "_binary"
     layer_name = name + "_layer"
-    tarball_name = name + "_tarball"
-    tar_name = tarball_name + "_tar"
-    output_name = name + ".tar"
 
     py_binary(
         name = binary_name,
@@ -43,7 +56,7 @@ def py_oci_image(name, main, srcs, deps, base, env = None, **kwargs):
     # Create the OCI image with the Python layer. This creates an "OCI layout"
     # as a directory tree.
     visibility = kwargs.get("visibility", None)
-    oci_image(
+    oci_image_with_tar(
         name = name,
         base = base,
         tars = [":" + layer_name],
@@ -52,21 +65,11 @@ def py_oci_image(name, main, srcs, deps, base, env = None, **kwargs):
         visibility = visibility,
     )
 
-    # The `oci_tarball` docs say that it does not produce a tarball by default
-    # (rather, "an mtree specification file"), but that does not seem to be the
-    # case. However, the tarball is placed at an odd path, so we copy it to the
-    # location where other rules expect to find it.
+def _oci_image_tar(name, oci_image, visibility):
     oci_tarball(
-        name = tarball_name,
-        image = ":" + name,
+        name = name + "_tarball",
+        image = oci_image,
         repo_tags = [name + ":latest"],
-    )
-
-    # TODO: The `oci_tarball` docs say that the "tarball" output group needs to
-    # be to specified to produce a tar file, but that does not seem to be true.
-    native.filegroup(
-        name = tar_name,
-        srcs = [":" + tarball_name],
     )
 
     # Copy the tar file to the location where other rules expect to find it.
@@ -74,9 +77,9 @@ def py_oci_image(name, main, srcs, deps, base, env = None, **kwargs):
     # TODO: symlinking would be more efficient but it fails for unclear reasons
     # ("dangling symlink").
     native.genrule(
-        name = tarball_name + "_copy",
-        srcs = [":" + tar_name],
-        outs = [output_name],
-        cmd = "cp $(location {}) $(OUTS)".format(tar_name),
+        name = name + "_tarball_copy",
+        srcs = [":" + name + "_tarball"],
+        outs = [name + ".tar"],
+        cmd = "cp $(location {}_tarball) $(OUTS)".format(name),
         visibility = visibility,
     )
