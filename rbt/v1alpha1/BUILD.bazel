@@ -41,7 +41,9 @@ py_proto_library(
 proto_library(
     name = "placement_planner_proto",
     srcs = ["placement_planner.proto"],
-    deps = [],
+    deps = [
+        "@com_google_protobuf//:descriptor_proto",
+    ],
 )
 
 py_proto_library(
