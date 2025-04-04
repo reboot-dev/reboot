@@ -16,13 +16,8 @@ load("@com_github_3rdparty_bazel_rules_jemalloc//bazel:repos.bzl", jemalloc_repo
 load("@com_github_3rdparty_stout//bazel:repos.bzl", stout_repos = "repos")
 load("@com_github_reboot_dev_pyprotoc_plugin//bazel:repos.bzl", pyprotoc_plugin_repos = "repos")
 
-def repos(repo_mapping = {}):
-    """Adds external repositories/archives needed by respect (phase 1).
-
-    Args:
-        repo_mapping: passed through to all other functions that expect/use
-            repo_mapping, e.g., 'stout_repos'
-    """
+def repos():
+    """Adds external repositories/archives needed by Reboot (phase 1)."""
 
     # Pull specific version of the 'abseil', that doesn't contain code
     # which triggers 'deprecated-builtins' warnings on the modern Xcode.
@@ -73,7 +68,6 @@ def repos(repo_mapping = {}):
         sha256 = "9acc0944c94adb23fba1c9988b48768b1bacc6583b52a2586895c5b7491e2e31",
         url = "https://github.com/bazelbuild/rules_python/releases/download/0.27.0/rules_python-0.27.0.tar.gz",
         strip_prefix = "rules_python-0.27.0",
-        repo_mapping = repo_mapping,
     )
 
     # Declare a specific gRPC version *first*, before another dependency has a chance
@@ -89,17 +83,11 @@ def repos(repo_mapping = {}):
         sha256 = "ec19657a677d49af59aa806ec299c070c882986c9fcc022b1c22c2a3caf01bcd",
     )
 
-    stout_repos(
-        repo_mapping = repo_mapping,
-    )
+    stout_repos()
 
-    pyprotoc_plugin_repos(
-        repo_mapping = repo_mapping,
-    )
+    pyprotoc_plugin_repos()
 
-    jemalloc_repos(
-        repo_mapping = repo_mapping,
-    )
+    jemalloc_repos()
 
     maybe(
         http_archive,
@@ -107,7 +95,6 @@ def repos(repo_mapping = {}):
         sha256 = "46ce9edcff4d3d7b3a550774b82396c0fa619cc9ce9da00c1b09a08b45ea5a14",
         strip_prefix = "rules_oci-1.8.0",
         url = "https://github.com/bazel-contrib/rules_oci/releases/download/v1.8.0/rules_oci-v1.8.0.tar.gz",
-        repo_mapping = repo_mapping,
     )
 
     # Gazell and rules_go are not true dependencies, but they are needed by
@@ -118,7 +105,6 @@ def repos(repo_mapping = {}):
         name = "bazel_gazelle",
         sha256 = "cdb02a887a7187ea4d5a27452311a75ed8637379a1287d8eeb952138ea485f7d",
         urls = ["https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.21.1/bazel-gazelle-v0.21.1.tar.gz"],
-        repo_mapping = repo_mapping,
     )
 
     maybe(
@@ -139,7 +125,6 @@ def repos(repo_mapping = {}):
             "https://github.com/bazelbuild/rules_pkg/releases/download/1.0.1/rules_pkg-1.0.1.tar.gz",
         ],
         sha256 = "d20c951960ed77cb7b341c2a59488534e494d5ad1d30c4818c736d57772a9fef",
-        repo_mapping = repo_mapping,
     )
 
     maybe(
@@ -148,7 +133,6 @@ def repos(repo_mapping = {}):
         remote = "https://github.com/googleapis/googleapis",
         commit = "43c8e80a384841ec0f740e001f077d9af8a5eae8",
         shallow_since = "1668729854 -0800",
-        repo_mapping = repo_mapping,
     )
 
     maybe(

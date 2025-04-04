@@ -27,20 +27,11 @@ load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies", "rules_
 load("//bazel:detect_host_arch.bzl", "detect_host_arch")
 load("//bazel:dockerfile_oci_image.bzl", "dockerfile_oci_image")
 
-def deps(repo_mapping = {}):
-    """Adds external repositories/archives needed by respect (phase 2).
+def deps():
+    """Adds external repositories/archives needed by Reboot (phase 2)."""
+    stout_deps()
 
-    Args:
-        repo_mapping: passed through to all other functions that expect/use
-            repo_mapping, e.g., 'stout_deps'
-    """
-    stout_deps(
-        repo_mapping = repo_mapping,
-    )
-
-    pyprotoc_plugin_deps(
-        repo_mapping = repo_mapping,
-    )
+    pyprotoc_plugin_deps()
 
     # TODO: BoringSSL is pulled in by some transitive dependency but the version
     # that is depended on fails to build on certain platforms (e.g., OSX
@@ -54,7 +45,6 @@ def deps(repo_mapping = {}):
         commit = "652d66d1feb8ba612e776e03182fa1c8f716d265",
         remote = "https://boringssl.googlesource.com/boringssl",
         shallow_since = "1705953338 +0000",
-        repo_mapping = repo_mapping,
     )
 
     rules_oci_dependencies()
@@ -68,9 +58,7 @@ def deps(repo_mapping = {}):
 
     gazelle_dependencies()
 
-    jemalloc_deps(
-        repo_mapping = repo_mapping,
-    )
+    jemalloc_deps()
 
     dockerfile_oci_image(
         name = "respect_base_image",

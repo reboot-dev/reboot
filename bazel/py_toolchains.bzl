@@ -3,13 +3,12 @@
 load("@com_github_reboot_dev_pyprotoc_plugin//bazel:py_toolchains.bzl", pyprotoc_plugin_py_toolchains = "py_toolchains")
 load("@rules_python//python:repositories.bzl", "py_repositories", "python_register_toolchains")
 
-def py_toolchains(repo_mapping = {}):
+def py_toolchains():
     py_repositories()
 
     python_register_toolchains(
         name = "python3_10_12",
         python_version = "3.10.12",
-        repo_mapping = repo_mapping,
     )
 
-    pyprotoc_plugin_py_toolchains(repo_mapping = repo_mapping)
+    pyprotoc_plugin_py_toolchains()
