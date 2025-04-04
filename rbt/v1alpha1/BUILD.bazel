@@ -341,6 +341,7 @@ genrule(
     ],
     outs = ["reboot-dev-reboot-api-" + REBOOT_VERSION + ".tgz"],
     cmd = """
+        set -eu
         npm_binary_path=$$(realpath $(execpath @node//:npm))
         working_folder=$$(dirname $(location :v1alpha1))
         pushd $$working_folder
