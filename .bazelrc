@@ -14,13 +14,14 @@ try-import submodules/dev-tools/.bazelrc
 # not using the C++ protobufs.
 build --define=use_fast_cpp_protos=true
 
-# We cannot build in any of the sandbox environments (including `linux`) that restrict
-# access to the network or filesystem.
-# Arrow, jemalloc, backward_cpp, etc will need to change to allow filesystem sandboxing.
-# TODO: Implement a more restrictive sandboxing strategy than `processwrapper-sandbox`.
+# We cannot build in any of the sandbox environments (including `linux`) that
+# restrict access to the network or filesystem. Also, some rules aren't even
+# compatible with the `processwrapper-sandbox` strategy, so we fallback to
+# `local` when necessary.
 #
-# https://bazel.build/docs/sandboxing#sandboxing-strategies
-build --spawn_strategy=processwrapper-sandbox
+# TODO: Implement a more restrictive sandboxing strategy.
+# TODO: Remove the need to fallback to local.
+build --spawn_strategy=processwrapper-sandbox,local
 
 # When we use C++, we use C++17.
 build --cxxopt='-std=c++17'
@@ -162,3 +163,7 @@ test --test_output=errors
 # of our GitHub Actions is configured to have a non-UTC local timezone which can
 # help us catch timezone related bugs before they reach production.
 test --test_env=TZ
+
+# When running tests, set the `REBOOT_BAZEL_TEST` environment variable to `true` so
+# we will print stack traces when running Reboot from Node.js.
+test --test_env=REBOOT_BAZEL_TEST=true

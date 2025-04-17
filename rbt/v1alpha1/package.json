@@ -1,6 +1,6 @@
 {
   "name": "@reboot-dev/reboot-api",
-  "version": "0.24.0",
+  "version": "0.25.1",
   "type": "module",
   "description": "npm package for Reboot API",
   "main": "index.js",
@@ -9,7 +9,9 @@
     "build": "tsc"
   },
   "author": "reboot-dev",
-  "dependencies": {},
+  "dependencies": {
+    "@bufbuild/protobuf": "1.3.2"
+  },
   "license": "Apache-2.0",
   "devDependencies": {}
 }

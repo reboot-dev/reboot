@@ -33,3 +33,5 @@ opentelemetry-api==1.28.1 # Latest as of 2024/11/14.
 opentelemetry-sdk==1.28.1 # Matching `opentelemetry-api`.
 opentelemetry-exporter-otlp-proto-grpc==1.28.1 # Matching `opentelemetry-api`.
 opentelemetry-instrumentation-grpc==0.49b1 # Latest as of 2024/11/14.
+fastapi==0.115.12 # Latest as of 2025/03/30.
+uvicorn==0.34.0 # Latest as of 2025/03/30.
