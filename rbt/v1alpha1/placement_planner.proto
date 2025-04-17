@@ -5,6 +5,8 @@ syntax = "proto3";
 // matching the Bazel workspace's folder structure.
 package rbt.v1alpha1;
 
+import "google/protobuf/descriptor.proto";
+
 service PlacementPlanner {
   rpc ListenForPlan(ListenForPlanRequest) returns (
       stream ListenForPlanResponse);
@@ -71,4 +73,7 @@ message Consensus {
     string host = 1;
     int32 port = 2;
   }
+
+  // `FileDescriptorSet` for this consensus.
+  google.protobuf.FileDescriptorSet file_descriptor_set = 6;
 }

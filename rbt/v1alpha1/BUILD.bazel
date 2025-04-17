@@ -41,7 +41,9 @@ py_proto_library(
 proto_library(
     name = "placement_planner_proto",
     srcs = ["placement_planner.proto"],
-    deps = [],
+    deps = [
+        "@com_google_protobuf//:descriptor_proto",
+    ],
 )
 
 py_proto_library(
@@ -341,6 +343,7 @@ genrule(
     ],
     outs = ["reboot-dev-reboot-api-" + REBOOT_VERSION + ".tgz"],
     cmd = """
+        set -eu
         npm_binary_path=$$(realpath $(execpath @node//:npm))
         working_folder=$$(dirname $(location :v1alpha1))
         pushd $$working_folder
