@@ -365,7 +365,7 @@ service Sidecar {
   rpc Store(StoreRequest) returns (StoreResponse);
 
   // Returns state needed to recover the server after a potential restart.
-  rpc Recover(RecoverRequest) returns (RecoverResponse);
+  rpc Recover(RecoverRequest) returns (stream RecoverResponse);
 
   rpc TransactionParticipantPrepare(TransactionParticipantPrepareRequest)
       returns (TransactionParticipantPrepareResponse);
