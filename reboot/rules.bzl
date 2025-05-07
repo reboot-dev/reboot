@@ -316,7 +316,7 @@ def _js_proto_files(
     if proto.startswith("//") or not proto.endswith(".proto"):
         fail(
             "Expecting '.proto' file in the current directory " +
-            "for 'proto = ' (without a using absolute path '//' prefix)",
+            "for 'proto = ' (without using absolute path '//' prefix)",
         )
 
     if proto.startswith(":"):
@@ -339,6 +339,7 @@ def _js_proto_files(
         name = name,
         srcs = [proto] + proto_deps + [
             "@com_github_reboot_dev_reboot//:node_modules/@bufbuild/protobuf",
+            "@com_github_reboot_dev_reboot//:node_modules/@bufbuild/protobuf/dir",
             "@com_github_reboot_dev_reboot//:node_modules/@bufbuild/protoplugin",
             "@com_github_reboot_dev_reboot//:node_modules/@typescript/vfs",
             "@com_github_reboot_dev_reboot//:node_modules/typescript",
@@ -370,23 +371,20 @@ def _js_proto_files(
             node_binary_path=$(execpath @node//:node)
             PATH="$$PATH:$$(dirname $$node_binary_path)"
 
-            # These execpath expression return multiple paths in Bazel 6+, but the
-            # different locations should be equivalent (due to symlinking). Add
-            # them all to PATH / NODE_PATH just to be safe.
-            protoc_gen_es_paths="$(execpaths @com_github_reboot_dev_reboot//:node_modules/@bufbuild/protoc-gen-es)"
-            for p in $$protoc_gen_es_paths; do
-              PATH="$$PATH:$$p/bin"
-            done
+            protoc_gen_es_dir="$(execpath @com_github_reboot_dev_reboot//:node_modules/@bufbuild/protoc-gen-es/dir)"
+            PATH="$$PATH:$$protoc_gen_es_dir/bin"
 
-            protobuf_paths="$(execpaths @com_github_reboot_dev_reboot//:node_modules/@bufbuild/protobuf)"
-            NODE_PATH=""
-            for p in $$protobuf_paths; do
-              if [[ -z "$$NODE_PATH" ]]; then
-                NODE_PATH="$$(dirname $$(dirname $$p))"
-              else
-                NODE_PATH="$$NODE_PATH:$$(dirname $$(dirname $$p))"
-              fi
-            done
+            # We don't actually need the protobuf package's directory, but we
+            # want to find the path to the `node_modules` directory above it.
+            # `protobuf_pkg_dir` should look like:
+            #
+            # [...]/node_modules/.aspect_rules_js/@bufbuild+protobuf@1.3.2/node_modules/@bufbuild/protobuf
+            #
+            # So we strip off the last 5 elements of the path.
+            #
+            # TODO: Find a more robust way to find this path.
+            protobuf_pkg_dir="$(execpath @com_github_reboot_dev_reboot//:node_modules/@bufbuild/protobuf/dir)"
+            NODE_PATH="$$(dirname $$(dirname $$(dirname $$(dirname $$(dirname $$protobuf_pkg_dir)))))"
             export NODE_PATH
 
             $(execpath @com_google_protobuf//:protoc) \
@@ -417,7 +415,7 @@ def _js_proto_files(
         tools = [
             "@com_github_reboot_dev_reboot//reboot:protoc-gen-es_with_deps",
             "@com_google_protobuf//:protoc",
-            "@com_github_reboot_dev_reboot//:node_modules/@bufbuild/protoc-gen-es",
+            "@com_github_reboot_dev_reboot//:node_modules/@bufbuild/protoc-gen-es/dir",
             "@node//:node",
         ],
         visibility = visibility,
