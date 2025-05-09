@@ -90,6 +90,17 @@ message ApplicationConfig {
     // change even when the contents of the config do not.
     string revision = 6;
 
+    // A monotonically increasing number representing the revision of this
+    // config. Assumed to be provided from outside the Reboot controller, so
+    // less rigorous than the "revision" string, but more human-readable.
+    //
+    // ATTENTION: this is a uint32, because wider numbers are JSON-serialized as
+    //            "string" instead of "int", and JSON serialization is how the
+    //            Kubernetes clients serialize. This isn't a problem in
+    //            practice, but since other places use a uint64 for this field
+    //            it's confusing.
+    uint32 revision_number = 10;
+
     // The number of consensuses to run for this application.
     // NOTE: Must be a power of 2.
     // Unset means: use default.

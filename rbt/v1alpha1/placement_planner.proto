@@ -59,6 +59,7 @@ message Consensus {
   string id = 1;
 
   string application_id = 5;
+  uint32 revision_number = 7;
 
   // The routable address for this consensus.
   Address address = 2;
