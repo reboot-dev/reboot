@@ -17,7 +17,7 @@ packages in multiple BUILD.bazel files.
 # increment the version number before we publish.
 #
 # ATTENTION: if you change this version number, you must also change it in:
-#  * reboot/benchmarks/package.json
+#  * reboot/benchmarks/construct/package.json
 #  * reboot/cli/init/templates/package.json.j2
 #  * reboot/cli/init/templates/backend_package.json.j2
 #  * reboot/cloud/web/package.json
@@ -41,6 +41,7 @@ packages in multiple BUILD.bazel files.
 #  * reboot/examples/hello-nodejs/Dockerfile
 #  * reboot/examples/prosemirror/web/package.json
 #  * reboot/examples/prosemirror/backend/package.json
+#  * reboot/examples/prosemirror/Dockerfile
 #  * reboot/nodejs/package.json
 #  * reboot/std/package.json
 #  * reboot/std/react/package.json
@@ -56,4 +57,4 @@ packages in multiple BUILD.bazel files.
 #
 # NOTE: if this variable name is ever changed, it must also be updated in
 # tests/reboot/versions_test.py.
-REBOOT_VERSION = "0.25.2"
+REBOOT_VERSION = "0.25.3"
