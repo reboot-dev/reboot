@@ -791,6 +791,11 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             # Doing effect validation, just let this propagate.
             raise
         except IMPORT_rebootdev.aio.aborted.Aborted as aborted:
+            # If the caller aborted due to a retryable error, just
+            # propagate the aborted instead of propagating `Unknown`
+            # so that a client can transparently retry.
+            if IMPORT_rebootdev.aio.aborted.is_retryable(aborted):
+                raise aborted
             # Log any _unhandled_ abort stack traces to make it
             # easier for debugging.
             #

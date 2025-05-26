@@ -9,14 +9,25 @@ from rebootdev.aio.types import assert_type
 from typing import Optional, TypeAlias, TypeVar, Union
 
 
+def is_retryable_status_code(code: grpc.StatusCode):
+    return code == grpc.StatusCode.UNAVAILABLE
+
+
 def is_grpc_retryable_exception(exception: BaseException):
     """Helper that returns if this exception is a gRPC "retryable" error
        (e.g., network disconnect)."""
     # TODO(benh): determine what other codes, if any, are retryable.
     return (
         isinstance(exception, grpc.aio.AioRpcError) and
-        exception.code() == grpc.StatusCode.UNAVAILABLE
+        is_retryable_status_code(exception.code())
     )
+
+
+def is_retryable(aborted: Aborted):
+    """Helper that returns whether or the method aborted with a
+    "retryable" error (e.g., network disconnect).
+    """
+    return is_retryable_status_code(aborted.code)
 
 
 # Type aliases of possible errors.
