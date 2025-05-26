@@ -171,6 +171,14 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                 "streaming",
                 "workflow",
             ],
+            only_generates_with_reboot_services=False,
+            exclude_google_and_reboot_system_generation=False,
+        )
+
+    @classmethod
+    def _is_google_or_reboot_package(cls, package_name: str) -> bool:
+        return package_name.startswith('google.') or package_name.startswith(
+            'rbt.v1alpha1'
         )
 
     @classmethod

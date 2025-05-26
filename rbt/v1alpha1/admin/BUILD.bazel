@@ -1,4 +1,5 @@
 load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_grpc_library", "py_proto_library")
+load("@com_github_reboot_dev_reboot//rebootdev:rules.bzl", "py_reboot_library")
 load("@rules_proto//proto:defs.bzl", "proto_library")
 
 proto_library(
@@ -24,4 +25,19 @@ py_grpc_library(
     srcs = [":export_import_proto"],
     visibility = ["//visibility:public"],
     deps = [":export_import_py_proto"],
+)
+
+proto_library(
+    name = "auth_proto",
+    srcs = [
+        ":auth.proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_reboot_library(
+    name = "auth_py_reboot",
+    proto = "auth.proto",
+    proto_library = ":auth_proto",
+    visibility = ["//visibility:public"],
 )

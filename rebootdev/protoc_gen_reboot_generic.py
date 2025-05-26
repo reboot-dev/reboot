@@ -875,6 +875,8 @@ class RebootProtocPlugin(ProtocPlugin):
             ):
                 if self.plugin_specific_data(
                 ).only_generates_with_reboot_services:
+                    # This proto file contains no Reboot services or states, and
+                    # the plugin has indicated that that means we should skip it.
                     return None
 
                 if self._is_google_or_reboot_package(
