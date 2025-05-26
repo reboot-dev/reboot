@@ -1,0 +1,18 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "python_py",
+    srcs = [
+        "python.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rebootdev/aio:aborted_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:contexts_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:directories_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:external_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio/auth:authorizers_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio/auth:token_verifiers_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio/internals:contextvars_py",
+    ],
+)

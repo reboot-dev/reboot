@@ -18,5 +18,5 @@ def pypi_repos():
     pip_parse(
         name = "rbt_pypi",
         python_interpreter_target = interpreter,
-        requirements_lock = "//reboot:requirements_lock.txt",
+        requirements_lock = "//rebootdev:requirements_lock.txt",
     )

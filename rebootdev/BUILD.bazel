@@ -1,0 +1,238 @@
+load("@com_github_reboot_dev_reboot//rebootdev:rules.bzl", "generate_version_py")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:pip.bzl", "compile_pip_requirements")
+
+exports_files([
+    "versions.bzl",
+    "requirements.in",
+])
+
+py_library(
+    name = "helpers_py",
+    srcs = ["helpers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:servicers_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
+        "@com_github_reboot_dev_reboot//rebootdev/consensus:service_descriptor_validator_py",
+        "@googleapis//google/api:annotations_py_proto",
+        "@googleapis//google/rpc:error_details_py_proto",
+        requirement("protobuf"),
+    ],
+)
+
+py_library(
+    name = "options_py",
+    srcs = ["options.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_py_proto",
+        requirement("protobuf"),
+    ],
+)
+
+py_library(
+    name = "protoc_gen_es_with_deps_py",
+    srcs = [
+        "protoc_gen_es_with_deps.py",
+    ],
+    data = [
+        ":protoc_gen_es_with_deps.cjs",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    # NOTE: we are breaking with our normal naming convention as the protoc
+    # compiler insists that the name of a plugin must(!!!!) start with
+    # `protoc-gen-`.
+    name = "protoc-gen-es_with_deps",
+    srcs = ["protoc_gen_es_with_deps.py"],
+    data = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@bufbuild/protoc-gen-es",
+        "//:node_modules/@bufbuild/protoplugin",
+        "//:node_modules/@types/node",
+    ],
+    main = "protoc_gen_es_with_deps.py",
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":protoc_gen_es_with_deps_py",
+    ],
+)
+
+py_library(
+    name = "protoc_gen_reboot_generic_py",
+    srcs = ["protoc_gen_reboot_generic.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        # We need the following import to "force" (or maybe accidentally end up)
+        # Bazel to generate a PYTHONPATH that imports the right proto library
+        # first. See: https://github.com/reboot-dev/mono/issues/1165.
+        requirement("protobuf"),
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_py_proto",
+        "@com_github_reboot_dev_reboot//rebootdev:helpers_py",
+        "@com_github_reboot_dev_reboot//rebootdev:options_py",
+        "@com_github_reboot_dev_reboot//rebootdev:version_py",
+        "@com_github_reboot_dev_pyprotoc_plugin//pyprotoc_plugin",
+        "@googleapis//google/api:annotations_py_proto",
+        requirement("jinja2-strcase"),
+    ],
+)
+
+py_binary(
+    # NOTE: we are breaking with our normal naming convention as the protoc
+    # compiler insists that the name of a plugin must(!!!!) start with
+    # `protoc-gen-`.
+    name = "protoc-gen-mypy",
+    srcs = ["protoc_gen_mypy_wrapper.py"],
+    main = "protoc_gen_mypy_wrapper.py",
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("mypy-protobuf"),
+    ],
+)
+
+py_library(
+    name = "protoc_gen_reboot_python_py",
+    srcs = [
+        "protoc_gen_reboot_python.py",
+    ],
+    data = [
+        "@com_github_reboot_dev_reboot//rebootdev/templates:reboot.py.j2",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":protoc_gen_reboot_generic_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:tracing_py",
+        "@googleapis//google/api:annotations_py_proto",
+    ],
+)
+
+py_binary(
+    # NOTE: we are breaking with our normal naming convention as the protoc
+    # compiler insists that the name of a plugin must(!!!!) start with
+    # `protoc-gen-`.
+    name = "protoc-gen-reboot_python",
+    srcs = [
+        "protoc_gen_reboot_python.py",
+    ],
+    main = "protoc_gen_reboot_python.py",
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":protoc_gen_reboot_python_py",
+        "@googleapis//google/api:annotations_py_proto",
+    ],
+)
+
+py_library(
+    name = "protoc_gen_reboot_python_boilerplate_py",
+    srcs = [
+        "protoc_gen_reboot_python_boilerplate.py",
+    ],
+    data = [
+        "//rebootdev/templates:servicer_boilerplate.py.j2",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rebootdev:protoc_gen_reboot_python_py",
+    ],
+)
+
+py_binary(
+    # NOTE: we are breaking with our normal naming convention as the protoc
+    # compiler insists that the name of a plugin must(!!!!) start with
+    # `protoc-gen-`.
+    name = "protoc-gen-reboot_python_boilerplate",
+    srcs = [
+        "protoc_gen_reboot_python_boilerplate.py",
+    ],
+    main = "protoc_gen_reboot_python_boilerplate.py",
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [":protoc_gen_reboot_python_boilerplate_py"],
+)
+
+# PEP 561 marker file; tells tools that type information is available.
+genrule(
+    name = "py_typed",
+    srcs = [],
+    outs = ["py.typed"],
+    cmd = "echo '# Marker file for PEP 561.' > $@",
+    visibility = ["//visibility:public"],
+)
+
+# Run 'bazel run reboot:requirements.update' to update the lock file.
+compile_pip_requirements(
+    name = "requirements",
+    src = ":requirements.in",
+    requirements_txt = ":requirements_lock.txt",
+)
+
+py_library(
+    name = "run_environments_py",
+    srcs = ["run_environments.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rebootdev:settings_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
+    ],
+)
+
+cc_library(
+    name = "settings_cc",
+    hdrs = [
+        "settings.h",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "settings_py",
+    srcs = ["settings.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "time_py",
+    srcs = ["time.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("tzlocal"),
+    ],
+)
+
+generate_version_py(name = "version_source")
+
+py_library(
+    name = "version_py",
+    srcs = [":version_source"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "versioning_py",
+    srcs = ["versioning.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":version_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:exceptions_py",
+    ],
+)

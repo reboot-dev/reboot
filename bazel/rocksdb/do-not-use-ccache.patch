@@ -1,0 +1,17 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index e9f56c308..9345c1883 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -58,12 +58,6 @@ if(NOT CMAKE_BUILD_TYPE)
+     "Default BUILD_TYPE is ${default_build_type}" FORCE)
+ endif()
+ 
+-find_program(CCACHE_FOUND ccache)
+-if(CCACHE_FOUND)
+-  set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
+-  set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ccache)
+-endif(CCACHE_FOUND)
+-
+ option(WITH_JEMALLOC "build with JeMalloc" OFF)
+ option(WITH_LIBURING "build with liburing" ON)
+ option(WITH_SNAPPY "build with SNAPPY" OFF)

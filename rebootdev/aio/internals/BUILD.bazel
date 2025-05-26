@@ -1,0 +1,74 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "channel_manager_py",
+    srcs = ["channel_manager.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio"),
+        "@com_github_reboot_dev_reboot//rebootdev/aio:aborted_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:resolvers_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:servicers_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:tracing_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
+        "@com_github_reboot_dev_reboot//rebootdev/ssl:localhost_py",
+    ],
+)
+
+py_library(
+    name = "contextvars_py",
+    srcs = ["contextvars.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
+    ],
+)
+
+py_library(
+    name = "middleware_py",
+    srcs = ["middleware.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":channel_manager_py",
+        ":contextvars_py",
+        ":tasks_dispatcher_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "@com_github_reboot_dev_reboot//rebootdev:settings_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:contexts_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:tasks_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio/auth:authorizers_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio/auth:token_verifiers_py",
+    ],
+)
+
+py_library(
+    name = "tasks_dispatcher_py",
+    srcs = ["tasks_dispatcher.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":contextvars_py",
+        ":tasks_cache_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:tasks_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio/backoff:python",
+    ],
+)
+
+py_library(
+    name = "tasks_cache_py",
+    srcs = ["tasks_cache.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:sidecar_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
+        "@com_github_reboot_dev_reboot//rebootdev:time_py",
+    ],
+)

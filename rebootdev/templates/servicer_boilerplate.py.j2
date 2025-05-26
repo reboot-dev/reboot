@@ -1,0 +1,161 @@
+# isort: skip_file
+# flake8: noqa: F401
+
+# THIS FILE IS GENERATED AND WILL BE OVERWRITTEN ON THE NEXT
+# 'rbt protoc' INVOCATION. DO NOT MODIFY THIS FILE DIRECTLY.
+# However, feel free to copy-paste sections of this file into
+# your own source files; that's what this file is here for!
+
+from rebootdev.aio.contexts import (
+{% if has_reader_method %}
+    ReaderContext,
+{% endif %}
+{% if has_writer_method %}
+    WriterContext,
+{% endif %}
+{% if has_transaction_method %}
+    TransactionContext,
+{% endif %}
+{% if has_workflow_method %}
+    WorkflowContext,
+{% endif %}
+)
+{% if has_workflow_method %}
+from rebootdev.aio.tasks import Loop
+from datetime import timedelta
+{% endif %}
+{% if has_streaming_method %}
+from typing import AsyncIterable
+{% endif %}
+from {{ rbt_name }} import (
+{% for state in states %}
+    {{ state.proto.name }},
+{% endfor %}
+{% for message in proto.messages_and_enums | unique | sort %}
+    {{ message }},
+{% endfor %}
+)
+{% for state in states %}
+{% for service in state.services %}
+
+
+class {{ state.proto.name }}Servicer({{ state.proto.name }}.Servicer):
+    """
+    An example of how to implement a Python servicer for the
+    {{ state.proto.name }} service, using Reboot.
+    You can copy-paste this servicer, or parts of it, to be the basis
+    for the implementation of your own servicer.
+    """
+    {% for method in service.methods %}
+    {% if method.options.proto.kind == 'reader' %}
+
+    async def {{ method.proto.name }}(
+        self,
+        context: ReaderContext,
+        {% if not method.options.proto.state_streaming %}
+        state: {{ state.proto.name }}.State,
+        {% else %}
+        states: AsyncIterable[{{ state.proto.name }}.State],
+        {% endif %}
+        {% if not method.proto.client_streaming %}
+        request: {{ method.input_type_name }},
+        {% else %}
+        requests: AsyncIterable[{{ method.input_type_name }}],
+        {% endif %}
+    {% if not method.proto.server_streaming %}
+    ) -> {{ method.output_type_name }}:
+    {% else %}
+    ) -> AsyncIterable[{{ method.output_type_name }}]:
+    {% endif %}
+        # TODO: implement your own business logic here!
+        #
+        # Read more about the reader methods in the Reboot documentation:
+        # https://docs.reboot.dev/develop/servicers#reader
+        raise NotImplementedError
+        {% if method.options.proto.state_streaming %}
+
+        # TODO: receive state updates like this.
+        async for state in states:
+            print(state)
+        {% endif %}
+        {% if method.proto.client_streaming %}
+
+        # TODO: receive streaming requests like this.
+        async for request in requests:
+            print(request)
+        {% endif %}
+        {% if method.proto.server_streaming %}
+
+        # TODO: then stream responses back to the client.
+        for i in range(10):
+            # TODO: fill in each response here.
+            yield {{ method.output_type_name }}()
+        {% else %}
+
+        # TODO: fill in the response here.
+        return {{ method.output_type_name }}()
+        {% endif %}
+    {% elif method.options.proto.kind == 'writer' %}
+
+    async def {{ method.proto.name }}(
+        self,
+        context: WriterContext,
+        state: {{ state.proto.name }}.State,
+        request: {{ method.input_type_name }},
+    ) -> {{ method.output_type_name }}:
+        # TODO: implement your own business logic here!
+        #
+        # Update `state` as neccessary.
+        #
+        # state.field = ...
+        #
+        # return {{ method.output_type_name }}()
+        #
+        # Read more about the writer methods in the Reboot documentation:
+        # https://docs.reboot.dev/develop/servicers/#writer
+        raise NotImplementedError
+    {% elif method.options.proto.kind == 'transaction' %}
+
+    async def {{ method.proto.name }}(
+        self,
+        context: TransactionContext,
+        state: {{ state.proto.name }}.State,
+        request: {{ method.input_type_name }},
+    ) -> {{ method.output_type_name }}:
+        # TODO: implement your own business logic here!
+        #
+        # Update `state` as neccessary.
+        #
+        # state.field = ...
+        #
+        # return {{ method.output_type_name }}()
+        #
+        # Read more about the transaction methods in the Reboot documentation:
+        # https://docs.reboot.dev/develop/servicers/#transaction
+        raise NotImplementedError
+    {% elif method.options.proto.kind == 'workflow' %}
+
+    async def {{ method.proto.name }}(
+        self,
+        context: WorkflowContext,
+        request: {{ method.input_type_name }},
+    ) -> {{ method.output_type_name }} | Loop:
+        # TODO: implement your own business logic here!
+        # Read more about the workflow methods in the Reboot documentation:
+        # https://docs.reboot.dev/develop/servicers/#workflow
+        raise NotImplementedError
+
+        # Here is how to see whether the workflow is looping.
+        if context.iteration == 0:
+            # Here is how to request the workflow to loop.
+            return Loop(when=timedelta(seconds=3))
+        else:
+            # Here is how to return a response when the workflow is done
+            # looping.
+            #
+            # TODO: fill in the response here.
+            return {{ method.output_type_name }}()
+    {% endif %}
+    {% endfor %}
+{% endfor %}
+{% endfor %}

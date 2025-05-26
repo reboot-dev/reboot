@@ -1,0 +1,1391 @@
+/* eslint-disable */
+// @ts-nocheck
+
+import { reboot_native, ensureError } from "@reboot-dev/reboot";
+{% if import_ids|length > 0 %}
+{% for unique_import_id, path in import_ids.items() %}
+import { importPys as {{ unique_import_id }}importPys } from "{{ path }}{% if nodejs_extensions %}.js{% endif %}"
+{% endfor %}
+{% endif %}
+
+{#
+NOTE: The following if block includes most of the rest of this file. Most of
+this generated code is meant for Reboot states and clients. In some cases, we
+generate _rbt files for services that aren't Reboot states or clients, to help
+with transitive imports. grep for 'END REBOOT SPECIFIC CODE' to see the end of
+this if block.
+#}
+{# BEGIN REBOOT SPEFICIC CODE #}
+{% if clients | length > 0 %}
+
+{% if google_protobuf_used_messages is defined and google_protobuf_used_messages|length > 0%}
+import {
+  {{ google_protobuf_used_messages|join(', \n  ') }}
+} from "@bufbuild/protobuf";
+{% endif %}
+{% if proto.messages_and_enums | length > 0 %}
+import {
+{% for message in proto.messages_and_enums | unique | list %}
+  {{ message }},
+{% endfor %}
+} from "./{{ pb_name }}{% if nodejs_extensions %}.js{% endif %}";
+
+// Additionally re-export all messages_and_enums from the pb module.
+export {
+  {% for message in proto.messages_and_enums | unique | list %}
+  {{ message }},
+  {% endfor %}
+};
+{% endif %}
+
+{# Since we are creating a new class named {{ state.proto.name }}, we can't import the same
+name from the {{ pb_name }}.js, so we have to alias that to use inside of that
+file, to the enduser we export that type as {{ state.proto.name }}.State #}
+{% if states|length > 0 %}
+{% for state in states %}
+import {
+  {{ state.proto.name }} as {{ state.proto.name }}Proto,
+} from "./{{ pb_name }}{% if nodejs_extensions %}.js{% endif %}";
+{% endfor %}
+{% endif %}
+
+import * as uuid from "uuid";
+
+import * as reboot from "@reboot-dev/reboot";
+import {
+  Context,
+  ExternalContext,
+  WorkflowContext,
+  ReaderContext,
+  WriterContext,
+  TransactionContext,
+} from "@reboot-dev/reboot";
+import * as protobuf_es from "@bufbuild/protobuf";
+import * as reboot_api from "@reboot-dev/reboot-api";
+
+{% if imports|length > 0 %}
+// Include all transitive imports.
+{% for import_path, unique_name in imports.items() %}
+import * as {{ unique_name }} from "{{ import_path }}{% if nodejs_extensions %}.js{% endif %}";
+{% endfor %}
+{% endif %}
+
+// To support writers seeing partial updates of transactions,
+// and transactions seeing updates from writers, we need to store
+// a reference to the latest state in an ongoing transaction.
+//
+// Moreover, we need to update that _reference_ after each writer
+// executes within a transaction. We do that in the generated
+// code, see below.
+const ongoingTransactionStates: { [id: string] : any; } = {};
+
+const ERROR_TYPES = [
+  // gRPC errors.
+  reboot_api.errors_pb.Cancelled,
+  reboot_api.errors_pb.Unknown,
+  reboot_api.errors_pb.InvalidArgument,
+  reboot_api.errors_pb.DeadlineExceeded,
+  reboot_api.errors_pb.NotFound,
+  reboot_api.errors_pb.AlreadyExists,
+  reboot_api.errors_pb.PermissionDenied,
+  reboot_api.errors_pb.ResourceExhausted,
+  reboot_api.errors_pb.FailedPrecondition,
+  reboot_api.errors_pb.Aborted,
+  reboot_api.errors_pb.OutOfRange,
+  reboot_api.errors_pb.Unimplemented,
+  reboot_api.errors_pb.Internal,
+  reboot_api.errors_pb.Unavailable,
+  reboot_api.errors_pb.DataLoss,
+  reboot_api.errors_pb.Unauthenticated,
+  // Reboot errors.
+  //
+  // NOTE: also add any new errors into `rbt/v1alpha1/index.ts`.
+  reboot_api.errors_pb.StateAlreadyConstructed,
+  reboot_api.errors_pb.StateNotConstructed,
+  reboot_api.errors_pb.TransactionParticipantFailedToPrepare,
+  reboot_api.errors_pb.TransactionParticipantFailedToCommit,
+  reboot_api.errors_pb.UnknownService,
+  reboot_api.errors_pb.UnknownTask,
+] as const; // Need `as const` to ensure TypeScript infers this as a tuple!
+
+{# Start generated Servicer code #}
+{% for client in clients %}
+
+type {{ client.proto.state_name }}RequestTypes =
+{% set request_types = [] %}
+{% for service in client.services %}
+{% for method in service.methods if method.input_type is not none and method.input_type not in request_types %}
+    {% if request_types|length > 0 %}        | {% else %}        {%endif%}{{method.input_type }}{{ request_types.append(method.input_type) or '' }}
+{% endfor %}
+{% endfor %};
+
+{# TODO: don't generate errors in both react and nodejs. #}
+{% for service in client.services %}
+{% for method in service.methods %}
+const {{ client.proto.state_name | to_screaming_snake }}_{{ method.proto.name | to_screaming_snake }}_ERROR_TYPES = [
+  ...ERROR_TYPES,
+  // Method errors.
+  {% for error, type in method.options.errors.items() %}
+  {{ type }},
+  {% endfor %}
+] as const; // Need `as const` to ensure TypeScript infers this as a tuple!
+
+type {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}AbortedError =
+  reboot_api.InstanceTypeForErrorTypes<
+    typeof {{ client.proto.state_name | to_screaming_snake }}_{{ method.proto.name | to_screaming_snake }}_ERROR_TYPES
+  >[number];
+
+{% endfor %}
+{% endfor %}
+
+{% endfor %}
+
+{% for state in states %}
+export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ state.proto.name }}.State> {
+  static __rbtModule__ = "{{ rbt_name }}";
+  static __servicerNodeAdaptor__ = "{{ state.proto.name }}ServicerNodeAdaptor";
+
+  // External reference to the native `Servicer`.
+  #external?: any | undefined;
+
+  protected ref(
+    options?: { bearerToken?: string }
+  ) {
+    const context = reboot.getContext();
+    return new {{ state.proto.name }}.WeakReference(context.stateId, options?.bearerToken);
+  }
+
+  {% for service in state.services %}
+  {% for method in service.methods %}
+  abstract {{ method.proto.name | to_lower_camel }}(
+    {% if method.options.proto.kind == 'reader' %}
+    context: ReaderContext,
+    {% elif method.options.proto.kind == 'writer' %}
+    context: WriterContext,
+    {% elif method.options.proto.kind == 'transaction' %}
+    context: TransactionContext,
+    {% elif method.options.proto.kind == 'workflow' %}
+    context: WorkflowContext,
+    {% endif %}
+    {% if method.options.proto.kind != 'workflow' %}
+    state: {{ state.proto.name }}.State,
+    {% endif %}
+    request: {{ method.input_type }},
+  ): Promise<
+  {{ method.output_type }} | protobuf_es.PartialMessage<{{ method.output_type }}>
+  {% if method.options.proto.kind == 'workflow' %}
+  | reboot.Loop
+  {% endif %}
+  >;
+
+  async _{{ method.proto.name }}(
+    {% if method.options.proto.kind == 'reader' %}
+    context: ReaderContext,
+    {% elif method.options.proto.kind == 'writer' %}
+    context: WriterContext,
+    {% elif method.options.proto.kind == 'transaction' %}
+    context: TransactionContext,
+    {% elif method.options.proto.kind == 'workflow' %}
+    context: WorkflowContext,
+    {% endif %}
+    jsonState: string,
+    jsonRequest: string
+  ): Promise<string> {
+    try {
+      {% if method.options.proto.kind != 'workflow' %}
+      let state = {{ state.proto.name }}.State.fromJsonString(
+        jsonState
+      );
+      {% endif %}
+      {% if method.options.proto.kind == 'writer' %}
+      if (context.stateId in ongoingTransactionStates) {
+        state = ongoingTransactionStates[context.stateId].clone();
+      }
+      {% elif method.options.proto.kind == 'transaction' %}
+      // TODO: assert that there are no ongoing transactions for this state.
+      ongoingTransactionStates[context.stateId] = state;
+      {% endif %}
+      const response = await reboot.runWithContext(context, () => {
+        return this.{{ method.proto.name | to_lower_camel }}(
+          context,
+          {% if method.options.proto.kind != 'workflow' %}
+          state,
+          {% endif %}
+          {{ method.input_type }}.fromJsonString(jsonRequest)
+        );
+      });
+      {% if method.options.proto.kind == 'writer' %}
+      // TODO: it's premature to overwrite the state now given that the
+      // writer might still "fail" and an error will get propagated back
+      // to the ongoing transaction which will still see the effects of
+      // this writer. What we should be doing instead is creating a
+      // callback API that we invoke only after a writer completes
+      // that lets us update the state _reference_ then.
+      if (context.stateId in ongoingTransactionStates) {
+        ongoingTransactionStates[context.stateId].copyFrom(state);
+      }
+      {% elif method.options.proto.kind == 'transaction' %}
+      delete ongoingTransactionStates[context.stateId];
+      {% endif %}
+      return JSON.stringify({
+        {% if method.options.proto.kind in ['writer', 'transaction'] %}
+        effects: new {{ state.proto.name }}.{{ method.proto.name }}Effects({ state, response })
+        {% elif method.options.proto.kind == 'workflow' %}
+        ...(response instanceof reboot.Loop && { loop: { when: response.when } } ||  { response }),
+        {% else %}
+        response
+        {% endif %}
+      });
+    } catch (e) {
+      if (e instanceof reboot_api.Aborted) {
+        return JSON.stringify({
+          status: e.toStatus()
+        });
+      }
+
+      // Ensure we have an `Error` and then `console.error()` it so
+      // that developers see a stack trace of what is going on.
+      //
+      // Only do this if it IS NOT an `Aborted` which we handle above.
+      const error = ensureError(e);
+      // Write an empy message which includes a newline to make it
+      // easier to identify the stack trace.
+      console.error("");
+      console.error(error);
+      console.error("");
+      console.error(
+        `Unhandled error in '{{ proto.package_name }}.{{ state.proto.name }}.{{ method.proto.name | to_lower_camel }}'; propagating as 'Unknown'\n`
+      );
+
+      throw error;
+    }
+  }
+
+  {% endfor %}
+  {% endfor %}
+
+  __storeExternal(external: any) {
+    this.#external = external;
+  }
+
+  get __external() {
+    if (this.#external === undefined) {
+      throw new Error(`Unexpected undefined external`);
+    }
+    return this.#external;
+  }
+
+  authorizer(): reboot.Authorizer<{{ state.proto.name }}.State, {{ state.proto.name }}RequestTypes> | reboot.AuthorizerRule<{{ state.proto.name }}.State, {{ state.proto.name }}RequestTypes> | null {
+    return null;
+  }
+
+  _authorizer() {
+    // Get authorizer, if any, converting from a rule if necessary.
+    const authorizer = ((authorizerOrRule) => {
+      if (authorizerOrRule instanceof reboot.AuthorizerRule) {
+        return new {{ state.proto.name }}Authorizer({ _default: authorizerOrRule });
+      }
+      return authorizerOrRule;
+    })(this.authorizer());
+
+    if (authorizer !== null) {
+      authorizer._authorize = async function(
+        methodName: string,
+        context: ReaderContext,
+        bytesState?: Uint8Array,
+        bytesRequest?: Uint8Array
+      ): Promise<Uint8Array> {
+        let state: {{ state.proto.name }}.State | undefined = undefined;
+        if (bytesState !== undefined) {
+          state = {{ state.proto.name }}.State.fromBinary(bytesState);
+        }
+        let request: {{ state.proto.name }}RequestTypes | undefined  = undefined;
+        const anyRequest = protobuf_es.Any.fromBinary(bytesRequest);
+        {% set ns = namespace(nested_loop_first = true) %}
+        {% for service in state.services %}
+        {% for method in service.methods %}
+        {% if ns.nested_loop_first %}
+        {% set ns.nested_loop_first = false %}
+        if (anyRequest.is({{ method.input_type }})) {
+        {% else %}
+        } else if (anyRequest.is({{ method.input_type }})) {
+        {% endif %}
+          request = new {{ method.input_type }}();
+          anyRequest.unpackTo(request);
+        {% endfor %}
+        {% endfor %}
+        } else {
+          throw new Error(`Unexpected type for ${request}: ${anyRequest.typeUrl}.`);
+        }
+        return protobuf_es.Any.pack(
+          await authorizer.authorize(methodName, context, state, request)
+        ).toBinary();
+      };
+    }
+    return authorizer;
+  }
+
+  static _State = class {
+
+    #servicer: {{ state.proto.name }}Servicer
+
+    constructor(servicer: {{ state.proto.name }}Servicer) {
+      this.#servicer = servicer;
+    }
+
+    async read(
+      context: reboot.WorkflowContext
+    ): Promise<{{ state.proto.name }}.State> {
+      return {{ state.proto.name }}.State.fromJsonString(
+        await reboot_native.Servicer_read(
+          this.#servicer.__external,
+          context.__external
+        )
+      );
+    }
+
+    async write(
+      idempotencyAlias: string,
+      context: reboot.WorkflowContext,
+      writer: (state: {{ state.proto.name }}.State) => Promise<void>,
+      options?: {
+        stringify?: undefined;
+        parse?: undefined;
+        validate?: undefined
+      }
+    ): Promise<void>;
+
+    async write<T>(
+      idempotencyAlias: string,
+      context: reboot.WorkflowContext,
+      writer: (state: {{ state.proto.name }}.State) => Promise<T>,
+      options: {
+        stringify?: (result: T) => string;
+        parse: (value: string) => T;
+        validate?: undefined;
+      } | {
+        stringify?: (result: T) => string;
+        parse?: undefined;
+        validate: (result: T) => boolean;
+      }
+    ): Promise<T>;
+
+    async write<T>(
+      idempotencyAlias: string,
+      context: reboot.WorkflowContext,
+      writer: (state: {{ state.proto.name }}.State) => Promise<T>,
+      options: {
+        stringify?: (result: T) => string;
+        parse?: (value: string) => T;
+        validate?: (result: T) => boolean
+      } = {}
+    ): Promise<void | T> {
+      return await this.idempotently(idempotencyAlias)
+        .write(context, writer, options);
+    }
+
+    static _Idempotently = class {
+
+      #external: any;
+      #options: reboot_api.IdempotencyOptions;
+
+      constructor(external: any, options: reboot_api.IdempotencyOptions) {
+        this.#external = external;
+        this.#options = options;
+      }
+
+      async write(
+        context: reboot.WorkflowContext,
+        writer: (state: {{ state.proto.name }}.State) => Promise<void>,
+        options?: {
+          stringify?: undefined;
+          parse?: undefined;
+          validate?: undefined
+        },
+        unidempotently?: boolean
+      ): Promise<void>;
+
+      async write<T>(
+        context: reboot.WorkflowContext,
+        writer: (state: {{ state.proto.name }}.State) => Promise<T>,
+        options: {
+          stringify?: (result: T) => string;
+          parse: (value: string) => T;
+          validate?: undefined;
+        } | {
+          stringify?: (result: T) => string;
+          parse?: undefined;
+          validate: (result: T) => boolean;
+        },
+        unidempotently?: boolean
+      ): Promise<T>;
+
+      async write<T>(
+        context: reboot.WorkflowContext,
+        writer: (state: {{ state.proto.name }}.State) => Promise<T>,
+        {
+          stringify = JSON.stringify,
+          parse = JSON.parse,
+          validate
+        }: {
+          stringify?: (result: T) => string;
+          parse?: (value: string) => T;
+          validate?: (result: T) => boolean
+        },
+        unidempotently: boolean = false,
+      ): Promise<void | T> {
+        const result = await reboot_native.Servicer_write(
+          this.#external,
+          context.__external,
+          async (jsonState: string) => {
+            const state = {{ state.proto.name }}.State.fromJsonString(
+              jsonState
+            );
+            try {
+              const t = await writer(state);
+
+              // Fail early if the developer thinks that they have some value
+              // that they want to validate but we got `undefined`.
+              if (t === undefined && validate !== undefined) {
+                throw new Error(
+                  "Not expecting `validate` as you are returning `void` (or explicitly `undefined`); did you mean to return a value (or if you want to explicitly return the absence of a value use `null`)"
+                );
+              }
+
+              return JSON.stringify({
+                // NOTE: we use the empty string to represent a
+                // `callable` returning `void` (or explicitly
+                // `undefined`).
+                //
+                // To differentiate returning `void` (or explicitly
+                // `undefined`) from `stringify` returning an empty
+                // string we use `{ value: stringify(t) }`.
+                result: (
+                  t !== undefined && JSON.stringify({ value: stringify(t) })
+                ) || "",
+                state,
+              });
+            } catch (e) {
+              throw ensureError(e);
+            }
+          },
+          JSON.stringify({ idempotency: this.#options, unidempotently }),
+        );
+
+        // NOTE: we parse and validate `value` every time, even the first
+        // time, so as to catch bugs where the `value` returned from
+        // `callable` might not parse or be valid. We will have already
+        // persisted `result`, so in the event of a bug the developer will
+        // have to change the idempotency alias so that `callable` is
+        // re-executed. These semantics are the same as Python (although
+        // Python uses the `type` keyword argument instead of the
+        // `parse` and `validate` properties we use here).
+
+        // TODO: assert(result !== undefined);
+
+        if (result !== "") {
+          const { value } = JSON.parse(result);
+          const t = parse(value);
+          if (!unidempotently) {
+            if (parse !== JSON.parse) {
+              if (validate === undefined) {
+                throw new Error("Missing `validate` property");
+              } else if (!validate(t)) {
+                throw new Error("Failed to validate memoized result");
+              }
+            }
+          }
+          return t;
+        }
+
+        // TODO: assert(result === "");
+
+        // Otherwise `callable` must have returned void (or explicitly
+        // `undefined`), fall through.
+      }
+    };
+
+    public idempotently(aliasOrOptions: string | reboot_api.IdempotencyOptions) {
+      const options = (typeof aliasOrOptions === "string" || aliasOrOptions instanceof String)
+        ? { alias: aliasOrOptions }
+        : aliasOrOptions;
+      if (options.alias === undefined && options.key === undefined) {
+        throw new Error(
+          "Inline writers require either an idempotency alias or key"
+        );
+      }
+      return new {{ state.proto.name }}Servicer._State._Idempotently(
+        this.#servicer.__external,
+        options,
+      );
+    }
+
+    static _Unidempotently = class {
+
+      #external: any;
+
+      constructor(external: any) {
+        this.#external = external;
+      }
+
+      async write(
+        context: reboot.WorkflowContext,
+        writer: (state: {{ state.proto.name }}.State) => Promise<void>
+      ): Promise<void>;
+
+      async write<T>(
+        context: reboot.WorkflowContext,
+        writer: (state: {{ state.proto.name }}.State) => Promise<T>
+      ): Promise<T>;
+
+      async write<T>(
+        context: reboot.WorkflowContext,
+        writer: (state: {{ state.proto.name }}.State) => Promise<T>
+      ): Promise<T> {
+        return new {{ state.proto.name }}Servicer._State._Idempotently(
+          this.#external,
+          { key: uuid.v4() }
+        ).write<T>(
+          context,
+          writer,
+          {},
+          true
+        );
+      }
+    };
+
+    public unidempotently() {
+      return new {{ state.proto.name }}Servicer._State._Unidempotently(
+        this.#servicer.__external
+      );
+    }
+  };
+
+  get state() {
+    return new {{ state.proto.name }}Servicer._State(this);
+  }
+}
+
+export type {{ state.proto.name }}AuthorizerRules = {
+  {% for service in state.services %}
+  {% for method in service.methods %}
+  {{ method.proto.name | to_lower_camel }}?: reboot.AuthorizerRule<{{ state.proto.name }}.State, {{ method.input_type }}>;
+  {% endfor %}
+  {% endfor %}
+};
+
+export class {{ state.proto.name }}Authorizer extends reboot.Authorizer<{{ state.proto.name }}.State, {{ state.proto.name }}RequestTypes> {
+
+  #rules: {{ state.proto.name }}AuthorizerRules & {
+    _default: reboot.AuthorizerRule<{{ state.proto.name }}.State, protobuf_es.Message>;
+  };
+
+  constructor(
+    rules?: {{ state.proto.name }}AuthorizerRules & {
+      _default?: reboot.AuthorizerRule<{{ state.proto.name }}.State, protobuf_es.Message>;
+    }
+  ) {
+    super();
+    this.#rules = { ...rules, _default: rules?._default ?? reboot.allowIf({ all: [ reboot.isAppInternal ] }) };
+  }
+
+  async authorize(
+    methodName: string,
+    context: ReaderContext,
+    state?: {{ state.proto.name }}.State,
+    request?: {{ state.proto.name }}RequestTypes
+  ): Promise<reboot.AuthorizerDecision> {
+    {% set ns = namespace(nested_loop_first = true) %}
+    {% for service in state.services %}
+    {% for method in service.methods %}
+    {% if ns.nested_loop_first %}
+    {% set ns.nested_loop_first = false %}
+    if (methodName == '{{ method.proto.full_name }}') {
+    {% else %}
+    } else if (methodName == '{{ method.proto.full_name }}') {
+    {% endif %}
+      return await this.{{ method.proto.name | to_lower_camel }}(
+        context,
+        {% if not method.options.proto.constructor %}
+        state,
+        {% endif %}
+        {% if not (method.options.proto.kind == 'reader' and method.proto.client_streaming) %}
+        request as {{ method.input_type }},
+        {% endif %}
+      );
+    {% endfor %}
+    {% endfor %}
+    } else {
+      return new reboot_api.errors_pb.PermissionDenied();
+    }
+  }
+
+  {% for service in state.services %}
+  {% for method in service.methods %}
+  async {{ method.proto.name | to_lower_camel }}(
+    context: ReaderContext,
+    {% if not method.options.proto.constructor %}
+    state: {{ state.proto.name }}.State,
+    {% endif %}
+    {% if not (method.options.proto.kind == 'reader' and method.proto.client_streaming) %}
+    request: {{ method.input_type }},
+    {% endif %}
+  ): Promise<reboot.AuthorizerDecision> {
+    return await (
+      this.#rules.{{ method.proto.name | to_lower_camel }} ?? this.#rules._default
+    ).execute({
+      context,
+      {% if not method.options.proto.constructor %}
+      state,
+      {% endif %}
+      {% if not (method.options.proto.kind == 'reader' and method.proto.client_streaming) %}
+      request: request as {{ method.input_type }},
+      {% endif %}
+    });
+  }
+  {% endfor %}
+  {% endfor %}
+}
+
+{% endfor %}
+{# End generated Servicer code #}
+{# Start generated State code #}
+{% for state in states %}
+
+export class {{ state.proto.name }}State extends {{ state.proto.name }}Proto {
+
+  static fromBinary(
+    bytes: Uint8Array,
+    options?: Partial<protobuf_es.BinaryReadOptions>
+  ) {
+    const state = new {{ state.proto.name }}.State();
+    state.fromBinary(bytes, options);
+    return state;
+  }
+
+  static fromJson(
+    jsonValue: protobuf_es.JsonValue,
+    options?: Partial<protobuf_es.JsonReadOptions>
+  ) {
+    const state = new {{ state.proto.name }}.State();
+    state.fromJson(jsonValue, options);
+    return state;
+  }
+
+  static fromJsonString(
+    jsonString: string,
+    options?: Partial<protobuf_es.JsonReadOptions>
+  ) {
+    const state = new {{ state.proto.name }}.State();
+    state.fromJsonString(jsonString, options);
+    return state;
+  }
+
+  public clone() {
+    const state = new {{ state.proto.name }}.State();
+    state.copyFrom(super.clone());
+    return state;
+  }
+
+  public copyFrom(that: {{ state.proto.name }}.State | {{ state.proto.name }}Proto) {
+    // Unfortunately, protobuf-es does not have `CopyFrom` like Python
+    // or C++ protobuf. Instead, protobuf-es has `fromJson` but it
+    // performs a merge. Thus, we have to first clear all of the fields
+    // in the message before calling `fromJson`.
+    reboot.clearFields(this);
+    this.fromJson(that.toJson());
+  }
+}
+
+{% endfor %}
+
+{% for client in clients %}
+
+{% for service in client.services %}
+{% for method in service.methods %}
+
+export class {{ client.proto.state_name }}{{ method.proto.name }}Aborted extends reboot_api.Aborted {
+  static fromStatus(status: reboot_api.Status) {
+    let error = reboot_api.errorFromGoogleRpcStatusDetails(
+      status,
+      {{ client.proto.state_name | to_screaming_snake }}_{{ method.proto.name | to_screaming_snake }}_ERROR_TYPES,
+    );
+
+    if (error !== undefined) {
+      return new {{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}Aborted(
+        error, { message: status.message }
+      );
+    }
+
+    error = reboot_api.errorFromGoogleRpcStatusCode(status);
+
+    // TODO(benh): also consider getting the type names from
+    // `status.details` and including that in `message` to make
+    // debugging easier.
+
+    return new {{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}Aborted(
+      error, { message: status.message }
+    );
+  }
+
+  public toStatus(): reboot_api.Status {
+    const isObject = (value: unknown): value is object => {
+      return typeof value === 'object';
+    };
+
+    const isArray = (value: unknown): value is any[]  => {
+      return Array.isArray(value);
+    };
+
+    const error = this.error.toJson();
+
+    if (!isObject(error) || isArray(error)) {
+      throw new Error("Expecting 'error' to be an object (and not an array)");
+    }
+
+    const detail = { ...error };
+    detail["@type"] = `type.googleapis.com/${this.error.getType().typeName}`;
+
+    return new reboot_api.Status({
+      code: this.code,
+      message: this.#message,
+      details: [detail]
+    });
+  }
+
+  constructor(
+    error: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}AbortedError,
+    { message }: { message?: string } = {}
+  ) {
+    super();
+
+    // Set the name of this error for even more information!
+    this.name = this.constructor.name;
+
+    this.error = error;
+
+    let code = reboot_api.grpcStatusCodeFromError(this.error);
+
+    if (code === undefined) {
+      // Must be one of the Reboot specific errors.
+      code = reboot_api.StatusCode.ABORTED;
+    }
+
+    this.code = code;
+
+    this.#message = message;
+  }
+
+  toString(): string {
+    return `${this.name}: ${this.message}`;
+  }
+
+  get message(): string {
+    return `${this.error.getType().typeName}${this.#message ? ": " + this.#message : ""}`;
+  }
+
+  readonly error: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}AbortedError;
+  readonly code: reboot_api.StatusCode;
+  readonly #message?: string;
+}
+
+export class {{ client.proto.state_name }}{{ method.proto.name }}Task {
+
+  readonly taskId: reboot_api.tasks_pb.TaskId;
+
+  #promise: Promise<{{ method.output_type }}>;
+
+  private constructor(
+    context: reboot.WorkflowContext | reboot.ExternalContext,
+    taskId: reboot_api.tasks_pb.TaskId
+  ) {
+    this.taskId = taskId;
+    this.#promise = new Promise(async (resolve, reject) => {
+      const json = JSON.parse(
+        await reboot_native.Task_await({
+          context: context.__external,
+          rbtModule: "{{ rbt_name }}",
+          stateName: "{{ client.proto.state_name }}",
+          method: "{{ method.proto.name }}",
+          jsonTaskId: JSON.stringify(taskId),
+        })
+      );
+
+      if ("status" in json) {
+        reject(
+          {{ client.proto.state_name }}
+            .{{ method.proto.name }}Aborted
+            .fromStatus(reboot_api.Status.fromJson(json["status"]))
+        );
+      } else {
+        // TODO: assert("response" in json)
+        resolve({{ method.output_type }}.fromJson(json["response"]));
+      }
+    });
+  }
+
+  static retrieve(
+    context: reboot.WorkflowContext | reboot.ExternalContext,
+    { taskId }: { taskId: reboot_api.tasks_pb.TaskId }
+  ) {
+    return new {{ client.proto.state_name }}{{ method.proto.name }}Task(
+      context, taskId
+    );
+  }
+
+  then(...args: Parameters<Promise<{{ method.output_type }}>["then"]>) {
+    return this.#promise.then(...args);
+  }
+}
+
+{% endfor %}
+{% endfor %}
+
+{% endfor %}
+
+{% for client in clients %}
+
+export class {{ client.proto.state_name }}WeakReference {
+  #external: any;
+  #id: string;
+  #options?: reboot_api.CallOptions;
+
+  constructor(id: string, bearerToken?: string) {
+    this.#id = id;
+    this.#options = {
+      bearerToken: bearerToken,
+    };
+    this.#external = reboot_native.Service_constructor({
+      rbtModule: "{{ rbt_name }}",
+      nodeAdaptor: "{{ client.proto.state_name }}WeakReferenceNodeAdaptor",
+      id: this.#id,
+    });
+  }
+
+  get stateId(): string {
+    return this.#id;
+  }
+
+  {% for service in client.services %}
+  {% for method in service.methods %}
+  async __externalServiceCall{{ method.proto.name }}(
+    context: Context | ExternalContext,
+    partialRequest?: protobuf_es.PartialMessage<{{ method.input_type }}>,
+    options?: reboot_api.CallOptions
+  ): Promise<any> {
+    const request = partialRequest instanceof {{ method.input_type }} ?
+      partialRequest : new {{ method.input_type }}(partialRequest);
+
+    const json = JSON.parse(
+      await reboot_native.Service_call({
+        external: this.#external,
+        kind: "{{ method.options.proto.kind }}",
+        method: "{{ method.proto.name }}",
+        requestModule: "{{ method.python_request_message_module }}",
+        requestType: "{{ method.python_input_type }}",
+        context: context.__external,
+        jsonRequest: JSON.stringify(request || {}),
+        jsonOptions: JSON.stringify(options || {}),
+      })
+    );
+
+    if ("status" in json) {
+      throw {{ client.proto.state_name }}
+        .{{ method.proto.name }}Aborted
+        .fromStatus(reboot_api.Status.fromJson(json["status"]));
+    }
+
+    return json;
+  }
+
+  {% if not method.options.proto.constructor %}
+  {% if method.options.proto.kind == 'workflow' %}
+  async {{ method.proto.name | to_lower_camel }}(
+    context: ExternalContext,
+    partialRequest?: protobuf_es.PartialMessage<{{ method.input_type }}>,
+  ): Promise<{{ method.output_type }}> {
+    const { task } = await this.spawn()
+      .{{ method.proto.name | to_lower_camel }}(context, partialRequest);
+    return await task;
+  }
+  {% else %}
+  async {{ method.proto.name | to_lower_camel }}(
+    {% if method.options.proto.kind == 'reader' %}
+    context: ReaderContext | WriterContext | TransactionContext | WorkflowContext | ExternalContext,
+    {% elif method.options.proto.kind in ['writer', 'transaction'] %}
+    context: TransactionContext | WorkflowContext | ExternalContext,
+    {% endif %}
+    partialRequest?: protobuf_es.PartialMessage<{{ method.input_type }}>,
+  ): Promise<{{ method.output_type }}> {
+    const json = await this.__externalServiceCall{{ method.proto.name }}(
+      context,
+      partialRequest,
+      this.#options,
+    );
+
+    // TODO: assert("response" in json)
+
+    return {{ method.output_type }}.fromJson(json["response"]);
+  }
+  {% endif %}
+
+  {% endif %}
+  {% endfor %}
+  {% endfor %}
+
+  static _Idempotently = class {
+
+    #weakReference: any;
+    #options: reboot_api.CallOptions;
+
+    constructor(
+      weakReference: any,
+      options: reboot_api.CallOptions
+    ) {
+      this.#weakReference = weakReference;
+      this.#options = options;
+    }
+
+    {% for service in client.services %}
+    {% for method in service.methods %}
+    {% if method.options.proto.kind in ['workflow'] %}
+    async {{ method.proto.name | to_lower_camel }}(
+      context: reboot.WorkflowContext | reboot.ExternalContext,
+      partialRequest?: protobuf_es.PartialMessage<{{ method.input_type }}>
+    ): Promise<{{ method.output_type }}> {
+      const { task } = await this.spawn()
+        .{{ method.proto.name | to_lower_camel }}(context, partialRequest);
+      return await task;
+    }
+    {% elif method.options.proto.kind in ['writer', 'transaction'] and not method.options.proto.constructor %}
+    async {{ method.proto.name | to_lower_camel }}(
+      context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
+      partialRequest?: protobuf_es.PartialMessage<{{ method.input_type }}>
+    ): Promise<{{ method.output_type }}> {
+      const json = await this.#weakReference.__externalServiceCall{{ method.proto.name }}(
+        context,
+        partialRequest,
+        this.#options,
+      );
+
+       // TODO: assert("response" in json)
+
+       return {{ method.output_type }}.fromJson(json["response"]);
+    }
+
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
+
+    public schedule(options?: reboot_api.ScheduleOptions) {
+      return new {{ client.proto.state_name }}.WeakReference._Schedule(
+        this.#weakReference,
+        {
+          ...this.#options,
+          schedule: options || { when: new Date() }
+        },
+      );
+    }
+
+    public spawn(options?: reboot_api.ScheduleOptions) {
+      return new {{ client.proto.state_name }}.WeakReference._Spawn(
+        this.#weakReference,
+        {
+          ...this.#options,
+          schedule: options || { when: new Date() }
+        },
+      );
+    }
+  };
+
+  public idempotently(aliasOrOptions: string | reboot_api.IdempotencyOptions = {} as reboot_api.IdempotencyOptions) {
+    const idempotency = (typeof aliasOrOptions === "string" || aliasOrOptions instanceof String) ? { alias: aliasOrOptions } : aliasOrOptions;
+    return new {{ client.proto.state_name }}.WeakReference._Idempotently(
+      this,
+      {
+        ...this.#options,
+        idempotency: idempotency,
+      },
+    );
+  }
+
+  public unidempotently() {
+    return this.idempotently({ key: uuid.v4() });
+  }
+
+  static _Schedule = class {
+
+    #weakReference: any;
+    #options: reboot_api.CallOptions;
+
+    constructor(
+      weakReference: any,
+      options: reboot_api.CallOptions,
+    ) {
+      this.#weakReference = weakReference;
+      this.#options = options;
+    }
+
+    {% for service in client.services %}
+    {% for method in service.methods %}
+    {% if not method.options.proto.constructor %}
+    async {{ method.proto.name | to_lower_camel }}(
+      context: reboot.WriterContext | reboot.TransactionContext,
+      partialRequest?: protobuf_es.PartialMessage<{{ method.input_type }}>
+    ): Promise<reboot_api.tasks_pb.TaskId> {
+      const json = await this.#weakReference.__externalServiceCall{{ method.proto.name }}(
+        context,
+        partialRequest,
+        this.#options,
+      );
+
+      // TODO: assert("taskId" in json)
+
+      const taskId = reboot_api.tasks_pb.TaskId.fromJson(json["taskId"]);
+
+      return taskId;
+    }
+
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
+
+  };
+
+  public schedule(options?: reboot_api.ScheduleOptions) {
+    return new {{ client.proto.state_name }}.WeakReference._Schedule(
+      this,
+      {
+        ...this.#options,
+        schedule: options || { when: new Date() }
+      },
+    );
+  }
+
+  static _Spawn = class {
+
+    #weakReference: any;
+    #options: reboot_api.CallOptions;
+
+    constructor(
+      weakReference: any,
+      options: reboot_api.CallOptions,
+    ) {
+      this.#weakReference = weakReference;
+      this.#options = options;
+    }
+
+    {% for service in client.services %}
+    {% for method in service.methods %}
+    {% if not method.options.proto.constructor %}
+    async {{ method.proto.name | to_lower_camel }}(
+      context: reboot.WorkflowContext | reboot.ExternalContext,
+      partialRequest?: protobuf_es.PartialMessage<{{ method.input_type }}>
+    ): Promise<{ task: {{ client.proto.state_name }}{{ method.proto.name }}Task }> {
+      const json = await this.#weakReference.__externalServiceCall{{ method.proto.name }}(
+        context,
+        partialRequest,
+        this.#options,
+      );
+
+      // TODO: assert("taskId" in json)
+
+      const taskId = reboot_api.tasks_pb.TaskId.fromJson(json["taskId"]);
+
+      return {
+        task: {{ client.proto.state_name }}.{{ method.proto.name }}Task
+          .retrieve(context, { taskId })
+      };
+    }
+
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
+
+  };
+
+  public spawn(options?: reboot_api.ScheduleOptions) {
+    return new {{ client.proto.state_name }}.WeakReference._Spawn(
+      this,
+      {
+        ...this.#options,
+        schedule: options || { when: new Date() }
+      },
+    );
+  }
+}
+
+export class {{ client.proto.state_name }} {
+
+  {% if client.state is not none %}
+  static Servicer = {{ client.proto.state_name }}Servicer;
+  static State = {{ client.proto.state_name }}State;
+  static Authorizer = {{ client.proto.state_name }}Authorizer;
+  {% endif %}
+  static WeakReference = {{ client.proto.state_name }}WeakReference;
+
+  {% for service in client.services %}
+  {% for method in service.methods %}
+
+  static {{ method.proto.name }}Aborted = {{ client.proto.state_name }}{{ method.proto.name }}Aborted;
+
+  static {{ method.proto.name }}Task = {{ client.proto.state_name }}{{ method.proto.name }}Task;
+
+  {% if client.state is not none %}
+  {% if method.options.proto.kind in ['writer', 'transaction'] %}
+  static {{ method.proto.name }}Effects = class {
+    state: {{ client.proto.state_name }}Proto;
+    response: {{ method.output_type }};
+
+    constructor(effects: {
+      state: protobuf_es.PartialMessage<{{ client.proto.state_name }}Proto>;
+      response: protobuf_es.PartialMessage<{{ method.output_type }}>;
+    }) {
+      this.state = effects.state instanceof {{ client.proto.state_name }}Proto
+        ? effects.state
+        : new {{ client.proto.state_name }}Proto(effects.state);
+
+      this.response = effects.response instanceof {{ method.output_type }}
+        ? effects.response
+        : new {{ method.output_type }}(effects.response);
+    }
+  };
+  {% endif %}
+  {% endif %}
+
+  {% endfor %}
+  {% endfor %}
+
+  public static ref(
+    id: string,
+    options?: { bearerToken?: string }
+  ) {
+    return new {{ client.proto.state_name }}.WeakReference(id, options?.bearerToken);
+  }
+
+  {% for service in client.services %}
+  {% for method in service.methods %}
+  {%- if method.options.proto.kind == 'workflow' %}
+  {# TODO(benh): support constructor "tasks" and workflows. #}
+  {%- else %}
+  {% if method.options.proto.constructor %}
+  public async {{ method.proto.name | to_lower_camel }}(
+    context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
+    partialRequest?: protobuf_es.PartialMessage<{{ method.input_type }}>,
+    options?: { bearerToken?: string }
+  ): Promise<[
+    {{ client.proto.state_name }}.WeakReference,
+    {{ method.output_type }}
+  ]>;
+
+  public async {{ method.proto.name | to_lower_camel }}(
+    context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
+    id: string,
+    partialRequest?: protobuf_es.PartialMessage<{{ method.input_type }}>,
+    options?: { bearerToken?: string }
+  ): Promise<[
+    {{ client.proto.state_name }}.WeakReference,
+    {{ method.output_type }}
+  ]>;
+
+  public static async {{ method.proto.name | to_lower_camel }}(
+    context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
+    idOrPartialRequest?: string | protobuf_es.PartialMessage<{{ method.input_type }}>,
+    partialRequestOrOptions?: protobuf_es.PartialMessage<{{ method.input_type }}> | { bearerToken?: string },
+    optionsOrUndefined?: { bearerToken?: string }
+  ): Promise<[
+    {{ client.proto.state_name }}.WeakReference,
+    {{ method.output_type }}
+  ]> {
+    let id: string | undefined = undefined;
+    let partialRequest: protobuf_es.PartialMessage<{{ method.input_type }}> | undefined = undefined;
+    let options: { bearerToken?: string } | undefined = undefined;
+
+    if (typeof idOrPartialRequest === "string" || idOrPartialRequest instanceof String) {
+      id = idOrPartialRequest;
+      partialRequest = partialRequestOrOptions;
+      options = optionsOrUndefined;
+    } else {
+      partialRequest = idOrPartialRequest;
+      options = partialRequestOrOptions;
+      if (optionsOrUndefined !== undefined) {
+        throw new Error(
+          `Invalid arguments passed to '{{ client.proto.state_name }}.{{ method.proto.name | to_lower_camel }}'`
+        );
+      }
+    }
+
+    if (id === undefined) {
+      id = uuid.v4();
+    }
+
+    const weakReference = {{ client.proto.state_name }}.ref(id);
+
+    const json = await weakReference.__externalServiceCall{{ method.proto.name }}(
+      context,
+      partialRequest,
+      options,
+    );
+
+    // TODO: assert("response" in json)
+
+    return [
+      weakReference,
+      {{ method.output_type }}.fromJson(json["response"])
+    ];
+  }
+
+  {% endif %}
+  {% endif %}
+  {% endfor %}
+  {% endfor %}
+
+  public static idempotently(aliasOrOptions: string | reboot_api.IdempotencyOptions = {} as reboot_api.IdempotencyOptions) {
+    const idempotency = (typeof aliasOrOptions === "string" || aliasOrOptions instanceof String) ? { alias: aliasOrOptions } : aliasOrOptions;
+    return new {{ client.proto.state_name }}._ConstructIdempotently(idempotency);
+  }
+
+  static _ConstructIdempotently = class {
+    #idempotency: reboot_api.IdempotencyOptions;
+
+    constructor(idempotency: reboot_api.IdempotencyOptions) {
+      this.#idempotency = idempotency;
+    }
+
+    {% for service in client.services %}
+    {% for method in service.methods %}
+    {%- if method.options.proto.kind == 'workflow' %}
+    {# TODO(benh): support constructor "tasks" and workflows. #}
+    {%- else %}
+    {% if method.options.proto.constructor %}
+    public async {{ method.proto.name | to_lower_camel }}(
+      context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
+      partialRequest?: protobuf_es.PartialMessage<{{ method.input_type }}>,
+      options?: { bearerToken?: string }
+    ): Promise<[
+      {{ client.proto.state_name }}.WeakReference,
+      {{ method.output_type }}
+    ]>;
+
+    public async {{ method.proto.name | to_lower_camel }}(
+      context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
+      id: string,
+      partialRequest?: protobuf_es.PartialMessage<{{ method.input_type }}>,
+      options?: { bearerToken?: string }
+    ): Promise<[
+      {{ client.proto.state_name }}.WeakReference,
+      {{ method.output_type }}
+    ]>;
+
+    public async {{ method.proto.name | to_lower_camel }}(
+      context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
+      idOrPartialRequest?: string | protobuf_es.PartialMessage<{{ method.input_type }}>,
+      partialRequestOrOptions?: protobuf_es.PartialMessage<{{ method.input_type }}>,
+      optionsOrUndefined?: { bearerToken?: string }
+    ): Promise<[
+      {{ client.proto.state_name }}.WeakReference,
+      {{ method.output_type }}
+    ]> {
+      let id: string | undefined = undefined;
+      let partialRequest: protobuf_es.PartialMessage<{{ method.input_type }}> | undefined = undefined;
+      let options: { bearerToken?: string } = {};
+
+      if (typeof idOrPartialRequest === "string" || idOrPartialRequest instanceof String) {
+        id = idOrPartialRequest;
+        partialRequest = partialRequestOrOptions;
+        options = optionsOrUndefined;
+      } else {
+        partialRequest = idOrPartialRequest;
+        options = partialRequestOrOptions;
+        if (optionsOrUndefined !== undefined) {
+          throw new Error(
+            `Not expecting more than 'partialRequest' and 'options' arguments after 'context'`
+          );
+        }
+      }
+
+      if (id === undefined) {
+        id = await context.generateIdempotentStateId(
+          "{{ proto.package_name }}.{{ client.proto.state_name }}",
+          "{{ service.proto.full_name }}",
+          "{{ method.proto.name }}",
+          this.#idempotency,
+        ) as string;
+      }
+
+      return await {{ client.proto.state_name }}.{{ method.proto.name | to_lower_camel }}(
+        context,
+        id,
+        partialRequest,
+        {
+          ...options,
+          idempotency: this.#idempotency,
+        },
+      );
+    }
+
+    {% endif %}
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
+  };
+}
+
+{% for service in client.services %}
+{% for method in service.methods %}
+export namespace {{ client.proto.state_name }} {
+  export type {{ method.proto.name }}Aborted = typeof {{ client.proto.state_name }}.{{ method.proto.name }}Aborted.prototype;
+}
+{% endfor %}
+{% endfor %}
+
+{% for service in client.services %}
+{% for method in service.methods if method.options.proto.kind in ['writer', 'transaction'] %}
+export namespace {{ client.proto.state_name }} {
+  export type {{ method.proto.name }}Task = typeof {{ client.proto.state_name }}.{{ method.proto.name }}Task.prototype;
+  {% if client.state is not none %}
+  export type {{ method.proto.name }}Effects = typeof {{ client.proto.state_name }}.{{ method.proto.name }}Effects.prototype;
+  {% endif %}
+}
+{% endfor %}
+{% endfor %}
+
+{% for service in client.services %}
+{% for method in service.methods if method.options.proto.kind in ['workflow'] %}
+export namespace {{ client.proto.state_name }} {
+  export type {{ method.proto.name }}Task = typeof {{ client.proto.state_name }}.{{ method.proto.name }}Task.prototype;
+}
+{% endfor %}
+{% endfor %}
+
+export namespace {{ client.proto.state_name }} {
+  export type RequestTypes = {{ client.proto.state_name }}RequestTypes;
+  export type WeakReference = typeof {{ client.proto.state_name }}.WeakReference.prototype;
+  {% if client.state is not none %}
+  {# This `State` alias is responsible for allowing users use
+     {{ client.proto.state_name }}.State as a type
+  #}
+  export type State = typeof {{ client.proto.state_name }}.State.prototype;
+  {% endif %}
+}
+{% endfor %}
+{# End generated Service code #}
+
+{% endif %}
+{# END REBOOT SPECIFIC CODE #}
+
+export function importPys() {
+    {% if import_ids|length > 0 %}
+    {% for unique_import_id, _ in import_ids.items() %}
+    {{ unique_import_id }}importPys()
+    {% endfor %}
+    {% endif %}
+
+    reboot_native.importPy("{{ pb2_name }}", "{{ base64_gzip_pb2_py }}");
+    reboot_native.importPy("{{ pb2_grpc_name }}", "{{ base64_gzip_pb2_grpc_py }}");
+    {% if clients | length > 0 %}
+    reboot_native.importPy("{{ rbt_name }}", "{{ base64_gzip_rbt_py }}");
+    {% endif %}
+}
+
+importPys()

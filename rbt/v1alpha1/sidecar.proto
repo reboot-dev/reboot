@@ -257,7 +257,7 @@ message StoreResponse {}
 
 message RecoverRequest {
   // Mapping from fully qualified state type names to state tags (as defined in
-  // `reboot.aio.types`). Used to implement backwards compatibility from
+  // `rebootdev.aio.types`). Used to implement backwards compatibility from
   // persistence version 0 to version 1.
   map<string, string> state_tags_by_state_type = 1;
 }
