@@ -205,7 +205,7 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
       // TODO: assert that there are no ongoing transactions for this state.
       ongoingTransactionStates[context.stateId] = state;
       {% endif %}
-      const response = await reboot.runWithContext(context, () => {
+      const partialResponse = await reboot.runWithContext(context, () => {
         return this.{{ method.proto.name | to_lower_camel }}(
           context,
           {% if method.options.proto.kind != 'workflow' %}
@@ -214,6 +214,12 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
           {{ method.input_type }}.fromJsonString(jsonRequest)
         );
       });
+
+      const response =
+        partialResponse instanceof {{ method.output_type }}
+          ? partialResponse
+          : new {{ method.output_type }}(partialResponse);
+
       {% if method.options.proto.kind == 'writer' %}
       // TODO: it's premature to overwrite the state now given that the
       // writer might still "fail" and an error will get propagated back
@@ -227,15 +233,24 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
       {% elif method.options.proto.kind == 'transaction' %}
       delete ongoingTransactionStates[context.stateId];
       {% endif %}
-      return JSON.stringify({
-        {% if method.options.proto.kind in ['writer', 'transaction'] %}
-        effects: new {{ state.proto.name }}.{{ method.proto.name }}Effects({ state, response })
-        {% elif method.options.proto.kind == 'workflow' %}
-        ...(response instanceof reboot.Loop && { loop: { when: response.when } } ||  { response }),
-        {% else %}
-        response
-        {% endif %}
-      });
+      return JSON.stringify(
+        {
+          {% if method.options.proto.kind in ['writer', 'transaction'] %}
+          effects: {
+            state:
+              state instanceof {{ state.proto.name }}.State
+                ? state.toJson()
+                : new {{ state.proto.name }}.State(state).toJson(),
+              response: response.toJson() },
+          {% elif method.options.proto.kind == 'workflow' %}
+          ...(partialResponse instanceof reboot.Loop
+              && { loop: { when: partialResponse.when } }
+              ||  { response: response.toJson() }),
+          {% else %}
+          response: response.toJson()
+          {% endif %}
+        }
+      );
     } catch (e) {
       if (e instanceof reboot_api.Aborted) {
         return JSON.stringify({
@@ -248,7 +263,7 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
       //
       // Only do this if it IS NOT an `Aborted` which we handle above.
       const error = ensureError(e);
-      // Write an empy message which includes a newline to make it
+      // Write an empty message which includes a newline to make it
       // easier to identify the stack trace.
       console.error("");
       console.error(error);
@@ -884,7 +899,7 @@ export class {{ client.proto.state_name }}WeakReference {
         requestModule: "{{ method.python_request_message_module }}",
         requestType: "{{ method.python_input_type }}",
         context: context.__external,
-        jsonRequest: JSON.stringify(request || {}),
+        jsonRequest: JSON.stringify(request.toJson() || {}),
         jsonOptions: JSON.stringify(options || {}),
       })
     );
@@ -1131,28 +1146,6 @@ export class {{ client.proto.state_name }} {
 
   static {{ method.proto.name }}Task = {{ client.proto.state_name }}{{ method.proto.name }}Task;
 
-  {% if client.state is not none %}
-  {% if method.options.proto.kind in ['writer', 'transaction'] %}
-  static {{ method.proto.name }}Effects = class {
-    state: {{ client.proto.state_name }}Proto;
-    response: {{ method.output_type }};
-
-    constructor(effects: {
-      state: protobuf_es.PartialMessage<{{ client.proto.state_name }}Proto>;
-      response: protobuf_es.PartialMessage<{{ method.output_type }}>;
-    }) {
-      this.state = effects.state instanceof {{ client.proto.state_name }}Proto
-        ? effects.state
-        : new {{ client.proto.state_name }}Proto(effects.state);
-
-      this.response = effects.response instanceof {{ method.output_type }}
-        ? effects.response
-        : new {{ method.output_type }}(effects.response);
-    }
-  };
-  {% endif %}
-  {% endif %}
-
   {% endfor %}
   {% endfor %}
 
@@ -1344,7 +1337,6 @@ export namespace {{ client.proto.state_name }} {
 export namespace {{ client.proto.state_name }} {
   export type {{ method.proto.name }}Task = typeof {{ client.proto.state_name }}.{{ method.proto.name }}Task.prototype;
   {% if client.state is not none %}
-  export type {{ method.proto.name }}Effects = typeof {{ client.proto.state_name }}.{{ method.proto.name }}Effects.prototype;
   {% endif %}
 }
 {% endfor %}
