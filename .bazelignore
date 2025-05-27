@@ -8,5 +8,5 @@ node_modules/
 rbt/v1alpha1/node_modules/
 reboot/inspect/node_modules/
 reboot/nodejs/node_modules/
-reboot/web/node_modules/
+reboot/react/node_modules/
 tests/reboot/node_modules/

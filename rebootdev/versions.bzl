@@ -45,7 +45,7 @@ packages in multiple BUILD.bazel files.
 #  * reboot/nodejs/package.json
 #  * reboot/std/package.json
 #  * reboot/std/react/package.json
-#  * reboot/web/package.json
+#  * reboot/react/package.json
 #  * rbt/std/package.json
 #  * rbt/v1alpha1/package.json
 #  * charts/reboot/Chart.yaml
