@@ -311,9 +311,9 @@ class {{ client.proto.state_name | to_camel }}Instance {
   private loadingReaders = 0;
   private runningMutates: reboot_react.Mutate[] = [];
   private queuedMutates: reboot_react.Mutate[] = [];
-  private flushMutates?: reboot_react.Event = undefined;
+  private flushMutates?: reboot_api.Event = undefined;
   private websocket?: WebSocket = undefined;
-  private backoff: reboot_react.Backoff = new reboot_react.Backoff();
+  private backoff: reboot_api.Backoff = new reboot_api.Backoff();
 
   private hasRunningMutations() {
     return this.runningMutates.length > 0;
@@ -321,7 +321,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
 
   private async flushMutations() {
     if (this.flushMutates === undefined) {
-      this.flushMutates = new reboot_react.Event();
+      this.flushMutates = new reboot_api.Event();
     }
     await this.flushMutates.wait();
   }
@@ -508,7 +508,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
     };
 
     try {
-      await reboot_react.retryForever(async () => {
+      await reboot_api.retryForever(async () => {
         let loaded = false;
         this.loadingReaders += 1;
 
@@ -688,7 +688,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
     // We always have at least 1 observer which is this function!
     let remainingObservers = 1;
 
-    const event = new reboot_react.Event();
+    const event = new reboot_api.Event();
 
     let callbacks: (() => void)[] = [];
 
@@ -1096,7 +1096,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
     // Fetch with retry, using a backoff, i.e., if we get disconnected.
     const { response, aborted } = await (async () => {
-      const backoff = new reboot_react.Backoff();
+      const backoff = new reboot_api.Backoff();
 
       while (true) {
         try {
