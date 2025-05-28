@@ -14,6 +14,7 @@ import {
 } from "@bufbuild/protobuf";
 {% endif %}
 import * as reboot_react from "@reboot-dev/reboot-react";
+import * as reboot_web from "@reboot-dev/reboot-web";
 import * as reboot_api from "@reboot-dev/reboot-api";
 import {
   useEffect,
@@ -59,7 +60,7 @@ export {
 {% endif %}
 
 {% for input_type in mutation_method_input_types %}
-export type Pending{{ input_type | to_camel }}Mutation = reboot_react.Mutation<{{ input_type }}>;
+export type Pending{{ input_type | to_camel }}Mutation = reboot_web.Mutation<{{ input_type }}>;
 {% endfor %}
 
 
@@ -109,7 +110,7 @@ export interface {{ client.proto.state_name | to_camel }}Mutators {
     (partialRequest?: __bufbuildProtobufPartialMessage<{{ method.input_type }}>,
      options?: { metadata?: any }
     ): Promise<
-      reboot_react.ResponseOrAborted<
+      reboot_web.ResponseOrAborted<
         {{ method.output_type }},
         {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
       >>;
@@ -236,7 +237,7 @@ export interface Use{{ client.proto.state_name }}Api {
     (partialRequest?: __bufbuildProtobufPartialMessage<{{ method.input_type }}>,
      options?: { metadata?: any }
     ): Promise<
-      reboot_react.ResponseOrAborted<
+      reboot_web.ResponseOrAborted<
         {{ method.output_type }},
         {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
       >>;
@@ -257,7 +258,7 @@ export interface Use{{ client.proto.state_name }}Api {
     partialRequest?: __bufbuildProtobufPartialMessage<{{ method.input_type }}>,
     options?: { signal?: AbortSignal }
   ) => Promise<
-    reboot_react.ResponseOrAborted<
+    reboot_web.ResponseOrAborted<
     {{ method.output_type }},
     {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
     >
@@ -283,7 +284,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
     this.url = url;
     this.refs = 1;
 
-    reboot_react.websockets.connect(this.url, this.stateRef);
+     reboot_web.websockets.connect(this.url, this.stateRef);
     this.initializeWebSocket();
   }
 
@@ -297,7 +298,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
 
     if (this.refs === 0 && this.websocket !== undefined) {
       this.websocket.close();
-      reboot_react.websockets.disconnect(this.url, this.stateRef);
+       reboot_web.websockets.disconnect(this.url, this.stateRef);
     }
 
     return this.refs;
@@ -307,10 +308,10 @@ class {{ client.proto.state_name | to_camel }}Instance {
   readonly stateRef: string;
   private url: string;
   private refs: number;
-  private observers: reboot_react.Observers = {};
+  private observers: reboot_web.Observers = {};
   private loadingReaders = 0;
-  private runningMutates: reboot_react.Mutate[] = [];
-  private queuedMutates: reboot_react.Mutate[] = [];
+  private runningMutates: reboot_web.Mutate[] = [];
+  private queuedMutates: reboot_web.Mutate[] = [];
   private flushMutates?: reboot_api.Event = undefined;
   private websocket?: WebSocket = undefined;
   private backoff: reboot_api.Backoff = new reboot_api.Backoff();
@@ -351,7 +352,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
       const url = new URL(`${this.url}/__/reboot/rpc/${this.stateRef}`);
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
 
-      this.websocket = reboot_react.websockets.create(url);
+      this.websocket = reboot_web.websockets.create(url);
 
       this.websocket.binaryType = "arraybuffer";
 
@@ -459,7 +460,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
     request: RequestType,
     bearerToken: string | undefined,
     responseType: __bufbuildProtobufMessageType<ResponseType>,
-    reader: reboot_react.Reader<ResponseType>
+    reader: reboot_web.Reader<ResponseType>
   ) {
     const queryRequest = new reboot_api.react_pb.QueryRequest({
       method,
@@ -544,7 +545,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
             }
           });
 
-          const queryResponses = reboot_react.reactiveReader({
+          const queryResponses = reboot_web.reactiveReader({
             endpoint: `${this.url}/__/reboot/rpc/${this.stateRef}`,
             request: queryRequest,
             signal: reader.abortController.signal,
@@ -681,7 +682,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
   async {{ method.proto.name | to_lower_camel }}(
     mutation: Pending{{ method.input_type | to_camel }}Mutation
   ): Promise<
-    reboot_react.ResponseOrAborted<
+    reboot_web.ResponseOrAborted<
       {{ method.output_type }},
       {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
   >> {
@@ -725,7 +726,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
     });
 
     return new Promise<
-      reboot_react.ResponseOrAborted<
+      reboot_web.ResponseOrAborted<
         {{ method.output_type }},
         {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
       >>(
@@ -829,7 +830,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
   {% elif method.options.proto.kind == 'reader' %}
 
   private use{{ method.proto.name | to_camel }}Readers: {
-    [id: string]: reboot_react.Reader<{{ method.output_type }}>
+    [id: string]: reboot_web.Reader<{{ method.output_type }}>
   } = {};
 
   use{{ method.proto.name | to_camel }}(
@@ -928,7 +929,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
   { id }: { id: string }
 ): Use{{ client.proto.state_name | to_camel }}Api => {
   const stateId = id;
-  const stateRef = reboot_react.stateIdToRef(
+  const stateRef = reboot_api.stateIdToRef(
     "{{ client.proto.state_full_name }}",
     id,
   );
@@ -1105,7 +1106,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
           //
           // See also 'reboot/helpers.py'.
           return {
-            response: await reboot_react.guardedFetch(
+            response: await reboot_web.guardedFetch(
               new Request(
                 `${rebootClient.url}/__/reboot/rpc/${stateRef}/{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}`, {
                   method: "POST",

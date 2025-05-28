@@ -216,6 +216,7 @@ def js_reboot_react_library(
             "//:node_modules/uuid",
             "//:node_modules/@bufbuild/protobuf",
             "//:node_modules/@reboot-dev/reboot-react",
+            "//:node_modules/@reboot-dev/reboot-web",
             "//:node_modules/@reboot-dev/reboot-api",
         ],
         visibility = visibility,
