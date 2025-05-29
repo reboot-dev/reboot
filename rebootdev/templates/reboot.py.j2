@@ -826,9 +826,17 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     not isinstance(aborted, aborted_type) and
                     aborted_type.is_declared_error(aborted.error)
                 ):
+                    # We propagate declared errors that might have
+                    # come from another call, i.e., we might have an
+                    # `Aborted` but not for this method but the
+                    # `Aborted` that we have has an error that this
+                    # method declared. This allows a developer to
+                    # simply add the declared error to their `.proto`
+                    # file rather than having to catch and re-raise
+                    # the error with their own aborted type.
                     if context.task is None:
                         logger.warning(
-                            f"Propagating unhandled (in '{{ state.proto.full_name }}.{{ method.proto.name }}') {aborted}"
+                            f"Propagating unhandled but declared error (in '{{ state.proto.full_name }}.{{ method.proto.name }}') {aborted}"
                         )
                 elif (
                     aborted_type is None or
@@ -840,6 +848,8 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                             f"Unhandled (in '{{ state.proto.full_name }}.{{ method.proto.name }}') {aborted}; propagating as 'Unknown'\n" +
                             ''.join(IMPORT_traceback.format_exception(aborted))
                         )
+                    # If this wasn't a declared error than we
+                    # propagate it as `Unknown`.
                     raise IMPORT_rebootdev.aio.aborted.SystemAborted(
                         IMPORT_rbt_v1alpha1.errors_pb2.Unknown(),
                         # TODO(benh): consider whether or not we want to
@@ -943,7 +953,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         {% endif %}
 
         async with self._state_manager.transactionally(
-            context, self.tasks_dispatcher
+            context,
+            self.tasks_dispatcher,
+            aborted_type={{ state.proto.name }}.{{ method.proto.name }}Aborted,
         ) as transaction:
             if transaction is not None:
                 context.participants.add(
@@ -971,17 +983,6 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 authorize=authorizer,
             ) as states:
             {% endif %}
-                if transaction is not None:
-                    # We need the transaction to be stored _before_ sending a
-                    # response to the user; otherwise they may read two
-                    # different states if we crash. Storing the transaction
-                    # before even performing the read covers an edge-case:
-                    # `StateManager.colocated_read()`, which may be called from
-                    # this reader, will read from RocksDB, and will want to use
-                    # the transaction.
-                    await self._state_manager.transaction_participant_store(
-                        transaction
-                    )
                 {% if not method.proto.server_streaming %}
                 response = await self.__{{ method.proto.name }}(
                     context,
@@ -1110,7 +1111,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         {% endif %}
 
         async with self._state_manager.transactionally(
-            context, self.tasks_dispatcher
+            context,
+            self.tasks_dispatcher,
+            aborted_type={{ state.proto.name }}.{{ method.proto.name }}Aborted,
         ) as transaction:
             if transaction is not None:
                 context.participants.add(
@@ -1270,9 +1273,15 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 # Doing effect validation, just let this propagate.
                 raise
             except IMPORT_rebootdev.aio.aborted.Aborted as aborted:
-                await grpc_context.abort_with_status(
-                    IMPORT_rpc_status_sync.to_status(aborted.to_status())
-                )
+                status = IMPORT_rpc_status_sync.to_status(aborted.to_status())
+                # Need to add transaction participants here because
+                # calling `grpc_context.abort_with_status()` will
+                # ignore any other trailing metadata.
+                if context is not None and context.transaction_id is not None:
+                    status = status._replace(
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                    )
+                await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
             except IMPORT_asyncio.CancelledError:
                 # It's pretty normal for an RPC to be cancelled; it's not useful to
@@ -1603,6 +1612,7 @@ class {{ client.proto.state_name }}WriterStub(_{{ client.proto.state_name }}Stub
             request=request,
             metadata=metadata,
             idempotency=idempotency,
+            aborted_type={{ client.proto.state_name }}.{{ method.proto.name }}Aborted,
         ) as idempotency_key:
             async with self._call(
                 IMPORT_reboot_aio_types.StateTypeName('{{ client.proto.state_full_name }}'),
@@ -1699,6 +1709,7 @@ class {{ client.proto.state_name }}WorkflowStub(_{{ client.proto.state_name }}St
             request=request,
             metadata=metadata,
             idempotency=idempotency,
+            aborted_type={{ client.proto.state_name }}.{{ method.proto.name }}Aborted,
         ) as idempotency_key:
             async with self._call(
                 IMPORT_reboot_aio_types.StateTypeName('{{ client.proto.state_full_name }}'),
@@ -1759,6 +1770,7 @@ class {{ client.proto.state_name }}TasksStub(_{{ client.proto.state_name }}Stub)
             request=request,
             metadata=metadata,
             idempotency=idempotency,
+            aborted_type={{ client.proto.state_name }}.{{ method.proto.name }}Aborted,
         ) as idempotency_key:
             async with self._call(
                 IMPORT_reboot_aio_types.StateTypeName('{{ client.proto.state_full_name }}'),
@@ -2283,9 +2295,10 @@ class {{ state.proto.name }}Servicer(IMPORT_reboot_aio_servicers.Servicer):
                     state_ref=context._state_ref,
                     service_name=None,  # Indicates an inline writer.
                     method=None,  # Indicates an inline writer.
-                    request=None,
+                    request=None,  # Indicates an inline writer.
                     metadata=metadata,
                     idempotency=idempotency,
+                    aborted_type=None,  # Indicates an inline writer.
                 ) as idempotency_key:
 
                     if any(t[0] == IMPORT_reboot_aio_headers.IDEMPOTENCY_KEY_HEADER for t in metadata):
@@ -2332,7 +2345,9 @@ class {{ state.proto.name }}Servicer(IMPORT_reboot_aio_servicers.Servicer):
                             return result
 
                         async with servicer._middleware._state_manager.transactionally(
-                            writer_context, servicer._middleware.tasks_dispatcher
+                            writer_context,
+                            servicer._middleware.tasks_dispatcher,
+                            aborted_type=None,
                         ) as transaction:
                             async with servicer._middleware._state_manager.writer(
                                 writer_context,

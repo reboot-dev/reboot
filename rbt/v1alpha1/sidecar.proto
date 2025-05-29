@@ -107,7 +107,11 @@ message Participants {
     repeated string state_refs = 1;
   }
 
-  map<string, StateRefs> participants = 1;
+  // Participants that we should commit, keyed by state type.
+  map<string, StateRefs> should_commit = 1;
+
+  // Participants that we should abort, keyed by state type.
+  map<string, StateRefs> should_abort = 2;
 }
 
 ////////////////////////////////////////////////////////////////////////

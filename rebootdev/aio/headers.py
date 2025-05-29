@@ -54,6 +54,7 @@ TRANSACTION_IDS_HEADER = 'x-reboot-transaction-ids'
 TRANSACTION_COORDINATOR_STATE_TYPE_HEADER = 'x-reboot-transaction-coordinator-state-type'
 TRANSACTION_COORDINATOR_STATE_REF_HEADER = 'x-reboot-transaction-coordinator-state-ref'
 TRANSACTION_PARTICIPANTS_HEADER = 'x-reboot-transaction-participants'
+TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER = 'x-reboot-transaction-participants-to-abort'
 
 # The header that carries the idempotency key for a mutation.
 #
