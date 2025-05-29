@@ -1,0 +1,146 @@
+// THIS FILE IS GENERATED AND WILL BE OVERWRITTEN ON THE NEXT
+// 'rbt protoc' INVOCATION. DO NOT MODIFY THIS FILE DIRECTLY.
+// However, feel free to copy-paste sections of this file into
+// your own source files; that's what this file is here for!
+
+import { PartialMessage } from "@bufbuild/protobuf";
+import {
+{% if has_reader_method %}
+  ReaderContext,
+{% endif %}
+{% if has_writer_method %}
+  WriterContext,
+{% endif %}
+{% if has_transaction_method %}
+  TransactionContext,
+{% endif %}
+{% if has_workflow_method %}
+  WorkflowContext,
+  Loop,
+{% endif %}
+} from "@reboot-dev/reboot";
+import {
+{% for state in states %}
+  {{ state.proto.name }},
+{% endfor %}
+{% for message in proto.messages_and_enums | unique | sort %}
+  {{ message }},
+{% endfor %}
+// TODO: Adjust the import path to match the actual path of the generated file.
+} from "{{nodejs_rbt_name}}";
+{% for state in states %}
+{% for service in state.services %}
+
+
+class {{ state.proto.name }}Servicer extends {{ state.proto.name }}.Servicer {
+  // An example of how to implement a Typescript servicer for the
+  // {{ state.proto.name }} service, using Reboot.
+  // You can copy-paste this servicer, or parts of it, to be the basis
+  // for the implementation of your own servicer.
+
+    {% for method in service.methods %}
+    {% if method.options.proto.kind == 'reader' %}
+
+  async {{ method.proto.name | to_lower_camel }}(
+    context: ReaderContext,
+    state: {{ state.proto.name }}.State,
+    request: {{ method.input_type }}
+  ): Promise<{{ method.output_type }} | PartialMessage<{{ method.output_type }}>> {
+    // TODO: implement your own business logic here!
+    //
+    // TODO: fill in the response here.
+    // return new {{ method.output_type }}()
+    //
+    // If you want to return a partial response, you can do so like this:
+    // return {
+    //    message: "This is a partial response",
+    // }
+    //
+    // Read more about the reader methods in the Reboot documentation:
+    // https://docs.reboot.dev/develop/servicers#reader
+    throw new Error("Not implemented");
+  }
+    {% elif method.options.proto.kind == 'writer' %}
+
+  async {{ method.proto.name | to_lower_camel }}(
+    context: WriterContext,
+    state: {{ state.proto.name }}.State,
+    request: {{ method.input_type }}
+  ): Promise<{{ method.output_type }} | PartialMessage<{{ method.output_type }}>> {
+    // TODO: implement your own business logic here!
+    //
+    // Update `state` as neccessary.
+    //
+    // state.field = ...
+    //
+    // return new {{ method.output_type }}()
+    //
+    // If you want to return a partial response, you can do so like this:
+    // return {
+    //    message: "This is a partial response",
+    // }
+    //
+    // Read more about the writer methods in the Reboot documentation:
+    // https://docs.reboot.dev/develop/servicers/#writer
+
+    throw new Error("Not implemented");
+  }
+    {% elif method.options.proto.kind == 'transaction' %}
+
+  async {{ method.proto.name | to_lower_camel }}(
+    context: TransactionContext,
+    state: {{ state.proto.name }}.State,
+    request: {{ method.input_type }}
+  ): Promise<{{ method.output_type }} | PartialMessage<{{ method.output_type }}>> {
+    // TODO: implement your own business logic here!
+    //
+    // Update `state` as neccessary.
+    //
+    // state.field = ...
+    //
+    // return new {{ method.output_type }}()
+    //
+    // If you want to return a partial response, you can do so like this:
+    // return {
+    //    message: "This is a partial response",
+    // }
+    //
+    // Read more about the transaction methods in the Reboot documentation:
+    // https://docs.reboot.dev/develop/servicers/#transaction
+    throw new Error("Not implemented");
+  }
+    {% elif method.options.proto.kind == 'workflow' %}
+
+  async {{ method.proto.name | to_lower_camel }}(
+    context: WorkflowContext,
+    request: {{ method.input_type }}
+  ): Promise<{{ method.output_type }} | PartialMessage<{{ method.output_type }}>> | Loop {
+    // TODO: implement your own business logic here!
+    // Here is how to see whether the workflow is looping.
+    // if (context.iteration == 0) {
+        // Here is how to request the workflow to loop.
+        // const when = new Date();
+        // when.setSeconds(when.getSeconds() + 3);
+        // return new Loop({ when });
+    // } else {
+        // Here is how to return a response when the workflow is done
+        // looping.
+        //
+        // TODO: fill in the response here.
+        // return new {{ method.output_type }}()
+        //
+        // If you want to return a partial response, you can do so like this:
+        // return {
+        //    message: "This is a partial response",
+        // }
+    // }
+    //
+    // Read more about the workflow methods in the Reboot documentation:
+    // https://docs.reboot.dev/develop/servicers/#workflow
+    throw new Error("Not implemented");
+  }
+    {% endif %}
+    {% endfor %}
+}
+{% endfor %}
+{% endfor %}

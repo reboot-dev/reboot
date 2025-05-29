@@ -141,7 +141,7 @@ export const GRPC_ERROR_TYPES = [
 
 export const REBOOT_ERROR_TYPES = [
   // NOTE: also add any new errors into
-  // `reboot/templates/reboot_react.ts.j2`.
+  // `rebootdev/templates/reboot_react.ts.j2`.
   errors_pb.StateAlreadyConstructed,
   errors_pb.StateNotConstructed,
   errors_pb.TransactionParticipantFailedToPrepare,

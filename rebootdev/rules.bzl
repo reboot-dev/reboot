@@ -7,7 +7,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_grpc_library", "py_proto_library")
 load("@com_github_reboot_dev_pyprotoc_plugin//:rules.bzl", "create_protoc_plugin_rule")
-load("@com_github_reboot_dev_reboot//reboot:versions.bzl", "REBOOT_VERSION")
+load("@com_github_reboot_dev_reboot//rebootdev:versions.bzl", "REBOOT_VERSION")
 load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library")
 
@@ -43,12 +43,12 @@ wrapped_pyi = rule(
 )
 
 _py_reboot_files = create_protoc_plugin_rule(
-    "@com_github_reboot_dev_mono//reboot:protoc-gen-reboot_python",
+    "@com_github_reboot_dev_reboot//rebootdev:protoc-gen-reboot_python",
     extensions = ("_rbt.py",),
 )
 
 _mypy_files = create_protoc_plugin_rule(
-    "@com_github_reboot_dev_mono//reboot:protoc-gen-mypy",
+    "@com_github_reboot_dev_reboot//rebootdev:protoc-gen-mypy",
     extensions = ("_pb2.pyi",),
 )
 
@@ -151,22 +151,22 @@ def py_reboot_library(
             requirement("googleapis-common-protos"),
             requirement("protobuf"),
             requirement("tzlocal"),
-            "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
+            "@com_github_reboot_dev_reboot//rebootdev/aio/backoff:python",
             "@com_github_reboot_dev_reboot//log:log_py",
-            "//reboot:versioning_py",
-            "//reboot/aio:call_py",
-            "//reboot/aio:contexts_py",
-            "//reboot/aio:headers_py",
-            "//reboot/aio:idempotency_py",
-            "//reboot/aio:placement_py",
-            "//reboot/aio:servicers_py",
-            "//reboot/aio:state_managers_py",
-            "//reboot/aio:stubs_py",
-            "//reboot/aio:tasks_py",
-            "//reboot/aio:types_py",
-            "//reboot/aio:external_py",
-            "//reboot/aio:tracing_py",
-            "//reboot/nodejs:python_py",
+            "@com_github_reboot_dev_reboot//rebootdev:versioning_py",
+            "@com_github_reboot_dev_reboot//rebootdev/aio:call_py",
+            "@com_github_reboot_dev_reboot//rebootdev/aio:contexts_py",
+            "@com_github_reboot_dev_reboot//rebootdev/aio:headers_py",
+            "@com_github_reboot_dev_reboot//rebootdev/aio:idempotency_py",
+            "@com_github_reboot_dev_reboot//rebootdev/aio:placement_py",
+            "@com_github_reboot_dev_reboot//rebootdev/aio:servicers_py",
+            "@com_github_reboot_dev_reboot//rebootdev/aio:state_managers_py",
+            "@com_github_reboot_dev_reboot//rebootdev/aio:stubs_py",
+            "@com_github_reboot_dev_reboot//rebootdev/aio:tasks_py",
+            "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
+            "@com_github_reboot_dev_reboot//rebootdev/aio:external_py",
+            "@com_github_reboot_dev_reboot//rebootdev/aio:tracing_py",
+            "@com_github_reboot_dev_reboot//rebootdev/nodejs:python_py",
             ":" + name + "_library",
         ] + py_deps,
     )
@@ -388,7 +388,7 @@ def _js_proto_files(
             export NODE_PATH
 
             $(execpath @com_google_protobuf//:protoc) \
-              --plugin=protoc-gen-es=$(execpath @com_github_reboot_dev_reboot//reboot:protoc-gen-es_with_deps) \
+              --plugin=protoc-gen-es=$(execpath @com_github_reboot_dev_reboot//rebootdev:protoc-gen-es_with_deps) \
               --es_out=. \
               {descriptor_set_in} \
               $$proto_path
@@ -413,7 +413,7 @@ def _js_proto_files(
             proto_pb_d_ts = proto_pb_d_ts,
         ),
         tools = [
-            "@com_github_reboot_dev_reboot//reboot:protoc-gen-es_with_deps",
+            "@com_github_reboot_dev_reboot//rebootdev:protoc-gen-es_with_deps",
             "@com_google_protobuf//:protoc",
             "@com_github_reboot_dev_reboot//:node_modules/@bufbuild/protoc-gen-es/dir",
             "@node//:node",
@@ -509,7 +509,7 @@ def write_merged_source_files(name, write_path, srcs = None, output_groups = [""
     )
 
 _py_boilerplate_reboot_files = create_protoc_plugin_rule(
-    "@com_github_reboot_dev_mono//reboot:protoc-gen-reboot_python_boilerplate",
+    "@com_github_reboot_dev_reboot//rebootdev:protoc-gen-reboot_python_boilerplate",
     extensions = ("_servicer.py",),
 )
 

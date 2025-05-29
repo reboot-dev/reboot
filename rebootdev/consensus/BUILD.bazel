@@ -1,0 +1,63 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_python//python:defs.bzl", "py_library")
+
+cc_library(
+    name = "sidecar_cc",
+    srcs = ["sidecar.cc"],
+    hdrs = ["sidecar.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_3rdparty_stout//:stout",
+        "@com_github_facebook_rocksdb//:rocksdb",
+        "@com_github_fmtlib_fmt//:fmt",
+        "@com_github_google_glog//:glog",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:sidecar_cc_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_cc_proto",
+        "@com_github_reboot_dev_reboot//rebootdev:settings_cc",
+        "@com_github_tl_expected//:expected",
+    ],
+)
+
+cc_binary(
+    name = "sidecar_native",
+    srcs = ["sidecar_native.cc"],
+    linkshared = True,
+    deps = [
+        ":sidecar_cc",
+    ],
+)
+
+py_library(
+    name = "sidecar_py",
+    srcs = ["sidecar.py"],
+    data = [
+        ":sidecar_native",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("cffi"),
+        requirement("grpcio"),
+        requirement("protobuf"),
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:sidecar_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:sidecar_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
+        "@com_github_reboot_dev_reboot//rebootdev:settings_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:contexts_py",
+        "@com_github_reboot_dev_reboot//rebootdev/grpc:options_py",
+    ],
+)
+
+py_library(
+    name = "service_descriptor_validator_py",
+    srcs = ["service_descriptor_validator.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("packaging"),
+        requirement("protobuf"),
+        "@com_github_reboot_dev_reboot//rebootdev:options_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:exceptions_py",
+    ],
+)

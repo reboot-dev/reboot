@@ -8,6 +8,7 @@ load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
 load("@buildifier_prebuilt//:defs.bzl", "buildifier_prebuilt_register_toolchains")
 load("@buildifier_prebuilt//:deps.bzl", "buildifier_prebuilt_deps")
 load("@com_github_3rdparty_bazel_rules_jemalloc//bazel:deps.bzl", jemalloc_deps = "deps")
+load("@com_github_3rdparty_bazel_rules_tl_expected//bazel:deps.bzl", expected_deps = "deps")
 load("@com_github_3rdparty_stout//bazel:deps.bzl", stout_deps = "deps")
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
 load("@com_github_reboot_dev_pyprotoc_plugin//bazel:deps.bzl", pyprotoc_plugin_deps = "deps")
@@ -19,6 +20,7 @@ load("@io_bazel_rules_webtesting//web:repositories.bzl", "web_test_repositories"
 load("@io_bazel_rules_webtesting//web/versioned:browsers-0.3.3.bzl", "browser_repositories")
 load("@mypy_integration//repositories:repositories.bzl", mypy_integration_repositories = "repositories")
 load("@mypy_integration_pip_deps//:requirements.bzl", mypy_integration_pypi_deps = "install_deps")
+load("@rbt_pypi//:requirements.bzl", rbt_pypi_deps = "install_deps")
 load("@rules_buf//buf:defs.bzl", "buf_dependencies")
 load("@rules_buf//buf:repositories.bzl", "rules_buf_dependencies", "rules_buf_toolchains")
 load("@rules_oci//oci:dependencies.bzl", "rules_oci_dependencies")
@@ -29,6 +31,10 @@ load("//bazel:dockerfile_oci_image.bzl", "dockerfile_oci_image")
 
 def deps():
     """Adds external repositories/archives needed by Reboot (phase 2)."""
+    expected_deps()
+
+    rbt_pypi_deps()
+
     stout_deps()
 
     pyprotoc_plugin_deps()

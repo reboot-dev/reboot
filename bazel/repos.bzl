@@ -182,9 +182,9 @@ def repos():
         # We apply a patch that removes the ability to use 'ccache'
         # because it may get found by cmake but not be usable within a
         # Bazel sandbox.
-        patches = ["//bazel/rocksdb:do-not-use-ccache.patch"],
+        patches = ["@com_github_reboot_dev_reboot//bazel/rocksdb:do-not-use-ccache.patch"],
         patch_args = ["-p1"],
-        build_file = "//bazel/rocksdb:rocksdb.BUILD",
+        build_file = "@com_github_reboot_dev_reboot//bazel/rocksdb:rocksdb.BUILD",
     )
 
     maybe(
@@ -211,4 +211,12 @@ def repos():
         sha256 = "04feedcd06f71d0497a81fdd3220140a373ff9d2bff94620fbd50b774f96d8e0",
         strip_prefix = "bazel-lib-1.40.2",
         url = "https://github.com/aspect-build/bazel-lib/releases/download/v1.40.2/bazel-lib-v1.40.2.tar.gz",
+    )
+
+    maybe(
+        git_repository,
+        name = "com_github_3rdparty_bazel_rules_tl_expected",
+        remote = "https://github.com/3rdparty/bazel-rules-expected",
+        commit = "c703632657bf4ec9177d9aea0447166d424b3b74",
+        shallow_since = "1654243887 +0300",
     )

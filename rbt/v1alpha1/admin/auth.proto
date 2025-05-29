@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package rbt.v1alpha1.admin;
+
+service Auth {
+  rpc IsAdmin(IsAdminRequest) returns (IsAdminResponse);
+}
+
+message IsAdminRequest {
+  string bearer_token = 1;
+}
+
+message IsAdminResponse {
+  bool is_admin = 1;
+  string user_id = 2;  // If it could be deduced from the bearer_token.
+}
