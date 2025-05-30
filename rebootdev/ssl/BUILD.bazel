@@ -1,0 +1,13 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "localhost_py",
+    srcs = [
+        "localhost.py",
+    ],
+    data = [
+        ":localhost.crt",
+        ":localhost.key",
+    ],
+    visibility = ["//visibility:public"],
+)

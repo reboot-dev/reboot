@@ -1,0 +1,36 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "__init___py",
+    srcs = ["__init__.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("protobuf"),
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:auth_py_proto",
+    ],
+)
+
+py_library(
+    name = "authorizers_py",
+    srcs = ["authorizers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rebootdev:run_environments_py",
+        "@com_github_reboot_dev_reboot//rebootdev:settings_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:contexts_py",
+    ],
+)
+
+py_library(
+    name = "token_verifiers_py",
+    srcs = ["token_verifiers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":__init___py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:contexts_py",
+    ],
+)

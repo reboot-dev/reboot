@@ -1,0 +1,24 @@
+// The settings below must match their equivalents in:
+// * reboot/settings.py
+// * <possibly other languages by the time you read this>
+
+#pragma once
+
+#include "stout/bytes.h"
+
+////////////////////////////////////////////////////////////////////////
+
+namespace rbt {
+
+////////////////////////////////////////////////////////////////////////
+
+// gRPC max message size to transmit large actor state data.
+// TODO: We have increased this as a short-term workaround for #3411 and
+// #3329.
+constexpr Bytes kMaxSidecarGrpcMessageSize = Megabytes(1024);
+
+////////////////////////////////////////////////////////////////////////
+
+} // namespace rbt
+
+////////////////////////////////////////////////////////////////////////
