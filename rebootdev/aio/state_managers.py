@@ -1344,7 +1344,7 @@ class SidecarStateManager(
             #
             # As has been suggested in other places in the code, in
             # the future we can actually keep all writes after the
-            # first one in memory to improve performance futher. But
+            # first one in memory to improve performance further. But
             # the first one needs to be persisted because it
             # demarcates that this state is part of a transaction.
             sync = True
@@ -2155,7 +2155,7 @@ class SidecarStateManager(
             ), f'{state_type_name} {state_ref.id} is not the transaction coordinator'
 
             # Before performing two phase commit we need to perform
-            # some validatation just as we do for any method in a
+            # some validation just as we do for any method in a
             # transaction (however since we are nested within
             # 'transactionally()' the validation won't be performed
             # there until after the transaction has actually
@@ -2269,7 +2269,7 @@ class SidecarStateManager(
             ):
                 # TODO(benh): check if the idempotency key exists in
                 # self._idempotent_mutations and if it does raise an
-                # error that the user is incorreclty reusing an
+                # error that the user is incorrectly reusing an
                 # idempotency key (within a transaction). While we
                 # can't check for all incorrect uses, any that we can
                 # check for will help the user sort out bugs.

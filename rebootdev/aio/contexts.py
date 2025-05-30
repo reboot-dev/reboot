@@ -317,7 +317,7 @@ class React:
 
                             await self._used_response[task].wait()
 
-                        raise RuntimeError('React.Query should be inifnite')
+                        raise RuntimeError('React.Query should be infinite')
 
                     try:
                         await loop()

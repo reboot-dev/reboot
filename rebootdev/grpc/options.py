@@ -39,7 +39,7 @@ def make_retry_service_config(
     max_attempts: int = 5,
     initial_backoff: str = '0.1s',
     max_backoff: str = '10s',
-    backoff_mutiplier: int = 2,
+    backoff_multiplier: int = 2,
 ) -> str:
     """Returns a JSON representation of a ServiceConfig
     (https://github.com/grpc/grpc/blob/master/doc/service_config.md)
@@ -72,7 +72,7 @@ def make_retry_service_config(
                                 'maxAttempts': max_attempts,
                                 'initialBackoff': initial_backoff,
                                 'maxBackoff': max_backoff,
-                                'backoffMultiplier': backoff_mutiplier,
+                                'backoffMultiplier': backoff_multiplier,
                                 'retryableStatusCodes': ['UNAVAILABLE'],
                             },
                     }
@@ -92,7 +92,7 @@ def make_retry_channel_options(
     # TODO: Improve performance by decreasing backoff_multiplier to 2.
     # This change must be accompanied by refactoring respect Client to take
     # a backoff_multiplier otherwise a decrease will increase flakiness.
-    backoff_mutiplier: int = 4,
+    backoff_multiplier: int = 4,
     authority: Optional[str] = None,
     max_send_message_length: Optional[int] = None,
     max_receive_message_length: Optional[int] = None
@@ -108,7 +108,7 @@ def make_retry_channel_options(
             max_attempts=max_attempts,
             initial_backoff=initial_backoff,
             max_backoff=max_backoff,
-            backoff_mutiplier=backoff_mutiplier,
+            backoff_multiplier=backoff_multiplier,
         ),
         max_send_message_length=max_send_message_length,
         max_receive_message_length=max_receive_message_length,
