@@ -236,7 +236,7 @@ class IdempotencyManager:
             # The `yield` threw an exception, which means the user
             # code that we're wrapping (an RPC to a mutation on
             # `service`) failed. We need to determine if this failure
-            # might mean that we are uncertain if a mutation occured
+            # might mean that we are uncertain if a mutation occurred
             # or not on the server.
             if (
                 aborted_type is not None and

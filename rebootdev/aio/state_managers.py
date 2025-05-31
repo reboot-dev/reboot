@@ -1604,7 +1604,7 @@ class SidecarStateManager(
         # details.
         #
         # TODO: do this concurrently with yielding the transaction and
-        # calling into the developers method for better peformance and
+        # calling into the developers method for better performance and
         # then only wait for the store to complete before things like
         # `StateManager.colocated_read()` or before we return (or if
         # this `transactionally()` wraps a `transaction` method type
