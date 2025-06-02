@@ -167,3 +167,7 @@ test --test_env=TZ
 # When running tests, set the `REBOOT_BAZEL_TEST` environment variable to `true` so
 # we will print stack traces when running Reboot from Node.js.
 test --test_env=REBOOT_BAZEL_TEST=true
+
+# Bazel doesn't print stdout/stderr for failed tests if the contents exceeds 1MB
+# by default; increase this to 10MB for CI purposes.
+test --experimental_ui_max_stdouterr_bytes=10485760
