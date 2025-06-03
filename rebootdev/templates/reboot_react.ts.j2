@@ -60,7 +60,7 @@ export {
 {% endif %}
 
 {% for input_type in mutation_method_input_types %}
-export type Pending{{ input_type | to_camel }}Mutation = reboot_web.Mutation<{{ input_type }}>;
+export type Pending{{ input_type | to_camel }}Mutation = reboot_react.Mutation<{{ input_type }}>;
 {% endfor %}
 
 
@@ -308,10 +308,10 @@ class {{ client.proto.state_name | to_camel }}Instance {
   readonly stateRef: string;
   private url: string;
   private refs: number;
-  private observers: reboot_web.Observers = {};
+  private observers: reboot_react.Observers = {};
   private loadingReaders = 0;
-  private runningMutates: reboot_web.Mutate[] = [];
-  private queuedMutates: reboot_web.Mutate[] = [];
+  private runningMutates: reboot_react.Mutate[] = [];
+  private queuedMutates: reboot_react.Mutate[] = [];
   private flushMutates?: reboot_api.Event = undefined;
   private websocket?: WebSocket = undefined;
   private backoff: reboot_api.Backoff = new reboot_api.Backoff();
@@ -460,7 +460,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
     request: RequestType,
     bearerToken: string | undefined,
     responseType: __bufbuildProtobufMessageType<ResponseType>,
-    reader: reboot_web.Reader<ResponseType>
+    reader: reboot_react.Reader<ResponseType>
   ) {
     const queryRequest = new reboot_api.react_pb.QueryRequest({
       method,
@@ -830,7 +830,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
   {% elif method.options.proto.kind == 'reader' %}
 
   private use{{ method.proto.name | to_camel }}Readers: {
-    [id: string]: reboot_web.Reader<{{ method.output_type }}>
+    [id: string]: reboot_react.Reader<{{ method.output_type }}>
   } = {};
 
   use{{ method.proto.name | to_camel }}(
