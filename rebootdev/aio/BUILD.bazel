@@ -224,7 +224,8 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
-        "types_py",
+        ":aborted_py",
+        ":types_py",
         "@com_github_reboot_dev_reboot//rebootdev:settings_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio:exceptions_py",
         requirement("protobuf"),

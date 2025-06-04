@@ -28,7 +28,7 @@ from rbt.v1alpha1.errors_pb2 import (
     TransactionParticipantFailedToPrepare,
 )
 from rebootdev.admin.export_import_converters import ExportImportItemConverters
-from rebootdev.aio.aborted import SystemAborted
+from rebootdev.aio.aborted import Aborted, SystemAborted
 from rebootdev.aio.backoff import Backoff
 from rebootdev.aio.contexts import (
     Context,
@@ -460,6 +460,8 @@ class StateManager(ABC):
         self,
         context: ReaderContext | WriterContext | TransactionContext,
         tasks_dispatcher: TasksDispatcher,
+        *,  # TODO: Make all args keyword.
+        aborted_type: Optional[type[Aborted]],
     ) -> AsyncIterator[Optional[Transaction]]:
         """Performs any necessary set up to execute the body of the context
         manager transactionally. The body may be for a reader, a
@@ -798,16 +800,19 @@ class SidecarStateManager(
                 lambda: defaultdict(asyncio.Semaphore)
             )
 
-        # Map from transaction UUID to a Future indicating whether or
-        # not the transaction has been prepared (and thus can be
-        # committed) for all transactions being coordinated by this
-        # state manager.
+        # Map from transaction UUID to a Future with the
+        # participants of the transaction that have been prepared, or
+        # that all need to be aborted, for all transactions being
+        # coordinated by this state manager.
         #
         # TODO(benh): need to remove these from this list after some
         # expiration timeout, or better yet, run a control loop that
         # forever tries to complete the commit phase and only
         # afterwards removes this from the list (and from rocksdb).
-        self._coordinator_prepared: dict[uuid.UUID, asyncio.Future[bool]] = {}
+        self._coordinator_participants: dict[
+            uuid.UUID,
+            asyncio.Future[Participants],
+        ] = {}
 
         # Coordinator "commit control loop" tasks for transactions
         # that have been prepared.
@@ -1344,7 +1349,7 @@ class SidecarStateManager(
             #
             # As has been suggested in other places in the code, in
             # the future we can actually keep all writes after the
-            # first one in memory to improve performance futher. But
+            # first one in memory to improve performance further. But
             # the first one needs to be persisted because it
             # demarcates that this state is part of a transaction.
             sync = True
@@ -1468,6 +1473,8 @@ class SidecarStateManager(
         self,
         context: ReaderContext | WriterContext | TransactionContext,
         tasks_dispatcher: TasksDispatcher,
+        *,  # TODO: Make all args keyword.
+        aborted_type: Optional[type[Aborted]],
     ) -> AsyncIterator[Optional[StateManager.Transaction]]:
         """Override of StateManager.transactionally(...) for
         SidecarStateManager.
@@ -1582,17 +1589,61 @@ class SidecarStateManager(
 
         assert transaction is not None
 
+        # Make sure we've stored this transaction.
+        #
+        # We need the transaction to be stored _before_ sending a
+        # response to the user, otherwise they may read two different
+        # states if we crash.
+        #
+        # We also need to store the transaction _before_ making any
+        # calls which might call into RocksDB. In particular,
+        # `StateManager.colocated_read()`, which may be called from a
+        # reader, will read from RocksDB, and will want to use the
+        # transaction. See
+        # https://github.com/reboot-dev/mono/issues/4019 for more
+        # details.
+        #
+        # TODO: do this concurrently with yielding the transaction and
+        # calling into the developers method for better performance and
+        # then only wait for the store to complete before things like
+        # `StateManager.colocated_read()` or before we return (or if
+        # this `transactionally()` wraps a `transaction` method type
+        # then we make sure that we've stored before we run 2PC).
+        #
+        # Other optimizations to consider:
+        #
+        # Doing this store now will also allow us to skip actually
+        # doing any stores from a `writer` or a `transaction`, those
+        # could just update memory until we are asked to prepare. We
+        # can also look at optimistically performing a prepare after
+        # returning to the caller by introducing a mechanism that
+        # tracks not only the participants but also the number of
+        # times they've been used within the transaction and thus not
+        # having to do the prepare when requested for the common case
+        # that a state is only involved in a transaction once.
+        await self.transaction_participant_store(transaction)
+
         try:
             yield transaction
 
             # Now that control has resumed here we're exiting the
             # context manager so we can validate the user is following
-            # the transaction requirements as well start watching the
-            # coordinator for any updates about the transaction.
-
+            # the transaction requirements.
             self.validate_transaction_participant(context, transaction)
-        except:
-            # TODO(benh): test this case!
+        except BaseException as exception:
+            # Transaction doesn't need to abort if this is from the
+            # backend and safe, i.e., declared or generated by Reboot.
+            if (
+                aborted_type is not None and
+                aborted_type.is_from_backend_and_safe(exception)
+            ):
+                # We don't need to abort, but we do need to validate
+                # the user is following the transaction requirements.
+                self.validate_transaction_participant(context, transaction)
+
+                raise
+
+            # All other errors abort the transaction.
             transaction.must_abort = True
             raise
         finally:
@@ -2114,13 +2165,14 @@ class SidecarStateManager(
             # We're starting a new transaction here, so we should have
             # a unique identifier, and it should not already be
             # tracked as a transaction that we're coordinating.
-            assert transaction.root_id not in self._coordinator_prepared
+            assert transaction.root_id not in self._coordinator_participants
 
-            # We need to add the prepared future _before_ we try and
+            # We need to add the participants future _before_ we try and
             # `_load()` the actor in case that raises and _before_ we
             # yield control to the servicer so any participants that it
             # calls will be able to start their watch control loops.
-            self._coordinator_prepared[transaction.root_id] = asyncio.Future()
+            self._coordinator_participants[transaction.root_id
+                                          ] = asyncio.Future()
 
         try:
             # Need to try and load the state to handle non-constructor
@@ -2155,7 +2207,7 @@ class SidecarStateManager(
             ), f'{state_type_name} {state_ref.id} is not the transaction coordinator'
 
             # Before performing two phase commit we need to perform
-            # some validatation just as we do for any method in a
+            # some validation just as we do for any method in a
             # transaction (however since we are nested within
             # 'transactionally()' the validation won't be performed
             # there until after the transaction has actually
@@ -2190,7 +2242,18 @@ class SidecarStateManager(
             await self._sidecar_client.transaction_coordinator_prepared(
                 transaction.root_id, context.participants
             )
+
+            participants = self._coordinator_participants[transaction.root_id]
+
+            # Not expecting `participants` to ever be cancelled, see:
+            # https://github.com/reboot-dev/mono/issues/3241
+            assert not participants.cancelled()
+
+            participants.set_result(context.participants)
         except:
+            # Mark all the participants as need to be aborted.
+            context.participants.abort()
+
             if context.nested:
                 # Raise the exception up to the outermost transaction,
                 # so the coordinator can handle the failure there.
@@ -2206,18 +2269,20 @@ class SidecarStateManager(
                 participants=context.participants,
             )
 
-            # Signal that this transaction was unable to be prepared.
-            prepared = self._coordinator_prepared[transaction.root_id]
+            # To indicate that the transaction has aborted we set the
+            # participants, which will all be in
+            # `participants.should_abort`.
+            participants = self._coordinator_participants[transaction.root_id]
 
-            # Not expecting `prepared` to ever be cancelled, see:
+            # Not expecting `participants` to ever be cancelled, see:
             # https://github.com/reboot-dev/mono/issues/3241
-            assert not prepared.cancelled()
+            assert not participants.cancelled()
 
-            prepared.set_result(False)
+            participants.set_result(context.participants)
 
             # Remove transaction so that participants "watch control
             # loop" will determine that the transaction has aborted!
-            del self._coordinator_prepared[transaction.root_id]
+            del self._coordinator_participants[transaction.root_id]
 
             raise
         else:
@@ -2269,7 +2334,7 @@ class SidecarStateManager(
             ):
                 # TODO(benh): check if the idempotency key exists in
                 # self._idempotent_mutations and if it does raise an
-                # error that the user is incorreclty reusing an
+                # error that the user is incorrectly reusing an
                 # idempotency key (within a transaction). While we
                 # can't check for all incorrect uses, any that we can
                 # check for will help the user sort out bugs.
@@ -2312,7 +2377,7 @@ class SidecarStateManager(
         two phase commit."""
         try:
             # TODO(benh): do in parallel!
-            for (state_type, state_ref) in participants:
+            for (state_type, state_ref) in participants.should_prepare():
                 # Getting a channel to the actor should succeed, since its
                 # participation in a transaction that is in the prepare step
                 # indicates that (1) it is up and running and (2) we should be
@@ -2360,9 +2425,9 @@ class SidecarStateManager(
     ):
         """Helper for a transaction coordinator performing the commit step of
         two phase commit."""
-        for (state_type, state_ref) in participants:
-            # TODO(benh): do in parallel!
+        # TODO(benh): do this for loop and the one below all in parallel!
 
+        for (state_type, state_ref) in participants.should_commit():
             # Do our best to tell the participant that the transaction has
             # committed. If we fail (e.g. because we can't get a channel), no
             # big deal; the caller will retry this at a later point.
@@ -2393,6 +2458,39 @@ class SidecarStateManager(
                     message=error.details(),
                 ) from None
 
+        # Need to abort all of the participants that should be aborted.
+        for (state_type, state_ref) in participants.should_abort():
+            # Do our best to tell the participant that, from their
+            # perspective, the transaction has aborted. If we fail
+            # (e.g. because we can't get a channel), no big deal; the
+            # caller will retry this at a later point.
+            channel = channel_manager.get_channel_to_state(
+                state_type,
+                state_ref,
+                # Since this is a Reboot-internal process that the user
+                # may not be aware is running in the background, logging
+                # user-visible errors is unhelpful.
+                unresolvable_state_log_level=logging.DEBUG,
+            )
+
+            stub = transactions_pb2_grpc.ParticipantStub(channel)
+
+            try:
+                await stub.Abort(
+                    transactions_pb2.AbortRequest(
+                        transaction_id=transaction_id.bytes
+                    ),
+                    metadata=Headers(
+                        application_id=application_id,
+                        state_ref=state_ref,
+                    ).to_grpc_metadata(),
+                )
+            except AioRpcError as error:
+                raise SystemAborted(
+                    TransactionParticipantFailedToCommit(),
+                    message=error.details(),
+                ) from None
+
     async def _transaction_coordinator_abort(
         self,
         *,
@@ -2401,7 +2499,7 @@ class SidecarStateManager(
         transaction_id: uuid.UUID,
         participants: Participants,
     ):
-        for (state_type, state_ref) in participants:
+        for (state_type, state_ref) in participants.should_prepare():
             # TODO(benh): do in parallel!
 
             try:
@@ -2474,7 +2572,9 @@ class SidecarStateManager(
 
                 watch_response = await stub.Watch(
                     transactions_pb2.WatchRequest(
-                        transaction_id=transaction.root_id.bytes
+                        transaction_id=transaction.root_id.bytes,
+                        state_type=transaction.state_type,
+                        state_ref=transaction.state_ref.to_str(),
                     )
                 )
 
@@ -2504,7 +2604,6 @@ class SidecarStateManager(
         grpc_context: grpc.aio.ServicerContext,
     ) -> transactions_pb2.WatchResponse:
         transaction_id = uuid.UUID(bytes=request.transaction_id)
-        prepared = self._coordinator_prepared.get(transaction_id)
 
         # If we don't know about the transaction than treat is as
         # aborted. This is possible, e.g., after a consensus where a
@@ -2512,14 +2611,30 @@ class SidecarStateManager(
         # transaction and thus all participants that are trying to
         # watch need to find out that the transaction should be
         # considered aborted.
-        if prepared is None:
+        if transaction_id not in self._coordinator_participants:
             return transactions_pb2.WatchResponse(aborted=True)
         else:
-            return transactions_pb2.WatchResponse(
-                # We must shield to avoid
-                # https://github.com/reboot-dev/mono/issues/3241.
-                aborted=not await asyncio.shield(prepared)
+            # We must shield to avoid
+            # https://github.com/reboot-dev/mono/issues/3241.
+            participants = await asyncio.shield(
+                self._coordinator_participants[transaction_id]
             )
+
+            for (state_type, state_ref) in participants.should_commit():
+                if request.state_type != state_type:
+                    continue
+                if request.state_ref == state_ref.to_str():
+                    return transactions_pb2.WatchResponse(aborted=False)
+
+            # If it shouldn't commit, it should abort!
+            #
+            # This also covers the case where a participant was
+            # split-brained from the rest of the transaction. In that
+            # case the transaction will have aborted (because there
+            # was an unsafe error due to the split-brain), and we need
+            # to tell the participant to also abort, regardless of
+            # whether they are in `participants`.
+            return transactions_pb2.WatchResponse(aborted=True)
 
     def _state_type_for_state_ref(self, state_ref: StateRef) -> StateTypeName:
         tag = state_ref.state_type_tag
@@ -3035,9 +3150,10 @@ class SidecarStateManager(
             for (transaction_id, participants
                 ) in recover_response.prepared_coordinator_transactions.items()
         ]:
-            prepared: asyncio.Future[bool] = asyncio.Future()
-            prepared.set_result(True)
-            self._coordinator_prepared[transaction_id] = prepared
+            self._coordinator_participants[transaction_id] = asyncio.Future()
+            self._coordinator_participants[transaction_id].set_result(
+                participants
+            )
 
             self._coordinator_commit_control_loop_tasks[
                 transaction_id
@@ -3113,13 +3229,13 @@ class SidecarStateManager(
                 # NOTE: as of the writing of this comment it is still
                 # possible that one of the participants might have
                 # started a watch which after we delete the entry from
-                # 'self._coordinator_prepared' below would cause
+                # 'self._coordinator_participants' below would cause
                 # that watch to think that the transaction was aborted
                 # but when the watch loop actually tries to do the
                 # abort it will see that the transaction has actually
                 # been finished because a commit was done first (from
                 # the call above).
-                del self._coordinator_prepared[transaction_id]
+                del self._coordinator_participants[transaction_id]
 
                 # Cleanup the sidecar participant state. If we fail before
                 # doing this then this control loop will run again after
