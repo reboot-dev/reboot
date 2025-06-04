@@ -44,6 +44,8 @@ service Participant {
 
 message WatchRequest {
   bytes transaction_id = 1;
+  string state_type = 2;
+  string state_ref = 3;
 }
 
 message WatchResponse {

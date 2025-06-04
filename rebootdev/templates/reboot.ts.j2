@@ -15,7 +15,7 @@ generate _rbt files for services that aren't Reboot states or clients, to help
 with transitive imports. grep for 'END REBOOT SPECIFIC CODE' to see the end of
 this if block.
 #}
-{# BEGIN REBOOT SPEFICIC CODE #}
+{# BEGIN REBOOT SPECIFIC CODE #}
 {% if clients | length > 0 %}
 
 {% if google_protobuf_used_messages is defined and google_protobuf_used_messages|length > 0%}

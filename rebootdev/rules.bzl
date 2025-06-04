@@ -31,7 +31,7 @@ def _wrapped_pyi_impl(ctx):
 # The generated pyi files created by `_mypy_files` do not have any file type
 # information attached to them. In order to be able to use the pyi files in a
 # `py_library`, we must first wrap the pyi files in a `PyInfo` object. This has
-# to happen through a seperate rule.
+# to happen through a separate rule.
 wrapped_pyi = rule(
     implementation = _wrapped_pyi_impl,
     attrs = {

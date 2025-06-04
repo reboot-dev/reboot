@@ -1,4 +1,5 @@
 import dataclasses
+import grpc
 import grpc_status._async as rpc_status
 import uuid
 from contextlib import asynccontextmanager
@@ -26,7 +27,7 @@ from typing import (
     TypeVar,
 )
 
-CallT = TypeVar('CallT')
+CallT = TypeVar('CallT', bound=grpc.Call)
 ResponseT = TypeVar('ResponseT', bound=Message)
 RequestT = TypeVar('RequestT', bound=Message)
 
@@ -173,6 +174,7 @@ class Stub:
                 async with self._call_transactionally(
                     stub_method,
                     request_or_requests,
+                    aborted_type=aborted_type,
                     metadata=metadata,
                 ) as call:
                     yield call
@@ -211,6 +213,7 @@ class Stub:
         stub_method: Callable[..., CallT],
         request_or_requests: RequestT | AsyncIterable[RequestT],
         *,
+        aborted_type: type[Aborted],
         metadata: GrpcMetadata,
     ) -> AsyncIterator[CallT]:
         """Helper for making an unreactive RPC and properly tracking it if it
@@ -221,14 +224,29 @@ class Stub:
 
         self._context.outstanding_rpcs += 1
 
+        call: Optional[CallT] = None
+
         try:
             call = stub_method(request_or_requests, metadata=metadata)
+            assert call is not None
             yield call
-            participants = Participants.from_grpc_metadata(
-                # TODO: https://github.com/reboot-dev/mono/issues/2420
-                await call.trailing_metadata()  # type: ignore[attr-defined]
+        except AioRpcError as error:
+            status = (
+                await rpc_status.from_call(call)
+            ) if call is not None else None
+
+            aborted = (
+                aborted_type.from_status(status) if status is not None else
+                aborted_type.from_grpc_aio_rpc_error(error)
             )
-            self._context.participants.union(participants)
+
+            if not aborted_type.is_from_backend_and_safe(aborted):
+                # TODO(benh): considering stringifying the exception to
+                # include in the error we raise when doing the prepare
+                # stage of two phase commit.
+                self._context.transaction_must_abort = True
+
+            raise aborted
         except:
             # TODO(benh): considering stringifying the exception to
             # include in the error we raise when doing the prepare
@@ -237,4 +255,10 @@ class Stub:
 
             raise
         finally:
+            if call is not None:
+                participants = Participants.from_grpc_metadata(
+                    await call.trailing_metadata()
+                )
+                self._context.participants.union(participants)
+
             self._context.outstanding_rpcs -= 1

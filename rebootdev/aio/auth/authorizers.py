@@ -271,7 +271,7 @@ def allow_if(
                 return rbt.v1alpha1.errors_pb2.Ok()
 
             # Must be `any`, check if we got at least one
-            # `PermissonDenied` otherwise return `Unauthenticated`.
+            # `PermissionDenied` otherwise return `Unauthenticated`.
             if denied:
                 return rbt.v1alpha1.errors_pb2.PermissionDenied()
             else:

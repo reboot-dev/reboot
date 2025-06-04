@@ -32,7 +32,7 @@ launch_subprocess_consensus: Callable[[str], Awaitable[str]]
 
 class EventLoopThread:
     """Helper class for creating and running an event loop on a thread and
-    performing callbacks on said event loop from C++ via caling
+    performing callbacks on said event loop from C++ via calling
     `run_callback_on_event_loop()`.
     """
 
@@ -44,7 +44,7 @@ class EventLoopThread:
             # async interplay of the Python and Node.js event loop. In
             # particular, there are code paths that are more
             # likely. The following are exception messages that we
-            # have seen in practice that we emperically believe to be
+            # have seen in practice that we empirically believe to be
             # harmless. Once we sort out these bugs for real we hope
             # to be able to remove this exception handler completely.
             if context[

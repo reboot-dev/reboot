@@ -2,6 +2,7 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from google.protobuf.message import Message
+from rebootdev.aio.aborted import Aborted
 from rebootdev.aio.exceptions import InputError
 from rebootdev.aio.types import (
     GrpcMetadata,
@@ -182,6 +183,7 @@ class IdempotencyManager:
         request: Optional[Message],
         metadata: Optional[GrpcMetadata],
         idempotency: Optional[Idempotency],
+        aborted_type: Optional[type[Aborted]],
     ) -> Iterator[Optional[uuid.UUID]]:
         """Ensures that either all mutations are performed idempotently or
         raises in the face of uncertainty about a mutation to avoid a
@@ -230,13 +232,24 @@ class IdempotencyManager:
                 yield None
         # TODO(benh): differentiate errors so that we only set
         # uncertainty when we are truly uncertain.
-        except:
+        except BaseException as exception:
             # The `yield` threw an exception, which means the user
             # code that we're wrapping (an RPC to a mutation on
-            # `service`) failed. We're uncertain whether that mutation
-            # succeeded or failed (there are many ways exceptions can
-            # get thrown, and not all errors can be clear on whether
-            # the RPC has definitively failed on the server).
+            # `service`) failed. We need to determine if this failure
+            # might mean that we are uncertain if a mutation occurred
+            # or not on the server.
+            if (
+                aborted_type is not None and
+                aborted_type.is_from_backend_and_safe(exception)
+            ):
+                # We are not uncertain because we _must_ have gotten
+                # this from the backend, so just let it propagate.
+                raise
+
+            # We're uncertain whether that mutation succeeded or
+            # failed (there are many ways exceptions can get thrown,
+            # and not all errors can be clear on whether the RPC has
+            # definitively failed on the server).
             #
             # We want to set uncertainty regardless of whether or not
             # _this_ call has an idempotency key because a user might

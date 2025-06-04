@@ -195,8 +195,6 @@ class SidecarService final : public rbt::v1alpha1::Sidecar::Service {
   // Migrate from previous persistence versions to the current version,
   // if necessary.
   expected<void> MaybeMigratePersistence(const RecoverRequest& request);
-  expected<void> MigratePersistence0To1(const RecoverRequest& request);
-  expected<void> MigratePersistence1To2(const RecoverRequest& request);
   expected<void> MigratePersistence2To3(const RecoverRequest& request);
 
   // Lookup a rocksdb column family handle for the specified state type,
@@ -2479,251 +2477,6 @@ expected<void> MaybeMigrateTaskId(
   return {};
 }
 
-expected<void> SidecarService::MigratePersistence0To1(
-    const RecoverRequest& request) {
-  // Confirm that there are no pending transactions, as transactions cannot be
-  // renamed, and we don't support backwards compatibly looking them up.
-  // This is only really feasible because we are not expecting any production
-  // users to experience this upgrade.
-  std::vector<rocksdb::Transaction*> txns;
-  db_->GetAllPreparedTransactions(&txns);
-  if (txns.size() > 0) {
-    return make_unexpected(
-        "Cannot migrate persistence while there are pending transactions: "
-        "please downgrade, allow transactions to complete, and then try "
-        "upgrading again.");
-  }
-
-  // Iterate over all keys in all column families, and rewrite them
-  // (idempotently, and inside per-key transactions).
-  rocksdb::Status status;
-  for (rocksdb::ColumnFamilyHandle* column_family_handle :
-       column_family_handles_) {
-    rocksdb::Iterator* it = db_->NewIterator(
-        NonPrefixIteratorReadOptions(),
-        column_family_handle);
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-      // Determine what type of key we're dealing with.
-      size_t colon_position = it->key().ToStringView().find(":");
-      if (colon_position == std::string::npos) {
-        if (it->key().ToStringView() == "file_descriptor_set"
-            || it->key().ToStringView() == kPersistenceVersionKey
-            || it->key().ToStringView() == kConsensusInfoKey) {
-          continue;
-        }
-        return make_unexpected(fmt::format(
-            "Unrecognized key type: {}",
-            it->key().ToStringView()));
-      }
-
-      std::optional<std::string> new_key = it->key().ToString();
-      std::string value = it->value().ToString();
-
-      std::string old_key = it->key().ToString();
-      std::string key_type_prefix = old_key.substr(0, colon_position);
-      if (key_type_prefix == STATE_KEY_PREFIX) {
-        // Needs key migration, but no value migration possible.
-        auto state_tag = GetStateTag(
-            request.state_tags_by_state_type(),
-            column_family_handle->GetName(),
-            "state_key");
-        if (!state_tag.has_value()) {
-          return make_unexpected(state_tag.error());
-        }
-        new_key = MakeActorStateKey(
-            MigrateStateRef(
-                *state_tag.value(),
-                old_key.substr(colon_position + 1, old_key.length())));
-      } else if (key_type_prefix == TASK_KEY_PREFIX) {
-        // Rewrite the internal actor id.
-        auto state_tag = GetStateTag(
-            request.state_tags_by_state_type(),
-            column_family_handle->GetName(),
-            "task_key");
-        if (!state_tag.has_value()) {
-          return make_unexpected(state_tag.error());
-        }
-
-        Task task;
-        CHECK(task.ParseFromString(std::move(value)));
-        std::string new_state_ref = MigrateStateRef(
-            *state_tag.value(),
-            task.task_id().state_ref());
-        task.mutable_task_id()->set_state_ref(new_state_ref);
-
-        // And then use it to rewrite the key as well.
-        new_key = MakeTaskKey(task.task_id());
-
-        CHECK(task.SerializeToString(&value));
-      } else if (key_type_prefix == TRANSACTION_PARTICIPANT_KEY_PREFIX) {
-        // Rewrite the internal actor ids.
-        Transaction transaction;
-        CHECK(transaction.ParseFromString(std::move(value)));
-        auto state_tag = GetStateTag(
-            request.state_tags_by_state_type(),
-            transaction.state_type(),
-            "txn_participant_key");
-        if (!state_tag.has_value()) {
-          return make_unexpected(state_tag.error());
-        }
-        std::string new_state_ref = MigrateStateRef(
-            *state_tag.value(),
-            transaction.state_ref());
-        transaction.set_state_ref(new_state_ref);
-
-        for (Task& task : *transaction.mutable_uncommitted_tasks()) {
-          CHECK(MaybeMigrateTaskId(
-              request.state_tags_by_state_type(),
-              task.mutable_task_id()));
-        }
-
-        for (IdempotentMutation& im :
-             *transaction.mutable_uncommitted_idempotent_mutations()) {
-          for (TaskId& task_id : *im.mutable_task_ids()) {
-            CHECK(MaybeMigrateTaskId(
-                request.state_tags_by_state_type(),
-                &task_id));
-          }
-        }
-
-        // And then use it to rewrite the key as well.
-        new_key = MakeTransactionParticipantKey(
-            transaction.state_type(),
-            new_state_ref);
-
-        CHECK(transaction.SerializeToString(&value));
-      } else if (key_type_prefix == TRANSACTION_PREPARED_KEY_PREFIX) {
-        // Does _not_ need key rewriting, but internal actor ids might
-        // need rewriting.
-        Participants participants;
-        CHECK(participants.ParseFromString(std::move(value)));
-
-        for (auto& pair : *participants.mutable_participants()) {
-          auto state_tag = GetStateTag(
-              request.state_tags_by_state_type(),
-              pair.first,
-              "txn_prepared_key");
-          if (!state_tag.has_value()) {
-            return make_unexpected(state_tag.error());
-          }
-          Participants::StateRefs& state_refs = pair.second;
-          for (std::string& state_ref : *state_refs.mutable_state_refs()) {
-            state_ref = MigrateStateRef(*state_tag.value(), state_ref);
-          }
-        }
-
-        CHECK(participants.SerializeToString(&value));
-      } else if (key_type_prefix == IDEMPOTENT_MUTATION_KEY_PREFIX) {
-        if (column_family_handle->GetName() == "default") {
-          // Idempotency keys in version 0 did not store enough information
-          // to allow us to determine which actor id or state type they are
-          // for. To avoid encountering them again in the future, we
-          // instead delete them here.
-          new_key = std::nullopt;
-        } else {
-          // Else: Already migrated to the appropriate column family. Nothing
-          // to do.
-          continue;
-        }
-      } else {
-        return make_unexpected(fmt::format(
-            "Unrecognized key type prefix: {}",
-            key_type_prefix));
-      }
-
-      // Transactionally rewrite the data.
-      rocksdb::Transaction* txn = db_->BeginTransaction(
-          // TODO: It is not clear whether the `WriteOptions.sync` flag applies
-          // to transactions, but we set it as a precaution. It's possible that
-          // we could safely remove it.
-          DefaultWriteOptions(),
-          rocksdb::TransactionOptions());
-
-      if (new_key != old_key) {
-        // Delete the old key.
-        status = txn->Delete(column_family_handle, rocksdb::Slice(old_key));
-        if (!status.ok()) {
-          return make_unexpected(fmt::format(
-              "Failed to delete old value: {}",
-              status.ToString()));
-        }
-      }
-
-      if (new_key.has_value()) {
-        status = txn->Put(
-            column_family_handle,
-            rocksdb::Slice(new_key.value()),
-            rocksdb::Slice(value));
-        if (!status.ok()) {
-          return make_unexpected(fmt::format(
-              "Failed to store new value: {}",
-              status.ToString()));
-        }
-      }
-
-      status = txn->Commit();
-      if (!status.ok()) {
-        return make_unexpected(fmt::format(
-            "Failed to commit: {}",
-            status.ToString()));
-      }
-    }
-  }
-
-  // Finally, update the persistence version.
-  return WritePersistenceVersion(db_.get(), 1);
-}
-
-// This migration deletes prepared transactions that were created before
-// support for cleaning up completed prepared transactions existed.
-//
-// The relevant indicator is that they have participants with invalid
-// service names.
-expected<void> SidecarService::MigratePersistence1To2(
-    const RecoverRequest& request) {
-  // Iterate over all coordinator prepared transactions.
-  std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
-      db_->NewIterator(NonPrefixIteratorReadOptions())));
-
-  // TODO: investigate using "prefix seek" for better performance, see:
-  // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
-  iterator->Seek(rocksdb::Slice(TRANSACTION_PREPARED_KEY_PREFIX));
-
-  Participants participants;
-  while (iterator->Valid()
-         && iterator->key()
-                 .ToStringView()
-                 .find(TRANSACTION_PREPARED_KEY_PREFIX)
-             == 0) {
-    CHECK(participants.ParseFromArray(
-        iterator->value().data(),
-        iterator->value().size()));
-
-    bool has_stale_participant_state = false;
-    for (const auto& entry : participants.participants()) {
-      const std::string& key = entry.first;
-      if (key.rfind("Methods") == key.length() - 7) {
-        has_stale_participant_state = true;
-        break;
-      }
-    }
-
-    if (has_stale_participant_state) {
-      rocksdb::Status status =
-          db_->Delete(DefaultWriteOptions(), iterator->key());
-      if (!status.ok()) {
-        return make_unexpected(fmt::format(
-            "Failed to delete stale transaction participants: {}",
-            status.ToString()));
-      }
-    }
-
-    iterator->Next();
-  }
-
-  // Finally, update the persistence version.
-  return WritePersistenceVersion(db_.get(), 2);
-}
 
 // This migration deletes Tasks which did not have `Any` response values
 // (i.e. from before #2580).
@@ -2806,25 +2559,20 @@ expected<void> SidecarService::MaybeMigratePersistence(
         status.ToString()));
   }
 
-  CHECK(0 <= version && version < CURRENT_PERSISTENCE_VERSION);
+  // Expecting at least persistence version >= 2.
+  CHECK(2 <= version && version < CURRENT_PERSISTENCE_VERSION)
+      << "Persistence version " << version << " is no longer supported";
 
   for (; version < CURRENT_PERSISTENCE_VERSION; version++) {
     REBOOT_SIDECAR_LOG(0)
         << "Migrating persistence from version { " << version << " }";
     expected<void> migrate;
     switch (version) {
-      case 0:
-        migrate = MigratePersistence0To1(request);
-        break;
-      case 1:
-        migrate = MigratePersistence1To2(request);
-        break;
       case 2:
         migrate = MigratePersistence2To3(request);
         break;
       default:
-        // Unreachable.
-        CHECK(false);
+        LOG(FATAL) << "Unreachable";
     }
     if (!migrate.has_value()) {
       return migrate;

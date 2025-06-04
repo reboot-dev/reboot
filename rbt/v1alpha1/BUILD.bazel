@@ -30,7 +30,7 @@ proto_library(
     ],
 )
 
-# We need the standard python grpc headers (i.e., the outout of
+# We need the standard python grpc headers (i.e., the output of
 # `py_proto_library`) for our `protoc` plugin.
 py_proto_library(
     name = "options_py_proto",

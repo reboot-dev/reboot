@@ -17,7 +17,11 @@ from rbt.v1alpha1 import errors_pb2, react_pb2, react_pb2_grpc, sidecar_pb2
 from rebootdev.aio.aborted import SystemAborted, is_grpc_retryable_exception
 from rebootdev.aio.auth import Auth
 from rebootdev.aio.backoff import Backoff
-from rebootdev.aio.headers import TRANSACTION_PARTICIPANTS_HEADER, Headers
+from rebootdev.aio.headers import (
+    TRANSACTION_PARTICIPANTS_HEADER,
+    TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER,
+    Headers,
+)
 from rebootdev.aio.idempotency import Idempotency, IdempotencyManager
 from rebootdev.aio.internals.channel_manager import (
     LegacyGrpcChannel,
@@ -50,54 +54,131 @@ ResponseT = TypeVar('ResponseT', bound=Message)
 
 
 class Participants:
-    _participants: defaultdict[StateTypeName, set[StateRef]]
+    # Participants that we should commit.
+    _should_commit: defaultdict[StateTypeName, set[StateRef]]
+
+    # Participants that we should abort. This is used to support a
+    # nested transaction which aborts with a declared error. In that
+    # case, we want all of its participants to abort but the parent
+    # transaction to commit.
+    _should_abort: defaultdict[StateTypeName, set[StateRef]]
+
+    # Whether or not this set of participants should all be considered
+    # aborted. Initially is `False` but once set to `True` is used to
+    # ensure no more participants are added.
+    _aborted: bool
 
     @classmethod
     def from_sidecar(cls, participants: sidecar_pb2.Participants):
         """Constructs an instance from the sidecar protobuf representation."""
         result = cls()
-        for (state_type, state_refs) in participants.participants.items():
+        for (state_type, state_refs) in participants.should_commit.items():
             for state_ref in state_refs.state_refs:
                 result.add(state_type, StateRef(state_ref))
+        for (state_type, state_refs) in participants.should_abort.items():
+            for state_ref in state_refs.state_refs:
+                result.add(state_type, StateRef(state_ref), abort=True)
         return result
 
     def to_sidecar(self) -> sidecar_pb2.Participants:
         """Helper to construct the sidecar protobuf representation."""
         return sidecar_pb2.Participants(
-            participants={
+            should_commit={
                 state_type:
                     sidecar_pb2.Participants.StateRefs(
                         state_refs=[
                             state_ref.to_str() for state_ref in state_refs
                         ]
-                    ) for (state_type, state_refs) in self._participants.items()
+                    )
+                for (state_type, state_refs) in self._should_commit.items()
+            },
+            should_abort={
+                state_type:
+                    sidecar_pb2.Participants.StateRefs(
+                        state_refs=[
+                            state_ref.to_str() for state_ref in state_refs
+                        ]
+                    ) for (state_type, state_refs) in self._should_abort.items()
             },
         )
 
     def __init__(self):
-        self._participants = defaultdict(set)
+        self._should_commit = defaultdict(set)
+        self._should_abort = defaultdict(set)
+        self._aborted = False
 
-    def __iter__(self) -> Iterator[Tuple[StateTypeName, StateRef]]:
+    def should_prepare(self) -> Iterator[Tuple[StateTypeName, StateRef]]:
         """Returns an iterator of (state_type, state_ref) tuples for each
-        participant."""
-        for state_type, state_refs in self._participants.items():
+        participant to prepare."""
+        for state_type, state_ref in self.should_commit():
+            yield (state_type, state_ref)
+        for state_type, state_ref in self.should_abort():
+            yield (state_type, state_ref)
+
+    def should_commit(self) -> Iterator[Tuple[StateTypeName, StateRef]]:
+        """Returns an iterator of (state_type, state_ref) tuples for each
+        participant to commit."""
+        for state_type, state_refs in self._should_commit.items():
             for state_ref in state_refs:
                 yield (state_type, state_ref)
 
-    def add(self, state_type: StateTypeName, state_ref: StateRef):
+    def should_abort(self) -> Iterator[Tuple[StateTypeName, StateRef]]:
+        """Returns an iterator of (state_type, state_ref) tuples for each
+        participant to abort."""
+        for state_type, state_refs in self._should_abort.items():
+            for state_ref in state_refs:
+                yield (state_type, state_ref)
+
+    def abort(self):
+        """Marks all participants as "to abort"."""
+        for state_type, state_refs in self._should_commit.items():
+            self._should_abort[state_type].update(state_refs)
+        self._should_commit.clear()
+        self._aborted = True
+
+    def add(
+        self,
+        state_type: StateTypeName,
+        state_ref: StateRef,
+        *,
+        abort: bool = False,
+    ):
         assert isinstance(state_type, str)
         assert isinstance(state_ref, StateRef)
-        self._participants[state_type].add(state_ref)
+        assert not self._aborted
+        if abort:
+            assert (
+                state_type not in self._should_commit or
+                state_ref not in self._should_commit[state_type]
+            )
+            self._should_abort[state_type].add(state_ref)
+        else:
+            assert (
+                state_type not in self._should_abort or
+                state_ref not in self._should_abort[state_type]
+            )
+            self._should_commit[state_type].add(state_ref)
 
     def update(
-        self, state_type: StateTypeName, state_refs: Iterable[StateRef]
+        self,
+        state_type: StateTypeName,
+        state_refs: Iterable[StateRef],
+        *,
+        abort: bool = False,
     ):
+        # NOTE: manually looping through and calling `self.add()`
+        # instead of just using `update()` on `self._participants` and
+        # ``self._participants_to_abort` to assert invariant check
+        # that participants to commit and abort are mutually
+        # exclusive.
         for state_ref in state_refs:
-            self.add(state_type, state_ref)
+            self.add(state_type, state_ref, abort=abort)
 
     def union(self, participants: 'Participants'):
-        for (state_type, state_refs) in participants._participants.items():
-            self._participants[state_type].update(state_refs)
+        for (state_type, state_refs) in participants._should_commit.items():
+            self.update(state_type, state_refs)
+        for (state_type, state_refs) in participants._should_abort.items():
+            self.update(state_type, state_refs, abort=True)
 
     def to_grpc_metadata(self) -> GrpcMetadata:
         """Helper to encode transaction participants into gRPC metadata.
@@ -110,7 +191,18 @@ class Participants:
                         state_type:
                             [state_ref.to_str() for state_ref in state_refs]
                         for (state_type,
-                             state_refs) in self._participants.items()
+                             state_refs) in self._should_commit.items()
+                    }
+                )
+            ),
+            (
+                TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER,
+                json.dumps(
+                    {
+                        state_type:
+                            [state_ref.to_str() for state_ref in state_refs]
+                        for (state_type,
+                             state_refs) in self._should_abort.items()
                     }
                 )
             ),
@@ -120,18 +212,22 @@ class Participants:
     def from_grpc_metadata(cls, metadata: GrpcMetadata) -> 'Participants':
         """Helper to decode transaction participants from gRPC metadata.
         """
+        participants = cls()
         for (key, value) in metadata:
             if key == TRANSACTION_PARTICIPANTS_HEADER:
-                participants = cls()
                 for (state_type_name, state_refs) in json.loads(value).items():
                     participants.update(
                         state_type_name,
                         [StateRef(state_ref) for state_ref in state_refs],
                     )
-
-                return participants
-
-        return cls()
+            elif key == TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER:
+                for (state_type_name, state_refs) in json.loads(value).items():
+                    participants.update(
+                        state_type_name,
+                        [StateRef(state_ref) for state_ref in state_refs],
+                        abort=True,
+                    )
+        return participants
 
 
 class RetryReactively(Exception):
@@ -317,7 +413,7 @@ class React:
 
                             await self._used_response[task].wait()
 
-                        raise RuntimeError('React.Query should be inifnite')
+                        raise RuntimeError('React.Query should be infinite')
 
                     try:
                         await loop()
