@@ -42,6 +42,7 @@ packages in multiple BUILD.bazel files.
 #  * reboot/examples/prosemirror/web/package.json
 #  * reboot/examples/prosemirror/backend/package.json
 #  * reboot/examples/prosemirror/Dockerfile
+#  * reboot/web/package.json
 #  * reboot/nodejs/package.json
 #  * reboot/std/package.json
 #  * reboot/std/react/package.json
@@ -58,4 +59,4 @@ packages in multiple BUILD.bazel files.
 #
 # NOTE: if this variable name is ever changed, it must also be updated in
 # tests/reboot/versions_test.py.
-REBOOT_VERSION = "0.25.7"
+REBOOT_VERSION = "0.26.0"
