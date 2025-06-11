@@ -42,10 +42,11 @@ packages in multiple BUILD.bazel files.
 #  * reboot/examples/prosemirror/web/package.json
 #  * reboot/examples/prosemirror/backend/package.json
 #  * reboot/examples/prosemirror/Dockerfile
+#  * reboot/web/package.json
 #  * reboot/nodejs/package.json
 #  * reboot/std/package.json
 #  * reboot/std/react/package.json
-#  * reboot/web/package.json
+#  * reboot/react/package.json
 #  * rbt/std/package.json
 #  * rbt/v1alpha1/package.json
 #  * charts/reboot/Chart.yaml
@@ -53,8 +54,9 @@ packages in multiple BUILD.bazel files.
 #  * tests/reboot/nodejs/auth_integration_test/package.json
 #  * tests/reboot/greeter_rbt.golden.py
 #  * tests/reboot/echo_rbt.golden.py
+#  * reboot/examples/hello/reboot-non-react-web/package.json
 #  (And possibly others)
 #
 # NOTE: if this variable name is ever changed, it must also be updated in
 # tests/reboot/versions_test.py.
-REBOOT_VERSION = "0.25.7"
+REBOOT_VERSION = "0.26.0"

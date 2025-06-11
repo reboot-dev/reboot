@@ -14,6 +14,7 @@ import {
 } from "@bufbuild/protobuf";
 {% endif %}
 import * as reboot_react from "@reboot-dev/reboot-react";
+import * as reboot_web from "@reboot-dev/reboot-web";
 import * as reboot_api from "@reboot-dev/reboot-api";
 import {
   useEffect,
@@ -42,7 +43,7 @@ import {
   {% for state in states %}
   {#
     The user may be importing the `message` type that defines a Reboot state, but
-    since we are creating a new class named {{ state.proto.name }}, we can't also
+    since we are creating a new class named {{ state.proto.name }}, we cannot also
     import a `message` with the same name from the {{ pb_name }}.js; we have to
     alias the `message` for use inside of this file.
   #}
@@ -109,7 +110,7 @@ export interface {{ client.proto.state_name | to_camel }}Mutators {
     (partialRequest?: __bufbuildProtobufPartialMessage<{{ method.input_type }}>,
      options?: { metadata?: any }
     ): Promise<
-      reboot_react.ResponseOrAborted<
+      reboot_web.ResponseOrAborted<
         {{ method.output_type }},
         {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
       >>;
@@ -121,7 +122,7 @@ export interface {{ client.proto.state_name | to_camel }}Mutators {
   {% endfor %}
 }
 
-{# TODO: don't generate errors in both react and nodejs. #}
+{# TODO: do not generate errors in react, nodejs, and web. #}
 {% for service in client.services %}
 {% for method in service.methods %}
 const {{ client.proto.state_name | to_screaming_snake }}_{{ method.proto.name | to_screaming_snake }}_ERROR_TYPES = [
@@ -236,7 +237,7 @@ export interface Use{{ client.proto.state_name }}Api {
     (partialRequest?: __bufbuildProtobufPartialMessage<{{ method.input_type }}>,
      options?: { metadata?: any }
     ): Promise<
-      reboot_react.ResponseOrAborted<
+      reboot_web.ResponseOrAborted<
         {{ method.output_type }},
         {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
       >>;
@@ -257,7 +258,7 @@ export interface Use{{ client.proto.state_name }}Api {
     partialRequest?: __bufbuildProtobufPartialMessage<{{ method.input_type }}>,
     options?: { signal?: AbortSignal }
   ) => Promise<
-    reboot_react.ResponseOrAborted<
+    reboot_web.ResponseOrAborted<
     {{ method.output_type }},
     {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
     >
@@ -283,7 +284,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
     this.url = url;
     this.refs = 1;
 
-    reboot_react.websockets.connect(this.url, this.stateRef);
+     reboot_web.websockets.connect(this.url, this.stateRef);
     this.initializeWebSocket();
   }
 
@@ -297,7 +298,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
 
     if (this.refs === 0 && this.websocket !== undefined) {
       this.websocket.close();
-      reboot_react.websockets.disconnect(this.url, this.stateRef);
+       reboot_web.websockets.disconnect(this.url, this.stateRef);
     }
 
     return this.refs;
@@ -311,9 +312,9 @@ class {{ client.proto.state_name | to_camel }}Instance {
   private loadingReaders = 0;
   private runningMutates: reboot_react.Mutate[] = [];
   private queuedMutates: reboot_react.Mutate[] = [];
-  private flushMutates?: reboot_react.Event = undefined;
+  private flushMutates?: reboot_api.Event = undefined;
   private websocket?: WebSocket = undefined;
-  private backoff: reboot_react.Backoff = new reboot_react.Backoff();
+  private backoff: reboot_api.Backoff = new reboot_api.Backoff();
 
   private hasRunningMutations() {
     return this.runningMutates.length > 0;
@@ -321,7 +322,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
 
   private async flushMutations() {
     if (this.flushMutates === undefined) {
-      this.flushMutates = new reboot_react.Event();
+      this.flushMutates = new reboot_api.Event();
     }
     await this.flushMutates.wait();
   }
@@ -351,7 +352,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
       const url = new URL(`${this.url}/__/reboot/rpc/${this.stateRef}`);
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
 
-      this.websocket = reboot_react.websockets.create(url);
+      this.websocket = reboot_web.websockets.create(url);
 
       this.websocket.binaryType = "arraybuffer";
 
@@ -508,7 +509,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
     };
 
     try {
-      await reboot_react.retryForever(async () => {
+      await reboot_api.retryForever(async () => {
         let loaded = false;
         this.loadingReaders += 1;
 
@@ -544,7 +545,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
             }
           });
 
-          const queryResponses = reboot_react.reactiveReader({
+          const queryResponses = reboot_web.reactiveReader({
             endpoint: `${this.url}/__/reboot/rpc/${this.stateRef}`,
             request: queryRequest,
             signal: reader.abortController.signal,
@@ -681,14 +682,14 @@ class {{ client.proto.state_name | to_camel }}Instance {
   async {{ method.proto.name | to_lower_camel }}(
     mutation: Pending{{ method.input_type | to_camel }}Mutation
   ): Promise<
-    reboot_react.ResponseOrAborted<
+    reboot_web.ResponseOrAborted<
       {{ method.output_type }},
       {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
   >> {
     // We always have at least 1 observer which is this function!
     let remainingObservers = 1;
 
-    const event = new reboot_react.Event();
+    const event = new reboot_api.Event();
 
     let callbacks: (() => void)[] = [];
 
@@ -725,7 +726,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
     });
 
     return new Promise<
-      reboot_react.ResponseOrAborted<
+      reboot_web.ResponseOrAborted<
         {{ method.output_type }},
         {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
       >>(
@@ -928,7 +929,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
   { id }: { id: string }
 ): Use{{ client.proto.state_name | to_camel }}Api => {
   const stateId = id;
-  const stateRef = reboot_react.stateIdToRef(
+  const stateRef = reboot_api.stateIdToRef(
     "{{ client.proto.state_full_name }}",
     id,
   );
@@ -1096,7 +1097,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
     // Fetch with retry, using a backoff, i.e., if we get disconnected.
     const { response, aborted } = await (async () => {
-      const backoff = new reboot_react.Backoff();
+      const backoff = new reboot_api.Backoff();
 
       while (true) {
         try {
@@ -1105,7 +1106,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
           //
           // See also 'reboot/helpers.py'.
           return {
-            response: await reboot_react.guardedFetch(
+            response: await reboot_web.guardedFetch(
               new Request(
                 `${rebootClient.url}/__/reboot/rpc/${stateRef}/{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}`, {
                   method: "POST",
@@ -1163,7 +1164,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
         return { aborted };
       }
     } else {
-      return { response: await response.json() };
+      return { response: {{ method.output_type }}.fromJson(await response.json()) };
     }
   }
 
