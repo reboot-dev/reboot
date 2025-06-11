@@ -1,0 +1,466 @@
+/* eslint-disable */
+// @ts-nocheck
+
+import type {
+  Message as __bufbuildProtobufMessage,
+  MessageType as __bufbuildProtobufMessageType,
+  PartialMessage as __bufbuildProtobufPartialMessage,
+} from "@bufbuild/protobuf";
+{% if google_protobuf_used_messages is defined and google_protobuf_used_messages|length > 0%}
+import {
+  {{ google_protobuf_used_messages|join(', \n	') }}
+} from "@bufbuild/protobuf";
+{% endif %}
+import * as reboot_api from "@reboot-dev/reboot-api";
+import * as reboot_web from "@reboot-dev/reboot-web";
+import { v4 as uuidv4 } from "uuid";
+{% if proto.messages_and_enums|length > 0 or states|length > 0 %}
+// NOTE NOTE NOTE
+//
+// If you are reading this comment because you are trying to debug
+// the error:
+//
+// Module not found: Error: Can't resolve './{{ pb_name }}.js'
+//
+// You can resolve this by passing --web-extensions to `rbt
+// protoc` (or better put it in your `.rbtrc` file).
+//
+// This is a known issue if you're using `webpack` which uses
+// `ts-loader` (https://github.com/TypeStrong/ts-loader/issues/465).
+import {
+  {% for message in proto.messages_and_enums | unique | list %}
+  {{ message }},
+  {% endfor %}
+  {% for state in states %}
+  {#
+    The user may be importing the `message` type that defines a Reboot state, but
+    since we are creating a new class named {{ state.proto.name }}, we can not also
+    import a `message` with the same name from the {{ pb_name }}.js; we have to
+    alias the `message` for use inside of this file.
+  #}
+  {{ state.proto.name }} as {{ state.proto.name }}Proto,
+  {% endfor %}
+} from "./{{ pb_name }}{% if web_extensions %}.js{% endif %}";
+
+// Additionally re-export all messages_and_enums from the pb module.
+export {
+  {% for message in proto.messages_and_enums | unique | list %}
+  {{ message }},
+  {% endfor %}
+};
+{% endif %}
+
+import * as protobuf_es from "@bufbuild/protobuf";
+
+{% if imports|length > 0%}
+// Include all transitive imports.
+{% for import_path, unique_name in imports.items() %}
+import * as {{ unique_name }} from "{{ import_path }}{% if web_extensions %}.js{% endif %}";
+{% endfor %}
+{% endif %}
+
+const ERROR_TYPES = [
+  // gRPC errors.
+  reboot_api.errors_pb.Cancelled,
+  reboot_api.errors_pb.Unknown,
+  reboot_api.errors_pb.InvalidArgument,
+  reboot_api.errors_pb.DeadlineExceeded,
+  reboot_api.errors_pb.NotFound,
+  reboot_api.errors_pb.AlreadyExists,
+  reboot_api.errors_pb.PermissionDenied,
+  reboot_api.errors_pb.ResourceExhausted,
+  reboot_api.errors_pb.FailedPrecondition,
+  reboot_api.errors_pb.Aborted,
+  reboot_api.errors_pb.OutOfRange,
+  reboot_api.errors_pb.Unimplemented,
+  reboot_api.errors_pb.Internal,
+  reboot_api.errors_pb.Unavailable,
+  reboot_api.errors_pb.DataLoss,
+  reboot_api.errors_pb.Unauthenticated,
+  // Reboot errors.
+  //
+  // NOTE: also add any new errors into `rbt/v1alpha1/index.ts`.
+  reboot_api.errors_pb.StateAlreadyConstructed,
+  reboot_api.errors_pb.StateNotConstructed,
+  reboot_api.errors_pb.TransactionParticipantFailedToPrepare,
+  reboot_api.errors_pb.TransactionParticipantFailedToCommit,
+  reboot_api.errors_pb.UnknownService,
+  reboot_api.errors_pb.UnknownTask,
+] as const; // Need `as const` to ensure TypeScript infers this as a tuple!
+
+{% for client in clients %}
+
+{# TODO: do not generate errors in react, nodejs, and web. #}
+{% for service in client.services %}
+{% for method in service.methods %}
+const {{ client.proto.state_name | to_screaming_snake }}_{{ method.proto.name | to_screaming_snake }}_ERROR_TYPES = [
+  ...ERROR_TYPES,
+
+  // Method errors.
+  {% for error, type in method.options.errors.items() %}
+  {{ type }},
+  {% endfor %}
+] as const; // Need `as const` to ensure TypeScript infers this as a tuple!
+
+export type {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}AbortedError =
+  reboot_api.InstanceTypeForErrorTypes<
+    typeof {{ client.proto.state_name | to_screaming_snake }}_{{ method.proto.name | to_screaming_snake }}_ERROR_TYPES
+  >[number];
+
+export class {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted extends reboot_api.Aborted {
+  static fromStatus(status: reboot_api.Status) {
+    let error = reboot_api.errorFromGoogleRpcStatusDetails(
+      status,
+      {{ client.proto.state_name | to_screaming_snake }}_{{ method.proto.name | to_screaming_snake }}_ERROR_TYPES,
+    );
+
+    if (error !== undefined) {
+      return new {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
+        error, { message: status.message }
+      );
+    }
+
+    error = reboot_api.errorFromGoogleRpcStatusCode(status);
+
+    // TODO(benh): also consider getting the type names from
+    // `status.details` and including that in `message` to make
+    // debugging easier.
+
+    return new {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
+      error, { message: status.message }
+    );
+  }
+
+  public toStatus(): reboot_api.Status {
+    const isObject = (value: unknown): value is object => {
+      return typeof value === 'object';
+    };
+
+    const isArray = (value: unknown): value is any[]  => {
+      return Array.isArray(value);
+    };
+
+    const error = this.error.toJson();
+
+    if (!isObject(error) || isArray(error)) {
+      throw new Error("Expecting 'error' to be an object (and not an array)");
+    }
+
+    const detail = { ...error };
+    detail["@type"] = `type.googleapis.com/${this.error.getType().typeName}`;
+
+    return new reboot_api.Status({
+      code: this.code,
+      message: this.#message,
+      details: [detail]
+    });
+  }
+
+  constructor(
+    error: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}AbortedError,
+    { message }: { message?: string } = {}
+  ) {
+    super();
+
+    // Set the name of this error for even more information!
+    this.name = this.constructor.name;
+
+    this.error = error;
+
+    let code = reboot_api.grpcStatusCodeFromError(this.error);
+
+    if (code === undefined) {
+      // Must be one of the Reboot specific errors.
+      code = reboot_api.StatusCode.ABORTED;
+    }
+
+    this.code = code;
+
+    this.#message = message;
+  }
+
+  toString(): string {
+    return `${this.name}: ${this.message}`;
+  }
+
+  get message(): string {
+    return `${this.error.getType().typeName}${this.#message ? ": " + this.#message : ""}`;
+  }
+
+  readonly error: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}AbortedError;
+  readonly code: reboot_api.StatusCode;
+  readonly #message?: string;
+}
+
+{% endfor %}
+{% endfor %}
+
+class _Reactively {
+  #id: string;
+  #state: string;
+  #options?: reboot_api.CallOptions;
+
+  constructor(id: string, options?: reboot_api.CallOptions) {
+    this.#id = id;
+    this.#state = "{{ client.proto.state_full_name }}";
+    this.#options = options;
+  }
+
+  {% for service in client.services %}
+  {% for method in service.methods %}
+  {% if method.options.proto.kind == 'reader' %}
+  async {{ method.proto.name | to_lower_camel }}(
+    context: reboot_web.WebContext,
+    partialRequest?: protobuf_es.PartialMessage<{{ method.input_type }}>,
+    options?: { signal?: AbortSignal },
+  ): [
+      AsyncGenerator<{{ method.output_type }}, void, unknown>,
+      (newRequest: {{ method.input_type }}) => void
+    ] {
+    const request = partialRequest instanceof {{ method.input_type }}
+      ? partialRequest.clone()
+      : new {{ method.input_type }}(partialRequest);
+
+    return reboot_web.reactively(
+      {
+        url: context.url,
+        state: this.#state,
+        method: "{{ method.proto.name }}",
+        id: this.#id,
+        requestType: {{ method.input_type }},
+        responseType: {{ method.output_type }},
+        request: request,
+        signal: options?.signal,
+        bearerToken: context.bearerToken,
+      }
+    );
+  }
+
+  {% endif %}
+  {% endfor %}
+  {% endfor %}
+
+}
+
+export class {{ client.proto.state_name }}WeakReference {
+  #id: string;
+  #options?: reboot_api.CallOptions;
+
+  constructor(id: string) {
+    this.#id = id;
+  }
+
+  get stateId(): string {
+    return this.#id;
+  }
+
+  public reactively() {
+    return new _Reactively(
+      this.#id,
+      this.#options,
+    );
+  }
+
+  {% for service in client.services %}
+  {% for method in service.methods %}
+
+  {% if method.options.proto.kind == 'workflow' %}
+  {# TODO: implement `workflow` methods. #}
+  {% elif method.options.proto.kind in ['reader', 'writer', 'transaction'] %}
+  async {% if method.options.proto.constructor %}_{% endif %}{{ method.proto.name | to_lower_camel }}(
+    context: reboot_web.WebContext,
+    partialRequest?: protobuf_es.PartialMessage<{{ method.input_type }}>,
+    options?: { signal?: AbortSignal, from_constructor?: boolean },
+  ): Promise<{{ method.output_type }}> {
+    {% if method.options.proto.constructor %}
+    if (!options || !options.from_constructor) {
+      throw new Error(
+        `Method '{{ method.proto.name }}' is a constructor, so it can not be called on a weak reference.`
+      );
+    }
+    {% endif %}
+
+    const request = partialRequest instanceof {{ method.input_type }}
+      ? partialRequest.clone()
+      : new {{ method.input_type }}(partialRequest);
+
+    const stateRef = reboot_api.stateIdToRef(
+      "{{ client.proto.state_full_name }}",
+      this.#id,
+    );
+
+    const headers = new Headers();
+    const idempotencyKey = uuidv4();
+
+    headers.set("Content-Type", "application/json");
+    headers.set("x-reboot-idempotency-key", idempotencyKey);
+
+    if (context.bearerToken) {
+      headers.set("Authorization", `Bearer ${context.bearerToken}`);
+    }
+
+    // Fetch with retry, using a backoff, i.e., if we get disconnected.
+    const { response, aborted } = await (async () => {
+      const backoff = new reboot_api.Backoff();
+
+      while (true) {
+        try {
+          // Invariant here is that we use the '/package.service.method' path and
+          // HTTP 'POST' method (we need 'POST' because we send an HTTP body).
+          //
+          // See also 'reboot/helpers.py'.
+          const response = await reboot_web.guardedFetch(
+              new Request(
+                `${context.url}/__/reboot/rpc/${stateRef}/{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}`, {
+                  method: "POST",
+                  headers,
+                  // Tell browser to pass cookies, even cross-origin.
+                  // TODO: Enable when the backend supports CORS.
+                  // credentials: "include",
+                  body: request.toJsonString()
+                }
+              ),
+              options
+            );
+
+          // Since it is a 'fetch', we could get an 'Unavailable', but
+          // it won't throw an exception, so we have to check the
+          // response status code for 'Unavailable' and retry it.
+          if (response.status === 503) {
+            if (response.headers.get("content-type") === "application/json") {
+              const status = reboot_api.Status.fromJson(await response.json());
+              const aborted = {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(status);
+              // Log the error later in the 'catch' block.
+              throw aborted;
+            } else {
+              const aborted = new {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
+                new reboot_api.errors_pb.Unknown(), {
+                  message: `Unknown error with HTTP status ${response.status}`
+                }
+              );
+              throw aborted;
+            }
+          }
+          return { response };
+        } catch (e: unknown) {
+          if (options?.signal?.aborted) {
+            const aborted = new {{ service.options.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
+              new reboot_api.errors_pb.Aborted(), {
+                message: e instanceof Error
+                  ? `${e}`
+                  : `Unknown error: ${JSON.stringify(e)}`
+              }
+            );
+
+            return { aborted };
+          } else if (e instanceof Error) {
+            console.error(e);
+          } else {
+            console.error(`Unknown error: ${JSON.stringify(e)}`);
+          }
+        }
+
+        console.warn(`Retrying call to {{ proto.package_name }}.{{ service.proto.name }}.{{ method.proto.name }} after backoff ...`);
+
+        await backoff.wait();
+      }
+    })();
+
+    if (aborted) {
+      throw aborted;
+    } else if (!response.ok) {
+      if (response.headers.get("content-type") === "application/json") {
+        const status = reboot_api.Status.fromJson(await response.json());
+
+        const aborted = {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(status);
+
+        console.warn(
+          `'{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' aborted with ${aborted.message}`
+        );
+
+        throw aborted;
+      } else {
+        const aborted = new {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
+          new reboot_api.errors_pb.Unknown(), {
+            message: `Unknown error with HTTP status ${response.status}`
+          }
+        );
+
+        throw aborted;
+      }
+    } else {
+      return {{ method.output_type }}.fromJson(await response.json());
+    }
+  }
+
+  {% endif %}
+  {% endfor %}
+  {% endfor %}
+}
+
+export class {{ client.proto.state_name }} {
+
+  static WeakReference = {{ client.proto.state_name }}WeakReference;
+
+  public static ref(
+    id: string,
+    options?: { bearerToken?: string }
+  ) {
+    return new {{ client.proto.state_name }}.WeakReference(id, options?.bearerToken);
+  }
+
+  {% for service in client.services %}
+  {% for method in service.methods %}
+  {%- if method.options.proto.kind == 'workflow' %}
+  {# TODO(benh): support "tasks" and workflows. #}
+  {% elif method.options.proto.constructor %}
+  public static async {{ method.proto.name | to_lower_camel }}(
+    context: reboot_web.WebContext,
+    idOrPartialRequest?: string | protobuf_es.PartialMessage<{{ method.input_type }}>,
+    inputPartialRequest?: protobuf_es.PartialMessage<{{ method.input_type }}>,
+    options?: { signal?: AbortSignal }
+  ): Promise<[
+    {{ client.proto.state_name }}.WeakReference,
+    {{ method.output_type }}
+  ]> {
+    let id: string | undefined = undefined;
+    let partialRequest: protobuf_es.PartialMessage<{{ method.input_type }}> | undefined = undefined;
+
+    if (typeof idOrPartialRequest === "string" || idOrPartialRequest instanceof String) {
+      id = idOrPartialRequest;
+      partialRequest = inputPartialRequest;
+    } else {
+      partialRequest = idOrPartialRequest;
+    }
+
+    if (id === undefined) {
+      id = uuidv4();
+    }
+
+    const weakReference = {{ client.proto.state_name }}.ref(id);
+
+    options = {
+      "from_constructor": true,
+      ...options,
+    }
+
+    const response = await weakReference._{{ method.proto.name | to_lower_camel }}(
+      context,
+      partialRequest,
+      options,
+    );
+
+    return [weakReference, response];
+  }
+  {% endif %}
+  {% endfor %}
+  {% endfor %}
+
+
+}
+
+export namespace {{ client.proto.state_name }} {
+  export type WeakReference = typeof {{ client.proto.state_name }}.WeakReference.prototype;
+}
+
+{% endfor %}

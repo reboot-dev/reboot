@@ -11,7 +11,7 @@ import { importPys as {{ unique_import_id }}importPys } from "{{ path }}{% if no
 {#
 NOTE: The following if block includes most of the rest of this file. Most of
 this generated code is meant for Reboot states and clients. In some cases, we
-generate _rbt files for services that aren't Reboot states or clients, to help
+generate _rbt files for services that are not Reboot states or clients, to help
 with transitive imports. grep for 'END REBOOT SPECIFIC CODE' to see the end of
 this if block.
 #}
@@ -38,7 +38,7 @@ export {
 };
 {% endif %}
 
-{# Since we are creating a new class named {{ state.proto.name }}, we can't import the same
+{# Since we are creating a new class named {{ state.proto.name }}, we cannot import the same
 name from the {{ pb_name }}.js, so we have to alias that to use inside of that
 file, to the enduser we export that type as {{ state.proto.name }}.State #}
 {% if states|length > 0 %}
@@ -119,7 +119,7 @@ type {{ client.proto.state_name }}RequestTypes =
 {% endfor %}
 {% endfor %};
 
-{# TODO: don't generate errors in both react and nodejs. #}
+{# TODO: do not generate errors in react, nodejs, and web. #}
 {% for service in client.services %}
 {% for method in service.methods %}
 const {{ client.proto.state_name | to_screaming_snake }}_{{ method.proto.name | to_screaming_snake }}_ERROR_TYPES = [

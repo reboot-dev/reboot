@@ -138,6 +138,10 @@ ENVVAR_REBOOT_NODEJS = 'REBOOT_NODEJS'
 ENVVAR_REBOOT_REACT_EXTENSIONS = 'REBOOT_REACT_EXTENSIONS'
 
 # Name of an environment variable that indicates whether or not to use
+# .js extensions in generated web files.
+ENVVAR_REBOOT_WEB_EXTENSIONS = 'REBOOT_WEB_EXTENSIONS'
+
+# Name of an environment variable that indicates whether or not to use
 # .js extensions in generated Node.js files.
 ENVVAR_REBOOT_NODEJS_EXTENSIONS = 'REBOOT_NODEJS_EXTENSIONS'
 

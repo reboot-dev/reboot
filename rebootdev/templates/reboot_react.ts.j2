@@ -43,7 +43,7 @@ import {
   {% for state in states %}
   {#
     The user may be importing the `message` type that defines a Reboot state, but
-    since we are creating a new class named {{ state.proto.name }}, we can't also
+    since we are creating a new class named {{ state.proto.name }}, we cannot also
     import a `message` with the same name from the {{ pb_name }}.js; we have to
     alias the `message` for use inside of this file.
   #}
@@ -122,7 +122,7 @@ export interface {{ client.proto.state_name | to_camel }}Mutators {
   {% endfor %}
 }
 
-{# TODO: don't generate errors in both react and nodejs. #}
+{# TODO: do not generate errors in react, nodejs, and web. #}
 {% for service in client.services %}
 {% for method in service.methods %}
 const {{ client.proto.state_name | to_screaming_snake }}_{{ method.proto.name | to_screaming_snake }}_ERROR_TYPES = [
@@ -1164,7 +1164,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
         return { aborted };
       }
     } else {
-      return { response: await response.json() };
+      return { response: {{ method.output_type }}.fromJson(await response.json()) };
     }
   }
 

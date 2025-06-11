@@ -53,6 +53,7 @@ packages in multiple BUILD.bazel files.
 #  * tests/reboot/nodejs/auth_integration_test/package.json
 #  * tests/reboot/greeter_rbt.golden.py
 #  * tests/reboot/echo_rbt.golden.py
+#  * reboot/examples/hello/reboot-non-react-web/package.json
 #  (And possibly others)
 #
 # NOTE: if this variable name is ever changed, it must also be updated in
