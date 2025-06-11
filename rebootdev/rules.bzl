@@ -216,6 +216,7 @@ def js_reboot_react_library(
             "//:node_modules/uuid",
             "//:node_modules/@bufbuild/protobuf",
             "//:node_modules/@reboot-dev/reboot-react",
+            "//:node_modules/@reboot-dev/reboot-web",
             "//:node_modules/@reboot-dev/reboot-api",
         ],
         visibility = visibility,
@@ -565,6 +566,55 @@ def ts_reboot_boilerplate_files(
     native.filegroup(
         name = name,
         srcs = [":" + name + "_ts_boilerplate_reboot_files"],
+        visibility = visibility,
+    )
+
+_ts_reboot_web_files = create_protoc_plugin_rule(
+    "@com_github_reboot_dev_mono//reboot:protoc-gen-reboot_web",
+    extensions = ("_rbt_web.ts",),
+    env = {
+        "REBOOT_WEB_EXTENSIONS": "true",
+    },
+)
+
+def js_reboot_web_library(
+        name,
+        proto,
+        srcs = [],
+        proto_deps = [],
+        deps = [],
+        declaration = True,
+        visibility = None):
+    """
+    Macro that wraps the necessary '_ts_reboot_files', and 'ts_project' targets.
+    """
+    _ts_reboot_web_files(
+        name = name + "_ts_reboot_web_files",
+        srcs = [proto],
+        deps = proto_deps,
+    )
+
+    ts_project(
+        name = name,
+        srcs = srcs + [
+            ":" + name + "_ts_reboot_web_files",
+        ],
+        declaration = declaration,
+        tsconfig = {
+            "compilerOptions": {
+                "declaration": True,
+                "module": "es2015",
+                "moduleResolution": "node",
+                "target": "es2018",
+            },
+        },
+        deps = deps + [
+            "//:node_modules/uuid",
+            "//:node_modules/@bufbuild/protobuf",
+            "//:node_modules/@reboot-dev/reboot-react",
+            "//:node_modules/@reboot-dev/reboot-web",
+            "//:node_modules/@reboot-dev/reboot-api",
+        ],
         visibility = visibility,
     )
 

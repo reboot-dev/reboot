@@ -7,6 +7,92 @@ export * as errors_pb from "./errors_pb.js";
 export * as react_pb from "./react_pb.js";
 export * as tasks_pb from "./tasks_pb.js";
 
+export const sleep = (seconds: number): Promise<void> => {
+  return new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+};
+
+export const randomNumberBetween = (min: number, max: number): number => {
+  return Math.random() * (max - min) + min;
+};
+
+export interface BackoffOptions {
+  initialBackoffSeconds?: number;
+  maxBackoffSeconds?: number;
+  backoffMultiplier?: number;
+}
+
+export async function retryForever<T>(
+  f: () => Promise<T>,
+  options?: BackoffOptions
+): Promise<T> {
+  const backoff = new Backoff(options);
+  while (true) {
+    try {
+      return await f();
+    } catch (e: any) {
+      await backoff.wait();
+    }
+  }
+}
+
+export class Backoff {
+  private retryAttempts = 0;
+
+  private initialBackoffSeconds: number;
+  private maxBackoffSeconds: number;
+  private backoffMultiplier: number;
+
+  constructor(options?: BackoffOptions) {
+    const {
+      initialBackoffSeconds = 1,
+      maxBackoffSeconds = 3,
+      backoffMultiplier = 2,
+    } = options || {};
+
+    this.initialBackoffSeconds = initialBackoffSeconds;
+    this.maxBackoffSeconds = maxBackoffSeconds;
+    this.backoffMultiplier = backoffMultiplier;
+  }
+
+  async wait() {
+    // Implementation of backoff borrowed from
+    // https://github.com/grpc/proposal/blob/master/A6-client-retries.md#exponential-backoff.
+    const backoffSeconds = randomNumberBetween(
+      0,
+      Math.min(
+        this.initialBackoffSeconds *
+          this.backoffMultiplier ** (this.retryAttempts - 1),
+        this.maxBackoffSeconds
+      )
+    );
+
+    await sleep(backoffSeconds);
+
+    this.retryAttempts += 1;
+  }
+}
+
+export class Event {
+  resolve: () => void;
+  promise: Promise<void>;
+
+  constructor() {
+    let _resolve = () => {};
+    this.promise = new Promise((resolve, _) => {
+      _resolve = resolve;
+    });
+    this.resolve = _resolve;
+  }
+
+  async wait() {
+    return await this.promise;
+  }
+
+  set() {
+    this.resolve();
+  }
+}
+
 // Not provided by protobuf-es, so we have a barebones implementation.
 export enum StatusCode {
   OK = 0,
@@ -359,3 +445,55 @@ export type CallOptions = {
   schedule?: ScheduleOptions;
   bearerToken?: string;
 };
+
+type StateId = string;
+type StateRef = string;
+type StateTypeName = string;
+
+// Corresponds to encodings in `rebootdev.aio.types`.
+export function stateIdToRef(stateType: StateTypeName, id: StateId): StateRef {
+  // This is the earliest time we can validate the state ID given to us by the
+  // user; do it now, so that any stack trace is as short as possible.
+  validateASCII(id, "state ID", 1, 128);
+
+  const escapedKey = id.replace(/\//g, "\\");
+
+  // Need to encode backslashes, because the TypeScript built-in 'URL'
+  // class will escape back any backslashes to forward slashes.
+  // We can't escape a forward slash with '%2F' currently, because we
+  // use forward slashes in the collocations.
+  // See more at public/rebootdev/aio/types.py.
+  const encoded = escapedKey.replace(/\\/g, "%5C");
+  return `${stateType}:${encoded}`;
+}
+
+// Helper function to validate an ASCII string.
+function validateASCII(
+  s: string,
+  fieldDescription: string,
+  lengthMin: number = 0,
+  lengthMax?: number
+) {
+  if (s.length < lengthMin) {
+    throw new Error(
+      `${fieldDescription} must have a length of at least ${lengthMin}; given value had length '${s.length}'`
+    );
+  }
+
+  if (lengthMax !== undefined && s.length > lengthMax) {
+    throw new Error(
+      `${fieldDescription} must have a length of at most ${lengthMax}; given value had length '${s.length}'`
+    );
+  }
+
+  // NOTE: not using a regular expression because it gives a
+  // "Unexpected control character(s) in regular expression"
+  // error that we don't want to print out to our users.
+  for (let i = 0; i < s.length; i++) {
+    if (s.charCodeAt(i) > 127) {
+      throw new Error(
+        `${fieldDescription} must be ASCII; given value '${s}' is not ASCII`
+      );
+    }
+  }
+}

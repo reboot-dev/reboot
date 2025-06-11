@@ -13,7 +13,7 @@ MAX_GRPC_RESPONSE_SIZE_BYTES = 4 * 1024 * 1024
 #     keepalive ping is sent on the transport.
 #
 # Chosen to match the interval at which we heartbeat from browsers (see
-# `setInterval(sendHeartbeat, ...)` in `reboot/web/index.tsx`.
+# `setInterval(sendHeartbeat, ...)` in `reboot/react/index.tsx`.
 GRPC_KEEPALIVE_TIME_MS = 5000
 
 # grpc.keepalive_timeout_ms: The amount of time (in milliseconds) the
@@ -136,6 +136,10 @@ ENVVAR_REBOOT_NODEJS = 'REBOOT_NODEJS'
 # Name of an environment variable that indicates whether or not to use
 # .js extensions in generated React files.
 ENVVAR_REBOOT_REACT_EXTENSIONS = 'REBOOT_REACT_EXTENSIONS'
+
+# Name of an environment variable that indicates whether or not to use
+# .js extensions in generated web files.
+ENVVAR_REBOOT_WEB_EXTENSIONS = 'REBOOT_WEB_EXTENSIONS'
 
 # Name of an environment variable that indicates whether or not to use
 # .js extensions in generated Node.js files.
