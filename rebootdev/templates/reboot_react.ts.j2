@@ -505,6 +505,10 @@ class {{ client.proto.state_name | to_camel }}Instance {
         expecteds = expecteds.filter(
           expected => expected.idempotencyKey !== idempotencyKey
         );
+
+        orphans = orphans.filter(
+          orphan => orphan.idempotencyKey !== idempotencyKey
+        );
       }
     };
 
