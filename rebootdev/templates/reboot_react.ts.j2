@@ -101,12 +101,33 @@ const ERROR_TYPES = [
 ] as const; // Need `as const` to ensure TypeScript infers this as a tuple!
 
 {% for client in clients %}
-export interface {{ client.proto.state_name | to_camel }}Mutators {
+export interface {{ client.proto.state_name }}Mutators {
   {% for service in client.services %}
   {% for method in service.methods %}
   {% if method.options.proto.kind in ['writer', 'transaction'] %}
   {{ method.proto.name | to_lower_camel }}: {
     // Mutators are functions and can be called directly.
+    (partialRequest?: __bufbuildProtobufPartialMessage<{{ method.input_type }}>,
+     options?: { metadata?: any, idempotencyKey?: string }
+    ): Promise<
+      reboot_web.ResponseOrAborted<
+        {{ method.output_type }},
+        {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
+      >>;
+
+    pending: Pending{{ method.input_type | to_camel }}Mutation[];
+  };
+  {% endif %}
+  {% endfor %}
+  {% endfor %}
+}
+
+export interface {{ client.proto.state_name }}Idempotently {
+  {% for service in client.services %}
+  {% for method in service.methods %}
+  {% if method.options.proto.kind in ['writer', 'transaction'] %}
+  {{ method.proto.name | to_lower_camel }}: {
+    // Idempotent calls are functions and can be called directly.
     (partialRequest?: __bufbuildProtobufPartialMessage<{{ method.input_type }}>,
      options?: { metadata?: any }
     ): Promise<
@@ -229,13 +250,14 @@ export class {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_c
 
 export interface Use{{ client.proto.state_name }}Api {
   mutators: {{ client.proto.state_name }}Mutators;
+  idempotently: (args: { key: string }) => {{ client.proto.state_name }}Idempotently;
   {% for service in client.services %}
   {% for method in service.methods %}
   {% if method.options.proto.kind in ["writer", "transaction"] %}
   {{ method.proto.name | to_lower_camel }}: {
     // Mutators are functions and can be called directly.
     (partialRequest?: __bufbuildProtobufPartialMessage<{{ method.input_type }}>,
-     options?: { metadata?: any }
+     options?: { metadata?: any, idempotencyKey?: string }
     ): Promise<
       reboot_web.ResponseOrAborted<
         {{ method.output_type }},
@@ -1000,13 +1022,13 @@ export const use{{ client.proto.state_name | to_camel }} = (
     const {{ method.proto.name | to_lower_camel }} = useMemo(() => {
       const method = async (
         partialRequest: __bufbuildProtobufPartialMessage<{{ method.input_type }}> = {},
-        options?: { metadata?: any }
+        options?: { metadata?: any, key?: string }
       ) => {
         const request = partialRequest instanceof {{ method.input_type }}
           ? partialRequest.clone()
           : new {{ method.input_type }}(partialRequest);
 
-        const idempotencyKey = uuidv4();
+        const idempotencyKey = options?.idempotencyKey ?? options?.key ?? uuidv4();
 
         const mutation = {
           request,
@@ -1187,6 +1209,20 @@ export const use{{ client.proto.state_name | to_camel }} = (
       {% endfor %}
       {% endfor %}
     },
+    idempotently: ({ key }: { key: string }) => {
+    return {
+      {% for service in client.services %}
+      {% for method in service.methods %}
+      {% if method.options.proto.kind in ['writer', 'transaction'] %}
+      {{ method.proto.name | to_lower_camel }}: (
+        partialRequest?: __bufbuildProtobufPartialMessage<{{ method.input_type }}>,
+        options?: { metadata?: any }
+      ) => {{ method.proto.name | to_lower_camel }}(partialRequest, { ...options, key }),
+      {% endif %}
+      {% endfor %}
+      {% endfor %}
+    };
+  },
     {% for service in client.services %}
     {% for method in service.methods %}
     {% if method.options.proto.kind in ['writer', 'transaction'] %}

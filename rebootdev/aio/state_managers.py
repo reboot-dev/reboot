@@ -2323,6 +2323,7 @@ class SidecarStateManager(
             return None
 
         idempotent_mutations = self._idempotent_mutations
+        transaction: Optional[StateManager.Transaction] = None
 
         if context.transaction_ids is not None:
             transaction = self._participant_transactions[
@@ -2340,7 +2341,42 @@ class SidecarStateManager(
                 # check for will help the user sort out bugs.
                 idempotent_mutations = transaction.idempotent_mutations
 
-        return idempotent_mutations.get(context.idempotency_key)
+        idempotent_mutation = idempotent_mutations.get(context.idempotency_key)
+
+        if idempotent_mutation is not None:
+            # Trigger reactive readers to observe the idempotent mutation.
+            # While they might have _already_ observed this mutation, this
+            # is important in order to ensure we propagate all the way back
+            # to the React generated code which may be waiting for this
+            # mutation to be observed.
+            state_copy: Optional[Message] = None
+            queues: Optional[list[asyncio.Queue[_StreamingReaderItem]]] = None
+
+            if transaction is not None:
+                assert transaction.state is not None
+                state_copy = transaction.state
+                queues = transaction.streaming_readers
+            else:
+                queues = self._streaming_readers[
+                    idempotent_mutation.state_type].get(
+                        StateRef.from_maybe_readable(
+                            idempotent_mutation.state_ref
+                        ),
+                        None,
+                    )
+                state_copy = self._states[idempotent_mutation.state_type].get(
+                    StateRef.from_maybe_readable(
+                        idempotent_mutation.state_ref
+                    ),
+                    None,
+                )
+
+            if queues is not None:
+                assert state_copy is not None
+                for queue in queues:
+                    queue.put_nowait((state_copy, context.idempotency_key))
+
+        return idempotent_mutation
 
     async def load_task_response(
         self,
