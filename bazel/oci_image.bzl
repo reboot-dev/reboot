@@ -20,7 +20,7 @@ def oci_image_with_tar(name, visibility, **kwargs):
 
     _oci_image_tar(name, ":" + name, visibility)
 
-def py_oci_image(name, main, srcs, deps, base, env = None, **kwargs):
+def py_oci_image(name, main, srcs, deps, base, env = None, entrypoint = False, **kwargs):
     """Constructs an OCI container image wrapping a py_binary target.
 
     Args:
@@ -30,6 +30,9 @@ def py_oci_image(name, main, srcs, deps, base, env = None, **kwargs):
         deps: Dependencies of the image.
         base: Base image to use.
         env: Environment variables to be set in the image.
+        entrypoint: If True, the image will have an entrypoint set to run the
+            Python binary. If False, the image will set the 'cmd'
+            instead.
         **kwargs: See py_binary.
     """
     binary_name = name + "_binary"
@@ -56,12 +59,17 @@ def py_oci_image(name, main, srcs, deps, base, env = None, **kwargs):
     # Create the OCI image with the Python layer. This creates an "OCI layout"
     # as a directory tree.
     visibility = kwargs.get("visibility", None)
+    command = [
+        "/usr/bin/python",
+        "/app/reboot/{}/{}".format(name, binary_name),
+    ]
     oci_image_with_tar(
         name = name,
         base = base,
         tars = [":" + layer_name],
         env = env,
-        entrypoint = ["/usr/bin/python", "/app/reboot/{}/{}".format(name, binary_name)],
+        entrypoint = command if entrypoint else None,
+        cmd = command if not entrypoint else None,
         visibility = visibility,
     )
 
