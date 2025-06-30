@@ -111,3 +111,17 @@ extend google.protobuf.MessageOptions {
   //       For now we use the 50000-99999 range for "in-house" applications.
   StateOptions state = 50000;
 }
+
+message FileOptions {
+  // Path to TypeScript schema that we want to be able to import in
+  // our generated code.
+  optional string zod = 1;
+}
+
+extend google.protobuf.FileOptions {
+  // TODO: once these options are stable, register field numbers for them in the
+  //       official protobuf global extension registry:
+  //       https://github.com/protocolbuffers/protobuf/blob/main/docs/options.md
+  //       For now we use the 50000-99999 range for "in-house" applications.
+  FileOptions file = 50000;
+}

@@ -132,6 +132,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
     def add_language_dependent_data(self, file: BaseFile) -> BaseFile:
         return PythonFile(
             proto=file.proto,
+            options=file.options,
             legacy_grpc_services=[
                 PythonLegacyGrpcService(
                     proto=legacy_grpc_service.proto,

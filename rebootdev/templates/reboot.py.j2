@@ -1299,6 +1299,10 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 )
 
                 # Re-raise the exception for gRPC to handle!
+                #
+                # TODO: gRPC will print a stack trace from this
+                # exception which we don't want if we're executing via
+                # Node.js.
                 raise
             finally:
                 if context is not None and context.transaction_id is not None:

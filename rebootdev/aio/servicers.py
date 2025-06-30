@@ -171,5 +171,5 @@ def _find_legacy_serviceable(
     except ImportError:
         raise ValueError(
             f"Could not find a Reboot module for '{servicer_type}'. "
-            "Did you forget to run 'protoc' with the Reboot plugin?"
+            "Did you forget to run 'rbt generate' with the Reboot plugin?"
         )

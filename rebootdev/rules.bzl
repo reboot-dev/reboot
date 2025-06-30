@@ -350,7 +350,7 @@ def _js_proto_files(
             proto_pb_d_ts,
         ],
         # NOTE NOTE NOTE: we are generating `.d.ts` and `.js` files
-        # here even though when someone does `rbt protoc` they'll just
+        # here even though when someone does `rbt generate` they'll just
         # get `.ts`. We could consider passing `--es_target=ts` below
         # and then wrapping all of this in a `ts_project(...)`
         # instead.

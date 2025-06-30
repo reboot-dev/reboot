@@ -34,5 +34,5 @@ def check_generated_code_compatible(
             f"This code was generated for Reboot version "
             f"'{generated_code_reboot_version}', but the installed Reboot "
             f"version is '{ REBOOT_VERSION }'. Please run `rbt dev run` or "
-            "`rbt protoc` to regenerate this code."
+            "`rbt generate` to regenerate this code."
         )
