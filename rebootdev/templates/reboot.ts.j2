@@ -20,25 +20,44 @@ this if block.
 
 {% if google_protobuf_used_messages is defined and google_protobuf_used_messages|length > 0%}
 import {
-  {{ google_protobuf_used_messages|join(', \n  ') }}
+  {{ google_protobuf_used_messages|join(', \n  ') }} as {{ google_protobuf_used_messages|join(', \n  ') }}Proto
 } from "@bufbuild/protobuf";
 {% endif %}
 {% if proto.messages_and_enums | length > 0 %}
+{# Import all protobuf types with `Proto` suffix to deal with possible
+naming clashes when we create type aliases for each request and
+response in the namespaces we export per state type. #}
 import {
-{% for message in proto.messages_and_enums | unique | list %}
-  {{ message }},
-{% endfor %}
+  {% for message in proto.messages_and_enums | unique | list %}
+  {{ message }} as {{ message }}Proto,
+  {% endfor %}
 } from "./{{ pb_name }}{% if nodejs_extensions %}.js{% endif %}";
-import * as {{ pb_name }} from "./{{ pb_name }}{% if nodejs_extensions %}.js{% endif %}";
 
 {% if not options.proto.zod %}
 // Additionally re-export all messages_and_enums from the pb module.
 export {
   {% for message in proto.messages_and_enums | unique | list %}
-  {{ message }},
+  {{ message }}Proto as {{ message }},
   {% endfor %}
 };
 {% endif %}
+{% endif %}
+
+{# Since we are creating a new class named {{ state.proto.name }}, we
+cannot import it from {{ pb_name }}.js as it would conflict. Instead
+we alias it inside this file and export that type as {{
+state.proto.name }}.State for developers to use. When a user is
+using Zod {{ state.proto.name }}.State aliases to their Zod type. #}
+{% if states|length > 0 %}
+{% for state in states %}
+import {
+  {# NOTE: we already rewrite state types for TypeScript with a `Proto`
+   suffix to not conflict with our new class named {{ state.proto.name }}
+   and since we also add the suffix `Proto` to all types the above
+   we need to add the double suffix `ProtoProto` here. #}
+  {{ state.proto.name }} as {{ state.proto.name }}ProtoProto,
+} from "./{{ pb_name }}{% if nodejs_extensions %}.js{% endif %}";
+{% endfor %}
 {% endif %}
 
 import { strict as assert } from "assert";
@@ -179,14 +198,14 @@ const {{ state.proto.name }}ToProtobuf = (
 // Helper for getting the expected shape of a request, i.e., either a
 // Zod shape or a protobuf instance, from a protobuf shape.
 const {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape = (
-  partialRequest: protobuf_es.PartialMessage<{{ method.input_type }}>
+  partialRequest: protobuf_es.PartialMessage<{{ method.input_type }}Proto>
 ): {{ state.proto.name }}.{{ method.proto.name }}Request => {
   // TOOD: update `convertFromProtobuf()` to actually work from
   // any objects that match the shape, not just protobuf instances,
   // and then we won't need to first call `fromJson()` here.
-  const request = partialRequest instanceof {{ method.input_type }}
+  const request = partialRequest instanceof {{ method.input_type }}Proto
     ? partialRequest
-    : {{ method.input_type }}.fromJson(partialRequest);
+    : {{ method.input_type }}Proto.fromJson(partialRequest);
 
   {% if options.proto.zod %}
   return reboot_api.validate(
@@ -208,7 +227,7 @@ const {{ state.proto.name }}{{ method.proto.name }}RequestFromJsonString = (
   jsonRequest: string
 ): {{ state.proto.name }}.{{ method.proto.name }}Request => {
   return {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape(
-    {{ method.input_type }}.fromJsonString(jsonRequest)
+    {{ method.input_type }}Proto.fromJsonString(jsonRequest)
   );
 };
 
@@ -216,10 +235,10 @@ const {{ state.proto.name }}{{ method.proto.name }}RequestFromJsonString = (
 // expected shape, i.e., either a Zod shape or a protobuf shape.
 const {{ state.proto.name }}{{ method.proto.name }}RequestToProtobuf = (
   partialRequest?: {{ state.proto.name }}.Partial{{ method.proto.name }}Request
-): {{ method.input_type }} => {
-  return partialRequest instanceof {{ method.input_type }}
+): {{ method.input_type }}Proto => {
+  return partialRequest instanceof {{ method.input_type }}Proto
     ? partialRequest
-    : new {{ method.input_type }}(
+    : new {{ method.input_type }}Proto(
       {% if options.proto.zod %}
       reboot_api.convertToProtobufJson(
         api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
@@ -236,14 +255,14 @@ const {{ state.proto.name }}{{ method.proto.name }}RequestToProtobuf = (
 };
 
 const {{ state.proto.name }}{{ method.proto.name }}ResponseFromProtobufShape = (
-  partialResponse: protobuf_es.PartialMessage<{{ method.output_type }}>
+  partialResponse: protobuf_es.PartialMessage<{{ method.output_type }}Proto>
 ) => {
   // TOOD: update `convertFromProtobuf()` to actually work from
   // any objects that match the shape, not just protobuf instances,
   // and then we won't need to first call `fromJson()` here.
-  const response = partialResponse instanceof {{ method.output_type }}
+  const response = partialResponse instanceof {{ method.output_type }}Proto
     ? partialResponse
-    : {{ method.output_type }}.fromJson(partialResponse);
+    : {{ method.output_type }}Proto.fromJson(partialResponse);
 
   {% if options.proto.zod %}
   return reboot_api.validate(
@@ -261,10 +280,10 @@ const {{ state.proto.name }}{{ method.proto.name }}ResponseFromProtobufShape = (
 
 const {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf = (
   partialResponse?: {{ state.proto.name }}.Partial{{ method.proto.name }}Response
-): {{ method.output_type }} => {
-  return partialResponse instanceof {{ method.output_type }}
+): {{ method.output_type }}Proto => {
+  return partialResponse instanceof {{ method.output_type }}Proto
     ? partialResponse
-    : new {{ method.output_type }}(
+    : new {{ method.output_type }}Proto(
       {% if options.proto.zod %}
       reboot_api.convertToProtobufJson(
         api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
@@ -405,8 +424,8 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
 
       const response = {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf(partialResponse);
 
-      {% if options.proto.zod %}
-      // Validate and convert back to protobuf.
+      {% if options.proto.zod and method.options.proto.kind != 'workflow' %}
+      // Validate and convert back to protobuf when using Zod.
       state = {{ state.proto.name }}ToProtobuf(state);
       {% endif %}
 
@@ -504,11 +523,11 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
         {% for method in service.methods %}
         {% if ns.nested_loop_first %}
         {% set ns.nested_loop_first = false %}
-        if (anyRequest.is({{ method.input_type }})) {
+        if (anyRequest.is({{ method.input_type }}Proto)) {
         {% else %}
-        } else if (anyRequest.is({{ method.input_type }})) {
+        } else if (anyRequest.is({{ method.input_type }}Proto)) {
         {% endif %}
-          const unpackedRequest = new {{ method.input_type }}();
+          const unpackedRequest = new {{ method.input_type }}Proto();
           anyRequest.unpackTo(unpackedRequest);
           try {
             // NOTE: we are setting `state` within `try` so that any
@@ -872,7 +891,7 @@ export class {{ state.proto.name }}Authorizer extends reboot.Authorizer<{{ state
 {# Start generated State code #}
 {% for state in states %}
 
-export class {{ state.proto.name }}State extends {{ pb_name}}.{{ state.proto.name }} {
+export class {{ state.proto.name }}State extends {{ state.proto.name }}ProtoProto {
 
   static fromBinary(
     bytes: Uint8Array,
@@ -907,7 +926,7 @@ export class {{ state.proto.name }}State extends {{ pb_name}}.{{ state.proto.nam
     return state;
   }
 
-  public copyFrom(that: {{ state.proto.name }}State | {{ pb_name}}.{{ state.proto.name }}) {
+  public copyFrom(that: {{ state.proto.name }}State | {{ state.proto.name }}ProtoProto) {
     // Unfortunately, protobuf-es does not have `CopyFrom` like Python
     // or C++ protobuf. Instead, protobuf-es has `fromJson` but it
     // performs a merge. Thus, we have to first clear all of the fields
@@ -1584,14 +1603,14 @@ export namespace {{ client.proto.state_name }} {
       >
     >;
     {% else %}
-    {{ pb_name }}.{{ method.input_type }};
+    {{ method.input_type }}Proto;
     {% endif %}
 
   export type Partial{{ method.proto.name }}Request =
     {% if options.proto.zod %}
     {{ method.proto.name }}Request;
     {% else %}
-    protobuf_es.PartialMessage<{{ pb_name }}.{{ method.input_type }}>;
+    protobuf_es.PartialMessage<{{ method.input_type }}Proto>;
     {% endif %}
 
   export type {{ method.proto.name }}Response =
@@ -1602,14 +1621,14 @@ export namespace {{ client.proto.state_name }} {
       >
     >;
     {% else %}
-    {{ pb_name }}.{{ method.output_type }};
+    {{ method.output_type }}Proto;
     {% endif %}
 
   export type Partial{{ method.proto.name }}Response =
     {% if options.proto.zod %}
     {{ method.proto.name }}Response;
     {% else %}
-    protobuf_es.PartialMessage<{{ pb_name }}.{{ method.output_type }}>;
+    protobuf_es.PartialMessage<{{ method.output_type }}Proto>;
     {% endif %}
 }
 {% endfor %}
