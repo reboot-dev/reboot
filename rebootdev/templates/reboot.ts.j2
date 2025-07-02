@@ -320,7 +320,7 @@ const {{ client.proto.state_name | to_screaming_snake }}_{{ method.proto.name | 
   ...ERROR_TYPES,
   // Method errors.
   {% for type in method.options.errors.values() %}
-  {{ type }},
+  {{ type }}Proto,
   {% endfor %}
 ] as const; // Need `as const` to ensure TypeScript infers this as a tuple!
 
