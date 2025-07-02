@@ -422,7 +422,7 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
         );
       });
 
-      const response = {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf(partialResponse);
+      const response = {% if method.options.proto.kind == 'workflow' %}partialResponse instanceof reboot.Loop ? partialResponse : {% endif %}{{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf(partialResponse);
 
       {% if options.proto.zod and method.options.proto.kind != 'workflow' %}
       // Validate and convert back to protobuf when using Zod.
@@ -450,8 +450,8 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
             response: response.toJson(),
           },
           {% elif method.options.proto.kind == 'workflow' %}
-          ...(partialResponse instanceof reboot.Loop
-              && { loop: { when: partialResponse.when } }
+          ...(response instanceof reboot.Loop
+              && { loop: { when: response.when } }
               ||  { response: response.toJson() }),
           {% else %}
           response: response.toJson()
