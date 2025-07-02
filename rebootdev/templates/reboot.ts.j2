@@ -663,8 +663,8 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
         context: reboot.WorkflowContext,
         writer: (state: {{ state.proto.name }}.State) => Promise<T>,
         {
-          stringify = JSON.stringify,
-          parse = JSON.parse,
+          stringify,
+          parse,
           validate
         }: {
           stringify?: (result: T) => string;
@@ -673,6 +673,10 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
         },
         unidempotently: boolean = false,
       ): Promise<void | T> {
+        // Use `JSON.stringify` and `JSON.parse` by default.
+        stringify = stringify ?? JSON.stringify;
+        parse = parse ?? JSON.parse;
+
         const result = await reboot_native.Servicer_write(
           this.#external,
           context.__external,
