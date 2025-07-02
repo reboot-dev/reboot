@@ -1029,7 +1029,7 @@ export class {{ client.proto.state_name }}{{ method.proto.name }}Aborted extends
       this.#error = reboot_api.errorFromZodError(error);
     } else {
       {% if method.options.errors | length != 0 %}
-      this.#error = {{ client.proto.state_name }}{{ method.proto.name }}Errors.fromJson(
+      this.#error = {{ client.proto.state_name }}{{ method.proto.name }}ErrorsProto.fromJson(
         reboot_api.convertToProtobufJson(
           {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
           reboot_api.validate(
@@ -1071,7 +1071,7 @@ export class {{ client.proto.state_name }}{{ method.proto.name }}Aborted extends
     assert(this.#error instanceof protobuf_es.Message);
     {% if options.proto.zod %}
     {% if method.options.errors | length != 0 %}
-    if (this.#error instanceof {{ client.proto.state_name }}{{ method.proto.name }}Errors) {
+    if (this.#error instanceof {{ client.proto.state_name }}{{ method.proto.name }}ErrorsProto) {
       return reboot_api.convertFromProtobuf(
         {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
         this.#error
