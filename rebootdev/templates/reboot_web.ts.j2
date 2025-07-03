@@ -1,11 +1,6 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import type {
-  Message as __bufbuildProtobufMessage,
-  MessageType as __bufbuildProtobufMessageType,
-  PartialMessage as __bufbuildProtobufPartialMessage,
-} from "@bufbuild/protobuf";
 {% if google_protobuf_used_messages is defined and google_protobuf_used_messages|length > 0%}
 import {
   {{ google_protobuf_used_messages|join(', \n	') }}
@@ -31,17 +26,20 @@ import {
   {% for message in proto.messages_and_enums | unique | list %}
   {{ message }},
   {% endfor %}
+  {# Since we are creating a new class named {{ state.proto.name }}, we
+   cannot import it from {{ pb_name }}.js as it would conflict. Instead
+   we alias it inside this file and export that type as {{
+   state.proto.name }}.State for developers to use. When a user is
+   using Zod {{ state.proto.name }}.State aliases to their Zod type. #}
   {% for state in states %}
-  {#
-    The user may be importing the `message` type that defines a Reboot state, but
-    since we are creating a new class named {{ state.proto.name }}, we can not also
-    import a `message` with the same name from the {{ pb_name }}.js; we have to
-    alias the `message` for use inside of this file.
-  #}
+  {# NOTE: we already rewrite state types that are used in `method.input_type`
+   or `method.output_type` with a `Proto` suffix to not conflict with our
+   new class named {{ state.proto.name }}, so that is what we want to
+   import as. #}
   {{ state.proto.name }} as {{ state.proto.name }}Proto,
   {% endfor %}
 } from "./{{ pb_name }}{% if web_extensions %}.js{% endif %}";
-
+import * as {{ pb_name }} from "./{{ pb_name }}{% if web_extensions %}.js{% endif %}";
 {% if not options.proto.zod %}
 // Additionally re-export all messages_and_enums from the pb module.
 export {
@@ -53,7 +51,6 @@ export {
 {% endif %}
 
 import * as protobuf_es from "@bufbuild/protobuf";
-import * as {{ pb_name }} from "./{{ pb_name }}{% if web_extensions %}.js{% endif %}";
 
 {% if imports|length > 0%}
 // Include all transitive imports.
@@ -103,14 +100,14 @@ const ERROR_TYPES = [
 // Helper for getting the expected shape of a request, i.e., either a
 // Zod shape or a protobuf instance, from a protobuf shape.
 const {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape = (
-  partialRequest: protobuf_es.PartialMessage<{{ method.input_type }}>
+  partialRequest: protobuf_es.PartialMessage<{% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}>
 ): {{ state.proto.name }}.{{ method.proto.name }}Request => {
   // TOOD: update `convertFromProtobuf()` to actually work from
   // any objects that match the shape, not just protobuf instances,
   // and then we won't need to first call `fromJson()` here.
-  const request = partialRequest instanceof {{ method.input_type }}
+  const request = partialRequest instanceof {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}
     ? partialRequest
-    : {{ method.input_type }}.fromJson(partialRequest);
+    : {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}.fromJson(partialRequest);
 
   {% if options.proto.zod %}
   return reboot_api.validate(
@@ -132,7 +129,7 @@ const {{ state.proto.name }}{{ method.proto.name }}RequestFromJsonString = (
   jsonRequest: string
 ): {{ state.proto.name }}.{{ method.proto.name }}Request => {
   return {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape(
-    {{ method.input_type }}.fromJsonString(jsonRequest)
+    {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}.fromJsonString(jsonRequest)
   );
 };
 
@@ -140,10 +137,10 @@ const {{ state.proto.name }}{{ method.proto.name }}RequestFromJsonString = (
 // expected shape, i.e., either a Zod shape or a protobuf shape.
 const {{ state.proto.name }}{{ method.proto.name }}RequestToProtobuf = (
   partialRequest?: {{ state.proto.name }}.Partial{{ method.proto.name }}Request
-): {{ method.input_type }} => {
-  return partialRequest instanceof {{ method.input_type }}
+): {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }} => {
+  return partialRequest instanceof {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}
     ? partialRequest
-    : new {{ method.input_type }}(
+    : new {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}(
       {% if options.proto.zod %}
       reboot_api.convertToProtobufJson(
         api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
@@ -160,14 +157,14 @@ const {{ state.proto.name }}{{ method.proto.name }}RequestToProtobuf = (
 };
 
 const {{ state.proto.name }}{{ method.proto.name }}ResponseFromProtobufShape = (
-  partialResponse: protobuf_es.PartialMessage<{{ method.output_type }}>
+  partialResponse: protobuf_es.PartialMessage<{% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.output_type }}>
 ) => {
   // TOOD: update `convertFromProtobuf()` to actually work from
   // any objects that match the shape, not just protobuf instances,
   // and then we won't need to first call `fromJson()` here.
-  const response = partialResponse instanceof {{ method.output_type }}
+  const response = partialResponse instanceof {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.output_type }}
     ? partialResponse
-    : {{ method.output_type }}.fromJson(partialResponse);
+    : {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.output_type }}.fromJson(partialResponse);
 
   {% if options.proto.zod %}
   return reboot_api.validate(
@@ -185,10 +182,10 @@ const {{ state.proto.name }}{{ method.proto.name }}ResponseFromProtobufShape = (
 
 const {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf = (
   partialResponse?: {{ state.proto.name }}.Partial{{ method.proto.name }}Response
-): {{ method.output_type }} => {
-  return partialResponse instanceof {{ method.output_type }}
+): {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.output_type }} => {
+  return partialResponse instanceof {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.output_type }}
     ? partialResponse
-    : new {{ method.output_type }}(
+    : new {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.output_type }}(
       {% if options.proto.zod %}
       reboot_api.convertToProtobufJson(
         api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
@@ -221,14 +218,14 @@ export namespace {{ client.proto.state_name }} {
       >
     >;
   {% else %}
-    {{ pb_name }}.{{ method.input_type }};
+    {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }};
   {% endif %}
 
   export type Partial{{ method.proto.name }}Request =
   {% if options.proto.zod %}
   {{ method.proto.name }}Request;
   {% else %}
-  protobuf_es.PartialMessage<{{ pb_name }}.{{ method.input_type }}>;
+  protobuf_es.PartialMessage<{% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}>;
   {% endif %}
 
   export type {{ method.proto.name }}Response =
@@ -239,14 +236,14 @@ export namespace {{ client.proto.state_name }} {
       >
     >;
   {% else %}
-    {{ pb_name }}.{{ method.output_type }};
+    {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }};
   {% endif %}
 
   export type Partial{{ method.proto.name }}Response =
   {% if options.proto.zod %}
   {{ method.proto.name }}Response;
   {% else %}
-  protobuf_es.PartialMessage<{{ pb_name }}.{{ method.output_type }}>;
+  protobuf_es.PartialMessage<{% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }}>;
   {% endif %}
 }
 {% endfor %}
@@ -352,7 +349,7 @@ export class {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_c
       this.#error = reboot_api.errorFromZodError(error);
     } else {
       {% if method.options.errors | length != 0 %}
-      this.#error = {{ client.proto.state_name }}{{ method.proto.name }}Errors.fromJson(
+      this.#error = {{ pb_name }}.{{ client.proto.state_name }}{{ method.proto.name }}Errors.fromJson(
         reboot_api.convertToProtobufJson(
           {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
           reboot_api.validate(
@@ -394,7 +391,7 @@ export class {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_c
     reboot_api.assert(this.#error instanceof protobuf_es.Message);
     {% if options.proto.zod %}
     {% if method.options.errors | length != 0 %}
-    if (this.#error instanceof {{ client.proto.state_name }}{{ method.proto.name }}Errors) {
+    if (this.#error instanceof {{ pb_name }}.{{ client.proto.state_name }}{{ method.proto.name }}Errors) {
       return reboot_api.convertFromProtobuf(
         {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
         this.#error
@@ -444,8 +441,8 @@ class _Reactively {
         state: this.#state,
         method: "{{ method.proto.name }}",
         id: this.#id,
-        requestType: {{ method.input_type }},
-        responseType: {{ method.output_type }},
+        requestType: {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }},
+        responseType: {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }},
         request: request,
         signal: options?.signal,
         bearerToken: context.bearerToken,
@@ -496,8 +493,8 @@ class _Idempotently {
         url: context.url,
         method: "{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}",
         stateRef: this.#stateRef,
-        requestType: {{ method.input_type }},
-        responseType: {{ method.output_type }},
+        requestType: {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }},
+        responseType: {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }},
         AbortedClass: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted,
         request: request,
         options: options,
@@ -570,8 +567,8 @@ export class {{ client.proto.state_name }}WeakReference {
         url: context.url,
         method: "{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}",
         stateRef: stateRef,
-        requestType: {{ method.input_type }},
-        responseType: {{ method.output_type }},
+        requestType: {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }},
+        responseType: {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }},
         AbortedClass: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted,
         request: request,
         options: options,
@@ -605,8 +602,8 @@ export class {{ client.proto.state_name }} {
   {% elif method.options.proto.constructor %}
   public static async {{ method.proto.name | to_lower_camel }}(
     context: reboot_web.WebContext,
-    idOrPartialRequest?: string | {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,,
-    inputPartialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,,
+    idOrPartialRequest?: string | {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
+    inputPartialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
     options?: { signal?: AbortSignal }
   ): Promise<[
     {{ client.proto.state_name }}.WeakReference,

@@ -933,7 +933,7 @@ class RebootProtocPlugin(ProtocPlugin):
 
             template_data = self.template_data(
                 file_proto,
-                self.request.parameter,
+                self.request.parameter if self.request is not None else '',
             )
 
             # Check if file has any Reboot states or clients and only generate

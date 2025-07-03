@@ -20,16 +20,13 @@ this if block.
 
 {% if google_protobuf_used_messages is defined and google_protobuf_used_messages|length > 0%}
 import {
-  {{ google_protobuf_used_messages|join(', \n  ') }} as {{ google_protobuf_used_messages|join(', \n  ') }}Proto
+  {{ google_protobuf_used_messages|join(', \n  ') }}
 } from "@bufbuild/protobuf";
 {% endif %}
 {% if proto.messages_and_enums | length > 0 %}
-{# Import all protobuf types with `Proto` suffix to deal with possible
-naming clashes when we create type aliases for each request and
-response in the namespaces we export per state type. #}
 import {
   {% for message in proto.messages_and_enums | unique | list %}
-  {{ message }} as {{ message }}Proto,
+  {{ message }},
   {% endfor %}
 } from "./{{ pb_name }}{% if nodejs_extensions %}.js{% endif %}";
 
@@ -37,7 +34,7 @@ import {
 // Additionally re-export all messages_and_enums from the pb module.
 export {
   {% for message in proto.messages_and_enums | unique | list %}
-  {{ message }}Proto as {{ message }},
+  {{ message }},
   {% endfor %}
 };
 {% endif %}
@@ -51,14 +48,15 @@ using Zod {{ state.proto.name }}.State aliases to their Zod type. #}
 {% if states|length > 0 %}
 {% for state in states %}
 import {
-  {# NOTE: we already rewrite state types for TypeScript with a `Proto`
-   suffix to not conflict with our new class named {{ state.proto.name }}
-   and since we also add the suffix `Proto` to all types the above
-   we need to add the double suffix `ProtoProto` here. #}
-  {{ state.proto.name }} as {{ state.proto.name }}ProtoProto,
+  {# NOTE: we already rewrite state types that are used in `method.input_type`
+   or `method.output_type` with a `Proto` suffix to not conflict with our
+   new class named {{ state.proto.name }}, so that is what we want to
+   import as. #}
+  {{ state.proto.name }} as {{ state.proto.name }}Proto,
 } from "./{{ pb_name }}{% if nodejs_extensions %}.js{% endif %}";
 {% endfor %}
 {% endif %}
+import * as {{ pb_name }} from "./{{ pb_name }}{% if nodejs_extensions %}.js{% endif %}";
 
 import { strict as assert } from "assert";
 import * as uuid from "uuid";
@@ -127,62 +125,62 @@ const ERROR_TYPES = [
 
 {# Start generated Servicer code #}
 
-{% for state in states %}
+{% for client in clients %}
 
-const {{ state.proto.name }}FromJsonString = (
+const {{ client.proto.state_name }}FromJsonString = (
   jsonState: string,
   options: { validate: boolean } = { validate: true }
-): {{ state.proto.name }}.State => {
+): {{ client.proto.state_name }}.State => {
   {% if options.proto.zod %}
   if (options.validate) {
     return reboot_api.validate(
-      "{{ state.proto.name }}.state",
-      api.{{ state.proto.name }}.state,
+      "{{ client.proto.state_name }}.state",
+      api.{{ client.proto.state_name }}.state,
       reboot_api.convertFromProtobuf(
-        api.{{ state.proto.name }}.state,
-        {{ state.proto.name }}State.fromJsonString(jsonState)
+        api.{{ client.proto.state_name }}.state,
+        {{ client.proto.state_name }}State.fromJsonString(jsonState)
       )
     );
   } else {
     return reboot_api.convertFromProtobuf(
-      api.{{ state.proto.name }}.state,
-      {{ state.proto.name }}State.fromJsonString(jsonState)
+      api.{{ client.proto.state_name }}.state,
+      {{ client.proto.state_name }}State.fromJsonString(jsonState)
     );
   }
   {% else %}
-  return {{ state.proto.name }}State.fromJsonString(jsonState);
+  return {{ client.proto.state_name }}State.fromJsonString(jsonState);
   {% endif %}
 };
 
-const {{ state.proto.name }}FromBinary = (
+const {{ client.proto.state_name }}FromBinary = (
   bytesState: Uint8Array
-): {{ state.proto.name }}.State => {
+): {{ client.proto.state_name }}.State => {
   {% if options.proto.zod %}
   return reboot_api.validate(
-    "{{ state.proto.name }}.state",
-    api.{{ state.proto.name }}.state,
+    "{{ client.proto.state_name }}.state",
+    api.{{ client.proto.state_name }}.state,
     reboot_api.convertFromProtobuf(
-      api.{{ state.proto.name }}.state,
-      {{ state.proto.name }}State.fromBinary(bytesState)
+      api.{{ client.proto.state_name }}.state,
+      {{ client.proto.state_name }}State.fromBinary(bytesState)
     )
   );
   {% else %}
-  return {{ state.proto.name }}State.fromBinary(bytesState);
+  return {{ client.proto.state_name }}State.fromBinary(bytesState);
   {% endif %}
 };
 
-const {{ state.proto.name }}ToProtobuf = (
-  state: {{ state.proto.name }}.State
-): {{ state.proto.name }}State => {
-  return state instanceof {{ state.proto.name }}State
+const {{ client.proto.state_name }}ToProtobuf = (
+  state: {{ client.proto.state_name }}.State
+): {{ client.proto.state_name }}State => {
+  return state instanceof {{ client.proto.state_name }}State
     ? state
-    : {{ state.proto.name }}State.fromJson(
+    : {{ client.proto.state_name }}State.fromJson(
       {% if options.proto.zod %}
       reboot_api.convertToProtobufJson(
-        api.{{ state.proto.name }}.state,
+        api.{{ client.proto.state_name }}.state,
         reboot_api.validate(
-          "{{ state.proto.name }}.state",
-          api.{{ state.proto.name }}.state,
+          "{{ client.proto.state_name }}.state",
+          api.{{ client.proto.state_name }}.state,
           state
         )
       )
@@ -192,27 +190,27 @@ const {{ state.proto.name }}ToProtobuf = (
     );
 };
 
-{% for service in state.services %}
+{% for service in client.services %}
 {% for method in service.methods %}
 
 // Helper for getting the expected shape of a request, i.e., either a
 // Zod shape or a protobuf instance, from a protobuf shape.
-const {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape = (
-  partialRequest: protobuf_es.PartialMessage<{{ method.input_type }}Proto>
-): {{ state.proto.name }}.{{ method.proto.name }}Request => {
+const {{ client.proto.state_name }}{{ method.proto.name }}RequestFromProtobufShape = (
+  partialRequest: protobuf_es.PartialMessage<{% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}>
+): {{ client.proto.state_name }}.{{ method.proto.name }}Request => {
   // TOOD: update `convertFromProtobuf()` to actually work from
   // any objects that match the shape, not just protobuf instances,
   // and then we won't need to first call `fromJson()` here.
-  const request = partialRequest instanceof {{ method.input_type }}Proto
+  const request = partialRequest instanceof {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}
     ? partialRequest
-    : {{ method.input_type }}Proto.fromJson(partialRequest);
+    : {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}.fromJson(partialRequest);
 
   {% if options.proto.zod %}
   return reboot_api.validate(
-    "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request",
-    api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
+    "{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request",
+    api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
     reboot_api.convertFromProtobuf(
-      api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
+      api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
       request
     )
   );
@@ -223,28 +221,28 @@ const {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape = (
 
 // Helper for getting the expected shape of a request, i.e., either a
 // Zod shape or a protobuf instance, from a JSON string.
-const {{ state.proto.name }}{{ method.proto.name }}RequestFromJsonString = (
+const {{ client.proto.state_name }}{{ method.proto.name }}RequestFromJsonString = (
   jsonRequest: string
-): {{ state.proto.name }}.{{ method.proto.name }}Request => {
-  return {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape(
-    {{ method.input_type }}Proto.fromJsonString(jsonRequest)
+): {{ client.proto.state_name }}.{{ method.proto.name }}Request => {
+  return {{ client.proto.state_name }}{{ method.proto.name }}RequestFromProtobufShape(
+    {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}.fromJsonString(jsonRequest)
   );
 };
 
 // Helper for getting a protobuf instance for a request from the
 // expected shape, i.e., either a Zod shape or a protobuf shape.
-const {{ state.proto.name }}{{ method.proto.name }}RequestToProtobuf = (
-  partialRequest?: {{ state.proto.name }}.Partial{{ method.proto.name }}Request
-): {{ method.input_type }}Proto => {
-  return partialRequest instanceof {{ method.input_type }}Proto
+const {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf = (
+  partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request
+): {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }} => {
+  return partialRequest instanceof {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}
     ? partialRequest
-    : new {{ method.input_type }}Proto(
+    : new {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}(
       {% if options.proto.zod %}
       reboot_api.convertToProtobufJson(
-        api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
+        api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
         reboot_api.validate(
-          "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request",
-          api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
+          "{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request",
+          api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
           partialRequest || {}
         )
       )
@@ -254,22 +252,22 @@ const {{ state.proto.name }}{{ method.proto.name }}RequestToProtobuf = (
     );
 };
 
-const {{ state.proto.name }}{{ method.proto.name }}ResponseFromProtobufShape = (
-  partialResponse: protobuf_es.PartialMessage<{{ method.output_type }}Proto>
+const {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape = (
+  partialResponse: protobuf_es.PartialMessage<{% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }}>
 ) => {
   // TOOD: update `convertFromProtobuf()` to actually work from
   // any objects that match the shape, not just protobuf instances,
   // and then we won't need to first call `fromJson()` here.
-  const response = partialResponse instanceof {{ method.output_type }}Proto
+  const response = partialResponse instanceof {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }}
     ? partialResponse
-    : {{ method.output_type }}Proto.fromJson(partialResponse);
+    : {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }}.fromJson(partialResponse);
 
   {% if options.proto.zod %}
   return reboot_api.validate(
-    "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response",
-    api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
+    "{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response",
+    api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
     reboot_api.convertFromProtobuf(
-      api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
+      api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
       response
     )
   );
@@ -278,18 +276,18 @@ const {{ state.proto.name }}{{ method.proto.name }}ResponseFromProtobufShape = (
   {% endif %}
 };
 
-const {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf = (
-  partialResponse?: {{ state.proto.name }}.Partial{{ method.proto.name }}Response
-): {{ method.output_type }}Proto => {
-  return partialResponse instanceof {{ method.output_type }}Proto
+const {{ client.proto.state_name }}{{ method.proto.name }}ResponseToProtobuf = (
+  partialResponse?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Response
+): {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }} => {
+  return partialResponse instanceof {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }}
     ? partialResponse
-    : new {{ method.output_type }}Proto(
+    : new {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }}(
       {% if options.proto.zod %}
       reboot_api.convertToProtobufJson(
-        api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
+        api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
         reboot_api.validate(
-          "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response",
-          api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
+          "{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response",
+          api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
           partialResponse
         )
       )
@@ -301,10 +299,6 @@ const {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf = (
 
 {% endfor %}
 {% endfor %}
-{% endfor %}
-
-
-{% for client in clients %}
 
 type {{ client.proto.state_name }}RequestTypes =
 {% for service in client.services %}
@@ -320,7 +314,7 @@ const {{ client.proto.state_name | to_screaming_snake }}_{{ method.proto.name | 
   ...ERROR_TYPES,
   // Method errors.
   {% for type in method.options.errors.values() %}
-  {{ type }}Proto,
+  {{ type }},
   {% endfor %}
 ] as const; // Need `as const` to ensure TypeScript infers this as a tuple!
 
@@ -523,11 +517,11 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
         {% for method in service.methods %}
         {% if ns.nested_loop_first %}
         {% set ns.nested_loop_first = false %}
-        if (anyRequest.is({{ method.input_type }}Proto)) {
+        if (anyRequest.is({% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }})) {
         {% else %}
-        } else if (anyRequest.is({{ method.input_type }}Proto)) {
+        } else if (anyRequest.is({% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }})) {
         {% endif %}
-          const unpackedRequest = new {{ method.input_type }}Proto();
+          const unpackedRequest = new {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}();
           anyRequest.unpackTo(unpackedRequest);
           try {
             // NOTE: we are setting `state` within `try` so that any
@@ -895,7 +889,7 @@ export class {{ state.proto.name }}Authorizer extends reboot.Authorizer<{{ state
 {# Start generated State code #}
 {% for state in states %}
 
-export class {{ state.proto.name }}State extends {{ state.proto.name }}ProtoProto {
+export class {{ state.proto.name }}State extends {{ state.proto.name }}Proto {
 
   static fromBinary(
     bytes: Uint8Array,
@@ -930,7 +924,7 @@ export class {{ state.proto.name }}State extends {{ state.proto.name }}ProtoProt
     return state;
   }
 
-  public copyFrom(that: {{ state.proto.name }}State | {{ state.proto.name }}ProtoProto) {
+  public copyFrom(that: {{ state.proto.name }}State | {{ state.proto.name }}Proto) {
     // Unfortunately, protobuf-es does not have `CopyFrom` like Python
     // or C++ protobuf. Instead, protobuf-es has `fromJson` but it
     // performs a merge. Thus, we have to first clear all of the fields
@@ -1607,14 +1601,14 @@ export namespace {{ client.proto.state_name }} {
       >
     >;
     {% else %}
-    {{ method.input_type }}Proto;
+    {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }};
     {% endif %}
 
   export type Partial{{ method.proto.name }}Request =
     {% if options.proto.zod %}
     {{ method.proto.name }}Request;
     {% else %}
-    protobuf_es.PartialMessage<{{ method.input_type }}Proto>;
+    protobuf_es.PartialMessage<{% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}>;
     {% endif %}
 
   export type {{ method.proto.name }}Response =
@@ -1625,14 +1619,14 @@ export namespace {{ client.proto.state_name }} {
       >
     >;
     {% else %}
-    {{ method.output_type }}Proto;
+    {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }};
     {% endif %}
 
   export type Partial{{ method.proto.name }}Response =
     {% if options.proto.zod %}
     {{ method.proto.name }}Response;
     {% else %}
-    protobuf_es.PartialMessage<{{ method.output_type }}Proto>;
+    protobuf_es.PartialMessage<{% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }}>;
     {% endif %}
 }
 {% endfor %}
