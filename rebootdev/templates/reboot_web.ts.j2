@@ -23,9 +23,6 @@ import { v4 as uuidv4 } from "uuid";
 // This is a known issue if you're using `webpack` which uses
 // `ts-loader` (https://github.com/TypeStrong/ts-loader/issues/465).
 import {
-  {% for message in proto.messages_and_enums | unique | list %}
-  {{ message }},
-  {% endfor %}
   {# Since we are creating a new class named {{ state.proto.name }}, we
    cannot import it from {{ pb_name }}.js as it would conflict. Instead
    we alias it inside this file and export that type as {{
@@ -46,7 +43,7 @@ export {
   {% for message in proto.messages_and_enums | unique | list %}
   {{ message }},
   {% endfor %}
-};
+} from "./{{ pb_name }}{% if web_extensions %}.js{% endif %}";
 {% endif %}
 {% endif %}
 
@@ -100,14 +97,14 @@ const ERROR_TYPES = [
 // Helper for getting the expected shape of a request, i.e., either a
 // Zod shape or a protobuf instance, from a protobuf shape.
 const {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape = (
-  partialRequest: protobuf_es.PartialMessage<{% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}>
+  partialRequest: protobuf_es.PartialMessage<{{ method.input_type }}>
 ): {{ state.proto.name }}.{{ method.proto.name }}Request => {
   // TOOD: update `convertFromProtobuf()` to actually work from
   // any objects that match the shape, not just protobuf instances,
   // and then we won't need to first call `fromJson()` here.
-  const request = partialRequest instanceof {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}
+  const request = partialRequest instanceof {{ method.input_type }}
     ? partialRequest
-    : {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}.fromJson(partialRequest);
+    : {{ method.input_type }}.fromJson(partialRequest);
 
   {% if options.proto.zod %}
   return reboot_api.validate(
@@ -129,7 +126,7 @@ const {{ state.proto.name }}{{ method.proto.name }}RequestFromJsonString = (
   jsonRequest: string
 ): {{ state.proto.name }}.{{ method.proto.name }}Request => {
   return {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape(
-    {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}.fromJsonString(jsonRequest)
+    {{ method.input_type }}.fromJsonString(jsonRequest)
   );
 };
 
@@ -137,10 +134,10 @@ const {{ state.proto.name }}{{ method.proto.name }}RequestFromJsonString = (
 // expected shape, i.e., either a Zod shape or a protobuf shape.
 const {{ state.proto.name }}{{ method.proto.name }}RequestToProtobuf = (
   partialRequest?: {{ state.proto.name }}.Partial{{ method.proto.name }}Request
-): {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }} => {
-  return partialRequest instanceof {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}
+): {{ method.input_type }} => {
+  return partialRequest instanceof {{ method.input_type }}
     ? partialRequest
-    : new {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(state.proto.name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}(
+    : new {{ method.input_type }}(
       {% if options.proto.zod %}
       reboot_api.convertToProtobufJson(
         api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
@@ -236,14 +233,14 @@ export namespace {{ client.proto.state_name }} {
       >
     >;
   {% else %}
-    {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }};
+    {{ method.output_type }};
   {% endif %}
 
   export type Partial{{ method.proto.name }}Response =
   {% if options.proto.zod %}
   {{ method.proto.name }}Response;
   {% else %}
-  protobuf_es.PartialMessage<{% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }}>;
+  protobuf_es.PartialMessage<{{ method.output_type }}>;
   {% endif %}
 }
 {% endfor %}
@@ -442,7 +439,7 @@ class _Reactively {
         method: "{{ method.proto.name }}",
         id: this.#id,
         requestType: {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }},
-        responseType: {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }},
+        responseType: {{ method.output_type }},
         request: request,
         signal: options?.signal,
         bearerToken: context.bearerToken,
@@ -494,7 +491,7 @@ class _Idempotently {
         method: "{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}",
         stateRef: this.#stateRef,
         requestType: {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }},
-        responseType: {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }},
+        responseType: {{ method.output_type }},
         AbortedClass: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted,
         request: request,
         options: options,
@@ -568,7 +565,7 @@ export class {{ client.proto.state_name }}WeakReference {
         method: "{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}",
         stateRef: stateRef,
         requestType: {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }},
-        responseType: {% if "." not in method.output_type and method.output_type not in google_protobuf_used_messages and method.output_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.output_type }},
+        responseType: {{ method.output_type }},
         AbortedClass: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted,
         request: request,
         options: options,
