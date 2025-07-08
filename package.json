@@ -11,11 +11,12 @@
     "@types/node": "20.11.5",
     "js-sha1": "0.7.0",
     "react": "^18.2.0",
-    "typescript": "4.9.3",
+    "typescript": "5.4.5",
     "tslib": "^2.6.2",
     "uuid": "9.0.1",
     "@typescript/vfs": "*",
     "chalk": "^4.1.2",
-    "vitest": "^2.1.9"
+    "vitest": "^2.1.9",
+    "zod": "^3.25.51"
   }
 }
