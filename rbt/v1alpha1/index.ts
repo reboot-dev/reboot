@@ -629,7 +629,7 @@ export function zodErrorFromError(
   } else if (error instanceof errors_pb.TransactionParticipantFailedToCommit) {
     return { type: "TransactionParticipantFailedToCommit" };
   }
-  throw new Error("Unknown error type");
+  throw new Error(`Unknown error type '${error.getType().typeName}'`);
 }
 
 export abstract class Aborted extends Error {
@@ -715,16 +715,9 @@ export const toPascalCase = (s: string): string => {
 };
 
 export const toCamelCase = (s: string): string => {
-  let pascalS = toPascalCase(s);
-  return pascalS.charAt(0).toLowerCase() + pascalS.slice(1);
+  const pascal = toPascalCase(s);
+  return pascal.charAt(0).toLowerCase() + pascal.slice(1);
 };
-
-export type EnsureZodObject<T extends Record<string, z.ZodType>> =
-  T extends z.ZodVoid
-    ? T
-    : T extends z.ZodObject
-    ? T
-    : ReturnType<typeof z.strictObject<T>>;
 
 export function validate<T>(
   what: string,
@@ -756,9 +749,15 @@ export function convertToProtobufJson<T>(
   }
 
   if (schema instanceof z.ZodOptional) {
-    return convertToProtobufJson(schema._zod.def.innerType as z.ZodType, input);
+    const meta = schema.meta();
+    assert(meta !== undefined && meta !== null);
+    const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
+    return convertToProtobufJson(schemaWithMeta, input);
   } else if (schema instanceof z.ZodDefault) {
-    return convertToProtobufJson(schema._zod.def.innerType as z.ZodType, input);
+    const meta = schema.meta();
+    assert(meta !== undefined && meta !== null);
+    const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
+    return convertToProtobufJson(schemaWithMeta, input);
   } else if (schema._zod.def.type === "string") {
     return input;
   } else if (schema instanceof z.ZodNumber) {
@@ -872,9 +871,15 @@ export function convertFromProtobuf<T>(
   }
 
   if (schema instanceof z.ZodOptional) {
-    return convertFromProtobuf(schema._zod.def.innerType as z.ZodType, input);
+    const meta = schema.meta();
+    assert(meta !== undefined && meta !== null);
+    const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
+    return convertFromProtobuf(schemaWithMeta, input);
   } else if (schema instanceof z.ZodDefault) {
-    return convertFromProtobuf(schema._zod.def.innerType as z.ZodType, input);
+    const meta = schema.meta();
+    assert(meta !== undefined && meta !== null);
+    const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
+    return convertFromProtobuf(schemaWithMeta, input);
   } else if (schema._zod.def.type === "string") {
     return input;
   } else if (schema instanceof z.ZodNumber) {

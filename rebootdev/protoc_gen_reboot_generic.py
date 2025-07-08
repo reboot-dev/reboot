@@ -471,9 +471,12 @@ class RebootProtocPlugin(ProtocPlugin):
     def template_data(
         self,
         file_proto: FileDescriptorProto,
-        # The default value of 'self.request.parameter' is an empty
-        # string, so we choose to not use `Optional[str]` here.
-        output_directory: str = '',
+        # Currently only used when generating code from a Zod schema.
+        output_directory: Optional[str] = None,
+        # We are calling that method directly when generating nodejs code,
+        # to generate and encode Reboot Python code, however we do not
+        # want to generate the Zod schema import path in that case.
+        generating_python_from_nodejs: bool = False,
     ) -> BaseFile:
 
         def check_legal_proto_directory(directory):
@@ -519,11 +522,12 @@ class RebootProtocPlugin(ProtocPlugin):
         # Then ask the language-specific logic to add any further information
         # that this specific language needs.
 
-        if base_file.options.proto.zod is not None:
+        if base_file.options.proto.zod is not None and not generating_python_from_nodejs:
             # The 'base_file.options.proto.zod' path is written by the
             # 'rbt-schema-to-proto' script as an absolute path to the
             # schema file, however we need to convert it to a relative
             # path so that the generated code can import it correctly.
+            assert output_directory is not None
             relative_schema_import_path = self.compute_relative_import_path(
                 output_directory=output_directory,
                 proto_file_name=base_file.proto.file_name,
@@ -933,7 +937,11 @@ class RebootProtocPlugin(ProtocPlugin):
 
             template_data = self.template_data(
                 file_proto,
-                self.request.parameter if self.request is not None else '',
+                # When generating code from a Zod schema we need to pass the
+                # `output_directory` which comes as the parameter on `self.request`
+                # but `self.request` is `None` when we are generating Reboot
+                # Python code to encode inside Reboot NodeJS.
+                self.request.parameter if self.request is not None else None,
             )
 
             # Check if file has any Reboot states or clients and only generate

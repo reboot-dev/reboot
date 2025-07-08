@@ -23,7 +23,8 @@ import {
   {{ google_protobuf_used_messages|join(', \n  ') }}
 } from "@bufbuild/protobuf";
 {% endif %}
-{% if proto.messages_and_enums | length > 0 %}
+{% if proto.messages_and_enums | length > 0 and not options.proto.zod %}
+// Additionally re-export all messages_and_enums from the pb module.
 export {
   {% for message in proto.messages_and_enums | unique | list %}
   {{ message }},
@@ -48,9 +49,11 @@ import {
 } from "./{{ pb_name }}{% if nodejs_extensions %}.js{% endif %}";
 {% endfor %}
 {% endif %}
+
+{# We import this because many `method.input_type` or `method.output_type` has
+already been converted to use `pb_name`. #}
 import * as {{ pb_name }} from "./{{ pb_name }}{% if nodejs_extensions %}.js{% endif %}";
 
-import { strict as assert } from "assert";
 import * as uuid from "uuid";
 
 import * as reboot from "@reboot-dev/reboot";
@@ -710,7 +713,7 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
         // Python uses the `type` keyword argument instead of the
         // `parse` and `validate` properties we use here).
 
-        // TODO: assert(result !== undefined);
+        // TODO: reboot_api.assert(result !== undefined);
 
         if (result !== "") {
           const { value } = JSON.parse(result);
@@ -727,7 +730,7 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
           return t;
         }
 
-        // TODO: assert(result === "");
+        // TODO: reboot_api.assert(result === "");
 
         // Otherwise `callable` must have returned void (or explicitly
         // `undefined`), fall through.
@@ -1015,7 +1018,7 @@ export class {{ client.proto.state_name }}{{ method.proto.name }}Aborted extends
       this.#error = reboot_api.errorFromZodError(error);
     } else {
       {% if method.options.errors | length != 0 %}
-      this.#error = {{ client.proto.state_name }}{{ method.proto.name }}Errors.fromJson(
+      this.#error = {{ pb_name }}.{{ client.proto.state_name }}{{ method.proto.name }}Errors.fromJson(
         reboot_api.convertToProtobufJson(
           {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
           reboot_api.validate(
@@ -1054,10 +1057,10 @@ export class {{ client.proto.state_name }}{{ method.proto.name }}Aborted extends
   }
 
   get error(){% if options.proto.zod %}: {% if method.options.errors | length != 0 %}z.infer<typeof {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema> | {% endif %}z.infer<typeof reboot_api.ZOD_ERRORS>{% endif %} {
-    assert(this.#error instanceof protobuf_es.Message);
+    reboot_api.assert(this.#error instanceof protobuf_es.Message);
     {% if options.proto.zod %}
     {% if method.options.errors | length != 0 %}
-    if (this.#error instanceof {{ client.proto.state_name }}{{ method.proto.name }}Errors) {
+    if (this.#error instanceof {{ pb_name }}.{{ client.proto.state_name }}{{ method.proto.name }}Errors) {
       return reboot_api.convertFromProtobuf(
         {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
         this.#error
@@ -1105,7 +1108,7 @@ export class {{ client.proto.state_name }}{{ method.proto.name }}Task {
             .fromStatus(reboot_api.Status.fromJson(json["status"]))
         );
       } else {
-        assert("response" in json);
+        reboot_api.assert("response" in json);
         resolve(
           {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(json["response"])
         );
@@ -1184,7 +1187,7 @@ export class {{ client.proto.state_name }}WeakReference {
     } else if ("taskId" in json) {
       return reboot_api.tasks_pb.TaskId.fromJson(json["taskId"]);
     } else {
-      assert("response" in json);
+      reboot_api.assert("response" in json);
       return {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(json["response"]);
     }
   }
@@ -1593,14 +1596,14 @@ export namespace {{ client.proto.state_name }} {
       >
     >;
     {% else %}
-    {% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }};
+    {{ method.input_type }};
     {% endif %}
 
   export type Partial{{ method.proto.name }}Request =
     {% if options.proto.zod %}
     {{ method.proto.name }}Request;
     {% else %}
-    protobuf_es.PartialMessage<{% if "." not in method.input_type and method.input_type not in google_protobuf_used_messages and method.input_type != "{}Proto".format(client.proto.state_name) %}{{ pb_name }}.{% endif %}{{ method.input_type }}>;
+    protobuf_es.PartialMessage<{{ method.input_type }}>;
     {% endif %}
 
   export type {{ method.proto.name }}Response =
