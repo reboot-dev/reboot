@@ -75,9 +75,7 @@ def has_service_options(service: ServiceDescriptor) -> bool:
     return options_pb2.service in options.Extensions
 
 
-def get_file_options(
-    file: FileDescriptor
-) -> options_pb2.FileOptions:
+def get_file_options(file: FileDescriptor) -> options_pb2.FileOptions:
     """Takes a file proto descriptor and extracts the reboot.FileOptions,
     if such an option is set.
     """
