@@ -63,7 +63,7 @@ export {
 {% for service in client.services %}
 {% for method in service.methods %}
 {% if method.options.proto.kind in ['writer', 'transaction'] %}
-export type Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation = reboot_react.Mutation<{{ client.proto.state_name }}.Partial{{ method.proto.name }}Request>;
+export type Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation = reboot_react.Mutation<{{ client.proto.state_name }}.{{ method.proto.name }}Request>;
 {% endif %}
 {% endfor %}
 {% endfor %}
