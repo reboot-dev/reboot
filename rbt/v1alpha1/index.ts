@@ -746,9 +746,12 @@ export function convertToProtobufJson<T>(
 
   if (!(schema instanceof z.ZodType)) {
     return convertToProtobufJson(z.strictObject(schema), input);
-  }
-
-  if (schema instanceof z.ZodOptional) {
+  } else if (schema instanceof z.ZodPipe) {
+    const meta = schema.meta();
+    assert(meta !== undefined && meta !== null);
+    const schemaWithMeta = (schema.in as z.ZodType).meta(meta);
+    return convertToProtobufJson(schemaWithMeta, input);
+  } else if (schema instanceof z.ZodOptional) {
     const meta = schema.meta();
     assert(meta !== undefined && meta !== null);
     const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
@@ -868,9 +871,12 @@ export function convertFromProtobuf<T>(
 
   if (!(schema instanceof z.ZodType)) {
     return convertFromProtobuf(z.strictObject(schema), input);
-  }
-
-  if (schema instanceof z.ZodOptional) {
+  } else if (schema instanceof z.ZodPipe) {
+    const meta = schema.meta();
+    assert(meta !== undefined && meta !== null);
+    const schemaWithMeta = (schema.in as z.ZodType).meta(meta);
+    return convertFromProtobuf(schemaWithMeta, input);
+  } else if (schema instanceof z.ZodOptional) {
     const meta = schema.meta();
     assert(meta !== undefined && meta !== null);
     const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
