@@ -65,12 +65,13 @@ class TasksDispatcher:
         dispatch: DispatchCallable,
         tasks_cache: TasksCache,
         ready: asyncio.Event,
+        complete_task: CompleteTaskCallable,
     ):
         self._application_id = application_id
         self._dispatch = dispatch
         self._tasks_cache = tasks_cache
         self._ready = ready
-        self._complete_task: Optional[CompleteTaskCallable] = None
+        self._complete_task = complete_task
 
         # Signal that stop has been requested.
         self._stop_requested = asyncio.Event()
@@ -80,10 +81,6 @@ class TasksDispatcher:
         # try and garbage collect them even if they haven't finished.
         self._dispatched_tasks: dict[bytes, Tuple[asyncio.Task,
                                                   IsCancelled]] = {}
-
-    def set_complete_task(self, complete_task: CompleteTaskCallable) -> None:
-        """Set the complete task callable."""
-        self._complete_task = complete_task
 
     async def validate(self, tasks: list[TaskEffect]) -> None:
         """Validate that the specified tasks can be dispatched.
