@@ -11,7 +11,7 @@ load("@rules_proto//proto:defs.bzl", "proto_library")
 npm_link_all_packages()
 
 # Protos that users can import and use in their own `.proto` files. These will
-# be made available when running `rbt protoc`.
+# be made available when running `rbt generate`.
 filegroup(
     name = "protos",
     srcs = [
@@ -323,6 +323,7 @@ ts_project(
     visibility = ["//visibility:public"],
     deps = [
         "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/zod",
     ],
 )
 

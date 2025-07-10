@@ -3,11 +3,7 @@
 
 "use client";
 
-import type {
-  Message as __bufbuildProtobufMessage,
-  MessageType as __bufbuildProtobufMessageType,
-  PartialMessage as __bufbuildProtobufPartialMessage,
-} from "@bufbuild/protobuf";
+import * as protobuf_es from "@bufbuild/protobuf";
 {% if google_protobuf_used_messages is defined and google_protobuf_used_messages|length > 0%}
 import {
   {{ google_protobuf_used_messages|join(', \n	') }}
@@ -32,43 +28,57 @@ import { v4 as uuidv4 } from "uuid";
 // Module not found: Error: Can't resolve './{{ pb_name }}.js'
 //
 // You can resolve this by passing --react-extensions to `rbt
-// protoc` (or better put it in your `.rbtrc` file).
+// generate` (or better put it in your `.rbtrc` file).
 //
 // This is a known issue if you're using `webpack` which uses
 // `ts-loader` (https://github.com/TypeStrong/ts-loader/issues/465).
 import {
-  {% for message in proto.messages_and_enums | unique | list %}
-  {{ message }},
-  {% endfor %}
+  {# Since we are creating a new class named {{ state.proto.name }}, we
+   cannot import it from {{ pb_name }}.js as it would conflict. Instead
+   we alias it inside this file and export that type as {{
+   state.proto.name }}.State for developers to use. When a user is
+   using Zod {{ state.proto.name }}.State aliases to their Zod type. #}
   {% for state in states %}
-  {#
-    The user may be importing the `message` type that defines a Reboot state, but
-    since we are creating a new class named {{ state.proto.name }}, we cannot also
-    import a `message` with the same name from the {{ pb_name }}.js; we have to
-    alias the `message` for use inside of this file.
-  #}
+  {# NOTE: we already rewrite state types that are used in `method.input_type`
+   or `method.output_type` with a `Proto` suffix to not conflict with our
+   new class named {{ state.proto.name }}, so that is what we want to
+   import as. #}
   {{ state.proto.name }} as {{ state.proto.name }}Proto,
   {% endfor %}
 } from "./{{ pb_name }}{% if react_extensions %}.js{% endif %}";
-
+{# We import this because many `method.input_type` or `method.output_type` has
+already been converted to use `pb_name`. #}
+import * as {{ pb_name }} from "./{{ pb_name }}{% if react_extensions %}.js{% endif %}";
+{% if not options.proto.zod %}
 // Additionally re-export all messages_and_enums from the pb module.
 export {
   {% for message in proto.messages_and_enums | unique | list %}
   {{ message }},
   {% endfor %}
-};
+} from "./{{ pb_name }}{% if react_extensions %}.js{% endif %}";
+{% endif %}
 {% endif %}
 
-{% for input_type in mutation_method_input_types %}
-export type Pending{{ input_type | to_camel }}Mutation = reboot_react.Mutation<{{ input_type }}>;
+{% for client in clients %}
+{% for service in client.services %}
+{% for method in service.methods %}
+{% if method.options.proto.kind in ['writer', 'transaction'] %}
+export type Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation = reboot_react.Mutation<{{ client.proto.state_name }}.{{ method.proto.name }}Request>;
+{% endif %}
 {% endfor %}
-
+{% endfor %}
+{% endfor %}
 
 {% if imports|length > 0%}
 // Include all transitive imports.
 {% for import_path, unique_name in imports.items() %}
 import * as {{ unique_name }} from "{{ import_path }}{% if react_extensions %}.js{% endif %}";
 {% endfor %}
+{% endif %}
+
+{% if options.proto.zod %}
+import { z } from "zod/v4";
+import { api } from "{{ options.proto.zod }}{% if react_extensions %}.js{% endif %}";
 {% endif %}
 
 const ERROR_TYPES = [
@@ -100,22 +110,176 @@ const ERROR_TYPES = [
   reboot_api.errors_pb.UnknownTask,
 ] as const; // Need `as const` to ensure TypeScript infers this as a tuple!
 
+{% for state in states %}
+{% for service in state.services %}
+{% for method in service.methods %}
+// Helper for getting the expected shape of a request, i.e., either a
+// Zod shape or a protobuf instance, from a protobuf shape.
+const {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape = (
+  partialRequest: protobuf_es.PartialMessage<{{ method.input_type }}>
+): {{ state.proto.name }}.{{ method.proto.name }}Request => {
+  // TOOD: update `convertFromProtobuf()` to actually work from
+  // any objects that match the shape, not just protobuf instances,
+  // and then we won't need to first call `fromJson()` here.
+  const request = partialRequest instanceof {{ method.input_type }}
+    ? partialRequest
+    : {{ method.input_type }}.fromJson(partialRequest);
+
+  {% if options.proto.zod %}
+  return reboot_api.validate(
+    "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request",
+    api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
+    reboot_api.convertFromProtobuf(
+      api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
+      request
+    )
+  );
+  {% else %}
+  return request;
+  {% endif %}
+};
+
+// Helper for getting the expected shape of a request, i.e., either a
+// Zod shape or a protobuf instance, from a JSON string.
+const {{ state.proto.name }}{{ method.proto.name }}RequestFromJsonString = (
+  jsonRequest: string
+): {{ state.proto.name }}.{{ method.proto.name }}Request => {
+  return {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape(
+    {{ method.input_type }}.fromJsonString(jsonRequest)
+  );
+};
+
+// Helper for getting a protobuf instance for a request from the
+// expected shape, i.e., either a Zod shape or a protobuf shape.
+const {{ state.proto.name }}{{ method.proto.name }}RequestToProtobuf = (
+  partialRequest?: {{ state.proto.name }}.Partial{{ method.proto.name }}Request
+): {{ method.input_type }} => {
+  return partialRequest instanceof {{ method.input_type }}
+    ? partialRequest
+    : new {{ method.input_type }}(
+      {% if options.proto.zod %}
+      reboot_api.convertToProtobufJson(
+        api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
+        reboot_api.validate(
+          "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request",
+          api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
+          partialRequest || {}
+        )
+      )
+      {% else %}
+      partialRequest
+      {% endif %}
+    );
+};
+
+const {{ state.proto.name }}{{ method.proto.name }}ResponseFromProtobufShape = (
+  partialResponse: protobuf_es.PartialMessage<{{ method.output_type }}>
+) => {
+  // TOOD: update `convertFromProtobuf()` to actually work from
+  // any objects that match the shape, not just protobuf instances,
+  // and then we won't need to first call `fromJson()` here.
+  const response = partialResponse instanceof {{ method.output_type }}
+    ? partialResponse
+    : {{ method.output_type }}.fromJson(partialResponse);
+
+  {% if options.proto.zod %}
+  return reboot_api.validate(
+    "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response",
+    api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
+    reboot_api.convertFromProtobuf(
+      api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
+      response
+    )
+  );
+  {% else %}
+  return response;
+  {% endif %}
+};
+
+const {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf = (
+  partialResponse?: {{ state.proto.name }}.Partial{{ method.proto.name }}Response
+): {{ method.output_type }} => {
+  return partialResponse instanceof {{ method.output_type }}
+    ? partialResponse
+    : new {{ method.output_type }}(
+      {% if options.proto.zod %}
+      reboot_api.convertToProtobufJson(
+        api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
+        reboot_api.validate(
+          "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response",
+          api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
+          partialResponse
+        )
+      )
+      {% else %}
+      partialResponse
+      {% endif %}
+    );
+};
+
+{% endfor %}
+{% endfor %}
+{% endfor %}
+
 {% for client in clients %}
+
+{% for service in client.services %}
+{% for method in service.methods %}
+export namespace {{ client.proto.state_name }} {
+  export type {{ method.proto.name }}Request =
+  {% if options.proto.zod %}
+  z.infer<
+    reboot_api.EnsureZodObject<
+      typeof api.{{ client.proto.state_name }}.{{ method.proto.name | to_lower_camel }}.request
+      >
+    >;
+  {% else %}
+    {{ method.input_type }};
+  {% endif %}
+
+  export type Partial{{ method.proto.name }}Request =
+  {% if options.proto.zod %}
+  {{ method.proto.name }}Request;
+  {% else %}
+  protobuf_es.PartialMessage<{{ method.input_type }}>;
+  {% endif %}
+
+  export type {{ method.proto.name }}Response =
+  {% if options.proto.zod %}
+  z.infer<
+    reboot_api.EnsureZodObject<
+      typeof api.{{ client.proto.state_name }}.{{ method.proto.name | to_lower_camel }}.response
+      >
+    >;
+  {% else %}
+  {{ method.output_type }};
+  {% endif %}
+
+  export type Partial{{ method.proto.name }}Response =
+  {% if options.proto.zod %}
+  {{ method.proto.name }}Response;
+  {% else %}
+  protobuf_es.PartialMessage<{{ method.output_type }}>;
+  {% endif %}
+}
+{% endfor %}
+{% endfor %}
+
 export interface {{ client.proto.state_name }}Mutators {
   {% for service in client.services %}
   {% for method in service.methods %}
   {% if method.options.proto.kind in ['writer', 'transaction'] %}
   {{ method.proto.name | to_lower_camel }}: {
     // Mutators are functions and can be called directly.
-    (partialRequest?: __bufbuildProtobufPartialMessage<{{ method.input_type }}>,
+    (partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
      options?: { metadata?: any, idempotencyKey?: string }
     ): Promise<
       reboot_web.ResponseOrAborted<
-        {{ method.output_type }},
+        {{ client.proto.state_name }}.{{ method.proto.name }}Response,
         {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
       >>;
 
-    pending: Pending{{ method.input_type | to_camel }}Mutation[];
+    pending: Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation[];
   };
   {% endif %}
   {% endfor %}
@@ -128,15 +292,15 @@ export interface {{ client.proto.state_name }}Idempotently {
   {% if method.options.proto.kind in ['writer', 'transaction'] %}
   {{ method.proto.name | to_lower_camel }}: {
     // Idempotent calls are functions and can be called directly.
-    (partialRequest?: __bufbuildProtobufPartialMessage<{{ method.input_type }}>,
+    (partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
      options?: { metadata?: any }
     ): Promise<
       reboot_web.ResponseOrAborted<
-        {{ method.output_type }},
+        {{ client.proto.state_name }}.{{ method.proto.name }}Response,
         {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
       >>;
 
-    pending: Pending{{ method.input_type | to_camel }}Mutation[];
+    pending: Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation[];
   };
   {% endif %}
   {% endfor %}
@@ -146,11 +310,27 @@ export interface {{ client.proto.state_name }}Idempotently {
 {# TODO: do not generate errors in react, nodejs, and web. #}
 {% for service in client.services %}
 {% for method in service.methods %}
+
+{% if options.proto.zod %}
+{% if method.options.errors | length != 0 %}
+const {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema: typeof api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors extends z.ZodDiscriminatedUnion ? typeof api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors : ReturnType<typeof z.discriminatedUnion<typeof api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors>> =
+  api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors instanceof z.ZodDiscriminatedUnion
+    ? api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors
+    // In order to types to properly be exposed
+    // 'api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors' must be defined with `as const`.
+    //
+    // TODO: eliminate this requirement for developers by indexing
+    // all of the errors in the code generation since we can determine
+    // how many there are.
+    : z.discriminatedUnion("type", api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors);
+{% endif %}
+{% endif %}
+
 const {{ client.proto.state_name | to_screaming_snake }}_{{ method.proto.name | to_screaming_snake }}_ERROR_TYPES = [
   ...ERROR_TYPES,
 
   // Method errors.
-  {% for error, type in method.options.errors.items() %}
+  {% for type in method.options.errors.values() %}
   {{ type }},
   {% endfor %}
 ] as const; // Need `as const` to ensure TypeScript infers this as a tuple!
@@ -193,14 +373,14 @@ export class {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_c
       return Array.isArray(value);
     };
 
-    const error = this.error.toJson();
+    const error = this.#error.toJson();
 
     if (!isObject(error) || isArray(error)) {
       throw new Error("Expecting 'error' to be an object (and not an array)");
     }
 
     const detail = { ...error };
-    detail["@type"] = `type.googleapis.com/${this.error.getType().typeName}`;
+    detail["@type"] = `type.googleapis.com/${this.#error.getType().typeName}`;
 
     return new reboot_api.Status({
       code: this.code,
@@ -210,7 +390,7 @@ export class {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_c
   }
 
   constructor(
-    error: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}AbortedError,
+    error: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}AbortedError{% if options.proto.zod %}{% if method.options.errors | length != 0 %} | z.infer<typeof {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema>{% endif %} | z.infer<typeof reboot_api.ZOD_ERRORS>{% endif %},
     { message }: { message?: string } = {}
   ) {
     super();
@@ -218,9 +398,34 @@ export class {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_c
     // Set the name of this error for even more information!
     this.name = this.constructor.name;
 
-    this.error = error;
+    {% if options.proto.zod %}
+    if (error instanceof protobuf_es.Message) {
+      this.#error = error;
+    } else if (!("type" in error)) {
+      throw new Error("Expecting discriminator 'type' in error");
+    } else if (reboot_api.ZOD_ERROR_NAMES.includes(error.type)) {
+      this.#error = reboot_api.errorFromZodError(error);
+    } else {
+      {% if method.options.errors | length != 0 %}
+      this.#error = {{ pb_name }}.{{ client.proto.state_name }}{{ method.proto.name }}Errors.fromJson(
+        reboot_api.convertToProtobufJson(
+          {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
+          reboot_api.validate(
+            "api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors",
+            {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
+            error
+          )
+        )
+      );
+      {% else %}
+      throw new Error(`Unknown 'type' discriminator '${error.type}' in error`);
+      {% endif %}
+    }
+    {% else %}
+    this.#error = error;
+    {% endif %}
 
-    let code = reboot_api.grpcStatusCodeFromError(this.error);
+    let code = reboot_api.grpcStatusCodeFromError(this.#error);
 
     if (code === undefined) {
       // Must be one of the Reboot specific errors.
@@ -237,10 +442,28 @@ export class {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_c
   }
 
   get message(): string {
-    return `${this.error.getType().typeName}${this.#message ? ": " + this.#message : ""}`;
+    return `${this.#error.getType().typeName}${this.#message ? ": " + this.#message : ""}`;
   }
 
-  readonly error: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}AbortedError;
+  get error(){% if options.proto.zod %}: {% if method.options.errors | length != 0 %}z.infer<typeof {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema> | {% endif %}z.infer<typeof reboot_api.ZOD_ERRORS>{% endif %} {
+    reboot_api.assert(this.#error instanceof protobuf_es.Message);
+    {% if options.proto.zod %}
+    {% if method.options.errors | length != 0 %}
+    if (this.#error instanceof {{ pb_name }}.{{ client.proto.state_name }}{{ method.proto.name }}Errors) {
+      return reboot_api.convertFromProtobuf(
+        {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
+        this.#error
+      );
+    }
+    {% else %}
+    return reboot_api.zodErrorFromError(this.#error);
+    {% endif %}
+    {% else %}
+    return this.#error;
+    {% endif %}
+  }
+
+  readonly #error: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}AbortedError;
   readonly code: reboot_api.StatusCode;
   readonly #message?: string;
 }
@@ -256,32 +479,32 @@ export interface Use{{ client.proto.state_name }}Api {
   {% if method.options.proto.kind in ["writer", "transaction"] %}
   {{ method.proto.name | to_lower_camel }}: {
     // Mutators are functions and can be called directly.
-    (partialRequest?: __bufbuildProtobufPartialMessage<{{ method.input_type }}>,
+    (partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
      options?: { metadata?: any, idempotencyKey?: string }
     ): Promise<
       reboot_web.ResponseOrAborted<
-        {{ method.output_type }},
+        {{ client.proto.state_name }}.{{ method.proto.name }}Response,
         {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
       >>;
 
-    pending: Pending{{ method.input_type | to_camel }}Mutation[];
+    pending: Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation[];
   };
   {% endif %}
   {% if method.options.proto.kind == "reader" %}
   {% if not method.proto.server_streaming and not method.proto.client_streaming %}
   use{{ method.proto.name | to_camel }}: (
-    partialRequest?: __bufbuildProtobufPartialMessage<{{ method.input_type }}>
+    partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
   ) => {
-    response: {{ method.output_type }} | undefined;
+    response: {{ client.proto.state_name }}.{{ method.proto.name }}Response | undefined;
     isLoading: boolean;
     aborted: undefined | {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted;
   };
   {{ method.proto.name | to_lower_camel }}: (
-    partialRequest?: __bufbuildProtobufPartialMessage<{{ method.input_type }}>,
+    partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
     options?: { signal?: AbortSignal }
   ) => Promise<
     reboot_web.ResponseOrAborted<
-    {{ method.output_type }},
+    {{ client.proto.state_name }}.{{ method.proto.name }}Response,
     {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
     >
   >;
@@ -450,7 +673,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
   }
 
   private async mutate(
-    partialRequest: __bufbuildProtobufPartialMessage<reboot_api.react_pb.MutateRequest>,
+    partialRequest: protobuf_es.PartialMessage<reboot_api.react_pb.MutateRequest>,
     update: (props: { isLoading: boolean; error?: any }) => void
   ): Promise<reboot_api.react_pb.MutateResponse> {
     const request = partialRequest instanceof reboot_api.react_pb.MutateRequest
@@ -475,13 +698,13 @@ class {{ client.proto.state_name | to_camel }}Instance {
   }
 
   private async read<
-    RequestType extends __bufbuildProtobufMessage<RequestType>,
-    ResponseType extends __bufbuildProtobufMessage<ResponseType>,
+    RequestType extends protobuf_es.Message<RequestType>,
+    ResponseType extends protobuf_es.Message<ResponseType>,
     >(
     method: string,
     request: RequestType,
     bearerToken: string | undefined,
-    responseType: __bufbuildProtobufMessageType<ResponseType>,
+    responseType: protobuf_es.MessageType<ResponseType>,
     reader: reboot_react.Reader<ResponseType>
   ) {
     const queryRequest = new reboot_api.react_pb.QueryRequest({
@@ -699,17 +922,17 @@ class {{ client.proto.state_name | to_camel }}Instance {
   {% if method.options.proto.kind in ['writer', 'transaction'] %}
 
   private use{{ method.proto.name | to_camel }}Mutations: (
-    Pending{{ method.input_type | to_camel }}Mutation)[] = [];
+    Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation)[] = [];
 
   private use{{ method.proto.name | to_camel }}SetPendings: {
-    [id: string]: (mutations: Pending{{ method.input_type | to_camel }}Mutation[]) => void
+    [id: string]: (mutations: Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation[]) => void
   } = {};
 
   async {{ method.proto.name | to_lower_camel }}(
-    mutation: Pending{{ method.input_type | to_camel }}Mutation
+    mutation: Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation
   ): Promise<
     reboot_web.ResponseOrAborted<
-      {{ method.output_type }},
+      {{ client.proto.state_name }}.{{ method.proto.name }}Response,
       {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
   >> {
     // We always have at least 1 observer which is this function!
@@ -753,7 +976,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
 
     return new Promise<
       reboot_web.ResponseOrAborted<
-        {{ method.output_type }},
+        {{ client.proto.state_name }}.{{ method.proto.name }}Response,
         {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
       >>(
       async (resolve, reject) => {
@@ -806,8 +1029,11 @@ class {{ client.proto.state_name | to_camel }}Instance {
             await observed(() => {
               removeMutationsAndSetPending();
               resolve({
-                response: {{ method.output_type }}.fromBinary(
-                  responseOrStatus.value
+                response:
+                  {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(
+                    {{ method.output_type }}.fromBinary(
+                    responseOrStatus.value
+                  )
                 )
               });
             });
@@ -844,7 +1070,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
 
   use{{ method.proto.name | to_camel }}(
     id: string,
-    setPending: (mutations: Pending{{ method.input_type | to_camel }}Mutation[]) => void
+    setPending: (mutations: Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation[]) => void
   ) {
     this.use{{ method.proto.name | to_camel }}SetPendings[id] = setPending;
   }
@@ -1005,7 +1231,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
     const [
       pending,
       setPending
-    ] = useState<Pending{{ method.input_type | to_camel }}Mutation[]>([]);
+    ] = useState<Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation[]>([]);
 
     useEffect(() => {
       const id = uuidv4();
@@ -1021,12 +1247,10 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
     const {{ method.proto.name | to_lower_camel }} = useMemo(() => {
       const method = async (
-        partialRequest: __bufbuildProtobufPartialMessage<{{ method.input_type }}> = {},
+        partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name}}Request = {},
         options?: { metadata?: any, key?: string }
       ) => {
-        const request = partialRequest instanceof {{ method.input_type }}
-          ? partialRequest.clone()
-          : new {{ method.input_type }}(partialRequest);
+        const request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
 
         const idempotencyKey = options?.idempotencyKey ?? options?.key ?? uuidv4();
 
@@ -1042,7 +1266,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
       };
 
       method.pending =
-        new Array<Pending{{ method.input_type | to_camel }}Mutation>();
+        new Array<Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation>();
 
       return method;
     }, [bearerToken]);
@@ -1059,11 +1283,9 @@ export const use{{ client.proto.state_name | to_camel }} = (
   {% if not method.proto.server_streaming and not method.proto.client_streaming %}
 
   function use{{ method.proto.name | to_camel }}(
-    partialRequest: __bufbuildProtobufPartialMessage<{{ method.input_type }}> = {}
+    partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name}}Request = {}
   ) {
-    const newRequest = partialRequest instanceof {{ method.input_type }}
-      ? partialRequest.clone()
-      : new {{ method.input_type }}(partialRequest);
+    const newRequest = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
 
     const [request, setRequest] = useState(newRequest);
 
@@ -1071,7 +1293,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
       setRequest(newRequest);
     }
 
-    const [response, setResponse] = useState<{{ method.output_type }}>();
+    const [response, setResponse] = useState<{{ client.proto.state_name }}.{{ method.proto.name}}Response>();
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [aborted, setAborted] = useState<
       undefined
@@ -1091,7 +1313,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
         (response: {{ method.output_type }}) => {
           unstable_batchedUpdates(() => {
             setAborted(undefined);
-            setResponse(response);
+            setResponse({{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(response));
           });
         },
         setIsLoading,
@@ -1114,12 +1336,10 @@ export const use{{ client.proto.state_name | to_camel }} = (
   }
 
   async function {{ method.proto.name | to_lower_camel }}(
-    partialRequest: __bufbuildProtobufPartialMessage<{{ method.input_type }}> = {},
+    partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name}}Request = {},
     options?: { signal?: AbortSignal }
   ) {
-    const request = partialRequest instanceof {{ method.input_type }}
-      ? partialRequest.clone()
-      : new {{ method.input_type }}(partialRequest);
+    const request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
 
     // Fetch with retry, using a backoff, i.e., if we get disconnected.
     const { response, aborted } = await (async () => {
@@ -1190,7 +1410,10 @@ export const use{{ client.proto.state_name | to_camel }} = (
         return { aborted };
       }
     } else {
-      return { response: {{ method.output_type }}.fromJson(await response.json()) };
+      return {
+        response:
+          {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(({{ method.output_type }}.fromJson(await response.json())))
+      };
     }
   }
 
@@ -1215,7 +1438,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
       {% for method in service.methods %}
       {% if method.options.proto.kind in ['writer', 'transaction'] %}
       {{ method.proto.name | to_lower_camel }}: (
-        partialRequest?: __bufbuildProtobufPartialMessage<{{ method.input_type }}>,
+        partialRequest?:{{ client.proto.state_name }}.Partial{{ method.proto.name}}Request,
         options?: { metadata?: any }
       ) => {{ method.proto.name | to_lower_camel }}(partialRequest, { ...options, key }),
       {% endif %}

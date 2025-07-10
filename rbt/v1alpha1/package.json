@@ -1,6 +1,6 @@
 {
   "name": "@reboot-dev/reboot-api",
-  "version": "0.28.0",
+  "version": "0.29.1",
   "type": "module",
   "description": "npm package for Reboot API",
   "main": "index.js",
@@ -11,7 +11,9 @@
   "author": "reboot-dev",
   "dependencies": {
     "@bufbuild/protobuf": "1.3.2",
-    "@scarf/scarf": "1.4.0"
+    "@scarf/scarf": "1.4.0",
+    "zod": "^3.25.51",
+    "typescript": "5.4.5"
   },
   "license": "Apache-2.0",
   "devDependencies": {}
