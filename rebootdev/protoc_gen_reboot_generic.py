@@ -22,6 +22,7 @@ from pyprotoc_plugin.helpers import (  # type: ignore[import]
 from pyprotoc_plugin.plugins import ProtocPlugin  # type: ignore[import]
 from rbt.v1alpha1 import options_pb2
 from rebootdev.options import (
+    get_file_options,
     get_method_options,
     get_service_options,
     get_state_options,
@@ -233,8 +234,19 @@ class ProtoFile:
 
 
 @dataclass
+class ProtoFileOptions:
+    zod: Optional[str]
+
+
+@dataclass
+class BaseFileOptions:
+    proto: ProtoFileOptions
+
+
+@dataclass
 class BaseFile:
     proto: ProtoFile
+    options: BaseFileOptions
     # The following is a Sequence, not list, to make it covariant:
     #   https://mypy.readthedocs.io/en/stable/common_issues.html#variance
     legacy_grpc_services: Sequence[BaseLegacyGrpcService]
@@ -404,7 +416,7 @@ class RebootProtocPlugin(ProtocPlugin):
 
     @classmethod
     def _proto_message_and_enum_names(
-        self,
+        cls,
         file: FileDescriptor,
     ) -> list[str]:
         """
@@ -432,9 +444,39 @@ class RebootProtocPlugin(ProtocPlugin):
 
         return messages_and_enums
 
+    def compute_relative_import_path(
+        self,
+        output_directory: str,
+        proto_file_name: str,
+        target_absolute_path: str,
+    ):
+        """Computes the relative import path from the output directory to the
+        target absolute path."""
+        relative_output_file = proto_file_name.replace(".proto", ".ts")
+        full_output_file_path = os.path.abspath(
+            os.path.join(output_directory, relative_output_file)
+        )
+        full_output_directory = os.path.dirname(full_output_file_path)
+
+        relative_path = os.path.relpath(
+            target_absolute_path, start=full_output_directory
+        )
+
+        # Remove the file extension, so we can determine if we want to
+        # use it depending on the provided '*_extensions' argument.
+        relative_path = relative_path[:-3]
+
+        return f'./{relative_path}'
+
     def template_data(
         self,
         file_proto: FileDescriptorProto,
+        # Currently only used when generating code from a Zod schema.
+        output_directory: Optional[str] = None,
+        # We are calling that method directly when generating nodejs code,
+        # to generate and encode Reboot Python code, however we do not
+        # want to generate the Zod schema import path in that case.
+        generating_python_from_nodejs: bool = False,
     ) -> BaseFile:
 
         def check_legal_proto_directory(directory):
@@ -468,7 +510,7 @@ class RebootProtocPlugin(ProtocPlugin):
             raise UserProtoError(
                 f"Proto file '{file.name}' has package '{file.package}', but "
                 "based on the file's path the expected package was "
-                f"'{directory.replace(os.path.sep, '.')}'. 'rbt protoc' "
+                f"'{directory.replace(os.path.sep, '.')}'. 'rbt generate' "
                 "expects the package to match the directory structure. Check "
                 "that the API base directory is correct, and if so, adjust "
                 "either the proto file's location or its package."
@@ -479,6 +521,24 @@ class RebootProtocPlugin(ProtocPlugin):
 
         # Then ask the language-specific logic to add any further information
         # that this specific language needs.
+
+        if base_file.options.proto.zod is not None and not generating_python_from_nodejs:
+            # The 'base_file.options.proto.zod' path is written by the
+            # 'rbt-schema-to-proto' script as an absolute path to the
+            # schema file, however we need to convert it to a relative
+            # path so that the generated code can import it correctly.
+            assert output_directory is not None
+            relative_schema_import_path = self.compute_relative_import_path(
+                output_directory=output_directory,
+                proto_file_name=base_file.proto.file_name,
+                target_absolute_path=base_file.options.proto.zod,
+            )
+
+            # Overwrite the zod import path with the relative one.
+            # So any of 'nodejs', 'react' and 'web' can import the
+            # schema.
+            base_file.options.proto.zod = relative_schema_import_path
+
         full_file = self.add_language_dependent_data(base_file)
 
         # If the `file_proto` does not contain Reboot states or clients, i.e.
@@ -571,6 +631,13 @@ class RebootProtocPlugin(ProtocPlugin):
         return ProtoServiceOptions(
             state_name=state_name,
             state_full_name=state_full_name,
+        )
+
+    @staticmethod
+    def _proto_file_options(file: FileDescriptor) -> ProtoFileOptions:
+        options = get_file_options(file)
+        return ProtoFileOptions(
+            zod=options.zod if options.HasField('zod') else None,
         )
 
     def _is_default_constructible(self, service: ServiceDescriptor) -> bool:
@@ -848,6 +915,9 @@ class RebootProtocPlugin(ProtocPlugin):
             states=states,
             clients=clients,
             reboot_version=REBOOT_VERSION,
+            options=BaseFileOptions(
+                proto=RebootProtocPlugin._proto_file_options(file),
+            ),
         )
 
     def process_file(self, file_proto: FileDescriptorProto) -> None:
@@ -865,7 +935,14 @@ class RebootProtocPlugin(ProtocPlugin):
                     f"'syntax=\"{file_proto.syntax}\";'"
                 )
 
-            template_data = self.template_data(file_proto)
+            template_data = self.template_data(
+                file_proto,
+                # When generating code from a Zod schema we need to pass the
+                # `output_directory` which comes as the parameter on `self.request`
+                # but `self.request` is `None` when we are generating Reboot
+                # Python code to encode inside Reboot NodeJS.
+                self.request.parameter if self.request is not None else None,
+            )
 
             # Check if file has any Reboot states or clients and only generate
             # if the plugin wants to and the services are user-defined.

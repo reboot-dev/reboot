@@ -12,7 +12,7 @@ from abc import abstractmethod
 from google.protobuf import any_pb2
 from google.protobuf.message import Message
 from rbt.v1alpha1 import errors_pb2, tasks_pb2
-from rebootdev.aio.aborted import Aborted
+from rebootdev.aio.aborted import Aborted, SystemAborted
 from rebootdev.aio.auth import Auth
 from rebootdev.aio.auth.authorizers import Authorizer
 from rebootdev.aio.auth.token_verifiers import TokenVerifier
@@ -263,6 +263,14 @@ class NodeAdaptorAuthorizer(Authorizer[Message, Message]):
         except asyncio.CancelledError:
             cancelled.set_result(None)
             raise
+        except BaseException as exception:
+            # Turn this into a system aborted so that downstream
+            # machinery handles it without printing Python stack
+            # traces.
+            raise SystemAborted(
+                errors_pb2.Unknown(),
+                message=f"unhandled while authorizing: {exception}"
+            ) from None
 
         # Make sure we cancel the `cancelled` future so that we don't
         # keep around resources related to it that might cause us to

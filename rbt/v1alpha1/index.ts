@@ -1,4 +1,5 @@
-import { MessageType } from "@bufbuild/protobuf";
+import * as protobuf_es from "@bufbuild/protobuf";
+import { z } from "zod/v4";
 import * as errors_pb from "./errors_pb.js";
 
 export * as protobuf_es from "@bufbuild/protobuf";
@@ -6,6 +7,22 @@ export * as auth_pb from "./auth_pb.js";
 export * as errors_pb from "./errors_pb.js";
 export * as react_pb from "./react_pb.js";
 export * as tasks_pb from "./tasks_pb.js";
+
+// We are using this helper function to raise an exception if the assertion
+// fails because console.assert does not do this and we can't use
+// `assert` from Node.js because it is not available in the browser.
+export function assert(
+  condition: boolean,
+  message: string = "Assertion failed"
+): asserts condition {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+export function typeIs<T>(t: any, predicate: (t: any) => t is T): t is T {
+  return predicate(t);
+}
 
 export const sleep = (seconds: number): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve, seconds * 1000));
@@ -189,17 +206,91 @@ export class Status {
   readonly details: any[];
 }
 
+export const ZOD_ERRORS = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("StateAlreadyConstructed"),
+  }),
+  z.object({
+    type: z.literal("StateNotConstructed"),
+    requiresConstructor: z.boolean().optional().meta({ tag: 1 }),
+  }),
+  z.object({
+    type: z.literal("UnknownService"),
+  }),
+  z.object({
+    type: z.literal("InvalidMethod"),
+  }),
+  z.object({
+    type: z.literal("UnknownTask"),
+  }),
+  z.object({
+    type: z.literal("TransactionParticipantFailedToPrepare"),
+  }),
+  z.object({
+    type: z.literal("TransactionParticipantFailedToCommit"),
+  }),
+  z.object({
+    type: z.literal("Cancelled"),
+  }),
+  z.object({
+    type: z.literal("Unknown"),
+  }),
+  z.object({
+    type: z.literal("InvalidArgument"),
+  }),
+  z.object({
+    type: z.literal("DeadlineExceeded"),
+  }),
+  z.object({
+    type: z.literal("NotFound"),
+  }),
+  z.object({
+    type: z.literal("AlreadyExists"),
+  }),
+  z.object({
+    type: z.literal("PermissionDenied"),
+  }),
+  z.object({
+    type: z.literal("ResourceExhausted"),
+  }),
+  z.object({
+    type: z.literal("FailedPrecondition"),
+  }),
+  z.object({
+    type: z.literal("Aborted"),
+  }),
+  z.object({
+    type: z.literal("OutOfRange"),
+  }),
+  z.object({
+    type: z.literal("Unimplemented"),
+  }),
+  z.object({
+    type: z.literal("Internal"),
+  }),
+  z.object({
+    type: z.literal("Unavailable"),
+  }),
+  z.object({
+    type: z.literal("DataLoss"),
+  }),
+  z.object({
+    type: z.literal("Unauthenticated"),
+  }),
+]);
+
+export const ZOD_ERROR_NAMES = ZOD_ERRORS.options.map(
+  (error) => error.shape.type.value
+);
+
 // Helper types for converting from a generated message type, e.g.,
 // `Foo`, to an instance of `Foo`. We could use `InstanceType`
 // but then we'd need to constrain `ErrorType` with something like
 // `new (...args: any) => any` and instead since we know it needs
-// to be a `MessageType` we infer the actual instance type from
+// to be a `protobuf_es.MessageType` we infer the actual instance type from
 // that instead.
-export type InstanceTypeForErrorType<ErrorType> = ErrorType extends MessageType<
-  infer Error
->
-  ? Error
-  : never;
+export type InstanceTypeForErrorType<ErrorType> =
+  ErrorType extends protobuf_es.MessageType<infer Error> ? Error : never;
 
 export type InstanceTypeForErrorTypes<ErrorTypes extends readonly [...any[]]> =
   ErrorTypes extends readonly [infer Head, ...infer Tail]
@@ -322,7 +413,7 @@ export function grpcStatusCodeFromError<ErrorType>(
 // any arbitrary `number`, which must be all possible types in the
 // tuple, thus the union.
 export function errorFromGoogleRpcStatusDetails<
-  ErrorTypes extends readonly [...MessageType<any>[]]
+  ErrorTypes extends readonly [...protobuf_es.MessageType<any>[]]
 >(
   status: Status,
   errorTypes: ErrorTypes
@@ -430,6 +521,117 @@ export function errorFromGoogleRpcStatusCode(status: Status): GrpcError {
   return new errors_pb.Unknown();
 }
 
+export function errorFromZodError(
+  error: z.infer<typeof ZOD_ERRORS>
+): GrpcError | RebootError {
+  switch (error.type) {
+    case "Cancelled":
+      return new errors_pb.Cancelled();
+    case "Unknown":
+      return new errors_pb.Unknown();
+    case "InvalidArgument":
+      return new errors_pb.InvalidArgument();
+    case "DeadlineExceeded":
+      return new errors_pb.DeadlineExceeded();
+    case "NotFound":
+      return new errors_pb.NotFound();
+    case "AlreadyExists":
+      return new errors_pb.AlreadyExists();
+    case "PermissionDenied":
+      return new errors_pb.PermissionDenied();
+    case "ResourceExhausted":
+      return new errors_pb.ResourceExhausted();
+    case "FailedPrecondition":
+      return new errors_pb.FailedPrecondition();
+    case "Aborted":
+      return new errors_pb.Aborted();
+    case "OutOfRange":
+      return new errors_pb.OutOfRange();
+    case "Unimplemented":
+      return new errors_pb.Unimplemented();
+    case "Internal":
+      return new errors_pb.Internal();
+    case "Unavailable":
+      return new errors_pb.Unavailable();
+    case "DataLoss":
+      return new errors_pb.DataLoss();
+    case "Unauthenticated":
+      return new errors_pb.Unauthenticated();
+    case "StateAlreadyConstructed":
+      return new errors_pb.StateAlreadyConstructed();
+    case "StateNotConstructed":
+      return new errors_pb.StateNotConstructed({
+        requiresConstructor: error.requiresConstructor,
+      });
+    case "UnknownService":
+      return new errors_pb.UnknownService();
+    case "InvalidMethod":
+      return new errors_pb.InvalidMethod();
+    case "UnknownTask":
+      return new errors_pb.UnknownTask();
+    case "TransactionParticipantFailedToPrepare":
+      return new errors_pb.TransactionParticipantFailedToPrepare();
+    case "TransactionParticipantFailedToCommit":
+      return new errors_pb.TransactionParticipantFailedToCommit();
+  }
+}
+
+export function zodErrorFromError(
+  error: protobuf_es.Message
+): z.infer<typeof ZOD_ERRORS> {
+  if (error instanceof errors_pb.Cancelled) {
+    return { type: "Cancelled" };
+  } else if (error instanceof errors_pb.Unknown) {
+    return { type: "Unknown" };
+  } else if (error instanceof errors_pb.InvalidArgument) {
+    return { type: "InvalidArgument" };
+  } else if (error instanceof errors_pb.DeadlineExceeded) {
+    return { type: "DeadlineExceeded" };
+  } else if (error instanceof errors_pb.NotFound) {
+    return { type: "NotFound" };
+  } else if (error instanceof errors_pb.AlreadyExists) {
+    return { type: "AlreadyExists" };
+  } else if (error instanceof errors_pb.PermissionDenied) {
+    return { type: "PermissionDenied" };
+  } else if (error instanceof errors_pb.ResourceExhausted) {
+    return { type: "ResourceExhausted" };
+  } else if (error instanceof errors_pb.FailedPrecondition) {
+    return { type: "FailedPrecondition" };
+  } else if (error instanceof errors_pb.Aborted) {
+    return { type: "Aborted" };
+  } else if (error instanceof errors_pb.OutOfRange) {
+    return { type: "OutOfRange" };
+  } else if (error instanceof errors_pb.Unimplemented) {
+    return { type: "Unimplemented" };
+  } else if (error instanceof errors_pb.Internal) {
+    return { type: "Internal" };
+  } else if (error instanceof errors_pb.Unavailable) {
+    return { type: "Unavailable" };
+  } else if (error instanceof errors_pb.DataLoss) {
+    return { type: "DataLoss" };
+  } else if (error instanceof errors_pb.Unauthenticated) {
+    return { type: "Unauthenticated" };
+  } else if (error instanceof errors_pb.StateAlreadyConstructed) {
+    return { type: "StateAlreadyConstructed" };
+  } else if (error instanceof errors_pb.StateNotConstructed) {
+    return {
+      type: "StateNotConstructed",
+      requiresConstructor: error.requiresConstructor,
+    };
+  } else if (error instanceof errors_pb.UnknownService) {
+    return { type: "UnknownService" };
+  } else if (error instanceof errors_pb.InvalidMethod) {
+    return { type: "InvalidMethod" };
+  } else if (error instanceof errors_pb.UnknownTask) {
+    return { type: "UnknownTask" };
+  } else if (error instanceof errors_pb.TransactionParticipantFailedToPrepare) {
+    return { type: "TransactionParticipantFailedToPrepare" };
+  } else if (error instanceof errors_pb.TransactionParticipantFailedToCommit) {
+    return { type: "TransactionParticipantFailedToCommit" };
+  }
+  throw new Error(`Unknown error type '${error.getType().typeName}'`);
+}
+
 export abstract class Aborted extends Error {
   abstract toStatus(): Status;
 }
@@ -495,5 +697,311 @@ function validateASCII(
         `${fieldDescription} must be ASCII; given value '${s}' is not ASCII`
       );
     }
+  }
+}
+
+export const toSnakeCase = (s: string): string => {
+  return s
+    .replace(/([A-Z])/g, "_$1")
+    .toLowerCase()
+    .replace(/^_/, "");
+};
+
+export const toPascalCase = (s: string): string => {
+  return (s.includes("_") ? s : toSnakeCase(s))
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join("");
+};
+
+export const toCamelCase = (s: string): string => {
+  const pascal = toPascalCase(s);
+  return pascal.charAt(0).toLowerCase() + pascal.slice(1);
+};
+
+export function validate<T>(
+  what: string,
+  schema: z.ZodObject | z.ZodVoid | Record<string, z.ZodType>,
+  input: T
+) {
+  if (!(schema instanceof z.ZodType)) {
+    return validate(what, z.strictObject(schema), input);
+  }
+
+  const { success, error, data } = schema.safeParse(input);
+
+  if (!success) {
+    console.warn(`\nFailed to validate '${what}':\n${z.prettifyError(error)}`);
+    throw new Error(`Failed to validate '${what}'`);
+  }
+
+  return data;
+}
+
+export function convertToProtobufJson<T>(
+  schema: z.ZodType | Record<string, z.ZodType>,
+  input: T
+): any {
+  assert(schema instanceof z.ZodVoid || input !== undefined);
+
+  if (!(schema instanceof z.ZodType)) {
+    return convertToProtobufJson(z.strictObject(schema), input);
+  } else if (schema instanceof z.ZodPipe) {
+    const meta = schema.meta();
+    assert(meta !== undefined && meta !== null);
+    const schemaWithMeta = (schema.in as z.ZodType).meta(meta);
+    return convertToProtobufJson(schemaWithMeta, input);
+  } else if (schema instanceof z.ZodOptional) {
+    const meta = schema.meta();
+    assert(meta !== undefined && meta !== null);
+    const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
+    return convertToProtobufJson(schemaWithMeta, input);
+  } else if (schema instanceof z.ZodDefault) {
+    const meta = schema.meta();
+    assert(meta !== undefined && meta !== null);
+    const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
+    return convertToProtobufJson(schemaWithMeta, input);
+  } else if (schema._zod.def.type === "string") {
+    return input;
+  } else if (schema instanceof z.ZodNumber) {
+    return input;
+  } else if (schema instanceof z.ZodBigInt) {
+    return input;
+  } else if (schema instanceof z.ZodBoolean) {
+    return input;
+  } else if (schema instanceof z.ZodLiteral) {
+    assert(typeof input === "string");
+    return input;
+  } else if (schema instanceof z.ZodRecord) {
+    assert(typeof input === "object");
+    // Need to _add_ the extra level of indirection we use to encode a
+    // record.
+    const output: { record: Record<string, any> } = { record: {} };
+    for (const property in input) {
+      // Drop all `undefined` properties as they are technically not
+      // valid JSON and can't be encoded/decoded via protobuf.
+      if (input[property] === undefined) {
+        continue;
+      }
+      output.record[property] = convertToProtobufJson(
+        schema.valueType as z.ZodType,
+        input[property]
+      );
+    }
+    return output;
+  } else if (schema instanceof z.ZodArray) {
+    assert(Array.isArray(input));
+    return {
+      elements: input.map((element) =>
+        convertToProtobufJson(schema.element as z.ZodType, element)
+      ),
+    };
+  } else if (schema instanceof z.ZodObject) {
+    assert(typeof input === "object" && input !== null);
+    const shape = schema.shape;
+    const output: Record<string, any> = {};
+    for (const property in input) {
+      assert(property in schema.shape);
+      // Drop all `undefined` properties as they are technically not
+      // valid JSON and can't be encoded/decoded via protobuf.
+      if (input[property] === undefined) {
+        continue;
+      }
+      output[property] = convertToProtobufJson(
+        shape[property],
+        input[property]
+      );
+    }
+    return output;
+  } else if (schema instanceof z.ZodDiscriminatedUnion) {
+    const discriminator = schema._zod.def.discriminator;
+    assert(typeof discriminator === "string");
+    assert(
+      typeIs(input, (input): input is T & { [key: string]: any } => {
+        return typeof input === "object" && discriminator in input;
+      })
+    );
+
+    for (const option of schema.options as z.ZodObject[]) {
+      assert(discriminator in option.shape);
+      if (
+        option.shape[discriminator]._zod.def.values[0] === input[discriminator]
+      ) {
+        const output: Record<string, any> = {};
+        const value = convertToProtobufJson(option, input);
+        delete value[discriminator];
+
+        output[toCamelCase(input[discriminator])] = value;
+
+        return output;
+      }
+    }
+    throw new Error(`Invalid discriminated union`);
+  } else if (schema instanceof z.ZodVoid) {
+    assert(input === undefined);
+    // Need this to be `google.protobuf.Empty`.
+    return {};
+  } else if (schema instanceof z.ZodCustom) {
+    // Currently we expect a custom schema to only be to alias a
+    // protobuf type that is otherwise well defined and does not
+    // require any conversion.
+    const meta = schema.meta();
+    assert(meta !== undefined && meta !== null && "protobuf" in meta);
+    return input;
+  } else if (
+    schema instanceof z.ZodLazy &&
+    schema._zod.def.getter?.toString() ===
+      (z.json() as z.ZodType as z.ZodLazy)._zod.def.getter.toString()
+  ) {
+    // NOTE: we are using `JSON.stringify()` here because we (a) want
+    // to ensure that this is in fact a valid JSON object but also
+    // because (b) @bufbuild/protobuf can not handle any object that
+    // has properties with `undefined` as a value.
+    return protobuf_es.Value.fromJsonString(JSON.stringify(input));
+  } else {
+    throw new Error(`Unexpected schema type '${schema._zod.def.type}'`);
+  }
+}
+
+export function convertFromProtobuf<T>(
+  schema: z.ZodType | Record<string, z.ZodType>,
+  input: T
+): any {
+  assert(input !== undefined);
+
+  if (!(schema instanceof z.ZodType)) {
+    return convertFromProtobuf(z.strictObject(schema), input);
+  } else if (schema instanceof z.ZodPipe) {
+    const meta = schema.meta();
+    assert(meta !== undefined && meta !== null);
+    const schemaWithMeta = (schema.in as z.ZodType).meta(meta);
+    return convertFromProtobuf(schemaWithMeta, input);
+  } else if (schema instanceof z.ZodOptional) {
+    const meta = schema.meta();
+    assert(meta !== undefined && meta !== null);
+    const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
+    return convertFromProtobuf(schemaWithMeta, input);
+  } else if (schema instanceof z.ZodDefault) {
+    const meta = schema.meta();
+    assert(meta !== undefined && meta !== null);
+    const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
+    return convertFromProtobuf(schemaWithMeta, input);
+  } else if (schema._zod.def.type === "string") {
+    return input;
+  } else if (schema instanceof z.ZodNumber) {
+    return input;
+  } else if (schema instanceof z.ZodBigInt) {
+    return input;
+  } else if (schema instanceof z.ZodBoolean) {
+    return input;
+  } else if (schema instanceof z.ZodLiteral) {
+    assert(typeof input === "number");
+    // We're relying on the fact that `schema._zod.def.values` is ordered
+    // based on what was originally passed in.
+    return schema._zod.def.values[input];
+  } else if (schema instanceof z.ZodRecord) {
+    assert(input instanceof protobuf_es.Message);
+    // Need to _remove_ the extra level of indirection we use to
+    // encode a record.
+    assert(input !== null && input !== undefined && "record" in input);
+    const record = (input as { record: Record<string, any> }).record;
+    const output: Record<string, any> = {};
+    for (const property in record as any) {
+      // Drop all `undefined` properties as they are technically not
+      // valid JSON and can't be encoded/decoded via protobuf.
+      if (record[property] === undefined) {
+        continue;
+      }
+      output[property] = convertFromProtobuf(
+        schema.valueType as z.ZodType,
+        record[property]
+      );
+    }
+    return output;
+  } else if (schema instanceof z.ZodArray) {
+    assert(
+      typeIs(input, (input): input is T & { elements: any[] } => {
+        return (
+          input instanceof protobuf_es.Message &&
+          "elements" in input &&
+          Array.isArray(input.elements)
+        );
+      }),
+      "schema is ZodArray, but input is not a protobuf message"
+    );
+
+    return input.elements.map((element: any) =>
+      convertFromProtobuf(schema.element as z.ZodType, element)
+    );
+  } else if (schema instanceof z.ZodObject) {
+    assert(
+      typeIs(input, (input): input is T & { [key: string]: any } => {
+        return input instanceof protobuf_es.Message && input !== null;
+      }),
+      "schema is ZodObject, but input is not a protobuf message"
+    );
+
+    const shape = schema.shape;
+    const output: Record<string, any> = {};
+    for (const property in input) {
+      assert(property in shape);
+      // Drop all `undefined` properties as they are technically not
+      // valid JSON and can't be encoded/decoded via protobuf.
+      if (input[property] === undefined) {
+        continue;
+      }
+      output[property] = convertFromProtobuf(shape[property], input[property]);
+    }
+    return output;
+  } else if (schema instanceof z.ZodDiscriminatedUnion) {
+    const discriminator = schema._zod.def.discriminator;
+    assert(typeof discriminator === "string");
+
+    assert(
+      typeIs(input, (input): input is T & { [key: string]: any } => {
+        return (
+          input instanceof protobuf_es.Message &&
+          input !== null &&
+          discriminator in input
+        );
+      }),
+      "schema is ZodDiscriminatedUnion, but input is not a protobuf message"
+    );
+
+    for (const option of schema.options as z.ZodObject[]) {
+      assert(discriminator in option.shape);
+      if (
+        toCamelCase(option.shape[discriminator]._zod.def.values[0]) ===
+        input[discriminator].case
+      ) {
+        const output = convertFromProtobuf(option, input[discriminator].value);
+        output[discriminator] = option.shape[discriminator]._zod.def.values[0];
+        return output;
+      }
+    }
+    throw new Error(`Invalid discriminated union`);
+  } else if (schema instanceof z.ZodVoid) {
+    // This is only supported for responses.
+    return undefined;
+  } else if (schema instanceof z.ZodCustom) {
+    // Currently we expect a custom schema to only be to alias a
+    // protobuf type that is otherwise well defined and doesn't
+    // require any conversion.
+    assert(
+      input instanceof protobuf_es.Message,
+      "schema is ZodCustom, but input is not a protobuf message"
+    );
+    const meta = (schema as z.ZodCustom).meta();
+    assert(meta !== undefined && "protobuf" in meta);
+    return input;
+  } else if (
+    schema instanceof z.ZodLazy &&
+    schema._zod.def.getter?.toString() ===
+      (z.json() as z.ZodType as z.ZodLazy)._zod.def.getter.toString()
+  ) {
+    assert(input instanceof protobuf_es.Value);
+    return input.toJson();
+  } else {
+    throw new Error(`Unexpected schema type '${schema._zod.def.type}'`);
   }
 }

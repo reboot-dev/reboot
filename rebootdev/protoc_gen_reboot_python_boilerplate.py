@@ -50,6 +50,7 @@ class PythonRebootBoilerplateProtocPlugin(PythonRebootProtocPlugin):
 
         python_boilerplate_file = PythonBoilerplateFile(
             proto=python_file.proto,
+            options=file.options,
             legacy_grpc_services=python_file.legacy_grpc_services,
             states=python_file.states,
             clients=python_file.clients,

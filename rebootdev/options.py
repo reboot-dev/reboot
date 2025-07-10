@@ -1,9 +1,11 @@
 from google.protobuf.descriptor import (
     Descriptor,
+    FileDescriptor,
     MethodDescriptor,
     ServiceDescriptor,
 )
 from google.protobuf.descriptor_pb2 import (
+    FileOptions,
     MessageOptions,
     MethodOptions,
     ServiceOptions,
@@ -71,3 +73,20 @@ def get_service_options(
 def has_service_options(service: ServiceDescriptor) -> bool:
     options: ServiceOptions = service.GetOptions()
     return options_pb2.service in options.Extensions
+
+
+def get_file_options(file: FileDescriptor) -> options_pb2.FileOptions:
+    """Takes a file proto descriptor and extracts the reboot.FileOptions,
+    if such an option is set.
+    """
+    options: FileOptions = file.GetOptions()
+    # This is the proto API for accessing our custom options used in the
+    # given `FileOptions`. Returns an empty reboot.FileOptions if no
+    # option is set, which means its options will default to the proto
+    # defaults for their field types.
+    return options.Extensions[options_pb2.file]
+
+
+def has_file_options(file: FileDescriptor) -> bool:
+    options: FileOptions = file.GetOptions()
+    return options_pb2.file in options.Extensions
