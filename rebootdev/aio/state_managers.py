@@ -2041,6 +2041,64 @@ class SidecarStateManager(
 
             yield (state_copy, StateManager.Writer(complete))
 
+    async def complete_task(
+        self,
+        task_effect: TaskEffect,
+        response_or_error: TaskResponseOrError,
+    ):
+        state_type = task_effect.task_id.state_type
+        state_ref = StateRef(task_effect.task_id.state_ref)
+        response_or_loop, error = response_or_error
+
+        async with self._mutator_locks[state_type][state_ref]:
+            if isinstance(response_or_loop, Loop):
+                loop: Loop = response_or_loop
+
+                if loop.when is not None:
+                    task_effect.schedule = (
+                        DateTimeWithTimeZone.now() + loop.when
+                    ) if isinstance(loop.when, timedelta) else loop.when
+
+                task_effect.iteration += 1
+
+                await self._store(
+                    state_type=state_type,
+                    state_ref=state_ref,
+                    task=task_effect.to_sidecar_task(),
+                )
+            else:
+                # Store response and mark this Task as completed in
+                # persistent storage. Even though we're writing here, we're
+                # not writing the actor's state.
+                task_response: Optional[any_pb2.Any] = None
+                task_error: Optional[any_pb2.Any] = None
+                if error is not None:
+                    assert response_or_loop is None
+
+                    task_error = any_pb2.Any()
+                    task_error.Pack(error)
+                else:
+                    assert response_or_loop is not None
+                    response: Message = response_or_loop
+
+                    task_response = any_pb2.Any()
+                    task_response.Pack(response)
+
+                assert task_response is not None or task_error is not None
+
+                await self._store(
+                    state_type=state_type,
+                    state_ref=state_ref,
+                    task=sidecar_pb2.Task(
+                        task_id=task_effect.task_id,
+                        method=task_effect.method_name,
+                        status=sidecar_pb2.Task.Status.COMPLETED,
+                        request=task_effect.request.SerializeToString(),
+                        response=task_response,
+                        error=task_error,
+                    ),
+                )
+
     @asynccontextmanager
     async def task_workflow(
         self,
@@ -2049,64 +2107,7 @@ class SidecarStateManager(
                                 Awaitable[None]]]:
         """Override of StateManager.task_workflow(...) for SidecarStateManager."""
 
-        async def complete(
-            task_effect: TaskEffect,
-            response_or_error: TaskResponseOrError,
-        ):
-            state_type = task_effect.task_id.state_type
-            state_ref = StateRef(task_effect.task_id.state_ref)
-            response_or_loop, error = response_or_error
-
-            async with self._mutator_locks[state_type][state_ref]:
-                if isinstance(response_or_loop, Loop):
-                    loop: Loop = response_or_loop
-
-                    if loop.when is not None:
-                        task_effect.schedule = (
-                            DateTimeWithTimeZone.now() + loop.when
-                        ) if isinstance(loop.when, timedelta) else loop.when
-
-                    task_effect.iteration += 1
-
-                    await self._store(
-                        state_type=state_type,
-                        state_ref=state_ref,
-                        task=task_effect.to_sidecar_task(),
-                    )
-                else:
-                    # Store response and mark this Task as completed in
-                    # persistent storage. Even though we're writing here, we're
-                    # not writing the actor's state.
-                    task_response: Optional[any_pb2.Any] = None
-                    task_error: Optional[any_pb2.Any] = None
-                    if error is not None:
-                        assert response_or_loop is None
-
-                        task_error = any_pb2.Any()
-                        task_error.Pack(error)
-                    else:
-                        assert response_or_loop is not None
-                        response: Message = response_or_loop
-
-                        task_response = any_pb2.Any()
-                        task_response.Pack(response)
-
-                    assert task_response is not None or task_error is not None
-
-                    await self._store(
-                        state_type=state_type,
-                        state_ref=state_ref,
-                        task=sidecar_pb2.Task(
-                            task_id=task_effect.task_id,
-                            method=task_effect.method_name,
-                            status=sidecar_pb2.Task.Status.COMPLETED,
-                            request=task_effect.request.SerializeToString(),
-                            response=task_response,
-                            error=task_error,
-                        ),
-                    )
-
-        yield complete
+        yield self.complete_task
 
     @asynccontextmanager
     async def transaction(

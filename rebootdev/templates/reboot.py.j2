@@ -184,6 +184,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             dispatch=self.dispatch,
             tasks_cache=tasks_cache,
             ready=ready,
+            complete_task=self._state_manager.complete_task,
         )
 
         # Store the type of each method's request so that stored requests can be
@@ -566,8 +567,6 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 async with self._state_manager.task_workflow(
                     context,
                 ) as complete:
-                    self.tasks_dispatcher.set_complete_task(complete)
-
                     try:
                         {% if method.options.proto.kind in ['reader', 'writer', 'transaction']:  %}
                         response = await ({{ state.proto.name }}WorkflowStub(
