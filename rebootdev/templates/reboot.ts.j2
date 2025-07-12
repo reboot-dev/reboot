@@ -295,7 +295,7 @@ const {{ client.proto.state_name }}{{ method.proto.name }}ResponseToProtobuf = (
 {% endfor %}
 {% endfor %}
 
-type {{ client.proto.state_name }}RequestTypes =
+export type {{ client.proto.state_name }}RequestTypes =
 {% for service in client.services %}
 {% for method in service.methods %}
   | {{ client.proto.state_name }}.{{ method.proto.name }}Request
@@ -324,6 +324,47 @@ type {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}A
 {% endfor %}
 
 {% for state in states %}
+
+export type {{ state.proto.name }}ObjectLiteral = {
+  authorizer?: () => reboot.Authorizer<{{ state.proto.name }}.State, {{ state.proto.name }}RequestTypes> | reboot.AuthorizerRule<{{ state.proto.name }}.State, {{ state.proto.name }}RequestTypes> | null;
+
+  {% for service in state.services %}
+  {% for method in service.methods %}
+  {{ method.proto.name | to_lower_camel }}: (
+    {% if method.options.proto.kind == 'reader' %}
+    context: ReaderContext,
+    {% elif method.options.proto.kind == 'writer' %}
+    context: WriterContext,
+    {% elif method.options.proto.kind == 'transaction' %}
+    context: TransactionContext,
+    {% elif method.options.proto.kind == 'workflow' %}
+    context: WorkflowContext,
+    {% endif %}
+    {% if method.options.proto.kind != 'workflow' %}
+    state: {{ state.proto.name }}.State,
+    {% else %}
+    state: {{ state.proto.name }}.WorkflowState,
+    {% endif %}
+    request: {{ state.proto.name }}.{{ method.proto.name }}Request,
+  ) => Promise<
+    {% if method.options.proto.kind == 'reader' %}
+    {{ state.proto.name }}.Partial{{ method.proto.name }}Response
+    {% elif method.options.proto.kind != 'workflow' %}
+    {{ state.proto.name }}.{{ method.proto.name }}Response extends void
+      ? [{{ state.proto.name }}.State]
+      : [
+        {{ state.proto.name }}.State,
+        {{ state.proto.name }}.Partial{{ method.proto.name }}Response,
+      ]
+    {% else %}
+    {{ state.proto.name }}.Partial{{ method.proto.name }}Response
+    | reboot.Loop
+  {% endif %}
+  >;
+  {% endfor %}
+  {% endfor %}
+};
+
 export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ state.proto.name }}State> {
   static __rbtModule__ = "{{ rbt_name }}";
   static __servicerNodeAdaptor__ = "{{ state.proto.name }}ServicerNodeAdaptor";
@@ -331,11 +372,70 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
   // External reference to the native `Servicer`.
   #external?: any | undefined;
 
-  protected ref(
+  public ref(
     options?: { bearerToken?: string }
   ) {
     const context = reboot.getContext();
     return new {{ state.proto.name }}.WeakReference(context.stateId, options?.bearerToken);
+  }
+
+  public static servicer(literal: {{ state.proto.name }}ObjectLiteral) {
+    return class extends {{ state.proto.name }}Servicer {
+      authorizer() {
+        if (literal.authorizer !== undefined) {
+          return literal.authorizer();
+        }
+        return super.authorizer();
+      }
+
+      {% for service in state.services %}
+      {% for method in service.methods %}
+      async {{ method.proto.name | to_lower_camel }} (
+        {% if method.options.proto.kind == 'reader' %}
+        context: ReaderContext,
+        {% elif method.options.proto.kind == 'writer' %}
+        context: WriterContext,
+        {% elif method.options.proto.kind == 'transaction' %}
+        context: TransactionContext,
+        {% elif method.options.proto.kind == 'workflow' %}
+        context: WorkflowContext,
+        {% endif %}
+        {% if method.options.proto.kind != 'workflow' %}
+        state: {{ state.proto.name }}.State,
+        {% endif %}
+        request: {{ state.proto.name }}.{{ method.proto.name }}Request,
+      ): Promise<
+        {{ state.proto.name }}.Partial{{ method.proto.name }}Response
+      {% if method.options.proto.kind == 'workflow' %}
+      | reboot.Loop
+      {% endif %}
+      > {
+        {% if method.options.proto.kind == 'reader' %}
+        return await literal.{{ method.proto.name | to_lower_camel }}(
+          context,
+          state,
+          request
+        );
+        {% elif method.options.proto.kind != 'workflow' %}
+        const [updatedState, response] = await literal.{{ method.proto.name | to_lower_camel }}(
+          context,
+          state,
+          request
+        );
+        Object.assign(state, updatedState);
+        return response;
+        {% else %}
+        return await literal.{{ method.proto.name | to_lower_camel }}(
+          context,
+          this.state,
+          request
+        );
+        {% endif %}
+      }
+
+      {% endfor %}
+      {% endfor %}
+    };
   }
 
   {% for service in state.services %}
@@ -553,7 +653,7 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
     return authorizer;
   }
 
-  static _State = class {
+  static WorkflowState = class {
 
     #servicer: {{ state.proto.name }}Servicer
 
@@ -746,7 +846,7 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
           "Inline writers require either an idempotency alias or key"
         );
       }
-      return new {{ state.proto.name }}Servicer._State._Idempotently(
+      return new {{ state.proto.name }}Servicer.WorkflowState._Idempotently(
         this.#servicer.__external,
         options,
       );
@@ -774,7 +874,7 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
         context: reboot.WorkflowContext,
         writer: (state: {{ state.proto.name }}.State) => Promise<T>
       ): Promise<T> {
-        return new {{ state.proto.name }}Servicer._State._Idempotently(
+        return new {{ state.proto.name }}Servicer.WorkflowState._Idempotently(
           this.#external,
           { key: uuid.v4() }
         ).write<T>(
@@ -787,14 +887,14 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
     };
 
     public unidempotently() {
-      return new {{ state.proto.name }}Servicer._State._Unidempotently(
+      return new {{ state.proto.name }}Servicer.WorkflowState._Unidempotently(
         this.#servicer.__external
       );
     }
   };
 
   get state() {
-    return new {{ state.proto.name }}Servicer._State(this);
+    return new {{ state.proto.name }}Servicer.WorkflowState(this);
   }
 }
 
@@ -1395,6 +1495,7 @@ export class {{ client.proto.state_name }} {
 
   {% if client.state is not none %}
   static Servicer = {{ client.proto.state_name }}Servicer;
+  static servicer = {{ client.proto.state_name }}Servicer.servicer;
   static State = {{ client.proto.state_name }}State;
   static Authorizer = {{ client.proto.state_name }}Authorizer;
   {% endif %}
@@ -1411,10 +1512,20 @@ export class {{ client.proto.state_name }} {
   {% endfor %}
 
   public static ref(
-    id: string,
+    idOrOptions?: string | { bearerToken?: string },
     options?: { bearerToken?: string }
   ) {
-    return new {{ client.proto.state_name }}.WeakReference(id, options?.bearerToken);
+    if (idOrOptions === undefined || typeof idOrOptions === "object") {
+      const context = reboot.getContext();
+      return new {{ client.proto.state_name }}.WeakReference(context.stateId, idOrOptions?.bearerToken);
+    }
+    if (typeof idOrOptions !== "string") {
+      throw new TypeError(
+        `Expecting first argument to be a 'string' "id", ` +
+        `got '${typeof idOrOptions}'`
+      );
+    }
+    return new {{ client.proto.state_name }}.WeakReference(idOrOptions, options?.bearerToken);
   }
 
   {% for service in client.services %}
@@ -1659,6 +1770,10 @@ export namespace {{ client.proto.state_name }} {
   {% else %}
     {{ client.proto.state_name }}State;
   {% endif %}
+
+  export type WorkflowState = InstanceType<
+    typeof {{ client.proto.state_name }}Servicer.WorkflowState
+  >;
   {% endif %}
 }
 {% endfor %}
