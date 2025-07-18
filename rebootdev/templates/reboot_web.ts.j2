@@ -428,10 +428,10 @@ class _Reactively {
     context: reboot_web.WebContext,
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
     options?: { signal?: AbortSignal },
-  ): [
+  ): Promise<[
       AsyncGenerator<{{ client.proto.state_name }}.{{ method.proto.name }}Response, void, unknown>,
       (newRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request) => void
-    ] {
+    ]> {
     const request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
 
     const [generator, setRequest] = reboot_web.reactively(
