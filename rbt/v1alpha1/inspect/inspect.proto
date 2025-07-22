@@ -4,7 +4,6 @@ package rbt.v1alpha1.inspect;
 
 import "google/api/annotations.proto";
 import "google/api/httpbody.proto";
-import "google/protobuf/struct.proto";
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -15,11 +14,23 @@ message GetAllStatesRequest {
 }
 
 message GetAllStatesResponse {
-  // We don't know the state types of the all of the actors, thus
-  // we're using a "struct". It is of the form:
+  // Data is returned as a `chunk`, e.g, 3 (zero based), of some
+  // `total`, e.g., 4, so as to account for max message size which is
+  // 4MB by default for gRPC (and actually 1MB by default for Envoy's
+  // gRPC-JSON transcoder which we set to also be 4MB to match gRPC).
+  uint32 chunk = 2;
+  uint32 total = 3;
+
+  // Serialized bytes of a `google.protobuf.Struct`. It is of the
+  // form:
   //
-  // { "service1": { "actor1": { ... }, "actor2": { ... }, ... }, ... }
-  google.protobuf.Struct actors = 1;
+  // { "service1": { "id1": { ... }, "id": { ... }, ... }, ... }
+  //
+  // TODO: consider passing JSON patches in the future to make the
+  // data more easily introspectable instead of binary.
+  bytes data = 4;
+
+  reserved 1;
 }
 
 ////////////////////////////////////////////////////////////////////////
