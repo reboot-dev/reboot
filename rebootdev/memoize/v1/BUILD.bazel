@@ -1,0 +1,18 @@
+load("@com_github_reboot_dev_reboot//rebootdev:rules.bzl", "py_reboot_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+proto_library(
+    name = "memoize_proto",
+    srcs = ["memoize.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "memoize_py_reboot",
+    proto = "memoize.proto",
+    proto_library = ":memoize_proto",
+    visibility = ["//visibility:public"],
+)

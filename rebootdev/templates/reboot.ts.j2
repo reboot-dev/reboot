@@ -708,32 +708,33 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
         validate?: (result: T) => boolean
       } = {}
     ): Promise<void | T> {
-      return await this.idempotently(idempotencyAlias)
-        .write(context, writer, options);
+      return await this.perWorkflowIteration()
+        .write(idempotencyAlias, context, writer, options);
     }
 
     static _Idempotently = class {
 
       #external: any;
-      #options: reboot_api.IdempotencyOptions;
+      #how: reboot.How;
 
-      constructor(external: any, options: reboot_api.IdempotencyOptions) {
+      constructor(external: any, how: reboot.How) {
         this.#external = external;
-        this.#options = options;
+        this.#how = how;
       }
 
       async write(
+        idempotencyAlias: string,
         context: reboot.WorkflowContext,
         writer: (state: {{ state.proto.name }}.State) => Promise<void>,
         options?: {
           stringify?: undefined;
           parse?: undefined;
           validate?: undefined
-        },
-        unidempotently?: boolean
+        }
       ): Promise<void>;
 
       async write<T>(
+        idempotencyAlias: string,
         context: reboot.WorkflowContext,
         writer: (state: {{ state.proto.name }}.State) => Promise<T>,
         options: {
@@ -744,11 +745,11 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
           stringify?: (result: T) => string;
           parse?: undefined;
           validate: (result: T) => boolean;
-        },
-        unidempotently?: boolean
+        }
       ): Promise<T>;
 
       async write<T>(
+        idempotencyAlias: string,
         context: reboot.WorkflowContext,
         writer: (state: {{ state.proto.name }}.State) => Promise<T>,
         {
@@ -759,12 +760,13 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
           stringify?: (result: T) => string;
           parse?: (value: string) => T;
           validate?: (result: T) => boolean
-        },
-        unidempotently: boolean = false,
+        }
       ): Promise<void | T> {
         // Use `JSON.stringify` and `JSON.parse` by default.
         stringify = stringify ?? JSON.stringify;
         parse = parse ?? JSON.parse;
+
+        const unidempotently = this.#how === reboot.ALWAYS;
 
         const result = await reboot_native.Servicer_write(
           this.#external,
@@ -801,7 +803,7 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
               throw ensureError(e);
             }
           },
-          JSON.stringify({ idempotency: this.#options, unidempotently }),
+          JSON.stringify({ alias: idempotencyAlias, how: this.#how }),
         );
 
         // NOTE: we parse and validate `value` every time, even the first
@@ -837,22 +839,21 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
       }
     };
 
-    public idempotently(aliasOrOptions: string | reboot_api.IdempotencyOptions) {
-      const options = (typeof aliasOrOptions === "string" || aliasOrOptions instanceof String)
-        ? { alias: aliasOrOptions }
-        : aliasOrOptions;
-      if (options.alias === undefined && options.key === undefined) {
-        throw new Error(
-          "Inline writers require either an idempotency alias or key"
-        );
-      }
+    public perWorkflow() {
       return new {{ state.proto.name }}Servicer.WorkflowState._Idempotently(
         this.#servicer.__external,
-        options,
+        reboot.PER_WORKFLOW,
       );
     }
 
-    static _Unidempotently = class {
+    public perWorkflowIteration() {
+      return new {{ state.proto.name }}Servicer.WorkflowState._Idempotently(
+        this.#servicer.__external,
+        reboot.PER_WORKFLOW_ITERATION,
+      );
+    }
+
+    static _Always = class {
 
       #external: any;
 
@@ -861,33 +862,35 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
       }
 
       async write(
+        idempotencyAlias: string,
         context: reboot.WorkflowContext,
         writer: (state: {{ state.proto.name }}.State) => Promise<void>
       ): Promise<void>;
 
       async write<T>(
+        idempotencyAlias: string,
         context: reboot.WorkflowContext,
         writer: (state: {{ state.proto.name }}.State) => Promise<T>
       ): Promise<T>;
 
       async write<T>(
+        idempotencyAlias: string,
         context: reboot.WorkflowContext,
         writer: (state: {{ state.proto.name }}.State) => Promise<T>
       ): Promise<T> {
         return new {{ state.proto.name }}Servicer.WorkflowState._Idempotently(
           this.#external,
-          { key: uuid.v4() }
+          reboot.ALWAYS
         ).write<T>(
           context,
           writer,
           {},
-          true
         );
       }
     };
 
-    public unidempotently() {
-      return new {{ state.proto.name }}Servicer.WorkflowState._Unidempotently(
+    public always() {
+      return new {{ state.proto.name }}Servicer.WorkflowState._Always(
         this.#servicer.__external
       );
     }
@@ -1295,11 +1298,14 @@ export class {{ client.proto.state_name }}WeakReference {
   {% if not method.options.proto.constructor %}
   {% if method.options.proto.kind == 'workflow' %}
   async {{ method.proto.name | to_lower_camel }}(
-    context: ExternalContext,
+    context: ExternalContext | WorkflowContext,
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
   ): Promise<{{ client.proto.state_name }}.{{ method.proto.name }}Response> {
-    const { task } = await this.spawn()
-      .{{ method.proto.name | to_lower_camel }}(context, partialRequest);
+    const { task } = await (
+      context instanceof WorkflowContext
+        ? this.perWorkflowIteration()
+        : this
+    ).spawn().{{ method.proto.name | to_lower_camel }}(context, partialRequest);
     return await task;
   }
   {% else %}
@@ -1311,6 +1317,15 @@ export class {{ client.proto.state_name }}WeakReference {
     {% endif %}
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
   ): Promise<{{ client.proto.state_name }}.{{ method.proto.name }}Response> {
+    {% if method.options.proto.kind != 'reader' %}
+    if (context instanceof WorkflowContext) {
+      return this.perWorkflowIteration().{{ method.proto.name | to_lower_camel }}(
+        context,
+        partialRequest,
+        this.#options,
+      );
+    }
+    {% endif %}
     return await this.__externalServiceCall{{ method.proto.name }}(
       context,
       partialRequest,
@@ -1385,7 +1400,7 @@ export class {{ client.proto.state_name }}WeakReference {
   };
 
   public idempotently(aliasOrOptions: string | reboot_api.IdempotencyOptions = {} as reboot_api.IdempotencyOptions) {
-    const idempotency = (typeof aliasOrOptions === "string" || aliasOrOptions instanceof String) ? { alias: aliasOrOptions } : aliasOrOptions;
+    const idempotency = (typeof aliasOrOptions === "string" || aliasOrOptions instanceof String) ? { alias: aliasOrOptions as string } : aliasOrOptions;
     return new {{ client.proto.state_name }}.WeakReference._Idempotently(
       this,
       {
@@ -1395,7 +1410,15 @@ export class {{ client.proto.state_name }}WeakReference {
     );
   }
 
-  public unidempotently() {
+  public perWorkflow(alias?: string) {
+    return this.idempotently(alias);
+  }
+
+  public perWorkflowIteration(alias?: string) {
+    return this.idempotently({ alias, eachIteration: true });
+  }
+
+  public always() {
     return this.idempotently({ key: uuid.v4() });
   }
 
@@ -1604,8 +1627,23 @@ export class {{ client.proto.state_name }} {
   {% endfor %}
 
   public static idempotently(aliasOrOptions: string | reboot_api.IdempotencyOptions = {} as reboot_api.IdempotencyOptions) {
-    const idempotency = (typeof aliasOrOptions === "string" || aliasOrOptions instanceof String) ? { alias: aliasOrOptions } : aliasOrOptions;
+    const idempotency = (typeof aliasOrOptions === "string" || aliasOrOptions instanceof String) ? { alias: aliasOrOptions as string } : aliasOrOptions;
     return new {{ client.proto.state_name }}._ConstructIdempotently(idempotency);
+  }
+
+  public static perWorkflow(alias?: string) {
+    return {{ client.proto.state_name }}
+      .idempotently({ alias });
+  }
+
+  public static perWorkflowIteration(alias?: string) {
+    return {{ client.proto.state_name }}
+      .idempotently({ alias, eachIteration: true });
+  }
+
+  public static always() {
+    return {{ client.proto.state_name }}
+      .idempotently({ key: uuid.v4() });
   }
 
   static _ConstructIdempotently = class {

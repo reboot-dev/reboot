@@ -550,6 +550,14 @@ class StateManager(ABC):
         yield  # Necessary for type checking.
 
     @abstractmethod
+    async def complete_task(
+        self,
+        task_effect: TaskEffect,
+        response_or_error: TaskResponseOrError,
+    ) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
     @asynccontextmanager
     async def task_workflow(
         self,
@@ -2045,7 +2053,7 @@ class SidecarStateManager(
         self,
         task_effect: TaskEffect,
         response_or_error: TaskResponseOrError,
-    ):
+    ) -> None:
         state_type = task_effect.task_id.state_type
         state_ref = StateRef(task_effect.task_id.state_ref)
         response_or_loop, error = response_or_error

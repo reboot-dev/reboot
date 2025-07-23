@@ -36,6 +36,7 @@ class Idempotency:
         *,
         alias: Optional[str] = None,
         key: Optional[uuid.UUID | str] = None,
+        generated: bool = False,
     ):
         """Constructs an idempotency instance. At most one of 'alias' or
         'key' should be specified. If neither is specified, a idempotency
@@ -47,6 +48,9 @@ class Idempotency:
 
         :param key: idempotency key. It might accept a string which is forwarded
             from the Typescript code, but will try convert it to a UUID.
+
+        :param generated: whether or not something has already
+            generated the alias or key.
         """
         if alias is not None and key is not None:
             raise ValueError(
@@ -76,6 +80,8 @@ class Idempotency:
 
         self._alias = alias
 
+        self._generated = generated
+
     @property
     def alias(self) -> Optional[str]:
         """Returns the alias or None."""
@@ -85,6 +91,11 @@ class Idempotency:
     def key(self) -> Optional[uuid.UUID]:
         """Returns the key or None."""
         return self._key
+
+    @property
+    def generated(self) -> bool:
+        """Returns whether or not a key or alias has already been generated."""
+        return self._generated
 
     @property
     def generate(self) -> bool:
@@ -313,7 +324,8 @@ class IdempotencyManager:
                 request=request,
                 serialized_request=None,
                 metadata=metadata,
-                idempotency_generated=idempotency.generate,
+                idempotency_generated=idempotency.generated or
+                idempotency.generate,
             )
             return idempotency_key
 

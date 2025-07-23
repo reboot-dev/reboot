@@ -166,6 +166,7 @@ def py_reboot_library(
             "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
             "@com_github_reboot_dev_reboot//rebootdev/aio:external_py",
             "@com_github_reboot_dev_reboot//rebootdev/aio:tracing_py",
+            "@com_github_reboot_dev_reboot//rebootdev/aio:workflows_py",
             "@com_github_reboot_dev_reboot//rebootdev/nodejs:python_py",
             ":" + name + "_library",
         ] + py_deps,

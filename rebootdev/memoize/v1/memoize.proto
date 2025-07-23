@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+package rebootdev.memoize.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service MemoizeMethods {
+  // Resets the memoize state so that you can call start on it again
+  // for handling "at most once" semantics.
+  rpc Reset(ResetRequest) returns (ResetResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  // Sets the memoize state to "started" so to support handling "at
+  // most once" semantics.
+  //
+  // NOTE: it is not expected that `Start` gets called for "at least
+  // once" semantics, only for "at most once".
+  rpc Start(StartRequest) returns (StartResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  // Stores the data in the memoize state.
+  rpc Store(StoreRequest) returns (StoreResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  // Stores a failure string in the memoize state.
+  rpc Fail(FailRequest) returns (FailResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  // Returns the status of the memoize state.
+  rpc Status(StatusRequest) returns (StatusResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Memoize {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  bool started = 1;
+  bool stored = 2;
+  bool failed = 4;
+  bytes data = 3;
+  string failure = 5;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message ResetRequest {}
+message ResetResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message StartRequest {}
+message StartResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message StoreRequest {
+  bytes data = 1;
+}
+
+message StoreResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message FailRequest {
+  string failure = 1;
+}
+
+message FailResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message StatusRequest {}
+
+message StatusResponse {
+  bool started = 1;
+  bool stored = 2;
+  bool failed = 4;
+  bytes data = 3;
+  string failure = 5;
+}
+
+////////////////////////////////////////////////////////////////////////

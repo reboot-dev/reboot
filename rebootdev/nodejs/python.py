@@ -134,6 +134,15 @@ def create_task_with_context(coro, context: Context, **kwargs):
     return create_task(coro_with_context(), **kwargs)
 
 
+def call_with_context(callable, context: Context):
+    """Helper for calling some callable with the `context`."""
+    if isinstance(context, ExternalContext):
+        return callable()
+
+    with context.use(), use_application_id(context.application_id):
+        return callable()
+
+
 async def task_await(
     context: WorkflowContext | ExternalContext,
     state: type,

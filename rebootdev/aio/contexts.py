@@ -989,22 +989,37 @@ class Context(ABC, IdempotencyManager):
         """Helper to create an `Idempotency` instance, or raise if being used
         incorrectly.
         """
-        if each_iteration:
-            if key is not None:
+        if each_iteration is not None and key is not None:
+            raise TypeError(
+                'Passing `each_iteration` is invalid when passing `key`'
+            )
+
+        generated = False
+
+        # Update or create an `alias` with iteration information if we
+        # don't have a `key` and are running from within a `workflow`.
+        if key is None:
+            context = Context.get()
+
+            if (
+                each_iteration is not None and each_iteration and
+                context is not None and isinstance(context, WorkflowContext)
+            ):
+                # If no alias was given than consider this idempotency
+                # to be generated. This is important for treating
+                # multiple calls without an alias as an error.
+                if alias is None:
+                    alias = "-"
+                    generated = True
+
+                alias += f' (iteration #{context.iteration})'
+
+            if each_iteration is not None and context is None:
                 raise TypeError(
-                    'Passing `each_iteration=True` is invalid when passing `key`'
+                    f'Passing `each_iteration={each_iteration}` is only valid within a `workflow` {context}'
                 )
 
-            context = cls.get_or_raise()
-
-            if not isinstance(context, WorkflowContext):
-                raise TypeError(
-                    'Passing `each_iteration=True` is only valid within a `workflow`'
-                )
-
-            alias = (alias or "-") + f' (iteration #{context.iteration})'
-
-        return Idempotency(alias=alias, key=key)
+        return Idempotency(alias=alias, key=key, generated=generated)
 
 
 class ReaderContext(Context):
