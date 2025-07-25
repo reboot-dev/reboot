@@ -1317,15 +1317,25 @@ export class {{ client.proto.state_name }}WeakReference {
     {% endif %}
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
   ): Promise<{{ client.proto.state_name }}.{{ method.proto.name }}Response> {
-    {% if method.options.proto.kind != 'reader' %}
     if (context instanceof WorkflowContext) {
-      return this.perWorkflowIteration().{{ method.proto.name | to_lower_camel }}(
-        context,
-        partialRequest,
-        this.#options,
-      );
+      {% if method.options.proto.kind == 'reader' %}
+      if (reboot.isWithinUntil()) {
+        return await this.always()
+          .{{ method.proto.name | to_lower_camel }}(
+            context,
+            partialRequest,
+            this.#options,
+          );
+      }
+      {% endif %}
+      return await this.perWorkflowIteration()
+        .{{ method.proto.name | to_lower_camel }}(
+          context,
+          partialRequest,
+          this.#options,
+        );
     }
-    {% endif %}
+
     return await this.__externalServiceCall{{ method.proto.name }}(
       context,
       partialRequest,
@@ -1362,7 +1372,7 @@ export class {{ client.proto.state_name }}WeakReference {
         .{{ method.proto.name | to_lower_camel }}(context, partialRequest);
       return await task;
     }
-    {% elif method.options.proto.kind in ['writer', 'transaction'] and not method.options.proto.constructor %}
+    {% elif (method.options.proto.kind in ['writer', 'transaction'] and not method.options.proto.constructor) or (method.options.proto.kind in ['reader'] and not method.proto.server_streaming) %}
     async {{ method.proto.name | to_lower_camel }}(
       context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
       partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
@@ -1419,7 +1429,7 @@ export class {{ client.proto.state_name }}WeakReference {
   }
 
   public always() {
-    return this.idempotently({ key: uuid.v4() });
+    return this.idempotently({ key: uuid.v4(), generated: true });
   }
 
   static _Schedule = class {
@@ -1643,7 +1653,7 @@ export class {{ client.proto.state_name }} {
 
   public static always() {
     return {{ client.proto.state_name }}
-      .idempotently({ key: uuid.v4() });
+      .idempotently({ key: uuid.v4(), generated: true });
   }
 
   static _ConstructIdempotently = class {

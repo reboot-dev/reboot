@@ -1511,15 +1511,20 @@ class {{ client.proto.state_name }}ReaderStub(_{{ client.proto.state_name }}Stub
         *,
         metadata: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None,
         bearer_token: IMPORT_typing.Optional[str] = None,
+        idempotency: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
     {% if not method.proto.server_streaming %}
     ) -> {{ method.output_type }}:
     {% else %}
     ) -> IMPORT_typing.AsyncIterable[{{ method.output_type }}]:
     {% endif %}
+        state_type_name = IMPORT_reboot_aio_types.StateTypeName('{{ client.proto.state_full_name }}')
+        service_name = IMPORT_reboot_aio_types.ServiceName('{{ service.proto.full_name }}')
+        method = '{{ method.proto.name }}'
+
         async with self._call(
-            IMPORT_reboot_aio_types.StateTypeName('{{ client.proto.state_full_name }}'),
-            IMPORT_reboot_aio_types.ServiceName('{{ service.proto.full_name }}'),
-            '{{ method.proto.name }}',
+            state_type_name,
+            service_name,
+            method,
             self._{{ stub_name(service.proto.full_name) }}.{{ method.proto.name }},
             request{% if method.proto.client_streaming %}s{% endif %},
             unary={{ not method.proto.client_streaming and not method.proto.server_streaming }},
@@ -1530,6 +1535,51 @@ class {{ client.proto.state_name }}ReaderStub(_{{ client.proto.state_name }}Stub
             bearer_token=bearer_token,
         ) as call:
         {% if not method.proto.server_streaming %}
+            {% if not method.proto.client_streaming %}
+            # Memoize reads in a `workflow` by default!
+            if isinstance(self._context, IMPORT_reboot_aio_contexts.WorkflowContext):
+                assert idempotency is not None
+
+                # Check if this reader is from an `.always()`, i.e., _we_
+                # generated an idempotency key, and if so, don't memoize!
+                if idempotency.generated and idempotency.key is not None:
+                    assert isinstance(call, IMPORT_typing.Awaitable)
+                    return await call
+
+                # Use the idempotency manager to make sure that this
+                # reader is being called following the rules.
+                with self._context.idempotently(
+                    state_type_name=state_type_name,
+                    state_ref=self._headers.state_ref,
+                    service_name=service_name,
+                    method=method,
+                    mutation=False,
+                    request=request,
+                    metadata=metadata,
+                    idempotency=idempotency,
+                    # Only need to pass `aborted_type` for mutations.
+                    aborted_type=None,
+                ) as idempotency_key:
+                    assert idempotency_key is not None
+                    return await IMPORT_reboot_aio_workflows.at_least_once(
+                    (
+                        # TODO: for easier debugging include the
+                        # original alias (or generated alias in the
+                        # case of `.per_workflow_iteration()` w/o an
+                        # alias) instead of just `idempotency_key`.
+                        f'{ service_name }.{ method } ({str(idempotency_key)})',
+                        # NOTE: we want this to be `PER_WORKFLOW`
+                        # because any per iteration concerns should
+                        # have already been taken care of by caller
+                        # using `.per_workflow_iteration()`.
+                        IMPORT_reboot_aio_workflows.PER_WORKFLOW
+                    ),
+                    self._context,
+                    lambda: call,
+                    type={{ method.output_type }},
+                )
+            {% endif %}
+
             assert isinstance(call, IMPORT_typing.Awaitable)
             return await call
         {% else %}
@@ -1613,6 +1663,7 @@ class {{ client.proto.state_name }}WriterStub(_{{ client.proto.state_name }}Stub
             state_ref=self._headers.state_ref,
             service_name=IMPORT_reboot_aio_types.ServiceName('{{ service.proto.full_name }}'),
             method='{{ method.proto.name }}',
+            mutation=True,
             request=request,
             metadata=metadata,
             idempotency=idempotency,
@@ -1710,6 +1761,7 @@ class {{ client.proto.state_name }}WorkflowStub(_{{ client.proto.state_name }}St
             state_ref=self._headers.state_ref,
             service_name=IMPORT_reboot_aio_types.ServiceName('{{ service.proto.full_name }}'),
             method='{{ method.proto.name }}',
+            mutation=True,
             request=request,
             metadata=metadata,
             idempotency=idempotency,
@@ -1771,6 +1823,7 @@ class {{ client.proto.state_name }}TasksStub(_{{ client.proto.state_name }}Stub)
             state_ref=self._headers.state_ref,
             service_name=IMPORT_reboot_aio_types.ServiceName('{{ service.proto.full_name }}'),
             method='{{ method.proto.name }}',
+            mutation=True,
             request=request,
             metadata=metadata,
             idempotency=idempotency,
@@ -2311,6 +2364,7 @@ class {{ state.proto.name }}Servicer(IMPORT_reboot_aio_servicers.Servicer):
                     state_ref=context._state_ref,
                     service_name=None,  # Indicates an inline writer.
                     method=None,  # Indicates an inline writer.
+                    mutation=True,
                     request=None,  # Indicates an inline writer.
                     metadata=metadata,
                     idempotency=idempotency,
@@ -3160,7 +3214,7 @@ class {{ client.proto.state_name }}:
                     )
                 )
 
-            {% elif method.options.proto.kind in ['writer', 'transaction'] %}
+            {% elif (method.options.proto.kind in ['writer', 'transaction']) or (method.options.proto.kind in ['reader'] and not method.proto.server_streaming and not method.proto.client_streaming) %}
             async def {{ method.proto.name }}(
                 # In methods which are dealing with user input, (i.e.,
                 # proto message field names), we should use '__double_underscored__'
@@ -3211,17 +3265,29 @@ class {{ client.proto.state_name }}:
             {% endfor %}
             {% endfor %}
 
+        @IMPORT_typing.overload
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, each_iteration: bool = False) -> {{ client.proto.state_name }}.WeakReference._Idempotently[{{ client.proto.state_name }}_ScheduleTypeVar]:
+            ...
+
+        @IMPORT_typing.overload
+        def idempotently(self, *, key: IMPORT_uuid.UUID, generated: bool = False) -> {{ client.proto.state_name }}.WeakReference._Idempotently[{{ client.proto.state_name }}_ScheduleTypeVar]:
+            ...
+
         def idempotently(
             self,
             alias: IMPORT_typing.Optional[str] = None,
             *,
             key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
             each_iteration: IMPORT_typing.Optional[bool] = None,
+            generated: bool = False,
         ) -> {{ client.proto.state_name }}.WeakReference._Idempotently[{{ client.proto.state_name }}_ScheduleTypeVar]:
             return {{ client.proto.state_name }}.WeakReference._Idempotently(
                 weak_reference=self,
                 idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
-                    key=key, alias=alias, each_iteration=each_iteration
+                    alias=alias,
+                    key=key,
+                    each_iteration=each_iteration,
+                    generated=generated,
                 )
             )
 
@@ -3232,7 +3298,7 @@ class {{ client.proto.state_name }}:
             return self.idempotently(alias, each_iteration=True)
 
         def always(self):
-            return self.idempotently(key=IMPORT_uuid.uuid4())
+            return self.idempotently(key=IMPORT_uuid.uuid4(), generated=True)
 
         def schedule(
             self,
@@ -3650,6 +3716,27 @@ class {{ client.proto.state_name }}:
         {% else %}
         ) -> IMPORT_typing.AsyncIterable[{{ method.output_type }}]:
         {% endif %}
+            {% if not method.proto.server_streaming and not method.proto.client_streaming %}
+            # Within a `workflow`, all "bare" calls are
+            # `per_workflow_iteration()` calls.
+            #
+            # Unless we are "within until" in which case all "bare"
+            # calls are `.always().
+            if (
+                isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext) and
+                (__options__ is None or __options__.idempotency is None)
+            ):
+                return await (
+                    __this__.always() if IMPORT_reboot_aio_contexts.within_until()
+                    else __this__.per_workflow_iteration()
+                ).{{ method.proto.name }}(
+                    __context__,
+                    __options__ or IMPORT_reboot_aio_call.Options(),
+                    {% for name in method.input_type_fields %}
+                    {{ name }}={{ name }},
+                    {% endfor %}
+                )
+            {% endif %}
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
             IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ method.input_type }})
@@ -3691,6 +3778,7 @@ class {{ client.proto.state_name }}:
                 __request{% if method.proto.client_streaming %}s__{% else %}__{% endif %},
                 metadata=__metadata__,
                 bearer_token=__bearer_token__,
+                idempotency=__options__.idempotency if __options__ is not None else None,
             )
             {% else %}
             __call__ = __this__._reader(__context__).{{ method.proto.name }}(
@@ -3900,7 +3988,7 @@ class {{ client.proto.state_name }}:
 
     @IMPORT_typing.overload
     @classmethod
-    def idempotently(cls, *, key: IMPORT_uuid.UUID) -> {{ client.proto.state_name }}._ConstructIdempotently:
+    def idempotently(cls, *, key: IMPORT_uuid.UUID, generated: bool = False) -> {{ client.proto.state_name }}._ConstructIdempotently:
         ...
 
     @classmethod
@@ -3910,10 +3998,14 @@ class {{ client.proto.state_name }}:
         *,
         key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
         each_iteration: IMPORT_typing.Optional[bool] = None,
+        generated: bool = False,
     ) -> {{ client.proto.state_name }}._ConstructIdempotently:
         return {{ client.proto.state_name }}._ConstructIdempotently(
             _idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
-                alias=alias, key=key, each_iteration=each_iteration
+                alias=alias,
+                key=key,
+                each_iteration=each_iteration,
+                generated=generated,
             ),
         )
 
@@ -3933,7 +4025,7 @@ class {{ client.proto.state_name }}:
 
     @classmethod
     def always(cls):
-        return cls.idempotently(key=IMPORT_uuid.uuid4())
+        return cls.idempotently(key=IMPORT_uuid.uuid4(), generated=True)
 
     @IMPORT_dataclasses.dataclass(frozen=True)
     class _ConstructIdempotently:
@@ -4462,9 +4554,21 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
         json_options: str,
     ) -> str:
         options = IMPORT_json.loads(json_options)
+
+        idempotency: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None
+
+        if 'idempotency' in options:
+            idempotency = IMPORT_reboot_aio_contexts.Context.idempotency(
+                alias=options['idempotency'].get('alias'),
+                key=options['idempotency'].get('key'),
+                each_iteration=options['idempotency'].get('eachIteration', None),
+                generated=options['idempotency'].get('generated', False),
+            )
+
         method_handle = IMPORT_functools.partial(
             getattr(super()._reader(context), method),
             bearer_token=options.get("bearerToken"),
+            idempotency=idempotency,
         )
         return await self._call(
             callable=method_handle,
@@ -4492,6 +4596,7 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
                 alias=options['idempotency'].get('alias'),
                 key=options['idempotency'].get('key'),
                 each_iteration=options['idempotency'].get('eachIteration', None),
+                generated=options['idempotency'].get('generated', False),
             )
 
         if 'schedule' in options:
@@ -4537,6 +4642,7 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
                 alias=options['idempotency'].get('alias'),
                 key=options['idempotency'].get('key'),
                 each_iteration=options['idempotency'].get('eachIteration', None),
+                generated=options['idempotency'].get('generated', False),
             )
 
         if 'schedule' in options:
@@ -4582,6 +4688,7 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
                 alias=options['idempotency'].get('alias'),
                 key=options['idempotency'].get('key'),
                 each_iteration=options['idempotency'].get('eachIteration', None),
+                generated=options['idempotency'].get('generated', False),
             )
 
         assert 'schedule' in options

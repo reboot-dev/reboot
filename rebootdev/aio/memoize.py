@@ -105,7 +105,7 @@ async def memoize(
         each_iteration=False,
     ).Reset(context)
 
-    status = await memoize.Status(context)
+    status = await memoize.always().Status(context)
 
     if at_most_once and status.started and not status.stored:
         raise AtMostOnceFailedBeforeCompleting(
@@ -136,6 +136,9 @@ async def memoize(
             """Helper to re-run `callable` if this is not "at most once" and we
             are validating effects.
             """
+            # Checkpoint the context since it is the `IdempotencyManager`.
+            checkpoint = context.checkpoint()
+
             t = await callable()
 
             if (
@@ -162,10 +165,10 @@ async def memoize(
                 message=message,
             )
 
-            # Reset the context since it is an `IdempotencyManager` so
+            # Restore the context to the checkpoint we took above so
             # we can re-execute `callable` as though it is being
             # retried from scratch.
-            context.reset()
+            context.restore(checkpoint)
 
             # TODO: check if `t` is different (we don't do this for
             # other effect validation so we're also not doing it now).

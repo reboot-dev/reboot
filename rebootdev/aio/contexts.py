@@ -985,6 +985,7 @@ class Context(ABC, IdempotencyManager):
         alias: Optional[str] = None,
         key: Optional[uuid.UUID | str] = None,
         each_iteration: Optional[bool] = None,
+        generated: bool = False,
     ) -> Idempotency:
         """Helper to create an `Idempotency` instance, or raise if being used
         incorrectly.
@@ -993,8 +994,6 @@ class Context(ABC, IdempotencyManager):
             raise TypeError(
                 'Passing `each_iteration` is invalid when passing `key`'
             )
-
-        generated = False
 
         # Update or create an `alias` with iteration information if we
         # don't have a `key` and are running from within a `workflow`.
@@ -1167,6 +1166,18 @@ class WorkflowContext(Context):
     """Call context for a workflow call."""
 
 
+# We need to know when we're within an `until` because we treat "bare"
+# calls to readers as `.always()`.
+_within_until: ContextVar[bool] = ContextVar(
+    "Whether or not current asyncio context is within an 'until'",
+    default=False,
+)
+
+
+def within_until() -> bool:
+    return _within_until.get()
+
+
 RetryReactivelyUntilT = TypeVar('RetryReactivelyUntilT')
 
 
@@ -1185,7 +1196,11 @@ async def retry_reactively_until(
 
     while True:
         try:
-            result = await condition()
+            try:
+                _within_until.set(True)
+                result = await condition()
+            finally:
+                _within_until.set(False)
 
             if not isinstance(result, bool):
                 return result
