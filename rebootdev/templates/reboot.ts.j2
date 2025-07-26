@@ -664,12 +664,11 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
     async read(
       context: reboot.WorkflowContext
     ): Promise<{{ state.proto.name }}.State> {
-      return {{ state.proto.name }}FromJsonString(
-        await reboot_native.Servicer_read(
-          this.#servicer.__external,
-          context.__external
-        )
-      );
+      return await (
+        reboot.isWithinUntil()
+          ? this.always()
+          : this.perWorkflowIteration()
+      ).read(context);
     }
 
     async write(
@@ -708,22 +707,33 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
         validate?: (result: T) => boolean
       } = {}
     ): Promise<void | T> {
-      return await this.perWorkflowIteration()
-        .write(idempotencyAlias, context, writer, options);
+      return await this.perWorkflowIteration(idempotencyAlias)
+        .write(context, writer, options);
     }
 
     static _Idempotently = class {
 
       #external: any;
-      #how: reboot.How;
+      #idempotency: { alias?: string; how: reboot.How };
 
-      constructor(external: any, how: reboot.How) {
+      constructor(external: any, idempotency: { alias?: string; how: reboot.How }) {
         this.#external = external;
-        this.#how = how;
+        this.#idempotency = idempotency;
+      }
+
+      async read(
+        context: reboot.WorkflowContext
+      ): Promise<{{ state.proto.name }}.State> {
+        return {{ state.proto.name }}FromJsonString(
+          await reboot_native.Servicer_read(
+            this.#external,
+            context.__external,
+            JSON.stringify(this.#idempotency)
+          )
+        );
       }
 
       async write(
-        idempotencyAlias: string,
         context: reboot.WorkflowContext,
         writer: (state: {{ state.proto.name }}.State) => Promise<void>,
         options?: {
@@ -734,7 +744,6 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
       ): Promise<void>;
 
       async write<T>(
-        idempotencyAlias: string,
         context: reboot.WorkflowContext,
         writer: (state: {{ state.proto.name }}.State) => Promise<T>,
         options: {
@@ -749,7 +758,6 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
       ): Promise<T>;
 
       async write<T>(
-        idempotencyAlias: string,
         context: reboot.WorkflowContext,
         writer: (state: {{ state.proto.name }}.State) => Promise<T>,
         {
@@ -766,7 +774,7 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
         stringify = stringify ?? JSON.stringify;
         parse = parse ?? JSON.parse;
 
-        const unidempotently = this.#how === reboot.ALWAYS;
+        const unidempotently = this.#idempotency.how === reboot.ALWAYS;
 
         const result = await reboot_native.Servicer_write(
           this.#external,
@@ -803,7 +811,7 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
               throw ensureError(e);
             }
           },
-          JSON.stringify({ alias: idempotencyAlias, how: this.#how }),
+          JSON.stringify(this.#idempotency)
         );
 
         // NOTE: we parse and validate `value` every time, even the first
@@ -839,17 +847,17 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
       }
     };
 
-    public perWorkflow() {
+    public perWorkflow(alias?: string) {
       return new {{ state.proto.name }}Servicer.WorkflowState._Idempotently(
         this.#servicer.__external,
-        reboot.PER_WORKFLOW,
+        { alias, how: reboot.PER_WORKFLOW },
       );
     }
 
-    public perWorkflowIteration() {
+    public perWorkflowIteration(alias?: string) {
       return new {{ state.proto.name }}Servicer.WorkflowState._Idempotently(
         this.#servicer.__external,
-        reboot.PER_WORKFLOW_ITERATION,
+        { alias, how: reboot.PER_WORKFLOW_ITERATION },
       );
     }
 
@@ -861,26 +869,32 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
         this.#external = external;
       }
 
+      async read(
+        context: reboot.WorkflowContext
+      ): Promise<{{ state.proto.name }}.State> {
+        return new {{ state.proto.name }}Servicer.WorkflowState._Idempotently(
+          this.#external,
+          { how: reboot.ALWAYS }
+        ).read(context);
+      }
+
       async write(
-        idempotencyAlias: string,
         context: reboot.WorkflowContext,
         writer: (state: {{ state.proto.name }}.State) => Promise<void>
       ): Promise<void>;
 
       async write<T>(
-        idempotencyAlias: string,
         context: reboot.WorkflowContext,
         writer: (state: {{ state.proto.name }}.State) => Promise<T>
       ): Promise<T>;
 
       async write<T>(
-        idempotencyAlias: string,
         context: reboot.WorkflowContext,
         writer: (state: {{ state.proto.name }}.State) => Promise<T>
       ): Promise<T> {
         return new {{ state.proto.name }}Servicer.WorkflowState._Idempotently(
           this.#external,
-          reboot.ALWAYS
+          { how: reboot.ALWAYS }
         ).write<T>(
           context,
           writer,

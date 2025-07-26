@@ -17,7 +17,7 @@ from rebootdev.aio.contexts import (
     _log_message_for_effect_validation,
 )
 from rebootdev.aio.headers import Headers
-from rebootdev.aio.idempotency import IdempotencyManager
+from rebootdev.aio.idempotency import Checkpoint, IdempotencyManager
 from rebootdev.aio.internals.channel_manager import _ChannelManager
 from rebootdev.aio.internals.contextvars import Servicing, _servicing
 from rebootdev.aio.internals.tasks_dispatcher import (
@@ -198,6 +198,7 @@ class Middleware(ABC):
         method_name: str,
         validating_effects: bool,
         context: Context,
+        checkpoint: Optional[Checkpoint] = None,
     ) -> None:
         """If we're validating effects, explains that we are about to retry, and then raises.
         """
@@ -242,8 +243,12 @@ class Middleware(ABC):
         )
 
         # Reset the `IdempotencyManager` so that we re-execute the
-        # method as though it is being retried from scratch.
-        idempotency_manager.reset()
+        # method as though it is being retried from scratch, unless a
+        # checkpoint was provided in which case restore it.
+        if checkpoint is None:
+            idempotency_manager.reset()
+        else:
+            idempotency_manager.restore(checkpoint)
 
         raise EffectValidationRetry()
 

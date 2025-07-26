@@ -333,9 +333,10 @@ class IdempotencyManager:
         state_type_name: StateTypeName,
         service_name: Optional[ServiceName],
         method: Optional[str],
+        mutation: bool,
     ):
         if method is None:
-            return f"inline writer of '{state_type_name}'"
+            return f"inline {'writer' if mutation else 'reader'} of '{state_type_name}'"
         else:
             assert service_name is not None
             return f"'{service_name}.{method}'"
@@ -357,6 +358,7 @@ class IdempotencyManager:
             state_ref=state_ref,
             service_name=service_name,
             method=method,
+            mutation=mutation,
             idempotency=idempotency,
         )
 
@@ -406,7 +408,7 @@ class IdempotencyManager:
         ):
             raise ValueError(
                 "To call "
-                f"{self._rpc_name(state_type_name, service_name, method)} "
+                f"{self._rpc_name(state_type_name, service_name, method, mutation)} "
                 f"of '{state_ref.id}' more than once using the same context an "
                 "idempotency alias or key must be specified"
             )
@@ -417,10 +419,10 @@ class IdempotencyManager:
         ):
             raise ValueError(
                 "Idempotency key for "
-                f"{self._rpc_name(state_type_name, service_name, method)} "
+                f"{self._rpc_name(state_type_name, service_name, method, mutation)} "
                 f"of state '{state_ref.id}' is being reused _unsafely_; you can "
                 "not reuse an idempotency key that was previously used for "
-                f"{self._rpc_name(rpc.state_type_name, rpc.service_name, rpc.method)} "
+                f"{self._rpc_name(rpc.state_type_name, rpc.service_name, rpc.method, rpc.mutation)} "
                 f"of state '{rpc.state_ref.id}'"
             )
 
@@ -430,7 +432,7 @@ class IdempotencyManager:
         ):
             raise ValueError(
                 "Idempotency key for "
-                f"{self._rpc_name(state_type_name, service_name, method)} "
+                f"{self._rpc_name(state_type_name, service_name, method, mutation)} "
                 f"of state '{state_ref.id}' is being reused _unsafely_; you can "
                 "not reuse an idempotency key with a different request"
             )
@@ -447,7 +449,7 @@ class IdempotencyManager:
             ):
                 raise ValueError(
                     "Idempotency key for "
-                    f"{self._rpc_name(state_type_name, service_name, method)} "
+                    f"{self._rpc_name(state_type_name, service_name, method, mutation)} "
                     f"of state '{state_ref.id}' is being reused _unsafely_; you can "
                     "not reuse an idempotency key with a different request"
                 )
@@ -455,7 +457,7 @@ class IdempotencyManager:
         if rpc.metadata != metadata:
             raise ValueError(
                 "Idempotency key for "
-                f"{self._rpc_name(state_type_name, service_name, method)} "
+                f"{self._rpc_name(state_type_name, service_name, method, mutation)} "
                 f"of state '{state_ref.id}' is being reused _unsafely_; you can "
                 "not reuse an idempotency key with different metadata"
             )
@@ -469,13 +471,14 @@ class IdempotencyManager:
         state_ref: StateRef,
         service_name: Optional[ServiceName],
         method: Optional[str],
+        mutation: bool,
         idempotency: Idempotency,
     ) -> uuid.UUID:
         if idempotency.key is not None:
             return idempotency.key
 
         alias = (
-            f'{self._rpc_name(state_type_name, service_name, method)}'
+            f'{self._rpc_name(state_type_name, service_name, method, mutation)}'
             f'@{state_ref.id}'
         )
 
@@ -516,7 +519,7 @@ class IdempotencyManager:
 
         alias = (
             idempotency.alias if idempotency.alias is not None else
-            f'{self._rpc_name(state_type_name, service_name, method)}'
+            f'{self._rpc_name(state_type_name, service_name, method, True)}'
         )
 
         return str(uuid.uuid5(self._seed, alias))

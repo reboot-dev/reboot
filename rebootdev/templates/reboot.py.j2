@@ -636,42 +636,36 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 async with self._state_manager.reactively(
                     context,
                     self._servicer.__state_type__,
-                    # TODO: Currently, we only authorize at creation time of a
-                    # task, but that violates our contract around re-authorizing
-                    # for each new state value.
+                    # Already authorized when we created the task.
                     authorize=None,
-                ) as states:
-                    async for (state, idempotency_keys) in states:
-                        try:
-                            # When we're validating effects we
-                            # periodically timeout so that we can log
-                            # that a workflow might be hung, i.e., the
-                            # user has a bug.
-                            task = IMPORT_asyncio.create_task(
-                                run_{{ method.proto.name }}(
-                                    validating_effects, context
-                                )
+                ):
+                    # When we're validating effects we
+                    # periodically timeout so that we can log
+                    # that a workflow might be hung, i.e., the
+                    # user has a bug.
+                    task = IMPORT_asyncio.create_task(
+                        run_{{ method.proto.name }}(
+                            validating_effects, context
+                        )
+                    )
+                    timeout = None if not validating_effects else 5  # seconds
+                    while True:
+                        done, pending = await IMPORT_asyncio.wait(
+                            [task],
+                            timeout=timeout,
+                        )
+                        # Check if we've timed out, which
+                        # should only occur if we're
+                        # validating effects.
+                        if len(done) == 0:
+                            assert validating_effects and timeout is not None
+                            logger.warning(
+                                f'Still waiting for method {{ state.proto.name }}.{{ method.proto.name }} '
+                                'to complete after re-running to validate effects.'
                             )
-                            timeout = None if not validating_effects else 5  # seconds
-                            while True:
-                                done, pending = await IMPORT_asyncio.wait(
-                                    [task],
-                                    timeout=timeout,
-                                )
-                                # Check if we've timed out, which
-                                # should only occur if we're
-                                # validating effects.
-                                if len(done) == 0:
-                                    assert validating_effects and timeout is not None
-                                    logger.warning(
-                                        f'Still waiting for method {{ state.proto.name }}.{{ method.proto.name }} '
-                                        'to complete after re-running to validate effects.'
-                                    )
-                                    timeout += 5  # seconds
-                                    continue
-                                return task.result()
-                        except IMPORT_reboot_aio_contexts.RetryReactively:
+                            timeout += 5  # seconds
                             continue
+                        return task.result()
             {% endif %}
 
             return await run_{{ method.proto.name }}{% if method.options.proto.kind == 'workflow' %}_reactively{% endif %}(
@@ -1562,22 +1556,22 @@ class {{ client.proto.state_name }}ReaderStub(_{{ client.proto.state_name }}Stub
                 ) as idempotency_key:
                     assert idempotency_key is not None
                     return await IMPORT_reboot_aio_workflows.at_least_once(
-                    (
-                        # TODO: for easier debugging include the
-                        # original alias (or generated alias in the
-                        # case of `.per_workflow_iteration()` w/o an
-                        # alias) instead of just `idempotency_key`.
-                        f'{ service_name }.{ method } ({str(idempotency_key)})',
-                        # NOTE: we want this to be `PER_WORKFLOW`
-                        # because any per iteration concerns should
-                        # have already been taken care of by caller
-                        # using `.per_workflow_iteration()`.
-                        IMPORT_reboot_aio_workflows.PER_WORKFLOW
-                    ),
-                    self._context,
-                    lambda: call,
-                    type={{ method.output_type }},
-                )
+                        (
+                            # TODO: for easier debugging include the
+                            # original alias (or generated alias in the
+                            # case of `.per_workflow_iteration()` w/o an
+                            # alias) instead of just `idempotency_key`.
+                            f'{ service_name }.{ method } ({str(idempotency_key)})',
+                            # NOTE: we want this to be `PER_WORKFLOW`
+                            # because any per iteration concerns should
+                            # have already been taken care of by caller
+                            # using `.per_workflow_iteration()`.
+                            IMPORT_reboot_aio_workflows.PER_WORKFLOW
+                        ),
+                        self._context,
+                        lambda: call,  # type: ignore[arg-type, return-value]
+                        type={{ method.output_type }},
+                    )
             {% endif %}
 
             assert isinstance(call, IMPORT_typing.Awaitable)
@@ -2172,18 +2166,10 @@ class {{ state.proto.name }}Servicer(IMPORT_reboot_aio_servicers.Servicer):
             self, context: IMPORT_reboot_aio_contexts.WorkflowContext
         ) -> {{ state.pb2_name }}.{{ state.proto.name }}:
             """Read the current state within a workflow."""
-
-            IMPORT_reboot_aio_types.assert_type(context, [IMPORT_reboot_aio_contexts.WorkflowContext])
-
-            if self._servicer._middleware is None:
-                raise RuntimeError(
-                    'Reboot middleware was not created; '
-                    'are you using this class without Reboot?'
-                )
-
-            return await self._servicer._middleware._state_manager.read(
-                context, self._servicer.__state_type__
-            )
+            return await (
+                self.always() if IMPORT_reboot_aio_contexts.within_until()
+                else self.per_workflow_iteration()
+            ).read(context)
 
         @IMPORT_typing.overload
         async def write(
@@ -2219,8 +2205,8 @@ class {{ state.proto.name }}Servicer(IMPORT_reboot_aio_servicers.Servicer):
             type: type = type(None),
         ) -> {{ state.proto.name }}Servicer.InlineWriterCallableResult:
             """Perform an "inline write" within a workflow."""
-            return await self.per_workflow_iteration().write(
-                idempotency_alias, context, writer, __options__, type=type
+            return await self.per_workflow_iteration(idempotency_alias).write(
+                context, writer, __options__, type=type
             )
 
         class _Idempotently:
@@ -2229,15 +2215,79 @@ class {{ state.proto.name }}Servicer(IMPORT_reboot_aio_servicers.Servicer):
                 self,
                 *,
                 servicer: {{ state.proto.name }}Servicer,
+                alias: IMPORT_typing.Optional[str],
                 how: IMPORT_reboot_aio_workflows.How,
             ):
                 self._servicer = servicer
+                self._alias = alias
                 self._how = how
+
+            async def read(
+                self, context: IMPORT_reboot_aio_contexts.WorkflowContext
+            ) -> {{ state.pb2_name }}.{{ state.proto.name }}:
+                """Read the current state within a workflow."""
+                IMPORT_reboot_aio_types.assert_type(context, [IMPORT_reboot_aio_contexts.WorkflowContext])
+
+                if self._servicer._middleware is None:
+                    raise RuntimeError(
+                        'Reboot middleware was not created; '
+                        'are you using this class without Reboot?'
+                    )
+
+                async def read():
+                    assert self._servicer._middleware is not None
+                    return await self._servicer._middleware._state_manager.read(
+                        context, self._servicer.__state_type__
+                    )
+
+                if self._how == IMPORT_reboot_aio_workflows.ALWAYS:
+                    return await read()
+
+                idempotency = context.idempotency(
+                    alias=self._alias,
+                    each_iteration=self._how == IMPORT_reboot_aio_workflows.PER_WORKFLOW_ITERATION,
+                )
+
+                state_type_name = IMPORT_reboot_aio_types.StateTypeName('{{ state.proto.full_name }}')
+
+                # Use the idempotency manager to make sure that this
+                # reader is being called following the rules.
+                with context.idempotently(
+                    state_type_name=state_type_name,
+                    state_ref=context._state_ref,
+                    # Not calling a method so `service_name`,
+                    # `method`, `request`, etc are irrelevant.
+                    service_name=None,
+                    method=None,
+                    mutation=False,
+                    request=None,
+                    metadata=None,
+                    idempotency=idempotency,
+                    # Only need to pass `aborted_type` for mutations.
+                    aborted_type=None,
+                ) as idempotency_key:
+                    assert idempotency_key is not None
+                    return await IMPORT_reboot_aio_workflows.at_least_once(
+                        (
+                            # TODO: for easier debugging include the
+                            # original alias (or generated alias in the
+                            # case of `.per_workflow_iteration()` w/o an
+                            # alias) instead of just `idempotency_key`.
+                            f"inline reader of '{ state_type_name }' ({str(idempotency_key)})",
+                            # NOTE: we want this to be `PER_WORKFLOW`
+                            # because any per iteration concerns should
+                            # have already been taken care of by caller
+                            # using `.per_workflow_iteration()`.
+                            IMPORT_reboot_aio_workflows.PER_WORKFLOW
+                        ),
+                        context,
+                        read,
+                        type={{ state.pb2_name }}.{{ state.proto.name }},
+                    )
 
             @IMPORT_typing.overload
             async def write(
                 self,
-                idempotency_alias: str,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
                 writer: {{ state.proto.name }}Servicer.InlineWriterCallable[None],
                 __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
@@ -2250,7 +2300,6 @@ class {{ state.proto.name }}Servicer(IMPORT_reboot_aio_servicers.Servicer):
             @IMPORT_typing.overload
             async def write(
                 self,
-                idempotency_alias: str,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
                 writer: {{ state.proto.name }}Servicer.InlineWriterCallable[{{ state.proto.name }}Servicer.InlineWriterCallableResult],
                 __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
@@ -2262,7 +2311,6 @@ class {{ state.proto.name }}Servicer(IMPORT_reboot_aio_servicers.Servicer):
 
             async def write(
                 self,
-                idempotency_alias: str,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
                 writer: {{ state.proto.name }}Servicer.InlineWriterCallable[{{ state.proto.name }}Servicer.InlineWriterCallableResult],
                 __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
@@ -2271,7 +2319,6 @@ class {{ state.proto.name }}Servicer(IMPORT_reboot_aio_servicers.Servicer):
                 check_type: bool = True,
             ) -> {{ state.proto.name }}Servicer.InlineWriterCallableResult:
                 return await self._write(
-                    idempotency_alias,
                     context,
                     writer,
                     __options__,
@@ -2281,7 +2328,6 @@ class {{ state.proto.name }}Servicer(IMPORT_reboot_aio_servicers.Servicer):
 
             async def _write(
                 self,
-                idempotency_alias: str,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
                 writer: {{ state.proto.name }}Servicer.InlineWriterCallable[{{ state.proto.name }}Servicer.InlineWriterCallableResult],
                 __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
@@ -2291,9 +2337,11 @@ class {{ state.proto.name }}Servicer(IMPORT_reboot_aio_servicers.Servicer):
             ) -> {{ state.proto.name }}Servicer.InlineWriterCallableResult:
                 unidempotently = self._how == IMPORT_reboot_aio_workflows.ALWAYS
                 idempotency = (
-                    context.idempotency(key=IMPORT_uuid.uuid4()) if unidempotently
-                    else context.idempotency(
-                        alias=idempotency_alias,
+                    context.idempotency(
+                        key=IMPORT_uuid.uuid4(),
+                        generated=True,
+                    ) if unidempotently else context.idempotency(
+                        alias=self._alias,
                         each_iteration=self._how == IMPORT_reboot_aio_workflows.PER_WORKFLOW_ITERATION
                     )
                 )
@@ -2307,6 +2355,7 @@ class {{ state.proto.name }}Servicer(IMPORT_reboot_aio_servicers.Servicer):
                     type_result=type_result,
                     check_type=check_type,
                     unidempotently=unidempotently,
+                    checkpoint=context.checkpoint(),
                 )
 
             @staticmethod
@@ -2322,6 +2371,7 @@ class {{ state.proto.name }}Servicer(IMPORT_reboot_aio_servicers.Servicer):
                 type_result: type,
                 check_type: bool,
                 unidempotently: bool,
+                checkpoint: IMPORT_reboot_aio_idempotency.Checkpoint,
             ) -> {{ state.proto.name }}Servicer.InlineWriterCallableResult:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
                 if __options__.idempotency is not None:
@@ -2467,21 +2517,24 @@ class {{ state.proto.name }}Servicer(IMPORT_reboot_aio_servicers.Servicer):
                                     method_name=method_name,
                                     validating_effects=validating_effects,
                                     context=context,
+                                    checkpoint=checkpoint,
                                 )
 
                                 await state_manager_writer.complete(effects)
 
                                 return result
 
-        def per_workflow(self):
+        def per_workflow(self, alias: IMPORT_typing.Optional[str] = None):
             return {{ state.proto.name }}Servicer._State._Idempotently(
                 servicer=self._servicer,
+                alias=alias,
                 how=IMPORT_reboot_aio_workflows.PER_WORKFLOW,
             )
 
-        def per_workflow_iteration(self):
+        def per_workflow_iteration(self, alias: IMPORT_typing.Optional[str] = None):
             return {{ state.proto.name }}Servicer._State._Idempotently(
                 servicer=self._servicer,
+                alias=alias,
                 how=IMPORT_reboot_aio_workflows.PER_WORKFLOW_ITERATION,
             )
 
@@ -2496,18 +2549,26 @@ class {{ state.proto.name }}Servicer(IMPORT_reboot_aio_servicers.Servicer):
             ):
                 self._servicer = servicer
 
+            async def read(
+                self, context: IMPORT_reboot_aio_contexts.WorkflowContext
+            ) -> {{ state.pb2_name }}.{{ state.proto.name }}:
+                return await {{ state.proto.name }}Servicer._State._Idempotently(
+                    servicer=self._servicer,
+                    alias=None,
+                    how=IMPORT_reboot_aio_workflows.ALWAYS,
+                ).read(context)
+
             async def write(
                 self,
-                idempotency_alias: str,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
                 writer: {{ state.proto.name }}Servicer.InlineWriterCallable[{{ state.proto.name }}Servicer.InlineWriterCallableResult],
                 __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
             ) -> {{ state.proto.name }}Servicer.InlineWriterCallableResult:
                 return await {{ state.proto.name }}Servicer._State._Idempotently(
                     servicer=self._servicer,
+                    alias=None,
                     how=IMPORT_reboot_aio_workflows.ALWAYS,
                 )._write(
-                    idempotency_alias,
                     context,
                     writer,
                     __options__,
@@ -4116,9 +4177,34 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.Servicer)
     def authorizer(self) -> IMPORT_typing.Optional[IMPORT_rebootdev.aio.auth.authorizers.Authorizer]:
         return self._construct_authorizer(self._js_servicer_reference)  # type: ignore[attr-defined]
 
-    async def _read(self, context: IMPORT_reboot_aio_contexts.WorkflowContext) -> str:
+    async def _read(
+        self,
+        context: IMPORT_reboot_aio_contexts.WorkflowContext,
+        json_options: str,
+    ) -> str:
+        options = IMPORT_json.loads(json_options)
+
+        alias = options.get('alias', None)
+
+        assert 'how' in options
+        how = options['how']
+        if how == IMPORT_reboot_aio_workflows.ALWAYS:
+            assert alias is None
+            return IMPORT_google_protobuf_json_format.MessageToJson(
+                await super().state.always().read(context)
+            )
+
+        assert how in [
+            IMPORT_reboot_aio_workflows.PER_WORKFLOW,
+            IMPORT_reboot_aio_workflows.PER_WORKFLOW_ITERATION,
+        ]
+
         return IMPORT_google_protobuf_json_format.MessageToJson(
-            await super().state.read(context)
+            await (
+                super().state.per_workflow(alias)
+                if how == IMPORT_reboot_aio_workflows.PER_WORKFLOW
+                else super().state.per_workflow_iteration(alias)
+            ).read(context)
         )
 
     async def _write(
@@ -4149,31 +4235,29 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.Servicer)
 
         options = IMPORT_json.loads(json_options)
 
-        assert 'alias' in options
-        assert 'how' in options
+        alias = options.get('alias', None)
 
-        if options['how'] == IMPORT_reboot_aio_workflows.ALWAYS:
+        assert 'how' in options
+        how = options['how']
+
+        if how == IMPORT_reboot_aio_workflows.ALWAYS:
+            assert alias is None
             return await super().state.always().write(
-                options['alias'],
                 context,
                 _writer,
             )
-        else:
-            assert options['how'] in [
-                IMPORT_reboot_aio_workflows.PER_WORKFLOW,
-                IMPORT_reboot_aio_workflows.PER_WORKFLOW_ITERATION,
-            ]
-            return await (
-                super().state.per_workflow()
-                if options['how'] == IMPORT_reboot_aio_workflows.PER_WORKFLOW
-                else super().state.per_workflow_iteration()
-            )._write(
-                options['alias'],
-                context,
-                _writer,
-                type_result=str,
-                check_type=True,
-            )
+
+        assert alias is not None
+        assert how in [
+            IMPORT_reboot_aio_workflows.PER_WORKFLOW,
+            IMPORT_reboot_aio_workflows.PER_WORKFLOW_ITERATION,
+        ]
+
+        return await (
+            super().state.per_workflow(alias)
+            if how == IMPORT_reboot_aio_workflows.PER_WORKFLOW
+            else super().state.per_workflow_iteration(alias)
+        ).write(context, _writer, type=str)
 
     # {{ state.proto.name }} specific methods:
     {% for service in state.services %}
