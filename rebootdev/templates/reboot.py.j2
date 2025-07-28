@@ -868,7 +868,8 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
 
             if IMPORT_reboot_nodejs_python.should_print_stacktrace():
                 logger.warning(
-                    f"Unhandled (in '{{ state.proto.full_name }}.{{ method.proto.name }}') {type(decode_error).__name__}: {decode_error}; " +
+                    "Unhandled (in '{{ state.proto.full_name }}.{{ method.proto.name }}') "
+                    f"{type(decode_error).__name__}{': ' + str(decode_error) if len(str(decode_error)) > 0 else ''}; "
                     "This is usually caused by a deeply nested protobuf message, which is not supported by protobuf.\n"
                     "See the limits here: https://protobuf.dev/programming-guides/proto-limits/" +
                     ''.join(IMPORT_traceback.format_exception(decode_error))
@@ -883,7 +884,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             # Not logging when within `node` as we already log there.
             if IMPORT_reboot_nodejs_python.should_print_stacktrace():
                 logger.warning(
-                    f"Unhandled (in '{{ state.proto.full_name }}.{{ method.proto.name }}') {type(exception).__name__}: {exception}; propagating as 'Unknown'\n" +
+                    "Unhandled (in '{{ state.proto.full_name }}.{{ method.proto.name }}') "
+                    f"{type(exception).__name__}{': ' + str(exception) if len(str(exception)) > 0 else ''}; "
+                    "propagating as 'Unknown'\n" +
                     ''.join(IMPORT_traceback.format_exception(exception))
                 )
             raise IMPORT_rebootdev.aio.aborted.SystemAborted(
