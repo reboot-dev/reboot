@@ -1518,71 +1518,75 @@ class {{ client.proto.state_name }}ReaderStub(_{{ client.proto.state_name }}Stub
         service_name = IMPORT_reboot_aio_types.ServiceName('{{ service.proto.full_name }}')
         method = '{{ method.proto.name }}'
 
-        async with self._call(
-            state_type_name,
-            service_name,
-            method,
-            self._{{ stub_name(service.proto.full_name) }}.{{ method.proto.name }},
-            request{% if method.proto.client_streaming %}s{% endif %},
-            unary={{ not method.proto.client_streaming and not method.proto.server_streaming }},
-            reader=True,
-            response_type={{ method.output_type }},
-            aborted_type={{ client.proto.state_name }}.{{ method.proto.name }}Aborted,
-            metadata=metadata,
-            bearer_token=bearer_token,
-        ) as call:
-        {% if not method.proto.server_streaming %}
-            {% if not method.proto.client_streaming %}
-            # Memoize reads in a `workflow` by default!
-            if isinstance(self._context, IMPORT_reboot_aio_contexts.WorkflowContext):
-                assert idempotency is not None
+        async def call():
+            async with self._call(
+                state_type_name,
+                service_name,
+                method,
+                self._{{ stub_name(service.proto.full_name) }}.{{ method.proto.name }},
+                request{% if method.proto.client_streaming %}s{% endif %},
+                unary={{ not method.proto.client_streaming and not method.proto.server_streaming }},
+                reader=True,
+                response_type={{ method.output_type }},
+                aborted_type={{ client.proto.state_name }}.{{ method.proto.name }}Aborted,
+                metadata=metadata,
+                bearer_token=bearer_token,
+            ) as call:
+                {% if not method.proto.server_streaming %}
+                assert isinstance(call, IMPORT_typing.Awaitable)
+                return await call
+                {% else %}
+                assert isinstance(call, IMPORT_typing.AsyncIterable)
+                async for response in call:
+                    yield response
+                {% endif %}
 
+        {% if not method.proto.server_streaming %}
+        {% if not method.proto.client_streaming %}
+        if isinstance(self._context, IMPORT_reboot_aio_contexts.WorkflowContext):
+            # Use the idempotency manager to make sure that this
+            # reader is being called following the rules.
+            with self._context.idempotently(
+                state_type_name=state_type_name,
+                state_ref=self._headers.state_ref,
+                service_name=service_name,
+                method=method,
+                mutation=False,
+                request=request,
+                metadata=metadata,
+                idempotency=idempotency,
+                # Only need to pass `aborted_type` for mutations.
+                aborted_type=None,
+            ) as idempotency_key:
+                assert idempotency is not None
                 # Check if this reader is from an `.always()`, i.e., _we_
                 # generated an idempotency key, and if so, don't memoize!
                 if idempotency.generated and idempotency.key is not None:
-                    assert isinstance(call, IMPORT_typing.Awaitable)
-                    return await call
+                    return await call()
 
-                # Use the idempotency manager to make sure that this
-                # reader is being called following the rules.
-                with self._context.idempotently(
-                    state_type_name=state_type_name,
-                    state_ref=self._headers.state_ref,
-                    service_name=service_name,
-                    method=method,
-                    mutation=False,
-                    request=request,
-                    metadata=metadata,
-                    idempotency=idempotency,
-                    # Only need to pass `aborted_type` for mutations.
-                    aborted_type=None,
-                ) as idempotency_key:
-                    assert idempotency_key is not None
-                    return await IMPORT_reboot_aio_workflows.at_least_once(
-                        (
-                            # TODO: for easier debugging include the
-                            # original alias (or generated alias in the
-                            # case of `.per_workflow_iteration()` w/o an
-                            # alias) instead of just `idempotency_key`.
-                            f'{ service_name }.{ method } ({str(idempotency_key)})',
-                            # NOTE: we want this to be `PER_WORKFLOW`
-                            # because any per iteration concerns should
-                            # have already been taken care of by caller
-                            # using `.per_workflow_iteration()`.
-                            IMPORT_reboot_aio_workflows.PER_WORKFLOW
-                        ),
-                        self._context,
-                        lambda: call,  # type: ignore[arg-type, return-value]
-                        type={{ method.output_type }},
-                    )
-            {% endif %}
-
-            assert isinstance(call, IMPORT_typing.Awaitable)
-            return await call
+                assert idempotency_key is not None
+                return await IMPORT_reboot_aio_workflows.at_least_once(
+                    (
+                        # TODO: for easier debugging include the
+                        # original alias (or generated alias in the
+                        # case of `.per_workflow_iteration()` w/o an
+                        # alias) instead of just `idempotency_key`.
+                        f'{ service_name }.{ method } ({str(idempotency_key)})',
+                        # NOTE: we want this to be `PER_WORKFLOW`
+                        # because any per iteration concerns should
+                        # have already been taken care of by caller
+                        # using `.per_workflow_iteration()`.
+                        IMPORT_reboot_aio_workflows.PER_WORKFLOW
+                    ),
+                    self._context,
+                    call,
+                    type={{ method.output_type }},
+                )
+        {% endif %}
+        return await call()
         {% else %}
-            assert isinstance(call, IMPORT_typing.AsyncIterable)
-            async for response in call:
-                yield response
+        async for response in call():
+            yield response
         {% endif %}
     {% endif %}
 
