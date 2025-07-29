@@ -12,7 +12,7 @@ from rebootdev.aio.contexts import (
 from rebootdev.aio.types import assert_type
 from rebootdev.aio.workflows import (
     ALWAYS,
-    PER_WORKFLOW_ITERATION,
+    PER_ITERATION,
     AtMostOnceFailedBeforeCompleting,
 )
 from rebootdev.memoize.v1.memoize_rbt import (
@@ -48,8 +48,7 @@ T = TypeVar('T')
 async def memoize(
     idempotency_alias_or_tuple: str | tuple[
         str,
-        Literal["ALWAYS"] | Literal["PER_WORKFLOW"] |
-        Literal["PER_WORKFLOW_ITERATION"],
+        Literal["ALWAYS"] | Literal["PER_WORKFLOW"] | Literal["PER_ITERATION"],
     ],
     context: WorkflowContext,
     callable: Callable[[], Awaitable[T]],
@@ -71,18 +70,17 @@ async def memoize(
     assert context.task_id is not None
 
     # Use `Context.idempotency()` to properly create an `Idempotency`
-    # that handles `PER_WORKFLOW_ITERATION` correctly.
+    # that handles `PER_ITERATION` correctly.
     idempotency = context.idempotency(
         alias=idempotency_alias_or_tuple,
-        each_iteration=True,
+        each_iteration=context.within_loop(),
     ) if isinstance(idempotency_alias_or_tuple, str) else (
         context.idempotency(
             alias=f"{idempotency_alias_or_tuple[0]} - {uuid.uuid4()}",
         ) if idempotency_alias_or_tuple[1] == ALWAYS else (
             context.idempotency(
                 alias=idempotency_alias_or_tuple[0],
-                each_iteration=idempotency_alias_or_tuple[1]
-                == PER_WORKFLOW_ITERATION,
+                each_iteration=idempotency_alias_or_tuple[1] == PER_ITERATION,
             )
         )
     )

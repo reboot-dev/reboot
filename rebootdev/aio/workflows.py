@@ -15,13 +15,10 @@ from typing import (
 # `at_most_once` and `at_least_once` are different than `until`.
 ALWAYS: Literal["ALWAYS"] = "ALWAYS"
 PER_WORKFLOW: Literal["PER_WORKFLOW"] = "PER_WORKFLOW"
-PER_WORKFLOW_ITERATION: Literal["PER_WORKFLOW_ITERATION"] = (
-    "PER_WORKFLOW_ITERATION"
-)
+PER_ITERATION: Literal["PER_ITERATION"] = "PER_ITERATION"
 
 How: TypeAlias = (
-    Literal["ALWAYS"] | Literal["PER_WORKFLOW"] |
-    Literal["PER_WORKFLOW_ITERATION"]
+    Literal["ALWAYS"] | Literal["PER_WORKFLOW"] | Literal["PER_ITERATION"]
 )
 
 T = TypeVar('T')
@@ -34,7 +31,7 @@ class Memoize(Protocol[T]):
         idempotency_alias_or_tuple: str | tuple[
             str,
             Literal["ALWAYS"] | Literal["PER_WORKFLOW"] |
-            Literal["PER_WORKFLOW_ITERATION"],
+            Literal["PER_ITERATION"],
         ],
         context: WorkflowContext,
         callable: Callable[[], Awaitable[T]],
@@ -64,7 +61,7 @@ class AtMostOnceFailedBeforeCompleting(Exception):
 
 AtMostLeastOnceTupleType: TypeAlias = tuple[
     str,
-    Literal["PER_WORKFLOW"] | Literal["PER_WORKFLOW_ITERATION"],
+    Literal["PER_WORKFLOW"] | Literal["PER_ITERATION"],
 ]
 
 
@@ -258,8 +255,7 @@ async def at_least_once_per_workflow(
 
 UntilTupleType: TypeAlias = tuple[
     str,
-    Literal["ALWAYS"] | Literal["PER_WORKFLOW"] |
-    Literal["PER_WORKFLOW_ITERATION"],
+    Literal["ALWAYS"] | Literal["PER_WORKFLOW"] | Literal["PER_ITERATION"],
 ]
 
 

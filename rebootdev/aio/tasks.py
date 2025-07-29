@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
-from datetime import timedelta
 from google.protobuf.message import Message
 from google.protobuf.timestamp_pb2 import Timestamp
 from rbt.v1alpha1 import sidecar_pb2, tasks_pb2
@@ -11,7 +9,8 @@ from rebootdev.time import DateTimeWithTimeZone
 from typing import Optional
 
 
-# TODO(benh): make this an immutable dataclass.
+# TODO(benh): make this an immutable dataclass. This is currently
+# tricky because `iteration` is mutated on an instance.
 class TaskEffect:
     """An effect which represents running an asynchronous task. If this
     effect is successfully persisted then the task will be dispatched.
@@ -74,9 +73,3 @@ class TaskEffect:
             timestamp=timestamp,
             iteration=self.iteration,
         )
-
-
-@dataclass(kw_only=True, frozen=True)
-class Loop:
-
-    when: Optional[DateTimeWithTimeZone | timedelta] = None

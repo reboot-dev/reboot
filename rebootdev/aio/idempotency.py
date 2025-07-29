@@ -380,7 +380,7 @@ class IdempotencyManager:
         # If we're seeing an RPC that maps to this idempotency key
         # _again_ and the idempotency _key_ was generated that means
         # someone has made more than one empty `.idempotently()` (or
-        # `.per_workflow()` or `.per_workflow_iteration()` and we need
+        # `.per_workflow()` or `.per_iteration()` and we need
         # to error out asking them to explicitly use an idempotency
         # alias or key.
         #
@@ -395,7 +395,7 @@ class IdempotencyManager:
         # (1) Calling `.always()`, where we generate an idempotency
         #     key for each call.
         #
-        # (2) Calling `.per_workflow_iteration()` specifically without
+        # (2) Calling `.per_iteration()` specifically without
         #     any alias where we create an alias based on the current
         #     iteration number.
         #

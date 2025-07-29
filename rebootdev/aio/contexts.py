@@ -39,12 +39,15 @@ from rebootdev.aio.types import (
 )
 from rebootdev.time import DateTimeWithTimeZone
 from typing import (
+    Any,
+    AsyncGenerator,
     Awaitable,
     Callable,
     Generic,
     Iterable,
     Iterator,
     Optional,
+    Protocol,
     Tuple,
     TypeVar,
 )
@@ -961,17 +964,6 @@ class Context(ABC, IdempotencyManager):
             if self._task is not None else None
         )
 
-    @property
-    def iteration(self) -> Optional[int]:
-        """Returns the loop iteration if this context is being used to
-        execute a control loop task, otherwise `None`.
-
-        Note that a single loop iteration may _retry_ multiple times; each of
-        these retries are for the same iteration. A new iteration starts only
-        when the previous iteration completes by returning `Loop`.
-        """
-        return self._task.iteration if self._task is not None else None
-
     def legacy_grpc_channel(self) -> grpc.aio.Channel:
         """Get a gRPC channel that can connect to any Reboot-hosted legacy
         gRPC service. Simply use this channel to create a Stub and call it, no
@@ -1011,7 +1003,7 @@ class Context(ABC, IdempotencyManager):
                     alias = "-"
                     generated = True
 
-                alias += f' (iteration #{context.iteration})'
+                alias += f' (iteration #{context.task.iteration})'
 
             if each_iteration is not None and context is None:
                 raise TypeError(
@@ -1162,8 +1154,15 @@ class TransactionContext(Context):
         return len(self._headers.transaction_ids) > 1
 
 
-class WorkflowContext(Context):
-    """Call context for a workflow call."""
+class Loop(Protocol):
+
+    def __call__(
+        self,
+        alias: str,
+        *,
+        interval: Optional[timedelta] = None,
+    ) -> AsyncGenerator[int, Any]:
+        ...
 
 
 # We need to know when we're within an `until` because we treat "bare"
@@ -1174,8 +1173,27 @@ _within_until: ContextVar[bool] = ContextVar(
 )
 
 
-def within_until() -> bool:
-    return _within_until.get()
+class WorkflowContext(Context):
+    """Call context for a workflow call."""
+
+    # Extra machinery for handling control loops, similar to how we
+    # `context.react`. Set when `StateManager.task_workflow()` is
+    # called.
+    loop: Loop
+    within_loop: Callable[[], bool]
+
+    def within_until(self) -> bool:
+        return _within_until.get()
+
+    @property
+    def task(self) -> TaskEffect:
+        assert self._task is not None
+        return self._task
+
+    @property
+    def task_id(self) -> uuid.UUID:
+        assert self._task is not None
+        return uuid.UUID(bytes=self._task.task_id.task_uuid)
 
 
 RetryReactivelyUntilT = TypeVar('RetryReactivelyUntilT')

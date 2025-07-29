@@ -23,6 +23,7 @@ import {
   {{ google_protobuf_used_messages|join(', \n  ') }}
 } from "@bufbuild/protobuf";
 {% endif %}
+import { AsyncLocalStorage } from "node:async_hooks";
 {% if proto.messages_and_enums | length > 0 and not options.proto.zod %}
 // Additionally re-export all messages_and_enums from the pb module.
 export {
@@ -347,19 +348,16 @@ export type {{ state.proto.name }}ObjectLiteral = {
     {% endif %}
     request: {{ state.proto.name }}.{{ method.proto.name }}Request,
   ) => Promise<
-    {% if method.options.proto.kind == 'reader' %}
+    {% if method.options.proto.kind in ['reader', 'workflow'] %}
     {{ state.proto.name }}.Partial{{ method.proto.name }}Response
-    {% elif method.options.proto.kind != 'workflow' %}
+    {% else %}
     {{ state.proto.name }}.{{ method.proto.name }}Response extends void
       ? [{{ state.proto.name }}.State]
       : [
         {{ state.proto.name }}.State,
         {{ state.proto.name }}.Partial{{ method.proto.name }}Response,
       ]
-    {% else %}
-    {{ state.proto.name }}.Partial{{ method.proto.name }}Response
-    | reboot.Loop
-  {% endif %}
+    {% endif %}
   >;
   {% endfor %}
   {% endfor %}
@@ -406,9 +404,6 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
         request: {{ state.proto.name }}.{{ method.proto.name }}Request,
       ): Promise<
         {{ state.proto.name }}.Partial{{ method.proto.name }}Response
-      {% if method.options.proto.kind == 'workflow' %}
-      | reboot.Loop
-      {% endif %}
       > {
         {% if method.options.proto.kind == 'reader' %}
         return await literal.{{ method.proto.name | to_lower_camel }}(
@@ -456,9 +451,6 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
     request: {{ state.proto.name }}.{{ method.proto.name }}Request,
   ): Promise<
     {{ state.proto.name }}.Partial{{ method.proto.name }}Response
-  {% if method.options.proto.kind == 'workflow' %}
-  | reboot.Loop
-  {% endif %}
   >;
 
   async _{{ method.proto.name }}(
@@ -511,7 +503,7 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
         );
       });
 
-      const response = {% if method.options.proto.kind == 'workflow' %}partialResponse instanceof reboot.Loop ? partialResponse : {% endif %}{{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf(partialResponse);
+      const response = {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf(partialResponse);
 
       {% if options.proto.zod and method.options.proto.kind != 'workflow' %}
       // Validate and convert back to protobuf when using Zod.
@@ -538,10 +530,6 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
             state: state.toJson(),
             response: response.toJson(),
           },
-          {% elif method.options.proto.kind == 'workflow' %}
-          ...(response instanceof reboot.Loop
-              && { loop: { when: response.when } }
-              ||  { response: response.toJson() }),
           {% else %}
           response: response.toJson()
           {% endif %}
@@ -667,7 +655,11 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
       return await (
         reboot.isWithinUntil()
           ? this.always()
-          : this.perWorkflowIteration()
+          : (
+            reboot.isWithinLoop()
+              ? this.perIteration()
+              : this.perWorkflow()
+          )
       ).read(context);
     }
 
@@ -707,8 +699,11 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
         validate?: (result: T) => boolean
       } = {}
     ): Promise<void | T> {
-      return await this.perWorkflowIteration(idempotencyAlias)
-        .write(context, writer, options);
+      return await (
+        reboot.isWithinLoop()
+          ? this.perIteration(idempotencyAlias)
+          :this.perWorkflow(idempotencyAlias)
+      ).write(context, writer, options);
     }
 
     static _Idempotently = class {
@@ -779,7 +774,9 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
         const result = await reboot_native.Servicer_write(
           this.#external,
           context.__external,
-          async (jsonState: string) => {
+          // Bind with async local storage so we can check things like
+          // `isWithinLoop`, etc.
+          AsyncLocalStorage.bind(async (jsonState: string) => {
             const state = {{ state.proto.name }}FromJsonString(
               jsonState
             );
@@ -810,7 +807,7 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
             } catch (e) {
               throw ensureError(e);
             }
-          },
+          }),
           JSON.stringify(this.#idempotency)
         );
 
@@ -854,10 +851,10 @@ export abstract class {{ state.proto.name }}Servicer extends reboot.Servicer<{{ 
       );
     }
 
-    public perWorkflowIteration(alias?: string) {
+    public perIteration(alias?: string) {
       return new {{ state.proto.name }}Servicer.WorkflowState._Idempotently(
         this.#servicer.__external,
-        { alias, how: reboot.PER_WORKFLOW_ITERATION },
+        { alias, how: reboot.PER_ITERATION },
       );
     }
 
@@ -1317,7 +1314,7 @@ export class {{ client.proto.state_name }}WeakReference {
   ): Promise<{{ client.proto.state_name }}.{{ method.proto.name }}Response> {
     const { task } = await (
       context instanceof WorkflowContext
-        ? this.perWorkflowIteration()
+        ? (reboot.isWithinLoop() ? this.perIteration() : this.perWorkflow())
         : this
     ).spawn().{{ method.proto.name | to_lower_camel }}(context, partialRequest);
     return await task;
@@ -1342,8 +1339,11 @@ export class {{ client.proto.state_name }}WeakReference {
           );
       }
       {% endif %}
-      return await this.perWorkflowIteration()
-        .{{ method.proto.name | to_lower_camel }}(
+      return await (
+        reboot.isWithinLoop()
+          ? this.perIteration()
+          : this.perWorkflow()
+      ).{{ method.proto.name | to_lower_camel }}(
           context,
           partialRequest,
           this.#options,
@@ -1438,7 +1438,7 @@ export class {{ client.proto.state_name }}WeakReference {
     return this.idempotently(alias);
   }
 
-  public perWorkflowIteration(alias?: string) {
+  public perIteration(alias?: string) {
     return this.idempotently({ alias, eachIteration: true });
   }
 
@@ -1660,7 +1660,7 @@ export class {{ client.proto.state_name }} {
       .idempotently({ alias });
   }
 
-  public static perWorkflowIteration(alias?: string) {
+  public static perIteration(alias?: string) {
     return {{ client.proto.state_name }}
       .idempotently({ alias, eachIteration: true });
   }

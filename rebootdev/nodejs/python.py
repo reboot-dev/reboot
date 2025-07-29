@@ -178,6 +178,23 @@ async def task_await(
         )
 
 
+async def loop(context: WorkflowContext, alias: str):
+    """Helper for performing loop iteration."""
+    iterator = context.loop(alias)
+
+    closed: bool = False
+
+    async def iterate(more: bool):
+        nonlocal closed
+        if not more and not closed:
+            await iterator.aclose()
+            closed = True
+            return None
+        return await anext(iterator, None)
+
+    return iterate
+
+
 def _message_to_serialized_any(message: Message) -> bytes:
     any_pb = any_pb2.Any()
     any_pb.Pack(message)
