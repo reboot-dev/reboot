@@ -3983,6 +3983,32 @@ class {{ client.proto.state_name }}:
         {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
         {% endfor %}
     ) -> tuple[{{ client.proto.state_name }}.WeakReference, {{ method.output_type }}]:
+        # Within a `workflow`, all "bare" calls are
+        # `per_workflow()` calls, unless we're within a control
+        # loop, in which case they are syntactic sugar for
+        # `per_iteration()`.
+        #
+        # Unless we are "within until" in which case all "bare"
+        # calls are `.always().
+        if (
+            isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext) and
+            __idempotency__ is None
+        ):
+            return await (
+                __cls__.always() if __context__.within_until()
+                else (
+                    __cls__.per_iteration() if __context__.within_loop()
+                    else __cls__.per_workflow()
+                )
+            ).{{ method.proto.name }}(
+                __context__,
+                __state_id__,
+                __options__,
+                {% for name in method.input_type_fields %}
+                {{ name }}={{ name }},
+                {% endfor %}
+            )
+
         {% for name, type in method.input_type_fields.items() %}
         if {{ name }} is not None and not isinstance(
             {{ name }},

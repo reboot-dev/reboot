@@ -1627,6 +1627,23 @@ export class {{ client.proto.state_name }} {
       }
     }
 
+    if (
+      context instanceof WorkflowContext && (
+        options === undefined || !("idempotency" in options)
+      )
+    ) {
+      return await (
+        reboot.isWithinLoop()
+          ? {{ client.proto.state_name }}.perIteration()
+          : {{ client.proto.state_name }}.perWorkflow()
+      ).{{ method.proto.name | to_lower_camel }}(
+        context,
+        idOrPartialRequest,
+        partialRequestOrOptions,
+        optionsOrUndefined
+      );
+    }
+
     if (id === undefined) {
       id = uuid.v4();
     }
