@@ -37,6 +37,7 @@ IMPORT_reboot_versioning.check_generated_code_compatible("{{ reboot_version }}")
 #            with user-defined methods that have the same name. Use
 #            fully-qualified names (e.g. `IMPORT_typing.Any`) instead.
 import asyncio as IMPORT_asyncio
+import builtins as IMPORT_builtins
 import contextvars as IMPORT_contextvars
 import dataclasses as IMPORT_dataclasses
 import google.protobuf.descriptor as IMPORT_google_protobuf_descriptor
@@ -3959,8 +3960,12 @@ class {{ client.proto.state_name }}:
                 {% for name, type in method.input_type_fields.items() %}
                 if {{ name }} is not None and not isinstance(
                     {{ name }},
+                    {% if name == "bytes" %}
+                    IMPORT_builtins.bytes
+                    {% else %}
                     {# NOTE: split at '[' so we don't include generic type parameters. #}
                     {{ type.split('[')[0] }},
+                    {% endif %}
                 ):
                     raise TypeError(
                         f"Can not construct protobuf message of type "
@@ -4069,8 +4074,12 @@ class {{ client.proto.state_name }}:
                 {% for name, type in method.input_type_fields.items() %}
                 if {{ name }} is not None and not isinstance(
                     {{ name }},
+                    {% if name == "bytes" %}
+                    IMPORT_builtins.bytes
+                    {% else %}
                     {# NOTE: split at '[' so we don't include generic type parameters. #}
                     {{ type.split('[')[0] }},
+                    {% endif %}
                 ):
                     raise TypeError(
                         f"Can not construct protobuf message of type "
@@ -4199,8 +4208,12 @@ class {{ client.proto.state_name }}:
                 {% for name, type in method.input_type_fields.items() %}
                 if {{ name }} is not None and not isinstance(
                     {{ name }},
+                    {% if name == "bytes" %}
+                    IMPORT_builtins.bytes
+                    {% else %}
                     {# NOTE: split at '[' so we don't include generic type parameters. #}
                     {{ type.split('[')[0] }},
+                    {% endif %}
                 ):
                     raise TypeError(
                         f"Can not construct protobuf message of type "
@@ -4503,8 +4516,12 @@ class {{ client.proto.state_name }}:
             {% for name, type in method.input_type_fields.items() %}
             if {{ name }} is not None and not isinstance(
                 {{ name }},
+                {% if name == "bytes" %}
+                IMPORT_builtins.bytes
+                {% else %}
                 {# NOTE: split at '[' so we don't include generic type parameters. #}
                 {{ type.split('[')[0] }},
+                {% endif %}
             ):
                 raise TypeError(
                     f"Can not construct protobuf message of type "
