@@ -20,4 +20,4 @@ packages in multiple BUILD.bazel files.
 #
 # NOTE: if this variable name is ever changed, it must also be updated in
 # tests/reboot/versions_test.py and in bazel/release_scripts/update_versions.py.
-REBOOT_VERSION = "0.29.5"
+REBOOT_VERSION = "0.30.0"
