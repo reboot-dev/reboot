@@ -9,6 +9,7 @@ import uuid
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
 from google.protobuf import any_pb2
@@ -49,7 +50,7 @@ from rebootdev.aio.internals.tasks_dispatcher import (
 )
 from rebootdev.aio.once import AsyncOnce
 from rebootdev.aio.servicers import RebootServiceable, Serviceable
-from rebootdev.aio.tasks import Loop, TaskEffect
+from rebootdev.aio.tasks import TaskEffect
 from rebootdev.aio.tracing import asynccontextmanager_span, function_span
 from rebootdev.aio.types import (
     ApplicationId,
@@ -66,8 +67,8 @@ from rebootdev.consensus.sidecar import (
     SidecarServer,
     SidecarServerFailed,
 )
-from rebootdev.time import DateTimeWithTimeZone
 from typing import (
+    Any,
     AsyncGenerator,
     AsyncIterator,
     Awaitable,
@@ -550,10 +551,22 @@ class StateManager(ABC):
         yield  # Necessary for type checking.
 
     @abstractmethod
+    async def complete_task(
+        self,
+        task_effect: TaskEffect,
+        response_or_error: TaskResponseOrError,
+    ) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
     @asynccontextmanager
     async def task_workflow(
         self,
         context: WorkflowContext,
+        task_effect: TaskEffect,
+        *,
+        on_loop_iteration: Callable[[int], None],
+        validating_effects: bool,
     ) -> AsyncIterator[Callable[[TaskEffect, TaskResponseOrError],
                                 Awaitable[None]]]:
         """Helper that handles code generated task workflows.
@@ -2045,67 +2058,152 @@ class SidecarStateManager(
         self,
         task_effect: TaskEffect,
         response_or_error: TaskResponseOrError,
-    ):
+    ) -> None:
         state_type = task_effect.task_id.state_type
         state_ref = StateRef(task_effect.task_id.state_ref)
-        response_or_loop, error = response_or_error
+        response, error = response_or_error
 
         async with self._mutator_locks[state_type][state_ref]:
-            if isinstance(response_or_loop, Loop):
-                loop: Loop = response_or_loop
+            # Store response and mark this Task as completed in
+            # persistent storage. Even though we're writing here, we're
+            # not writing the actor's state.
+            task_response: Optional[any_pb2.Any] = None
+            task_error: Optional[any_pb2.Any] = None
+            if error is not None:
+                assert response is None
 
-                if loop.when is not None:
-                    task_effect.schedule = (
-                        DateTimeWithTimeZone.now() + loop.when
-                    ) if isinstance(loop.when, timedelta) else loop.when
-
-                task_effect.iteration += 1
-
-                await self._store(
-                    state_type=state_type,
-                    state_ref=state_ref,
-                    task=task_effect.to_sidecar_task(),
-                )
+                task_error = any_pb2.Any()
+                task_error.Pack(error)
             else:
-                # Store response and mark this Task as completed in
-                # persistent storage. Even though we're writing here, we're
-                # not writing the actor's state.
-                task_response: Optional[any_pb2.Any] = None
-                task_error: Optional[any_pb2.Any] = None
-                if error is not None:
-                    assert response_or_loop is None
+                assert response is not None
 
-                    task_error = any_pb2.Any()
-                    task_error.Pack(error)
-                else:
-                    assert response_or_loop is not None
-                    response: Message = response_or_loop
+                task_response = any_pb2.Any()
+                task_response.Pack(response)
 
-                    task_response = any_pb2.Any()
-                    task_response.Pack(response)
+            assert task_response is not None or task_error is not None
 
-                assert task_response is not None or task_error is not None
-
-                await self._store(
-                    state_type=state_type,
-                    state_ref=state_ref,
-                    task=sidecar_pb2.Task(
-                        task_id=task_effect.task_id,
-                        method=task_effect.method_name,
-                        status=sidecar_pb2.Task.Status.COMPLETED,
-                        request=task_effect.request.SerializeToString(),
-                        response=task_response,
-                        error=task_error,
-                    ),
-                )
+            await self._store(
+                state_type=state_type,
+                state_ref=state_ref,
+                task=sidecar_pb2.Task(
+                    task_id=task_effect.task_id,
+                    method=task_effect.method_name,
+                    status=sidecar_pb2.Task.Status.COMPLETED,
+                    request=task_effect.request.SerializeToString(),
+                    response=task_response,
+                    error=task_error,
+                ),
+            )
 
     @asynccontextmanager
     async def task_workflow(
         self,
         context: WorkflowContext,
+        task_effect: TaskEffect,
+        *,
+        on_loop_iteration: Callable[[int], None],
+        validating_effects: bool,
     ) -> AsyncIterator[Callable[[TaskEffect, TaskResponseOrError],
                                 Awaitable[None]]]:
         """Override of StateManager.task_workflow(...) for SidecarStateManager."""
+
+        # Construct the machinery necessary for enabling control
+        # loops.
+        #
+        # TODO: currently we only allow a single control loop per
+        # workflow, change that!
+        loop_alias: Optional[str] = None
+
+        within_loop: ContextVar[bool] = ContextVar(
+            "Whether or not current asyncio context is within a control loop",
+            default=False,
+        )
+
+        async def loop(
+            alias: str,
+            *,
+            interval: Optional[timedelta] = None,
+        ) -> AsyncGenerator[int, Any]:
+            nonlocal loop_alias
+            if loop_alias is not None:
+                raise RuntimeError(
+                    "Only one loop per workflow is currently supported "
+                    f"(already ran loop '{loop_alias}'); "
+                    "please reach out if this is a blocker for you!"
+                )
+
+            loop_alias = alias
+
+            # Need a checkpoint of the context so that we can restore
+            # it before each iteration.
+            #
+            # TODO: this will not play nicely with other concurrent
+            # asyncio tasks _outside_ of the control loop, we should
+            # detect that case and raise an exception that it is not
+            # supported via something like an asyncio context variable
+            # that indicates whether or not it is a descendent of the
+            # asyncio context that created/started the loop and
+            # ensuring that all of those asyncio contexts are
+            # completed for each loop iteration.
+            checkpoint = context.checkpoint()
+
+            state_type = task_effect.task_id.state_type
+            state_ref = StateRef(task_effect.task_id.state_ref)
+
+            try:
+                nonlocal within_loop
+                within_loop.set(True)
+
+                while True:
+                    yield task_effect.iteration
+
+                    # Because a control loop is often meant to wait for some
+                    # kind of external changes, trying to re-execute it for
+                    # effect validation may either cause it to "hang" or "do
+                    # more work". This is most often NOT a bug, i.e., the
+                    # intent of effect validation for a `workflow` method is
+                    # to ensure it can handle a failure and the developer
+                    # might have written the code to handle failures and still
+                    # run into the "hang" or "do more work" due to effect
+                    # validation. So for now, we don't bother doing effect
+                    # validation for loops.
+                    if validating_effects:
+                        raise RuntimeError(
+                            f"While validating effects the '{alias}' control loop "
+                            "did not break but instead attempted to continue to iterate"
+                        )
+
+                    async with self._mutator_locks[state_type][state_ref]:
+                        task_effect.iteration += 1
+
+                        await self._store(
+                            state_type=state_type,
+                            state_ref=state_ref,
+                            task=task_effect.to_sidecar_task(),
+                        )
+
+                    on_loop_iteration(task_effect.iteration)
+
+                    if interval is not None:
+                        await asyncio.sleep(interval.total_seconds())
+
+                    # We need to restore the idempotency checkpoint so
+                    # that each new loop iteration we allow empty
+                    # calls to `.per_workflow()` and
+                    # `.per_iteration()`.
+                    #
+                    # TODO: consider supporting that in
+                    # `IdempotencyManager` by taking into account
+                    # loops and iterations and only raising an error
+                    # if you do an empty `.per_workflow()` or
+                    # `.per_iteration()` call within the same
+                    # iteration?
+                    context.restore(checkpoint)
+            finally:
+                within_loop.set(False)
+
+        context.loop = loop
+        context.within_loop = lambda: within_loop.get()
 
         yield self.complete_task
 

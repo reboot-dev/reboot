@@ -134,6 +134,15 @@ def create_task_with_context(coro, context: Context, **kwargs):
     return create_task(coro_with_context(), **kwargs)
 
 
+def call_with_context(callable, context: Context):
+    """Helper for calling some callable with the `context`."""
+    if isinstance(context, ExternalContext):
+        return callable()
+
+    with context.use(), use_application_id(context.application_id):
+        return callable()
+
+
 async def task_await(
     context: WorkflowContext | ExternalContext,
     state: type,
@@ -167,6 +176,23 @@ async def task_await(
         return json.dumps(
             {'response': google.protobuf.json_format.MessageToDict(response)}
         )
+
+
+async def loop(context: WorkflowContext, alias: str):
+    """Helper for performing loop iteration."""
+    iterator = context.loop(alias)
+
+    closed: bool = False
+
+    async def iterate(more: bool):
+        nonlocal closed
+        if not more and not closed:
+            await iterator.aclose()
+            closed = True
+            return None
+        return await anext(iterator, None)
+
+    return iterate
 
 
 def _message_to_serialized_any(message: Message) -> bytes:

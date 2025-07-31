@@ -21,7 +21,6 @@ from rebootdev.aio.contexts import (
 {% endif %}
 )
 {% if has_workflow_method %}
-from rebootdev.aio.tasks import Loop
 from datetime import timedelta
 {% endif %}
 {% if has_streaming_method %}
@@ -139,22 +138,18 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}.Servicer):
         self,
         context: WorkflowContext,
         request: {{ method.input_type_name }},
-    ) -> {{ method.output_type_name }} | Loop:
+    ) -> {{ method.output_type_name }}:
         # TODO: implement your own business logic here!
         # Read more about the workflow methods in the Reboot documentation:
         # https://docs.reboot.dev/develop/servicers/#workflow
         raise NotImplementedError
 
-        # Here is how to see whether the workflow is looping.
-        if context.iteration == 0:
-            # Here is how to request the workflow to loop.
-            return Loop(when=timedelta(seconds=3))
-        else:
-            # Here is how to return a response when the workflow is done
-            # looping.
-            #
-            # TODO: fill in the response here.
-            return {{ method.output_type_name }}()
+        # Here is how to create a control loop:
+        # async for iteration in context.loop("Some control loop"):
+        #     ...
+
+        # TODO: fill in the response here.
+        # return {{ method.output_type_name }}()
     {% endif %}
     {% endfor %}
 {% endfor %}

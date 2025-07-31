@@ -39,12 +39,15 @@ from rebootdev.aio.types import (
 )
 from rebootdev.time import DateTimeWithTimeZone
 from typing import (
+    Any,
+    AsyncGenerator,
     Awaitable,
     Callable,
     Generic,
     Iterable,
     Iterator,
     Optional,
+    Protocol,
     Tuple,
     TypeVar,
 )
@@ -961,17 +964,6 @@ class Context(ABC, IdempotencyManager):
             if self._task is not None else None
         )
 
-    @property
-    def iteration(self) -> Optional[int]:
-        """Returns the loop iteration if this context is being used to
-        execute a control loop task, otherwise `None`.
-
-        Note that a single loop iteration may _retry_ multiple times; each of
-        these retries are for the same iteration. A new iteration starts only
-        when the previous iteration completes by returning `Loop`.
-        """
-        return self._task.iteration if self._task is not None else None
-
     def legacy_grpc_channel(self) -> grpc.aio.Channel:
         """Get a gRPC channel that can connect to any Reboot-hosted legacy
         gRPC service. Simply use this channel to create a Stub and call it, no
@@ -985,26 +977,40 @@ class Context(ABC, IdempotencyManager):
         alias: Optional[str] = None,
         key: Optional[uuid.UUID | str] = None,
         each_iteration: Optional[bool] = None,
+        generated: bool = False,
     ) -> Idempotency:
         """Helper to create an `Idempotency` instance, or raise if being used
         incorrectly.
         """
-        if each_iteration:
-            if key is not None:
+        if each_iteration is not None and key is not None:
+            raise TypeError(
+                'Passing `each_iteration` is invalid when passing `key`'
+            )
+
+        # Update or create an `alias` with iteration information if we
+        # don't have a `key` and are running from within a `workflow`.
+        if key is None:
+            context = Context.get()
+
+            if (
+                each_iteration is not None and each_iteration and
+                context is not None and isinstance(context, WorkflowContext)
+            ):
+                # If no alias was given than consider this idempotency
+                # to be generated. This is important for treating
+                # multiple calls without an alias as an error.
+                if alias is None:
+                    alias = "-"
+                    generated = True
+
+                alias += f' (iteration #{context.task.iteration})'
+
+            if each_iteration is not None and context is None:
                 raise TypeError(
-                    'Passing `each_iteration=True` is invalid when passing `key`'
+                    f'Passing `each_iteration={each_iteration}` is only valid within a `workflow` {context}'
                 )
 
-            context = cls.get_or_raise()
-
-            if not isinstance(context, WorkflowContext):
-                raise TypeError(
-                    'Passing `each_iteration=True` is only valid within a `workflow`'
-                )
-
-            alias = (alias or "-") + f' (iteration #{context.iteration})'
-
-        return Idempotency(alias=alias, key=key)
+        return Idempotency(alias=alias, key=key, generated=generated)
 
 
 class ReaderContext(Context):
@@ -1148,8 +1154,46 @@ class TransactionContext(Context):
         return len(self._headers.transaction_ids) > 1
 
 
+class Loop(Protocol):
+
+    def __call__(
+        self,
+        alias: str,
+        *,
+        interval: Optional[timedelta] = None,
+    ) -> AsyncGenerator[int, Any]:
+        ...
+
+
+# We need to know when we're within an `until` because we treat "bare"
+# calls to readers as `.always()`.
+_within_until: ContextVar[bool] = ContextVar(
+    "Whether or not current asyncio context is within an 'until'",
+    default=False,
+)
+
+
 class WorkflowContext(Context):
     """Call context for a workflow call."""
+
+    # Extra machinery for handling control loops, similar to how we
+    # `context.react`. Set when `StateManager.task_workflow()` is
+    # called.
+    loop: Loop
+    within_loop: Callable[[], bool]
+
+    def within_until(self) -> bool:
+        return _within_until.get()
+
+    @property
+    def task(self) -> TaskEffect:
+        assert self._task is not None
+        return self._task
+
+    @property
+    def task_id(self) -> uuid.UUID:
+        assert self._task is not None
+        return uuid.UUID(bytes=self._task.task_id.task_uuid)
 
 
 RetryReactivelyUntilT = TypeVar('RetryReactivelyUntilT')
@@ -1170,7 +1214,11 @@ async def retry_reactively_until(
 
     while True:
         try:
-            result = await condition()
+            try:
+                _within_until.set(True)
+                result = await condition()
+            finally:
+                _within_until.set(False)
 
             if not isinstance(result, bool):
                 return result

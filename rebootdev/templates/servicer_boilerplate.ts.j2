@@ -16,7 +16,6 @@ import {
 {% endif %}
 {% if has_workflow_method %}
   WorkflowContext,
-  Loop,
 {% endif %}
 } from "@reboot-dev/reboot";
 import {
@@ -49,9 +48,6 @@ class {{ state.proto.name }}Servicer extends {{ state.proto.name }}.Servicer {
     // TODO: implement your own business logic here!
     //
     // TODO: fill in the response here.
-    // return new {{ method.output_type }}()
-    //
-    // If you want to return a partial response, you can do so like this:
     // return {
     //    message: "This is a partial response",
     // }
@@ -73,9 +69,6 @@ class {{ state.proto.name }}Servicer extends {{ state.proto.name }}.Servicer {
     //
     // state.field = ...
     //
-    // return new {{ method.output_type }}()
-    //
-    // If you want to return a partial response, you can do so like this:
     // return {
     //    message: "This is a partial response",
     // }
@@ -98,9 +91,6 @@ class {{ state.proto.name }}Servicer extends {{ state.proto.name }}.Servicer {
     //
     // state.field = ...
     //
-    // return new {{ method.output_type }}()
-    //
-    // If you want to return a partial response, you can do so like this:
     // return {
     //    message: "This is a partial response",
     // }
@@ -114,25 +104,17 @@ class {{ state.proto.name }}Servicer extends {{ state.proto.name }}.Servicer {
   async {{ method.proto.name | to_lower_camel }}(
     context: WorkflowContext,
     request: {{ method.input_type }}
-  ): Promise<{{ method.output_type }} | PartialMessage<{{ method.output_type }}>> | Loop {
+  ): Promise<{{ method.output_type }} | PartialMessage<{{ method.output_type }}>> {
     // TODO: implement your own business logic here!
-    // Here is how to see whether the workflow is looping.
-    // if (context.iteration == 0) {
-        // Here is how to request the workflow to loop.
-        // const when = new Date();
-        // when.setSeconds(when.getSeconds() + 3);
-        // return new Loop({ when });
-    // } else {
-        // Here is how to return a response when the workflow is done
-        // looping.
-        //
-        // TODO: fill in the response here.
-        // return new {{ method.output_type }}()
-        //
-        // If you want to return a partial response, you can do so like this:
-        // return {
-        //    message: "This is a partial response",
-        // }
+    //
+    // Here is how to create a control loop:
+    // for await (const iteration of context.loop("Some control loop")) {
+    //   ...
+    // }
+    //
+    // TODO: fill in the response here.
+    // return {
+    //    message: "This is a partial response",
     // }
     //
     // Read more about the workflow methods in the Reboot documentation:
