@@ -10,7 +10,7 @@ from rbt.v1alpha1 import tasks_pb2
 from rebootdev.aio.backoff import Backoff
 from rebootdev.aio.internals.contextvars import use_application_id
 from rebootdev.aio.internals.tasks_cache import TasksCache
-from rebootdev.aio.tasks import Loop, TaskEffect
+from rebootdev.aio.tasks import TaskEffect
 from rebootdev.aio.types import ApplicationId
 from rebootdev.time import DateTimeWithTimeZone
 from typing import Awaitable, Callable, Optional, Protocol, Tuple
@@ -29,7 +29,7 @@ DISPATCHED_TASKS_LIMIT = 1024
 
 _TASK_INITIAL_BACKOFF_SECONDS = 1
 
-TaskResponseOrError = Tuple[Optional[Message | Loop], Optional[Message]]
+TaskResponseOrError = Tuple[Optional[Message], Optional[Message]]
 
 
 class DispatchCallable(Protocol):
@@ -43,6 +43,7 @@ class DispatchCallable(Protocol):
         task: TaskEffect,
         *,
         only_validate: bool = False,
+        on_loop_iteration: Callable[[int], None] = lambda iteration: None,
     ) -> Awaitable[TaskResponseOrError]:
         pass
 
@@ -172,9 +173,7 @@ class TasksDispatcher:
                             occurred_at=occurred_at,
                         )
 
-                        response_or_loop, error = await self._dispatch(task)
-
-                        if isinstance(response_or_loop, Loop):
+                        def on_loop_iteration(iteration: int):
                             occurred_at.FromDatetime(
                                 DateTimeWithTimeZone.now()
                             )
@@ -184,12 +183,13 @@ class TasksDispatcher:
                                 occurred_at=occurred_at,
                                 iteration=True,
                             )
-                            continue
 
-                        if response_or_loop is not None:
+                        response, error = await self._dispatch(
+                            task,
+                            on_loop_iteration=on_loop_iteration,
+                        )
 
-                            response: Message = response_or_loop
-
+                        if response is not None:
                             any_response = any_pb2.Any()
                             any_response.Pack(response)
 

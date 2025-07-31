@@ -23,6 +23,7 @@ class Options:
     idempotency_key: Optional[uuid.UUID] = None
     idempotency_alias: Optional[str] = None
     generate_idempotency: bool = False
+    generated_idempotency: bool = False
     metadata: Optional[GrpcMetadata] = None
     bearer_token: Optional[str] = None
 
@@ -57,7 +58,9 @@ class Options:
     def idempotency(self) -> Optional[Idempotency]:
         if self.idempotency_key or self.idempotency_alias:
             return Idempotency(
-                key=self.idempotency_key, alias=self.idempotency_alias
+                key=self.idempotency_key,
+                alias=self.idempotency_alias,
+                generated=self.generated_idempotency,
             )
         elif self.generate_idempotency:
             return Idempotency()

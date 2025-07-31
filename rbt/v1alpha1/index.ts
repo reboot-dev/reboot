@@ -637,8 +637,18 @@ export abstract class Aborted extends Error {
 }
 
 export type IdempotencyOptions =
-  | { alias?: string; key?: undefined; eachIteration?: boolean }
-  | { alias?: undefined; key: string; eachIteration?: undefined };
+  | {
+      alias?: string;
+      key?: undefined;
+      eachIteration?: boolean;
+      generated?: boolean;
+    }
+  | {
+      alias?: undefined;
+      key: string;
+      eachIteration?: undefined;
+      generated?: boolean;
+    };
 
 export type ScheduleOptions = { when: Date };
 
