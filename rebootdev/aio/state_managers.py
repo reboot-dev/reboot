@@ -45,6 +45,7 @@ from rebootdev.aio.headers import Headers
 from rebootdev.aio.internals.channel_manager import _ChannelManager
 from rebootdev.aio.internals.middleware import Middleware
 from rebootdev.aio.internals.tasks_dispatcher import (
+    OnLoopIterationCallable,
     TaskResponseOrError,
     TasksDispatcher,
 )
@@ -67,6 +68,7 @@ from rebootdev.consensus.sidecar import (
     SidecarServer,
     SidecarServerFailed,
 )
+from rebootdev.time import DateTimeWithTimeZone
 from typing import (
     Any,
     AsyncGenerator,
@@ -565,7 +567,7 @@ class StateManager(ABC):
         context: WorkflowContext,
         task_effect: TaskEffect,
         *,
-        on_loop_iteration: Callable[[int], None],
+        on_loop_iteration: OnLoopIterationCallable,
         validating_effects: bool,
     ) -> AsyncIterator[Callable[[TaskEffect, TaskResponseOrError],
                                 Awaitable[None]]]:
@@ -2101,7 +2103,7 @@ class SidecarStateManager(
         context: WorkflowContext,
         task_effect: TaskEffect,
         *,
-        on_loop_iteration: Callable[[int], None],
+        on_loop_iteration: OnLoopIterationCallable,
         validating_effects: bool,
     ) -> AsyncIterator[Callable[[TaskEffect, TaskResponseOrError],
                                 Awaitable[None]]]:
@@ -2157,20 +2159,34 @@ class SidecarStateManager(
                 while True:
                     yield task_effect.iteration
 
-                    # Because a control loop is often meant to wait for some
-                    # kind of external changes, trying to re-execute it for
-                    # effect validation may either cause it to "hang" or "do
-                    # more work". This is most often NOT a bug, i.e., the
-                    # intent of effect validation for a `workflow` method is
-                    # to ensure it can handle a failure and the developer
-                    # might have written the code to handle failures and still
-                    # run into the "hang" or "do more work" due to effect
-                    # validation. So for now, we don't bother doing effect
-                    # validation for loops.
+                    # During effect validation we restart the loop at
+                    # its last iteration (even if it had completed, we
+                    # intentionally don't persist that, see the
+                    # `finally` block). We do this, because we don't
+                    # love the alternative semantics:
+                    # 1. We don't want to restart the loop from the
+                    #    first iteration - there may have been many,
+                    #    many iterations, and re-running them all would
+                    #    take a long time.
+                    # 2. We don't want to restart the loop at an
+                    #    iteration beyond the last one, as it would have
+                    #    developers' conditions like `if iteration ==
+                    #    10: break` suddenly be faced with `iteration`
+                    #    values beyond 10.
+                    #
+                    # Re-running only the last iteration of the loop is
+                    # a nice sweet-spot. However, since it was the
+                    # _last_ iteration of the loop, it means that on
+                    # effect validation, the iteration must (again)
+                    # break out of the loop, and we should not get to
+                    # this point in the code (i.e. we expect to jump to
+                    # the `finally` block).
                     if validating_effects:
                         raise RuntimeError(
-                            f"While validating effects the '{alias}' control loop "
-                            "did not break but instead attempted to continue to iterate"
+                            "While validating effects, the re-run of the last "
+                            f"iteration of the '{alias}' control loop "
+                            "did not break but instead attempted to continue "
+                            "to iterate"
                         )
 
                     async with self._mutator_locks[state_type][state_ref]:
@@ -2182,7 +2198,14 @@ class SidecarStateManager(
                             task=task_effect.to_sidecar_task(),
                         )
 
-                    on_loop_iteration(task_effect.iteration)
+                    on_loop_iteration(
+                        # The number of the anticipated next iteration.
+                        task_effect.iteration,
+                        # The time at which the next iteration should
+                        # start, if not ASAP.
+                        (DateTimeWithTimeZone.now() +
+                         interval) if interval else None,
+                    )
 
                     if interval is not None:
                         await asyncio.sleep(interval.total_seconds())
@@ -2200,6 +2223,15 @@ class SidecarStateManager(
                     # iteration?
                     context.restore(checkpoint)
             finally:
+                # The loop has ended, but we don't know (and can't know,
+                # see https://github.com/reboot-dev/mono/issues/4761)
+                # whether it ended successfully with a `break`/`return`,
+                # or whether it failed with an exception; here we only
+                # see a generic `GeneratorExit`. Fortunately, it doesn't
+                # matter: we do NOT record the completion of the final
+                # iteration of the loop in either case, since in case of
+                # a workflow restart we either way want to re-run the
+                # last iteration of the loop.
                 within_loop.set(False)
 
         context.loop = loop

@@ -31,6 +31,8 @@ _TASK_INITIAL_BACKOFF_SECONDS = 1
 
 TaskResponseOrError = Tuple[Optional[Message], Optional[Message]]
 
+OnLoopIterationCallable = Callable[[int, Optional[DateTimeWithTimeZone]], None]
+
 
 class DispatchCallable(Protocol):
     """Helper class for capturing the type of our dispatch
@@ -43,7 +45,9 @@ class DispatchCallable(Protocol):
         task: TaskEffect,
         *,
         only_validate: bool = False,
-        on_loop_iteration: Callable[[int], None] = lambda iteration: None,
+        on_loop_iteration: OnLoopIterationCallable = (
+            lambda iteration, next_iteration_schedule: None
+        ),
     ) -> Awaitable[TaskResponseOrError]:
         pass
 
@@ -173,15 +177,37 @@ class TasksDispatcher:
                             occurred_at=occurred_at,
                         )
 
-                        def on_loop_iteration(iteration: int):
+                        def on_loop_iteration(
+                            iteration: int,
+                            next_iteration_schedule: Optional[
+                                DateTimeWithTimeZone],
+                        ):
+                            """
+                            Called in anticipation of a next loop
+                            iteration (before the iteration starts, and
+                            before waiting for the appropriate start
+                            time).
+                            """
                             occurred_at.FromDatetime(
                                 DateTimeWithTimeZone.now()
                             )
+                            scheduled_at: Optional[Timestamp] = None
+                            if next_iteration_schedule is not None:
+                                scheduled_at = Timestamp()
+                                scheduled_at.FromDatetime(
+                                    next_iteration_schedule
+                                )
                             self._tasks_cache.update_task_info(
                                 task.task_id,
-                                status=tasks_pb2.TaskInfo.Status.STARTED,
+                                status=tasks_pb2.TaskInfo.Status.
+                                SCHEDULED_ITERATION,
                                 occurred_at=occurred_at,
-                                iteration=True,
+                                scheduled_at=scheduled_at,
+                                # The `iteration` is the number of the
+                                # anticipated next iteration; it implies
+                                # we've completed `iteration` previous
+                                # iterations.
+                                iterations=iteration,
                             )
 
                         response, error = await self._dispatch(

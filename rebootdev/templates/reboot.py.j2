@@ -536,7 +536,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         task: IMPORT_reboot_aio_tasks.TaskEffect,
         *,
         only_validate: bool = False,
-        on_loop_iteration: IMPORT_typing.Callable[[int], None] = lambda iteration: None,
+        on_loop_iteration: IMPORT_reboot_aio_internals_tasks_dispatcher.OnLoopIterationCallable = (lambda iteration, next_iteration_schedule: None),
     ) -> IMPORT_reboot_aio_internals_tasks_dispatcher.TaskResponseOrError:
         """Dispatches the tasks to execute unless 'only_validate' is set to
         true, in which case just ensures that the task actually exists.

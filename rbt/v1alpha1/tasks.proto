@@ -17,14 +17,19 @@ message TaskInfo {
   enum Status {
     UNKNOWN = 0;
     STARTED = 1;
-    // If task is SCHEDULED, it means that it was scheduled and is waiting
-    // for its turn to be executed for the first time.
+    // If task is SCHEDULED, it means that it was scheduled and is
+    // waiting to be executed for the first time.
     SCHEDULED = 2;
-    // If task is SCHEDULED_RETRY, it means that it was scheduled, but
-    // failed and is waiting for some backoff before retrying.
+    // If task is SCHEDULED_RETRY, it means that it had started, but
+    // failed, and is now waiting for some backoff before executing a
+    // retry.
     SCHEDULED_RETRY = 3;
-    // If task is CANCELLED, it means that it was cancelled before it was
-    // completed by a tasks service.
+    // If a task has status SCHEDULED_ITERATION, it means that it had
+    // started, but is now waiting for the next iteration of its loop to
+    // begin.
+    SCHEDULED_ITERATION = 6;
+    // If task is CANCELLED, it means that it was cancelled before it
+    // was completed.
     CANCELLED = 4;
     // If task is COMPLETED, it means that it was executed and completed
     // successfully.
@@ -37,6 +42,9 @@ message TaskInfo {
   google.protobuf.Timestamp occurred_at = 4;
   // When we expect to next transition. Only for scheduled statuses.
   google.protobuf.Timestamp scheduled_at = 5;
+  // The number of completed iterations the task has gone through. Note
+  // that tasks that don't loop are still considered to complete one
+  // iteration.
   uint64 iterations = 6;
   // Number of runs that failed in a retry loop recently (since the consensus
   // most recently came up).
@@ -94,9 +102,11 @@ message TaskCancelledError {
 
 service Tasks {
   rpc Wait(WaitRequest) returns (WaitResponse);
-  rpc ListTasks(ListTasksRequest)
-      returns (ListTasksResponse);
+
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+  // Like `ListTasks`, but returns the latest list of tasks every time
+  // that list changes.
+  rpc ListTasksStream(ListTasksRequest) returns (stream ListTasksResponse);
+
   rpc CancelTask(CancelTaskRequest) returns (CancelTaskResponse);
 }
-
-////////////////////////////////////////////////////////////////////////
