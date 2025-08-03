@@ -1,6 +1,22 @@
 /* eslint-disable */
 // @ts-nocheck
 
+{# Constants we use throughout template. #}
+{% set constants = namespace(has_read=false, has_write=false) %}
+
+{# Determine whether or not we'll be overriding 'Read'/'Write'. #}
+{% for client in clients %}
+{% for service in client.services %}
+{% for method in service.methods %}
+{% if method.proto.name == 'Read' %}
+{% set constants.has_read = true %}
+{% elif method.proto.name == 'Write' %}
+{% set constants.has_write = true %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% endfor %}
+
 import { reboot_native, ensureError } from "@reboot-dev/reboot";
 {% if import_ids|length > 0 %}
 {% for unique_import_id, path in import_ids.items() %}
@@ -1418,18 +1434,24 @@ export class {{ client.proto.state_name }}WeakReference {
   #external: any;
   #id: string;
   #options?: reboot_api.CallOptions;
-  #servicer?: {{ client.proto.state_name }}BaseServicer;
+  {% if client.state is not none %}
+  _servicer?: {{ client.proto.state_name }}BaseServicer;
+  {% endif %}
 
   constructor(
     id: string,
     bearerToken?: string,
+    {% if client.state is not none %}
     servicer?: {{ client.proto.state_name }}BaseServicer
+    {% endif %}
   ) {
     this.#id = id;
     this.#options = {
       bearerToken: bearerToken,
     };
-    this.#servicer = servicer;
+    {% if client.state is not none %}
+    this._servicer = servicer;
+    {% endif %}
     this.#external = reboot_native.Service_constructor({
       rbtModule: "{{ rbt_name }}",
       nodeAdaptor: "{{ client.proto.state_name }}WeakReferenceNodeAdaptor",
@@ -1441,10 +1463,7 @@ export class {{ client.proto.state_name }}WeakReference {
     return this.#id;
   }
 
-  get servicer(): {{ client.proto.state_name }}BaseServicer | undefined {
-    return this.#servicer;
-  }
-
+  {% if not constants.has_read and client.state is not none %}
   async read(
     context: reboot.WorkflowContext
   ): Promise<{{ client.proto.state_name }}.State> {
@@ -1458,9 +1477,10 @@ export class {{ client.proto.state_name }}WeakReference {
         )
     ).read(context);
   }
+  {% endif %}
 
+  {% if not constants.has_write and client.state is not none %}
   async write(
-    idempotencyAlias: string,
     context: reboot.WorkflowContext,
     writer: (state: {{ client.proto.state_name }}.State) => Promise<void>,
     options?: {
@@ -1471,7 +1491,6 @@ export class {{ client.proto.state_name }}WeakReference {
   ): Promise<void>;
 
   async write<T>(
-    idempotencyAlias: string,
     context: reboot.WorkflowContext,
     writer: (state: {{ client.proto.state_name }}.State) => Promise<T>,
     options: {
@@ -1486,7 +1505,6 @@ export class {{ client.proto.state_name }}WeakReference {
   ): Promise<T>;
 
   async write<T>(
-    idempotencyAlias: string,
     context: reboot.WorkflowContext,
     writer: (state: {{ client.proto.state_name }}.State) => Promise<T>,
     options: {
@@ -1496,11 +1514,16 @@ export class {{ client.proto.state_name }}WeakReference {
     } = {}
   ): Promise<void | T> {
     return await (
-      reboot.isWithinLoop()
-        ? this.perIteration(idempotencyAlias)
-        :this.perWorkflow(idempotencyAlias)
+      reboot.isWithinUntil()
+        ? this.always()
+        : (
+          reboot.isWithinLoop()
+            ? this.perIteration()
+            : this.perWorkflow()
+        )
     ).write(context, writer, options);
   }
+  {% endif %}
 
   {% for service in client.services %}
   {% for method in service.methods %}
@@ -1605,10 +1628,11 @@ export class {{ client.proto.state_name }}WeakReference {
       this.#options = options;
     }
 
+    {% if not constants.has_read and client.state is not none %}
     async read(
       context: reboot.WorkflowContext
     ): Promise<{{ client.proto.state_name }}.State> {
-      const servicer = this.#weakReference.servicer;
+      const servicer = this.#weakReference._servicer;
 
       if (servicer === undefined) {
         throw new Error(
@@ -1642,7 +1666,9 @@ export class {{ client.proto.state_name }}WeakReference {
         { alias: this.#options.idempotency.alias, how }
       ).read(context);
     }
+    {% endif %}
 
+    {% if not constants.has_write and client.state is not none %}
     async write(
       context: reboot.WorkflowContext,
       writer: (state: {{ client.proto.state_name }}.State) => Promise<void>,
@@ -1676,7 +1702,7 @@ export class {{ client.proto.state_name }}WeakReference {
         validate?: (result: T) => boolean
       } = {}
     ): Promise<void | T> {
-      const servicer = this.#weakReference.servicer;
+      const servicer = this.#weakReference._servicer;
 
       if (servicer === undefined) {
         throw new Error(
@@ -1710,6 +1736,7 @@ export class {{ client.proto.state_name }}WeakReference {
         { alias: this.#options.idempotency.alias, how }
       ).write(context, writer, options);
     }
+    {% endif %}
 
     {% for service in client.services %}
     {% for method in service.methods %}

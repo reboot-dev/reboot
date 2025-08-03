@@ -2408,11 +2408,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                         'Found redundant idempotency in `Options`'
                     )
 
-                assert not idempotency.generate, (
-                    "Inline writers are always required to specify either an "
-                    "idempotency alias or an idempotency key"
-                )
-
                 IMPORT_reboot_aio_types.assert_type(context, [IMPORT_reboot_aio_contexts.WorkflowContext])
 
                 if servicer._middleware is None:
@@ -2530,15 +2525,12 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                                     "Should always have a task when running a `workflow`"
                                 )
 
-                                method_name = f"{{ state.proto.name }}.{task.method_name} "
+                                method_name = f"{{ state.proto.name }}.{task.method_name} inline writer"
 
-                                if unidempotently:
-                                    method_name += "unidempotent inline writer"
-                                elif idempotency.alias is not None:
-                                    method_name += "inline writer with idempotency alias '" + idempotency.alias + "'"
-                                else:
-                                    assert idempotency.key is not None
-                                    method_name += "inline writer with idempotency key=" + str(idempotency.key)
+                                if idempotency.alias is not None:
+                                    method_name += " with idempotency alias '" + idempotency.alias + "'"
+                                elif idempotency.key is not None:
+                                    method_name += " with idempotency key=" + str(idempotency.key)
 
                                 servicer._middleware.maybe_raise_effect_validation_retry(
                                     logger=logger,
@@ -4152,7 +4144,6 @@ class {{ client.proto.state_name }}:
         @IMPORT_typing.overload
         async def Write(
             self,
-            idempotency_alias: str,
             context: IMPORT_reboot_aio_contexts.WorkflowContext,
             writer: {{ client.proto.state_name }}BaseServicer.InlineWriterCallable[None],
             *,
@@ -4163,7 +4154,6 @@ class {{ client.proto.state_name }}:
         @IMPORT_typing.overload
         async def Write(
             self,
-            idempotency_alias: str,
             context: IMPORT_reboot_aio_contexts.WorkflowContext,
             writer: {{ client.proto.state_name }}BaseServicer.InlineWriterCallable[{{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult],
             *,
@@ -4173,7 +4163,6 @@ class {{ client.proto.state_name }}:
 
         async def Write(
             self,
-            idempotency_alias: str,
             context: IMPORT_reboot_aio_contexts.WorkflowContext,
             writer: {{ client.proto.state_name }}BaseServicer.InlineWriterCallable[{{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult],
             *,
@@ -4181,8 +4170,11 @@ class {{ client.proto.state_name }}:
         ) -> {{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult:
             """Perform an "inline write" within a workflow."""
             return await (
-                self.per_iteration(idempotency_alias) if context.within_loop()
-                else self.per_workflow(idempotency_alias)
+                self.always() if context.within_until()
+                else (
+                    self.per_iteration() if context.within_loop()
+                    else self.per_workflow()
+                )
             ).Write(
                 context, writer, type=type
             )
@@ -4701,7 +4693,7 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.Servicer)
     ) -> str:
         options = IMPORT_json.loads(json_options)
 
-        alias = options.get('alias', None)
+        alias = options.get('alias')
 
         assert 'how' in options
         how = options['how']
@@ -4752,7 +4744,7 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.Servicer)
 
         options = IMPORT_json.loads(json_options)
 
-        alias = options.get('alias', None)
+        alias = options.get('alias')
 
         assert 'how' in options
         how = options['how']
@@ -4764,7 +4756,6 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.Servicer)
                 _writer,
             )
 
-        assert alias is not None
         assert how in [
             IMPORT_reboot_aio_workflows.PER_WORKFLOW,
             IMPORT_reboot_aio_workflows.PER_ITERATION,
