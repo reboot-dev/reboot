@@ -140,7 +140,7 @@ async def memoize(
             t = await callable()
 
             if (
-                at_most_once or
+                at_most_once or until or
                 context._effect_validation == EffectValidation.DISABLED
             ):
                 return t

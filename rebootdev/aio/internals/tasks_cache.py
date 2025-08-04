@@ -68,7 +68,7 @@ class TasksCache:
         status: tasks_pb2.TaskInfo.Status,
         occurred_at: Timestamp,
         scheduled_at: Optional[Timestamp] = None,
-        iteration: bool = False,
+        iterations: Optional[int] = None,
         failed: bool = False,
     ) -> None:
 
@@ -80,8 +80,8 @@ class TasksCache:
             task_info.occurred_at.CopyFrom(occurred_at)
             if scheduled_at is not None:
                 task_info.scheduled_at.CopyFrom(scheduled_at)
-            if iteration is True:
-                task_info.iterations += 1
+            if iterations is not None:
+                task_info.iterations = iterations
             if failed is True:
                 task_info.num_runs_failed_recently += 1
 
@@ -147,7 +147,28 @@ class TasksCache:
 
     def get_tasks(self) -> Iterable[tasks_pb2.TaskInfo]:
         """Get the TaskInfo of all tasks in the cache."""
-        return (task_info for _, (future, task_info) in self._cache.items())
+
+        def count_last_iteration(
+            task_info: tasks_pb2.TaskInfo
+        ) -> tasks_pb2.TaskInfo:
+            """Return the task info with the last iteration count."""
+            if task_info.status != tasks_pb2.TaskInfo.Status.COMPLETED:
+                # No corrections needed.
+                return task_info
+
+            # When a task has completed, the last iteration it ran must
+            # also have completed - even though (by design) completion
+            # of that last iteration is never persisted. Increment the
+            # number of iterations by one to reflect that.
+            corrected_task_info = tasks_pb2.TaskInfo()
+            corrected_task_info.CopyFrom(task_info)
+            corrected_task_info.iterations += 1
+            return corrected_task_info
+
+        return (
+            count_last_iteration(task_info)
+            for _, (future, task_info) in self._cache.items()
+        )
 
     async def get(self, task_id: tasks_pb2.TaskId) -> Optional[bytes]:
         """Get the cached response for a particular task, awaiting if necessary.
