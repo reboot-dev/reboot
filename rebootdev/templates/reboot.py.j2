@@ -3002,6 +3002,8 @@ def ensure_has_timezone(
 {{ client.proto.state_name }}_ScheduleTypeVar = IMPORT_typing.TypeVar('{{ client.proto.state_name }}_ScheduleTypeVar', '{{ client.proto.state_name }}.WeakReference._Schedule', '{{ client.proto.state_name }}.WeakReference._WriterSchedule')
 {{ client.proto.state_name }}_IdempotentlyScheduleTypeVar = IMPORT_typing.TypeVar('{{ client.proto.state_name }}_IdempotentlyScheduleTypeVar', '{{ client.proto.state_name }}.WeakReference._Schedule', '{{ client.proto.state_name }}.WeakReference._WriterSchedule')
 
+{{ client.proto.state_name }}_UntilCallableType = IMPORT_typing.TypeVar('{{ client.proto.state_name }}_UntilCallableType')
+
 {% if client.state is not none %}
 class {{ client.proto.state_name }}Alpha:
 
@@ -3774,6 +3776,141 @@ class {{ client.proto.state_name }}:
 
         def always(self):
             return self.idempotently(key=IMPORT_uuid.uuid4(), generated=True)
+
+        class _UntilChangesSatisfies(IMPORT_typing.Generic[{{ client.proto.state_name }}_UntilCallableType]):
+
+            _idempotency_alias: str
+            _context: IMPORT_reboot_aio_contexts.WorkflowContext
+            _callable: IMPORT_typing.Callable[[], IMPORT_typing.Awaitable[{{ client.proto.state_name }}_UntilCallableType]]
+            _type: type[{{ client.proto.state_name }}_UntilCallableType]
+
+            def __init__(
+                self,
+                *,
+                idempotency_alias: str,
+                context: IMPORT_reboot_aio_contexts.WorkflowContext,
+                callable: IMPORT_typing.Callable[[], IMPORT_typing.Awaitable[{{ client.proto.state_name }}_UntilCallableType]],
+                type: type[{{ client.proto.state_name }}_UntilCallableType],
+            ):
+                self._idempotency_alias = idempotency_alias
+                self._context = context
+                self._callable = callable
+                self._type = type
+
+            async def changes(self):
+                return await IMPORT_reboot_aio_workflows.until_changes(
+                    self._idempotency_alias,
+                    self._context,
+                    self._callable,
+                    type=self._type,
+                )
+
+            async def satisfies(
+                self,
+                condition: IMPORT_typing.Callable[[{{ client.proto.state_name }}_UntilCallableType], bool],
+            ):
+
+                async def converge():
+                    response = await self._callable()
+                    if condition(response):
+                        return response
+                    return False
+
+                return await IMPORT_reboot_aio_workflows.until(
+                    self._idempotency_alias,
+                    self._context,
+                    converge,
+                    type=self._type,
+                )
+
+        class _Until:
+
+            _weak_reference: {{ client.proto.state_name }}.WeakReference
+            _idempotency_alias: str
+
+            def __init__(
+                self,
+                *,
+                weak_reference: {{ client.proto.state_name }}.WeakReference,
+                idempotency_alias: str,
+            ):
+                self._weak_reference = weak_reference
+                self._idempotency_alias = idempotency_alias
+
+            {% if not constants.has_read and client.state is not none %}
+            def Read(
+                self,
+                context: IMPORT_reboot_aio_contexts.WorkflowContext,
+            ) -> {{ client.proto.state_name }}.WeakReference._UntilChangesSatisfies[{{ pb2_name }}.{{ client.proto.state_name }}]:
+                IMPORT_reboot_aio_types.assert_type(
+                    context,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext],
+                )
+
+                async def callable():
+                    return await self._weak_reference.Read(context)
+
+                return {{ client.proto.state_name }}.WeakReference._UntilChangesSatisfies(
+                    idempotency_alias=self._idempotency_alias,
+                    context=context,
+                    callable=callable,
+                    type={{ pb2_name }}.{{ client.proto.state_name }},
+                )
+            {% endif %}
+
+            {% for service in client.services %}
+            {% for method in service.methods %}
+            {% if not method.proto.client_streaming and not method.proto.server_streaming %}
+            {% if method.options.proto.kind == 'reader' %}
+            def {{ method.proto.name }}(
+                # In methods which are dealing with user input, (i.e.,
+                # proto message field names), we should use '__double_underscored__'
+                # variables to avoid any potential name conflicts with the method's
+                # parameters.
+                # The '__self__' parameter is a convention in Python to
+                # indicate that this method is a bound method, so we use
+                # '__this__' instead.
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
+                __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
+                {% for name, type in method.input_type_fields.items() %}
+                {% if loop.first %}
+                *,
+                {% endif %}
+                {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+                {% endfor %}
+            ) -> {{ client.proto.state_name }}.WeakReference._UntilChangesSatisfies[{{ method.output_type }}]:
+                IMPORT_reboot_aio_types.assert_type(
+                    __context__,
+                    [IMPORT_reboot_aio_contexts.WorkflowContext],
+                )
+
+                async def callable():
+                    return await __this__._weak_reference.{{ method.proto.name }}(
+                        __context__,
+                        __options__,
+                        {% for name in method.input_type_fields %}
+                        {{ name }}={{ name }},
+                        {% endfor %}
+                    )
+
+                return {{ client.proto.state_name }}.WeakReference._UntilChangesSatisfies(
+                    idempotency_alias=__this__._idempotency_alias,
+                    context=__context__,
+                    callable=callable,
+                    type={{ method.output_type }},
+                )
+
+            {% endif %}
+            {% endif %}
+            {% endfor %}
+            {% endfor %}
+
+        def until(self, alias: str):
+            return {{ client.proto.state_name }}.WeakReference._Until(
+                weak_reference=self,
+                idempotency_alias=alias,
+            )
 
         def schedule(
             self,
