@@ -98,6 +98,30 @@ class Idempotency:
         return self._generated
 
     @property
+    def per_workflow(self) -> bool:
+        """Returns whether this is from `.per_workflow()`."""
+        # TODO: pass along this intent rather than deducing it here,
+        # which technically we could get wrong if someone passes
+        # `generated` incorrectly.
+        return self._key is None and not self._generated
+
+    @property
+    def per_iteration(self) -> bool:
+        """Returns whether this is from `.per_iteration()`."""
+        # TODO: pass along this intent rather than deducing it here,
+        # which technically we could get wrong if someone passes
+        # `generated` incorrectly.
+        return self._alias is not None and self._generated
+
+    @property
+    def always(self) -> bool:
+        """Returns whether this is from `.always()`."""
+        # TODO: pass along this intent rather than deducing it here,
+        # which technically we could get wrong if someone passes
+        # `generated` incorrectly.
+        return self._key is not None and self._generated
+
+    @property
     def generate(self) -> bool:
         """Returns whether or not to generate idempotency."""
         return self._key is None and self._alias is None

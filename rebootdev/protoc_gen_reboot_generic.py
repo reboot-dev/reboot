@@ -338,6 +338,30 @@ class RebootProtocPlugin(ProtocPlugin):
                         "start with an uppercase letter."
                     )
 
+                # Reboot method names that are "reserved" include:
+                #
+                # `Read`: used for inline readers, potentially we'll
+                # support overriding it in the future.
+                #
+                # `Write`: used for inline writers, potentially we'll
+                # support overriding it in the future.
+                #
+                # `Delete`: clashes in JavaScript once it becomes the
+                # lower-case version `delete`.
+                #
+                # In the future we may plan to allow overriding these,
+                # but for now we don't. However, we already had these
+                # methods for our `Secret` type so we special case it.
+                if (
+                    service.full_name
+                    not in ["rbt.cloud.v1alpha1.secrets.SecretMethods"] and
+                    method.name in ["Read", "Write", "Delete"]
+                ):
+                    raise UserProtoError(
+                        f"Reboot method '{service.full_name}/{method.name}' "
+                        f"has illegal name: {method.name} is reserved"
+                    )
+
                 # Reboot methods don't support HTTP annotations (yet).
                 #
                 # TODO(rjh): consider what it would take to allow Reboot
@@ -389,6 +413,7 @@ class RebootProtocPlugin(ProtocPlugin):
                         f"'{proto_state.full_name}' defined in "
                         f"'{proto_file.file_name}'."
                     )
+        return proto_states
 
     @staticmethod
     def plugin_specific_data() -> PluginSpecificData:
@@ -893,10 +918,13 @@ class RebootProtocPlugin(ProtocPlugin):
                     proto_file,
                     proto_state,
                 ),
-            ) for proto_state in [
-                self._proto_state(state)
-                for state in RebootProtocPlugin._reboot_states(file)
-            ]
+            ) for proto_state in self._check_states(
+                proto_file,
+                [
+                    self._proto_state(state)
+                    for state in RebootProtocPlugin._reboot_states(file)
+                ],
+            )
         ]
 
         services = [

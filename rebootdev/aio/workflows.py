@@ -341,3 +341,55 @@ async def until_per_workflow(
         callable,
         type=type,
     )
+
+
+async def until_changes(
+    idempotency_alias: str,
+    context: WorkflowContext,
+    callable: Callable[[], Awaitable[T]],
+    *,
+    type: type[T],
+    equals: Callable[[T, T], bool] = lambda previous,
+    current: previous == current,
+) -> T:
+    """Runs `callable` at each iteration, only returning if the result of
+    running callable != the result from the previous iteration."""
+    if not context.within_loop():
+        raise RuntimeError(
+            "Waiting for changes must be done _within_ a control loop"
+        )
+
+    iteration = context.task.iteration
+
+    previous: Optional[T] = None
+
+    if iteration > 0:
+        # Get the previous memoized result!
+        async def missing_memoized_value() -> T:
+            raise RuntimeError(
+                f"Missing memoized value for '{idempotency_alias}'"
+            )
+
+        previous = await until_per_workflow(
+            f"{idempotency_alias} #{iteration - 1}",
+            context,
+            missing_memoized_value,
+            type=type,
+        )
+
+    # Wait until previous result does not equal current result.
+    async def previous_not_equals_current():
+        current = await callable()
+        if iteration == 0:
+            return current
+        assert previous is not None
+        if not equals(previous, current):
+            return current
+        return False
+
+    return await until_per_workflow(
+        f"{idempotency_alias} #{iteration}",
+        context,
+        previous_not_equals_current,
+        type=type,
+    )

@@ -101,6 +101,7 @@ py_library(
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:transactions_py_grpc",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:transactions_py_proto",
+        "@com_github_reboot_dev_reboot//rebootdev:time_py",
         "@com_github_reboot_dev_reboot//rebootdev/admin:export_import_converters_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio:exceptions_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio/internals:channel_manager_py",
