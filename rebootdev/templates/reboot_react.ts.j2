@@ -501,7 +501,7 @@ export interface Use{{ client.proto.state_name }}Api {
   };
   {{ method.proto.name | to_lower_camel }}: (
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-    options?: { signal?: AbortSignal }
+    options?: { signal?: AbortSignal; retry?: boolean }
   ) => Promise<
     reboot_web.ResponseOrAborted<
     {{ client.proto.state_name }}.{{ method.proto.name }}Response,
@@ -1337,8 +1337,13 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
   async function {{ method.proto.name | to_lower_camel }}(
     partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name}}Request = {},
-    options?: { signal?: AbortSignal }
+    options?: { signal?: AbortSignal; retry?: boolean }
   ) {
+    let retry = true;
+    if (options !== undefined && options.retry !== undefined) {
+      retry = options.retry;
+    }
+
     const request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
 
     // Fetch with retry, using a backoff, i.e., if we get disconnected.
@@ -1364,7 +1369,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
             )
           };
         } catch (e: unknown) {
-          if (options?.signal?.aborted) {
+          if (options?.signal?.aborted || !retry) {
             const aborted = new {{ service.options.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
               new reboot_api.errors_pb.Aborted(), {
                 message: e instanceof Error
