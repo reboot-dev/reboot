@@ -134,3 +134,7 @@ class ExternalContext(IdempotencyManager):
         gRPC service. Simply use this channel to create a Stub and call it, no
         address required."""
         return LegacyGrpcChannel(self._channel_manager)
+
+
+class InitializeContext(ExternalContext):
+    """Context used for `initialize`."""

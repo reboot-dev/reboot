@@ -4206,14 +4206,14 @@ class {{ client.proto.state_name }}:
             # within a control loop, in which case they are syntactic
             # sugar for `per_iteration()`.
             context = IMPORT_reboot_aio_contexts.Context.get()
-            if (
-                context is not None and
-                isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext)
-            ):
-                return (
-                    self.per_iteration() if context.within_loop()
-                    else self.per_workflow()
-                ).spawn(when=when)
+            if context is not None:
+                if isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return (
+                        self.per_iteration() if context.within_loop()
+                        else self.per_workflow()
+                    ).spawn(when=when)
+                elif isinstance(context, IMPORT_reboot_aio_external.InitializeContext):
+                    return self.idempotently().spawn(when=when)
 
             return {{ client.proto.state_name }}.WeakReference._Spawn(
                 self._application_id, self._tasks, when=when
@@ -4451,6 +4451,11 @@ class {{ client.proto.state_name }}:
         {% else %}
         ) -> IMPORT_typing.AsyncIterable[{{ method.output_type }}]:
         {% endif %}
+            # UX improvement: check that neither positional argument was accidentally
+            # given a gRPC request type.
+            IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ method.input_type }})
+            IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type={{ method.input_type }})
+
             {% if not method.proto.server_streaming and not method.proto.client_streaming %}
             # Within a `workflow`, all "bare" calls are
             # `per_workflow()` calls, unless we're within a control
@@ -4459,28 +4464,30 @@ class {{ client.proto.state_name }}:
             #
             # Unless we are "within until" in which case all "bare"
             # calls are `.always().
-            if (
-                isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext) and
-                (__options__ is None or __options__.idempotency is None)
-            ):
-                return await (
-                    __this__.always() if __context__.within_until()
-                    else (
-                        __this__.per_iteration() if __context__.within_loop()
-                        else __this__.per_workflow()
+            if __options__ is None or __options__.idempotency is None:
+                if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return await (
+                        __this__.always() if __context__.within_until()
+                        else (
+                            __this__.per_iteration() if __context__.within_loop()
+                            else __this__.per_workflow()
+                        )
+                    ).{{ method.proto.name }}(
+                        __context__,
+                        __options__ or IMPORT_reboot_aio_call.Options(),
+                        {% for name in method.input_type_fields %}
+                        {{ name }}={{ name }},
+                        {% endfor %}
                     )
-                ).{{ method.proto.name }}(
-                    __context__,
-                    __options__ or IMPORT_reboot_aio_call.Options(),
-                    {% for name in method.input_type_fields %}
-                    {{ name }}={{ name }},
-                    {% endfor %}
-                )
+                elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
+                    return await __this__.idempotently().{{ method.proto.name }}(
+                        __context__,
+                        __options__ or IMPORT_reboot_aio_call.Options(),
+                        {% for name in method.input_type_fields %}
+                        {{ name }}={{ name }},
+                        {% endfor %}
+                    )
             {% endif %}
-            # UX improvement: check that neither positional argument was accidentally
-            # given a gRPC request type.
-            IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ method.input_type }})
-            IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type={{ method.input_type }})
 
             {% if not method.proto.client_streaming %}
             {% for name, type in method.input_type_fields.items() %}
@@ -4540,29 +4547,35 @@ class {{ client.proto.state_name }}:
             {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
             {% endfor %}
         ) -> {{ method.output_type }}:
-            # Within a `workflow`, all "bare" calls are
-            # `per_workflow()` calls, unless we're within a control
-            # loop, in which case they are syntactic sugar for
-            # `per_iteration()`.
-            if (
-                isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext) and
-                (__options__ is None or __options__.idempotency is None)
-            ):
-                return await (
-                    __this__.per_iteration() if __context__.within_loop()
-                    else __this__.per_workflow()
-                ).{{ method.proto.name }}(
-                    __context__,
-                    __options__ or IMPORT_reboot_aio_call.Options(),
-                    {% for name in method.input_type_fields %}
-                    {{ name }}={{ name }},
-                    {% endfor %}
-                )
-
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
             IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ method.input_type }})
             IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type={{ method.input_type }})
+
+            # Within a `workflow`, all "bare" calls are
+            # `per_workflow()` calls, unless we're within a control
+            # loop, in which case they are syntactic sugar for
+            # `per_iteration()`.
+            if __options__ is None or __options__.idempotency is None:
+                if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return await (
+                        __this__.per_iteration() if __context__.within_loop()
+                        else __this__.per_workflow()
+                    ).{{ method.proto.name }}(
+                        __context__,
+                        __options__ or IMPORT_reboot_aio_call.Options(),
+                        {% for name in method.input_type_fields %}
+                        {{ name }}={{ name }},
+                        {% endfor %}
+                    )
+                elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
+                    return await __this__.idempotently().{{ method.proto.name }}(
+                        __context__,
+                        __options__ or IMPORT_reboot_aio_call.Options(),
+                        {% for name in method.input_type_fields %}
+                        {{ name }}={{ name }},
+                        {% endfor %}
+                    )
 
             {% for name, type in method.input_type_fields.items() %}
             if {{ name }} is not None and not isinstance(
@@ -4665,24 +4678,31 @@ class {{ client.proto.state_name }}:
         #
         # Unless we are "within until" in which case all "bare"
         # calls are `.always().
-        if (
-            isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext) and
-            __idempotency__ is None
-        ):
-            return await (
-                __cls__.always() if __context__.within_until()
-                else (
-                    __cls__.per_iteration() if __context__.within_loop()
-                    else __cls__.per_workflow()
+        if __idempotency__ is None:
+            if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
+                return await (
+                    __cls__.always() if __context__.within_until()
+                    else (
+                        __cls__.per_iteration() if __context__.within_loop()
+                        else __cls__.per_workflow()
+                    )
+                ).{{ method.proto.name }}(
+                    __context__,
+                    __state_id__,
+                    __options__,
+                    {% for name in method.input_type_fields %}
+                    {{ name }}={{ name }},
+                    {% endfor %}
                 )
-            ).{{ method.proto.name }}(
-                __context__,
-                __state_id__,
-                __options__,
-                {% for name in method.input_type_fields %}
-                {{ name }}={{ name }},
-                {% endfor %}
-            )
+            elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
+                return await __cls__.idempotently().{{ method.proto.name }}(
+                    __context__,
+                    __state_id__,
+                    __options__,
+                    {% for name in method.input_type_fields %}
+                    {{ name }}={{ name }},
+                    {% endfor %}
+                )
 
         {% for name, type in method.input_type_fields.items() %}
         if {{ name }} is not None and not isinstance(

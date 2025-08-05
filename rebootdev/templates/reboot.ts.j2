@@ -76,6 +76,7 @@ import * as uuid from "uuid";
 import * as reboot from "@reboot-dev/reboot";
 import {
   Context,
+  InitializeContext,
   ExternalContext,
   WorkflowContext,
   ReaderContext,
@@ -1568,7 +1569,7 @@ export class {{ client.proto.state_name }}WeakReference {
     const { task } = await (
       context instanceof WorkflowContext
         ? (reboot.isWithinLoop() ? this.perIteration() : this.perWorkflow())
-        : this
+        : (context instanceof InitializeContext ? this.idempotently() : this)
     ).spawn().{{ method.proto.name | to_lower_camel }}(context, partialRequest);
     return await task;
   }
@@ -1597,6 +1598,13 @@ export class {{ client.proto.state_name }}WeakReference {
           ? this.perIteration()
           : this.perWorkflow()
       ).{{ method.proto.name | to_lower_camel }}(
+          context,
+          partialRequest,
+          this.#options,
+        );
+    } else if (context instanceof InitializeContext) {
+      return await this.idempotently()
+        .{{ method.proto.name | to_lower_camel }}(
           context,
           partialRequest,
           this.#options,
@@ -1991,21 +1999,27 @@ export class {{ client.proto.state_name }} {
       }
     }
 
-    if (
-      context instanceof WorkflowContext && (
-        options === undefined || !("idempotency" in options)
-      )
-    ) {
-      return await (
-        reboot.isWithinLoop()
-          ? {{ client.proto.state_name }}.perIteration()
-          : {{ client.proto.state_name }}.perWorkflow()
-      ).{{ method.proto.name | to_lower_camel }}(
-        context,
-        idOrPartialRequest,
-        partialRequestOrOptions,
-        optionsOrUndefined
-      );
+    if (options === undefined || !("idempotency" in options)) {
+      if (context instanceof WorkflowContext) {
+        return await (
+          reboot.isWithinLoop()
+            ? {{ client.proto.state_name }}.perIteration()
+            : {{ client.proto.state_name }}.perWorkflow()
+        ).{{ method.proto.name | to_lower_camel }}(
+          context,
+          idOrPartialRequest,
+          partialRequestOrOptions,
+          optionsOrUndefined
+        );
+      } else if (context instanceof InitializeContext) {
+        return await {{ client.proto.state_name }}.idempotently()
+          .{{ method.proto.name | to_lower_camel }}(
+            context,
+            idOrPartialRequest,
+            partialRequestOrOptions,
+            optionsOrUndefined
+          );
+      }
     }
 
     if (id === undefined) {
