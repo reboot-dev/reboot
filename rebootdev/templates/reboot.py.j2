@@ -3010,12 +3010,18 @@ class {{ client.proto.state_name }}Alpha:
 
     Servicer: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}AlphaServicer
 
+class {{ client.proto.state_name }}Singleton:
+
+    Servicer: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Servicer
+
 {% endif %}
 
 class {{ client.proto.state_name }}:
 
     {% if client.state is not none %}
     alpha: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Alpha
+
+    singleton: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Singleton
 
     Servicer: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Servicer
 
