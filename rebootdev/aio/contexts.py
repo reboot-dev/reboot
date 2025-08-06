@@ -783,6 +783,7 @@ class Context(ABC, IdempotencyManager):
         channel_manager: _ChannelManager,
         headers: Headers,
         state_type_name: StateTypeName,
+        method: str,
         app_internal_api_key_secret: str,
         effect_validation: EffectValidation,
         task: Optional[TaskEffect] = None,
@@ -806,6 +807,7 @@ class Context(ABC, IdempotencyManager):
         self._channel_manager = channel_manager
         self._headers = headers
         self._state_type_name = state_type_name
+        self._method = method
         self._task = task
 
         self.participants = Participants()
@@ -849,6 +851,12 @@ class Context(ABC, IdempotencyManager):
         """Return the name of the state type.
         """
         return self._state_type_name
+
+    @property
+    def method(self) -> str:
+        """Return the name of the method.
+        """
+        return self._method
 
     @property
     def state_id(self) -> StateId:
@@ -1040,6 +1048,7 @@ class WriterContext(Context):
         channel_manager: _ChannelManager,
         headers: Headers,
         state_type_name: StateTypeName,
+        method: str,
         app_internal_api_key_secret: str,
         effect_validation: EffectValidation,
         task: Optional[TaskEffect] = None,
@@ -1048,6 +1057,7 @@ class WriterContext(Context):
             channel_manager=channel_manager,
             headers=headers,
             state_type_name=state_type_name,
+            method=method,
             app_internal_api_key_secret=app_internal_api_key_secret,
             task=task,
             effect_validation=effect_validation,
@@ -1065,6 +1075,7 @@ class TransactionContext(Context):
         channel_manager: _ChannelManager,
         headers: Headers,
         state_type_name: StateTypeName,
+        method: str,
         app_internal_api_key_secret: str,
         effect_validation: EffectValidation,
         task: Optional[TaskEffect] = None,
@@ -1098,6 +1109,7 @@ class TransactionContext(Context):
             channel_manager=channel_manager,
             headers=headers,
             state_type_name=state_type_name,
+            method=method,
             app_internal_api_key_secret=app_internal_api_key_secret,
             task=task,
             effect_validation=effect_validation,
