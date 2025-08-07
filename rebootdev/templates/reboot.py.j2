@@ -2681,7 +2681,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
     {% endfor %}
 
 
-class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
+class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer):
 
     @property
     def state(self):
@@ -2811,7 +2811,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
     {% endfor %}
 
 
-class {{ state.proto.name }}AlphaServicer({{ state.proto.name }}BaseServicer):
+class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
 
     _state: IMPORT_contextvars.ContextVar[
         IMPORT_typing.Optional[{{ state.pb2_name }}.{{ state.proto.name }}]
@@ -2828,10 +2828,10 @@ class {{ state.proto.name }}AlphaServicer({{ state.proto.name }}BaseServicer):
     )
 
     # An instance of the derived class for each state.
-    _instances: dict[str, {{ state.proto.name }}AlphaServicer] = {}
+    _instances: dict[str, {{ state.proto.name }}Servicer] = {}
 
     def _instance(self, state_id: str):
-        instances = {{ state.proto.name }}AlphaServicer._instances
+        instances = {{ state.proto.name }}Servicer._instances
         instance = instances.get(state_id)
         if instance is None:
             instance = self.__class__()
@@ -2841,12 +2841,12 @@ class {{ state.proto.name }}AlphaServicer({{ state.proto.name }}BaseServicer):
 
     @property
     def state(self) -> {{ state.pb2_name }}.{{ state.proto.name }}:
-        state = {{ state.proto.name }}AlphaServicer._state.get()
+        state = {{ state.proto.name }}Servicer._state.get()
         if state is None:
             raise RuntimeError(
                 "`state` property is only relevant within a `Servicer` method"
             )
-        workflow = {{ state.proto.name }}AlphaServicer._workflow.get()
+        workflow = {{ state.proto.name }}Servicer._workflow.get()
         if workflow:
             raise RuntimeError(
                 "`self.state` is not valid within a `workflow` because a "
@@ -2857,12 +2857,12 @@ class {{ state.proto.name }}AlphaServicer({{ state.proto.name }}BaseServicer):
 
     @state.setter
     def state(self, new_state: {{ state.pb2_name }}.{{ state.proto.name }}):
-        state = {{ state.proto.name }}AlphaServicer._state.get()
+        state = {{ state.proto.name }}Servicer._state.get()
         if state is None:
             raise RuntimeError(
                 "`state` property is only relevant within a `Servicer` method"
             )
-        workflow = {{ state.proto.name }}AlphaServicer._workflow.get()
+        workflow = {{ state.proto.name }}Servicer._workflow.get()
         if workflow:
             raise RuntimeError(
                 "`self.state` is not valid within a `workflow` because a "
@@ -2935,14 +2935,14 @@ class {{ state.proto.name }}AlphaServicer({{ state.proto.name }}BaseServicer):
         # We should have an asyncio task and thus context per request,
         # let's confirm this assumption by making sure that
         # `_state is None`.
-        assert {{ state.proto.name }}AlphaServicer._state.get() is None
-        {{ state.proto.name }}AlphaServicer._state.set(state)
+        assert {{ state.proto.name }}Servicer._state.get() is None
+        {{ state.proto.name }}Servicer._state.set(state)
         try:
             return await self._instance(
                 context.state_id
             ).{{ method.proto.name }}(context, request)
         finally:
-            {{ state.proto.name }}AlphaServicer._state.set(None)
+            {{ state.proto.name }}Servicer._state.set(None)
         {% endif %}
     {% elif method.options.proto.kind == 'writer' %}
     async def _{{ method.proto.name }}(
@@ -2954,14 +2954,14 @@ class {{ state.proto.name }}AlphaServicer({{ state.proto.name }}BaseServicer):
         # We should have an asyncio task and thus context per request,
         # let's confirm this assumption by making sure that
         # `_state is None`.
-        assert {{ state.proto.name }}AlphaServicer._state.get() is None
-        {{ state.proto.name }}AlphaServicer._state.set(state)
+        assert {{ state.proto.name }}Servicer._state.get() is None
+        {{ state.proto.name }}Servicer._state.set(state)
         try:
             return await self._instance(
                 context.state_id
             ).{{ method.proto.name }}(context, request)
         finally:
-            {{ state.proto.name }}AlphaServicer._state.set(None)
+            {{ state.proto.name }}Servicer._state.set(None)
     {% elif method.options.proto.kind == 'transaction' %}
     async def _{{ method.proto.name }}(
         self,
@@ -2972,27 +2972,27 @@ class {{ state.proto.name }}AlphaServicer({{ state.proto.name }}BaseServicer):
         # We should have an asyncio task and thus context per request,
         # let's confirm this assumption by making sure that
         # `_state is None`.
-        assert {{ state.proto.name }}AlphaServicer._state.get() is None
-        {{ state.proto.name }}AlphaServicer._state.set(state)
+        assert {{ state.proto.name }}Servicer._state.get() is None
+        {{ state.proto.name }}Servicer._state.set(state)
         try:
             return await self._instance(
                 context.state_id
             ).{{ method.proto.name }}(context, request)
         finally:
-            {{ state.proto.name }}AlphaServicer._state.set(None)
+            {{ state.proto.name }}Servicer._state.set(None)
     {% elif method.options.proto.kind == 'workflow' %}
     async def _{{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
-        {{ state.proto.name }}AlphaServicer._workflow.set(True)
+        {{ state.proto.name }}Servicer._workflow.set(True)
         try:
             return await self._instance(
                 context.state_id
             ).{{ method.proto.name }}(context, request)
         finally:
-            {{ state.proto.name }}AlphaServicer._workflow.set(False)
+            {{ state.proto.name }}Servicer._workflow.set(False)
     {% endif %}
 
     {% endfor %}
@@ -3025,24 +3025,18 @@ def ensure_has_timezone(
 {{ client.proto.state_name }}_UntilCallableType = IMPORT_typing.TypeVar('{{ client.proto.state_name }}_UntilCallableType')
 
 {% if client.state is not none %}
-class {{ client.proto.state_name }}Alpha:
-
-    Servicer: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}AlphaServicer
-
 class {{ client.proto.state_name }}Singleton:
-
-    Servicer: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Servicer
+    Servicer: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}SingletonServicer
 
 {% endif %}
 
 class {{ client.proto.state_name }}:
 
     {% if client.state is not none %}
-    alpha: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Alpha
-
-    singleton: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Singleton
 
     Servicer: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Servicer
+
+    singleton: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Singleton
 
     Effects: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}BaseServicer.Effects
 
@@ -4826,7 +4820,7 @@ class {{ client.proto.state_name }}:
 # Relevant to servicers, irrelevant to clients.
 
 {% for state in states %}
-class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.Servicer):
+class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton.Servicer):
 
     async def _wait_for_cancelled(
         self,

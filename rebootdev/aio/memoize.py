@@ -249,7 +249,7 @@ async def memoize(
         return t
 
 
-class MemoizeServicer(Memoize.Servicer):
+class MemoizeServicer(Memoize.singleton.Servicer):
 
     def authorizer(self):
         return allow_if(all=[is_app_internal])
