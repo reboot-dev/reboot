@@ -37,6 +37,7 @@ IMPORT_reboot_versioning.check_generated_code_compatible("{{ reboot_version }}")
 #            with user-defined methods that have the same name. Use
 #            fully-qualified names (e.g. `IMPORT_typing.Any`) instead.
 import asyncio as IMPORT_asyncio
+import builtins as IMPORT_builtins
 import contextvars as IMPORT_contextvars
 import dataclasses as IMPORT_dataclasses
 import google.protobuf.descriptor as IMPORT_google_protobuf_descriptor
@@ -281,6 +282,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 state_ref=state_ref,
             ),
             state_type_name = IMPORT_reboot_aio_types.StateTypeName('{{ state.proto.full_name }}'),
+            method="inspect",
             context_type=IMPORT_reboot_aio_contexts.ReaderContext,
         )
 
@@ -331,10 +333,13 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             context = self.create_context(
                 headers=headers,
                 state_type_name = IMPORT_reboot_aio_types.StateTypeName('{{ proto.package_name }}.{{ service.options.proto.state_name }}'),
+                method='{{ method.proto.name }}',
                 context_type=IMPORT_reboot_aio_contexts.ReaderContext,
             )
 
-            context.auth = await self._maybe_verify_token(headers)
+            context.auth = await self._maybe_verify_token(
+                headers=headers, method='{{ method.proto.name }}'
+            )
 
             request = {{ method.input_type }}()
             request.ParseFromString(request_bytes)
@@ -693,6 +698,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                         {% endif %}
                     ),
                     state_type_name = IMPORT_reboot_aio_types.StateTypeName('{{ proto.package_name }}.{{ service.options.proto.state_name }}'),
+                    method='{{ method.proto.name }}',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
                 )
@@ -929,7 +935,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
     ) -> IMPORT_typing.AsyncIterable[{{ method.output_type }}]:
     {% endif %}
         # Try to verify the token if a token verifier exists.
-        context.auth = await self._maybe_verify_token(context._headers)
+        context.auth = await self._maybe_verify_token(
+            headers=context._headers, method='{{ method.proto.name }}'
+        )
 
         {% if method.options.proto.kind in ['writer', 'transaction'] %}
         # Check if we already have performed this mutation!
@@ -1072,6 +1080,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         context: IMPORT_reboot_aio_contexts.WriterContext = self.create_context(
             headers=headers,
             state_type_name = IMPORT_reboot_aio_types.StateTypeName('{{ proto.package_name }}.{{ service.options.proto.state_name }}'),
+            method='{{ method.proto.name }}',
             context_type=IMPORT_reboot_aio_contexts.WriterContext,
         )
         response = {{ method.output_type }}()
@@ -1118,7 +1127,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 )
 
             # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(headers)
+            context.auth = await self._maybe_verify_token(
+                headers=headers, method='{{ method.proto.name }}'
+            )
 
             async with self._state_manager.writer(
                 context,
@@ -1237,6 +1248,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 context = self.create_context(
                     headers=headers,
                     state_type_name = IMPORT_reboot_aio_types.StateTypeName('{{ proto.package_name }}.{{ service.options.proto.state_name }}'),
+                    method='{{ method.proto.name }}',
                     context_type=IMPORT_reboot_aio_contexts.{{ method.options.proto.kind | to_camel }}Context,
                 )
                 assert context is not None
@@ -1346,6 +1358,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     headers.copy_for_token_verification_and_authorization()
                 ),
                 state_type_name = IMPORT_reboot_aio_types.StateTypeName('{{ state.proto.full_name }}'),
+                method=method_name,
                 context_type=IMPORT_reboot_aio_contexts.ReaderContext,
             ) as context:
                 context.auth = auth
@@ -1397,7 +1410,12 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
 
         return authorize
 
-    async def _maybe_verify_token(self, headers: IMPORT_reboot_aio_headers.Headers) -> IMPORT_typing.Optional[IMPORT_rebootdev.aio.auth.Auth]:
+    async def _maybe_verify_token(
+        self,
+        *,
+        headers: IMPORT_reboot_aio_headers.Headers,
+        method: str,
+    ) -> IMPORT_typing.Optional[IMPORT_rebootdev.aio.auth.Auth]:
         """Verify the bearer token and if a token verifier is present.
 
         Returns the (optional) `rebootdev.aio.auth.Auth` object
@@ -1413,6 +1431,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     headers.copy_for_token_verification_and_authorization()
                 ),
                 state_type_name = IMPORT_reboot_aio_types.StateTypeName('{{ state.proto.full_name }}'),
+                method=method,
                 context_type=IMPORT_reboot_aio_contexts.ReaderContext,
             ) as context:
                 return await self._token_verifier.verify_token(
@@ -2458,6 +2477,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                     with servicer._middleware.use_context(
                         headers=IMPORT_reboot_aio_headers.Headers.from_grpc_metadata(metadata),
                         state_type_name = IMPORT_reboot_aio_types.StateTypeName('{{ state.proto.full_name }}'),
+                        method='inline writer',
                         context_type=IMPORT_reboot_aio_contexts.WriterContext,
                     ) as writer_context:
                         # Check if we already have performed this mutation!
@@ -3009,12 +3029,18 @@ class {{ client.proto.state_name }}Alpha:
 
     Servicer: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}AlphaServicer
 
+class {{ client.proto.state_name }}Singleton:
+
+    Servicer: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Servicer
+
 {% endif %}
 
 class {{ client.proto.state_name }}:
 
     {% if client.state is not none %}
     alpha: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Alpha
+
+    singleton: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Singleton
 
     Servicer: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Servicer
 
@@ -3959,8 +3985,12 @@ class {{ client.proto.state_name }}:
                 {% for name, type in method.input_type_fields.items() %}
                 if {{ name }} is not None and not isinstance(
                     {{ name }},
+                    {% if name == "bytes" %}
+                    IMPORT_builtins.bytes
+                    {% else %}
                     {# NOTE: split at '[' so we don't include generic type parameters. #}
                     {{ type.split('[')[0] }},
+                    {% endif %}
                 ):
                     raise TypeError(
                         f"Can not construct protobuf message of type "
@@ -4069,8 +4099,12 @@ class {{ client.proto.state_name }}:
                 {% for name, type in method.input_type_fields.items() %}
                 if {{ name }} is not None and not isinstance(
                     {{ name }},
+                    {% if name == "bytes" %}
+                    IMPORT_builtins.bytes
+                    {% else %}
                     {# NOTE: split at '[' so we don't include generic type parameters. #}
                     {{ type.split('[')[0] }},
+                    {% endif %}
                 ):
                     raise TypeError(
                         f"Can not construct protobuf message of type "
@@ -4199,8 +4233,12 @@ class {{ client.proto.state_name }}:
                 {% for name, type in method.input_type_fields.items() %}
                 if {{ name }} is not None and not isinstance(
                     {{ name }},
+                    {% if name == "bytes" %}
+                    IMPORT_builtins.bytes
+                    {% else %}
                     {# NOTE: split at '[' so we don't include generic type parameters. #}
                     {{ type.split('[')[0] }},
+                    {% endif %}
                 ):
                     raise TypeError(
                         f"Can not construct protobuf message of type "
@@ -4503,8 +4541,12 @@ class {{ client.proto.state_name }}:
             {% for name, type in method.input_type_fields.items() %}
             if {{ name }} is not None and not isinstance(
                 {{ name }},
+                {% if name == "bytes" %}
+                IMPORT_builtins.bytes
+                {% else %}
                 {# NOTE: split at '[' so we don't include generic type parameters. #}
                 {{ type.split('[')[0] }},
+                {% endif %}
             ):
                 raise TypeError(
                     f"Can not construct protobuf message of type "

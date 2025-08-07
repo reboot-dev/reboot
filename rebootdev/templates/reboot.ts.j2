@@ -1905,6 +1905,7 @@ export class {{ client.proto.state_name }} {
 
   {% if client.state is not none %}
   static alpha = { Servicer: {{ client.proto.state_name }}AlphaServicer };
+  static singleton = { Servicer: {{ client.proto.state_name }}Servicer };
   static Servicer = {{ client.proto.state_name }}Servicer;
   static servicer = {{ client.proto.state_name }}BaseServicer.servicer;
   static State = {{ client.proto.state_name }}State;
