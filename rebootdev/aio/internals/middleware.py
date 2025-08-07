@@ -129,6 +129,7 @@ class Middleware(ABC):
         *,
         headers: Headers,
         state_type_name: StateTypeName,
+        method: str,
         context_type: type[ContextT],
         task: Optional[TaskEffect] = None,
     ) -> ContextT:
@@ -149,6 +150,7 @@ class Middleware(ABC):
             channel_manager=self.channel_manager,
             headers=headers,
             state_type_name=state_type_name,
+            method=method,
             app_internal_api_key_secret=self._app_internal_api_key_secret,
             task=task,
             effect_validation=self._effect_validation,
@@ -167,6 +169,7 @@ class Middleware(ABC):
         *,
         headers: Headers,
         state_type_name: StateTypeName,
+        method: str,
         context_type: type[ContextT],
         task: Optional[TaskEffect] = None,
     ) -> Iterator[ContextT]:
@@ -178,6 +181,7 @@ class Middleware(ABC):
             yield self.create_context(
                 headers=headers,
                 state_type_name=state_type_name,
+                method=method,
                 context_type=context_type,
                 task=task,
             )

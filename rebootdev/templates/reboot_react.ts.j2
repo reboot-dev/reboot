@@ -501,7 +501,7 @@ export interface Use{{ client.proto.state_name }}Api {
   };
   {{ method.proto.name | to_lower_camel }}: (
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-    options?: { signal?: AbortSignal }
+    options?: { signal?: AbortSignal; retry?: boolean }
   ) => Promise<
     reboot_web.ResponseOrAborted<
     {{ client.proto.state_name }}.{{ method.proto.name }}Response,
@@ -822,7 +822,8 @@ class {{ client.proto.state_name | to_camel }}Instance {
             // observed all `orphans` because we waited
             // for any mutations to flush before we re-started to
             // read.
-            if (orphans.length > 0) {
+            const haveOrphans = orphans.length;
+            if (haveOrphans > 0) {
               // We mark all mutations as observed except the
               // last one which we also invoke all `setResponse`s.
               // In this way we effectively create a barrier
@@ -847,7 +848,14 @@ class {{ client.proto.state_name | to_camel }}Instance {
               });
 
               orphans = [];
-            } else if (
+            }
+            // We want to check the orphans list AND the expecteds list because
+            // it could be possible that we receive a query response that
+            // contains an idempotency key that we are expecting while having an
+            // orphans list with a length greater than 0. In this case, we don't
+            // want to skip checking the expecteds list just because we have
+            // already checked the orphans list.
+            if (
               expecteds.length > 0 &&
               queryResponse.idempotencyKeys.includes(
                 expecteds[0].idempotencyKey
@@ -862,7 +870,12 @@ class {{ client.proto.state_name | to_camel }}Instance {
                 }
                 expecteds.shift();
               });
-            } else if (response !== undefined) {
+            }
+            // If we don't have any orphans to observe and we don't have any expecteds to observe,
+	          // or at least, the first expecteds _is not observed_ by this response, then go ahead and
+	          // pass on the response because it might contain new data that should get shown to the
+	          // user (e.g., in a chat app this could be a new chat message from a different user).
+            else if (response !== undefined && !haveOrphans) {
               unstable_batchedUpdates(() => {
                 reader.response = response;
                 for (const setResponse of Object.values(reader.setResponses)) {
@@ -1337,8 +1350,13 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
   async function {{ method.proto.name | to_lower_camel }}(
     partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name}}Request = {},
-    options?: { signal?: AbortSignal }
+    options?: { signal?: AbortSignal; retry?: boolean }
   ) {
+    let retry = true;
+    if (options !== undefined && options.retry !== undefined) {
+      retry = options.retry;
+    }
+
     const request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
 
     // Fetch with retry, using a backoff, i.e., if we get disconnected.
@@ -1364,7 +1382,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
             )
           };
         } catch (e: unknown) {
-          if (options?.signal?.aborted) {
+          if (options?.signal?.aborted || !retry) {
             const aborted = new {{ service.options.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
               new reboot_api.errors_pb.Aborted(), {
                 message: e instanceof Error
