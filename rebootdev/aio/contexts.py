@@ -372,7 +372,8 @@ class React:
                         self._state_type_name, self._state_ref
                     )
 
-                    call = react_pb2_grpc.ReactStub(channel).Query(
+                    stub = react_pb2_grpc.ReactStub(channel)
+                    call = stub.Query(
                         react_pb2.QueryRequest(
                             method=self._method,
                             request=serialized_request,
@@ -396,6 +397,17 @@ class React:
                         assert task is not None
 
                         async for query_response in call:
+                            # Signal to the server that we're ready for the next response.
+                            await stub.AcknowledgeQueryResponse(
+                                react_pb2.AcknowledgeQueryResponseRequest(
+                                    query_response_id=query_response.
+                                    query_response_id,
+                                ),
+                                # Using the same metadata ensures we're routed back to the
+                                # same consensus.
+                                metadata=metadata,
+                            )
+
                             if not query_response.HasField('response'):
                                 continue
 

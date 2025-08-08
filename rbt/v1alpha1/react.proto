@@ -40,7 +40,19 @@ message QueryResponse {
   //
   // TODO(benh): send these as bytes?
   repeated string idempotency_keys = 2;
+
+  // An ID for this response; used to acknowledge this response in a
+  // `AcknowledgeQueryResponseRequest`.
+  string query_response_id = 4;
 }
+
+////////////////////////////////////////////////////////////////////////
+
+message AcknowledgeQueryResponseRequest {
+  string query_response_id = 1;
+}
+
+message AcknowledgeQueryResponseResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -89,15 +101,35 @@ message WebSocketsConnectionResponse {}
 
 service React {
   // Allows users to "watch" the response of a unary reader method for
-  // changes. The current response of the method is sent when the
-  // stream is opened, then a new response is sent whenever the
-  // state changes in a way that causes the method's response to change.
+  // changes. The current response of the method is sent when the stream
+  // is opened. Each response from `Query` must be acknowledged by
+  // calling `AcknowledgeQueryResponse`. After such an acknowledgement,
+  // the `Query` stream will send a next response whenever the state
+  // changes in a way that causes the method's response to change; this
+  // response needs to in turn be acknowledged, and the cycle continues.
   //
   // NOTE: the service name and state ID is expected to be part of the
   // gRPC metadata, exactly like any other reboot requests.
   rpc Query(QueryRequest) returns (stream QueryResponse) {
     option (google.api.http) = {
       post: "/rbt.v1alpha1.React/Query"
+    };
+  }
+
+  // Acknowledges that the client has received a response from a call to
+  // `Query`, and is ready for the next response.
+  //
+  // This acts as a flow control mechanism; see:
+  //   https://github.com/reboot-dev/mono/issues/4754.
+  //
+  // This method must be called on the same server that the `Query`
+  // method that produced the response was called on.
+  rpc AcknowledgeQueryResponse(
+      AcknowledgeQueryResponseRequest) returns (
+      // This comment forces a line break to avoid length limits.
+      AcknowledgeQueryResponseResponse) {
+    option (google.api.http) = {
+      post: "/rbt.v1alpha1.React/AcknowledgeQueryResponse"
     };
   }
 

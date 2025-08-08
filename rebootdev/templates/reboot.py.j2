@@ -3506,9 +3506,11 @@ class {{ client.proto.state_name }}:
                             __this__._state_ref,
                         ) as __channel__:
 
-                            __call__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
+                            __stub__ = IMPORT_rbt_v1alpha1.react_pb2_grpc.ReactStub(
                                 __channel__
-                            ).Query(
+                            )
+
+                            __call__ = __stub__.Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='{{ method.proto.name }}',
                                     request=__request__.SerializeToString(),
@@ -3527,13 +3529,28 @@ class {{ client.proto.state_name }}:
                                 # idempotency key has been recorded; there may
                                 # not be a new response. Python callers don't
                                 # (currently) care about such an event, so we
-                                # simply ignore it.
-                                if not __query_response__.HasField("response"):
-                                    continue
+                                # simply ignore any message without a response.
+                                if __query_response__.HasField("response"):
+                                    __response__ = {{ method.output_type }}()
+                                    __response__.ParseFromString(__query_response__.response)
+                                    yield __response__
 
-                                __response__ = {{ method.output_type }}()
-                                __response__.ParseFromString(__query_response__.response)
-                                yield __response__
+                                # Signal to the server that we're ready for the next response.
+                                # We choose to ack only _after_ processing the previous response,
+                                # so that a next update will jump us straight to the most recent
+                                # response. It would also be valid to acknowledge before
+                                # processing, but that would mean that if that client-side
+                                # processing takes a long time, we might see another (very) old
+                                # response before catching up to the latest state of the world.
+                                await __stub__.AcknowledgeQueryResponse(
+                                    IMPORT_rbt_v1alpha1.react_pb2.AcknowledgeQueryResponseRequest(
+                                        query_response_id=__query_response__.query_response_id,
+                                    ),
+                                    # Using the same metadata ensures we're routed back to the
+                                    # same consensus.
+                                    metadata=__metadata__,
+                                )
+
 
                     except BaseException as exception:
                         # We expect to get disconnected from the placement
