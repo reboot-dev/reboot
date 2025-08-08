@@ -102,7 +102,7 @@ class Effects:
     def __init__(
         self,
         *,
-        state: Message,
+        state: Optional[Message] = None,
         response: Optional[Message] = None,
         error: Optional[Message] = None,
         tasks: Optional[list[TaskEffect]] = None,
@@ -1290,16 +1290,17 @@ class SidecarStateManager(
             # asyncio context holds the lock ... maybe use a contextvar?
             assert self._mutator_locks[state_type][state_ref].locked()
 
-            state_copy = type(effects.state)()
-            state_copy.CopyFrom(effects.state)
+            if effects.state is not None:
+                state_copy = type(effects.state)()
+                state_copy.CopyFrom(effects.state)
 
-            actor_upserts.append(
-                sidecar_pb2.Actor(
-                    state_type=state_type,
-                    state_ref=state_ref.to_str(),
-                    state=state_copy.SerializeToString(),
+                actor_upserts.append(
+                    sidecar_pb2.Actor(
+                        state_type=state_type,
+                        state_ref=state_ref.to_str(),
+                        state=state_copy.SerializeToString(),
+                    )
                 )
-            )
 
             if effects.tasks is not None:
                 task_upserts += [
@@ -1402,7 +1403,7 @@ class SidecarStateManager(
 
         # Now that everything is stored we can update in memory
         # state. First we update state related to effects (if any).
-        if effects is not None:
+        if effects is not None and effects.state is not None:
             assert state_copy is not None
 
             queues: Optional[list[asyncio.Queue[_StreamingReaderItem]]] = None
