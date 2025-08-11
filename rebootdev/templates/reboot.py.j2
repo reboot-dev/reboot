@@ -4635,6 +4635,60 @@ class {{ client.proto.state_name }}:
         {% endfor %}
         {% endfor %}
 
+    class _Forall:
+
+        _ids: list[str]
+
+        def __init__(self, ids: list[str]):
+            self._ids = ids
+
+        {% for service in client.services %}
+        {% for method in service.methods %}
+        {% if not method.proto.client_streaming and not method.proto.server_streaming and not method.options.proto.constructor and not method.options.proto.kind == 'workflow' %}
+        async def {{ method.proto.name }}(
+            # In methods which are dealing with user input, (i.e.,
+            # proto message field names), we should use '__double_underscored__'
+            # variables to avoid any potential name conflicts with the method's
+            # parameters.
+            # The '__self__' parameter is a convention in Python to
+            # indicate that this method is a bound method, so we use
+            # '__this__' instead.
+            __this__,
+            {% if method.options.proto.kind == 'reader' %}
+            __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+            {% elif method.options.proto.kind in ['writer', 'transaction'] %}
+            __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+            {% endif %}
+            __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
+            {% for name, type in method.input_type_fields.items() %}
+            {% if loop.first %}
+            *,
+            {% endif %}
+            {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+            {% endfor %}
+        ) -> list[{{ method.output_type }}]:
+            return await IMPORT_asyncio.gather(
+                *[
+                    {{ client.proto.state_name }}.ref(
+                        id
+                    ).{{ method.proto.name }}(
+                        __context__,
+                        __options__,
+                        {% for name in method.input_type_fields %}
+                        {{ name }}={{ name }},
+                        {% endfor %}
+                    ) for id in __this__._ids
+                ]
+            )
+
+        {% endif %}
+        {% endfor %}
+        {% endfor %}
+
+    @classmethod
+    def forall(cls, ids: list[str]) -> {{ client.proto.state_name }}._Forall:
+        return {{ client.proto.state_name }}._Forall(ids)
+
     @classmethod
     def ref(
         cls,
