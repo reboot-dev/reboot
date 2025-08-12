@@ -855,36 +855,24 @@ class {{ client.proto.state_name | to_camel }}Instance {
             // orphans list with a length greater than 0. In this case, we don't
             // want to skip checking the expecteds list just because we have
             // already checked the orphans list.
-            //
-            // It is possible for multiple mutations to have the same
-            // idempotency key (this isn't typical, in fact it likely
-            // only occurs in tests), and it is possible for a single
-            // query response to report multiple idempotency keys (this
-            // is likely quite common). Observe _all_ mutations that
-            // have _any_ of the idempotency keys in the query response.
             if (
-              expecteds.some(expected => queryResponse.idempotencyKeys.includes(
-                expected.idempotencyKey
-              ))
+              expecteds.length > 0 &&
+              queryResponse.idempotencyKeys.includes(
+                expecteds[0].idempotencyKey
+              )
             ) {
-              for (const expected of expecteds) {
-                if (queryResponse.idempotencyKeys.includes(expected.idempotencyKey)) {
-                  await expected.observed(() => {
-                    if (response !== undefined) {
-                      reader.response = response;
-                      for (const setResponse of Object.values(reader.setResponses)) {
-                        setResponse(response);
-                      }
-                    }
-                  });
+              await expecteds[0].observed(() => {
+                if (response !== undefined) {
+                  reader.response = response;
+                  for (const setResponse of Object.values(reader.setResponses)) {
+                    setResponse(response);
+                  }
                 }
-              }
-              expecteds = expecteds.filter(
-                expected => !queryResponse.idempotencyKeys.includes(expected.idempotencyKey)
-              );
+                expecteds.shift();
+              });
             }
             // If we don't have any orphans to observe and we don't have any expecteds to observe,
-	          // or at least, none of the expecteds _is observed_ by this response, then go ahead and
+	          // or at least, the first expecteds _is not observed_ by this response, then go ahead and
 	          // pass on the response because it might contain new data that should get shown to the
 	          // user (e.g., in a chat app this could be a new chat message from a different user).
             else if (response !== undefined && !haveOrphans) {
