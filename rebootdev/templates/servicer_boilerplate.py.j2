@@ -38,7 +38,7 @@ from {{ rbt_name }} import (
 {% for service in state.services %}
 
 
-class {{ state.proto.name }}Servicer({{ state.proto.name }}.Servicer):
+class {{ state.proto.name }}Servicer({{ state.proto.name }}.singleton.Servicer):
     """
     An example of how to implement a Python servicer for the
     {{ state.proto.name }} service, using Reboot.

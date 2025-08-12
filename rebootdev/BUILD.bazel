@@ -10,6 +10,16 @@ exports_files([
 ])
 
 py_library(
+    name = "protobuf_py",
+    srcs = ["protobuf.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("protobuf"),
+    ],
+)
+
+py_library(
     name = "helpers_py",
     srcs = ["helpers.py"],
     srcs_version = "PY3",

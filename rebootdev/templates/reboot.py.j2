@@ -2522,6 +2522,11 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                                 authorize=None,
                                 transaction=transaction,
                             ) as (state, state_manager_writer):
+                                # Serialize the state so we can see if it changed.
+                                serialized_state = state.SerializeToString(
+                                    deterministic=True,
+                                )
+
                                 result = await writer(state=state)
 
                                 if check_type and type(result) is not type_result:
@@ -2530,14 +2535,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                                         f"not of expected type '{type_result.__name__}'; "
                                         "did you specify an incorrect 'type'?"
                                     )
-
-                                effects = {{ state.proto.name }}BaseServicer.Effects(
-                                    state=state,
-                                    tasks=context._tasks,
-                                    response=IMPORT_google_protobuf_wrappers_pb2.BytesValue(
-                                        value=IMPORT_pickle.dumps(result)
-                                    ),
-                                )
 
                                 task: IMPORT_typing.Optional[IMPORT_reboot_aio_tasks.TaskEffect] = context.task
 
@@ -2559,6 +2556,24 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                                     validating_effects=validating_effects,
                                     context=context,
                                     checkpoint=checkpoint,
+                                )
+
+                                # We don't pass the context to the
+                                # writer, so we don't expect there to
+                                # be any scheduled tasks!
+                                assert len(context._tasks) == 0
+
+                                effects = IMPORT_reboot_aio_state_managers.Effects(
+                                    state=(
+                                        # Pass `None` if the state hasn't changed!
+                                        state if serialized_state != state.SerializeToString(
+                                            deterministic=True,
+                                        )
+                                        else None
+                                    ),
+                                    response=IMPORT_google_protobuf_wrappers_pb2.BytesValue(
+                                        value=IMPORT_pickle.dumps(result)
+                                    ),
                                 )
 
                                 await state_manager_writer.complete(effects)
@@ -2681,7 +2696,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
     {% endfor %}
 
 
-class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
+class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer):
 
     @property
     def state(self):
@@ -2769,19 +2784,26 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
     {% else %}
     ) -> IMPORT_typing.AsyncIterable[{{ method.output_type }}]:
     {% endif %}
-        response{% if method.proto.server_streaming %}s{% endif %} = (
-            self.{{ method.proto.name }}(
-                context,
-                state{% if method.options.proto.state_streaming %}s{% endif %},
-                request{% if method.proto.client_streaming %}s{% endif %},
+        # Wrap the call to the developer's method in a `span` so that it
+        # is traced using its fully-qualified Python name.
+        with IMPORT_reboot_aio_tracing.span(
+                name=f"{IMPORT_reboot_aio_tracing.full_type_name(self)}.{{ method.proto.name }}()",
+                level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                python_specific=True,
+        ):
+            response{% if method.proto.server_streaming %}s{% endif %} = (
+                self.{{ method.proto.name }}(
+                    context,
+                    state{% if method.options.proto.state_streaming %}s{% endif %},
+                    request{% if method.proto.client_streaming %}s{% endif %},
+                )
             )
-        )
-        {% if not method.proto.server_streaming %}
-        return await response
-        {% else %}
-        async for response in responses:
-            yield response
-        {% endif %}
+            {% if not method.proto.server_streaming %}
+            return await response
+            {% else %}
+            async for response in responses:
+                yield response
+            {% endif %}
     {% elif method.options.proto.kind == 'writer' %}
     async def _{{ method.proto.name }}(
         self,
@@ -2789,7 +2811,15 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         state: {{ state.pb2_name }}.{{ state.proto.name }},
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
-        return await self.{{ method.proto.name }}(context, state, request)
+        # Wrap the call to the developer's method in a `span` so that it
+        # is traced using its fully-qualified Python name.
+        with IMPORT_reboot_aio_tracing.span(
+                name=f"{IMPORT_reboot_aio_tracing.full_type_name(self)}.{{ method.proto.name }}()",
+                level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                python_specific=True,
+        ):
+            return await self.{{ method.proto.name }}(context, state, request)
+
     {% elif method.options.proto.kind == 'transaction' %}
     async def _{{ method.proto.name }}(
         self,
@@ -2797,21 +2827,37 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         state: {{ state.pb2_name }}.{{ state.proto.name }},
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
-        return await self.{{ method.proto.name }}(context, state, request)
+        # Wrap the call to the developer's method in a `span` so that it
+        # is traced using its fully-qualified Python name.
+        with IMPORT_reboot_aio_tracing.span(
+                name=f"{IMPORT_reboot_aio_tracing.full_type_name(self)}.{{ method.proto.name }}()",
+                level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                python_specific=True,
+        ):
+            return await self.{{ method.proto.name }}(context, state, request)
+
     {% elif method.options.proto.kind == 'workflow' %}
     async def _{{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
-        return await self.{{ method.proto.name }}(context, request)
+        # Wrap the call to the developer's method in a `span` so that it
+        # is traced using its fully-qualified Python name.
+        with IMPORT_reboot_aio_tracing.span(
+                name=f"{IMPORT_reboot_aio_tracing.full_type_name(self)}.{{ method.proto.name }}()",
+                level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                python_specific=True,
+        ):
+            return await self.{{ method.proto.name }}(context, request)
+
     {% endif %}
 
     {% endfor %}
     {% endfor %}
 
 
-class {{ state.proto.name }}AlphaServicer({{ state.proto.name }}BaseServicer):
+class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
 
     _state: IMPORT_contextvars.ContextVar[
         IMPORT_typing.Optional[{{ state.pb2_name }}.{{ state.proto.name }}]
@@ -2828,10 +2874,10 @@ class {{ state.proto.name }}AlphaServicer({{ state.proto.name }}BaseServicer):
     )
 
     # An instance of the derived class for each state.
-    _instances: dict[str, {{ state.proto.name }}AlphaServicer] = {}
+    _instances: dict[str, {{ state.proto.name }}Servicer] = {}
 
     def _instance(self, state_id: str):
-        instances = {{ state.proto.name }}AlphaServicer._instances
+        instances = {{ state.proto.name }}Servicer._instances
         instance = instances.get(state_id)
         if instance is None:
             instance = self.__class__()
@@ -2841,12 +2887,12 @@ class {{ state.proto.name }}AlphaServicer({{ state.proto.name }}BaseServicer):
 
     @property
     def state(self) -> {{ state.pb2_name }}.{{ state.proto.name }}:
-        state = {{ state.proto.name }}AlphaServicer._state.get()
+        state = {{ state.proto.name }}Servicer._state.get()
         if state is None:
             raise RuntimeError(
                 "`state` property is only relevant within a `Servicer` method"
             )
-        workflow = {{ state.proto.name }}AlphaServicer._workflow.get()
+        workflow = {{ state.proto.name }}Servicer._workflow.get()
         if workflow:
             raise RuntimeError(
                 "`self.state` is not valid within a `workflow` because a "
@@ -2857,12 +2903,12 @@ class {{ state.proto.name }}AlphaServicer({{ state.proto.name }}BaseServicer):
 
     @state.setter
     def state(self, new_state: {{ state.pb2_name }}.{{ state.proto.name }}):
-        state = {{ state.proto.name }}AlphaServicer._state.get()
+        state = {{ state.proto.name }}Servicer._state.get()
         if state is None:
             raise RuntimeError(
                 "`state` property is only relevant within a `Servicer` method"
             )
-        workflow = {{ state.proto.name }}AlphaServicer._workflow.get()
+        workflow = {{ state.proto.name }}Servicer._workflow.get()
         if workflow:
             raise RuntimeError(
                 "`self.state` is not valid within a `workflow` because a "
@@ -2935,14 +2981,20 @@ class {{ state.proto.name }}AlphaServicer({{ state.proto.name }}BaseServicer):
         # We should have an asyncio task and thus context per request,
         # let's confirm this assumption by making sure that
         # `_state is None`.
-        assert {{ state.proto.name }}AlphaServicer._state.get() is None
-        {{ state.proto.name }}AlphaServicer._state.set(state)
+        assert {{ state.proto.name }}Servicer._state.get() is None
+        {{ state.proto.name }}Servicer._state.set(state)
         try:
-            return await self._instance(
-                context.state_id
-            ).{{ method.proto.name }}(context, request)
+            # Wrap the call to the developer's method in a `span` so that it
+            # is traced using its fully-qualified Python name.
+            instance = self._instance(context.state_id)
+            with IMPORT_reboot_aio_tracing.span(
+                    name=f"{IMPORT_reboot_aio_tracing.full_type_name(instance)}.{{ method.proto.name }}()",
+                    level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                    python_specific=True,
+            ):
+                return await instance.{{ method.proto.name }}(context, request)
         finally:
-            {{ state.proto.name }}AlphaServicer._state.set(None)
+            {{ state.proto.name }}Servicer._state.set(None)
         {% endif %}
     {% elif method.options.proto.kind == 'writer' %}
     async def _{{ method.proto.name }}(
@@ -2954,14 +3006,20 @@ class {{ state.proto.name }}AlphaServicer({{ state.proto.name }}BaseServicer):
         # We should have an asyncio task and thus context per request,
         # let's confirm this assumption by making sure that
         # `_state is None`.
-        assert {{ state.proto.name }}AlphaServicer._state.get() is None
-        {{ state.proto.name }}AlphaServicer._state.set(state)
+        assert {{ state.proto.name }}Servicer._state.get() is None
+        {{ state.proto.name }}Servicer._state.set(state)
         try:
-            return await self._instance(
-                context.state_id
-            ).{{ method.proto.name }}(context, request)
+            # Wrap the call to the developer's method in a `span` so that it
+            # is traced using its fully-qualified Python name.
+            instance = self._instance(context.state_id)
+            with IMPORT_reboot_aio_tracing.span(
+                    name=f"{IMPORT_reboot_aio_tracing.full_type_name(instance)}.{{ method.proto.name }}()",
+                    level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                    python_specific=True,
+            ):
+                return await instance.{{ method.proto.name }}(context, request)
         finally:
-            {{ state.proto.name }}AlphaServicer._state.set(None)
+            {{ state.proto.name }}Servicer._state.set(None)
     {% elif method.options.proto.kind == 'transaction' %}
     async def _{{ method.proto.name }}(
         self,
@@ -2972,27 +3030,39 @@ class {{ state.proto.name }}AlphaServicer({{ state.proto.name }}BaseServicer):
         # We should have an asyncio task and thus context per request,
         # let's confirm this assumption by making sure that
         # `_state is None`.
-        assert {{ state.proto.name }}AlphaServicer._state.get() is None
-        {{ state.proto.name }}AlphaServicer._state.set(state)
+        assert {{ state.proto.name }}Servicer._state.get() is None
+        {{ state.proto.name }}Servicer._state.set(state)
         try:
-            return await self._instance(
-                context.state_id
-            ).{{ method.proto.name }}(context, request)
+            # Wrap the call to the developer's method in a `span` so that it
+            # is traced using its fully-qualified Python name.
+            instance = self._instance(context.state_id)
+            with IMPORT_reboot_aio_tracing.span(
+                    name=f"{IMPORT_reboot_aio_tracing.full_type_name(instance)}.{{ method.proto.name }}()",
+                    level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                    python_specific=True,
+            ):
+                return await instance.{{ method.proto.name }}(context, request)
         finally:
-            {{ state.proto.name }}AlphaServicer._state.set(None)
+            {{ state.proto.name }}Servicer._state.set(None)
     {% elif method.options.proto.kind == 'workflow' %}
     async def _{{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
-        {{ state.proto.name }}AlphaServicer._workflow.set(True)
+        {{ state.proto.name }}Servicer._workflow.set(True)
         try:
-            return await self._instance(
-                context.state_id
-            ).{{ method.proto.name }}(context, request)
+            # Wrap the call to the developer's method in a `span` so that it
+            # is traced using its fully-qualified Python name.
+            instance = self._instance(context.state_id)
+            with IMPORT_reboot_aio_tracing.span(
+                    name=f"{IMPORT_reboot_aio_tracing.full_type_name(instance)}.{{ method.proto.name }}()",
+                    level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                    python_specific=True,
+            ):
+                return await instance.{{ method.proto.name }}(context, request)
         finally:
-            {{ state.proto.name }}AlphaServicer._workflow.set(False)
+            {{ state.proto.name }}Servicer._workflow.set(False)
     {% endif %}
 
     {% endfor %}
@@ -3025,24 +3095,18 @@ def ensure_has_timezone(
 {{ client.proto.state_name }}_UntilCallableType = IMPORT_typing.TypeVar('{{ client.proto.state_name }}_UntilCallableType')
 
 {% if client.state is not none %}
-class {{ client.proto.state_name }}Alpha:
-
-    Servicer: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}AlphaServicer
-
 class {{ client.proto.state_name }}Singleton:
-
-    Servicer: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Servicer
+    Servicer: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}SingletonServicer
 
 {% endif %}
 
 class {{ client.proto.state_name }}:
 
     {% if client.state is not none %}
-    alpha: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Alpha
-
-    singleton: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Singleton
 
     Servicer: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Servicer
+
+    singleton: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Singleton
 
     Effects: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}BaseServicer.Effects
 
@@ -4180,14 +4244,14 @@ class {{ client.proto.state_name }}:
             # within a control loop, in which case they are syntactic
             # sugar for `per_iteration()`.
             context = IMPORT_reboot_aio_contexts.Context.get()
-            if (
-                context is not None and
-                isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext)
-            ):
-                return (
-                    self.per_iteration() if context.within_loop()
-                    else self.per_workflow()
-                ).spawn(when=when)
+            if context is not None:
+                if isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return (
+                        self.per_iteration() if context.within_loop()
+                        else self.per_workflow()
+                    ).spawn(when=when)
+                elif isinstance(context, IMPORT_reboot_aio_external.InitializeContext):
+                    return self.idempotently().spawn(when=when)
 
             return {{ client.proto.state_name }}.WeakReference._Spawn(
                 self._application_id, self._tasks, when=when
@@ -4425,6 +4489,11 @@ class {{ client.proto.state_name }}:
         {% else %}
         ) -> IMPORT_typing.AsyncIterable[{{ method.output_type }}]:
         {% endif %}
+            # UX improvement: check that neither positional argument was accidentally
+            # given a gRPC request type.
+            IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ method.input_type }})
+            IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type={{ method.input_type }})
+
             {% if not method.proto.server_streaming and not method.proto.client_streaming %}
             # Within a `workflow`, all "bare" calls are
             # `per_workflow()` calls, unless we're within a control
@@ -4433,28 +4502,30 @@ class {{ client.proto.state_name }}:
             #
             # Unless we are "within until" in which case all "bare"
             # calls are `.always().
-            if (
-                isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext) and
-                (__options__ is None or __options__.idempotency is None)
-            ):
-                return await (
-                    __this__.always() if __context__.within_until()
-                    else (
-                        __this__.per_iteration() if __context__.within_loop()
-                        else __this__.per_workflow()
+            if __options__ is None or __options__.idempotency is None:
+                if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return await (
+                        __this__.always() if __context__.within_until()
+                        else (
+                            __this__.per_iteration() if __context__.within_loop()
+                            else __this__.per_workflow()
+                        )
+                    ).{{ method.proto.name }}(
+                        __context__,
+                        __options__ or IMPORT_reboot_aio_call.Options(),
+                        {% for name in method.input_type_fields %}
+                        {{ name }}={{ name }},
+                        {% endfor %}
                     )
-                ).{{ method.proto.name }}(
-                    __context__,
-                    __options__ or IMPORT_reboot_aio_call.Options(),
-                    {% for name in method.input_type_fields %}
-                    {{ name }}={{ name }},
-                    {% endfor %}
-                )
+                elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
+                    return await __this__.idempotently().{{ method.proto.name }}(
+                        __context__,
+                        __options__ or IMPORT_reboot_aio_call.Options(),
+                        {% for name in method.input_type_fields %}
+                        {{ name }}={{ name }},
+                        {% endfor %}
+                    )
             {% endif %}
-            # UX improvement: check that neither positional argument was accidentally
-            # given a gRPC request type.
-            IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ method.input_type }})
-            IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type={{ method.input_type }})
 
             {% if not method.proto.client_streaming %}
             {% for name, type in method.input_type_fields.items() %}
@@ -4514,29 +4585,35 @@ class {{ client.proto.state_name }}:
             {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
             {% endfor %}
         ) -> {{ method.output_type }}:
-            # Within a `workflow`, all "bare" calls are
-            # `per_workflow()` calls, unless we're within a control
-            # loop, in which case they are syntactic sugar for
-            # `per_iteration()`.
-            if (
-                isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext) and
-                (__options__ is None or __options__.idempotency is None)
-            ):
-                return await (
-                    __this__.per_iteration() if __context__.within_loop()
-                    else __this__.per_workflow()
-                ).{{ method.proto.name }}(
-                    __context__,
-                    __options__ or IMPORT_reboot_aio_call.Options(),
-                    {% for name in method.input_type_fields %}
-                    {{ name }}={{ name }},
-                    {% endfor %}
-                )
-
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
             IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ method.input_type }})
             IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type={{ method.input_type }})
+
+            # Within a `workflow`, all "bare" calls are
+            # `per_workflow()` calls, unless we're within a control
+            # loop, in which case they are syntactic sugar for
+            # `per_iteration()`.
+            if __options__ is None or __options__.idempotency is None:
+                if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return await (
+                        __this__.per_iteration() if __context__.within_loop()
+                        else __this__.per_workflow()
+                    ).{{ method.proto.name }}(
+                        __context__,
+                        __options__ or IMPORT_reboot_aio_call.Options(),
+                        {% for name in method.input_type_fields %}
+                        {{ name }}={{ name }},
+                        {% endfor %}
+                    )
+                elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
+                    return await __this__.idempotently().{{ method.proto.name }}(
+                        __context__,
+                        __options__ or IMPORT_reboot_aio_call.Options(),
+                        {% for name in method.input_type_fields %}
+                        {{ name }}={{ name }},
+                        {% endfor %}
+                    )
 
             {% for name, type in method.input_type_fields.items() %}
             if {{ name }} is not None and not isinstance(
@@ -4596,6 +4673,60 @@ class {{ client.proto.state_name }}:
         {% endfor %}
         {% endfor %}
 
+    class _Forall:
+
+        _ids: list[str]
+
+        def __init__(self, ids: list[str]):
+            self._ids = ids
+
+        {% for service in client.services %}
+        {% for method in service.methods %}
+        {% if not method.proto.client_streaming and not method.proto.server_streaming and not method.options.proto.constructor and not method.options.proto.kind == 'workflow' %}
+        async def {{ method.proto.name }}(
+            # In methods which are dealing with user input, (i.e.,
+            # proto message field names), we should use '__double_underscored__'
+            # variables to avoid any potential name conflicts with the method's
+            # parameters.
+            # The '__self__' parameter is a convention in Python to
+            # indicate that this method is a bound method, so we use
+            # '__this__' instead.
+            __this__,
+            {% if method.options.proto.kind == 'reader' %}
+            __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+            {% elif method.options.proto.kind in ['writer', 'transaction'] %}
+            __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+            {% endif %}
+            __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
+            {% for name, type in method.input_type_fields.items() %}
+            {% if loop.first %}
+            *,
+            {% endif %}
+            {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+            {% endfor %}
+        ) -> list[{{ method.output_type }}]:
+            return await IMPORT_asyncio.gather(
+                *[
+                    {{ client.proto.state_name }}.ref(
+                        id
+                    ).{{ method.proto.name }}(
+                        __context__,
+                        __options__,
+                        {% for name in method.input_type_fields %}
+                        {{ name }}={{ name }},
+                        {% endfor %}
+                    ) for id in __this__._ids
+                ]
+            )
+
+        {% endif %}
+        {% endfor %}
+        {% endfor %}
+
+    @classmethod
+    def forall(cls, ids: list[str]) -> {{ client.proto.state_name }}._Forall:
+        return {{ client.proto.state_name }}._Forall(ids)
+
     @classmethod
     def ref(
         cls,
@@ -4639,24 +4770,31 @@ class {{ client.proto.state_name }}:
         #
         # Unless we are "within until" in which case all "bare"
         # calls are `.always().
-        if (
-            isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext) and
-            __idempotency__ is None
-        ):
-            return await (
-                __cls__.always() if __context__.within_until()
-                else (
-                    __cls__.per_iteration() if __context__.within_loop()
-                    else __cls__.per_workflow()
+        if __idempotency__ is None:
+            if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
+                return await (
+                    __cls__.always() if __context__.within_until()
+                    else (
+                        __cls__.per_iteration() if __context__.within_loop()
+                        else __cls__.per_workflow()
+                    )
+                ).{{ method.proto.name }}(
+                    __context__,
+                    __state_id__,
+                    __options__,
+                    {% for name in method.input_type_fields %}
+                    {{ name }}={{ name }},
+                    {% endfor %}
                 )
-            ).{{ method.proto.name }}(
-                __context__,
-                __state_id__,
-                __options__,
-                {% for name in method.input_type_fields %}
-                {{ name }}={{ name }},
-                {% endfor %}
-            )
+            elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
+                return await __cls__.idempotently().{{ method.proto.name }}(
+                    __context__,
+                    __state_id__,
+                    __options__,
+                    {% for name in method.input_type_fields %}
+                    {{ name }}={{ name }},
+                    {% endfor %}
+                )
 
         {% for name, type in method.input_type_fields.items() %}
         if {{ name }} is not None and not isinstance(
@@ -4826,7 +4964,7 @@ class {{ client.proto.state_name }}:
 # Relevant to servicers, irrelevant to clients.
 
 {% for state in states %}
-class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.Servicer):
+class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton.Servicer):
 
     async def _wait_for_cancelled(
         self,
