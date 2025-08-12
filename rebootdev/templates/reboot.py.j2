@@ -2784,19 +2784,26 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     {% else %}
     ) -> IMPORT_typing.AsyncIterable[{{ method.output_type }}]:
     {% endif %}
-        response{% if method.proto.server_streaming %}s{% endif %} = (
-            self.{{ method.proto.name }}(
-                context,
-                state{% if method.options.proto.state_streaming %}s{% endif %},
-                request{% if method.proto.client_streaming %}s{% endif %},
+        # Wrap the call to the developer's method in a `span` so that it
+        # is traced using its fully-qualified Python name.
+        with IMPORT_reboot_aio_tracing.span(
+                name=f"{IMPORT_reboot_aio_tracing.full_type_name(self)}.{{ method.proto.name }}()",
+                level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                python_specific=True,
+        ):
+            response{% if method.proto.server_streaming %}s{% endif %} = (
+                self.{{ method.proto.name }}(
+                    context,
+                    state{% if method.options.proto.state_streaming %}s{% endif %},
+                    request{% if method.proto.client_streaming %}s{% endif %},
+                )
             )
-        )
-        {% if not method.proto.server_streaming %}
-        return await response
-        {% else %}
-        async for response in responses:
-            yield response
-        {% endif %}
+            {% if not method.proto.server_streaming %}
+            return await response
+            {% else %}
+            async for response in responses:
+                yield response
+            {% endif %}
     {% elif method.options.proto.kind == 'writer' %}
     async def _{{ method.proto.name }}(
         self,
@@ -2804,7 +2811,15 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         state: {{ state.pb2_name }}.{{ state.proto.name }},
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
-        return await self.{{ method.proto.name }}(context, state, request)
+        # Wrap the call to the developer's method in a `span` so that it
+        # is traced using its fully-qualified Python name.
+        with IMPORT_reboot_aio_tracing.span(
+                name=f"{IMPORT_reboot_aio_tracing.full_type_name(self)}.{{ method.proto.name }}()",
+                level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                python_specific=True,
+        ):
+            return await self.{{ method.proto.name }}(context, state, request)
+
     {% elif method.options.proto.kind == 'transaction' %}
     async def _{{ method.proto.name }}(
         self,
@@ -2812,14 +2827,30 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         state: {{ state.pb2_name }}.{{ state.proto.name }},
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
-        return await self.{{ method.proto.name }}(context, state, request)
+        # Wrap the call to the developer's method in a `span` so that it
+        # is traced using its fully-qualified Python name.
+        with IMPORT_reboot_aio_tracing.span(
+                name=f"{IMPORT_reboot_aio_tracing.full_type_name(self)}.{{ method.proto.name }}()",
+                level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                python_specific=True,
+        ):
+            return await self.{{ method.proto.name }}(context, state, request)
+
     {% elif method.options.proto.kind == 'workflow' %}
     async def _{{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
-        return await self.{{ method.proto.name }}(context, request)
+        # Wrap the call to the developer's method in a `span` so that it
+        # is traced using its fully-qualified Python name.
+        with IMPORT_reboot_aio_tracing.span(
+                name=f"{IMPORT_reboot_aio_tracing.full_type_name(self)}.{{ method.proto.name }}()",
+                level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                python_specific=True,
+        ):
+            return await self.{{ method.proto.name }}(context, request)
+
     {% endif %}
 
     {% endfor %}
@@ -2953,9 +2984,15 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         assert {{ state.proto.name }}Servicer._state.get() is None
         {{ state.proto.name }}Servicer._state.set(state)
         try:
-            return await self._instance(
-                context.state_id
-            ).{{ method.proto.name }}(context, request)
+            # Wrap the call to the developer's method in a `span` so that it
+            # is traced using its fully-qualified Python name.
+            instance = self._instance(context.state_id)
+            with IMPORT_reboot_aio_tracing.span(
+                    name=f"{IMPORT_reboot_aio_tracing.full_type_name(instance)}.{{ method.proto.name }}()",
+                    level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                    python_specific=True,
+            ):
+                return await instance.{{ method.proto.name }}(context, request)
         finally:
             {{ state.proto.name }}Servicer._state.set(None)
         {% endif %}
@@ -2972,9 +3009,15 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         assert {{ state.proto.name }}Servicer._state.get() is None
         {{ state.proto.name }}Servicer._state.set(state)
         try:
-            return await self._instance(
-                context.state_id
-            ).{{ method.proto.name }}(context, request)
+            # Wrap the call to the developer's method in a `span` so that it
+            # is traced using its fully-qualified Python name.
+            instance = self._instance(context.state_id)
+            with IMPORT_reboot_aio_tracing.span(
+                    name=f"{IMPORT_reboot_aio_tracing.full_type_name(instance)}.{{ method.proto.name }}()",
+                    level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                    python_specific=True,
+            ):
+                return await instance.{{ method.proto.name }}(context, request)
         finally:
             {{ state.proto.name }}Servicer._state.set(None)
     {% elif method.options.proto.kind == 'transaction' %}
@@ -2990,9 +3033,15 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         assert {{ state.proto.name }}Servicer._state.get() is None
         {{ state.proto.name }}Servicer._state.set(state)
         try:
-            return await self._instance(
-                context.state_id
-            ).{{ method.proto.name }}(context, request)
+            # Wrap the call to the developer's method in a `span` so that it
+            # is traced using its fully-qualified Python name.
+            instance = self._instance(context.state_id)
+            with IMPORT_reboot_aio_tracing.span(
+                    name=f"{IMPORT_reboot_aio_tracing.full_type_name(instance)}.{{ method.proto.name }}()",
+                    level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                    python_specific=True,
+            ):
+                return await instance.{{ method.proto.name }}(context, request)
         finally:
             {{ state.proto.name }}Servicer._state.set(None)
     {% elif method.options.proto.kind == 'workflow' %}
@@ -3003,9 +3052,15 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
     ) -> {{ method.output_type }}:
         {{ state.proto.name }}Servicer._workflow.set(True)
         try:
-            return await self._instance(
-                context.state_id
-            ).{{ method.proto.name }}(context, request)
+            # Wrap the call to the developer's method in a `span` so that it
+            # is traced using its fully-qualified Python name.
+            instance = self._instance(context.state_id)
+            with IMPORT_reboot_aio_tracing.span(
+                    name=f"{IMPORT_reboot_aio_tracing.full_type_name(instance)}.{{ method.proto.name }}()",
+                    level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                    python_specific=True,
+            ):
+                return await instance.{{ method.proto.name }}(context, request)
         finally:
             {{ state.proto.name }}Servicer._workflow.set(False)
     {% endif %}

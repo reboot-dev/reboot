@@ -205,6 +205,7 @@ py_library(
         ":once_py",
         ":signals_py",
         "@com_github_reboot_dev_reboot//log:log_py",
+        "@com_github_reboot_dev_reboot//rebootdev:settings_py",
     ],
 )
 
