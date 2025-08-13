@@ -5,8 +5,10 @@ import uuid
 from contextlib import asynccontextmanager
 from google.protobuf.message import Message
 from grpc.aio import AioRpcError
+from log.log import get_logger
 from rebootdev.aio.aborted import Aborted
-from rebootdev.aio.contexts import Context, Participants
+from rebootdev.aio.backoff import Backoff
+from rebootdev.aio.contexts import Context, Participants, ReaderContext
 from rebootdev.aio.headers import IDEMPOTENCY_KEY_HEADER, Headers
 from rebootdev.aio.idempotency import IdempotencyManager
 from rebootdev.aio.internals.channel_manager import _ChannelManager
@@ -19,10 +21,13 @@ from rebootdev.aio.types import (
     StateTypeName,
 )
 from typing import (
+    Any,
     AsyncIterable,
     AsyncIterator,
     Awaitable,
     Callable,
+    Generator,
+    Generic,
     Optional,
     TypeVar,
 )
@@ -30,6 +35,112 @@ from typing import (
 CallT = TypeVar('CallT', bound=grpc.Call)
 ResponseT = TypeVar('ResponseT', bound=Message)
 RequestT = TypeVar('RequestT', bound=Message)
+
+logger = get_logger(__name__)
+
+
+class UnaryRetriedCall(Generic[ResponseT]):
+    """
+    Helper for making an RPC call, and retrying if there's a retryable
+    error.
+
+    The built-in gRPC retry mechanism unfortunately only supports up to
+    5 retries before giving up [1]; that's not sufficient for the use
+    case of a Reboot application. This wrapper therefore implements
+    custom retry logic.
+
+    This must be done in a helper object wrapped around a gRPC `call`
+    object, because while there are only a few places in our generated
+    code where we _create_ a `Call` object, there are many places where
+    we `await` them - and most of those places are not suitable for
+    in-place retry logic.
+
+    [1] https://github.com/grpc/proposal/blob/master/A6-client-retries.md#validation-of-retrypolicy
+    """
+
+    def __init__(
+        self,
+        *,
+        # In some places in the generated code we must create a `call`
+        # object to decide whether or not to even make the call; in
+        # those cases, the already-created `call` object can be passed,
+        # so it can be used to make the first call.
+        call: Optional[Awaitable[ResponseT]],
+        # What follows is information that's needed to create subsequent
+        # `call` objects (for retries, or if no `call` was provided in
+        # the first place).
+        stub_method: Callable[...,
+                              Awaitable[ResponseT] | AsyncIterable[ResponseT]],
+        method_name: str,
+        request: Message,
+        metadata: GrpcMetadata,
+        # When something went _fatally_ wrong, an error of the following
+        # type is raised.
+        aborted_type: type[Aborted],
+    ) -> None:
+        self._call: Optional[Awaitable[ResponseT]] = call
+        self._stub_method = stub_method
+        self._method_name = method_name
+        self._request = request
+        self._metadata = metadata
+        self._aborted_type = aborted_type
+
+    async def trailing_metadata(self) -> GrpcMetadata:
+        """Return the trailing metadata from the call."""
+        if self._call is None:
+            raise RuntimeError(
+                "Cannot get trailing metadata before the call has been made"
+            )
+        return await self._call.trailing_metadata( # type: ignore[attr-defined]
+        )
+
+    def __await__(self) -> Generator[Any, None, ResponseT]:
+        return self._call_with_retries().__await__()
+
+    def _should_retry(self, error: grpc.aio.AioRpcError) -> bool:
+        # For now, the only retriable error is UNAVAILABLE.
+        return error.code() == grpc.StatusCode.UNAVAILABLE
+
+    async def _call_with_retries(self) -> ResponseT:
+        backoff = Backoff()
+        while True:
+            if self._call is None:
+                new_call = self._stub_method(
+                    self._request, metadata=self._metadata
+                )
+                assert isinstance(new_call, Awaitable)
+                self._call = new_call
+            try:
+                return await self._call
+            except grpc.aio.AioRpcError as error:
+                if self._should_retry(error):
+                    # Retry this, with some backoff.
+                    logger.debug(
+                        f"Unary call to '{self._method_name}' encountered "
+                        f"retryable error: {error}; will retry..."
+                    )
+                    await backoff()
+                    # We need to create a fresh call object for the
+                    # retry.
+                    self._call = None
+                    continue
+
+                # Because the `self._call` is not necessarily the `call`
+                # that was passed to us, the outer try/except blocks may
+                # not correctly spot and handle an error. We therefore
+                # do that here.
+                status = (
+                    await rpc_status.from_call(self._call)
+                ) if self._call is not None else None
+
+                if status is not None:
+                    raise self._aborted_type.from_status(status) from None
+
+                raise self._aborted_type.from_grpc_aio_rpc_error(
+                    error
+                ) from None
+
+        raise RuntimeError("This is unreachable")
 
 
 class Stub:
@@ -99,6 +210,49 @@ class Stub:
             app_internal_authorization=app_internal_authorization,
         )
 
+    def _should_call_retry_unavailable(
+        self, call: Awaitable | AsyncIterable,
+        request_or_requests: Message | AsyncIterable[Message]
+    ) -> bool:
+        if isinstance(call, AsyncIterable):
+            # This is a server-streaming call.
+            #
+            # It is NOT safe to retry server-streaming calls,
+            # even if they can only be readers. Unlike
+            # _reactive_ reader calls, streaming reader
+            # responses can have ~any semantic the developer
+            # wants, and it isn't safe to simply restart the
+            # response stream from the beginning.
+            #
+            # We therefore do NOT implement transparent retry
+            # logic for this call.
+            return False
+        if isinstance(request_or_requests, AsyncIterable):
+            # This is a client-streaming call.
+            #
+            # It is NOT safe to retry client-streaming calls,
+            # since the `request_or_requests` is an iterable and
+            # may have already been (partially) consumed by the
+            # time a retry would be attempted.
+            #
+            # We therefore do NOT implement transparent retry
+            # logic for this call.
+            return False
+
+        # This is a unary call. It is _safe_ to retry, but should we?
+        # Retries are done at the root of the DAG, so only at the root
+        # will we consider retrying. Even at the root, it depends on the
+        # type of DAG root we have:
+        # 1. Workflows retry failures by restarting the whole workflow.
+        #    That is, we will NOT retry individual calls.
+        # 2. `ExternalContext`s. These are the only place where we retry
+        #    individual calls.
+        #
+        # If and ONLY if we're in an `ExternalContext`, the `_context`
+        # is None, because `ExternalContext` is the only context type
+        # that doesn't inherit from `Context`.
+        return self._context is None
+
     @asynccontextmanager
     async def _call(
         self,
@@ -131,6 +285,21 @@ class Stub:
                 f"Do not set '{IDEMPOTENCY_KEY_HEADER}' metadata yourself"
             )
 
+        if (
+            idempotency_key is None and
+            not isinstance(self._context, ReaderContext)
+        ):
+            # There isn't a user-provided idempotency key, and the
+            # method is not inherently idempotent (i.e., a reader).
+            #
+            # We may perform transparent retries on this call. That
+            # means it needs to be idempotent, and for non-readers that
+            # means we need an idempotency key. So even if the user or
+            # idempotency manager didn't provide an idempotency key, we
+            # generate one now. Keys generated here don't need to be
+            # reproducible, they just need to be unique.
+            idempotency_key = uuid.uuid4()
+
         if idempotency_key is not None:
             metadata += ((IDEMPOTENCY_KEY_HEADER, str(idempotency_key)),)
 
@@ -147,16 +316,25 @@ class Stub:
         call: Awaitable[ResponseT] | AsyncIterable[ResponseT]
         try:
             # Check if we should execute this call reactively.
-            #
-            # Reactive calls are only supported for unary readers, i.e.,
-            # we only have a single request, no idempotency key, and we
-            # won't be in a transaction.
             if (
                 self._context is not None and
                 self._context.react is not None and unary and reader
             ):
+                # This code path only applies for _transitive_ reactive
+                # reader calls; calls that are made directly via
+                # `WeakReference.reactively()` are handled elsewhere.
+                # This code path handles a reader call made from within
+                # a context that is already reactive, and that therefore
+                # (implicitly) must be reactive themselves.
+                #
+                # Reactive calls are only supported for unary readers,
+                # i.e., we only have a single request, and we won't be
+                # in a transaction.
+                #
+                # This type of reactive call is _not_ the root of a DAG,
+                # and so is NOT retried on error (even if the error is
+                # retryable).
                 assert not isinstance(request_or_requests, AsyncIterable)
-                assert idempotency_key is None
                 assert self._context.transaction_id is None
 
                 call, response = await self._context.react.call(
@@ -180,7 +358,32 @@ class Stub:
                     yield call
             else:
                 call = stub_method(request_or_requests, metadata=metadata)
-                yield call
+                if self._should_call_retry_unavailable(
+                    call, request_or_requests
+                ):
+                    assert isinstance(call, Awaitable)
+                    assert isinstance(request_or_requests, Message)
+                    # This is not a reactive call.
+                    assert (
+                        self._context is None or self._context.react is None or
+                        not unary or not reader
+                    )
+                    # This is not a transaction.
+                    assert (
+                        self._context is None or
+                        self._context.transaction_id is None
+                    )
+                    yield UnaryRetriedCall(
+                        call=call,
+                        stub_method=stub_method,
+                        method_name=method,
+                        request=request_or_requests,
+                        metadata=metadata,
+                        aborted_type=aborted_type,
+                    )
+                else:
+                    yield call
+
         except AioRpcError as error:
             status = (
                 await rpc_status.from_call(call)
