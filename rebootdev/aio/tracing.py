@@ -506,12 +506,12 @@ class StreamUnaryOpenTelemetryWorkaroundInterceptor(
 def context_from_headers(headers: Headers):
     """
     Context manager to restore OpenTelemetry context from headers.
-    
+
     Usage:
         with context_from_headers(headers):
             # Server-side processing with restored tracing context
             pass
-    
+
     This is used for server-side context restoration when not using
     OTEL's automatic gRPC interceptors.
     """
