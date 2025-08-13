@@ -27,7 +27,7 @@ tzlocal==5.3 # Latest as of 2025/02/13.
 urllib3==1.26.15 # Latest as of 2023/03/10.
 watchdog==6.0.0 # Latest as of 2025/01/29.
 websockets==13.1 # See https://github.com/reboot-dev/mono/issues/3922
-uuid7==0.1.0 # Latest as of 2024/09/01.
+uuid7-standard>=1.1.0 # Latest as of 2025/08/10.
 tabulate==0.9.0 # Latest as of 2024/10/25.
 opentelemetry-api==1.28.1 # Latest as of 2024/11/14.
 opentelemetry-sdk==1.28.1 # Matching `opentelemetry-api`.
@@ -35,3 +35,4 @@ opentelemetry-exporter-otlp-proto-grpc==1.28.1 # Matching `opentelemetry-api`.
 opentelemetry-instrumentation-grpc==0.49b1 # Latest as of 2024/11/14.
 fastapi==0.115.12 # Latest as of 2025/03/30.
 uvicorn==0.34.0 # Latest as of 2025/03/30.
+pydantic>=2.7.4 # To be version compatibable with projects like `langchain`.

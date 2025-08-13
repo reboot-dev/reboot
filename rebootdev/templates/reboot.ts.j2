@@ -76,6 +76,7 @@ import * as uuid from "uuid";
 import * as reboot from "@reboot-dev/reboot";
 import {
   Context,
+  InitializeContext,
   ExternalContext,
   WorkflowContext,
   ReaderContext,
@@ -398,7 +399,7 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
   }
 
   public static servicer(literal: {{ state.proto.name }}ObjectLiteral) {
-    return class extends {{ state.proto.name }}Servicer {
+    return class extends {{ state.proto.name }}SingletonServicer {
       authorizer() {
         if (literal.authorizer !== undefined) {
           return literal.authorizer();
@@ -929,7 +930,7 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
   };
 }
 
-export abstract class {{ state.proto.name }}Servicer extends {{ state.proto.name }}BaseServicer {
+export abstract class {{ state.proto.name }}SingletonServicer extends {{ state.proto.name }}BaseServicer {
   {% for service in state.services %}
   {% for method in service.methods %}
   abstract {{ method.proto.name | to_lower_camel }}(
@@ -984,7 +985,7 @@ export abstract class {{ state.proto.name }}Servicer extends {{ state.proto.name
   }
 }
 
-export abstract class {{ state.proto.name }}AlphaServicer extends {{ state.proto.name }}BaseServicer {
+export abstract class {{ state.proto.name }}Servicer extends {{ state.proto.name }}BaseServicer {
 
   // Async local storage provides access to state for each call, i.e.,
   // there may be multiple readers executing concurrently but each
@@ -995,10 +996,10 @@ export abstract class {{ state.proto.name }}AlphaServicer extends {{ state.proto
   }>();
 
   // An instance of the derived class for each state.
-  static #instances = new Map<string, {{ state.proto.name }}AlphaServicer>();
+  static #instances = new Map<string, {{ state.proto.name }}Servicer>();
 
   get state(): {{ state.proto.name }}.State {
-    const store = {{ state.proto.name }}AlphaServicer.#storage.getStore();
+    const store = {{ state.proto.name }}Servicer.#storage.getStore();
     if (!store) {
       throw new Error(
         "`state` property is only relevant within a `Servicer` method"
@@ -1015,7 +1016,7 @@ export abstract class {{ state.proto.name }}AlphaServicer extends {{ state.proto
   }
 
   set state(state: {{ state.proto.name }}.State) {
-    const store = {{ state.proto.name }}AlphaServicer.#storage.getStore();
+    const store = {{ state.proto.name }}Servicer.#storage.getStore();
     if (!store) {
       throw new Error(
         "`state` property is only relevant within a `Servicer` method"
@@ -1065,14 +1066,14 @@ export abstract class {{ state.proto.name }}AlphaServicer extends {{ state.proto
   ): Promise<
     {{ state.proto.name }}.Partial{{ method.proto.name }}Response
   > {
-    const instances = {{ state.proto.name }}AlphaServicer.#instances;
+    const instances = {{ state.proto.name }}Servicer.#instances;
     let instance = instances.get(context.stateId);
     if (instance === undefined) {
       instance = new (this.constructor as new () => this)();
       instance.__storeExternal(this.__external);
       instances.set(context.stateId, instance);
     }
-    return await {{ state.proto.name }}AlphaServicer.#storage.run(
+    return await {{ state.proto.name }}Servicer.#storage.run(
       {% if method.options.proto.kind != 'workflow' %}
       { state, workflow: false },
       {% else %}
@@ -1568,7 +1569,7 @@ export class {{ client.proto.state_name }}WeakReference {
     const { task } = await (
       context instanceof WorkflowContext
         ? (reboot.isWithinLoop() ? this.perIteration() : this.perWorkflow())
-        : this
+        : (context instanceof InitializeContext ? this.idempotently() : this)
     ).spawn().{{ method.proto.name | to_lower_camel }}(context, partialRequest);
     return await task;
   }
@@ -1597,6 +1598,13 @@ export class {{ client.proto.state_name }}WeakReference {
           ? this.perIteration()
           : this.perWorkflow()
       ).{{ method.proto.name | to_lower_camel }}(
+          context,
+          partialRequest,
+          this.#options,
+        );
+    } else if (context instanceof InitializeContext) {
+      return await this.idempotently()
+        .{{ method.proto.name | to_lower_camel }}(
           context,
           partialRequest,
           this.#options,
@@ -1904,8 +1912,7 @@ export class {{ client.proto.state_name }}WeakReference {
 export class {{ client.proto.state_name }} {
 
   {% if client.state is not none %}
-  static alpha = { Servicer: {{ client.proto.state_name }}AlphaServicer };
-  static singleton = { Servicer: {{ client.proto.state_name }}Servicer };
+  static singleton = { Servicer: {{ client.proto.state_name }}SingletonServicer };
   static Servicer = {{ client.proto.state_name }}Servicer;
   static servicer = {{ client.proto.state_name }}BaseServicer.servicer;
   static State = {{ client.proto.state_name }}State;
@@ -1992,21 +1999,27 @@ export class {{ client.proto.state_name }} {
       }
     }
 
-    if (
-      context instanceof WorkflowContext && (
-        options === undefined || !("idempotency" in options)
-      )
-    ) {
-      return await (
-        reboot.isWithinLoop()
-          ? {{ client.proto.state_name }}.perIteration()
-          : {{ client.proto.state_name }}.perWorkflow()
-      ).{{ method.proto.name | to_lower_camel }}(
-        context,
-        idOrPartialRequest,
-        partialRequestOrOptions,
-        optionsOrUndefined
-      );
+    if (options === undefined || !("idempotency" in options)) {
+      if (context instanceof WorkflowContext) {
+        return await (
+          reboot.isWithinLoop()
+            ? {{ client.proto.state_name }}.perIteration()
+            : {{ client.proto.state_name }}.perWorkflow()
+        ).{{ method.proto.name | to_lower_camel }}(
+          context,
+          idOrPartialRequest,
+          partialRequestOrOptions,
+          optionsOrUndefined
+        );
+      } else if (context instanceof InitializeContext) {
+        return await {{ client.proto.state_name }}.idempotently()
+          .{{ method.proto.name | to_lower_camel }}(
+            context,
+            idOrPartialRequest,
+            partialRequestOrOptions,
+            optionsOrUndefined
+          );
+      }
     }
 
     if (id === undefined) {

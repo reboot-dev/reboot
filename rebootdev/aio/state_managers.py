@@ -102,7 +102,7 @@ class Effects:
     def __init__(
         self,
         *,
-        state: Message,
+        state: Optional[Message] = None,
         response: Optional[Message] = None,
         error: Optional[Message] = None,
         tasks: Optional[list[TaskEffect]] = None,
@@ -1290,16 +1290,17 @@ class SidecarStateManager(
             # asyncio context holds the lock ... maybe use a contextvar?
             assert self._mutator_locks[state_type][state_ref].locked()
 
-            state_copy = type(effects.state)()
-            state_copy.CopyFrom(effects.state)
+            if effects.state is not None:
+                state_copy = type(effects.state)()
+                state_copy.CopyFrom(effects.state)
 
-            actor_upserts.append(
-                sidecar_pb2.Actor(
-                    state_type=state_type,
-                    state_ref=state_ref.to_str(),
-                    state=state_copy.SerializeToString(),
+                actor_upserts.append(
+                    sidecar_pb2.Actor(
+                        state_type=state_type,
+                        state_ref=state_ref.to_str(),
+                        state=state_copy.SerializeToString(),
+                    )
                 )
-            )
 
             if effects.tasks is not None:
                 task_upserts += [
@@ -1402,7 +1403,7 @@ class SidecarStateManager(
 
         # Now that everything is stored we can update in memory
         # state. First we update state related to effects (if any).
-        if effects is not None:
+        if effects is not None and effects.state is not None:
             assert state_copy is not None
 
             queues: Optional[list[asyncio.Queue[_StreamingReaderItem]]] = None
@@ -2453,12 +2454,16 @@ class SidecarStateManager(
         if context.idempotency_key is None:
             return None
 
+        state_type_name = context.state_type_name
+        state_ref = context._state_ref
+
         idempotent_mutations = self._idempotent_mutations
         transaction: Optional[StateManager.Transaction] = None
 
         if context.transaction_ids is not None:
-            transaction = self._participant_transactions[
-                context.state_type_name].get(context._state_ref)
+            transaction = self._participant_transactions[state_type_name].get(
+                state_ref
+            )
 
             if (
                 transaction is not None and
@@ -2474,38 +2479,31 @@ class SidecarStateManager(
 
         idempotent_mutation = idempotent_mutations.get(context.idempotency_key)
 
-        if idempotent_mutation is not None:
-            # Trigger reactive readers to observe the idempotent mutation.
-            # While they might have _already_ observed this mutation, this
-            # is important in order to ensure we propagate all the way back
-            # to the React generated code which may be waiting for this
-            # mutation to be observed.
-            state_copy: Optional[Message] = None
-            queues: Optional[list[asyncio.Queue[_StreamingReaderItem]]] = None
+        # Trigger reactive readers in the React generated code to
+        # observe the idempotent mutation.  While they might have
+        # _already_ observed this mutation, this is important in order
+        # to ensure we propagate all the way back to the React
+        # generated code which may be waiting for this mutation to be
+        # observed.
+        #
+        # Note that we only do this if we're not in a transaction, as
+        # it is not until the end of the transaction that a React
+        # generated reactive reader would see any updates.
+        if context.transaction_ids is None and idempotent_mutation is not None:
+            state = self._states[state_type_name].get(state_ref, None)
 
-            if transaction is not None:
-                assert transaction.state is not None
-                state_copy = transaction.state
-                queues = transaction.streaming_readers
-            else:
-                queues = self._streaming_readers[
-                    idempotent_mutation.state_type].get(
-                        StateRef.from_maybe_readable(
-                            idempotent_mutation.state_ref
-                        ),
-                        None,
-                    )
-                state_copy = self._states[idempotent_mutation.state_type].get(
-                    StateRef.from_maybe_readable(
-                        idempotent_mutation.state_ref
-                    ),
+            # If state is `None` then we don't have any reactive
+            # readers otherwise the state will have already been
+            # `_load()`ed.
+            if state is not None:
+                queues = self._streaming_readers[state_type_name].get(
+                    state_ref,
                     None,
                 )
 
-            if queues is not None:
-                assert state_copy is not None
-                for queue in queues:
-                    queue.put_nowait((state_copy, context.idempotency_key))
+                if queues is not None:
+                    for queue in queues:
+                        queue.put_nowait((state, context.idempotency_key))
 
         return idempotent_mutation
 

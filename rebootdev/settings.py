@@ -127,6 +127,10 @@ RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY = 13
 ENVVAR_REBOOT_LOCAL_ENVOY = 'REBOOT_LOCAL_ENVOY'
 ENVVAR_REBOOT_LOCAL_ENVOY_PORT = 'REBOOT_LOCAL_ENVOY_PORT'
 
+# The level of tracing to use. This is a Reboot-internal environment
+# variable; it is not expected to be set by developers using Reboot.
+ENVVAR_REBOOT_TRACE_LEVEL = 'REBOOT_TRACE_LEVEL'
+
 # The name of an environment variable that indicates that we are
 # running from within `node`. Not to be confused with
 # `ENVVAR_RBT_NODEJS` which implies the `--nodejs` flag was set when

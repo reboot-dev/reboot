@@ -719,7 +719,9 @@ pycparser==2.21 \
 pydantic==2.9.2 \
     --hash=sha256:d155cef71265d1e9807ed1c32b4c8deec042a44a50a4188b25ac67ecd81a9c0f \
     --hash=sha256:f048cec7b26778210e28a0459867920654d48e5e62db0958433636cde4254f12
-    # via fastapi
+    # via
+    #   -r rebootdev/requirements.in
+    #   fastapi
 pydantic-core==2.23.4 \
     --hash=sha256:0a7df63886be5e270da67e0966cf4afbae86069501d35c8c1b3b6c168f42cb36 \
     --hash=sha256:0cb3da3fd1b6a5d0279a01877713dbda118a2a4fc6f0d821a57da2e464793f05 \
@@ -927,9 +929,9 @@ urllib3==1.26.15 \
     # via
     #   -r rebootdev/requirements.in
     #   kubernetes-asyncio
-uuid7==0.1.0 \
-    --hash=sha256:5e259bb63c8cb4aded5927ff41b444a80d0c7124e8a0ced7cf44efa1f5cccf61 \
-    --hash=sha256:8c57aa32ee7456d3cc68c95c4530bc571646defac01895cfc73545449894a63c
+uuid7-standard==1.1.0 \
+    --hash=sha256:725f8f9202662dd6212df6b8caa1e101c2a61935261f43438bca842e058c5726 \
+    --hash=sha256:c7efdef8309265444fd11439bda8df10bd6469b56be62c1d3d78e014d16b4b9a
     # via -r rebootdev/requirements.in
 uvicorn==0.34.0 \
     --hash=sha256:023dc038422502fa28a09c7a30bf2b6991512da7dcdb8fd35fe57cfc154126f4 \

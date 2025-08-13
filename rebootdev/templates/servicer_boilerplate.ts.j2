@@ -31,7 +31,7 @@ import {
 {% for service in state.services %}
 
 
-class {{ state.proto.name }}Servicer extends {{ state.proto.name }}.Servicer {
+class {{ state.proto.name }}Servicer extends {{ state.proto.name }}.singleton.Servicer {
   // An example of how to implement a Typescript servicer for the
   // {{ state.proto.name }} service, using Reboot.
   // You can copy-paste this servicer, or parts of it, to be the basis

@@ -242,6 +242,18 @@ class SidecarClient:
         sync: bool = True,
     ) -> None:
         """Store actor state and task upserts after method completion."""
+        # Don't bother making an expensive call if there isn't
+        # anything to be done, which may be possible for inline
+        # writers that are not idempotent and haven't modified their
+        # state.
+        if (
+            len(actor_upserts) == 0 and len(task_upserts) == 0 and
+            len(colocated_upserts) == 0 and
+            len(ensure_state_types_created) == 0 and transaction is None and
+            idempotent_mutation is None
+        ):
+            return
+
         stub = await self._get_sidecar_stub()
 
         request = sidecar_pb2.StoreRequest(
