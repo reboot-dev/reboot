@@ -1146,7 +1146,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 requires_constructor={{ service.proto.requires_constructor }}
             ) as (state, writer):
 
-                task = {{ state.proto.name }}ServicerTasksStub(
+                task = await {{ state.proto.name }}ServicerTasks(
                     context=context,
                     state_ref=context._state_ref,
                 ).{{ method.proto.name }}(
@@ -1662,10 +1662,10 @@ class {{ client.proto.state_name }}WriterStub(_{{ client.proto.state_name }}Stub
             bearer_token=bearer_token,
         ) as call:
         {% if not method.proto.server_streaming %}
-            assert isinstance(call, IMPORT_typing.Awaitable)
+            assert isinstance(call, IMPORT_typing.Awaitable), type(call)
             return await call
         {% else %}
-            assert isinstance(call, IMPORT_typing.AsyncIterable)
+            assert isinstance(call, IMPORT_typing.AsyncIterable), type(call)
             async for response in call:
                 yield response
         {% endif %}
@@ -1703,7 +1703,7 @@ class {{ client.proto.state_name }}WriterStub(_{{ client.proto.state_name }}Stub
                 idempotency_key=idempotency_key,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable)
+                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
                 return await call
     {% endif %}
 
@@ -1759,10 +1759,10 @@ class {{ client.proto.state_name }}WorkflowStub(_{{ client.proto.state_name }}St
             bearer_token=bearer_token,
         ) as call:
         {% if not method.proto.server_streaming %}
-            assert isinstance(call, IMPORT_typing.Awaitable)
+            assert isinstance(call, IMPORT_typing.Awaitable), type(call)
             return await call
         {% else %}
-            assert isinstance(call, IMPORT_typing.AsyncIterable)
+            assert isinstance(call, IMPORT_typing.AsyncIterable), type(call)
             async for response in call:
                 yield response
         {% endif %}
@@ -1801,7 +1801,7 @@ class {{ client.proto.state_name }}WorkflowStub(_{{ client.proto.state_name }}St
                 idempotency_key=idempotency_key,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable)
+                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
                 return await call
     {% endif %}
 
@@ -1863,7 +1863,7 @@ class {{ client.proto.state_name }}TasksStub(_{{ client.proto.state_name }}Stub)
                 idempotency_key=idempotency_key,
                 bearer_token=bearer_token,
             ) as call:
-                assert isinstance(call, IMPORT_typing.Awaitable)
+                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
                 await call
                 for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
                     if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
@@ -1881,7 +1881,7 @@ class {{ client.proto.state_name }}TasksStub(_{{ client.proto.state_name }}Stub)
     {% endfor %}
 
 
-class {{ client.proto.state_name }}ServicerTasksStub(_{{ client.proto.state_name }}Stub):
+class {{ client.proto.state_name }}ServicerTasks:
 
     _context: IMPORT_reboot_aio_contexts.WriterContext
 
@@ -1893,18 +1893,13 @@ class {{ client.proto.state_name }}ServicerTasksStub(_{{ client.proto.state_name
         bearer_token: IMPORT_typing.Optional[str] = None,
     ):
         IMPORT_reboot_aio_types.assert_type(context, [IMPORT_reboot_aio_contexts.WriterContext])
-        super().__init__(
-            context=context,
-            state_ref=state_ref,
-            bearer_token=bearer_token,
-        )
-
         self._context = context
+        self._state_ref = state_ref
 
     # {{ client.proto.state_name }} specific methods:
     {% for service in client.services %}
     {% for method in service.methods %}
-    def {{ method.proto.name }}(
+    async def {{ method.proto.name }}(
         self,
         request: {{ method.input_type }},
         *,
@@ -1913,7 +1908,7 @@ class {{ client.proto.state_name }}ServicerTasksStub(_{{ client.proto.state_name
         schedule = ensure_has_timezone(when=schedule)
         task = IMPORT_reboot_aio_tasks.TaskEffect(
             state_type=IMPORT_reboot_aio_types.StateTypeName('{{ client.proto.state_full_name }}'),
-            state_ref=self._headers.state_ref,
+            state_ref=self._state_ref,
             method_name='{{ method.proto.name }}',
             request=request,
             schedule=(IMPORT_reboot_time_DateTimeWithTimeZone.now() + schedule) if isinstance(
@@ -3159,7 +3154,7 @@ class {{ client.proto.state_name }}:
             return self._task_id
 
         def __await__(self) -> IMPORT_typing.Generator[None, None, {{ method.output_type }}]:
-            """Awaits for task to finish and returns it's response."""
+            """Awaits for task to finish and returns its response."""
             async def wait_for_task() -> {{ method.output_type }}:
                 channel = self._channel_manager.get_channel_to_state(
                     self._task_id.state_type,
@@ -3169,22 +3164,26 @@ class {{ client.proto.state_name }}:
                 stub = IMPORT_rbt_v1alpha1.tasks_pb2_grpc.TasksStub(channel)
 
                 try:
-                    wait_for_task_response = await stub.Wait(
-                        IMPORT_rbt_v1alpha1.tasks_pb2.WaitRequest(task_id=self._task_id),
+                    call = IMPORT_reboot_aio_stubs.UnaryRetriedCall(
+                        call=None,  # `RetriedCall` can create the call itself.
+                        stub_method=stub.Wait,
+                        method_name="Wait",
+                        request=IMPORT_rbt_v1alpha1.tasks_pb2.WaitRequest(task_id=self._task_id),
                         metadata=IMPORT_reboot_aio_headers.Headers(
                             state_ref=IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
                             application_id=self._application_id,
                         ).to_grpc_metadata(),
+                        aborted_type=IMPORT_rebootdev.aio.aborted.SystemAborted,
                     )
-                except IMPORT_grpc.aio.AioRpcError as error:
-                    if error.code() == IMPORT_grpc.StatusCode.NOT_FOUND:
+
+                    wait_for_task_response = await call
+                except IMPORT_rebootdev.aio.aborted.SystemAborted as error:
+                    if error.code == IMPORT_grpc.StatusCode.NOT_FOUND:
                         raise IMPORT_rebootdev.aio.aborted.SystemAborted(
                             IMPORT_rbt_v1alpha1.errors_pb2.UnknownTask()
                         ) from None
 
-                    raise IMPORT_rebootdev.aio.aborted.SystemAborted.from_grpc_aio_rpc_error(
-                        error
-                    ) from None
+                    raise
                 else:
                     response_or_error: IMPORT_typing.Optional[IMPORT_google_protobuf_any_pb2.Any] = None
                     is_error = False
@@ -3606,11 +3605,16 @@ class {{ client.proto.state_name }}:
                                 yield __response__
 
                     except BaseException as exception:
-                        # We expect to get disconnected from the placement
-                        # planner from time to time, e.g., when it is
-                        # being updated, but we don't want that error to
+                        # We expect to get disconnected from the server
+                        # from time to time, e.g., when it is being
+                        # updated, but we don't want that error to
                         # propagate, we just want to retry.
                         if IMPORT_rebootdev.aio.aborted.is_grpc_retryable_exception(exception):
+                            logger.debug(
+                                "Reactive read to '{{ method.proto.full_name }}' "
+                                f"failed with a retryable error: '{exception}'; "
+                                "will retry..."
+                            )
                             await __query_backoff__()
                             continue
                         raise
@@ -4186,13 +4190,13 @@ class {{ client.proto.state_name }}:
                     {% endfor %}
                 )
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
-                    return {{ client.proto.state_name }}ServicerTasksStub(
+                    return (await {{ client.proto.state_name }}ServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).{{ method.proto.name }}(
                         __request__,
                         schedule=__this__._when,
-                    ).task_id
+                    )).task_id
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -5417,8 +5421,8 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
         IMPORT_google_protobuf_json_format.Parse(json_request, request)
 
         if isinstance(context, IMPORT_reboot_aio_contexts.WriterContext):
-            task = getattr(
-                {{ client.proto.state_name }}ServicerTasksStub(
+            task = await getattr(
+                {{ client.proto.state_name }}ServicerTasks(
                     context=context,
                     state_ref=context._state_ref,
                 ),
