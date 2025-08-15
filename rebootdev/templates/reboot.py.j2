@@ -5061,23 +5061,37 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
     ) -> str:
 
         async def _writer(state: IMPORT_google_protobuf_message.Message):
-            json_result_state = await writer(
-                IMPORT_google_protobuf_json_format.MessageToJson(state)
-            )
-
-            result_state = IMPORT_json.loads(json_result_state)
-
-            state.CopyFrom(
-                IMPORT_google_protobuf_json_format.ParseDict(
-                    result_state['state'],
-                    self.__state_type__(),
+            with IMPORT_reboot_aio_tracing.span(
+                state_name=f"{context.state_type_name}('{context.state_id}')",
+                span_name="_writer on NodeAdaptor",
+                # The naming above matches Python, but not TypeScript.
+                python_specific=True,
+                level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+            ):
+                json_result_state = await writer(
+                    IMPORT_google_protobuf_json_format.MessageToJson(state)
                 )
-            )
 
-            assert 'result' in result_state
-            result = result_state['result']
-            assert type(result) == str
-            return result
+                with IMPORT_reboot_aio_tracing.span(
+                    state_name=f"{context.state_type_name}('{context.state_id}')",
+                    span_name="State Copy on NodeAdaptor",
+                    # The naming above matches Python, but not TypeScript.
+                    python_specific=True,
+                    level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                ):
+                    result_state = IMPORT_json.loads(json_result_state)
+
+                    state.CopyFrom(
+                        IMPORT_google_protobuf_json_format.ParseDict(
+                            result_state['state'],
+                            self.__state_type__(),
+                        )
+                    )
+
+                    assert 'result' in result_state
+                    result = result_state['result']
+                    assert type(result) == str
+                    return result
 
         options = IMPORT_json.loads(json_options)
 
@@ -5212,81 +5226,130 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
         state: {{ state.pb2_name }}.{{ state.proto.name }},
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
-        json_state = IMPORT_google_protobuf_json_format.MessageToJson(state)
-        json_request = IMPORT_google_protobuf_json_format.MessageToJson(request)
+        with IMPORT_reboot_aio_tracing.span(
+                state_name=f"{context.state_type_name}('{context.state_id}')",
+                span_name="NodeAdaptor {{ method.proto.name }}",
+                # The naming above matches Python, but not TypeScript.
+                python_specific=True,
+                level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+        ):
+            with IMPORT_reboot_aio_tracing.span(
+                state_name=f"{context.state_type_name}('{context.state_id}')",
+                span_name="Copy State and Request to JSON",
+                # The naming above matches Python, but not TypeScript.
+                python_specific=True,
+                level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+            ):
+                json_state = IMPORT_google_protobuf_json_format.MessageToJson(state)
+                json_request = IMPORT_google_protobuf_json_format.MessageToJson(request)
 
-        cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
+            cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-        json_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+            json_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
 
-        try:
-            json_result_future = self._trampoline(  # type: ignore[attr-defined]
-                self._js_servicer_reference,
-                '{{ method.options.proto.kind }}',
-                '{{ method.proto.name }}',
-                context,
-                cancelled,
-                json_state,
-                json_request,
-            )
-            # NOTE: we need to `asyncio.shield` so that we can still
-            # correctly wait for this future to complete even if we
-            # are cancelled.
-            assert json_result_future is not None
-            json_result = await IMPORT_asyncio.shield(json_result_future)
-        except IMPORT_asyncio.CancelledError:
-            cancelled.set_result(None)
-
-            # NOTE: we MUST wait for `json_result_future` because this
-            # is a `writer` or `transaction` and we CAN NOT execute
-            # multiple simultaneously.
-            if json_result_future is not None:
-                await self._wait_for_cancelled(
-                    json_result_future,
-                    '{{ state.proto.name }}.{{ method.proto.name }}',
-                )
-
-            raise
-        except:
-            # Make sure we cancel the `cancelled` future either if an
-            # exception is thrown or if the result is reeturned so
-            # that we don't keep around resources related to it that
-            # might cause us to run out of memory or worse, keep Node
-            # from exiting because it is waiting for Python.
-            cancelled.cancel()
-            raise
-        else:
-            cancelled.cancel()
-
-            result = IMPORT_json.loads(json_result)
-
-            if 'effects' in result:
-                effects = result['effects']
-
-                state.CopyFrom(
-                    IMPORT_google_protobuf_json_format.ParseDict(
-                        effects['state'],
-                        {{ state.pb2_name }}.{{ state.proto.name }}(),
+            try:
+                with IMPORT_reboot_aio_tracing.span(
+                    state_name=f"{context.state_type_name}('{context.state_id}')",
+                    span_name="trampoline",
+                    # The naming above matches Python, but not TypeScript.
+                    python_specific=True,
+                    level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                ):
+                    json_result_future = self._trampoline(  # type: ignore[attr-defined]
+                        self._js_servicer_reference,
+                        '{{ method.options.proto.kind }}',
+                        '{{ method.proto.name }}',
+                        context,
+                        cancelled,
+                        json_state,
+                        json_request,
                     )
-                )
+                    # NOTE: we need to `asyncio.shield` so that we can still
+                    # correctly wait for this future to complete even if we
+                    # are cancelled.
+                    assert json_result_future is not None
+                    json_result = await IMPORT_asyncio.shield(json_result_future)
+            except IMPORT_asyncio.CancelledError:
+                cancelled.set_result(None)
 
-                assert not hasattr(effects, 'tasks'), "JS tasks not yet implemented"
+                # NOTE: we MUST wait for `json_result_future` because this
+                # is a `writer` or `transaction` and we CAN NOT execute
+                # multiple simultaneously.
+                if json_result_future is not None:
+                    await self._wait_for_cancelled(
+                        json_result_future,
+                        '{{ state.proto.name }}.{{ method.proto.name }}',
+                    )
 
-                return IMPORT_google_protobuf_json_format.ParseDict(
-                    effects['response'],
-                    {{ method.output_type }}(),
-                )
-            elif 'status' in result:
-                raise (
-                    {{ state.proto.name }}
-                    .{{ method.proto.name }}Aborted
-                    .from_status(
-                        IMPORT_google_protobuf_json_format.ParseDict(
-                            result['status'],
-                            IMPORT_google_rpc_status_pb2.Status(),
+                raise
+            except:
+                # Make sure we cancel the `cancelled` future either if an
+                # exception is thrown or if the result is reeturned so
+                # that we don't keep around resources related to it that
+                # might cause us to run out of memory or worse, keep Node
+                # from exiting because it is waiting for Python.
+                cancelled.cancel()
+                raise
+            else:
+                cancelled.cancel()
+
+                with IMPORT_reboot_aio_tracing.span(
+                    state_name=f"{context.state_type_name}('{context.state_id}')",
+                    span_name="JSON.loads",
+                    # The naming above matches Python, but not TypeScript.
+                    python_specific=True,
+                    level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                ):
+                    result = IMPORT_json.loads(json_result)
+
+                if 'effects' in result:
+                    effects = result['effects']
+                    with IMPORT_reboot_aio_tracing.span(
+                        state_name=f"{context.state_type_name}('{context.state_id}')",
+                        span_name="Result state copy ParseDict",
+                        # The naming above matches Python, but not TypeScript.
+                        python_specific=True,
+                        level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                    ):
+                        parsed_dict = IMPORT_google_protobuf_json_format.ParseDict(
+                            effects['state'],
+                            {{ state.pb2_name }}.{{ state.proto.name }}(),
+                        )
+                    with IMPORT_reboot_aio_tracing.span(
+                        state_name=f"{context.state_type_name}('{context.state_id}')",
+                        span_name="Result state copy from effects",
+                        # The naming above matches Python, but not TypeScript.
+                        python_specific=True,
+                        level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                    ):
+                        state.CopyFrom(
+                            parsed_dict
+                        )
+
+                    assert not hasattr(effects, 'tasks'), "JS tasks not yet implemented"
+
+                    with IMPORT_reboot_aio_tracing.span(
+                        state_name=f"{context.state_type_name}('{context.state_id}')",
+                        span_name="Response with ParseDict",
+                        # The naming above matches Python, but not TypeScript.
+                        python_specific=True,
+                        level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                    ):
+                        return IMPORT_google_protobuf_json_format.ParseDict(
+                            effects['response'],
+                            {{ method.output_type }}(),
+                        )
+                elif 'status' in result:
+                    raise (
+                        {{ state.proto.name }}
+                        .{{ method.proto.name }}Aborted
+                        .from_status(
+                            IMPORT_google_protobuf_json_format.ParseDict(
+                                result['status'],
+                                IMPORT_google_rpc_status_pb2.Status(),
+                            )
                         )
                     )
-                )
     {% elif method.options.proto.kind == 'workflow' %}
     async def {{ method.proto.name }}(
         self,

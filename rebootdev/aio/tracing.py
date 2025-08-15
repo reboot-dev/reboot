@@ -564,7 +564,7 @@ def qualified_type_name(obj: Any) -> str:
     Returns the qualified type name of an object, excluding its module.
     """
     assert hasattr(obj, "__class__"), "'obj' is not an object"
-    return obj.__class__.__qualname__
+    return f"{obj.__class__.__module__}.{obj.__class__.__qualname__}"
 
 
 named_spans: dict[str, trace.Span] = {}

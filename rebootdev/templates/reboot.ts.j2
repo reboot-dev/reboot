@@ -17,7 +17,7 @@
 {% endfor %}
 {% endfor %}
 
-import { reboot_native, ensureError } from "@reboot-dev/reboot";
+import { reboot_native, ensureError, getTracer } from "@reboot-dev/reboot";
 {% if import_ids|length > 0 %}
 {% for unique_import_id, path in import_ids.items() %}
 import { importPys as {{ unique_import_id }}importPys } from "{{ path }}{% if nodejs_extensions %}.js{% endif %}"
@@ -487,6 +487,7 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
     jsonState: string,
     jsonRequest: string
   ): Promise<string> {
+    const span = await (await getTracer()).startSpan("Node.js _{{ method.proto.name }}");
     try {
       {% if method.options.proto.kind != 'workflow' %}
       let state = {{ state.proto.name }}FromJsonString(
@@ -544,7 +545,8 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       {% elif method.options.proto.kind == 'transaction' %}
       delete ongoingTransactionStates[context.stateId];
       {% endif %}
-      return JSON.stringify(
+
+      const finalResponse = JSON.stringify(
         {
           {% if method.options.proto.kind in ['writer', 'transaction'] %}
           effects: {
@@ -556,6 +558,10 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
           {% endif %}
         }
       );
+
+      span.end();
+
+      return finalResponse;
     } catch (e) {
       if (e instanceof reboot_api.Aborted) {
         return JSON.stringify({
