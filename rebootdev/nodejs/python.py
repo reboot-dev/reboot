@@ -29,6 +29,8 @@ from typing import Awaitable, Callable, Optional, Sequence, TypeVar
 # 'reboot_native.cc'.
 launch_subprocess_consensus: Callable[[str], Awaitable[str]]
 
+run_functions: Callable[[], None]
+
 
 class EventLoopThread:
     """Helper class for creating and running an event loop on a thread and
@@ -36,7 +38,9 @@ class EventLoopThread:
     `run_callback_on_event_loop()`.
     """
 
-    def __init__(self):
+    def __init__(self, read_fd):
+        self._read_fd = read_fd
+
         self._loop = asyncio.new_event_loop()
 
         def exception_handler(loop, context):
@@ -63,6 +67,14 @@ class EventLoopThread:
 
         def run_forever():
             asyncio.set_event_loop(self._loop)
+
+            def read_and_run_functions():
+                os.read(self._read_fd, 8)
+                global run_functions
+                run_functions()
+
+            self._loop.add_reader(self._read_fd, read_and_run_functions)
+
             self._loop.run_forever()
 
         self._thread = threading.Thread(target=run_forever)
