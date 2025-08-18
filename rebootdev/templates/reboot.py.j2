@@ -5215,7 +5215,7 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
                     {{ state.proto.name }}
                     .{{ method.proto.name }}Aborted
                     .from_status(
-                        IMPORT_google_protobuf_json_format.ParseDict(
+                        IMPORT_google_protobuf_json_format.Parse(
                             result.status_json,
                             IMPORT_google_rpc_status_pb2.Status(),
                         )
@@ -5349,7 +5349,7 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
                         {{ state.proto.name }}
                         .{{ method.proto.name }}Aborted
                         .from_status(
-                            IMPORT_google_protobuf_json_format.ParseDict(
+                            IMPORT_google_protobuf_json_format.Parse(
                                 result.status_json,
                                 IMPORT_google_rpc_status_pb2.Status(),
                             )
@@ -5439,7 +5439,7 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
                     {{ state.proto.name }}
                     .{{ method.proto.name }}Aborted
                     .from_status(
-                        IMPORT_google_protobuf_json_format.ParseDict(
+                        IMPORT_google_protobuf_json_format.Parse(
                             result.status_json,
                             IMPORT_google_rpc_status_pb2.Status(),
                         )
