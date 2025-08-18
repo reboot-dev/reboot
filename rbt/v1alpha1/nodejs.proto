@@ -73,7 +73,7 @@ message TrampolineResult {
 
   // Serialized protobuf `state` is optional because we don't pass it
   // for a `reader` or a `workflow`.
-  optional bytes state = 4;
+  optional bytes state = 3;
 }
 
 ////////////////////////////////////////////////////////////////////////
