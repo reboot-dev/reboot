@@ -30,6 +30,7 @@ class TaskEffect:
         schedule: Optional[DateTimeWithTimeZone] = None,
         iteration: int = 0,
     ):
+        self.state_id = state_ref.id
         self.method_name = method_name
         self.request = request
         self.task_id = tasks_pb2.TaskId(

@@ -29,6 +29,7 @@ from rbt.v1alpha1.errors_pb2 import (
     TransactionParticipantFailedToPrepare,
 )
 from rebootdev.admin.export_import_converters import ExportImportItemConverters
+from rebootdev.aio import tracing
 from rebootdev.aio.aborted import Aborted, SystemAborted
 from rebootdev.aio.backoff import Backoff
 from rebootdev.aio.contexts import (
@@ -52,7 +53,7 @@ from rebootdev.aio.internals.tasks_dispatcher import (
 from rebootdev.aio.once import AsyncOnce
 from rebootdev.aio.servicers import RebootServiceable, Serviceable
 from rebootdev.aio.tasks import TaskEffect
-from rebootdev.aio.tracing import asynccontextmanager_span, function_span
+from rebootdev.aio.tracing import asynccontextmanager_span, function_span, span
 from rebootdev.aio.types import (
     ApplicationId,
     StateId,
@@ -997,6 +998,7 @@ class SidecarStateManager(
                 idempotent_mutation=idempotent_mutation,
             )
 
+    @function_span()
     async def _maybe_authorize(
         self,
         authorize: Optional[AuthorizeCallable],
@@ -1013,6 +1015,7 @@ class SidecarStateManager(
 
         await authorize(state)
 
+    @function_span()
     async def _load(
         self,
         context: Context,
@@ -1052,19 +1055,24 @@ class SidecarStateManager(
             # to `context` (through `context.transaction_id`), while the
             # `ongoing_transaction` is an ongoing transaction on the actor that
             # the caller is not a participant of.
-            ongoing_transaction: Optional[
-                StateManager.Transaction
-            ] = self._participant_transactions[state_type_name].get(state_ref)
-            if ongoing_transaction is not None and ongoing_transaction.prepared(
+            with span(
+                state_name=state_type_name,
+                span_name="rebootdev.aio.state_managers._load() - "
+                "awaiting 'ongoing_transaction'"
             ):
-                # There is a transaction ongoing, and it has been prepared. We
-                # need to wait for it to complete.
-                try:
-                    await ongoing_transaction
-                except:
-                    # Any errors coming from the transaction do not concern us
-                    # here.
-                    pass
+                ongoing_transaction: Optional[
+                    StateManager.Transaction] = self._participant_transactions[
+                        state_type_name].get(state_ref)
+                if ongoing_transaction is not None and ongoing_transaction.prepared(
+                ):
+                    # There is a transaction ongoing, and it has been prepared. We
+                    # need to wait for it to complete.
+                    try:
+                        await ongoing_transaction
+                    except:
+                        # Any errors coming from the transaction do not concern us
+                        # here.
+                        pass
         else:
             transaction = self._participant_transactions[state_type_name].get(
                 state_ref
@@ -1081,14 +1089,19 @@ class SidecarStateManager(
         )
 
         if transaction is not None:
-            # Need to set transaction state if this is the first time
-            # doing a load within a transaction for this actor.
-            if transaction.state is None and state is not None:
-                # Make a copy of `state` so that modifications within
-                # the transaction aren't seen by concurrent readers.
-                transaction.state = state_type()
-                transaction.state.CopyFrom(state)
-            state = cast(StateT, transaction.state)
+            with span(
+                state_name=state_type_name,
+                span_name="rebootdev.aio.state_managers._load() - "
+                "get state if transaction is not 'None'"
+            ):
+                # Need to set transaction state if this is the first time
+                # doing a load within a transaction for this actor.
+                if transaction.state is None and state is not None:
+                    # Make a copy of `state` so that modifications within
+                    # the transaction aren't seen by concurrent readers.
+                    transaction.state = state_type()
+                    transaction.state.CopyFrom(state)
+                state = cast(StateT, transaction.state)
 
         if state is not None:
             await self._maybe_authorize(authorize, state)
@@ -1116,142 +1129,170 @@ class SidecarStateManager(
         # to begin execution immediately.
         load = self._loads[state_type_name].get(state_ref)
         if load is None:
-            load = asyncio.Event()
-            self._loads[state_type_name][state_ref] = load
+            with span(
+                state_name=state_type_name,
+                span_name="rebootdev.aio.state_managers._load() - "
+                "loading the state first time"
+            ):
+                load = asyncio.Event()
+                self._loads[state_type_name][state_ref] = load
 
-            try:
-                data: Optional[bytes
-                              ] = await self._sidecar_client.load_actor_state(
-                                  state_type_name, state_ref
-                              )
-                if data is not None:
-                    state = state_type()
-                    state.ParseFromString(data)
-
-                # We need to call into the authorizer _before_ we reveal
-                # anything else about the state, e.g., if it's already constructed
-                # or not.
-                await self._maybe_authorize(authorize, state)
-
-                if data is not None:
-                    if from_constructor:
-                        logger.error(
-                            f"State '{state_ref.id}' for state type '{state_type_name}' "
-                            "already constructed"
+                try:
+                    with span(
+                        state_name=state_type_name,
+                        span_name="rebootdev.aio.state_managers._load() "
+                        "- load_actor_state"
+                    ):
+                        data: Optional[
+                            bytes
+                        ] = await self._sidecar_client.load_actor_state(
+                            state_type_name, state_ref
                         )
-                        raise SystemAborted(StateAlreadyConstructed())
+                    if data is not None:
+                        with span(
+                            state_name=state_type_name,
+                            span_name="rebootdev.aio.state_managers._load() "
+                            "- parseFromString"
+                        ):
+                            state = state_type()
+                            state.ParseFromString(data)
 
-                    assert state is not None
+                    # We need to call into the authorizer _before_ we reveal
+                    # anything else about the state, e.g., if it's already constructed
+                    # or not.
+                    await self._maybe_authorize(authorize, state)
 
-                    self._states[state_type_name][state_ref] = state
+                    if data is not None:
+                        if from_constructor:
+                            logger.error(
+                                f"State '{state_ref.id}' for state type '{state_type_name}' "
+                                "already constructed"
+                            )
+                            raise SystemAborted(StateAlreadyConstructed())
 
-                    if transaction is not None:
-                        # Make a copy of `state` so that
-                        # modifications within the transaction
-                        # aren't seen by concurrent readers.
-                        transaction.state = state_type()
-                        transaction.state.CopyFrom(state)
-                        state = cast(StateT, transaction.state)
+                        assert state is not None
 
-                    # Need to enqueue the loaded state to any
-                    # outstanding queues; see comments in
-                    # 'streaming_reader()' for more details.
-                    #
-                    # Note that even though enqueuing requires
-                    # doing an 'await' which means we might yield
-                    # to the event loop, because we don't trigger
-                    # the 'load' event until _after_ we're done
-                    # with all the queues we know that we'll get
-                    # all future state updates. That is, if it's a
-                    # reader (or streaming reader) that is doing
-                    # the loading then a writer will be waiting
-                    # for the 'load' event. Meanwhile if it is a
-                    # writer doing the loading then it will do all
-                    # the enqueuing before even returning from
-                    # this function.
-                    queues: Optional[list[asyncio.Queue[_StreamingReaderItem]]
-                                    ] = self._streaming_readers[
-                                        state_type_name].get(state_ref)
+                        self._states[state_type_name][state_ref] = state
 
-                    if queues is not None:
-                        for queue in queues:
-                            # NOTE: we defer making a reader
-                            # specific copy of this state until
-                            # the reader actually reads it to
-                            # reduce memory usage.
-                            queue.put_nowait((state, None))
+                        if transaction is not None:
+                            # Make a copy of `state` so that
+                            # modifications within the transaction
+                            # aren't seen by concurrent readers.
+                            transaction.state = state_type()
+                            transaction.state.CopyFrom(state)
+                            state = cast(StateT, transaction.state)
 
-                    if transaction is not None:
-                        for queue in transaction.streaming_readers:
-                            # NOTE: we defer making a reader
-                            # specific copy of this state until
-                            # the reader actually reads it to
-                            # reduce memory usage.
-                            queue.put_nowait((state, None))
+                        # Need to enqueue the loaded state to any
+                        # outstanding queues; see comments in
+                        # 'streaming_reader()' for more details.
+                        #
+                        # Note that even though enqueuing requires
+                        # doing an 'await' which means we might yield
+                        # to the event loop, because we don't trigger
+                        # the 'load' event until _after_ we're done
+                        # with all the queues we know that we'll get
+                        # all future state updates. That is, if it's a
+                        # reader (or streaming reader) that is doing
+                        # the loading then a writer will be waiting
+                        # for the 'load' event. Meanwhile if it is a
+                        # writer doing the loading then it will do all
+                        # the enqueuing before even returning from
+                        # this function.
+                        with span(
+                            state_name=state_type_name,
+                            span_name="rebootdev.aio.state_managers._load() "
+                            "- putting new state on queues"
+                        ):
+                            queues: Optional[
+                                list[asyncio.Queue[_StreamingReaderItem]]
+                            ] = self._streaming_readers[state_type_name].get(
+                                state_ref
+                            )
 
-                    return state
-                elif requires_constructor and not from_constructor:
-                    logger.warning(
-                        f"State '{state_ref.id}' for state type '{state_type_name}' not "
-                        "constructed (must call a constructor to construct)"
-                    )
-                    raise SystemAborted(
-                        StateNotConstructed(requires_constructor=True)
-                    )
-                elif from_reader:
-                    log_at_most_once_per(
-                        seconds=300,
-                        log_method=logger.warning,
-                        message=(
-                            f"State '{state_ref.id}' for state type "
-                            f"'{state_type_name}' not constructed (call "
-                            "any writer to construct). Will silence this "
-                            "message for the next 5 minutes."
-                        ),
-                    )
-                    raise SystemAborted(StateNotConstructed())
-                else:
-                    # State is not constructed and we're calling a
-                    # constructor, expose as much via `context`.
-                    #
-                    # TODO(benh): refactor to return `None` and
-                    # then we can create a new `context` before
-                    # passing to users instead of doing mutation
-                    # here!
-                    context._constructor = True
+                            if queues is not None:
+                                for queue in queues:
+                                    # NOTE: we defer making a reader
+                                    # specific copy of this state until
+                                    # the reader actually reads it to
+                                    # reduce memory usage.
+                                    queue.put_nowait((state, None))
 
-                    state = state_type()
+                            if transaction is not None:
+                                for queue in transaction.streaming_readers:
+                                    # NOTE: we defer making a reader
+                                    # specific copy of this state until
+                                    # the reader actually reads it to
+                                    # reduce memory usage.
+                                    queue.put_nowait((state, None))
 
-                    assert state is not None
+                            return state
+                    elif requires_constructor and not from_constructor:
+                        logger.warning(
+                            f"State '{state_ref.id}' for state type '{state_type_name}' not "
+                            "constructed (must call a constructor to construct)"
+                        )
+                        raise SystemAborted(
+                            StateNotConstructed(requires_constructor=True)
+                        )
+                    elif from_reader:
+                        log_at_most_once_per(
+                            seconds=300,
+                            log_method=logger.warning,
+                            message=(
+                                f"State '{state_ref.id}' for state type "
+                                f"'{state_type_name}' not constructed (call "
+                                "any writer to construct). Will silence this "
+                                "message for the next 5 minutes."
+                            ),
+                        )
+                        raise SystemAborted(StateNotConstructed())
+                    else:
+                        # State is not constructed and we're calling a
+                        # constructor, expose as much via `context`.
+                        #
+                        # TODO(benh): refactor to return `None` and
+                        # then we can create a new `context` before
+                        # passing to users instead of doing mutation
+                        # here!
+                        context._constructor = True
 
-                    if transaction is not None:
-                        # NOTE: no need to copy state here since
-                        # it is not stored in `self._states`.
-                        transaction.state = state
+                        state = state_type()
 
-                    return state
-            finally:
-                # Trigger anyone waiting on the load. Note that it
-                # doesn't matter whether or not we were actually
-                # able to load any state; no matter what we want
-                # all coroutines waiting on the load to resume.
-                del self._loads[state_type_name][state_ref]
-                load.set()
+                        assert state is not None
+
+                        if transaction is not None:
+                            # NOTE: no need to copy state here since
+                            # it is not stored in `self._states`.
+                            transaction.state = state
+
+                        return state
+                finally:
+                    # Trigger anyone waiting on the load. Note that it
+                    # doesn't matter whether or not we were actually
+                    # able to load any state; no matter what we want
+                    # all coroutines waiting on the load to resume.
+                    del self._loads[state_type_name][state_ref]
+                    load.set()
         else:
             # We'll wait for the load and then recursively try
             # again in the event that the loader failed (e.g.,
             # perhaps the loader was from a reader and the
             # actor had not yet been constructed but we're a
             # writer and will successfully be able to load).
-            await load.wait()
-            return await self._load(
-                context,
-                state_type,
-                authorize=authorize,
-                from_reader=from_reader,
-                from_constructor=from_constructor,
-                requires_constructor=requires_constructor,
-            )
+            with span(
+                state_name=state_type_name,
+                span_name="rebootdev.aio.state_managers._load() - "
+                "waiting for the load",
+            ):
+                await load.wait()
+                return await self._load(
+                    context,
+                    state_type,
+                    authorize=authorize,
+                    from_reader=from_reader,
+                    from_constructor=from_constructor,
+                    requires_constructor=requires_constructor,
+                )
 
     async def _store(
         self,
@@ -1797,7 +1838,7 @@ class SidecarStateManager(
         async def iterator(
             state: Optional[StateT]
         ) -> AsyncGenerator[tuple[StateT, Optional[uuid.UUID]], None]:
-            if state is not None:
+            if state is not None and queue.qsize() == 0:
                 # Every reader/writer gets a copy of their own state so
                 # that they can execute concurrently.
                 state_copy = state_type()
@@ -1806,6 +1847,9 @@ class SidecarStateManager(
 
             while True:
                 next_item: _StreamingReaderItem = await queue.get()
+
+                # TODO: just get the last item from the queue, but
+                # aggregate all of the idempotency keys.
 
                 # Currently stream is never "closed" so we should
                 # never not have state unless we're in a transaction
@@ -2003,16 +2047,20 @@ class SidecarStateManager(
         async with mutator_or_transaction_writer_lock:
             # Every reader/writer gets a copy of their own state so
             # that they can execute concurrently.
-            state_copy = state_type()
-            state_copy.CopyFrom(
-                await self._load(
-                    context,
-                    state_type,
-                    authorize=authorize,
-                    from_constructor=from_constructor,
-                    requires_constructor=requires_constructor,
-                )
+            loaded_result = await self._load(
+                context,
+                state_type,
+                authorize=authorize,
+                from_constructor=from_constructor,
+                requires_constructor=requires_constructor,
             )
+            with span(
+                state_name=state_type_name,
+                span_name="rebootdev.aio.state_managers."
+                "SidecarStateManager.writer() - Copy State",
+            ):
+                state_copy = state_type()
+                state_copy.CopyFrom(loaded_result)
 
             async def complete(effects: Effects) -> None:
                 if transaction is None:
@@ -2209,7 +2257,14 @@ class SidecarStateManager(
                     )
 
                     if interval is not None:
-                        await asyncio.sleep(interval.total_seconds())
+                        with tracing.span(
+                            state_name=
+                            f"{task_effect.task_id.state_type}('{task_effect.state_id}')",
+                            span_name=
+                            f"{task_effect.method_name}() loop iteration {task_effect.iteration}: waiting until the scheduled start time",
+                            level=tracing.TraceLevel.CUSTOMER,
+                        ):
+                            await asyncio.sleep(interval.total_seconds())
 
                     # We need to restore the idempotency checkpoint so
                     # that each new loop iteration we allow empty

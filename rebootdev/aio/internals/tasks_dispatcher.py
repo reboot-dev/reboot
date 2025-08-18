@@ -7,6 +7,7 @@ from google.protobuf import any_pb2
 from google.protobuf.message import Message
 from google.protobuf.timestamp_pb2 import Timestamp
 from rbt.v1alpha1 import tasks_pb2
+from rebootdev.aio import tracing
 from rebootdev.aio.backoff import Backoff
 from rebootdev.aio.internals.contextvars import use_application_id
 from rebootdev.aio.internals.tasks_cache import TasksCache
@@ -168,7 +169,14 @@ class TasksDispatcher:
                                 task.schedule - DateTimeWithTimeZone.now()
                             ).total_seconds()
                             if seconds > 0:
-                                await asyncio.sleep(seconds)
+                                with tracing.span(
+                                    state_name=
+                                    f"{task.task_id.state_type}('{task.state_id}')",
+                                    span_name=
+                                    f"{task.method_name}(): waiting until the scheduled start time",
+                                    level=tracing.TraceLevel.CUSTOMER,
+                                ):
+                                    await asyncio.sleep(seconds)
 
                         occurred_at.FromDatetime(DateTimeWithTimeZone.now())
                         self._tasks_cache.update_task_info(

@@ -202,6 +202,7 @@ py_library(
         requirement("opentelemetry-sdk"),
         requirement("opentelemetry-exporter-otlp-proto-grpc"),
         requirement("opentelemetry-instrumentation-grpc"),
+        ":headers_py",
         ":once_py",
         ":signals_py",
         "@com_github_reboot_dev_reboot//log:log_py",

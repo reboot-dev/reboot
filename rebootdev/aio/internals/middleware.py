@@ -1,5 +1,6 @@
 import functools
 import grpc
+import rebootdev.aio.tracing
 import uuid
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
@@ -173,18 +174,22 @@ class Middleware(ABC):
         context_type: type[ContextT],
         task: Optional[TaskEffect] = None,
     ) -> Iterator[ContextT]:
-        """Context manager for ensuring that we reset the asyncio context
+        """
+        Context manager for ensuring that we reset the asyncio context
         variable to the previous context.
+
+        Also ensures that the tracing context is set up correctly.
         """
         context: Optional[Context] = Context.get()
         try:
-            yield self.create_context(
-                headers=headers,
-                state_type_name=state_type_name,
-                method=method,
-                context_type=context_type,
-                task=task,
-            )
+            with rebootdev.aio.tracing.context_from_headers(headers):
+                yield self.create_context(
+                    headers=headers,
+                    state_type_name=state_type_name,
+                    method=method,
+                    context_type=context_type,
+                    task=task,
+                )
         finally:
             if context is not None:
                 Context.set(context)
