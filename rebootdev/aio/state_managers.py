@@ -1015,6 +1015,7 @@ class SidecarStateManager(
 
         await authorize(state)
 
+    @function_span()
     async def _load(
         self,
         context: Context,
@@ -1056,7 +1057,8 @@ class SidecarStateManager(
             # the caller is not a participant of.
             with span(
                 state_name=state_type_name,
-                span_name="_load - awaiting 'ongoing_transaction'"
+                span_name="rebootdev.aio.state_managers._load() - "
+                "awaiting 'ongoing_transaction'"
             ):
                 ongoing_transaction: Optional[
                     StateManager.Transaction] = self._participant_transactions[
@@ -1089,7 +1091,8 @@ class SidecarStateManager(
         if transaction is not None:
             with span(
                 state_name=state_type_name,
-                span_name="_load - get state if transaction is not 'None'"
+                span_name="rebootdev.aio.state_managers._load() - "
+                "get state if transaction is not 'None'"
             ):
                 # Need to set transaction state if this is the first time
                 # doing a load within a transaction for this actor.
@@ -1128,7 +1131,8 @@ class SidecarStateManager(
         if load is None:
             with span(
                 state_name=state_type_name,
-                span_name="_load - loading the state first time"
+                span_name="rebootdev.aio.state_managers._load() - "
+                "loading the state first time"
             ):
                 load = asyncio.Event()
                 self._loads[state_type_name][state_ref] = load
@@ -1136,7 +1140,8 @@ class SidecarStateManager(
                 try:
                     with span(
                         state_name=state_type_name,
-                        span_name="_load - load_actor_state"
+                        span_name="rebootdev.aio.state_managers._load() "
+                        "- load_actor_state"
                     ):
                         data: Optional[
                             bytes
@@ -1146,7 +1151,8 @@ class SidecarStateManager(
                     if data is not None:
                         with span(
                             state_name=state_type_name,
-                            span_name="_load - parseFromString"
+                            span_name="rebootdev.aio.state_managers._load() "
+                            "- parseFromString"
                         ):
                             state = state_type()
                             state.ParseFromString(data)
@@ -1194,7 +1200,8 @@ class SidecarStateManager(
                         # this function.
                         with span(
                             state_name=state_type_name,
-                            span_name="_load - putting new state on queues"
+                            span_name="rebootdev.aio.state_managers._load() "
+                            "- putting new state on queues"
                         ):
                             queues: Optional[
                                 list[asyncio.Queue[_StreamingReaderItem]]
@@ -1274,7 +1281,8 @@ class SidecarStateManager(
             # writer and will successfully be able to load).
             with span(
                 state_name=state_type_name,
-                span_name="_load - waiting for the load",
+                span_name="rebootdev.aio.state_managers._load() - "
+                "waiting for the load",
             ):
                 await load.wait()
                 return await self._load(
@@ -2039,20 +2047,17 @@ class SidecarStateManager(
         async with mutator_or_transaction_writer_lock:
             # Every reader/writer gets a copy of their own state so
             # that they can execute concurrently.
+            loaded_result = await self._load(
+                context,
+                state_type,
+                authorize=authorize,
+                from_constructor=from_constructor,
+                requires_constructor=requires_constructor,
+            )
             with span(
                 state_name=state_type_name,
-                span_name="writer - _load state",
-            ):
-                loaded_result = await self._load(
-                    context,
-                    state_type,
-                    authorize=authorize,
-                    from_constructor=from_constructor,
-                    requires_constructor=requires_constructor,
-                )
-            with span(
-                state_name=state_type_name,
-                span_name="Writer - Copy State",
+                span_name="rebootdev.aio.state_managers."
+                "SidecarStateManager.writer() - Copy State",
             ):
                 state_copy = state_type()
                 state_copy.CopyFrom(loaded_result)

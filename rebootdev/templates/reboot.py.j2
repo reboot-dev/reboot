@@ -5210,13 +5210,13 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
                 bytes_result
             )
 
-            if result.HasField('status'):
+            if result.HasField('status_json'):
                 raise (
                     {{ state.proto.name }}
                     .{{ method.proto.name }}Aborted
                     .from_status(
                         IMPORT_google_protobuf_json_format.ParseDict(
-                            result.status,
+                            result.status_json,
                             IMPORT_google_rpc_status_pb2.Status(),
                         )
                     )
@@ -5344,13 +5344,13 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
                             )
                         )
 
-                if result.HasField('status'):
+                if result.HasField('status_json'):
                     raise (
                         {{ state.proto.name }}
                         .{{ method.proto.name }}Aborted
                         .from_status(
                             IMPORT_google_protobuf_json_format.ParseDict(
-                                result.status,
+                                result.status_json,
                                 IMPORT_google_rpc_status_pb2.Status(),
                             )
                         )
@@ -5361,9 +5361,6 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
                 with IMPORT_reboot_aio_tracing.span(
                     state_name=f"{context.state_type_name}('{context.state_id}')",
                     span_name="response ParseFromString",
-                    # The naming above matches Python, but not TypeScript.
-                    python_specific=True,
-                    level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
                     return {{ method.output_type }}.FromString(result.response)
     {% elif method.options.proto.kind == 'workflow' %}
@@ -5437,13 +5434,13 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
                 bytes_result
             )
 
-            if result.HasField('status'):
+            if result.HasField('status_json'):
                 raise (
                     {{ state.proto.name }}
                     .{{ method.proto.name }}Aborted
                     .from_status(
                         IMPORT_google_protobuf_json_format.ParseDict(
-                            result.status,
+                            result.status_json,
                             IMPORT_google_rpc_status_pb2.Status(),
                         )
                     )

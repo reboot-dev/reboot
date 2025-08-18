@@ -29,6 +29,10 @@ from typing import Awaitable, Callable, Optional, Sequence, TypeVar
 # 'reboot_native.cc'.
 launch_subprocess_consensus: Callable[[str], Awaitable[str]]
 
+# Functions that will be run the next time the event loop's `read_fd`
+# has bytes pushed to it. This is intended to be used by
+# `reboot_native.cc` to register a callback that runs C++
+# functions that should run under the Python GIL.
 run_functions: Callable[[], None]
 
 
@@ -39,6 +43,9 @@ class EventLoopThread:
     """
 
     def __init__(self, read_fd):
+        # A file descriptor that we can send bytes to to trigger the
+        # event loop to run `run_functions`. The content of the bytes
+        # doesn't matter.
         self._read_fd = read_fd
 
         self._loop = asyncio.new_event_loop()
@@ -261,7 +268,7 @@ class NodeAdaptorAuthorizer(Authorizer[Message, Message]):
         self,
         context: ReaderContext,
         cancelled: asyncio.Future[None],
-        bytes_call: bytes,
+        bytes_call: bytes,  # Serialized `AuthorizeCall`.
     ) -> bytes:
         raise NotImplementedError
 
@@ -345,7 +352,7 @@ class NodeAdaptorTokenVerifier(TokenVerifier):
         self,
         context: ReaderContext,
         cancelled: asyncio.Future[None],
-        bytes_call: bytes,
+        bytes_call: bytes,  # Serialized `VerifyTokenCall`.
     ) -> Optional[bytes]:
         raise NotImplementedError()
 

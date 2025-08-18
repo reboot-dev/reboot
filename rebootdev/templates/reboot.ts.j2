@@ -567,7 +567,7 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
     } catch (e) {
       if (e instanceof reboot_api.Aborted) {
         return reboot_api.nodejs_pb.TrampolineResult.fromJson({
-          status: e.toStatus()
+          status_json: e.toStatus()
         }).toBinary();
       }
 

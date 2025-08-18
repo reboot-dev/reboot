@@ -60,8 +60,8 @@ message TrampolineResult {
 
   // A reader returns response or status.
   //
-  // A writer, transaction, or workflow returns response (and state)
-  // or status.
+  // A writer, transaction, or workflow returns a serialized response
+  // (and state) or a serialized status.
   optional bytes response = 1;
 
   // JSON representation of `google.rpc.Status`.
@@ -69,10 +69,10 @@ message TrampolineResult {
   // TODO(benh): this is sent as JSON because `protoc-gen-es`
   // doesn't have `google.rpc.Status` and so we have our own
   // implementation which only has JSON support for now.
-  optional string status = 2;
+  optional string status_json = 2;
 
-  // `state` is optional because we don't pass it for a `reader` or a
-  // `workflow`.
+  // Serialized protobuf `state` is optional because we don't pass it
+  // for a `reader` or a `workflow`.
   optional bytes state = 4;
 }
 
