@@ -11,7 +11,7 @@ import threading
 from abc import abstractmethod
 from google.protobuf import any_pb2
 from google.protobuf.message import Message
-from rbt.v1alpha1 import errors_pb2, tasks_pb2
+from rbt.v1alpha1 import errors_pb2, nodejs_pb2, tasks_pb2
 from rebootdev.aio.aborted import Aborted, SystemAborted
 from rebootdev.aio.auth import Auth
 from rebootdev.aio.auth.authorizers import Authorizer
@@ -247,11 +247,9 @@ class NodeAdaptorAuthorizer(Authorizer[Message, Message]):
     @abstractmethod
     async def _authorize(
         self,
-        method_name: str,
         context: ReaderContext,
         cancelled: asyncio.Future[None],
-        bytes_state: Optional[bytes],
-        bytes_request: Optional[bytes],
+        bytes_call: bytes,
     ) -> bytes:
         raise NotImplementedError
 
@@ -264,14 +262,6 @@ class NodeAdaptorAuthorizer(Authorizer[Message, Message]):
         request: Optional[Message],
         **kwargs,
     ) -> Authorizer.Decision:
-        # Convert the Request type to Any, since it could be any of a
-        # number of types.
-        bytes_request = None if request is None else _message_to_serialized_any(
-            request
-        )
-
-        bytes_state = None if state is None else state.SerializeToString()
-
         cancelled: asyncio.Future[None] = asyncio.Future()
 
         try:
@@ -280,11 +270,34 @@ class NodeAdaptorAuthorizer(Authorizer[Message, Message]):
             # from `kwargs` to positional. See
             # https://github.com/pybind/pybind11/pull/5406
             bytes_decision = await self._authorize(
-                method_name,
                 context,
                 cancelled,
-                bytes_state,
-                bytes_request,
+                nodejs_pb2.AuthorizeCall(
+                    # NOTE: this is the fully qualified name,
+                    # different than `context.method`.
+                    method_name=method_name,
+                    context=nodejs_pb2.Context(
+                        method=context.method,
+                        state_id=context.state_id,
+                        state_type_name=context.state_type_name,
+                        caller_bearer_token=context.caller_bearer_token,
+                        cookie=context.cookie,
+                        app_internal=context.app_internal,
+                        auth=(
+                            None if context.auth is None else
+                            context.auth.to_proto_bytes()
+                        ),
+                    ),
+                    state=(
+                        None if state is None else state.SerializeToString()
+                    ),
+                    request=(
+                        # Convert the Request type to Any, since
+                        # it could be any of a number of types.
+                        None if request is None else
+                        _message_to_serialized_any(request)
+                    ),
+                ).SerializeToString(),
             )
         except asyncio.CancelledError:
             cancelled.set_result(None)
@@ -320,7 +333,7 @@ class NodeAdaptorTokenVerifier(TokenVerifier):
         self,
         context: ReaderContext,
         cancelled: asyncio.Future[None],
-        token: Optional[str],
+        bytes_call: bytes,
     ) -> Optional[bytes]:
         raise NotImplementedError()
 
@@ -332,7 +345,21 @@ class NodeAdaptorTokenVerifier(TokenVerifier):
         cancelled: asyncio.Future[None] = asyncio.Future()
         try:
             # TODO: See the note before the call in `NodeAdaptorAuthorizer`.
-            auth_bytes = await self._verify_token(context, cancelled, token)
+            auth_bytes = await self._verify_token(
+                context,
+                cancelled,
+                nodejs_pb2.VerifyTokenCall(
+                    context=nodejs_pb2.Context(
+                        method=context.method,
+                        state_id=context.state_id,
+                        state_type_name=context.state_type_name,
+                        caller_bearer_token=context.caller_bearer_token,
+                        cookie=context.cookie,
+                        app_internal=context.app_internal,
+                    ),
+                    token=token,
+                ).SerializeToString(),
+            )
         except asyncio.CancelledError:
             cancelled.set_result(None)
             raise

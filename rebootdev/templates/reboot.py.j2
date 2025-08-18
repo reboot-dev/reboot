@@ -85,6 +85,7 @@ import rebootdev.settings as IMPORT_reboot_settings
 import rebootdev.nodejs.python as IMPORT_reboot_nodejs_python
 from rebootdev.time import DateTimeWithTimeZone as IMPORT_reboot_time_DateTimeWithTimeZone
 import rbt.v1alpha1 as IMPORT_rbt_v1alpha1
+import rbt.v1alpha1.nodejs_pb2 as IMPORT_rbt_v1alpha1_nodejs_pb2
 import google.protobuf.any_pb2 as IMPORT_google_protobuf_any_pb2
 
 {% if imports | length > 0 %}
@@ -5143,41 +5144,53 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
         {% if method.proto.client_streaming or method.options.proto.state_streaming or method.proto.server_streaming %}
         raise NotImplementedError
         {% else %}
-        json_state = IMPORT_google_protobuf_json_format.MessageToJson(state)
-        json_request = IMPORT_google_protobuf_json_format.MessageToJson(request)
+        bytes_call = IMPORT_rbt_v1alpha1_nodejs_pb2.TrampolineCall(
+            kind=IMPORT_rbt_v1alpha1_nodejs_pb2.{{ method.options.proto.kind }},
+            context=IMPORT_rbt_v1alpha1_nodejs_pb2.Context(
+                method='{{ method.proto.name }}',
+                state_id=context.state_id,
+                state_type_name=context.state_type_name,
+                caller_bearer_token=context.caller_bearer_token,
+                cookie=context.cookie,
+                app_internal=context.app_internal,
+                auth=(
+                    None if context.auth is None
+                    else context.auth.to_proto_bytes()
+                ),
+            ),
+            state=state.SerializeToString(),
+            request=request.SerializeToString(),
+        ).SerializeToString()
 
         cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-        json_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
 
         try:
-            json_result_future = self._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
                 self._js_servicer_reference,
-                '{{ method.options.proto.kind }}',
-                '{{ method.proto.name }}',
                 context,
                 cancelled,
-                json_state,
-                json_request,
+                bytes_call,
             )
             # NOTE: we need to `asyncio.shield` so that we can still
             # correctly wait for this future to complete even if we
             # are cancelled.
-            assert json_result_future is not None
-            json_result = await IMPORT_asyncio.shield(json_result_future)
+            assert bytes_result_future is not None
+            bytes_result = await IMPORT_asyncio.shield(bytes_result_future)
         except IMPORT_asyncio.CancelledError:
             cancelled.set_result(None)
 
             # NOTE: unlike for a `writer` or `transaction`, we DO NOT
-            # _need_ to wait for `json_result_future` because this is a
+            # _need_ to wait for `bytes_result_future` because this is a
             # reader and we can execute multiple readers
             # simultaneously. That being said, we still want to give
             # good feedback that the RPC has been cancelled, and there
             # is no harm waiting because other readers can still be
             # called.
-            if json_result_future is not None:
+            if bytes_result_future is not None:
                 await self._wait_for_cancelled(
-                    json_result_future,
+                    bytes_result_future,
                     '{{ state.proto.name }}.{{ method.proto.name }}',
                 )
 
@@ -5193,24 +5206,25 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
         else:
             cancelled.cancel()
 
-            result = IMPORT_json.loads(json_result)
+            result = IMPORT_rbt_v1alpha1_nodejs_pb2.TrampolineResult.FromString(
+                bytes_result
+            )
 
-            if 'response' in result:
-                return IMPORT_google_protobuf_json_format.ParseDict(
-                    result['response'],
-                    {{ method.output_type }}(),
-                )
-            elif 'status' in result:
+            if result.HasField('status'):
                 raise (
                     {{ state.proto.name }}
                     .{{ method.proto.name }}Aborted
                     .from_status(
                         IMPORT_google_protobuf_json_format.ParseDict(
-                            result['status'],
+                            result.status,
                             IMPORT_google_rpc_status_pb2.Status(),
                         )
                     )
                 )
+
+            assert result.HasField('response')
+
+            return {{ method.output_type }}.FromString(result.response)
         {% endif %}
         {% if method.proto.server_streaming %}
         yield  # Necessary for type checking.
@@ -5235,17 +5249,32 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
         ):
             with IMPORT_reboot_aio_tracing.span(
                 state_name=f"{context.state_type_name}('{context.state_id}')",
-                span_name="Copy State and Request to JSON",
+                span_name="Create and serialize `TrampolineCall`",
                 # The naming above matches Python, but not TypeScript.
                 python_specific=True,
                 level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
             ):
-                json_state = IMPORT_google_protobuf_json_format.MessageToJson(state)
-                json_request = IMPORT_google_protobuf_json_format.MessageToJson(request)
+                bytes_call = IMPORT_rbt_v1alpha1_nodejs_pb2.TrampolineCall(
+                    kind=IMPORT_rbt_v1alpha1_nodejs_pb2.{{ method.options.proto.kind }},
+                    context=IMPORT_rbt_v1alpha1_nodejs_pb2.Context(
+                        method='{{ method.proto.name }}',
+                        state_id=context.state_id,
+                        state_type_name=context.state_type_name,
+                        caller_bearer_token=context.caller_bearer_token,
+                        cookie=context.cookie,
+                        app_internal=context.app_internal,
+                        auth=(
+                            None if context.auth is None
+                            else context.auth.to_proto_bytes()
+                        ),
+                    ),
+                    state=state.SerializeToString(),
+                    request=request.SerializeToString(),
+                ).SerializeToString()
 
             cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-            json_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+            bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
 
             try:
                 with IMPORT_reboot_aio_tracing.span(
@@ -5255,29 +5284,26 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
-                    json_result_future = self._trampoline(  # type: ignore[attr-defined]
+                    bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
                         self._js_servicer_reference,
-                        '{{ method.options.proto.kind }}',
-                        '{{ method.proto.name }}',
                         context,
                         cancelled,
-                        json_state,
-                        json_request,
+                        bytes_call,
                     )
                     # NOTE: we need to `asyncio.shield` so that we can still
                     # correctly wait for this future to complete even if we
                     # are cancelled.
-                    assert json_result_future is not None
-                    json_result = await IMPORT_asyncio.shield(json_result_future)
+                    assert bytes_result_future is not None
+                    bytes_result = await IMPORT_asyncio.shield(bytes_result_future)
             except IMPORT_asyncio.CancelledError:
                 cancelled.set_result(None)
 
-                # NOTE: we MUST wait for `json_result_future` because this
+                # NOTE: we MUST wait for `bytes_result_future` because this
                 # is a `writer` or `transaction` and we CAN NOT execute
                 # multiple simultaneously.
-                if json_result_future is not None:
+                if bytes_result_future is not None:
                     await self._wait_for_cancelled(
-                        json_result_future,
+                        bytes_result_future,
                         '{{ state.proto.name }}.{{ method.proto.name }}',
                     )
 
@@ -5295,101 +5321,103 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
 
                 with IMPORT_reboot_aio_tracing.span(
                     state_name=f"{context.state_type_name}('{context.state_id}')",
-                    span_name="JSON.loads",
+                    span_name="result ParseFromString",
                     # The naming above matches Python, but not TypeScript.
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 ):
-                    result = IMPORT_json.loads(json_result)
+                    result = IMPORT_rbt_v1alpha1_nodejs_pb2.TrampolineResult.FromString(
+                        bytes_result
+                    )
 
-                if 'effects' in result:
-                    effects = result['effects']
+                if result.HasField('state'):
                     with IMPORT_reboot_aio_tracing.span(
                         state_name=f"{context.state_type_name}('{context.state_id}')",
-                        span_name="Result state copy ParseDict",
-                        # The naming above matches Python, but not TypeScript.
-                        python_specific=True,
-                        level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
-                    ):
-                        parsed_dict = IMPORT_google_protobuf_json_format.ParseDict(
-                            effects['state'],
-                            {{ state.pb2_name }}.{{ state.proto.name }}(),
-                        )
-                    with IMPORT_reboot_aio_tracing.span(
-                        state_name=f"{context.state_type_name}('{context.state_id}')",
-                        span_name="Result state copy from effects",
+                        span_name="state ParseFromString",
                         # The naming above matches Python, but not TypeScript.
                         python_specific=True,
                         level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                     ):
                         state.CopyFrom(
-                            parsed_dict
+                            {{ state.pb2_name }}.{{ state.proto.name }}.FromString(
+                                result.state
+                            )
                         )
 
-                    assert not hasattr(effects, 'tasks'), "JS tasks not yet implemented"
-
-                    with IMPORT_reboot_aio_tracing.span(
-                        state_name=f"{context.state_type_name}('{context.state_id}')",
-                        span_name="Response with ParseDict",
-                        # The naming above matches Python, but not TypeScript.
-                        python_specific=True,
-                        level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
-                    ):
-                        return IMPORT_google_protobuf_json_format.ParseDict(
-                            effects['response'],
-                            {{ method.output_type }}(),
-                        )
-                elif 'status' in result:
+                if result.HasField('status'):
                     raise (
                         {{ state.proto.name }}
                         .{{ method.proto.name }}Aborted
                         .from_status(
                             IMPORT_google_protobuf_json_format.ParseDict(
-                                result['status'],
+                                result.status,
                                 IMPORT_google_rpc_status_pb2.Status(),
                             )
                         )
                     )
+
+                assert result.HasField('response')
+
+                with IMPORT_reboot_aio_tracing.span(
+                    state_name=f"{context.state_type_name}('{context.state_id}')",
+                    span_name="response ParseFromString",
+                    # The naming above matches Python, but not TypeScript.
+                    python_specific=True,
+                    level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                ):
+                    return {{ method.output_type }}.FromString(result.response)
     {% elif method.options.proto.kind == 'workflow' %}
     async def {{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
-        json_request = IMPORT_google_protobuf_json_format.MessageToJson(request)
+        bytes_call = IMPORT_rbt_v1alpha1_nodejs_pb2.TrampolineCall(
+            kind=IMPORT_rbt_v1alpha1_nodejs_pb2.{{ method.options.proto.kind }},
+            context=IMPORT_rbt_v1alpha1_nodejs_pb2.Context(
+                method='{{ method.proto.name }}',
+                state_id=context.state_id,
+                state_type_name=context.state_type_name,
+                caller_bearer_token=context.caller_bearer_token,
+                cookie=context.cookie,
+                app_internal=context.app_internal,
+                auth=(
+                    None if context.auth is None
+                    else context.auth.to_proto_bytes()
+                ),
+            ),
+            request=request.SerializeToString(),
+        ).SerializeToString()
 
         cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
-        json_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
+        bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
 
         try:
-            json_result_future = self._trampoline(  # type: ignore[attr-defined]
+            bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
                 self._js_servicer_reference,
-                '{{ method.options.proto.kind }}',
-                '{{ method.proto.name }}',
                 context,
                 cancelled,
-                '{}',
-                json_request,
+                bytes_call,
             )
             # NOTE: we need to `asyncio.shield` so that we can still
             # correctly wait for this future to complete even if we
             # are cancelled.
-            assert json_result_future is not None
-            json_result = await IMPORT_asyncio.shield(json_result_future)
+            assert bytes_result_future is not None
+            bytes_result = await IMPORT_asyncio.shield(bytes_result_future)
         except IMPORT_asyncio.CancelledError:
             cancelled.set_result(None)
 
             # NOTE: unlike for a `writer` or `transaction`, we DO NOT
-            # _need_ to wait for `json_result_future` because this is
+            # _need_ to wait for `bytes_result_future` because this is
             # a workflow and we can execute multiple workflows
             # simultaneously. That being said, we still want to give
             # good feedback that the RPC has been cancelled, and there
             # is no harm waiting because other writers can still be
             # called.
-            if json_result_future is not None:
+            if bytes_result_future is not None:
                 await self._wait_for_cancelled(
-                    json_result_future,
+                    bytes_result_future,
                     '{{ state.proto.name }}.{{ method.proto.name }}',
                 )
 
@@ -5405,24 +5433,24 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
         else:
             cancelled.cancel()
 
-            result = IMPORT_json.loads(json_result)
+            result = IMPORT_rbt_v1alpha1_nodejs_pb2.TrampolineResult.FromString(
+                bytes_result
+            )
 
-            if 'response' in result:
-                return IMPORT_google_protobuf_json_format.ParseDict(
-                    result['response'],
-                    {{ method.output_type }}(),
-                )
-            elif 'status' in result:
+            if result.HasField('status'):
                 raise (
                     {{ state.proto.name }}
                     .{{ method.proto.name }}Aborted
                     .from_status(
                         IMPORT_google_protobuf_json_format.ParseDict(
-                            result['status'],
+                            result.status,
                             IMPORT_google_rpc_status_pb2.Status(),
                         )
                     )
                 )
+
+            assert result.HasField('response')
+            return {{ method.output_type }}.FromString(result.response)
     {% endif %}
         raise RuntimeError("Unexpected result from {{ method.proto.name }}")
 

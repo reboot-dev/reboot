@@ -242,6 +242,16 @@ const {{ client.proto.state_name }}{{ method.proto.name }}RequestFromJsonString 
   );
 };
 
+// Helper for getting the expected shape of a request, i.e., either a
+// Zod shape or a protobuf instance, from binary.
+const {{ client.proto.state_name }}{{ method.proto.name }}RequestFromBinary = (
+  bytesRequest: Uint8Array
+): {{ client.proto.state_name }}.{{ method.proto.name }}Request => {
+  return {{ client.proto.state_name }}{{ method.proto.name }}RequestFromProtobufShape(
+    {{ method.input_type }}.fromBinary(bytesRequest)
+  );
+};
+
 // Helper for getting a protobuf instance for a request from the
 // expected shape, i.e., either a Zod shape or a protobuf shape.
 const {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf = (
@@ -484,108 +494,168 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
     {% elif method.options.proto.kind == 'workflow' %}
     context: WorkflowContext,
     {% endif %}
-    jsonState: string,
-    jsonRequest: string
-  ): Promise<string> {
-    const span = await (await getTracer()).startSpan("Node.js _{{ method.proto.name }}");
-    try {
-      {% if method.options.proto.kind != 'workflow' %}
-      let state = {{ state.proto.name }}FromJsonString(
-        jsonState,
-        // Don't validate if we're a constructor because non-optional
-        // fields that this constructor might be setting will be invalid.
-        { validate: {% if method.options.proto.constructor %}false{% else %}true{% endif %} },
-      );
-      {% endif %}
-      {% if method.options.proto.kind == 'writer' %}
-      if (context.stateId in ongoingTransactionStates) {
-        {% if options.proto.zod %}
-        state = reboot_api.convertFromProtobufShape(
-          api.{{ state.proto.name }}.state,
-          ongoingTransactionStates[context.stateId].clone()
-        );
-        {% else %}
-        state = ongoingTransactionStates[context.stateId].clone();
-        {% endif %}
-      }
-      {% elif method.options.proto.kind == 'transaction' %}
-      // TODO: assert that there are no ongoing transactions for this state.
-      ongoingTransactionStates[context.stateId] = state;
-      {% endif %}
-
-      let request = {{ state.proto.name }}{{ method.proto.name }}RequestFromJsonString(jsonRequest);
-
-      let partialResponse = await reboot.runWithContext(context, () => {
-        return this.__{{ method.proto.name }}(
-          context,
+    bytesState: Uint8Array | undefined,  // `undefined` for a workflow.
+    bytesRequest: Uint8Array
+  ): Promise<Uint8Array> {
+    const tracer = await getTracer();
+    return await tracer.startActiveSpan(
+      "Node.js _{{ method.proto.name }}",
+      async (span) => {
+        try {
           {% if method.options.proto.kind != 'workflow' %}
-          state,
+          let state = tracer.startActiveSpan(
+            "Node.js _{{ method.proto.name }} state parse",
+            (span) => {
+              const state = {{ state.proto.name }}FromBinary(
+                bytesState,
+                // Don't validate if we're a constructor because non-optional
+                // fields that this constructor might be setting will be invalid.
+                { validate: {% if method.options.proto.constructor %}false{% else %}true{% endif %} },
+              );
+              span.end();
+              return state;
+            });
           {% endif %}
-          request
-        );
-      });
-
-      const response = {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf(partialResponse);
-
-      {% if options.proto.zod and method.options.proto.kind != 'workflow' %}
-      // Validate and convert back to protobuf when using Zod.
-      state = {{ state.proto.name }}ToProtobuf(state);
-      {% endif %}
-
-      {% if method.options.proto.kind == 'writer' %}
-      // TODO: it's premature to overwrite the state now given that the
-      // writer might still "fail" and an error will get propagated back
-      // to the ongoing transaction which will still see the effects of
-      // this writer. What we should be doing instead is creating a
-      // callback API that we invoke only after a writer completes
-      // that lets us update the state _reference_ then.
-      if (context.stateId in ongoingTransactionStates) {
-        ongoingTransactionStates[context.stateId].copyFrom(state);
-      }
-      {% elif method.options.proto.kind == 'transaction' %}
-      delete ongoingTransactionStates[context.stateId];
-      {% endif %}
-
-      const finalResponse = JSON.stringify(
-        {
-          {% if method.options.proto.kind in ['writer', 'transaction'] %}
-          effects: {
-            state: state.toJson(),
-            response: response.toJson(),
-          },
-          {% else %}
-          response: response.toJson()
+          {% if method.options.proto.kind == 'writer' %}
+          if (context.stateId in ongoingTransactionStates) {
+            {% if options.proto.zod %}
+            state = reboot_api.convertFromProtobufShape(
+              api.{{ state.proto.name }}.state,
+              ongoingTransactionStates[context.stateId].clone()
+            );
+            {% else %}
+            state = ongoingTransactionStates[context.stateId].clone();
+            {% endif %}
+          }
+          {% elif method.options.proto.kind == 'transaction' %}
+          // TODO: assert that there are no ongoing transactions for this state.
+          ongoingTransactionStates[context.stateId] = state;
           {% endif %}
+
+          const request = tracer.startActiveSpan(
+            "Node.js _{{ method.proto.name }} request parse",
+            (span) => {
+              const request = {{ state.proto.name }}{{ method.proto.name }}RequestFromBinary(bytesRequest);
+              span.end();
+              return request;
+            });
+
+          let partialResponse = await reboot.runWithContext(context, async () => {
+            return await tracer.startActiveSpan(
+              "Node.js {{ method.proto.name | to_lower_camel }}",
+              async (span) => {
+                const partialResponse = await this.__{{ method.proto.name }}(
+                  context,
+                  {% if method.options.proto.kind != 'workflow' %}
+                  state,
+                  {% endif %}
+                  request
+                );
+                span.end();
+                return partialResponse;
+              }
+            );
+          });
+
+          const response = {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf(partialResponse);
+
+          {% if options.proto.zod and method.options.proto.kind != 'workflow' %}
+          // Validate and convert back to protobuf when using Zod.
+          state = {{ state.proto.name }}ToProtobuf(state);
+          {% endif %}
+
+          {% if method.options.proto.kind == 'writer' %}
+          // TODO: it's premature to overwrite the state now given that the
+          // writer might still "fail" and an error will get propagated back
+          // to the ongoing transaction which will still see the effects of
+          // this writer. What we should be doing instead is creating a
+          // callback API that we invoke only after a writer completes
+          // that lets us update the state _reference_ then.
+          if (context.stateId in ongoingTransactionStates) {
+            ongoingTransactionStates[context.stateId].copyFrom(state);
+          }
+          {% elif method.options.proto.kind == 'transaction' %}
+          delete ongoingTransactionStates[context.stateId];
+          {% endif %}
+
+          const result = tracer.startActiveSpan(
+            "Node.js _{{ method.proto.name }} serialize result",
+            (span) => {
+              const result = new reboot_api.nodejs_pb.TrampolineResult();
+
+              {% if method.options.proto.kind in ['writer', 'transaction'] %}
+              result.state = state.toBinary();
+              {% endif %}
+
+              result.response = response.toBinary();
+
+              span.end();
+
+              return result.toBinary();
+            });
+
+          return result;
+        } catch (e) {
+          if (e instanceof reboot_api.Aborted) {
+            return reboot_api.nodejs_pb.TrampolineResult.fromJson({
+              status: e.toStatus()
+            }).toBinary();
+          }
+
+          // Ensure we have an `Error` and then `console.error()` it so
+          // that developers see a stack trace of what is going on.
+          //
+          // Only do this if it IS NOT an `Aborted` which we handle above.
+          const error = ensureError(e);
+          // Write an empty message which includes a newline to make it
+          // easier to identify the stack trace.
+          console.error("");
+          console.error(error);
+          console.error("");
+
+          console.error(
+            `Unhandled error in '{{ proto.package_name }}.{{ state.proto.name }}.{{ method.proto.name | to_lower_camel }}'; propagating as 'Unknown'\n`
+          );
+
+          throw error;
+        } finally {
+          span.end();
         }
-      );
+      });
+  }
 
-      span.end();
+  async __dispatch(
+    external,
+    cancelled: Promise<void>,
+    bytesCall: Uint8Array,
+  ) {
+    const call = reboot_api.nodejs_pb.TrampolineCall.fromBinary(bytesCall);
 
-      return finalResponse;
-    } catch (e) {
-      if (e instanceof reboot_api.Aborted) {
-        return JSON.stringify({
-          status: e.toStatus()
-        });
-      }
+    const context = reboot.Context.fromNativeExternal({
+      external,
+      kind: reboot_api.nodejs_pb.Kind[call.kind],
+      stateId: call.context.stateId,
+      method: call.context.method,
+      stateTypeName: call.context.stateTypeName,
+      callerBearerToken: call.context.callerBearerToken,
+      cookie: call.context.cookie,
+      appInternal: call.context.appInternal,
+      auth: (
+        call.context.auth !== undefined
+          ? reboot.Auth.fromProtoBytes(call.context.auth)
+          : null
+      ),
+      cancelled,
+    });
 
-      // Ensure we have an `Error` and then `console.error()` it so
-      // that developers see a stack trace of what is going on.
-      //
-      // Only do this if it IS NOT an `Aborted` which we handle above.
-      const error = ensureError(e);
-      // Write an empty message which includes a newline to make it
-      // easier to identify the stack trace.
-      console.error("");
-      console.error(error);
-      console.error("");
+    // TODO: as an optimization consider marking `context` as
+    // "expired" before returning so that anyone else that tries to
+    // use it will get an exception that the method for which this
+    // context was valid has completed, that way we don't need to pay
+    // to "interrupt" Python to let Python know that the Python
+    // context instance can now be safely deleted.
 
-      console.error(
-        `Unhandled error in '{{ proto.package_name }}.{{ state.proto.name }}.{{ method.proto.name | to_lower_camel }}'; propagating as 'Unknown'\n`
-      );
-
-      throw error;
-    }
+    return this["_" + call.context.method](context, call.state, call.request);
   }
 
   {% endfor %}
@@ -617,12 +687,30 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
 
     if (authorizer !== null) {
       authorizer._authorize = async function(
-        methodName: string,
-        context: ReaderContext,
-        bytesState?: Uint8Array,
-        bytesRequest?: Uint8Array
+        external: any,
+        cancelled: Promise<void>,
+        bytesCall: Uint8Array
       ): Promise<Uint8Array> {
-        const anyRequest = protobuf_es.Any.fromBinary(bytesRequest);
+        const call = reboot_api.nodejs_pb.AuthorizeCall.fromBinary(bytesCall);
+
+        const context = reboot.Context.fromNativeExternal({
+          external,
+          kind: "reader",
+          stateId: call.context.stateId,
+          method: call.context.method,
+          stateTypeName: call.context.stateTypeName,
+          callerBearerToken: call.context.callerBearerToken,
+          cookie: call.context.cookie,
+          appInternal: call.context.appInternal,
+          auth: (
+            call.context.auth !== undefined
+              ? reboot.Auth.fromProtoBytes(call.context.auth)
+              : null
+          ),
+          cancelled,
+        }) as reboot.ReaderContext;
+
+        const anyRequest = protobuf_es.Any.fromBinary(call.request);
         {% set ns = namespace(nested_loop_first = true) %}
         {% for service in state.services %}
         {% for method in service.methods %}
@@ -639,10 +727,15 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
             // possible validation errors if using Zod are logged in
             // the `catch`.
             const state: {{ state.proto.name }}.State | undefined =
-              bytesState && {{ state.proto.name }}FromBinary(bytesState);
+              call.state && {{ state.proto.name }}FromBinary(call.state);
             const request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape(unpackedRequest);
             return protobuf_es.Any.pack(
-              await authorizer.authorize(methodName, context, state, request)
+              await authorizer.authorize(
+                call.methodName,
+                context,
+                state,
+                request
+              )
             ).toBinary();
           } catch (e) {
             // Ensure we have an `Error` and then `console.error()` it so

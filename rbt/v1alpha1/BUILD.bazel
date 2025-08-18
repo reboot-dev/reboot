@@ -282,6 +282,38 @@ js_proto_library(
 )
 
 proto_library(
+    name = "nodejs_proto",
+    srcs = [":nodejs.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tasks_proto",
+        "@com_google_protobuf//:any_proto",
+    ],
+)
+
+py_proto_library(
+    name = "nodejs_py_proto",
+    visibility = ["//visibility:public"],
+    deps = [":nodejs_proto"],
+)
+
+js_proto_library(
+    name = "nodejs_js_proto",
+    package_json = ":package.json",
+    proto = ":nodejs.proto",
+    proto_deps = [
+        ":nodejs_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        ":tasks_proto",
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+proto_library(
     name = "errors_proto",
     srcs = [":errors.proto"],
     visibility = ["//visibility:public"],
@@ -315,6 +347,7 @@ ts_project(
         ":auth_js_proto",
         ":errors_js_proto",
         ":index.ts",
+        ":nodejs_js_proto",
         ":react_js_proto",
         ":tasks_js_proto",
     ],
