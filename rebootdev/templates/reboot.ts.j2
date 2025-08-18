@@ -166,10 +166,12 @@ const {{ client.proto.state_name }}FromJsonString = (
 };
 
 const {{ client.proto.state_name }}FromBinary = (
-  bytesState: Uint8Array
+  bytesState: Uint8Array,
+  options: { validate: boolean } = { validate: true }
 ): {{ client.proto.state_name }}.State => {
   {% if options.proto.zod %}
-  return reboot_api.validate(
+  if (options.validate) {
+    return reboot_api.validate(
     "{{ client.proto.state_name }}.state",
     api.{{ client.proto.state_name }}.state,
     reboot_api.convertFromProtobuf(
@@ -177,6 +179,12 @@ const {{ client.proto.state_name }}FromBinary = (
       {{ client.proto.state_name }}State.fromBinary(bytesState)
     )
   );
+  } else {
+    return reboot_api.convertFromProtobuf(
+      api.{{ client.proto.state_name }}.state,
+      {{ client.proto.state_name }}State.fromBinary(bytesState)
+    );
+  }
   {% else %}
   return {{ client.proto.state_name }}State.fromBinary(bytesState);
   {% endif %}
