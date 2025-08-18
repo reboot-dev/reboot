@@ -1831,7 +1831,7 @@ class SidecarStateManager(
         async def iterator(
             state: Optional[StateT]
         ) -> AsyncGenerator[tuple[StateT, Optional[uuid.UUID]], None]:
-            if state is not None:
+            if state is not None and queue.qsize() == 0:
                 # Every reader/writer gets a copy of their own state so
                 # that they can execute concurrently.
                 state_copy = state_type()
@@ -1840,6 +1840,9 @@ class SidecarStateManager(
 
             while True:
                 next_item: _StreamingReaderItem = await queue.get()
+
+                # TODO: just get the last item from the queue, but
+                # aggregate all of the idempotency keys.
 
                 # Currently stream is never "closed" so we should
                 # never not have state unless we're in a transaction
