@@ -17,7 +17,7 @@
 {% endfor %}
 {% endfor %}
 
-import { reboot_native, ensureError, getTracer } from "@reboot-dev/reboot";
+import { reboot_native, ensureError } from "@reboot-dev/reboot";
 {% if import_ids|length > 0 %}
 {% for unique_import_id, path in import_ids.items() %}
 import { importPys as {{ unique_import_id }}importPys } from "{{ path }}{% if nodejs_extensions %}.js{% endif %}"
@@ -497,131 +497,97 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
     bytesState: Uint8Array | undefined,  // `undefined` for a workflow.
     bytesRequest: Uint8Array
   ): Promise<Uint8Array> {
-    const tracer = await getTracer();
-    return await tracer.startActiveSpan(
-      "Node.js _{{ method.proto.name }}",
-      async (span) => {
-        try {
+    try {
+      {% if method.options.proto.kind != 'workflow' %}
+      let state = {{ state.proto.name }}FromBinary(
+        bytesState,
+        // Don't validate if we're a constructor because non-optional
+        // fields that this constructor might be setting will be invalid.
+        { validate: {% if method.options.proto.constructor %}false{% else %}true{% endif %} },
+      );
+      {% endif %}
+      {% if method.options.proto.kind == 'writer' %}
+      if (context.stateId in ongoingTransactionStates) {
+        {% if options.proto.zod %}
+        state = reboot_api.convertFromProtobufShape(
+          api.{{ state.proto.name }}.state,
+          ongoingTransactionStates[context.stateId].clone()
+        );
+        {% else %}
+        state = ongoingTransactionStates[context.stateId].clone();
+        {% endif %}
+      }
+      {% elif method.options.proto.kind == 'transaction' %}
+      // TODO: assert that there are no ongoing transactions for this state.
+      ongoingTransactionStates[context.stateId] = state;
+      {% endif %}
+
+      const request = {{ state.proto.name }}{{ method.proto.name }}RequestFromBinary(bytesRequest);
+
+      let partialResponse = await reboot.runWithContext(context, () => {
+        return this.__{{ method.proto.name }}(
+          context,
           {% if method.options.proto.kind != 'workflow' %}
-          let state = tracer.startActiveSpan(
-            "Node.js _{{ method.proto.name }} state parse",
-            (span) => {
-              const state = {{ state.proto.name }}FromBinary(
-                bytesState,
-                // Don't validate if we're a constructor because non-optional
-                // fields that this constructor might be setting will be invalid.
-                { validate: {% if method.options.proto.constructor %}false{% else %}true{% endif %} },
-              );
-              span.end();
-              return state;
-            });
+          state,
           {% endif %}
-          {% if method.options.proto.kind == 'writer' %}
-          if (context.stateId in ongoingTransactionStates) {
-            {% if options.proto.zod %}
-            state = reboot_api.convertFromProtobufShape(
-              api.{{ state.proto.name }}.state,
-              ongoingTransactionStates[context.stateId].clone()
-            );
-            {% else %}
-            state = ongoingTransactionStates[context.stateId].clone();
-            {% endif %}
-          }
-          {% elif method.options.proto.kind == 'transaction' %}
-          // TODO: assert that there are no ongoing transactions for this state.
-          ongoingTransactionStates[context.stateId] = state;
-          {% endif %}
-
-          const request = tracer.startActiveSpan(
-            "Node.js _{{ method.proto.name }} request parse",
-            (span) => {
-              const request = {{ state.proto.name }}{{ method.proto.name }}RequestFromBinary(bytesRequest);
-              span.end();
-              return request;
-            });
-
-          let partialResponse = await reboot.runWithContext(context, async () => {
-            return await tracer.startActiveSpan(
-              "Node.js {{ method.proto.name | to_lower_camel }}",
-              async (span) => {
-                const partialResponse = await this.__{{ method.proto.name }}(
-                  context,
-                  {% if method.options.proto.kind != 'workflow' %}
-                  state,
-                  {% endif %}
-                  request
-                );
-                span.end();
-                return partialResponse;
-              }
-            );
-          });
-
-          const response = {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf(partialResponse);
-
-          {% if options.proto.zod and method.options.proto.kind != 'workflow' %}
-          // Validate and convert back to protobuf when using Zod.
-          state = {{ state.proto.name }}ToProtobuf(state);
-          {% endif %}
-
-          {% if method.options.proto.kind == 'writer' %}
-          // TODO: it's premature to overwrite the state now given that the
-          // writer might still "fail" and an error will get propagated back
-          // to the ongoing transaction which will still see the effects of
-          // this writer. What we should be doing instead is creating a
-          // callback API that we invoke only after a writer completes
-          // that lets us update the state _reference_ then.
-          if (context.stateId in ongoingTransactionStates) {
-            ongoingTransactionStates[context.stateId].copyFrom(state);
-          }
-          {% elif method.options.proto.kind == 'transaction' %}
-          delete ongoingTransactionStates[context.stateId];
-          {% endif %}
-
-          const result = tracer.startActiveSpan(
-            "Node.js _{{ method.proto.name }} serialize result",
-            (span) => {
-              const result = new reboot_api.nodejs_pb.TrampolineResult();
-
-              {% if method.options.proto.kind in ['writer', 'transaction'] %}
-              result.state = state.toBinary();
-              {% endif %}
-
-              result.response = response.toBinary();
-
-              span.end();
-
-              return result.toBinary();
-            });
-
-          return result;
-        } catch (e) {
-          if (e instanceof reboot_api.Aborted) {
-            return reboot_api.nodejs_pb.TrampolineResult.fromJson({
-              status: e.toStatus()
-            }).toBinary();
-          }
-
-          // Ensure we have an `Error` and then `console.error()` it so
-          // that developers see a stack trace of what is going on.
-          //
-          // Only do this if it IS NOT an `Aborted` which we handle above.
-          const error = ensureError(e);
-          // Write an empty message which includes a newline to make it
-          // easier to identify the stack trace.
-          console.error("");
-          console.error(error);
-          console.error("");
-
-          console.error(
-            `Unhandled error in '{{ proto.package_name }}.{{ state.proto.name }}.{{ method.proto.name | to_lower_camel }}'; propagating as 'Unknown'\n`
-          );
-
-          throw error;
-        } finally {
-          span.end();
-        }
+          request
+        );
       });
+
+      const response = {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf(partialResponse);
+
+      {% if options.proto.zod and method.options.proto.kind != 'workflow' %}
+      // Validate and convert back to protobuf when using Zod.
+      state = {{ state.proto.name }}ToProtobuf(state);
+      {% endif %}
+
+      {% if method.options.proto.kind == 'writer' %}
+      // TODO: it's premature to overwrite the state now given that the
+      // writer might still "fail" and an error will get propagated back
+      // to the ongoing transaction which will still see the effects of
+      // this writer. What we should be doing instead is creating a
+      // callback API that we invoke only after a writer completes
+      // that lets us update the state _reference_ then.
+      if (context.stateId in ongoingTransactionStates) {
+        ongoingTransactionStates[context.stateId].copyFrom(state);
+      }
+      {% elif method.options.proto.kind == 'transaction' %}
+      delete ongoingTransactionStates[context.stateId];
+      {% endif %}
+
+      const result = new reboot_api.nodejs_pb.TrampolineResult();
+
+      {% if method.options.proto.kind in ['writer', 'transaction'] %}
+      result.state = state.toBinary();
+      {% endif %}
+
+      result.response = response.toBinary();
+
+      return result.toBinary();
+    } catch (e) {
+      if (e instanceof reboot_api.Aborted) {
+        return reboot_api.nodejs_pb.TrampolineResult.fromJson({
+          status: e.toStatus()
+        }).toBinary();
+      }
+
+      // Ensure we have an `Error` and then `console.error()` it so
+      // that developers see a stack trace of what is going on.
+      //
+      // Only do this if it IS NOT an `Aborted` which we handle above.
+      const error = ensureError(e);
+      // Write an empty message which includes a newline to make it
+      // easier to identify the stack trace.
+      console.error("");
+      console.error(error);
+      console.error("");
+
+      console.error(
+        `Unhandled error in '{{ proto.package_name }}.{{ state.proto.name }}.{{ method.proto.name | to_lower_camel }}'; propagating as 'Unknown'\n`
+      );
+
+      throw error;
+    }
   }
 
   async __dispatch(

@@ -998,6 +998,7 @@ class SidecarStateManager(
                 idempotent_mutation=idempotent_mutation,
             )
 
+    @function_span()
     async def _maybe_authorize(
         self,
         authorize: Optional[AuthorizeCallable],
@@ -1055,7 +1056,7 @@ class SidecarStateManager(
             # the caller is not a participant of.
             with span(
                 state_name=state_type_name,
-                span_name="await ongoing_transaction"
+                span_name="_load - awaiting 'ongoing_transaction'"
             ):
                 ongoing_transaction: Optional[
                     StateManager.Transaction] = self._participant_transactions[
@@ -1088,7 +1089,7 @@ class SidecarStateManager(
         if transaction is not None:
             with span(
                 state_name=state_type_name,
-                span_name="get state if transaction is not None"
+                span_name="_load - get state if transaction is not 'None'"
             ):
                 # Need to set transaction state if this is the first time
                 # doing a load within a transaction for this actor.
@@ -1100,16 +1101,13 @@ class SidecarStateManager(
                 state = cast(StateT, transaction.state)
 
         if state is not None:
-            with span(
-                state_name=state_type_name, span_name="_maybe_authorize"
-            ):
-                await self._maybe_authorize(authorize, state)
-                if from_constructor:
-                    logger.error(
-                        f"State '{state_ref.id}' for state type '{state_type_name}' already constructed"
-                    )
-                    raise SystemAborted(StateAlreadyConstructed())
-                return state
+            await self._maybe_authorize(authorize, state)
+            if from_constructor:
+                logger.error(
+                    f"State '{state_ref.id}' for state type '{state_type_name}' already constructed"
+                )
+                raise SystemAborted(StateAlreadyConstructed())
+            return state
 
         # We don't have state cached, so attempt to load it from
         # the sidecar. This will return None if state has not
@@ -1130,7 +1128,7 @@ class SidecarStateManager(
         if load is None:
             with span(
                 state_name=state_type_name,
-                span_name="loading the state first time"
+                span_name="_load - loading the state first time"
             ):
                 load = asyncio.Event()
                 self._loads[state_type_name][state_ref] = load
@@ -1138,7 +1136,7 @@ class SidecarStateManager(
                 try:
                     with span(
                         state_name=state_type_name,
-                        span_name="load_actor_state"
+                        span_name="_load - load_actor_state"
                     ):
                         data: Optional[
                             bytes
@@ -1148,7 +1146,7 @@ class SidecarStateManager(
                     if data is not None:
                         with span(
                             state_name=state_type_name,
-                            span_name="parseFromString"
+                            span_name="_load - parseFromString"
                         ):
                             state = state_type()
                             state.ParseFromString(data)
@@ -1196,7 +1194,7 @@ class SidecarStateManager(
                         # this function.
                         with span(
                             state_name=state_type_name,
-                            span_name="putting new state on queues"
+                            span_name="_load - putting new state on queues"
                         ):
                             queues: Optional[
                                 list[asyncio.Queue[_StreamingReaderItem]]
@@ -1275,7 +1273,8 @@ class SidecarStateManager(
             # actor had not yet been constructed but we're a
             # writer and will successfully be able to load).
             with span(
-                state_name=state_type_name, span_name="waiting for the load"
+                state_name=state_type_name,
+                span_name="_load - waiting for the load",
             ):
                 await load.wait()
                 return await self._load(
@@ -2040,7 +2039,10 @@ class SidecarStateManager(
         async with mutator_or_transaction_writer_lock:
             # Every reader/writer gets a copy of their own state so
             # that they can execute concurrently.
-            with span(state_name=state_type_name, span_name="_load state"):
+            with span(
+                state_name=state_type_name,
+                span_name="writer - _load state",
+            ):
                 loaded_result = await self._load(
                     context,
                     state_type,
@@ -2048,7 +2050,10 @@ class SidecarStateManager(
                     from_constructor=from_constructor,
                     requires_constructor=requires_constructor,
                 )
-            with span(state_name=state_type_name, span_name="Copy State"):
+            with span(
+                state_name=state_type_name,
+                span_name="Writer - Copy State",
+            ):
                 state_copy = state_type()
                 state_copy.CopyFrom(loaded_result)
 

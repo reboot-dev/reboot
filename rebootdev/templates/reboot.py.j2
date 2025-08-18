@@ -5075,7 +5075,7 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
 
                 with IMPORT_reboot_aio_tracing.span(
                     state_name=f"{context.state_type_name}('{context.state_id}')",
-                    span_name="State Copy on NodeAdaptor",
+                    span_name="_write - State Copy on NodeAdaptor",
                     # The naming above matches Python, but not TypeScript.
                     python_specific=True,
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,

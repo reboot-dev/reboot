@@ -78,11 +78,9 @@ def force_flush(*args, **kwargs):
     # unflushed traces this may take a moment, but without it
     # short-lived processes (e.g. consensuses in unit tests) would never
     # get to flush their traces.
-    # print(f"TRACING: flushing", file=sys.stderr)
     global _providers
     for provider in _providers.values():
         process_name = provider.resource.attributes.get("service.name")
-        # print(f"TRACING: force-flushing '{process_name}'", file=sys.stderr)
         logger.debug(
             f"Force-flushing tracer for '{process_name}'; "
             "this may delay shutdown..."
@@ -120,7 +118,6 @@ def _start(process_name: str):
             ENVVAR_REBOOT_TRACE_LEVEL,
             "CUSTOMER",
         ).upper()]
-        # print(f"TRACING level {_trace_level}")
         global _python_specific
         # Show Python-specific traces only if the user code is in
         # Python, or if the trace level is set to a high enough level
@@ -129,7 +126,6 @@ def _start(process_name: str):
             ENVVAR_REBOOT_NODEJS not in os.environ or
             _trace_level == TraceLevel.REBOOT_INTERNAL
         )
-        # print(f"TRACING _python_specific: {_python_specific}")
     except KeyError as e:
         # The `ENVVAR_REBOOT_TRACE_LEVEL` environment variable is an
         # internal detail (not used by developers, only by maintainers),
@@ -198,7 +194,6 @@ def _get_tracer(state_name: str) -> trace.Tracer:
             provider.add_span_processor(_processor)
         _providers[state_name] = provider
         _tracers[state_name] = provider.get_tracer(state_name)
-        # print(f"TRACING: added provider '{state_name}'", file=sys.stderr)
 
     return _tracers[state_name]
 
@@ -216,9 +211,6 @@ def span(
     Start a new tracing span.
     """
     global _process_name
-    # print(
-    #     f"TRACING: considering span '{state_name}.{span_name}' at level {level}, python specific {python_specific}"
-    # )
     if (
         _process_name is not None and _trace_level.value >= level.value and (
             # Python-specific spans are only emitted if the customer is
@@ -228,15 +220,12 @@ def span(
             _trace_level == TraceLevel.REBOOT_INTERNAL
         )
     ):
-        # print(f"TRACING: span '{state_name}.{span_name}' starting")
         state_name = state_name or _process_name
         with _get_tracer(
             state_name,
         ).start_as_current_span(span_name, **span_kwargs):
             yield
-        # print(f"TRACING: span '{state_name}.{span_name}' ended")
     else:
-        # print(f"TRACING: span '{state_name}.{span_name}' SKIPPED")
         yield
 
 
@@ -442,10 +431,6 @@ def aio_server_interceptors(tracer_provider=None, filter_=None):
     # Only use OpenTelemetry's gRPC interceptors for REBOOT_INTERNAL trace level
     # to avoid showing all gRPC spans at CUSTOMER level.
     if _trace_level.value >= TraceLevel.REBOOT_INTERNAL.value:
-        # print(
-        #     "TRACING: using OpenTelemetry gRPC server interceptors",
-        #     file=sys.stderr
-        # )
         return [
             opentelemetry.instrumentation.grpc.aio_server_interceptor(
                 tracer_provider=tracer_provider,
@@ -462,10 +447,6 @@ def aio_client_interceptors():
     # Only use OpenTelemetry's gRPC interceptors for REBOOT_INTERNAL trace level
     # to avoid showing all gRPC spans at CUSTOMER level
     if _trace_level.value >= TraceLevel.REBOOT_INTERNAL.value:
-        # print(
-        #     "TRACING: using OpenTelemetry gRPC client interceptors",
-        #     file=sys.stderr
-        # )
         return opentelemetry.instrumentation.grpc.aio_client_interceptors() + [
             UnaryUnaryOpenTelemetryWorkaroundInterceptor(),
             StreamUnaryOpenTelemetryWorkaroundInterceptor(),
@@ -568,33 +549,3 @@ def qualified_type_name(obj: Any) -> str:
 
 
 named_spans: dict[str, trace.Span] = {}
-
-
-def start_trace_span(name: str):
-    """
-    Starts a trace span with the given name, using the current context.
-
-    This is a convenience function to start a span without needing to
-    manually manage the context.
-    """
-    global _process_name
-    if _process_name is None:
-        raise RuntimeError("Tracing not started; call start() first.")
-
-    global named_spans
-    assert name not in named_spans
-    span = _get_tracer(_process_name).start_span(name)
-    named_spans[name] = span
-
-
-def end_trace_span(name: str):
-    """
-    Ends the trace span with the given name, if it exists.
-
-    This is a convenience function to end a span without needing to
-    manually manage the context.
-    """
-    global named_spans
-    assert name in named_spans
-    span = named_spans.pop(name)
-    span.end()
