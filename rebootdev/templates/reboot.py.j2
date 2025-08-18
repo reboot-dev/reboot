@@ -337,47 +337,54 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 context_type=IMPORT_reboot_aio_contexts.ReaderContext,
             )
 
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='{{ method.proto.name }}'
-            )
+            with IMPORT_reboot_aio_tracing.span(
+                state_name=f"{context.state_type_name}('{context.state_id}')",
+                span_name="{{ method.proto.name }}() (reactively)",
+                # The naming above matches Python, but not TypeScript.
+                python_specific=True,
+                level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+            ):
+                context.auth = await self._maybe_verify_token(
+                    headers=headers, method='{{ method.proto.name }}'
+                )
 
-            request = {{ method.input_type }}()
-            request.ParseFromString(request_bytes)
+                request = {{ method.input_type }}()
+                request.ParseFromString(request_bytes)
 
-            async with self._state_manager.reactively(
-                context,
-                self._servicer.__state_type__,
-                authorize=self._maybe_authorize(
-                    method_name='{{ method.proto.full_name }}',
-                    headers=headers,
-                    auth=context.auth,
-                    request=request,
-                ),
-            ) as states:
-                async for (state, idempotency_keys) in states:
+                async with self._state_manager.reactively(
+                    context,
+                    self._servicer.__state_type__,
+                    authorize=self._maybe_authorize(
+                        method_name='{{ method.proto.full_name }}',
+                        headers=headers,
+                        auth=context.auth,
+                        request=request,
+                    ),
+                ) as states:
+                    async for (state, idempotency_keys) in states:
 
-                    aggregated_idempotency_keys.extend(idempotency_keys)
+                        aggregated_idempotency_keys.extend(idempotency_keys)
 
-                    # Note: This does not do any defensive copying currently:
-                    # see https://github.com/reboot-dev/respect/issues/2636.
-                    @IMPORT_reboot_aio_internals_middleware.maybe_run_function_twice_to_validate_effects
-                    async def run__{{ method.proto.name }}(validating_effects: bool) -> IMPORT_google_protobuf_message.Message:
-                        return await self.__{{ method.proto.name }}(
-                            context,
-                            state,
-                            request,
-                            validating_effects=validating_effects,
-                        )
+                        # Note: This does not do any defensive copying currently:
+                        # see https://github.com/reboot-dev/respect/issues/2636.
+                        @IMPORT_reboot_aio_internals_middleware.maybe_run_function_twice_to_validate_effects
+                        async def run__{{ method.proto.name }}(validating_effects: bool) -> IMPORT_google_protobuf_message.Message:
+                            return await self.__{{ method.proto.name }}(
+                                context,
+                                state,
+                                request,
+                                validating_effects=validating_effects,
+                            )
 
-                    response = await run__{{ method.proto.name }}()
+                        response = await run__{{ method.proto.name }}()
 
-                    if last_response != response:
-                        yield (response, aggregated_idempotency_keys)
-                        last_response = response
-                    else:
-                        yield (None, aggregated_idempotency_keys)
+                        if last_response != response:
+                            yield (response, aggregated_idempotency_keys)
+                            last_response = response
+                        else:
+                            yield (None, aggregated_idempotency_keys)
 
-                    aggregated_idempotency_keys.clear()
+                        aggregated_idempotency_keys.clear()
             {% else %}
             # Invariant here is that users should not have called this
             # directly but only through code generated React
@@ -1321,12 +1328,13 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                         context.participants.to_grpc_metadata()
                     )
 
-        {% if not method.proto.server_streaming %}
-        return await _run()
-        {% else %}
-        async for response in _run():
-            yield response
-        {% endif %}
+        with IMPORT_reboot_aio_tracing.context_from_headers(headers):
+            {% if not method.proto.server_streaming %}
+            return await _run()
+            {% else %}
+            async for response in _run():
+                yield response
+            {% endif %}
 
     {% endfor %}
     {% endfor %}
@@ -2782,7 +2790,8 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         # Wrap the call to the developer's method in a `span` so that it
         # is traced using its fully-qualified Python name.
         with IMPORT_reboot_aio_tracing.span(
-                name=f"{IMPORT_reboot_aio_tracing.full_type_name(self)}.{{ method.proto.name }}()",
+                state_name=f"{{ state.proto.full_name }}('{context.state_id}')",
+                span_name=f"{IMPORT_reboot_aio_tracing.qualified_type_name(self)}.{{ method.proto.name }}()",
                 level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 python_specific=True,
         ):
@@ -2809,7 +2818,8 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         # Wrap the call to the developer's method in a `span` so that it
         # is traced using its fully-qualified Python name.
         with IMPORT_reboot_aio_tracing.span(
-                name=f"{IMPORT_reboot_aio_tracing.full_type_name(self)}.{{ method.proto.name }}()",
+                state_name=f"{{ state.proto.full_name }}('{context.state_id}')",
+                span_name=f"{IMPORT_reboot_aio_tracing.qualified_type_name(self)}.{{ method.proto.name }}()",
                 level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 python_specific=True,
         ):
@@ -2825,7 +2835,8 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         # Wrap the call to the developer's method in a `span` so that it
         # is traced using its fully-qualified Python name.
         with IMPORT_reboot_aio_tracing.span(
-                name=f"{IMPORT_reboot_aio_tracing.full_type_name(self)}.{{ method.proto.name }}()",
+                state_name=f"{{ state.proto.full_name }}('{context.state_id}')",
+                span_name=f"{IMPORT_reboot_aio_tracing.qualified_type_name(self)}.{{ method.proto.name }}()",
                 level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 python_specific=True,
         ):
@@ -2840,7 +2851,8 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         # Wrap the call to the developer's method in a `span` so that it
         # is traced using its fully-qualified Python name.
         with IMPORT_reboot_aio_tracing.span(
-                name=f"{IMPORT_reboot_aio_tracing.full_type_name(self)}.{{ method.proto.name }}()",
+                state_name=f"{{ state.proto.full_name }}('{context.state_id}')",
+                span_name=f"{IMPORT_reboot_aio_tracing.qualified_type_name(self)}.{{ method.proto.name }}()",
                 level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 python_specific=True,
         ):
@@ -2983,7 +2995,8 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
             # is traced using its fully-qualified Python name.
             instance = self._instance(context.state_id)
             with IMPORT_reboot_aio_tracing.span(
-                    name=f"{IMPORT_reboot_aio_tracing.full_type_name(instance)}.{{ method.proto.name }}()",
+                    state_name=f"{{ state.proto.full_name }}('{context.state_id}')",
+                    span_name=f"{IMPORT_reboot_aio_tracing.qualified_type_name(instance)}.{{ method.proto.name }}()",
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                     python_specific=True,
             ):
@@ -3008,7 +3021,8 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
             # is traced using its fully-qualified Python name.
             instance = self._instance(context.state_id)
             with IMPORT_reboot_aio_tracing.span(
-                    name=f"{IMPORT_reboot_aio_tracing.full_type_name(instance)}.{{ method.proto.name }}()",
+                    state_name=f"{{ state.proto.full_name }}('{context.state_id}')",
+                    span_name=f"{IMPORT_reboot_aio_tracing.qualified_type_name(instance)}.{{ method.proto.name }}()",
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                     python_specific=True,
             ):
@@ -3032,7 +3046,8 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
             # is traced using its fully-qualified Python name.
             instance = self._instance(context.state_id)
             with IMPORT_reboot_aio_tracing.span(
-                    name=f"{IMPORT_reboot_aio_tracing.full_type_name(instance)}.{{ method.proto.name }}()",
+                    state_name=f"{{ state.proto.full_name }}('{context.state_id}')",
+                    span_name=f"{IMPORT_reboot_aio_tracing.qualified_type_name(instance)}.{{ method.proto.name }}()",
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                     python_specific=True,
             ):
@@ -3051,7 +3066,8 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
             # is traced using its fully-qualified Python name.
             instance = self._instance(context.state_id)
             with IMPORT_reboot_aio_tracing.span(
-                    name=f"{IMPORT_reboot_aio_tracing.full_type_name(instance)}.{{ method.proto.name }}()",
+                    state_name=f"{{ state.proto.full_name }}('{context.state_id}')",
+                    span_name=f"{IMPORT_reboot_aio_tracing.qualified_type_name(instance)}.{{ method.proto.name }}()",
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                     python_specific=True,
             ):

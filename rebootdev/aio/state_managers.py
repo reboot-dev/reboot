@@ -29,6 +29,7 @@ from rbt.v1alpha1.errors_pb2 import (
     TransactionParticipantFailedToPrepare,
 )
 from rebootdev.admin.export_import_converters import ExportImportItemConverters
+from rebootdev.aio import tracing
 from rebootdev.aio.aborted import Aborted, SystemAborted
 from rebootdev.aio.backoff import Backoff
 from rebootdev.aio.contexts import (
@@ -2209,7 +2210,14 @@ class SidecarStateManager(
                     )
 
                     if interval is not None:
-                        await asyncio.sleep(interval.total_seconds())
+                        with tracing.span(
+                            state_name=
+                            f"{task_effect.task_id.state_type}('{task_effect.state_id}')",
+                            span_name=
+                            f"{task_effect.method_name}() loop iteration {task_effect.iteration}: waiting until the scheduled start time",
+                            level=tracing.TraceLevel.CUSTOMER,
+                        ):
+                            await asyncio.sleep(interval.total_seconds())
 
                     # We need to restore the idempotency checkpoint so
                     # that each new loop iteration we allow empty

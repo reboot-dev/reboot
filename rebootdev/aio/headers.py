@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import grpc
 import json
+import opentelemetry.propagate
 import uuid
 from dataclasses import dataclass
 from rebootdev.aio.call import validate_ascii
@@ -79,6 +80,11 @@ TASK_ID_UUID = 'x-reboot-task-id-uuid'
 
 FORWARDED_CLIENT_CERT_HEADER = 'x-forwarded-client-cert'
 
+# OpenTelemetry W3C Trace Context header
+# See: https://www.w3.org/TR/trace-context/
+TRACEPARENT_HEADER = 'traceparent'
+TRACESTATE_HEADER = 'tracestate'
+
 
 @dataclass(kw_only=True, frozen=True)
 class Headers:
@@ -116,6 +122,11 @@ class Headers:
     forwarded_client_cert: Optional[str] = None
     app_internal_authorization: Optional[str] = None
 
+    # OpenTelemetry W3C Trace Context headers for manual span context
+    # propagation when not using opentelemetry's automatic gRPC interceptors.
+    traceparent: Optional[str] = None
+    tracestate: Optional[str] = None
+
     def __post_init__(self):
         validate_ascii(
             self.bearer_token,
@@ -125,6 +136,24 @@ class Headers:
             # into headers.
             illegal_characters='\n',
         )
+
+        # Automatically populate OpenTelemetry tracing headers if not
+        # already set and if a tracing context is present.
+        if self.traceparent is None and self.tracestate is None:
+            carrier: dict[str, str] = {}
+            opentelemetry.propagate.inject(carrier)
+            if TRACEPARENT_HEADER in carrier:
+                # `__setattr__` is a workaround for this object being
+                # frozen post-init.
+                object.__setattr__(
+                    self, 'traceparent', carrier[TRACEPARENT_HEADER]
+                )
+            if TRACESTATE_HEADER in carrier:
+                # `__setattr__` is a workaround for this object being
+                # frozen post-init.
+                object.__setattr__(
+                    self, 'tracestate', carrier[TRACESTATE_HEADER]
+                )
 
     def copy_for_token_verification_and_authorization(self):
         """Returns a copy of the headers that is suitable for use when doing
@@ -144,6 +173,8 @@ class Headers:
             forwarded_client_cert=self.forwarded_client_cert,
             app_internal_authorization=self.app_internal_authorization,
             bearer_token=self.bearer_token,
+            traceparent=self.traceparent,
+            tracestate=self.tracestate,
         )
 
     @classmethod
@@ -259,6 +290,9 @@ class Headers:
             APP_INTERNAL_AUTHORIZATION_HEADER
         )
 
+        traceparent: Optional[str] = extract_maybe(TRACEPARENT_HEADER)
+        tracestate: Optional[str] = extract_maybe(TRACESTATE_HEADER)
+
         return cls(
             application_id=application_id,
             consensus_id=consensus_id,
@@ -274,6 +308,8 @@ class Headers:
             cookie=cookie,
             forwarded_client_cert=forwarded_client_cert,
             app_internal_authorization=app_internal_authorization,
+            traceparent=traceparent,
+            tracestate=tracestate,
         )
 
     @property
@@ -353,6 +389,14 @@ class Headers:
                 return ((IDEMPOTENCY_KEY_HEADER, str(self.idempotency_key)),)
             return ()
 
+        def maybe_add_opentelemetry_headers() -> GrpcMetadata | tuple[()]:
+            headers: GrpcMetadata | tuple[()] = ()
+            if self.traceparent is not None:
+                headers += ((TRACEPARENT_HEADER, self.traceparent),)
+            if self.tracestate is not None:
+                headers += ((TRACESTATE_HEADER, self.tracestate),)
+            return headers
+
         return (
             ((STATE_REF_HEADER, self.state_ref.to_str()),) +
             maybe_add_application_id_header() +
@@ -360,5 +404,6 @@ class Headers:
             maybe_add_authorization_header() + maybe_add_cookie_header() +
             maybe_add_app_internal_authorization_header() +
             maybe_add_transaction_headers() + maybe_add_workflow_headers() +
-            maybe_add_idempotency_key_header()
+            maybe_add_idempotency_key_header() +
+            maybe_add_opentelemetry_headers()
         )

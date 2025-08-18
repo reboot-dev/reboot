@@ -3,9 +3,9 @@ import grpc
 import os
 import uuid
 from cffi import FFI
-from opentelemetry.instrumentation.grpc import aio_client_interceptors
 from rbt.v1alpha1 import sidecar_pb2, sidecar_pb2_grpc, tasks_pb2
 from rebootdev.aio.contexts import Participants
+from rebootdev.aio.tracing import aio_client_interceptors
 from rebootdev.aio.types import StateRef, StateTypeName
 # TODO(benh): move this into a top-level 'grpc' module to be shared by
 # both 'respect' and 'reboot'.
