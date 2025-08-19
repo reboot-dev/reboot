@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package rbt.v1alpha1;
+
+import "rbt/v1alpha1/tasks.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+// Context properties.
+message Context {
+  string method = 1;
+  string state_id = 2;
+  string state_type_name = 3;
+  optional string caller_bearer_token = 4;
+  optional string cookie = 5;
+  bool app_internal = 6;
+  optional bytes auth = 7;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+enum Kind {
+  unknown = 0;
+  reader = 1;
+  writer = 2;
+  transaction = 3;
+  workflow = 4;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message VerifyTokenCall {
+  Context context = 1;
+  optional string token = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message AuthorizeCall {
+  string method_name = 1;
+  Context context = 2;
+  optional bytes state = 3;
+  optional bytes request = 4;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message TrampolineCall {
+  Kind kind = 1;
+  Context context = 2;
+  // `state` is optional because we don't pass it for a `workflow`.
+  optional bytes state = 3;
+  bytes request = 4;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message TrampolineResult {
+  // TODO: use buf's oneof validator.
+
+  // A reader returns response or status.
+  //
+  // A writer, transaction, or workflow returns a serialized response
+  // (and state) or a serialized status.
+  optional bytes response = 1;
+
+  // JSON representation of `google.rpc.Status`.
+  //
+  // TODO(benh): this is sent as JSON because `protoc-gen-es`
+  // doesn't have `google.rpc.Status` and so we have our own
+  // implementation which only has JSON support for now.
+  optional string status_json = 2;
+
+  // Serialized protobuf `state` is optional because we don't pass it
+  // for a `reader` or a `workflow`.
+  optional bytes state = 3;
+}
+
+////////////////////////////////////////////////////////////////////////

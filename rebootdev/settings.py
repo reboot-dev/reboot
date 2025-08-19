@@ -231,5 +231,9 @@ ENVVAR_BAZEL_TEST = 'REBOOT_BAZEL_TEST'
 # Specific for running 'rbt dev run' in a bazel test.
 ENVVAR_REBOOT_USE_TTY = 'REBOOT_USE_TTY'
 
+# An environment variable to enable event loop lag monitoring.
+# Turned off by default, if set we will print warnings about event loop lag.
+ENVVAR_REBOOT_ENABLE_EVENT_LOOP_LAG_MONITORING = 'REBOOT_ENABLE_EVENT_LOOP_LAG_MONITORING'
+
 REBOOT_DISCORD_URL = 'https://discord.gg/cRbdcS94Nr'
 REBOOT_GITHUB_ISSUES_URL = 'https://github.com/reboot-dev/reboot/issues'

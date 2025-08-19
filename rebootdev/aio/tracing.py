@@ -17,7 +17,8 @@ from grpc.aio import (
     UnaryUnaryClientInterceptor,
 )
 from log.log import get_logger
-from opentelemetry import trace
+from opentelemetry import context as otel_context
+from opentelemetry import propagate, trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
     OTLPSpanExporter,
 )
@@ -27,6 +28,11 @@ from opentelemetry.sdk.environment_variables import (
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from rebootdev.aio.headers import (
+    TRACEPARENT_HEADER,
+    TRACESTATE_HEADER,
+    Headers,
+)
 from rebootdev.aio.once import Once
 from rebootdev.aio.signals import install_cleanup
 from rebootdev.settings import (
@@ -37,8 +43,6 @@ from rebootdev.settings import (
 from typing import Any, AsyncIterator, Callable, Optional
 
 logger = get_logger(__name__)
-
-provider: Optional[TracerProvider] = None
 
 
 class TraceLevel(Enum):
@@ -61,68 +65,52 @@ _trace_level = TraceLevel.CUSTOMER
 # detail (if False).
 _python_specific = False
 
+_tracers: dict[str, trace.Tracer] = {}
+_providers: dict[str, TracerProvider] = {}
+_default_provider: Optional[TracerProvider] = None
+_processor: Optional[BatchSpanProcessor] = None
+_process_name: Optional[str] = None
 
-class FilteredBatchSpanProcessor(BatchSpanProcessor):
-    """
-    A BatchSpanProcessor that filters out Reboot-specific spans.
 
-    This is a workaround for the fact that OpenTelemetry's SDKs don't
-    always obey their own filters.
-    """
-
-    # TODO(rjh): this only works well if there are no child spans below
-    #            the spans being filtered out; otherwise the child spans
-    #            are orphaned. Instead of using this mechanism, we
-    #            should replace OpenTelemetry's gRPC tracing
-    #            interceptors with our own logic, so that we can filter
-    #            which gRPC spans get _created_ (like we already do for
-    #            other spans with the `level` parameter to e.g. the
-    #            `span()` method below).
-
-    def on_end(self, span):
-        # The `rpc.service` attribute is set by OpenTelemetry's gRPC
-        # instrumentation; it contains the fully qualified name of the
-        # gRPC service being called.
-        service_name = span.attributes.get("rpc.service")
-        if (
-            service_name is not None and
-            # Filter out calls to the Sidecar: they're not interesting
-            # to customers, cause a lot of noise on the dashboard, and
-            # since they're "leaf" spans they'll never have child spans
-            # (see the TODO above).
-            str(service_name).startswith("rbt.v1alpha1.Sidecar") and
-            _trace_level.value < TraceLevel.REBOOT_INTERNAL.value
-        ):
-            return
-        super().on_end(span)
+def force_flush(*args, **kwargs):
+    # Before shutting down this process we must force-flush the
+    # providers, to make sure all spans are recorded. If there are
+    # unflushed traces this may take a moment, but without it
+    # short-lived processes (e.g. consensuses in unit tests) would never
+    # get to flush their traces.
+    global _providers
+    for provider in _providers.values():
+        process_name = provider.resource.attributes.get("service.name")
+        logger.debug(
+            f"Force-flushing tracer for '{process_name}'; "
+            "this may delay shutdown..."
+        )
+        provider.force_flush()
 
 
 def force_flush_and_shutdown(*args, **kwargs):
-    global provider
-
-    if provider is None:
-        return
-
-    # Before shutting down this process we must force-flush the provider
-    # to make sure all spans are recorded. If there are unflushed traces
-    # this may take a moment, but without it short-lived processes (e.g.
-    # consensuses in unit tests) would never get to flush their traces.
-    process_name = provider.resource.attributes.get("service.name")
-    logger.debug(
-        f"Force-flushing tracer for '{process_name}'; "
-        "this may delay shutdown..."
-    )
-    provider.force_flush()
-    provider.shutdown()
+    # Before shutting down this process we must force-flush the
+    # providers, to make sure all spans are recorded. If there are
+    # unflushed traces this may take a moment, but without it
+    # short-lived processes (e.g. consensuses in unit tests) would never
+    # get to flush their traces.
+    force_flush(*args, **kwargs)
+    global _providers
+    for provider in _providers.values():
+        provider.shutdown()
 
 
 def _start(process_name: str):
+    global _process_name
+    _process_name = process_name
+
     if OTEL_EXPORTER_OTLP_TRACES_ENDPOINT not in os.environ:
-        # Tracing is not enabled; do nothing, tracers continue to be NOOPs.
+        # Tracing is not enabled; do nothing, tracers continue to be
+        # NOOPs.
         return
 
-    global provider
-    assert provider is None, "Tracer provider already initialized"
+    global _processor
+    assert _processor is None, "Processor already initialized"
 
     try:
         global _trace_level
@@ -149,18 +137,21 @@ def _start(process_name: str):
             f"{', '.join([level.name for level in TraceLevel])}"
         ) from e
 
-    resource = Resource(attributes={SERVICE_NAME: process_name})
-    provider = TracerProvider(resource=resource)
-    processor = FilteredBatchSpanProcessor(OTLPSpanExporter())
-    provider.add_span_processor(processor)
+    global _default_provider
+    global _providers
+    _default_provider = TracerProvider(
+        resource=Resource.create({SERVICE_NAME: _process_name}),
+    )
+    assert _default_provider is not None
+    trace.set_tracer_provider(_default_provider)
+    _providers[process_name] = _default_provider
 
-    # Sets the global default tracer provider; any `ProxyTracer`s already
-    # returned by `get_tracer()` (as well as any future tracers) will now direct
-    # their spans to this provider.
-    trace.set_tracer_provider(provider)
+    _processor = BatchSpanProcessor(OTLPSpanExporter())
+    for provider in _providers.values():
+        provider.add_span_processor(_processor)
 
-    # Consensuses while being shut down (e.g. at the end of tests) should flush
-    # their traces.
+    # Consensuses while being shut down (e.g. at the end of tests)
+    # should flush their traces.
     install_cleanup([signal.SIGTERM], force_flush_and_shutdown)
 
 
@@ -192,25 +183,26 @@ def start(
     _start_once(process_name)
 
 
-# A default tracer to use when a more specific tracer is not needed (it's not
-# clear exactly what benefit it gives us to have differently-named tracers
-# anyway; those names don't show up on Jaeger's UI).
-#
-# Creates a tracer from the global tracer provider. Since `start()` has not been
-# called yet this will return a `ProxyTracer` that initially does nothing with
-# its traces; after `start()` all `ProxyTracer`s will direct new spans to the
-# globally set tracer provider that is then set.
-_tracer = trace.get_tracer(__name__)
+def _get_tracer(state_name: str) -> trace.Tracer:
+    global _tracers
+    global _processor
 
+    if state_name not in _tracers:
+        resource = Resource(attributes={SERVICE_NAME: state_name})
+        provider = TracerProvider(resource=resource)
+        if _processor is not None:
+            provider.add_span_processor(_processor)
+        _providers[state_name] = provider
+        _tracers[state_name] = provider.get_tracer(state_name)
 
-def get_tracer(name: Optional[str] = None):
-    global tracer
-    return trace.get_tracer(name) if name is not None else _tracer
+    return _tracers[state_name]
 
 
 @contextmanager
 def span(
-    name: str,
+    *,
+    state_name: Optional[str],
+    span_name: str,
     level: TraceLevel = TraceLevel.REBOOT_INTERNAL,
     python_specific: bool = False,
     **span_kwargs,
@@ -218,14 +210,20 @@ def span(
     """
     Start a new tracing span.
     """
-    if _trace_level.value >= level.value and (
-        # Python-specific spans are only emitted if the customer is
-        # using Python code, OR if the trace level is high enough that
-        # we want to see Python implementation details.
-        (not python_specific or _python_specific) or
-        _trace_level == TraceLevel.REBOOT_INTERNAL
+    global _process_name
+    if (
+        _process_name is not None and _trace_level.value >= level.value and (
+            # Python-specific spans are only emitted if the customer is
+            # using Python code, OR if the trace level is high enough that
+            # we want to see Python implementation details.
+            (not python_specific or _python_specific) or
+            _trace_level == TraceLevel.REBOOT_INTERNAL
+        )
     ):
-        with _tracer.start_as_current_span(name, **span_kwargs):
+        state_name = state_name or _process_name
+        with _get_tracer(
+            state_name,
+        ).start_as_current_span(span_name, **span_kwargs):
             yield
     else:
         yield
@@ -264,7 +262,8 @@ def function_span(
 
         async def wrapper(*args, **kwargs):
             with span(
-                name=(name or func.__qualname__) + "()",
+                state_name=None,
+                span_name=(name or func.__qualname__) + "()",
                 level=level,
                 # These spans are Python-specific, since they use Python
                 # module/class/method names.
@@ -306,8 +305,9 @@ def main_span(name: Optional[str] = None, **span_kwargs) -> Callable:
 
         def wrapper(*args, **kwargs):
             start(name)
-            global _tracer
-            with _tracer.start_as_current_span(
+            global _process_name
+            assert _process_name is not None
+            with _get_tracer(name or _process_name).start_as_current_span(
                 func.__qualname__ + "()",
                 **span_kwargs,
             ):
@@ -345,8 +345,9 @@ class TracedAsyncGeneratorContextManager(_AsyncGeneratorContextManager):
 
     async def __aenter__(self):
         global _trace_level
-        if _trace_level.value >= self._span_level.value:
-            self.tracing = _tracer.start_as_current_span(
+        global _process_name
+        if _process_name is not None and _trace_level.value >= self._span_level.value:
+            self.tracing = _get_tracer(_process_name).start_as_current_span(
                 self.func_name,
                 **self.span_kwargs,
             )
@@ -393,7 +394,10 @@ def asynccontextmanager_span(
     return decorator
 
 
-def generator_span(**span_kwargs) -> Callable:
+def generator_span(
+    level: TraceLevel = TraceLevel.REBOOT_INTERNAL,
+    **span_kwargs,
+) -> Callable:
     """
     Same as `function_span`, but for generators.
 
@@ -405,10 +409,16 @@ def generator_span(**span_kwargs) -> Callable:
 
         async def wrapper(*args, **kwargs) -> AsyncIterator:
             global _tracer
-            with _tracer.start_as_current_span(
-                func.__qualname__ + "()",
-                **span_kwargs,
-            ):
+            global _trace_level
+            global _process_name
+            if _process_name is not None and _trace_level.value >= level.value:
+                with _get_tracer(_process_name).start_as_current_span(
+                    func.__qualname__ + "()",
+                    **span_kwargs,
+                ):
+                    async for result in func(*args, **kwargs):
+                        yield result
+            else:
                 async for result in func(*args, **kwargs):
                     yield result
 
@@ -417,29 +427,34 @@ def generator_span(**span_kwargs) -> Callable:
     return decorator
 
 
-def aio_server_interceptor(tracer_provider=None, filter_=None):
-    return opentelemetry.instrumentation.grpc.aio_server_interceptor(
-        tracer_provider=tracer_provider,
-        # TODO(rjh): We'd have liked to use the `service_prefix` filter
-        # to filter out Reboot-specific spans (i.e. any with the "rbt."
-        # prefix), but OpenTelemetry's SDKs don't (always) obey those
-        # filters!? We use a custom `FilteredBatchSpanProcessor`
-        # instead; see above.
-        filter_=filter_,
-    )
+def aio_server_interceptors(tracer_provider=None, filter_=None):
+    # Only use OpenTelemetry's gRPC interceptors for REBOOT_INTERNAL trace level
+    # to avoid showing all gRPC spans at CUSTOMER level.
+    if _trace_level.value >= TraceLevel.REBOOT_INTERNAL.value:
+        return [
+            opentelemetry.instrumentation.grpc.aio_server_interceptor(
+                tracer_provider=tracer_provider,
+                filter_=filter_,
+            )
+        ]
+    else:
+        # For CUSTOMER level, return empty list. Context propagation
+        # will be handled manually in headers.py.
+        return []
 
 
 def aio_client_interceptors():
-    return opentelemetry.instrumentation.grpc.aio_client_interceptors(
-        # TODO(rjh): We'd have liked to use the `service_prefix` filter
-        # to filter out Reboot-specific spans (i.e. any with the "rbt."
-        # prefix), but OpenTelemetry's SDKs don't (always) obey those
-        # filters!? We use a custom `FilteredBatchSpanProcessor`
-        # instead; see above.
-    ) + [
-        UnaryUnaryOpenTelemetryWorkaroundInterceptor(),
-        StreamUnaryOpenTelemetryWorkaroundInterceptor(),
-    ]
+    # Only use OpenTelemetry's gRPC interceptors for REBOOT_INTERNAL trace level
+    # to avoid showing all gRPC spans at CUSTOMER level
+    if _trace_level.value >= TraceLevel.REBOOT_INTERNAL.value:
+        return opentelemetry.instrumentation.grpc.aio_client_interceptors() + [
+            UnaryUnaryOpenTelemetryWorkaroundInterceptor(),
+            StreamUnaryOpenTelemetryWorkaroundInterceptor(),
+        ]
+    else:
+        # For CUSTOMER level, return empty list. Context propagation
+        # will be handled manually in headers.py.
+        return []
 
 
 # TODO(tonyhong007): These interceptors are a workaround for https://github.com/open-telemetry/opentelemetry-python-contrib/issues/3271.
@@ -487,9 +502,50 @@ class StreamUnaryOpenTelemetryWorkaroundInterceptor(
             raise
 
 
-def full_type_name(obj: Any) -> str:
+@contextmanager
+def context_from_headers(headers: Headers):
     """
-    Returns the fully qualified type name of an object, including its module.
+    Context manager to restore OpenTelemetry context from headers.
+
+    Usage:
+        with context_from_headers(headers):
+            # Server-side processing with restored tracing context
+            pass
+
+    This is used for server-side context restoration when not using
+    OTEL's automatic gRPC interceptors.
+    """
+    # If OTEL has already set a context (e.g. by using its
+    # interceptors), don't do it again.
+    if len(otel_context.get_current()) > 0:
+        yield
+        return
+
+    # Create carrier with headers.
+    carrier = {}
+    if headers.traceparent is not None:
+        carrier[TRACEPARENT_HEADER] = headers.traceparent
+    if headers.tracestate is not None:
+        carrier[TRACESTATE_HEADER] = headers.tracestate
+
+    # Extract context from carrier.
+    context = propagate.extract(carrier)
+
+    # Attach context.
+    token = otel_context.attach(context)
+    try:
+        yield
+    finally:
+        # Always detach context.
+        otel_context.detach(token)
+
+
+def qualified_type_name(obj: Any) -> str:
+    """
+    Returns the qualified type name of an object, excluding its module.
     """
     assert hasattr(obj, "__class__"), "'obj' is not an object"
     return f"{obj.__class__.__module__}.{obj.__class__.__qualname__}"
+
+
+named_spans: dict[str, trace.Span] = {}
