@@ -410,7 +410,7 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
   #external?: any | undefined;
 
   public ref(
-    options?: { bearerToken?: string }
+    options?: { bearerToken?: string | null }
   ) {
     const context = reboot.getContext();
     return new {{ state.proto.name }}.WeakReference(
@@ -1526,15 +1526,13 @@ export class {{ client.proto.state_name }}WeakReference {
 
   constructor(
     id: string,
-    bearerToken?: string,
+    bearerToken?: string | null,
     {% if client.state is not none %}
     servicer?: {{ client.proto.state_name }}BaseServicer
     {% endif %}
   ) {
     this.#id = id;
-    this.#options = {
-      bearerToken: bearerToken,
-    };
+    this.#options = bearerToken === null ? {} : { bearerToken };
     {% if client.state is not none %}
     this._servicer = servicer;
     {% endif %}
@@ -2016,8 +2014,8 @@ export class {{ client.proto.state_name }} {
   {% endfor %}
 
   public static ref(
-    idOrOptions?: string | { bearerToken?: string },
-    options?: { bearerToken?: string }
+    idOrOptions?: string | { bearerToken?: string | null },
+    options?: { bearerToken?: string | null }
   ) {
     if (idOrOptions === undefined || typeof idOrOptions === "object") {
       const context = reboot.getContext();
@@ -2041,7 +2039,7 @@ export class {{ client.proto.state_name }} {
   public async {{ method.proto.name | to_lower_camel }}(
     context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-    options?: { bearerToken?: string }
+    options?: { bearerToken?: string | null }
   ): Promise<[
     {{ client.proto.state_name }}.WeakReference,
     {{ client.proto.state_name }}.{{ method.proto.name }}Response,
@@ -2051,7 +2049,7 @@ export class {{ client.proto.state_name }} {
     context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
     id: string,
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-    options?: { bearerToken?: string }
+    options?: { bearerToken?: string | null }
   ): Promise<[
     {{ client.proto.state_name }}.WeakReference,
     {{ client.proto.state_name }}.{{ method.proto.name }}Response,
@@ -2060,15 +2058,15 @@ export class {{ client.proto.state_name }} {
   public static async {{ method.proto.name | to_lower_camel }}(
     context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
     idOrPartialRequest?: string | {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-    partialRequestOrOptions?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | { bearerToken?: string },
-    optionsOrUndefined?: { bearerToken?: string }
+    partialRequestOrOptions?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | { bearerToken?: string | null },
+    optionsOrUndefined?: { bearerToken?: string | null }
   ): Promise<[
     {{ client.proto.state_name }}.WeakReference,
     {{ client.proto.state_name }}.{{ method.proto.name }}Response,
   ]> {
     let id: string | undefined = undefined;
     let partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | undefined = undefined;
-    let options: { bearerToken?: string } | undefined = undefined;
+    let options: { bearerToken?: string | null } | undefined = undefined;
 
     if (typeof idOrPartialRequest === "string" || idOrPartialRequest instanceof String) {
       id = idOrPartialRequest;
@@ -2166,7 +2164,7 @@ export class {{ client.proto.state_name }} {
     public async {{ method.proto.name | to_lower_camel }}(
       context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
       partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-      options?: { bearerToken?: string }
+      options?: { bearerToken?: string | null }
     ): Promise<[
       {{ client.proto.state_name }}.WeakReference,
       {{ client.proto.state_name }}.{{ method.proto.name }}Response,
@@ -2176,7 +2174,7 @@ export class {{ client.proto.state_name }} {
       context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
       id: string,
       partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-      options?: { bearerToken?: string }
+      options?: { bearerToken?: string | null }
     ): Promise<[
       {{ client.proto.state_name }}.WeakReference,
       {{ client.proto.state_name }}.{{ method.proto.name }}Response,
@@ -2185,15 +2183,15 @@ export class {{ client.proto.state_name }} {
     public async {{ method.proto.name | to_lower_camel }}(
       context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
       idOrPartialRequest?: string | {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-      partialRequestOrOptions?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | { bearerToken?: string },
-      optionsOrUndefined?: { bearerToken?: string }
+      partialRequestOrOptions?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | { bearerToken?: string | null },
+      optionsOrUndefined?: { bearerToken?: string | null }
     ): Promise<[
       {{ client.proto.state_name }}.WeakReference,
       {{ client.proto.state_name }}.{{ method.proto.name }}Response,
     ]> {
       let id: string | undefined = undefined;
       let partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | undefined = undefined;
-      let options: { bearerToken?: string } = {};
+      let options: { bearerToken?: string | null } = {};
 
       if (typeof idOrPartialRequest === "string" || idOrPartialRequest instanceof String) {
         id = idOrPartialRequest;
