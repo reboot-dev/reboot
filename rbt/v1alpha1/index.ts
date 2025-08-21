@@ -868,7 +868,7 @@ export function convertToProtobufJson<T>(
     // to ensure that this is in fact a valid JSON object but also
     // because (b) @bufbuild/protobuf can not handle any object that
     // has properties with `undefined` as a value.
-    return protobuf_es.Value.fromJsonString(JSON.stringify(input));
+    return JSON.parse(JSON.stringify(input));
   } else {
     throw new Error(`Unexpected schema type '${schema._zod.def.type}'`);
   }

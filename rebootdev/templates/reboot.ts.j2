@@ -267,8 +267,8 @@ const {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf = (
 ): {{ method.input_type }} => {
   return partialRequest instanceof {{ method.input_type }}
     ? partialRequest
-    : new {{ method.input_type }}(
-      {% if options.proto.zod %}
+    {% if options.proto.zod %}
+    : new {{ method.input_type }}().fromJson(
       reboot_api.convertToProtobufJson(
         api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
         reboot_api.validate(
@@ -277,10 +277,12 @@ const {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf = (
           partialRequest || {}
         )
       )
-      {% else %}
-      partialRequest
-      {% endif %}
     );
+    {% else %}
+    : new {{ method.input_type }}(
+      partialRequest
+    );
+    {% endif %}
 };
 
 const {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape = (
@@ -312,8 +314,8 @@ const {{ client.proto.state_name }}{{ method.proto.name }}ResponseToProtobuf = (
 ): {{ method.output_type }} => {
   return partialResponse instanceof {{ method.output_type }}
     ? partialResponse
-    : new {{ method.output_type }}(
-      {% if options.proto.zod %}
+    {% if options.proto.zod %}
+    : new {{ method.output_type }}().fromJson(
       reboot_api.convertToProtobufJson(
         api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
         reboot_api.validate(
@@ -322,10 +324,12 @@ const {{ client.proto.state_name }}{{ method.proto.name }}ResponseToProtobuf = (
           partialResponse
         )
       )
-      {% else %}
-      partialResponse
-      {% endif %}
     );
+    {% else %}
+    : new {{ method.output_type }}(
+      partialResponse
+    );
+    {% endif %}
 };
 
 {% endfor %}
