@@ -598,6 +598,9 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
     }
   }
 
+  {% endfor %}
+  {% endfor %}
+
   async __dispatch(
     external,
     cancelled: Promise<void>,
@@ -631,9 +634,6 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
 
     return this["_" + call.context.method](context, call.state, call.request);
   }
-
-  {% endfor %}
-  {% endfor %}
 
   __storeExternal(external: any) {
     this.#external = external;

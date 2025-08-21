@@ -150,10 +150,16 @@ class SidecarService final : public rbt::v1alpha1::Sidecar::Service {
       grpc::ServerContext* context,
       const LoadRequest* request,
       LoadResponse* response) override;
+  grpc::Status _Load(
+      const LoadRequest* request,
+      LoadResponse* response);
   grpc::Status Store(
       grpc::ServerContext* context,
       const StoreRequest* request,
       StoreResponse* response) override;
+  grpc::Status _Store(
+      const StoreRequest* request,
+      StoreResponse* response);
   grpc::Status Recover(
       grpc::ServerContext* context,
       const RecoverRequest* request,
@@ -1218,14 +1224,11 @@ grpc::Status SidecarService::ColocatedReverseRange(
 
 ////////////////////////////////////////////////////////////////////////
 
-grpc::Status SidecarService::Load(
-    grpc::ServerContext* context,
+grpc::Status SidecarService::_Load(
     const LoadRequest* request,
     LoadResponse* response) {
-  std::unique_lock lock(mutex_);
-
   REBOOT_SIDECAR_LOG(1)
-      << "Load { " << request->ShortDebugString() << " }";
+      << "_Load { " << request->ShortDebugString() << " }";
 
   std::vector<rocksdb::ColumnFamilyHandle*> column_families;
   std::vector<std::string> keys;
@@ -1320,6 +1323,12 @@ grpc::Status SidecarService::Load(
   return grpc::Status::OK;
 }
 
+grpc::Status SidecarService::Load(
+    grpc::ServerContext* context,
+    const LoadRequest* request,
+    LoadResponse* response) {
+  return _Load(request, response);
+}
 ////////////////////////////////////////////////////////////////////////
 
 // Helper that extracts the state_type/actor for a store request that is
@@ -1398,14 +1407,11 @@ expected<void> SidecarService::ValidateNonTransactionalStore(
 
 ////////////////////////////////////////////////////////////////////////
 
-grpc::Status SidecarService::Store(
-    grpc::ServerContext* context,
+grpc::Status SidecarService::_Store(
     const StoreRequest* request,
     StoreResponse* response) {
-  std::unique_lock lock(mutex_);
-
   REBOOT_SIDECAR_LOG(1)
-      << "Store { " << request->ShortDebugString() << " }";
+      << "_Store { " << request->ShortDebugString() << " }";
 
   // Helper for either adding all of the state updates to a
   // 'rocksdb::WriteBatch' or a 'rocksdb::Transaction',
@@ -1656,6 +1662,13 @@ grpc::Status SidecarService::Store(
               status->ToString()));
     }
   }
+}
+
+grpc::Status SidecarService::Store(
+    grpc::ServerContext* context,
+    const StoreRequest* request,
+    StoreResponse* response) {
+  return _Store(request, response);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -2670,7 +2683,7 @@ SidecarServer::Instantiate(
     address = fmt::format("{}:{}", absl::StripSuffix(address, ":0"), *port);
   }
 
-  REBOOT_SIDECAR_LOG(1) << "sidecar gRPC server listening on " << address;
+  REBOOT_SIDECAR_LOG(1) << "sidecar gRPC server listening at " << address;
 
   return std::unique_ptr<SidecarServer>(
       new SidecarServer(
@@ -2678,6 +2691,89 @@ SidecarServer::Instantiate(
           std::move(server),
           address));
 }
+
+extern "C" {
+
+// Tries to 'Load' and returns the size of message (or error code) and the
+// message as 'response_ptr' and 'status_message'.
+size_t sidecar_server_load_actor_state(
+    rbt::consensus::SidecarServer* server,
+    const char* request_bytes,
+    size_t request_bytes_size,
+    char** message_bytes,
+    char** status_message) {
+  rbt::v1alpha1::LoadRequest request;
+  CHECK(request.ParseFromArray(request_bytes, request_bytes_size));
+
+  rbt::v1alpha1::LoadResponse response;
+
+  auto* service = static_cast<rbt::consensus::SidecarService*>(
+      server->service_.get());
+
+  auto status = service->_Load(&request, &response);
+
+  if (!status.ok()) {
+    REBOOT_SIDECAR_LOG(1) << "Failed to load actor state: "
+                          << status.error_message() << std::endl;
+    size_t size = status.error_message().size();
+    *status_message = new char[size];
+    // Use `memcpy` instead of `strncpy` to safely copy raw data,
+    // including binary content that may contain null bytes (\0).
+    // `strncpy` is intended for null-terminated C-strings and may
+    // stop copying early or pad with extra nulls.
+    std::memcpy(*status_message, status.error_message().data(), size);
+    *message_bytes = nullptr;
+    return size;
+  } else {
+    // Serialize response and send back.
+    *status_message = nullptr;
+    size_t size = response.ByteSizeLong();
+    *message_bytes = new char[size];
+    CHECK(response.SerializeToArray(*message_bytes, size));
+    return size;
+  }
+}
+
+// Tries to 'Store' and returns 0 on success or > 0 on gRPC error.
+size_t sidecar_server_store(
+    rbt::consensus::SidecarServer* server,
+    const char* request_bytes,
+    size_t request_bytes_size,
+    char** status_message) {
+  rbt::v1alpha1::StoreRequest request;
+  CHECK(request.ParseFromArray(request_bytes, request_bytes_size));
+
+  rbt::v1alpha1::StoreResponse response;
+
+  auto* service = static_cast<rbt::consensus::SidecarService*>(
+      server->service_.get());
+
+  auto status = service->_Store(&request, &response);
+
+  if (!status.ok()) {
+    REBOOT_SIDECAR_LOG(1) << "Failed to store: "
+                          << status.error_message() << std::endl;
+    size_t size = status.error_message().size();
+    *status_message = new char[size];
+    // Use `memcpy` instead of `strncpy` to safely copy raw data,
+    // including binary content that may contain null bytes (\0).
+    // `strncpy` is intended for null-terminated C-strings and may
+    // stop copying early or pad with extra nulls.
+    std::memcpy(*status_message, status.error_message().data(), size);
+
+    return size;
+  }
+
+  *status_message = nullptr;
+
+  return 0;
+}
+
+void sidecar_server_delete_array(char* ptr) {
+  delete[] ptr;
+}
+
+} // extern "C"
 
 ////////////////////////////////////////////////////////////////////////
 

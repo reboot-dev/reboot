@@ -756,16 +756,37 @@ class SidecarStateManager(
     """Implementation of state manager that stores data using the sidecar.
 
     SidecarStateManager also implements both the coordinator and
-    participant interfaces for performing transactions.
+    participant interfaces for performing transactions, it also encapsulates a
+    'SidecarServer' for local use.
     """
 
     def __init__(
         self,
         *,
-        sidecar_address: str,
+        directory: str,
+        shards: list[sidecar_pb2.ShardInfo],
         serviceables: list[Serviceable],
     ) -> None:
-        self._sidecar_client = SidecarClient(sidecar_address)
+        try:
+            self._sidecar = SidecarServer(
+                directory,
+                sidecar_pb2.ConsensusInfo(shard_infos=shards),
+            )
+        except SidecarServerFailed as e:
+            if (
+                'Failed to instantiate service' in str(e) and
+                '/LOCK:' in str(e)
+            ):
+                raise InputError(
+                    reason=(
+                        "Failed to start sidecar server.\n"
+                        "Did you start another instance of `rbt dev run` "
+                        "in another terminal?"
+                    ), causing_exception=e
+                )
+            raise e
+
+        self._sidecar_client = SidecarClient(self._sidecar.address)
 
         self._state_type_by_state_tag: dict[str, StateTypeName] = {}
 
@@ -861,7 +882,35 @@ class SidecarStateManager(
         self._idempotent_mutations: dict[uuid.UUID,
                                          sidecar_pb2.IdempotentMutation] = {}
 
-    async def shutdown(self) -> None:
+    @property
+    def sidecar_client(self) -> SidecarClient:
+        """Returns the sidecar client."""
+        return self._sidecar_client
+
+    async def shutdown_and_wait(self):
+        """Shuts down the state manager and sidecar. This is a single method,
+        instead of a separate `shutdown` and `wait`, since the state manager
+        must be fully shut down (including `wait`ing for it) before it's safe to
+        shut down the sidecar.
+        """
+        # First stop the state manager that's using the sidecar server.
+        await self._shutdown()
+        # Wait for the state manager to be fully shut down, so that we're sure
+        # nobody needs the sidecar server anymore.
+        await self._wait()
+
+        # Now shut down the sidecar server. These methods are synchronous C++,
+        # so the blocking `wait()` must be called through `run_in_executor` to
+        # not block the event loop.
+        self._sidecar.shutdown()
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            # Use the default executor.
+            executor=None,
+            func=self._sidecar.wait,
+        )
+
+    async def _shutdown(self) -> None:
         """Shuts down this state manager, which includes cancellation of
         background tasks.
         """
@@ -873,7 +922,7 @@ class SidecarStateManager(
         for task in self._coordinator_commit_control_loop_tasks.values():
             task.cancel()
 
-    async def wait(self) -> None:
+    async def _wait(self) -> None:
         """Waits for this state manager to be fully shut down."""
         for task in self._coordinator_commit_control_loop_tasks.values():
             try:
@@ -1143,9 +1192,7 @@ class SidecarStateManager(
                         span_name="rebootdev.aio.state_managers._load() "
                         "- load_actor_state"
                     ):
-                        data: Optional[
-                            bytes
-                        ] = await self._sidecar_client.load_actor_state(
+                        data: Optional[bytes] = self._sidecar.load_actor_state(
                             state_type_name, state_ref
                         )
                     if data is not None:
@@ -1423,7 +1470,7 @@ class SidecarStateManager(
 
         # NOTE: we _must_ store the data in the sidecar _before_
         # updating in memory state in case the store fails.
-        await self._sidecar_client.store(
+        self._sidecar.store(
             actor_upserts,
             task_upserts,
             colocated_upserts,
@@ -3505,65 +3552,4 @@ class SidecarStateManager(
         raise RuntimeError(
             f"Missing middleware for state type '{state_type_name}' "
             f"{error_suffix}."
-        )
-
-
-class LocalSidecarStateManager(SidecarStateManager):
-    """Implementation of state manager that also encapsulates a
-    'SidecarServer' for local use.
-    """
-
-    def __init__(
-        self,
-        directory: str,
-        shards: list[sidecar_pb2.ShardInfo],
-        serviceables: list[Serviceable],
-    ):
-        try:
-            self._sidecar = SidecarServer(
-                directory,
-                sidecar_pb2.ConsensusInfo(shard_infos=shards),
-            )
-        except SidecarServerFailed as e:
-            if (
-                'Failed to instantiate service' in str(e) and
-                '/LOCK:' in str(e)
-            ):
-                raise InputError(
-                    reason=(
-                        "Failed to start sidecar server.\n"
-                        "Did you start another instance of `rbt dev run` "
-                        "in another terminal?"
-                    ), causing_exception=e
-                )
-            raise e
-
-        # Now call our super constructor with the sidecar address and the
-        # serviceables list.
-        super().__init__(
-            sidecar_address=self._sidecar.address,
-            serviceables=serviceables,
-        )
-
-    async def shutdown_and_wait(self):
-        """Shuts down the state manager and sidecar. This is a single method,
-        instead of a separate `shutdown` and `wait`, since the state manager
-        must be fully shut down (including `wait`ing for it) before it's safe to
-        shut down the sidecar.
-        """
-        # First stop the state manager that's using the sidecar server.
-        await super().shutdown()
-        # Wait for the state manager to be fully shut down, so that we're sure
-        # nobody needs the sidecar server anymore.
-        await super().wait()
-
-        # Now shut down the sidecar server. These methods are synchronous C++,
-        # so the blocking `wait()` must be called through `run_in_executor` to
-        # not block the event loop.
-        self._sidecar.shutdown()
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            # Use the default executor.
-            executor=None,
-            func=self._sidecar.wait,
         )

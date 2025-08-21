@@ -27,6 +27,12 @@ _ffi.cdef(
   void sidecar_server_wait(SidecarServer* ss);
 
   void sidecar_server_destroy(SidecarServer* ss);
+
+  size_t sidecar_server_load_actor_state(SidecarServer* server, const char* request_bytes, size_t request_bytes_size, char** message_bytes, char** status_message);
+
+  size_t sidecar_server_store(SidecarServer* server, const char* request_bytes, size_t request_bytes_size, char** status_message);
+
+  void sidecar_server_delete_array(char* ptr);
 """
 )
 _lib = _ffi.dlopen(
@@ -81,6 +87,120 @@ class SidecarServer:
 
     def wait(self):
         _lib.sidecar_server_wait(self._ptr)
+
+    def _load_actor_state(
+        self,
+        request: sidecar_pb2.LoadRequest,
+    ) -> Optional[bytes]:
+        message_bytes = _ffi.new("char**")
+        status_message = _ffi.new("char**")
+
+        request_bytes = request.SerializeToString()
+        try:
+            size = _lib.sidecar_server_load_actor_state(
+                self._ptr,
+                request_bytes,
+                len(request_bytes),
+                message_bytes,
+                status_message,
+            )
+
+            if message_bytes[0] != _ffi.NULL:
+                response = sidecar_pb2.LoadResponse()
+                response_bytes = _ffi.unpack(message_bytes[0], size)
+                response.ParseFromString(response_bytes)
+
+                if (len(response.actors) == 0):
+                    # No actor found.
+                    return None
+
+                assert len(response.actors) == 1
+                assert (response.actors[0].HasField('state'))
+                return response.actors[0].state
+            else:
+                # Generic gRPC error.
+                assert status_message[0] != _ffi.NULL
+                status = _ffi.unpack(status_message[0], size)
+                # We know that the 'status_message[0]' is a 'char*',
+                # so according to the docs 'unpack' will always
+                # return a 'bytes' object.
+                # https://cffi.readthedocs.io/en/latest/ref.html#ffi-string-ffi-unpack
+                assert isinstance(status, bytes)
+                raise SidecarError(
+                    "Error while loading actor state (gRPC request "
+                    f"failed): {status.decode() or 'unknown error'}"
+                )
+        finally:
+            _lib.sidecar_server_delete_array(message_bytes[0])
+            _lib.sidecar_server_delete_array(status_message[0])
+
+    def load_actor_state(
+        self,
+        state_type: StateTypeName,
+        state_ref: StateRef,
+    ) -> Optional[bytes]:
+        """Attempt to load state from sidecar. Return None if state
+         has not (yet) been stored.
+        """
+
+        request = sidecar_pb2.LoadRequest(
+            actors=[
+                sidecar_pb2.Actor(
+                    state_type=state_type,
+                    state_ref=state_ref.ref,
+                )
+            ]
+        )
+
+        return self._load_actor_state(request)
+
+    def _store(self, request: sidecar_pb2.StoreRequest) -> None:
+        status_message = _ffi.new("char**")
+
+        request_bytes = request.SerializeToString()
+        try:
+            size = _lib.sidecar_server_store(
+                self._ptr,
+                request_bytes,
+                len(request_bytes),
+                status_message,
+            )
+
+            if status_message[0] != _ffi.NULL:
+                status = _ffi.unpack(status_message[0], size)
+                # We know that the 'status_message[0]' is a 'char*',
+                # so according to the docs 'unpack' will always
+                # return a 'bytes' object.
+                # https://cffi.readthedocs.io/en/latest/ref.html#ffi-string-ffi-unpack
+                assert isinstance(status, bytes)
+                raise SidecarError(
+                    "Error while storing data in sidecar (gRPC request "
+                    f"failed): {status.decode() or 'unknown error'}"
+                )
+        finally:
+            _lib.sidecar_server_delete_array(status_message[0])
+
+    def store(
+        self,
+        actor_upserts: list[sidecar_pb2.Actor],
+        task_upserts: list[sidecar_pb2.Task],
+        colocated_upserts: list[sidecar_pb2.ColocatedUpsert],
+        ensure_state_types_created: list[StateTypeName],
+        transaction: Optional[sidecar_pb2.Transaction] = None,
+        idempotent_mutation: Optional[sidecar_pb2.IdempotentMutation] = None,
+        sync: bool = True,
+    ) -> None:
+        request = sidecar_pb2.StoreRequest(
+            actor_upserts=actor_upserts,
+            task_upserts=task_upserts,
+            colocated_upserts=colocated_upserts,
+            transaction=transaction,
+            idempotent_mutation=idempotent_mutation,
+            ensure_state_types_created=ensure_state_types_created,
+            sync=sync,
+        )
+
+        self._store(request)
 
 
 # `SortedMap` is implemented using a series of special cases that we might
@@ -156,36 +276,6 @@ class SidecarClient:
             )
         )
 
-    async def load_actor_state(
-        self,
-        state_type: StateTypeName,
-        state_ref: StateRef,
-    ) -> Optional[bytes]:
-        """Attempt to load state from sidecar. Return None if state
-         has not (yet) been stored.
-        """
-        stub = await self._get_sidecar_stub()
-        response: sidecar_pb2.LoadResponse = await stub.Load(
-            sidecar_pb2.LoadRequest(
-                actors=[
-                    sidecar_pb2.
-                    Actor(state_type=state_type, state_ref=state_ref.to_str())
-                ]
-            )
-        )
-        if len(response.actors) > 1:
-            raise LoadError(
-                f'Expected one actor in LoadResponse; got {len(response.actors)}'
-            )
-
-        if len(response.actors) == 0:
-            return None
-
-        # Invariant: If an actor is filled in a LoadResponse, its state field is
-        # also filled (although said state may itself be empty).
-        assert response.actors[0].HasField('state')
-        return response.actors[0].state
-
     async def load_task_response(
         self,
         task_id: tasks_pb2.TaskId,
@@ -230,43 +320,6 @@ class SidecarClient:
                 )
         else:
             return None
-
-    async def store(
-        self,
-        actor_upserts: list[sidecar_pb2.Actor],
-        task_upserts: list[sidecar_pb2.Task],
-        colocated_upserts: list[sidecar_pb2.ColocatedUpsert],
-        ensure_state_types_created: list[StateTypeName],
-        transaction: Optional[sidecar_pb2.Transaction] = None,
-        idempotent_mutation: Optional[sidecar_pb2.IdempotentMutation] = None,
-        sync: bool = True,
-    ) -> None:
-        """Store actor state and task upserts after method completion."""
-        # Don't bother making an expensive call if there isn't
-        # anything to be done, which may be possible for inline
-        # writers that are not idempotent and haven't modified their
-        # state.
-        if (
-            len(actor_upserts) == 0 and len(task_upserts) == 0 and
-            len(colocated_upserts) == 0 and
-            len(ensure_state_types_created) == 0 and transaction is None and
-            idempotent_mutation is None
-        ):
-            return
-
-        stub = await self._get_sidecar_stub()
-
-        request = sidecar_pb2.StoreRequest(
-            actor_upserts=actor_upserts,
-            task_upserts=task_upserts,
-            colocated_upserts=colocated_upserts,
-            transaction=transaction,
-            idempotent_mutation=idempotent_mutation,
-            ensure_state_types_created=ensure_state_types_created,
-            sync=sync,
-        )
-
-        await stub.Store(request)
 
     async def transaction_coordinator_prepared(
         self,
