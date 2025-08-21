@@ -618,8 +618,16 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       stateId: call.context.stateId,
       method: call.context.method,
       stateTypeName: call.context.stateTypeName,
-      callerBearerToken: call.context.callerBearerToken,
-      cookie: call.context.cookie,
+      callerBearerToken: (
+        call.context.callerBearerToken !== undefined
+          ? call.context.callerBearerToken
+          : null
+      ),
+      cookie: (
+        call.context.cookie !== undefined
+          ? call.context.cookie
+          : null
+      ),
       appInternal: call.context.appInternal,
       auth: (
         call.context.auth !== undefined
