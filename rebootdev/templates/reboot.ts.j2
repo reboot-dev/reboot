@@ -1746,7 +1746,7 @@ export class {{ client.proto.state_name }}WeakReference {
             }
             return reboot.ALWAYS;
           }
-          return this.#options.idempotency.each_iteration
+          return this.#options.idempotency.eachIteration
             ? reboot.PER_ITERATION
             : reboot.PER_WORKFLOW;
         }
@@ -1816,7 +1816,7 @@ export class {{ client.proto.state_name }}WeakReference {
             }
             return reboot.ALWAYS;
           }
-          return this.#options.idempotency.each_iteration
+          return this.#options.idempotency.eachIteration
             ? reboot.PER_ITERATION
             : reboot.PER_WORKFLOW;
         }
