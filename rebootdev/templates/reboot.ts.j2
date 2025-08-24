@@ -72,7 +72,6 @@ already been converted to use `pb_name`. #}
 import * as {{ pb_name }} from "./{{ pb_name }}{% if nodejs_extensions %}.js{% endif %}";
 
 import * as uuid from "uuid";
-
 import * as reboot from "@reboot-dev/reboot";
 import {
   Context,
@@ -83,6 +82,7 @@ import {
   WriterContext,
   TransactionContext,
 } from "@reboot-dev/reboot";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import * as protobuf_es from "@bufbuild/protobuf";
 import * as reboot_api from "@reboot-dev/reboot-api";
 
@@ -267,8 +267,8 @@ const {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf = (
 ): {{ method.input_type }} => {
   return partialRequest instanceof {{ method.input_type }}
     ? partialRequest
-    : new {{ method.input_type }}(
-      {% if options.proto.zod %}
+    {% if options.proto.zod %}
+    : new {{ method.input_type }}().fromJson(
       reboot_api.convertToProtobufJson(
         api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
         reboot_api.validate(
@@ -277,10 +277,12 @@ const {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf = (
           partialRequest || {}
         )
       )
-      {% else %}
-      partialRequest
-      {% endif %}
     );
+    {% else %}
+    : new {{ method.input_type }}(
+      partialRequest
+    );
+    {% endif %}
 };
 
 const {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape = (
@@ -312,8 +314,8 @@ const {{ client.proto.state_name }}{{ method.proto.name }}ResponseToProtobuf = (
 ): {{ method.output_type }} => {
   return partialResponse instanceof {{ method.output_type }}
     ? partialResponse
-    : new {{ method.output_type }}(
-      {% if options.proto.zod %}
+    {% if options.proto.zod %}
+    : new {{ method.output_type }}().fromJson(
       reboot_api.convertToProtobufJson(
         api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
         reboot_api.validate(
@@ -322,10 +324,12 @@ const {{ client.proto.state_name }}{{ method.proto.name }}ResponseToProtobuf = (
           partialResponse
         )
       )
-      {% else %}
-      partialResponse
-      {% endif %}
     );
+    {% else %}
+    : new {{ method.output_type }}(
+      partialResponse
+    );
+    {% endif %}
 };
 
 {% endfor %}
@@ -406,7 +410,7 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
   #external?: any | undefined;
 
   public ref(
-    options?: { bearerToken?: string }
+    options?: { bearerToken?: string | null }
   ) {
     const context = reboot.getContext();
     return new {{ state.proto.name }}.WeakReference(
@@ -598,6 +602,9 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
     }
   }
 
+  {% endfor %}
+  {% endfor %}
+
   async __dispatch(
     external,
     cancelled: Promise<void>,
@@ -611,8 +618,16 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       stateId: call.context.stateId,
       method: call.context.method,
       stateTypeName: call.context.stateTypeName,
-      callerBearerToken: call.context.callerBearerToken,
-      cookie: call.context.cookie,
+      callerBearerToken: (
+        call.context.callerBearerToken !== undefined
+          ? call.context.callerBearerToken
+          : null
+      ),
+      cookie: (
+        call.context.cookie !== undefined
+          ? call.context.cookie
+          : null
+      ),
       appInternal: call.context.appInternal,
       auth: (
         call.context.auth !== undefined
@@ -631,9 +646,6 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
 
     return this["_" + call.context.method](context, call.state, call.request);
   }
-
-  {% endfor %}
-  {% endfor %}
 
   __storeExternal(external: any) {
     this.#external = external;
@@ -762,38 +774,22 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       idempotencyAlias: string,
       context: reboot.WorkflowContext,
       writer: (state: {{ state.proto.name }}.State) => Promise<void>,
-      options?: {
-        stringify?: undefined;
-        parse?: undefined;
-        validate?: undefined
-      }
+      options?: { schema?: undefined }
     ): Promise<void>;
 
-    async write<T>(
+    async write<Schema extends StandardSchemaV1>(
       idempotencyAlias: string,
       context: reboot.WorkflowContext,
-      writer: (state: {{ state.proto.name }}.State) => Promise<T>,
-      options: {
-        stringify?: (result: T) => string;
-        parse: (value: string) => T;
-        validate?: undefined;
-      } | {
-        stringify?: (result: T) => string;
-        parse?: undefined;
-        validate: (result: T) => boolean;
-      }
-    ): Promise<T>;
+      writer: (state: {{ state.proto.name }}.State) => Promise<StandardSchemaV1.InferInput<Schema>>,
+      options: { schema: Schema }
+    ): Promise<StandardSchemaV1.InferOutput<Schema>>;
 
-    async write<T>(
+    async write<Schema extends StandardSchemaV1>(
       idempotencyAlias: string,
       context: reboot.WorkflowContext,
-      writer: (state: {{ state.proto.name }}.State) => Promise<T>,
-      options: {
-        stringify?: (result: T) => string;
-        parse?: (value: string) => T;
-        validate?: (result: T) => boolean
-      } = {}
-    ): Promise<void | T> {
+      writer: (state: {{ state.proto.name }}.State) => Promise<StandardSchemaV1.InferInput<Schema>>,
+      options: { schema?: Schema } = {}
+    ): Promise<void | StandardSchemaV1.InferOutput<Schema>> {
       return await (
         reboot.isWithinLoop()
           ? this.perIteration(idempotencyAlias)
@@ -826,46 +822,20 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       async write(
         context: reboot.WorkflowContext,
         writer: (state: {{ state.proto.name }}.State) => Promise<void>,
-        options?: {
-          stringify?: undefined;
-          parse?: undefined;
-          validate?: undefined
-        }
+        options?: { schema?: undefined }
       ): Promise<void>;
 
-      async write<T>(
+      async write<Schema extends StandardSchemaV1>(
         context: reboot.WorkflowContext,
-        writer: (state: {{ state.proto.name }}.State) => Promise<T>,
-        options: {
-          stringify?: (result: T) => string;
-          parse: (value: string) => T;
-          validate?: undefined;
-        } | {
-          stringify?: (result: T) => string;
-          parse?: undefined;
-          validate: (result: T) => boolean;
-        }
-      ): Promise<T>;
+        writer: (state: {{ state.proto.name }}.State) => Promise<StandardSchemaV1.InferInput<Schema>>,
+        options: { schema: Schema }
+      ): Promise<StandardSchemaV1.InferOutput<Schema>>;
 
-      async write<T>(
+      async write<Schema extends StandardSchemaV1>(
         context: reboot.WorkflowContext,
-        writer: (state: {{ state.proto.name }}.State) => Promise<T>,
-        {
-          stringify,
-          parse,
-          validate
-        }: {
-          stringify?: (result: T) => string;
-          parse?: (value: string) => T;
-          validate?: (result: T) => boolean
-        }
-      ): Promise<void | T> {
-        // Use `JSON.stringify` and `JSON.parse` by default.
-        stringify = stringify ?? JSON.stringify;
-        parse = parse ?? JSON.parse;
-
-        const unidempotently = this.#idempotency.how === reboot.ALWAYS;
-
+        writer: (state: {{ state.proto.name }}.State) => Promise<StandardSchemaV1.InferInput<Schema>>,
+        { schema }: { schema?: Schema } = {}
+      ): Promise<void | StandardSchemaV1.InferOutput<Schema>> {
         const result = await reboot_native.Servicer_write(
           this.#external,
           context.__external,
@@ -880,22 +850,48 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
 
               // Fail early if the developer thinks that they have some value
               // that they want to validate but we got `undefined`.
-              if (t === undefined && validate !== undefined) {
+              if (t === undefined && schema !== undefined) {
                 throw new Error(
-                  "Not expecting `validate` as you are returning `void` (or explicitly `undefined`); did you mean to return a value (or if you want to explicitly return the absence of a value use `null`)"
+                  "Not expecting 'schema' as you are returning 'void' (or explicitly 'undefined') from your inline writer; did you mean to return a value (or if you want to explicitly return the absence of a value use 'null')"
                 );
               }
 
+              if (t !== undefined) {
+                // Fail early if the developer forgot to pass `schema`.
+                if (schema === undefined) {
+                  throw new Error(
+                    "Expecting 'schema' as you are returning a value from your inline writer"
+                  );
+                }
+
+                let validate = schema["~standard"].validate(t);
+                if (validate instanceof Promise) {
+                  validate = await validate;
+                }
+
+                // If the `issues` field exists, the validation failed.
+                if (validate.issues) {
+                  throw new Error(
+                    `Failed to validate result of inline writer: ${JSON.stringify(validate.issues, null, 2)}`
+                  );
+                }
+              }
+
               return JSON.stringify({
-                // NOTE: we use the empty string to represent a
+                // NOTE: we use `stringify` from
+                // `@reboot-dev/reboot-api` because it can handle
+                // `BigInt` and `Uint8Array` which are common types
+                // from protobuf.
+                //
+                // We use the empty string to represent a
                 // `callable` returning `void` (or explicitly
                 // `undefined`).
                 //
                 // To differentiate returning `void` (or explicitly
-                // `undefined`) from `stringify` returning an empty
-                // string we use `{ value: stringify(t) }`.
+                // `undefined`) from `reboot_api.stringify` returning an empty
+                // string we use `{ value: t }`.
                 result: (
-                  t !== undefined && JSON.stringify({ value: stringify(t) })
+                  t !== undefined && reboot_api.stringify({ value: t })
                 ) || "",
                 state: {{ state.proto.name }}ToProtobuf(state).toJson(),
               });
@@ -913,26 +909,37 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
         // have to change the idempotency alias so that `callable` is
         // re-executed. These semantics are the same as Python (although
         // Python uses the `type` keyword argument instead of the
-        // `parse` and `validate` properties we use here).
+        // `schema` property we use here).
 
-        // TODO: reboot_api.assert(result !== undefined);
+        reboot_api.assert(result !== undefined);
 
         if (result !== "") {
-          const { value } = JSON.parse(result);
-          const t = parse(value);
-          if (!unidempotently) {
-            if (parse !== JSON.parse) {
-              if (validate === undefined) {
-                throw new Error("Missing `validate` property");
-              } else if (!validate(t)) {
-                throw new Error("Failed to validate memoized result");
-              }
-            }
-          }
-          return t;
-        }
+          // NOTE: we use `parse` from `@reboot-dev/reboot-api`
+          // because it can handle `BigInt` and `Uint8Array` which are
+          // common types from protobuf.
+          const { value } = reboot_api.parse(result);
 
-        // TODO: reboot_api.assert(result === "");
+          if (schema === undefined) {
+            throw new Error(
+              "Expecting 'schema' as we have already memoized a result, has " +
+              "the code been updated to remove a previously existing 'schema'"
+            );
+          }
+
+          let validate = schema["~standard"].validate(value);
+          if (validate instanceof Promise) {
+            validate = await validate;
+          }
+
+          // If the `issues` field exists, the validation failed.
+          if (validate.issues) {
+            throw new Error(
+              `Failed to validate result of inline writer: ${JSON.stringify(validate.issues, null, 2)}`
+            );
+          }
+
+          return validate.value;
+        }
 
         // Otherwise `callable` must have returned void (or explicitly
         // `undefined`), fall through.
@@ -1514,15 +1521,13 @@ export class {{ client.proto.state_name }}WeakReference {
 
   constructor(
     id: string,
-    bearerToken?: string,
+    bearerToken?: string | null,
     {% if client.state is not none %}
     servicer?: {{ client.proto.state_name }}BaseServicer
     {% endif %}
   ) {
     this.#id = id;
-    this.#options = {
-      bearerToken: bearerToken,
-    };
+    this.#options = bearerToken === null ? {} : { bearerToken };
     {% if client.state is not none %}
     this._servicer = servicer;
     {% endif %}
@@ -1557,36 +1562,20 @@ export class {{ client.proto.state_name }}WeakReference {
   async write(
     context: reboot.WorkflowContext,
     writer: (state: {{ client.proto.state_name }}.State) => Promise<void>,
-    options?: {
-      stringify?: undefined;
-      parse?: undefined;
-      validate?: undefined
-    }
+    options?: { schema?: undefined },
   ): Promise<void>;
 
-  async write<T>(
+  async write<Schema extends StandardSchemaV1>(
     context: reboot.WorkflowContext,
-    writer: (state: {{ client.proto.state_name }}.State) => Promise<T>,
-    options: {
-      stringify?: (result: T) => string;
-      parse: (value: string) => T;
-      validate?: undefined;
-    } | {
-      stringify?: (result: T) => string;
-      parse?: undefined;
-      validate: (result: T) => boolean;
-    }
-  ): Promise<T>;
+    writer: (state: {{ client.proto.state_name }}.State) => Promise<StandardSchemaV1.InferInput<Schema>>,
+    options: { schema: Schema }
+  ): Promise<StandardSchemaV1.InferOutput<Schema>>;
 
-  async write<T>(
+  async write<Schema extends StandardSchemaV1>(
     context: reboot.WorkflowContext,
-    writer: (state: {{ client.proto.state_name }}.State) => Promise<T>,
-    options: {
-      stringify?: (result: T) => string;
-      parse?: (value: string) => T;
-      validate?: (result: T) => boolean
-    } = {}
-  ): Promise<void | T> {
+    writer: (state: {{ client.proto.state_name }}.State) => Promise<StandardSchemaV1.InferInput<Schema>>,
+    options: { schema?: Schema } = {}
+  ): Promise<void | StandardSchemaV1.InferOutput<Schema>> {
     return await (
       reboot.isWithinUntil()
         ? this.always()
@@ -1736,7 +1725,7 @@ export class {{ client.proto.state_name }}WeakReference {
             }
             return reboot.ALWAYS;
           }
-          return this.#options.idempotency.each_iteration
+          return this.#options.idempotency.eachIteration
             ? reboot.PER_ITERATION
             : reboot.PER_WORKFLOW;
         }
@@ -1753,36 +1742,20 @@ export class {{ client.proto.state_name }}WeakReference {
     async write(
       context: reboot.WorkflowContext,
       writer: (state: {{ client.proto.state_name }}.State) => Promise<void>,
-      options?: {
-        stringify?: undefined;
-        parse?: undefined;
-        validate?: undefined
-      }
+      options?: { schema?: undefined }
     ): Promise<void>;
 
-    async write<T>(
+    async write<Schema extends StandardSchemaV1>(
       context: reboot.WorkflowContext,
-      writer: (state: {{ client.proto.state_name }}.State) => Promise<T>,
-      options: {
-        stringify?: (result: T) => string;
-        parse: (value: string) => T;
-        validate?: undefined;
-      } | {
-        stringify?: (result: T) => string;
-        parse?: undefined;
-        validate: (result: T) => boolean;
-      }
-    ): Promise<T>;
+      writer: (state: {{ client.proto.state_name }}.State) => Promise<StandardSchemaV1.InferInput<Schema>>,
+      options: { schema: Schema }
+    ): Promise<StandardSchemaV1.InferOutput<Schema>>;
 
-    async write<T>(
+    async write<Schema extends StandardSchemaV1>(
       context: reboot.WorkflowContext,
-      writer: (state: {{ client.proto.state_name }}.State) => Promise<T>,
-      options: {
-        stringify?: (result: T) => string;
-        parse?: (value: string) => T;
-        validate?: (result: T) => boolean
-      } = {}
-    ): Promise<void | T> {
+      writer: (state: {{ client.proto.state_name }}.State) => Promise<StandardSchemaV1.InferInput<Schema>>,
+      options: { schema?: Schema } = {}
+    ): Promise<void | StandardSchemaV1.InferOutput<Schema>> {
       const servicer = this.#weakReference._servicer;
 
       if (servicer === undefined) {
@@ -1806,7 +1779,7 @@ export class {{ client.proto.state_name }}WeakReference {
             }
             return reboot.ALWAYS;
           }
-          return this.#options.idempotency.each_iteration
+          return this.#options.idempotency.eachIteration
             ? reboot.PER_ITERATION
             : reboot.PER_WORKFLOW;
         }
@@ -2004,8 +1977,8 @@ export class {{ client.proto.state_name }} {
   {% endfor %}
 
   public static ref(
-    idOrOptions?: string | { bearerToken?: string },
-    options?: { bearerToken?: string }
+    idOrOptions?: string | { bearerToken?: string | null },
+    options?: { bearerToken?: string | null }
   ) {
     if (idOrOptions === undefined || typeof idOrOptions === "object") {
       const context = reboot.getContext();
@@ -2029,7 +2002,7 @@ export class {{ client.proto.state_name }} {
   public async {{ method.proto.name | to_lower_camel }}(
     context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-    options?: { bearerToken?: string }
+    options?: { bearerToken?: string | null }
   ): Promise<[
     {{ client.proto.state_name }}.WeakReference,
     {{ client.proto.state_name }}.{{ method.proto.name }}Response,
@@ -2039,7 +2012,7 @@ export class {{ client.proto.state_name }} {
     context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
     id: string,
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-    options?: { bearerToken?: string }
+    options?: { bearerToken?: string | null }
   ): Promise<[
     {{ client.proto.state_name }}.WeakReference,
     {{ client.proto.state_name }}.{{ method.proto.name }}Response,
@@ -2048,15 +2021,15 @@ export class {{ client.proto.state_name }} {
   public static async {{ method.proto.name | to_lower_camel }}(
     context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
     idOrPartialRequest?: string | {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-    partialRequestOrOptions?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | { bearerToken?: string },
-    optionsOrUndefined?: { bearerToken?: string }
+    partialRequestOrOptions?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | { bearerToken?: string | null },
+    optionsOrUndefined?: { bearerToken?: string | null }
   ): Promise<[
     {{ client.proto.state_name }}.WeakReference,
     {{ client.proto.state_name }}.{{ method.proto.name }}Response,
   ]> {
     let id: string | undefined = undefined;
     let partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | undefined = undefined;
-    let options: { bearerToken?: string } | undefined = undefined;
+    let options: { bearerToken?: string | null } | undefined = undefined;
 
     if (typeof idOrPartialRequest === "string" || idOrPartialRequest instanceof String) {
       id = idOrPartialRequest;
@@ -2154,7 +2127,7 @@ export class {{ client.proto.state_name }} {
     public async {{ method.proto.name | to_lower_camel }}(
       context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
       partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-      options?: { bearerToken?: string }
+      options?: { bearerToken?: string | null }
     ): Promise<[
       {{ client.proto.state_name }}.WeakReference,
       {{ client.proto.state_name }}.{{ method.proto.name }}Response,
@@ -2164,7 +2137,7 @@ export class {{ client.proto.state_name }} {
       context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
       id: string,
       partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-      options?: { bearerToken?: string }
+      options?: { bearerToken?: string | null }
     ): Promise<[
       {{ client.proto.state_name }}.WeakReference,
       {{ client.proto.state_name }}.{{ method.proto.name }}Response,
@@ -2173,15 +2146,15 @@ export class {{ client.proto.state_name }} {
     public async {{ method.proto.name | to_lower_camel }}(
       context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
       idOrPartialRequest?: string | {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-      partialRequestOrOptions?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | { bearerToken?: string },
-      optionsOrUndefined?: { bearerToken?: string }
+      partialRequestOrOptions?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | { bearerToken?: string | null },
+      optionsOrUndefined?: { bearerToken?: string | null }
     ): Promise<[
       {{ client.proto.state_name }}.WeakReference,
       {{ client.proto.state_name }}.{{ method.proto.name }}Response,
     ]> {
       let id: string | undefined = undefined;
       let partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | undefined = undefined;
-      let options: { bearerToken?: string } = {};
+      let options: { bearerToken?: string | null } = {};
 
       if (typeof idOrPartialRequest === "string" || idOrPartialRequest instanceof String) {
         id = idOrPartialRequest;

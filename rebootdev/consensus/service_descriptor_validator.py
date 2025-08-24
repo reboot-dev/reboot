@@ -532,6 +532,19 @@ def _compare_messages(
             if original_value == updated_value:
                 continue
 
+            # It is safe for a `uint32` field to change to a `uint64`.
+            if (
+                original_value == FieldDescriptor.TYPE_UINT32 and
+                updated_value == FieldDescriptor.TYPE_UINT64
+            ):
+                continue
+            # It is safe for an `int32` field to change to an `int64`.
+            if (
+                original_value == FieldDescriptor.TYPE_INT32 and
+                updated_value == FieldDescriptor.TYPE_INT64
+            ):
+                continue
+
             hint = (
                 f'(relative to original message `{original_message.name}`) '
                 if original_message.name != updated_message.name else ''

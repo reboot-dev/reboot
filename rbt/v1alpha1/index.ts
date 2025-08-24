@@ -868,7 +868,7 @@ export function convertToProtobufJson<T>(
     // to ensure that this is in fact a valid JSON object but also
     // because (b) @bufbuild/protobuf can not handle any object that
     // has properties with `undefined` as a value.
-    return protobuf_es.Value.fromJsonString(JSON.stringify(input));
+    return JSON.parse(JSON.stringify(input));
   } else {
     throw new Error(`Unexpected schema type '${schema._zod.def.type}'`);
   }
@@ -1015,4 +1015,85 @@ export function convertFromProtobuf<T>(
   } else {
     throw new Error(`Unexpected schema type '${schema._zod.def.type}'`);
   }
+}
+
+/**
+ * Convert Uint8Array to base64 string (cross-platform).
+ */
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  // @ts-ignore
+  if (typeof Buffer !== "undefined") {
+    // Node.js environment.
+    // @ts-ignore
+    return Buffer.from(bytes).toString("base64");
+  } else {
+    // Browser environment.
+    return btoa(String.fromCharCode(...bytes));
+  }
+}
+
+/**
+ * Convert base64 string to Uint8Array (cross-platform).
+ */
+function base64ToUint8Array(base64: string): Uint8Array {
+  // @ts-ignore
+  if (typeof Buffer !== "undefined") {
+    // Node.js environment.
+    // @ts-ignore
+    return new Uint8Array(Buffer.from(base64, "base64"));
+  } else {
+    // Browser environment.
+    return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  }
+}
+
+/**
+ * Like `JSON.stringify` but with special handling for `BigInt`,
+ * `Uint8Array`, primitive `string`, and `String` objects.
+ *
+ * @param input - The input to stringify.
+ * @returns JSON string with `BigInt`, `Uint8Array`, primitive
+ * `string`, and `String` objects converted to prefixed strings.
+ */
+export function stringify(input: any): string {
+  return JSON.stringify(input, (_, value) => {
+    if (typeof value === "bigint") {
+      return `__BIGINT__${value.toString()}`;
+    } else if (value instanceof Uint8Array) {
+      return `__UINT8ARRAY__${uint8ArrayToBase64(value)}`;
+    } else if (typeof value === "string") {
+      return `__STRING__${value}`;
+    } else if (value instanceof String) {
+      return `__STRING__${value.toString()}`;
+    } else {
+      return value;
+    }
+  });
+}
+
+/**
+ * Like `JSON.parse`, but expecting a string from `stringify` (see
+ * above) in order to reconstruct `BigInt`, `Uint8Array`, primitive
+ * `string`, and `String` objects.
+ *
+ * @param s - The JSON string to parse.
+ * @returns The parsed result with `BigInt`, `Uint8Array`, and `string` properly
+ * reconstructed.
+ */
+export function parse(s: string): any {
+  return JSON.parse(s, (_, value) => {
+    if (typeof value === "string") {
+      if (value.startsWith("__BIGINT__")) {
+        const bigIntStr = value.slice(10); // Remove "__BIGINT__" prefix.
+        return BigInt(bigIntStr);
+      } else if (value.startsWith("__UINT8ARRAY__")) {
+        const base64 = value.slice(14); // Remove "__UINT8ARRAY__" prefix (14 characters).
+        return base64ToUint8Array(base64);
+      } else if (value.startsWith("__STRING__")) {
+        return value.slice(10); // Remove "__STRING__" prefix (10 characters).
+      }
+    } else {
+      return value;
+    }
+  });
 }

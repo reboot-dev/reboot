@@ -265,6 +265,7 @@ def js_reboot_library(
             "//:node_modules/@bufbuild/protobuf",
             "//:node_modules/@reboot-dev/reboot",
             "//:node_modules/@reboot-dev/reboot-api",
+            "//:node_modules/@standard-schema/spec",
             "//:node_modules/@types/node",
             "//:node_modules/@types/uuid",
             "//:node_modules/uuid",
