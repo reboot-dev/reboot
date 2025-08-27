@@ -11,7 +11,7 @@ from rebootdev.aio.types import StateRef, StateTypeName
 # both 'respect' and 'reboot'.
 from rebootdev.grpc.options import make_retry_channel_options
 from rebootdev.settings import MAX_SIDECAR_GRPC_MESSAGE_LENGTH_BYTES
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Optional, overload
 
 _ffi = FFI()
 _ffi.cdef(
@@ -320,6 +320,74 @@ class SidecarClient:
                 )
         else:
             return None
+
+    @overload
+    async def find(
+        self,
+        state_type: StateTypeName,
+        *,
+        start_id: Optional[str] = None,
+        exclusive: bool = False,
+        limit: int = 100,
+    ) -> list[StateRef]:
+        ...
+
+    @overload
+    async def find(
+        self,
+        state_type: StateTypeName,
+        *,
+        until_id: Optional[str] = None,
+        exclusive: bool = False,
+        limit: int = 100,
+    ) -> list[StateRef]:
+        ...
+
+    async def find(
+        self,
+        state_type: StateTypeName,
+        *,
+        start_id: Optional[str] = None,
+        until_id: Optional[str] = None,
+        exclusive: bool = False,
+        limit: int = 100,
+    ) -> list[StateRef]:
+        """
+        Find actor references by state type and ID prefix/range.
+        
+        Args:
+            state_type: The state type to search for.
+            start_id: Start searching from this ID (forward pagination).
+            until_id: Search backwards from this ID (backward pagination).
+            exclusive: If True, exclude either start_id or until_id from results.
+            limit: Maximum number of results to return.
+            
+        Returns:
+            List of StateRef objects matching the search criteria.
+            
+        Note:
+            Only one of (start_id, until_id) should be specified.
+        """
+        stub = await self._get_sidecar_stub()
+
+        request = sidecar_pb2.FindRequest(
+            state_type=state_type,
+            limit=limit,
+        )
+
+        if start_id is not None:
+            state_ref = StateRef.from_id_prefix(state_type, start_id)
+            request.start.state_ref = state_ref.to_str()
+            request.start.exclusive = exclusive
+        elif until_id is not None:
+            state_ref = StateRef.from_id_prefix(state_type, until_id)
+            request.until.state_ref = state_ref.to_str()
+            request.until.exclusive = exclusive
+        else:
+            raise AssertionError("Either start_id or until_id must be given.")
+
+        response: sidecar_pb2.FindResponse = await stub.Find(request)
+        return [StateRef(ref) for ref in response.state_refs]
 
     async def transaction_coordinator_prepared(
         self,

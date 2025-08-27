@@ -35,6 +35,8 @@ using rbt::v1alpha1::ConsensusInfo;
 using rbt::v1alpha1::ExportItem;
 using rbt::v1alpha1::ExportRequest;
 using rbt::v1alpha1::ExportResponse;
+using rbt::v1alpha1::FindRequest;
+using rbt::v1alpha1::FindResponse;
 using rbt::v1alpha1::IdempotentMutation;
 using rbt::v1alpha1::LoadRequest;
 using rbt::v1alpha1::LoadResponse;
@@ -146,6 +148,10 @@ class SidecarService final : public rbt::v1alpha1::Sidecar::Service {
       grpc::ServerContext* context,
       const ColocatedReverseRangeRequest* request,
       ColocatedReverseRangeResponse* response) override;
+  grpc::Status Find(
+      grpc::ServerContext* context,
+      const rbt::v1alpha1::FindRequest* request,
+      rbt::v1alpha1::FindResponse* response) override;
   grpc::Status Load(
       grpc::ServerContext* context,
       const LoadRequest* request,
@@ -241,10 +247,6 @@ class SidecarService final : public rbt::v1alpha1::Sidecar::Service {
   // Helper to validate a non-transactional store request.
   expected<void> ValidateNonTransactionalStore(
       const StoreRequest& request);
-
-  // Helper for recovering actors.
-  void RecoverActors(
-      grpc::ServerWriter<RecoverResponse>& responses);
 
   // Helper for recovering tasks.
   std::set<std::string> RecoverTasks(
@@ -1224,6 +1226,115 @@ grpc::Status SidecarService::ColocatedReverseRange(
 
 ////////////////////////////////////////////////////////////////////////
 
+grpc::Status SidecarService::Find(
+    grpc::ServerContext* context,
+    const FindRequest* request,
+    FindResponse* response) {
+  std::unique_lock lock(mutex_);
+  REBOOT_SIDECAR_LOG(1)
+      << "Find { " << request->ShortDebugString() << " }";
+
+  expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
+      LookupColumnFamilyHandle(request->state_type());
+  if (!column_family_handle.has_value()) {
+    // Return empty results for unknown state types rather than an error.
+    // This is important because callers (like SidecarStateManager.actors())
+    // may query for state types that haven't been created yet. A state type's
+    // column family is only created when the first actor of that type is
+    // stored, so returning an empty result correctly indicates there are no
+    // actors of this type yet.
+    return grpc::Status::OK;
+  }
+
+  // Use NonPrefixIteratorReadOptions to ensure we iterate over all keys
+  // in total order. This is necessary because we have a prefix extractor
+  // configured, and using the default ReadOptions could cause the iterator
+  // to skip keys due to prefix optimization.
+  rocksdb::ReadOptions read_options = NonPrefixIteratorReadOptions();
+  std::unique_ptr<rocksdb::Iterator> it(
+      db_->NewIterator(read_options, *column_family_handle));
+
+  if (request->has_start()) {
+    // Forward pagination from a specific key.
+    const auto& start_key = request->start();
+    std::string start_key_ref = MakeActorStateKey(start_key.state_ref());
+
+    // Start at the specified key (inclusive).
+    it->Seek(start_key_ref);
+
+    if (start_key.exclusive()
+        && it->Valid()
+        && it->key().ToString() == start_key_ref) {
+      // Start after the specified key.
+      it->Next();
+    }
+
+    // Collect up to 'limit' entries going forward.
+    for (uint32_t i = 0; i < request->limit() && it->Valid(); ++i) {
+      std::string_view key_view = it->key().ToStringView();
+      const std::string prefix = STATE_KEY_PREFIX ":";
+      if (key_view.size() < prefix.size()
+          || key_view.substr(0, prefix.size()) != prefix) {
+        // We've reached a key that doesn't belong to actor state.
+        break;
+      }
+      std::string_view state_ref = GetStateRefFromActorStateKey(key_view);
+      response->add_state_refs(std::string(state_ref));
+      it->Next();
+    }
+  } else if (request->has_until()) {
+    // Backward pagination before a specific key.
+    const auto& until_key = request->until();
+    std::string until_key_ref = MakeActorStateKey(until_key.state_ref());
+
+    // End at the specified key (inclusive).
+    it->SeekForPrev(until_key_ref);
+
+    if (until_key.exclusive()
+        && it->Valid()
+        && it->key().ToString() == until_key_ref) {
+      // End before the specified key.
+      it->Prev();
+    }
+
+    // Collect up to 'limit' entries going backward, but we need to
+    // reverse them since we want to return in forward order.
+    std::vector<std::string> state_refs;
+    for (uint32_t i = 0; i < request->limit() && it->Valid(); ++i) {
+      std::string_view key_view = it->key().ToStringView();
+      const std::string prefix = STATE_KEY_PREFIX ":";
+      if (key_view.size() < prefix.size()
+          || key_view.substr(0, prefix.size()) != prefix) {
+        // We've reached a key that doesn't belong to actor state.
+        break;
+      }
+      std::string_view state_ref = GetStateRefFromActorStateKey(key_view);
+      state_refs.push_back(std::string(state_ref));
+      it->Prev();
+    }
+
+    // Reverse to maintain forward order in the response.
+    response->mutable_state_refs()->Add(state_refs.rbegin(), state_refs.rend());
+  } else {
+    // No direction specified. Technically possible, but not supported.
+    return grpc::Status(
+        grpc::INVALID_ARGUMENT,
+        "Must specify either 'start' or 'until' direction");
+  }
+
+  if (!it->status().ok()) {
+    return grpc::Status(
+        grpc::UNKNOWN,
+        fmt::format(
+            "Failed to iterate: {}",
+            it->status().ToString()));
+  }
+
+  return grpc::Status::OK;
+}
+
+////////////////////////////////////////////////////////////////////////
+
 grpc::Status SidecarService::_Load(
     const LoadRequest* request,
     LoadResponse* response) {
@@ -2010,61 +2121,6 @@ grpc::Status SidecarService::Export(
 
 ////////////////////////////////////////////////////////////////////////
 
-void SidecarService::RecoverActors(
-    grpc::ServerWriter<RecoverResponse>& responses) {
-  RecoverResponse response;
-
-  // We don't know what is the best batch size for this, so we
-  // just use a number that is small enough to not cause
-  // performance issues, but large enough to not cause too many
-  // round trips.
-  // TODO: This should be configurable and pick the better value for default.
-  static size_t RECOVER_ACTORS_BATCH_SIZE = 16384;
-
-  size_t batch_size = 0;
-
-  for (rocksdb::ColumnFamilyHandle* column_family_handle :
-       column_family_handles_) {
-    if (column_family_handle->GetName() == "default") {
-      continue;
-    }
-    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
-        db_->NewIterator(
-            NonPrefixIteratorReadOptions(),
-            column_family_handle)));
-
-    iterator->Seek(rocksdb::Slice(STATE_KEY_PREFIX));
-    while (iterator->Valid()
-           && iterator->key()
-                   .ToStringView()
-                   .find(STATE_KEY_PREFIX)
-               == 0) {
-      Actor* actor = response.add_actors();
-      actor->set_state_type(column_family_handle->GetName());
-      actor->set_state_ref(
-          std::string(GetStateRefFromActorStateKey(
-              iterator->key()
-                  .ToStringView())));
-
-      MaybeWriteAndClearResponse(
-          responses,
-          response,
-          batch_size,
-          RECOVER_ACTORS_BATCH_SIZE);
-
-      iterator->Next();
-    }
-  }
-
-  // Flush any remaining actors.
-  WriteAndClearResponse(
-      responses,
-      response,
-      batch_size);
-}
-
-////////////////////////////////////////////////////////////////////////
-
 std::set<std::string> SidecarService::RecoverTasks(
     grpc::ServerWriter<RecoverResponse>& responses) {
   // Scan through all column families' set of tasks to find the
@@ -2612,22 +2668,19 @@ grpc::Status SidecarService::Recover(
     return grpc::Status(grpc::UNKNOWN, maybe_migrate.error());
   }
 
-  // (1) Recover the list of all state types and actors.
-  RecoverActors(*responses);
-
-  // (2) Recover tasks _before_ recovering transactions because
+  // (1) Recover tasks _before_ recovering transactions because
   // transactions need to know the recovered committed tasks to
   // recover uncommitted tasks.
   std::set<std::string> committed_task_uuids = RecoverTasks(*responses);
 
-  // (3) Recover idempotent mutations _before_ recovering
+  // (2) Recover idempotent mutations _before_ recovering
   // transactions because transactions need to know the
   // recovered committed idempotent mutations to recover
   // uncommitted idempotent mutations.
   std::set<std::string> committed_idempotent_mutations =
       RecoverIdempotentMutations(*responses);
 
-  // (4) Recover transactions.
+  // (3) Recover transactions.
   expected<void> recover_transactions = RecoverTransactions(
       *responses,
       committed_task_uuids,
