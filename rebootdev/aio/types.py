@@ -122,6 +122,25 @@ class StateRef:
             f"{state_type_tag_for_name(state_type)}:{_state_id_encode(state_id)}"
         )
 
+    @classmethod
+    def from_id_prefix(
+        cls,
+        state_type: StateTypeName,
+        state_id: StateId,
+    ) -> StateRef:
+        # Since this is an ID _prefix_, it's allowed to be empty.
+        validate_ascii(
+            state_id,
+            'state_id',
+            MAX_ACTOR_ID_LENGTH,
+            length_min=0,
+            illegal_characters="\0\n\\",
+            error_type=InvalidStateRefError,
+        )
+        return StateRef(
+            f"{state_type_tag_for_name(state_type)}:{_state_id_encode(state_id)}"
+        )
+
     def components(self) -> list[StateRef]:
         """Returns the component StateRefs in an StateRef.
 

@@ -217,6 +217,45 @@ message ColocatedReverseRangeResponse {
 
 ////////////////////////////////////////////////////////////////////////
 
+message FindRequest {
+  // The state type that is being scanned: this corresponds to the
+  // column family that we will scan in. Must be an existing state type.
+  string state_type = 1;
+
+  message Key {
+    // The state_ref at which to start scanning. Does not need to be an
+    // existing state_ref; it may for example be a prefix of a state_ref
+    // that the caller is interested in. Can be empty, in which case the
+    // first `limit` state refs will be returned.
+    string state_ref = 1;
+
+    // If true, do not include `state_ref` in the range to search. This
+    // is useful for paginated searches; the caller may specify the last
+    // state reference they've seen as their `state_ref`.
+    bool exclusive = 2;
+  }
+
+  oneof direction {
+    // Return the first `limit` entries starting from this key. Useful
+    // for forward pagination.
+    Key start = 2;
+    // Return the last `limit` entries before this key. Useful for
+    // backwards pagination.
+    Key until = 3;
+  }
+
+  // A required limit on the count of records returned, to avoid
+  // exhausting memory in the client or server. A zero limit is not
+  // special cased: no records will be returned for `limit=0`.
+  uint32 limit = 4;
+}
+
+message FindResponse {
+  repeated string state_refs = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
 message LoadRequest {
   // Invariant: actor's 'state' is expected to be unset.
   repeated Actor actors = 1;
@@ -267,9 +306,9 @@ message RecoverRequest {
 }
 
 message RecoverResponse {
-  reserved 5;
+  reserved 5, 6;
+  reserved "actors";
 
-  repeated Actor actors = 6;
   repeated Task pending_tasks = 1;
   repeated Transaction participant_transactions = 2;
 
@@ -360,6 +399,9 @@ service Sidecar {
   // Returns one page of interleaved state machines from the datastore.
   rpc ColocatedReverseRange(ColocatedReverseRangeRequest)
       returns (ColocatedReverseRangeResponse);
+
+  // Find stored state refs by state type and ID (which may be just a prefix).
+  rpc Find(FindRequest) returns (FindResponse);
 
   // Returns an actor state data, or empty data if no such actor yet
   // exists.

@@ -402,8 +402,9 @@ class StateManager(ABC):
 
     @abstractmethod
     async def actors(
-        self
-    ) -> AsyncIterator[dict[StateTypeName, Set[StateRef]]]:
+        self,
+        state_type: StateTypeName,
+    ) -> AsyncIterator[list[StateRef]]:
         """Returns an iterator of all the actors under management."""
         raise NotImplementedError()
         yield  # Necessary for type checking.
@@ -800,10 +801,9 @@ class SidecarStateManager(
         # Is this state manager shutting down?
         self._shutting_down = False
 
-        # All known actors under management.
-        self._actors: defaultdict[StateTypeName,
-                                  Set[StateRef]] = defaultdict(set)
-        self._actors_changed_events: list[asyncio.Event] = []
+        # A way to get notified when the list of actors under management
+        # may have changed.
+        self._actors_list_maybe_changed_events: list[asyncio.Event] = []
 
         # TODO(benh): add a helper class, e.g., ActorData, that
         # encapsulates all of '_states', '_mutator_locks', etc.
@@ -931,20 +931,41 @@ class SidecarStateManager(
                 pass
 
     async def actors(
-        self
-    ) -> AsyncIterator[dict[StateTypeName, Set[StateRef]]]:
+        self,
+        state_type: StateTypeName,
+    ) -> AsyncIterator[list[StateRef]]:
         """Override of StateManager.actors() for
         SidecarStateManager.
         """
         event = asyncio.Event()
-        self._actors_changed_events.append(event)
+        self._actors_list_maybe_changed_events.append(event)
         try:
             while True:
-                yield dict(self._actors)
+                # Make a call to the sidecar to get the list of actors
+                # of the given type. This avoids us having to have a
+                # full list of all actor IDs in memory.
+                yield await self._sidecar_client.find(
+                    state_type,
+                    # TODO(rjh): returning all actors IDs is not very
+                    #            scalable. Instead, we should take
+                    #            parameters from the caller about which
+                    #            actors they're interested in, and what
+                    #            they want the limit to be.
+                    start_id="",
+                    limit=2**32 - 1,  # Max for proto `uint32`.
+                )
+
                 await event.wait()
                 event.clear()
+        except Exception as e:
+            logger.error(
+                "Error in actors() generator: %s",
+                e,
+                exc_info=True,
+            )
+            raise
         finally:
-            self._actors_changed_events.remove(event)
+            self._actors_list_maybe_changed_events.remove(event)
 
     async def export_items(
         self, state_type: StateTypeName
@@ -1508,13 +1529,14 @@ class SidecarStateManager(
                 transaction.actors[state_type].add(state_ref)
 
             else:
+                state_was_cached = state_ref in self._states[state_type]
                 self._states[state_type][state_ref] = state_copy
                 queues = self._streaming_readers[state_type].get(state_ref)
 
-                # Record the presence of this actor.
-                self._actors[state_type].add(state_ref)
-                for event in self._actors_changed_events:
-                    event.set()
+                if not state_was_cached:
+                    # We MAY have just created a new actor.
+                    for event in self._actors_list_maybe_changed_events:
+                        event.set()
 
             if queues is not None:
                 for queue in queues:
@@ -3084,6 +3106,7 @@ class SidecarStateManager(
 
                 queues = self._streaming_readers[state_type].get(state_ref)
 
+                state_was_cached = state_ref in self._states[state_type]
                 if transaction.state is not None:
                     self._states[state_type][state_ref] = transaction.state
                 else:
@@ -3119,12 +3142,16 @@ class SidecarStateManager(
                 if len(transaction.tasks) > 0:
                     transaction.tasks_dispatcher.dispatch(transaction.tasks)
 
-                # Add all actors created during the transaction.
-                if len(transaction.actors) > 0:
-                    for (state_type, state_refs) in transaction.actors.items():
-                        self._actors[state_type].update(state_refs)
-
-                    for event in self._actors_changed_events:
+                if not state_was_cached:
+                    # We MAY have just added this actor as a new state.
+                    # Notify anybody watching for a change in the
+                    # existant actors.
+                    #
+                    # Note that it's OK to only consider this
+                    # participant's state ref. If there's another
+                    # participant that was added in this transaction,
+                    # its state manager will perform the notification.
+                    for event in self._actors_list_maybe_changed_events:
                         event.set()
 
                 # Add all idempotent mutations that occurred within
@@ -3337,11 +3364,6 @@ class SidecarStateManager(
                 for state_type in middleware_by_state_type_name.keys()
             }
         )
-
-        for actor in recover_response.actors:
-            self._actors[actor.state_type].add(StateRef(actor.state_ref))
-            for event in self._actors_changed_events:
-                event.set()
 
         # Need to declare this up here as it is used in multiple scopes.
         middleware: Optional[Middleware] = None

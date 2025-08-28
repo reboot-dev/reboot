@@ -7,38 +7,68 @@ import "google/api/httpbody.proto";
 
 ////////////////////////////////////////////////////////////////////////
 
-message GetAllStatesRequest {
-  // If set, only return actors held by the given consensus ID. If not set (or
-  // left at default), return all actors held by all consensuses.
-  string only_consensus_id = 1;
+message GetStateTypesRequest {}
+
+message GetStateTypesResponse {
+  // The state types that are currently registered.
+  repeated string state_types = 1;
 }
 
-message GetAllStatesResponse {
+////////////////////////////////////////////////////////////////////////
+
+message GetStateIdsRequest {
+  // If set, only return state IDs held by the given consensus ID. If not set
+  // (or left at default), return all state IDs held by all consensuses.
+  string only_consensus_id = 1;
+
+  // The state type to get state IDs for.
+  string state_type = 2;
+}
+
+message GetStateIdsResponse {
+  repeated string state_ids = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message GetStateRequest {
+  // This request is expected to have the `x-reboot-state-ref` header
+  // set, which identifies the state that should be fetched (as well as
+  // ensuring the request is routed correctly). No further parameters
+  // are needed.
+}
+
+message GetStateResponse {
   // Data is returned as a `chunk`, e.g, 3 (zero based), of some
   // `total`, e.g., 4, so as to account for max message size which is
   // 4MB by default for gRPC (and actually 1MB by default for Envoy's
   // gRPC-JSON transcoder which we set to also be 4MB to match gRPC).
-  uint32 chunk = 2;
-  uint32 total = 3;
+  uint32 chunk = 1;
+  uint32 total = 2;
 
-  // Serialized bytes of a `google.protobuf.Struct`. It is of the
-  // form:
-  //
-  // { "service1": { "id1": { ... }, "id": { ... }, ... }, ... }
-  //
-  // TODO: consider passing JSON patches in the future to make the
-  // data more easily introspectable instead of binary.
-  bytes data = 4;
-
-  reserved 1;
+  // Serialized bytes of a `google.protobuf.Struct` representing the
+  // single state requested. If the state doesn't exist, this will be
+  // an empty Struct.
+  bytes data = 3;
 }
 
 ////////////////////////////////////////////////////////////////////////
 
 service Inspect {
-  // Get all actors.
-  rpc GetAllStates(GetAllStatesRequest) returns (stream GetAllStatesResponse) {
-  }
+  // The list of state types in an application is static, however, we
+  // make this a streaming RPC so that the client can hear when it
+  // disconnects from the server and retry its call. Disconnects can
+  // mean that a new version of the app may have been deployed, and the
+  // state types may have changed, and the retry will ensure that the
+  // client gets the latest list.
+  rpc GetStateTypes(GetStateTypesRequest) returns (
+      stream GetStateTypesResponse) {}
+
+  // Get state IDs for a given state type.
+  rpc GetStateIds(GetStateIdsRequest) returns (stream GetStateIdsResponse) {}
+
+  // Get the data for a single state.
+  rpc GetState(GetStateRequest) returns (stream GetStateResponse) {}
 
   // Serve a web dashboard. Uses `HttpBody` to return arbitrary content (HTML,
   // JS) to callers; see `httpbody.proto` for more details.
@@ -47,8 +77,10 @@ service Inspect {
       get: "/__/inspect"
       additional_bindings {
         // The 'index.html' will want to load a few further files,
-        // most notably 'bundle.js'.
-        get: "/__/inspect/{file=*}"
+        // most notably 'bundle.js'. Furthermore, the inspect page might
+        // use some "slash/delimited" paths to load specific resources
+        // in its single-page app.
+        get: "/__/inspect/{file=**}"
       }
     };
   }
