@@ -85,8 +85,7 @@ class SidecarServer final {
     }
   }
 
-  auto InProcessChannel(
-      const grpc::ChannelArguments& arguments = grpc::ChannelArguments()) {
+  auto InProcessChannel(const grpc::ChannelArguments& arguments) {
     return server_->InProcessChannel(arguments);
   }
 
@@ -103,11 +102,8 @@ class SidecarServer final {
       server_(std::move(server)),
       address_(address) {}
 
- public:
   std::unique_ptr<grpc::Service> service_;
   std::unique_ptr<grpc::Server> server_;
-
- private:
   const std::string address_;
 };
 
