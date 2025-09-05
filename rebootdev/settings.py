@@ -199,6 +199,9 @@ SIDECAR_SUFFIX = "-sidecar"
 
 # Local envoy specific environment variables that impact how it gets
 # configured.
+#
+# Keep in sync with top-level `Dockerfile` and
+# `reboot/containers/reboot-base/Dockerfile`.
 ENVOY_VERSION = '1.30.2'
 ENVOY_PROXY_IMAGE = f'envoyproxy/envoy:v{ENVOY_VERSION}'
 
