@@ -2099,6 +2099,43 @@ export class {{ client.proto.state_name }} {
   {% endfor %}
   {% endfor %}
 
+  static _Forall = class {
+    #ids: string[];
+
+    constructor(
+      ids: string[],
+    ) {
+      this.#ids = ids || [];
+    }
+
+    {% for service in client.services %}
+    {% for method in service.methods %}
+    {% if not method.proto.client_streaming and not method.proto.server_streaming and not method.options.proto.constructor and not method.options.proto.kind == 'workflow' %}
+    async {{ method.proto.name | to_lower_camel }}(
+      {% if method.options.proto.kind == 'reader' %}
+      context: ReaderContext | WriterContext | TransactionContext | WorkflowContext | ExternalContext,
+      {% elif method.options.proto.kind in ['writer', 'transaction'] %}
+      context: TransactionContext | WorkflowContext | ExternalContext,
+      {% endif %}
+      partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
+      options?: { bearerToken?: string | null }
+    ): Promise<{{ method.output_type }}[]> {
+      return Promise.all(this.#ids.map((id: string) => 
+        {{ client.proto.state_name }}.ref(id, options).{{ method.proto.name | to_lower_camel }}(
+          context,
+          partialRequest
+        )
+      ));
+    }  
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
+  }
+
+  public static forall(ids: string[]) {
+    return new {{ client.proto.state_name }}._Forall(ids);
+  }
+
   public static idempotently(aliasOrOptions: string | reboot_api.IdempotencyOptions = {} as reboot_api.IdempotencyOptions) {
     const idempotency = (typeof aliasOrOptions === "string" || aliasOrOptions instanceof String) ? { alias: aliasOrOptions as string } : aliasOrOptions;
     return new {{ client.proto.state_name }}._ConstructIdempotently(idempotency);
