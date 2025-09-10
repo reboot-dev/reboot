@@ -103,7 +103,7 @@ class TasksCache:
         """
         uuid = task_id.task_uuid
 
-        assert uuid not in self._cache, f"Task {uuid} already in cache"
+        assert uuid not in self._cache, f"Task {uuid.decode()} already in cache"
 
         future: asyncio.Future[bytes] = asyncio.Future()
 

@@ -1184,15 +1184,45 @@ _within_until: ContextVar[bool] = ContextVar(
     default=False,
 )
 
+# Type variable for `Workflow.wait()`.
+WaitT = TypeVar('WaitT')
+
 
 class WorkflowContext(Context):
     """Call context for a workflow call."""
+
+    # If this context called into Node.js, this is the "cancelled"
+    # future that indicates if the original call was cancelled.
+    _cancelled: Optional[asyncio.Future[None]]
 
     # Extra machinery for handling control loops, similar to how we
     # `context.react`. Set when `StateManager.task_workflow()` is
     # called.
     loop: Loop
     within_loop: Callable[[], bool]
+
+    def __init__(
+        self,
+        *,
+        channel_manager: _ChannelManager,
+        headers: Headers,
+        state_type_name: StateTypeName,
+        method: str,
+        app_internal_api_key_secret: str,
+        effect_validation: EffectValidation,
+        task: Optional[TaskEffect] = None,
+    ):
+        super().__init__(
+            channel_manager=channel_manager,
+            headers=headers,
+            state_type_name=state_type_name,
+            method=method,
+            app_internal_api_key_secret=app_internal_api_key_secret,
+            effect_validation=effect_validation,
+            task=task,
+        )
+
+        self._cancelled = None
 
     def within_until(self) -> bool:
         return _within_until.get()
@@ -1206,6 +1236,26 @@ class WorkflowContext(Context):
     def task_id(self) -> uuid.UUID:
         assert self._task is not None
         return uuid.UUID(bytes=self._task.task_id.task_uuid)
+
+    async def wait(self, awaitable: Awaitable[WaitT]) -> WaitT:
+        """
+        Helper that awaits an awaitable taking into account the possibility that this
+        workflow context might have been cancelled and handling that appropriately.
+        """
+        if self._cancelled is None:
+            return await awaitable
+
+        awaitable_future = asyncio.ensure_future(awaitable)
+
+        done, pending = await asyncio.wait(  # type: ignore[type-var]
+            [self._cancelled, awaitable_future],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        if self._cancelled in done:
+            awaitable_future.cancel()
+
+        return await awaitable_future
 
 
 RetryReactivelyUntilT = TypeVar('RetryReactivelyUntilT')
@@ -1245,4 +1295,6 @@ async def retry_reactively_until(
         except:
             raise
 
-        iteration = await context.react.iterate(iteration)
+        # NOTE: using `context.wait()` so calls through Node.js will
+        # be cancelled.
+        iteration = await context.wait(context.react.iterate(iteration))

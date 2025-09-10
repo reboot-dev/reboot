@@ -1457,37 +1457,15 @@ export class {{ client.proto.state_name }}{{ method.proto.name }}Task {
 
   readonly taskId: reboot_api.tasks_pb.TaskId;
 
-  #promise: Promise<{{ client.proto.state_name }}.{{ method.proto.name }}Response>;
+  #context: reboot.WorkflowContext | reboot.ExternalContext;
+  #promise?: Promise<{{ client.proto.state_name }}.{{ method.proto.name }}Response>;
 
   private constructor(
     context: reboot.WorkflowContext | reboot.ExternalContext,
     taskId: reboot_api.tasks_pb.TaskId
   ) {
     this.taskId = taskId;
-    this.#promise = new Promise(async (resolve, reject) => {
-      const json = JSON.parse(
-        await reboot_native.Task_await({
-          context: context.__external,
-          rbtModule: "{{ rbt_name }}",
-          stateName: "{{ client.proto.state_name }}",
-          method: "{{ method.proto.name }}",
-          jsonTaskId: JSON.stringify(taskId),
-        })
-      );
-
-      if ("status" in json) {
-        reject(
-          {{ client.proto.state_name }}
-            .{{ method.proto.name }}Aborted
-            .fromStatus(reboot_api.Status.fromJson(json["status"]))
-        );
-      } else {
-        reboot_api.assert("response" in json);
-        resolve(
-          {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(json["response"])
-        );
-      }
-    });
+    this.#context = context;
   }
 
   static retrieve(
@@ -1500,6 +1478,36 @@ export class {{ client.proto.state_name }}{{ method.proto.name }}Task {
   }
 
   then(...args: Parameters<Promise<{{ client.proto.state_name }}.{{ method.proto.name }}Response>["then"]>) {
+    if (this.#promise === undefined) {
+      // NOTE: we lazily create the promise because it eagerly awaits
+      // the task and if the task is not meant to complete, e.g., it
+      // is control loop that runs forever, this may cause tests to
+      // wait forever.
+      this.#promise = new Promise(async (resolve, reject) => {
+        const json = JSON.parse(
+          await reboot_native.Task_await({
+            context: this.#context.__external,
+            rbtModule: "{{ rbt_name }}",
+            stateName: "{{ client.proto.state_name }}",
+            method: "{{ method.proto.name }}",
+            jsonTaskId: JSON.stringify(this.taskId),
+          })
+        );
+
+        if ("status" in json) {
+          reject(
+            {{ client.proto.state_name }}
+              .{{ method.proto.name }}Aborted
+              .fromStatus(reboot_api.Status.fromJson(json["status"]))
+          );
+        } else {
+          reboot_api.assert("response" in json);
+          resolve(
+            {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(json["response"])
+          );
+        }
+      });
+    }
     return this.#promise.then(...args);
   }
 }
