@@ -2286,7 +2286,11 @@ class SidecarStateManager(
                             f"{task_effect.method_name}() loop iteration {task_effect.iteration}: waiting until the scheduled start time",
                             level=tracing.TraceLevel.CUSTOMER,
                         ):
-                            await asyncio.sleep(interval.total_seconds())
+                            # NOTE: using `context.wait()` so calls
+                            # through Node.js will be cancelled.
+                            await context.wait(
+                                asyncio.sleep(interval.total_seconds())
+                            )
 
                     # We need to restore the idempotency checkpoint so
                     # that each new loop iteration we allow empty

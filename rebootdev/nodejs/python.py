@@ -179,7 +179,12 @@ async def task_await(
     )
 
     try:
-        response = await task
+        # NOTE: using `context.wait()` so calls through Node.js will
+        # be cancelled.
+        response = await (
+            context.wait(task)
+            if isinstance(context, WorkflowContext) else task
+        )
     except BaseException as exception:
         if isinstance(exception, Aborted):
             return json.dumps(

@@ -5388,6 +5388,11 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
 
         cancelled: IMPORT_asyncio.Future[None] = IMPORT_asyncio.Future()
 
+        # Link up this `cancelled` future with the context so that it
+        # waiting within Python via `context.wait()` will correctly
+        # propagate `CancelledError` back through Node.js.
+        context._cancelled = cancelled
+
         bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
 
         try:
