@@ -217,7 +217,7 @@ export namespace {{ client.proto.state_name }} {
   {% if options.proto.zod %}
   z.infer<
     reboot_api.EnsureZodObject<
-      typeof api.{{ client.proto.state_name }}.{{ method.proto.name | to_lower_camel }}.request
+      typeof api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request
       >
     >;
   {% else %}
@@ -235,7 +235,7 @@ export namespace {{ client.proto.state_name }} {
   {% if options.proto.zod %}
   z.infer<
     reboot_api.EnsureZodObject<
-      typeof api.{{ client.proto.state_name }}.{{ method.proto.name | to_lower_camel }}.response
+      typeof api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response
       >
     >;
   {% else %}
