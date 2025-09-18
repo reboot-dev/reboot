@@ -207,6 +207,14 @@ export class Status {
   readonly details: any[];
 }
 
+export type EnsureZodObject<T> = T extends z.ZodObject<any>
+  ? T
+  : T extends z.ZodVoid
+  ? T // ZodVoid is a special case, since it doesn't extend ZodObject.
+  : T extends Record<string, z.ZodType>
+  ? z.ZodObject<T>
+  : never;
+
 export const ZOD_ERRORS = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("StateAlreadyConstructed"),

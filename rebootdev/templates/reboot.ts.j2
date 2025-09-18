@@ -107,6 +107,11 @@ import { api } from "{{ options.proto.zod }}{% if nodejs_extensions %}.js{% endi
 // code, see below.
 const ongoingTransactionStates: { [id: string] : any; } = {};
 
+// Track state IDs that are being _constructed_ in a transaction
+// so that when using Zod we don't validate the initial state which
+// will fail validation if there are required fields.
+const statesBeingConstructed: Set<string> = new Set();
+
 const ERROR_TYPES = [
   // gRPC errors.
   reboot_api.errors_pb.Cancelled,
@@ -191,7 +196,8 @@ const {{ client.proto.state_name }}FromBinary = (
 };
 
 const {{ client.proto.state_name }}ToProtobuf = (
-  state: {{ client.proto.state_name }}.State
+  state: {{ client.proto.state_name }}.State,
+  options: { validate: boolean } = { validate: true }
 ): {{ client.proto.state_name }}State => {
   return state instanceof {{ client.proto.state_name }}State
     ? state
@@ -199,11 +205,13 @@ const {{ client.proto.state_name }}ToProtobuf = (
       {% if options.proto.zod %}
       reboot_api.convertToProtobufJson(
         api.{{ client.proto.state_name }}.state,
-        reboot_api.validate(
-          "{{ client.proto.state_name }}.state",
-          api.{{ client.proto.state_name }}.state,
-          state
-        )
+        options.validate
+          ? reboot_api.validate(
+            "{{ client.proto.state_name }}.state",
+            api.{{ client.proto.state_name }}.state,
+            state
+          )
+          : state
       )
       {% else %}
       state
@@ -510,18 +518,22 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
     bytesRequest: Uint8Array
   ): Promise<Uint8Array> {
     try {
+      {% if method.options.proto.constructor %}
+      statesBeingConstructed.add(context.stateId);
+      {% endif %}
+
       {% if method.options.proto.kind != 'workflow' %}
       let state = {{ state.proto.name }}FromBinary(
         bytesState,
-        // Don't validate if we're a constructor because non-optional
-        // fields that this constructor might be setting will be invalid.
-        { validate: {% if method.options.proto.constructor %}false{% else %}true{% endif %} },
+        // Don't validate if we're constructing because non-optional
+        // fields that this method might be setting will be invalid.
+        { validate: !(statesBeingConstructed.has(context.stateId)) },
       );
       {% endif %}
       {% if method.options.proto.kind == 'writer' %}
       if (context.stateId in ongoingTransactionStates) {
         {% if options.proto.zod %}
-        state = reboot_api.convertFromProtobufShape(
+        state = reboot_api.convertFromProtobuf(
           api.{{ state.proto.name }}.state,
           ongoingTransactionStates[context.stateId].clone()
         );
@@ -531,7 +543,12 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       }
       {% elif method.options.proto.kind == 'transaction' %}
       // TODO: assert that there are no ongoing transactions for this state.
-      ongoingTransactionStates[context.stateId] = state;
+      ongoingTransactionStates[context.stateId] = {{ state.proto.name }}ToProtobuf(
+        state,
+        // Don't validate if we're constructing because non-optional
+        // fields that this method might be setting will be invalid.
+        { validate: !(statesBeingConstructed.has(context.stateId)) },
+      );
       {% endif %}
 
       const request = {{ state.proto.name }}{{ method.proto.name }}RequestFromBinary(bytesRequest);
@@ -550,7 +567,12 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
 
       {% if options.proto.zod and method.options.proto.kind != 'workflow' %}
       // Validate and convert back to protobuf when using Zod.
-      state = {{ state.proto.name }}ToProtobuf(state);
+      state = {{ state.proto.name }}ToProtobuf(
+        state,
+        // Don't validate if we're constructing because non-optional
+        // fields that this method might be setting will be invalid.
+        { validate: !(statesBeingConstructed.has(context.stateId)) },
+      );
       {% endif %}
 
       {% if method.options.proto.kind == 'writer' %}
@@ -563,8 +585,6 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       if (context.stateId in ongoingTransactionStates) {
         ongoingTransactionStates[context.stateId].copyFrom(state);
       }
-      {% elif method.options.proto.kind == 'transaction' %}
-      delete ongoingTransactionStates[context.stateId];
       {% endif %}
 
       const result = new reboot_api.nodejs_pb.TrampolineResult();
@@ -599,6 +619,14 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       );
 
       throw error;
+    } finally {
+      {% if method.options.proto.kind == 'transaction' %}
+      delete ongoingTransactionStates[context.stateId];
+      {% endif %}
+
+      {% if method.options.proto.constructor %}
+      statesBeingConstructed.delete(context.stateId);
+      {% endif %}
     }
   }
 
@@ -713,7 +741,12 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
             // possible validation errors if using Zod are logged in
             // the `catch`.
             const state: {{ state.proto.name }}.State | undefined =
-              call.state && {{ state.proto.name }}FromBinary(call.state);
+              call.state && {{ state.proto.name }}FromBinary(
+                call.state,
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) },
+              );
             const request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape(unpackedRequest);
             return protobuf_es.Any.pack(
               await authorizer.authorize(
@@ -2098,6 +2131,43 @@ export class {{ client.proto.state_name }} {
   {% endif %}
   {% endfor %}
   {% endfor %}
+
+  static _Forall = class {
+    #ids: string[];
+
+    constructor(
+      ids: string[],
+    ) {
+      this.#ids = ids || [];
+    }
+
+    {% for service in client.services %}
+    {% for method in service.methods %}
+    {% if not method.proto.client_streaming and not method.proto.server_streaming and not method.options.proto.constructor and not method.options.proto.kind == 'workflow' %}
+    async {{ method.proto.name | to_lower_camel }}(
+      {% if method.options.proto.kind == 'reader' %}
+      context: ReaderContext | WriterContext | TransactionContext | WorkflowContext | ExternalContext,
+      {% elif method.options.proto.kind in ['writer', 'transaction'] %}
+      context: TransactionContext | WorkflowContext | ExternalContext,
+      {% endif %}
+      partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
+      options?: { bearerToken?: string | null }
+    ): Promise<{{ client.proto.state_name }}.Partial{{ method.proto.name }}Response[]> {
+      return Promise.all(this.#ids.map((id: string) =>
+        {{ client.proto.state_name }}.ref(id, options).{{ method.proto.name | to_lower_camel }}(
+          context,
+          partialRequest
+        )
+      ));
+    }
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
+  }
+
+  public static forall(ids: string[]) {
+    return new {{ client.proto.state_name }}._Forall(ids);
+  }
 
   public static idempotently(aliasOrOptions: string | reboot_api.IdempotencyOptions = {} as reboot_api.IdempotencyOptions) {
     const idempotency = (typeof aliasOrOptions === "string" || aliasOrOptions instanceof String) ? { alias: aliasOrOptions as string } : aliasOrOptions;
