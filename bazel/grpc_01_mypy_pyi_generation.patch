@@ -1,0 +1,34 @@
+diff --git a/bazel/python_rules.bzl b/bazel/python_rules.bzl
+index f5fa1a0550..78eb8b8706 100644
+--- a/bazel/python_rules.bzl
++++ b/bazel/python_rules.bzl
+@@ -65,13 +65,14 @@ def _gen_py_aspect_impl(target, context):
+                  declare_out_files(protos, context, _GENERATED_PROTO_STUB_FORMAT))
+     generated_py_srcs = out_files
+
+-    tools = [context.executable._protoc]
++    tools = [context.executable._protoc, context.executable._protoc_gen_mypy]
+
+     out_dir = get_out_dir(protos, context)
+
+     arguments = ([
++        "--plugin=protoc-gen-mypy={}".format(context.executable._protoc_gen_mypy.path),
+         "--python_out={}".format(out_dir.path),
+-        "--pyi_out={}".format(out_dir.path),
++        "--mypy_out={}".format(out_dir.path),
+     ] + [
+         "--proto_path={}".format(get_include_directory(i))
+         for i in includes.to_list()
+@@ -120,6 +121,12 @@ _gen_py_aspect = aspect(
+             default = Label("@com_google_protobuf//:protobuf_python"),
+             providers = [PyInfo],
+         ),
++        "_protoc_gen_mypy": attr.label(
++            default = Label("@com_github_reboot_dev_reboot//protoc_gen_mypy_plugin:protoc-gen-mypy"),
++            providers = ["files_to_run"],
++            executable = True,
++            cfg = "exec",
++        ),
+     },
+ )
+

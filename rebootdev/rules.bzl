@@ -11,57 +11,19 @@ load("@com_github_reboot_dev_reboot//rebootdev:versions.bzl", "REBOOT_VERSION")
 load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library")
 
-def _wrapped_pyi_impl(ctx):
-    # This rule returns `PyInfo` for all `pyi` files in `deps`.
-
-    pyi_files = []
-
-    # Collect .pyi files from the mypy_files target.
-    for dep in ctx.attr.deps:
-        if hasattr(dep, "files"):
-            pyi_files += [f for f in dep.files.to_list() if f.path.endswith(".pyi")]
-
-    # Provide PyInfo with the .pyi files as the sources.
-    py_info = PyInfo(
-        transitive_sources = depset(pyi_files),
-    )
-
-    return [DefaultInfo(files = depset(pyi_files)), py_info]
-
-# The generated pyi files created by `_mypy_files` do not have any file type
-# information attached to them. In order to be able to use the pyi files in a
-# `py_library`, we must first wrap the pyi files in a `PyInfo` object. This has
-# to happen through a separate rule.
-wrapped_pyi = rule(
-    implementation = _wrapped_pyi_impl,
-    attrs = {
-        "deps": attr.label_list(
-            allow_files = True,
-            mandatory = True,
-        ),
-    },
-)
-
 _py_reboot_files = create_protoc_plugin_rule(
     "@com_github_reboot_dev_reboot//rebootdev:protoc-gen-reboot_python",
     extensions = ("_rbt.py",),
 )
 
-_mypy_files = create_protoc_plugin_rule(
-    "@com_github_reboot_dev_reboot//rebootdev:protoc-gen-mypy",
-    extensions = ("_pb2.pyi",),
-)
-
 def py_proto_with_grpc_library_typed(
         name,
-        proto,
         proto_library,
         visibility = None):
     """Helper for generating better proto libraries.
 
     Args:
         name: target name.
-        proto: '.proto' file.
         proto_library: a `proto_library` containing the `.proto` file.
         visibility: bazel visibility.
     """
@@ -69,18 +31,6 @@ def py_proto_with_grpc_library_typed(
     py_proto_library(
         name = name + "_pb2_py",
         deps = [proto_library],
-    )
-
-    _mypy_files(
-        name = name + "_pb2_pyi_files",
-        srcs = [proto],
-        deps = [proto_library],
-    )
-
-    wrapped_pyi(
-        name = name + "_pb2_pyi",
-        deps = [":" + name + "_pb2_pyi_files"],
-        visibility = visibility,
     )
 
     py_grpc_library(
@@ -98,9 +48,6 @@ def py_proto_with_grpc_library_typed(
         deps = [
             ":" + name + "_pb2_py",
             ":" + name + "_pb2_grpc_py",
-        ],
-        data = [
-            ":" + name + "_pb2_pyi",
         ],
     )
 
@@ -129,7 +76,6 @@ def py_reboot_library(
 
     py_proto_with_grpc_library_typed(
         name = name + "_library",
-        proto = proto,
         proto_library = proto_library,
         visibility = visibility,
     )

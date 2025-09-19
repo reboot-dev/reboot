@@ -1,6 +1,7 @@
 import asyncio
 import grpc
 import os
+import sys
 import uuid
 from cffi import FFI
 from rbt.v1alpha1 import sidecar_pb2, sidecar_pb2_grpc, tasks_pb2
@@ -11,7 +12,7 @@ from rebootdev.aio.types import StateRef, StateTypeName
 # both 'respect' and 'reboot'.
 from rebootdev.grpc.options import make_retry_channel_options
 from rebootdev.settings import MAX_SIDECAR_GRPC_MESSAGE_LENGTH_BYTES
-from typing import AsyncIterator, Optional, overload
+from typing import AsyncIterator, Mapping, Optional, cast, overload
 
 _ffi = FFI()
 _ffi.cdef(
@@ -29,9 +30,17 @@ _ffi.cdef(
   void sidecar_server_destroy(SidecarServer* ss);
 """
 )
-_lib = _ffi.dlopen(
-    os.path.join(os.path.dirname(__file__), "libsidecar_native.so")
-)
+
+# Bazel >= 6 will produce a 'libsidecar_native.dylib' for the MacOS and
+# 'libsidecar_native.so' for Linux.
+if sys.platform == "darwin":
+    _lib = _ffi.dlopen(
+        os.path.join(os.path.dirname(__file__), "libsidecar_native.dylib")
+    )
+else:
+    _lib = _ffi.dlopen(
+        os.path.join(os.path.dirname(__file__), "libsidecar_native.so")
+    )
 
 
 # TODO: Refactor into an `exceptions` module.
@@ -438,7 +447,9 @@ class SidecarClient:
         stub = await self._get_sidecar_stub()
         async for partial in stub.Recover(
             sidecar_pb2.RecoverRequest(
-                state_tags_by_state_type=state_tags_by_state_type,
+                state_tags_by_state_type=cast(
+                    Mapping[str, str], state_tags_by_state_type
+                ),
             ),
         ):
             response.MergeFrom(partial)

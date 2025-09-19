@@ -1,0 +1,33 @@
+diff --git a/mypy.bzl b/mypy.bzl
+index 3dfe9f2..8a7f60f 100644
+--- a/mypy.bzl
++++ b/mypy.bzl
+@@ -126,6 +126,28 @@ def _mypy_rule_impl(ctx, is_aspect = False):
+     if not src_files:
+         return None
+
++    def get_module_key(src_file):
++        return src_file.path.rsplit(".", 1)[0]
++
++    for f in stub_files:
++        src_files.append(f)
++
++    # With the 27.1 version of 'protobuf', it started to provide '.pyi' files along
++    # with '.py' files for the same module as part of 'py_proto_library. We need
++    # to filter out the '.py' files if there is a '.pyi' file for the same module
++    # to avoid the "duplicate module name" type error (since we are providing the
++    # source files explicitly by name).
++    filtered_files = {}
++    for file in src_files:
++        key = get_module_key(file)
++        if key in filtered_files and file.path.endswith(".py"):
++            # We already have a `.pyi` file for this module;
++            # prefer that one over this `.py` file.
++            continue
++        filtered_files[key] = file
++
++    src_files = list(filtered_files.values())
++
+     mypypath_parts += [src_f.dirname for src_f in stub_files]
+     mypypath = ":".join(mypypath_parts)
+

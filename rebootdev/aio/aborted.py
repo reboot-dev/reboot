@@ -6,7 +6,7 @@ from google.protobuf import any_pb2, text_format
 from google.protobuf.message import Message
 from google.rpc import code_pb2, status_pb2
 from rebootdev.aio.types import assert_type
-from typing import Optional, TypeAlias, TypeVar, Union
+from typing import Optional, Sequence, TypeAlias, TypeVar, Union
 
 
 def is_retryable_status_code(code: grpc.StatusCode):
@@ -60,7 +60,7 @@ RebootError: TypeAlias = Union[
     rbt.v1alpha1.errors_pb2.InvalidMethod,
 ]
 
-GRPC_ERROR_TYPES: list[type[GrpcError]] = [
+GRPC_ERROR_TYPES: list[type[Message]] = [
     rbt.v1alpha1.errors_pb2.Cancelled,
     rbt.v1alpha1.errors_pb2.Unknown,
     rbt.v1alpha1.errors_pb2.InvalidArgument,
@@ -79,7 +79,7 @@ GRPC_ERROR_TYPES: list[type[GrpcError]] = [
     rbt.v1alpha1.errors_pb2.Unauthenticated,
 ]
 
-REBOOT_ERROR_TYPES: list[type[RebootError]] = [
+REBOOT_ERROR_TYPES: list[type[Message]] = [
     rbt.v1alpha1.errors_pb2.StateAlreadyConstructed,
     rbt.v1alpha1.errors_pb2.StateNotConstructed,
     rbt.v1alpha1.errors_pb2.TransactionParticipantFailedToPrepare,
@@ -183,7 +183,7 @@ class Aborted(Exception):
     def error_from_google_rpc_status_details(
         cls,
         status: status_pb2.Status,
-        error_types: list[type[ErrorT]],
+        error_types: Sequence[type[ErrorT]],
     ) -> Optional[ErrorT]:
         for detail in status.details:
             for error_type in error_types:
@@ -400,7 +400,7 @@ class SystemAborted(Aborted):
 
     Error = Union[GrpcError, RebootError]
 
-    ERROR_TYPES: list[type[Error]] = GRPC_ERROR_TYPES + REBOOT_ERROR_TYPES
+    ERROR_TYPES: list[type[Message]] = GRPC_ERROR_TYPES + REBOOT_ERROR_TYPES
 
     _error: Error
     _code: grpc.StatusCode

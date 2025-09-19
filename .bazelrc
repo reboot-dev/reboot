@@ -1,18 +1,6 @@
-try-import submodules/dev-tools/.bazelrc
+common --enable_bzlmod=false
 
-# Use the more efficient C++ protobuf library for Python. This is a
-# Bazel specific configurable build attribute
-# (https://bazel.build/docs/configurable-attributes) defined in the
-# protocol buffers library (see
-# https://github.com/protocolbuffers/protobuf/blob/22d0a354a05a5e8d6f43edaf5ea4f4dbd9dfb8a7/python/BUILD.bazel#L33).
-#
-# It not only improves performance generally, but also allows moving
-# protobufs between Python and C++ without copying when using pybind.
-#
-# TODO(benh): revisit how this works when users Python libraries
-# depend on our libraries (i.e., through pip) and those libraries are
-# not using the C++ protobufs.
-build --define=use_fast_cpp_protos=true
+try-import submodules/dev-tools/.bazelrc
 
 # We cannot build in any of the sandbox environments (including `linux`) that
 # restrict access to the network or filesystem. Also, some rules aren't even
@@ -42,12 +30,7 @@ build --force_pic
 build --compilation_mode=fastbuild
 build --host_compilation_mode=fastbuild
 
-# Disable the use of module maps. This is necessary for now, since old
-# 'grpc' version has a bug in its module map that causes a build failure.
-# TODO: Remove this once we upgrade to a newer version of 'grpc'.
-#       See more https://github.com/reboot-dev/mono/issues/644
-build --features=-module_maps
-build  --copt=-Wno-error=int-conversion
+build --copt=-Wno-error=int-conversion
 
 # Explicitly disable the remote cache. It's not on by default, but this is
 # useful either for CI that normally _would_ use a remote cache, or for

@@ -199,11 +199,13 @@ class StateManager(ABC):
                     uuid.UUID(bytes=transaction_id)
                     for transaction_id in transaction.transaction_ids
                 ],
-                coordinator_state_type=transaction.coordinator_state_type,
+                coordinator_state_type=StateTypeName(
+                    transaction.coordinator_state_type
+                ),
                 coordinator_state_ref=StateRef(
                     transaction.coordinator_state_ref
                 ),
-                state_type=transaction.state_type,
+                state_type=StateTypeName(transaction.state_type),
                 state_ref=StateRef(transaction.state_ref),
                 tasks_dispatcher=middleware.tasks_dispatcher,
                 stored=True,
@@ -2132,7 +2134,7 @@ class SidecarStateManager(
         task_effect: TaskEffect,
         response_or_error: TaskResponseOrError,
     ) -> None:
-        state_type = task_effect.task_id.state_type
+        state_type = StateTypeName(task_effect.task_id.state_type)
         state_ref = StateRef(task_effect.task_id.state_ref)
         response, error = response_or_error
 
@@ -2220,7 +2222,7 @@ class SidecarStateManager(
             # completed for each loop iteration.
             checkpoint = context.checkpoint()
 
-            state_type = task_effect.task_id.state_type
+            state_type = StateTypeName(task_effect.task_id.state_type)
             state_ref = StateRef(task_effect.task_id.state_ref)
 
             try:
@@ -3352,7 +3354,7 @@ class SidecarStateManager(
                 middleware_by_state_type_name,
                 sidecar_transaction.state_type,
                 error_suffix="when recovering transaction "
-                f"'{str(uuid.UUID(bytes=sidecar_transaction.transaction_ids[0]))}'",
+                f"'{uuid.UUID(bytes=sidecar_transaction.transaction_ids[0])}'",
             )
 
             transaction = StateManager.Transaction.from_sidecar(

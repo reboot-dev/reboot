@@ -276,7 +276,7 @@ class TasksDispatcher:
                     except BaseException as exception:
                         exception_str = f"{exception}"
                         logger.warning(
-                            f"Task '{task.task_id.state_type}.{task.method_name}' (UUID={str(UUID(bytes=task.task_id.task_uuid))}) "
+                            f"Task '{task.task_id.state_type}.{task.method_name}' (UUID={UUID(bytes=task.task_id.task_uuid)}) "
                             f"failed with {type(exception).__name__}{': ' + exception_str if len(exception_str) > 0 else ''}; "
                             "will retry after backoff ..."
                         )
@@ -433,5 +433,5 @@ class TasksDispatcher:
 
             for uuid in self._dispatched_tasks.keys():
                 logger.warning(
-                    f'Waiting for task with UUID {str(UUID(bytes=uuid))}'
+                    f'Waiting for task with UUID {UUID(bytes=uuid)}'
                 )

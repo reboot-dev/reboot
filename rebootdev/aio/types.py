@@ -5,7 +5,7 @@ import hashlib
 import uuid
 from dataclasses import dataclass
 from rebootdev.settings import MAX_ACTOR_ID_LENGTH, MIN_ACTOR_ID_LENGTH
-from typing import Any, NewType, Optional, TypeAlias
+from typing import Any, NewType, Optional, Sequence, TypeAlias
 
 # Collection of types used throughout our code with more meaningful names than
 # the underlying python types.
@@ -276,7 +276,7 @@ def _state_id_decode(state_id_encoded: str) -> StateId:
 
 def assert_type(
     t: Any,
-    types: list[type[Any]],
+    types: Sequence[type[Any]],
     *,
     may_be_subclass: bool = True,
     error_message_supplement: Optional[str] = None,
