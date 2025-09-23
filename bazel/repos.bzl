@@ -61,6 +61,15 @@ def repos():
 
     jemalloc_repos()
 
+    # Need `rules_foreign_cc` for building RocksDB.
+    maybe(
+        http_archive,
+        name = "rules_foreign_cc",
+        sha256 = "4b33d62cf109bcccf286b30ed7121129cc34cf4f4ed9d8a11f38d9108f40ba74",
+        strip_prefix = "rules_foreign_cc-0.11.1",
+        url = "https://github.com/bazelbuild/rules_foreign_cc/releases/download/0.11.1/rules_foreign_cc-0.11.1.tar.gz",
+    )
+
     maybe(
         http_archive,
         name = "rules_oci",
@@ -102,10 +111,10 @@ def repos():
     maybe(
         http_archive,
         name = "buildifier_prebuilt",
-        sha256 = "ecef8f8c39eaf4f1c1604c677d232ade33818f898e35e7826e7564a648751350",
-        strip_prefix = "buildifier-prebuilt-5.1.0.2",
+        sha256 = "8ada9d88e51ebf5a1fdff37d75ed41d51f5e677cdbeafb0a22dda54747d6e07e",
+        strip_prefix = "buildifier-prebuilt-6.4.0",
         urls = [
-            "http://github.com/keith/buildifier-prebuilt/archive/5.1.0.2.tar.gz",
+            "http://github.com/keith/buildifier-prebuilt/archive/6.4.0.tar.gz",
         ],
     )
 
@@ -178,9 +187,9 @@ def repos():
     maybe(
         http_archive,
         name = "aspect_bazel_lib",
-        sha256 = "04feedcd06f71d0497a81fdd3220140a373ff9d2bff94620fbd50b774f96d8e0",
-        strip_prefix = "bazel-lib-1.40.2",
-        url = "https://github.com/aspect-build/bazel-lib/releases/download/v1.40.2/bazel-lib-v1.40.2.tar.gz",
+        sha256 = "6e729e4900695623efa5e9c73b10b0509eb1606b73cafc374a359aed4c9e6958",
+        strip_prefix = "bazel-lib-1.42.0",
+        url = "https://github.com/aspect-build/bazel-lib/releases/download/v1.42.0/bazel-lib-v1.42.0.tar.gz",
     )
 
     maybe(

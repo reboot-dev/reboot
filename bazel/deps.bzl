@@ -20,6 +20,7 @@ load("@mypy_integration_pip_deps//:requirements.bzl", mypy_integration_pypi_deps
 load("@rbt_pypi//:requirements.bzl", rbt_pypi_deps = "install_deps")
 load("@rules_buf//buf:defs.bzl", "buf_dependencies")
 load("@rules_buf//buf:repositories.bzl", "rules_buf_dependencies", "rules_buf_toolchains")
+load("@rules_foreign_cc//foreign_cc:repositories.bzl", "rules_foreign_cc_dependencies")
 load("@rules_oci//oci:dependencies.bzl", "rules_oci_dependencies")
 load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
 load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies")
@@ -121,6 +122,8 @@ def deps():
 
     # Dependency to use write_source_files.
     aspect_bazel_lib_dependencies()
+
+    rules_foreign_cc_dependencies()
 
     # Plain zig_toolchains() will pick reasonable defaults. See
     # toolchain/defs.bzl:toolchains on how to change the Zig SDK version and
