@@ -3211,7 +3211,7 @@ class SidecarStateManager(
 
     async def _colocated_omnidirectional_range(
         self,
-        context,
+        context: Context,
         *,
         start: Optional[str],
         end: Optional[str],
@@ -3225,10 +3225,12 @@ class SidecarStateManager(
                 transaction_id.bytes
                 for transaction_id in context.transaction_ids
             ],
-            coordinator_state_type=context.transaction_coordinator_state_type,
+            coordinator_state_type=(
+                context.transaction_coordinator_state_type or ""
+            ),
             coordinator_state_ref=(
                 context.transaction_coordinator_state_ref.to_str()
-                if context.transaction_coordinator_state_ref else None
+                if context.transaction_coordinator_state_ref else ""
             ),
         )
         if context.state_type_name != SORTED_MAP_TYPE_NAME:
