@@ -2721,8 +2721,54 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     {% for method in service.methods %}
     # For '{{ method.proto.full_name }}'.
     {% if method.options.proto.kind == 'reader' %}
-    @IMPORT_abc_abstractmethod
+    # To be backwards compatible during the renaming don't make this
+    # method to be 'abstractmethod', so that new code that
+    # doesn't implement it continues to work.
+    # TODO: make it abstractmethod when renaming is done.
     async def {{ method.proto.name }}(
+        self,
+        context: IMPORT_reboot_aio_contexts.ReaderContext,
+        {% if not method.options.proto.state_streaming %}
+        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        {% else %}
+        states: IMPORT_typing.AsyncIterable[{{ state.pb2_name }}.{{ state.proto.name }}],
+        {% endif %}
+        {% if not method.proto.client_streaming %}
+        request: {{ method.input_type }},
+        {% else %}
+        requests: IMPORT_typing.AsyncIterable[{{ method.input_type }}],
+        {% endif %}
+    {% if not method.proto.server_streaming %}
+    ) -> {{ method.output_type }}:
+    {% else %}
+    ) -> IMPORT_typing.AsyncIterable[{{ method.output_type }}]:
+    {% endif %}
+        # During the migration from 'PascalCase' to 'snake_case' method
+        # naming in Python servicers, we call the 'snake_case' version
+        # by default, so new names will do the correct thing making the
+        # code to be backwards compatible for some time and if a servicer
+        # overrides the 'PascalCase' version - it will override that
+        # method and will just work.
+        {% if not method.proto.server_streaming %}
+        return await self.{{ method.proto.name | to_snake }}(
+            context,
+            state{% if method.options.proto.state_streaming %}s{% endif %},
+            request{% if method.proto.client_streaming %}s{% endif %},
+        )
+        {% else %}
+        async for response in self.{{ method.proto.name | to_snake }}(
+            context,
+            state{% if method.options.proto.state_streaming %}s{% endif %},
+            request{% if method.proto.client_streaming %}s{% endif %},
+        ):
+            yield response
+        {% endif %}
+
+    # To be backwards compatible during the renaming don't make this
+    # method to be 'abstractmethod', so that existing code that
+    # doesn't implement it continues to work.
+    # TODO: make it abstractmethod when renaming is done.
+    async def {{ method.proto.name | to_snake }}(
         self,
         context: IMPORT_reboot_aio_contexts.ReaderContext,
         {% if not method.options.proto.state_streaming %}
@@ -2745,8 +2791,32 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         yield  # Necessary for type checking.
         {% endif %}
     {% elif method.options.proto.kind == 'writer' %}
-    @IMPORT_abc_abstractmethod
+    # To be backwards compatible during the renaming don't make this
+    # method to be 'abstractmethod', so that new code that
+    # doesn't implement it continues to work.
+    # TODO: make it abstractmethod when renaming is done.
     async def {{ method.proto.name }}(
+        self,
+        context: IMPORT_reboot_aio_contexts.WriterContext,
+        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        request: {{ method.input_type }},
+    ) -> {{ method.output_type }}:
+        # During the migration from 'PascalCase' to 'snake_case' method
+        # naming in Python servicers, we call the 'snake_case' version
+        # by default, so new names will do the correct thing making the
+        # code to be backwards compatible for some time and if a servicer
+        # overrides the 'PascalCase' version - it will override that
+        # method and will just work.
+        return await self.{{ method.proto.name | to_snake }}(
+            context,
+            state,
+            request,
+        )
+
+    # To be backwards compatible during the renaming don't make this
+    # method to be 'abstractmethod', so that existing code that
+    # doesn't implement it continues to work.
+    async def {{ method.proto.name | to_snake }}(
         self,
         context: IMPORT_reboot_aio_contexts.WriterContext,
         state: {{ state.pb2_name }}.{{ state.proto.name }},
@@ -2754,8 +2824,32 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     ) -> {{ method.output_type }}:
         raise NotImplementedError
     {% elif method.options.proto.kind == 'transaction' %}
-    @IMPORT_abc_abstractmethod
+    # To be backwards compatible during the renaming don't make this
+    # method to be 'abstractmethod', so that new code that
+    # doesn't implement it continues to work.
+    # TODO: make it abstractmethod when renaming is done.
     async def {{ method.proto.name }}(
+        self,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
+        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        request: {{ method.input_type }},
+    ) -> {{ method.output_type }}:
+        # During the migration from 'PascalCase' to 'snake_case' method
+        # naming in Python servicers, we call the 'snake_case' version
+        # by default, so new names will do the correct thing making the
+        # code to be backwards compatible for some time and if a servicer
+        # overrides the 'PascalCase' version - it will override that
+        # method and will just work.
+        return await self.{{ method.proto.name | to_snake }}(
+            context,
+            state,
+            request,
+        )
+
+    # To be backwards compatible during the renaming don't make this
+    # method to be 'abstractmethod', so that existing code that
+    # doesn't implement it continues to work.
+    async def {{ method.proto.name | to_snake }}(
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
         state: {{ state.pb2_name }}.{{ state.proto.name }},
@@ -2763,8 +2857,30 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     ) -> {{ method.output_type }}:
         raise NotImplementedError
     {% elif method.options.proto.kind == 'workflow' %}
-    @IMPORT_abc_abstractmethod
+    # To be backwards compatible during the renaming don't make this
+    # method to be 'abstractmethod', so that new code that
+    # doesn't implement it continues to work.
+    # TODO: make it abstractmethod when renaming is done.
     async def {{ method.proto.name }}(
+        self,
+        context: IMPORT_reboot_aio_contexts.WorkflowContext,
+        request: {{ method.input_type }},
+    ) -> {{ method.output_type }}:
+        # During the migration from 'PascalCase' to 'snake_case' method
+        # naming in Python servicers, we call the 'snake_case' version
+        # by default, so new names will do the correct thing making the
+        # code to be backwards compatible for some time and if a servicer
+        # overrides the 'PascalCase' version - it will override that
+        # method and will just work.
+        return await self.{{ method.proto.name | to_snake }}(
+            context,
+            request,
+        )
+
+    # To be backwards compatible during the renaming don't make this
+    # method to be 'abstractmethod', so that existing code that
+    # doesn't implement it continues to work.
+    async def {{ method.proto.name | to_snake }}(
         self,
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
         request: {{ method.input_type }},
@@ -2937,8 +3053,38 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
     {% for service in state.services %}
     {% for method in service.methods %}
     # For '{{ method.proto.full_name }}'.
-    @IMPORT_abc_abstractmethod
+    # To be backwards compatible during the renaming don't make this
+    # method to be 'abstractmethod', so that new code that
+    # doesn't implement it continues to work.
+    # TODO: make it abstractmethod when renaming is done.
     async def {{ method.proto.name }}(
+        self,
+        {% if method.options.proto.kind == 'reader' %}
+        context: IMPORT_reboot_aio_contexts.ReaderContext,
+        {% elif method.options.proto.kind == 'writer' %}
+        context: IMPORT_reboot_aio_contexts.WriterContext,
+        {% elif method.options.proto.kind == 'transaction' %}
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
+        {% elif method.options.proto.kind == 'workflow' %}
+        context: IMPORT_reboot_aio_contexts.WorkflowContext,
+        {% endif %}
+        request: {{ method.input_type }},
+    ) -> {{ method.output_type }}:
+        # During the migration from 'PascalCase' to 'snake_case' method
+        # naming in Python servicers, we call the 'snake_case' version
+        # by default, so new names will do the correct thing making the
+        # code to be backwards compatible for some time and if a servicer
+        # overrides the 'PascalCase' version - it will override that
+        # method and will just work.
+        return await self.{{ method.proto.name | to_snake }}(
+            context,
+            request,
+        )
+
+    # To be backwards compatible during the renaming don't make this
+    # method to be 'abstractmethod', so that existing code that
+    # doesn't implement it continues to work.
+    async def {{ method.proto.name | to_snake }}(
         self,
         {% if method.options.proto.kind == 'reader' %}
         context: IMPORT_reboot_aio_contexts.ReaderContext,
@@ -3645,6 +3791,10 @@ class {{ client.proto.state_name }}:
                             continue
                         raise
 
+            # Keep the original functions on the client, so old code will
+            # continue to work, but use the new 'snake_case' method in
+            # the new code.
+            {{ method.proto.name | to_snake }} = {{ method.proto.name }}
             {% endif %}
             {% endfor %}
             {% endfor %}
@@ -3811,6 +3961,10 @@ class {{ client.proto.state_name }}:
                     )
                 )
 
+            # Keep the original functions on the client, so old code will
+            # continue to work, but use the new 'snake_case' method in
+            # the new code.
+            {{ method.proto.name | to_snake }} = {{ method.proto.name }}
             {% elif (method.options.proto.kind in ['writer', 'transaction']) or (method.options.proto.kind in ['reader'] and not method.proto.server_streaming and not method.proto.client_streaming) %}
             async def {{ method.proto.name }}(
                 # In methods which are dealing with user input, (i.e.,
@@ -3857,6 +4011,10 @@ class {{ client.proto.state_name }}:
                     {% endfor %}
                 )
 
+            # Keep the original functions on the client, so old code will
+            # continue to work, but use the new 'snake_case' method in
+            # the new code.
+            {{ method.proto.name | to_snake }} = {{ method.proto.name }}
             {% endif %}
             {% endif %}
             {% endfor %}
@@ -4021,6 +4179,10 @@ class {{ client.proto.state_name }}:
                     type={{ method.output_type }},
                 )
 
+            # Keep the original functions on the client, so old code will
+            # continue to work, but use the new 'snake_case' method in
+            # the new code.
+            {{ method.proto.name | to_snake }} = {{ method.proto.name }}
             {% endif %}
             {% endif %}
             {% endfor %}
@@ -4140,6 +4302,10 @@ class {{ client.proto.state_name }}:
 
                 return __task_id__
 
+            # Keep the original functions on the client, so old code will
+            # continue to work, but use the new 'snake_case' method in
+            # the new code.
+            {{ method.proto.name | to_snake }} = {{ method.proto.name }}
             {% endif %}
             {% endfor %}
             {% endfor %}
@@ -4260,6 +4426,10 @@ class {{ client.proto.state_name }}:
                     bearer_token=__bearer_token__,
                 )
 
+            # Keep the original functions on the client, so old code will
+            # continue to work, but use the new 'snake_case' method in
+            # the new code.
+            {{ method.proto.name | to_snake }} = {{ method.proto.name }}
             {% endif %}
             {% endfor %}
             {% endfor %}
@@ -4391,6 +4561,10 @@ class {{ client.proto.state_name }}:
                     task_id=__task_id__,
                 )
 
+            # Keep the original functions on the client, so old code will
+            # continue to work, but use the new 'snake_case' method in
+            # the new code.
+            {{ method.proto.name | to_snake }} = {{ method.proto.name }}
             {% endif %}
             {% endfor %}
             {% endfor %}
@@ -4498,6 +4672,11 @@ class {{ client.proto.state_name }}:
                     {% endfor %}
                 )
             )
+
+        # Keep the original functions on the client, so old code will
+        # continue to work, but use the new 'snake_case' method in
+        # the new code.
+        {{ method.proto.name | to_snake }} = {{ method.proto.name }}
         {% elif method.options.proto.kind == 'reader' %}
         async def {{ method.proto.name }}(
             __this__,
@@ -4603,6 +4782,10 @@ class {{ client.proto.state_name }}:
             async for __response__ in __call__:
                 yield __response__
             {% endif %}
+        # Keep the original functions on the client, so old code will
+        # continue to work, but use the new 'snake_case' method in
+        # the new code.
+        {{ method.proto.name | to_snake }} = {{ method.proto.name }}
         {% elif method.options.proto.kind in ['transaction', 'writer'] %}
         async def {{ method.proto.name }}(
             __this__,
@@ -4698,6 +4881,10 @@ class {{ client.proto.state_name }}:
             )
             {% endif %}
 
+        # Keep the original functions on the client, so old code will
+        # continue to work, but use the new 'snake_case' method in
+        # the new code.
+        {{ method.proto.name | to_snake }} = {{ method.proto.name }}
         {% endif %}
         {% endif %}
         {% endfor %}
@@ -4749,6 +4936,10 @@ class {{ client.proto.state_name }}:
                 ]
             )
 
+        # Keep the original functions on the client, so old code will
+        # continue to work, but use the new 'snake_case' method in
+        # the new code.
+        {{ method.proto.name | to_snake }} = {{ method.proto.name }}
         {% endif %}
         {% endfor %}
         {% endfor %}
@@ -4893,6 +5084,10 @@ class {{ client.proto.state_name }}:
             )
         )
 
+    # Keep the original functions on the client, so old code will
+    # continue to work, but use the new 'snake_case' method in
+    # the new code.
+    {{ method.proto.name | to_snake }} = {{ method.proto.name }}
     {% endif %}
     {% endif %}
     {% endfor %}
@@ -4982,6 +5177,10 @@ class {{ client.proto.state_name }}:
                 {% endfor %}
             )
 
+        # Keep the original functions on the client, so old code will
+        # continue to work, but use the new 'snake_case' method in
+        # the new code.
+        {{ method.proto.name | to_snake }} = {{ method.proto.name }}
         {% endif %}
         {% endif %}
         {% endfor %}
