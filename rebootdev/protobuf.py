@@ -62,7 +62,7 @@ def from_message(message: Message) -> Value:
     return _from(MessageToDict(message), dict)
 
 
-def from_model(model: BaseModel) -> Value:
+def from_model(model: BaseModel, **kwargs) -> Value:
     """
     Helper that returns a `google.protobuf.Value` from a pydantic
     `BaseModel`.
@@ -71,7 +71,7 @@ def from_model(model: BaseModel) -> Value:
         raise TypeError(
             "Expecting argument to be instance of 'pydantic.BaseModel'"
         )
-    return _from(model.model_dump(), dict)
+    return _from(model.model_dump(**kwargs), dict)
 
 
 def _as(value: Value, expected_type: type[T]) -> T:
