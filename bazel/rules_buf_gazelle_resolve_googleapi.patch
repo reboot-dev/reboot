@@ -1,0 +1,31 @@
+Workaround googleapis change in recent Gazelle
+
+In 0.32 and subsequent versions of Gazelle, the previously built-in logic for
+resolving googleapis has been removed [1]. This commit restores a limited
+version of that behavior, by writing a BUILD.bazel with Gazelle resolve
+directives into the workspace created for the repo as part of
+`buf_dependencies()`.
+
+[1] https://github.com/bazel-contrib/bazel-gazelle/releases/tag/v0.32.0
+
+diff --git a/buf/internal/repo.bzl b/buf/internal/repo.bzl
+index d07bfdb..e642023 100644
+--- a/buf/internal/repo.bzl
++++ b/buf/internal/repo.bzl
+@@ -56,6 +56,15 @@ def _buf_dependencies_impl(ctx):
+
+     ctx.file("WORKSPACE", "workspace(name = \"{name}\")".format(name = ctx.name), executable = False)
+
++    # Gazelle >= 0.32 no longer has built-in resolver rules for
++    # googleapis. Restore the rules we need for building Reboot.
++    resolve_directives = [
++        "# gazelle:resolve proto proto google/rpc/status.proto @googleapis//google/rpc:status_proto",
++        "# gazelle:resolve proto proto google/api/expr/v1alpha1/checked.proto @googleapis//google/api/expr/v1alpha1:expr_proto",
++        "# gazelle:resolve proto proto google/api/expr/v1alpha1/syntax.proto @googleapis//google/api/expr/v1alpha1:expr_proto",
++    ]
++    ctx.file("BUILD.bazel", "\n".join(resolve_directives), executable = False)
++
+     # Run gazelle to generate `proto_library` rules.
+     # Note that this doesn't require the `buf` extension
+     # as all the files are exported to workspace root.
+

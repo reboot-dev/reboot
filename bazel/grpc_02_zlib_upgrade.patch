@@ -1,0 +1,63 @@
+This is a subset of commit 4d01914c77275c2170 from the upstream grpc repo. It
+upgrades zlib to avoid a build error on Mac OS. Once we upgrade to gRPC >= 1.72,
+we can drop this.
+
+diff --git a/MODULE.bazel b/MODULE.bazel
+index 7f2eb3995a..e79355d3d3 100644
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -40,7 +40,7 @@ bazel_dep(name = "rules_apple", version = "3.16.0", repo_name = "build_bazel_rul
+ bazel_dep(name = "rules_cc", version = "0.0.17")
+ bazel_dep(name = "rules_proto", version = "7.0.2")
+ bazel_dep(name = "xds", version = "0.0.0-20240423-555b57e", repo_name = "com_github_cncf_xds")  # mismatched 20231116
+-bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
++bazel_dep(name = "zlib", version = "1.3.1.bcr.5")
+ 
+ switched_rules = use_extension("@com_google_googleapis//:extensions.bzl", "switched_rules")
+ switched_rules.use_languages(
+diff --git a/bazel/grpc_deps.bzl b/bazel/grpc_deps.bzl
+index a2ae01a480..8a925e641a 100644
+--- a/bazel/grpc_deps.bzl
++++ b/bazel/grpc_deps.bzl
+@@ -47,11 +47,11 @@ def grpc_deps():
+         http_archive(
+             name = "zlib",
+             build_file = "@com_github_grpc_grpc//third_party:zlib.BUILD",
+-            sha256 = "18337cdb32562003c39d9f7322b9a166ad4abfb2b909566428e11f96d2385586",
+-            strip_prefix = "zlib-09155eaa2f9270dc4ed1fa13e2b4b2613e6e4851",
++            sha256 = "da8937719bb6e9600a671f320934c0db3b8020c9c30fecda60b5a5ebdc9a1ea0",
++            strip_prefix = "zlib-f1f503da85d52e56aae11557b4d79a42bcaa2b86",
+             urls = [
+-                "https://storage.googleapis.com/grpc-bazel-mirror/github.com/madler/zlib/archive/09155eaa2f9270dc4ed1fa13e2b4b2613e6e4851.tar.gz",
+-                "https://github.com/madler/zlib/archive/09155eaa2f9270dc4ed1fa13e2b4b2613e6e4851.tar.gz",
++                "https://storage.googleapis.com/grpc-bazel-mirror/github.com/madler/zlib/archive/f1f503da85d52e56aae11557b4d79a42bcaa2b86.tar.gz",
++                "https://github.com/madler/zlib/archive/f1f503da85d52e56aae11557b4d79a42bcaa2b86.tar.gz",
+             ],
+         )
+ 
+diff --git a/templates/MODULE.bazel.template b/templates/MODULE.bazel.template
+index 33cfa973d0..bf02cec979 100644
+--- a/templates/MODULE.bazel.template
++++ b/templates/MODULE.bazel.template
+@@ -42,7 +42,7 @@
+     bazel_dep(name = "rules_cc", version = "0.0.17")
+     bazel_dep(name = "rules_proto", version = "7.0.2")
+     bazel_dep(name = "xds", version = "0.0.0-20240423-555b57e", repo_name = "com_github_cncf_xds")  # mismatched 20231116
+-    bazel_dep(name = "zlib", version = "1.3.1.bcr.3")
++    bazel_dep(name = "zlib", version = "1.3.1.bcr.5")
+ 
+     switched_rules = use_extension("@com_google_googleapis//:extensions.bzl", "switched_rules")
+     switched_rules.use_languages(
+diff --git a/tools/run_tests/sanity/check_submodules.sh b/tools/run_tests/sanity/check_submodules.sh
+index 7c29942829..0bd013193f 100755
+--- a/tools/run_tests/sanity/check_submodules.sh
++++ b/tools/run_tests/sanity/check_submodules.sh
+@@ -40,7 +40,7 @@ third_party/protobuf d295af5c3002c08e1bfd9d7f9e175d0a4d015f1e
+ third_party/protoc-gen-validate 32c2415389a3538082507ae537e7edd9578c64ed
+ third_party/re2 0c5616df9c0aaa44c9440d87422012423d91c7d1
+ third_party/xds 3a472e524827f72d1ad621c4983dd5af54c46776
+-third_party/zlib 09155eaa2f9270dc4ed1fa13e2b4b2613e6e4851
++third_party/zlib f1f503da85d52e56aae11557b4d79a42bcaa2b86
+ EOF
+ 
+ if ! diff -u "$submodules" "$want_submodules"; then

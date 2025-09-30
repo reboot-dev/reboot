@@ -1,6 +1,7 @@
 import inspect
 import logging
 import rbt.v1alpha1.errors_pb2
+import typing
 from abc import ABC, abstractmethod
 from google.protobuf.message import Message
 from log.log import get_logger, log_at_most_once_per
@@ -53,6 +54,8 @@ class Authorizer(ABC, Generic[StateType, RequestTypes]):
         rbt.v1alpha1.errors_pb2.Unauthenticated |
         rbt.v1alpha1.errors_pb2.PermissionDenied | rbt.v1alpha1.errors_pb2.Ok
     )
+
+    DECISION_TYPES = typing.get_args(Decision)
 
     @abstractmethod
     async def authorize(

@@ -14,7 +14,7 @@ h2==4.3.0  # For HTTP/2 low-level protocol testing.
 jinja2==3.1.2  # Latest as of 2023/03/20.
 jinja2-strcase==0.0.2 # Latest as 2023/12/03.
 kubernetes-asyncio==31.1.0  # Latest as of 2024/09/16.
-mypy-protobuf==3.5.0 # Latest as of 2024/02/15.
+mypy-protobuf==3.6.0 # Latest as of 2025/03/25.
 packaging>=23.1 # Latest as of 2023/04/12.
 pathspec==0.12.1 # Latest as of 2024/04/22.
 protobuf==5.28.3 # Aligned with `grpcio`.

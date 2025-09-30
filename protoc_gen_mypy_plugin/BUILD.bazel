@@ -1,0 +1,16 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_binary")
+
+py_binary(
+    # NOTE: we are breaking with our normal naming convention as the protoc
+    # compiler insists that the name of a plugin must(!!!!) start with
+    # `protoc-gen-`.
+    name = "protoc-gen-mypy",
+    srcs = ["protoc_gen_mypy_wrapper.py"],
+    main = "protoc_gen_mypy_wrapper.py",
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("mypy-protobuf"),
+    ],
+)

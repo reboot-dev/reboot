@@ -342,11 +342,8 @@ class NodeAdaptorAuthorizer(Authorizer[Message, Message]):
         cancelled.cancel()
 
         return _serialized_any_to_expected_message(
-            bytes_decision, [
-                errors_pb2.Unauthenticated,
-                errors_pb2.PermissionDenied,
-                errors_pb2.Ok,
-            ]
+            bytes_decision,
+            self.DECISION_TYPES,
         )
 
 

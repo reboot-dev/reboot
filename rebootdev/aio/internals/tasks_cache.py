@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from collections import OrderedDict
 from google.protobuf.message import Message
 from google.protobuf.timestamp_pb2 import Timestamp
@@ -65,7 +66,7 @@ class TasksCache:
     def update_task_info(
         self,
         task_id: tasks_pb2.TaskId,
-        status: tasks_pb2.TaskInfo.Status,
+        status: tasks_pb2.TaskInfo.Status.ValueType,
         occurred_at: Timestamp,
         scheduled_at: Optional[Timestamp] = None,
         iterations: Optional[int] = None,
@@ -101,9 +102,9 @@ class TasksCache:
         Returns a future that the caller can set with the response
         bytes to indicate the completion of the task.
         """
-        uuid = task_id.task_uuid
+        task_uuid = task_id.task_uuid
 
-        assert uuid not in self._cache, f"Task {uuid.decode()} already in cache"
+        assert task_uuid not in self._cache, f"Task {uuid.UUID(bytes=task_uuid)} already in cache"
 
         future: asyncio.Future[bytes] = asyncio.Future()
 
@@ -124,12 +125,12 @@ class TasksCache:
             scheduled_at.FromDatetime(schedule)
             task_info.scheduled_at.CopyFrom(scheduled_at)
 
-        self._cache[uuid] = (
+        self._cache[task_uuid] = (
             future,
             task_info,
         )
 
-        self._cache.move_to_end(uuid)
+        self._cache.move_to_end(task_uuid)
         self._trim_cache()
 
         # Check if the task had been added as part of a transaction,
@@ -139,9 +140,9 @@ class TasksCache:
         # NOTE: there is an invariant here that after calling
         # `set_result()` on the future the task will be in the cache
         # and thus we do this after adding it to the cache above.
-        if uuid in self._transaction_prepared_tasks:
-            self._transaction_prepared_tasks[uuid].set_result(None)
-            del self._transaction_prepared_tasks[uuid]
+        if task_uuid in self._transaction_prepared_tasks:
+            self._transaction_prepared_tasks[task_uuid].set_result(None)
+            del self._transaction_prepared_tasks[task_uuid]
 
         return future
 
@@ -226,7 +227,7 @@ class TasksCache:
         task_id: tasks_pb2.TaskId,
         response: bytes,
         timestamp: Timestamp,
-        status: sidecar_pb2.Task.Status,
+        status: sidecar_pb2.Task.Status.ValueType,
         method: str,
         iteration: int = 0,
     ) -> None:
