@@ -7,16 +7,20 @@ load("@rules_python//python:pip.bzl", "pip_parse")
 
 def pypi_repos():
     """Defines local PyPI-based repositories."""
+    pyprotoc_plugin_pypi_repos()
+
     pip_parse(
         name = "mypy_integration_pip_deps",
         python_interpreter_target = interpreter,
-        requirements_lock = "//:mypy-requirements_lock.txt",
+        # Fully-specified path (including repo) so that this `.bzl` file can
+        # also be imported from other repos.
+        requirements_lock = "@com_github_reboot_dev_reboot//:mypy-requirements_lock.txt",
     )
-
-    pyprotoc_plugin_pypi_repos()
 
     pip_parse(
         name = "rbt_pypi",
         python_interpreter_target = interpreter,
-        requirements_lock = "//rebootdev:requirements_lock.txt",
+        # Fully-specified path (including repo) so that this `.bzl` file can
+        # also be imported from other repos.
+        requirements_lock = "@com_github_reboot_dev_reboot//rebootdev:requirements_lock.txt",
     )

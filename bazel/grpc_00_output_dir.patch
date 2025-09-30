@@ -1,0 +1,25 @@
+A recent gRPC change [1] results in writing the gRPC output files to
+the wrong location. This looks like a bug in gRPC; we should file it
+with the upstream gRPC project (#4365).
+
+[1] https://github.com/grpc/grpc/commit/c8f467aea99e074776901fc4c53d59565b90d988
+diff -ru grpc-1.70.1.orig/bazel/python_rules.bzl grpc-1.70.1/bazel/python_rules.bzl
+--- grpc-1.70.1.orig/bazel/python_rules.bzl	2025-03-06 09:37:38
++++ grpc-1.70.1/bazel/python_rules.bzl	2025-03-06 09:38:16
+@@ -191,15 +191,10 @@
+     arguments = []
+     tools = [context.executable._protoc, context.executable._grpc_plugin]
+     out_dir = get_out_dir(protos, context)
+-    if out_dir.import_path:
+-        # is virtual imports
+-        out_path = out_dir.path
+-    else:
+-        out_path = context.genfiles_dir.path
+     arguments += get_plugin_args(
+         context.executable._grpc_plugin,
+         plugin_flags,
+-        out_path,
++        out_dir.path,
+         False,
+     )
+ 

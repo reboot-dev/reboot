@@ -19,48 +19,6 @@ load("@com_github_reboot_dev_pyprotoc_plugin//bazel:repos.bzl", pyprotoc_plugin_
 def repos():
     """Adds external repositories/archives needed by Reboot (phase 1)."""
 
-    # Pull specific version of the 'abseil', that doesn't contain code
-    # which triggers 'deprecated-builtins' warnings on the modern Xcode.
-    # Took the version from
-    # https://github.com/grpc/grpc/blob/v1.55.0/bazel/grpc_deps.bzl#L339
-    # Doing that we won't spam the CI runner logs.
-    # TODO: remove and let the 'grpc' bring the 'abseil' library when the
-    # 'grpc' library is updated.
-    maybe(
-        http_archive,
-        name = "com_google_absl",
-        sha256 = "5366d7e7fa7ba0d915014d387b66d0d002c03236448e1ba9ef98122c13b35c36",
-        strip_prefix = "abseil-cpp-20230125.3",
-        urls = [
-            "https://storage.googleapis.com/grpc-bazel-mirror/github.com/abseil/abseil-cpp/archive/20230125.3.tar.gz",
-            "https://github.com/abseil/abseil-cpp/archive/20230125.3.tar.gz",
-        ],
-    )
-
-    # Declare the 'upb' dependency explicitly to apply a patch and ignore
-    # the version of the 'upb' that is pulled by the 'grpc' dependency.
-    # Took the commit from there:
-    # https://github.com/grpc/grpc/blob/v1.45.0/bazel/grpc_deps.bzl#L340
-    # We need that to avoid build error on the modern Xcode, see more:
-    # https://github.com/reboot-dev/mono/issues/4280
-    # TODO: Remove the patch once the 'grpc' library is upgraded.
-    maybe(
-        http_archive,
-        name = "upb",
-        sha256 = "1cd33bf607ebc83acf71b6078c1d4361ffa49d647a2ce792a557ae98f75500ad",
-        strip_prefix = "upb-a02d92e0257a35f11d4a58b6a932506cbdbb2f29",
-        urls = [
-            "https://storage.googleapis.com/grpc-bazel-mirror/github.com/protocolbuffers/upb/archive/a02d92e0257a35f11d4a58b6a932506cbdbb2f29.tar.gz",
-            "https://github.com/protocolbuffers/upb/archive/a02d92e0257a35f11d4a58b6a932506cbdbb2f29.tar.gz",
-        ],
-        # Before we update the version of the 'grpc', which pulls the old
-        # version of the 'upb' which is causing the Reboot build error we
-        # can apply the patch to ignore that errors to make the Reboot be able
-        # to build with Xcode 16.
-        patches = ["@com_github_reboot_dev_reboot//bazel/upb:upb-ignore-modern-xcode-errors.patch"],
-        patch_args = ["-p1"],
-    )
-
     # Official Python rules for Bazel.
     maybe(
         http_archive,
@@ -72,15 +30,29 @@ def repos():
 
     # Declare a specific gRPC version *first*, before another dependency has a chance
     # to define an alternative incompatible version.
-    # TODO(Issue #644, Xander): Fix the compilation errors caused by combining newer
-    # gRPC versions with `io_bazel_rules_go` repos (brought in via the
-    # `io_bazel_rules_docker` repos).
     maybe(
         http_archive,
         name = "com_github_grpc_grpc",
-        urls = ["https://github.com/grpc/grpc/archive/refs/tags/v1.45.0.tar.gz"],
-        strip_prefix = "grpc-1.45.0",
-        sha256 = "ec19657a677d49af59aa806ec299c070c882986c9fcc022b1c22c2a3caf01bcd",
+        urls =
+            ["https://github.com/grpc/grpc/archive/refs/tags/v1.71.0.tar.gz"],
+        sha256 = "0d631419e54ec5b29def798623ee3bf5520dac77abeab3284ef7027ec2363f91",
+        strip_prefix = "grpc-1.71.0",
+        patches = [
+            "@com_github_reboot_dev_reboot//bazel:grpc_00_output_dir.patch",
+            "@com_github_reboot_dev_reboot//bazel:grpc_01_mypy_pyi_generation.patch",
+            "@com_github_reboot_dev_reboot//bazel:grpc_02_zlib_upgrade.patch",
+        ],
+        patch_args = ["-p1"],
+    )
+
+    maybe(
+        http_archive,
+        name = "com_google_protobuf",
+        sha256 = "6fbe2e6f703bcd3a246529c2cab586ca12a98c4e641f5f71d51fde09eb48e9e7",
+        strip_prefix = "protobuf-27.1",
+        urls = [
+            "https://github.com/protocolbuffers/protobuf/archive/v27.1.tar.gz",
+        ],
     )
 
     stout_repos()
@@ -88,6 +60,15 @@ def repos():
     pyprotoc_plugin_repos()
 
     jemalloc_repos()
+
+    # Need `rules_foreign_cc` for building RocksDB.
+    maybe(
+        http_archive,
+        name = "rules_foreign_cc",
+        sha256 = "4b33d62cf109bcccf286b30ed7121129cc34cf4f4ed9d8a11f38d9108f40ba74",
+        strip_prefix = "rules_foreign_cc-0.11.1",
+        url = "https://github.com/bazelbuild/rules_foreign_cc/releases/download/0.11.1/rules_foreign_cc-0.11.1.tar.gz",
+    )
 
     maybe(
         http_archive,
@@ -97,24 +78,16 @@ def repos():
         url = "https://github.com/bazel-contrib/rules_oci/releases/download/v1.8.0/rules_oci-v1.8.0.tar.gz",
     )
 
-    # Gazell and rules_go are not true dependencies, but they are needed by
-    # another one of our transitive dependencies that does not properly load
-    # its own dependencies.
-    maybe(
-        http_archive,
-        name = "bazel_gazelle",
-        sha256 = "cdb02a887a7187ea4d5a27452311a75ed8637379a1287d8eeb952138ea485f7d",
-        urls = ["https://github.com/bazelbuild/bazel-gazelle/releases/download/v0.21.1/bazel-gazelle-v0.21.1.tar.gz"],
-    )
-
-    maybe(
-        http_archive,
-        name = "io_bazel_rules_go",
-        sha256 = "08c3cd71857d58af3cda759112437d9e63339ac9c6e0042add43f4d94caf632d",
+    # We don't use rules_license, but one of our transitive dependencies does
+    # (BoringSSL), and the version that is transitively included does not seem
+    # to properly declare its own dependency on the right version of rules_license.
+    http_archive(
+        name = "rules_license",
         urls = [
-            "https://storage.googleapis.com/bazel-mirror/github.com/bazelbuild/rules_go/releases/download/v0.24.2/rules_go-v0.24.2.tar.gz",
-            "https://github.com/bazelbuild/rules_go/releases/download/v0.24.2/rules_go-v0.24.2.tar.gz",
+            "https://mirror.bazel.build/github.com/bazelbuild/rules_license/releases/download/1.0.0/rules_license-1.0.0.tar.gz",
+            "https://github.com/bazelbuild/rules_license/releases/download/1.0.0/rules_license-1.0.0.tar.gz",
         ],
+        sha256 = "26d4021f6898e23b82ef953078389dd49ac2b5618ac564ade4ef87cced147b38",
     )
 
     maybe(
@@ -138,10 +111,10 @@ def repos():
     maybe(
         http_archive,
         name = "buildifier_prebuilt",
-        sha256 = "ecef8f8c39eaf4f1c1604c677d232ade33818f898e35e7826e7564a648751350",
-        strip_prefix = "buildifier-prebuilt-5.1.0.2",
+        sha256 = "8ada9d88e51ebf5a1fdff37d75ed41d51f5e677cdbeafb0a22dda54747d6e07e",
+        strip_prefix = "buildifier-prebuilt-6.4.0",
         urls = [
-            "http://github.com/keith/buildifier-prebuilt/archive/5.1.0.2.tar.gz",
+            "http://github.com/keith/buildifier-prebuilt/archive/6.4.0.tar.gz",
         ],
     )
 
@@ -151,26 +124,32 @@ def repos():
         sha256 = "9d270fdb81e76fed1122a94c512b0930d70b837569dc488b58ab9c033641910d",
         strip_prefix = "bazel-mypy-integration-0.5.0",
         url = "https://github.com/bazel-contrib/bazel-mypy-integration/archive/refs/tags/0.5.0.tar.gz",
+        patches = [
+            "@com_github_reboot_dev_reboot//bazel:bazel-mypy-integration_avoid_duplicate_names.patch",
+        ],
+        patch_args = ["-p1"],
     )
 
     maybe(
         http_archive,
         name = "rules_proto",
-        sha256 = "e017528fd1c91c5a33f15493e3a398181a9e821a804eb7ff5acdd1d2d6c2b18d",
-        strip_prefix = "rules_proto-4.0.0-3.20.0",
-        urls = [
-            "https://github.com/bazelbuild/rules_proto/archive/refs/tags/4.0.0-3.20.0.tar.gz",
-        ],
+        sha256 = "14a225870ab4e91869652cfd69ef2028277fc1dc4910d65d353b62d6e0ae21f4",
+        strip_prefix = "rules_proto-7.1.0",
+        url = "https://github.com/bazelbuild/rules_proto/releases/download/7.1.0/rules_proto-7.1.0.tar.gz",
     )
 
     maybe(
         http_archive,
         name = "rules_buf",
-        sha256 = "523a4e06f0746661e092d083757263a249fedca535bd6dd819a8c50de074731a",
-        strip_prefix = "rules_buf-0.1.1",
+        sha256 = "bca5582e8bdeb31ec7896de0af262f2ce2f20bf9df78a77f3f23013ba0b35d1a",
+        strip_prefix = "rules_buf-2c81951626962cb37aeff5f4ca772b083d8d5882",
         urls = [
-            "https://github.com/bufbuild/rules_buf/archive/refs/tags/v0.1.1.zip",
+            "https://github.com/bufbuild/rules_buf/archive/2c81951626962cb37aeff5f4ca772b083d8d5882.zip",
         ],
+        patches = [
+            "@com_github_reboot_dev_reboot//bazel:rules_buf_gazelle_resolve_googleapi.patch",
+        ],
+        patch_args = ["-p1"],
     )
 
     maybe(
@@ -208,9 +187,9 @@ def repos():
     maybe(
         http_archive,
         name = "aspect_bazel_lib",
-        sha256 = "04feedcd06f71d0497a81fdd3220140a373ff9d2bff94620fbd50b774f96d8e0",
-        strip_prefix = "bazel-lib-1.40.2",
-        url = "https://github.com/aspect-build/bazel-lib/releases/download/v1.40.2/bazel-lib-v1.40.2.tar.gz",
+        sha256 = "6e729e4900695623efa5e9c73b10b0509eb1606b73cafc374a359aed4c9e6958",
+        strip_prefix = "bazel-lib-1.42.0",
+        url = "https://github.com/aspect-build/bazel-lib/releases/download/v1.42.0/bazel-lib-v1.42.0.tar.gz",
     )
 
     maybe(

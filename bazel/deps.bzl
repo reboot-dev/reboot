@@ -1,7 +1,6 @@
 """Dependency specific initialization."""
 
 load("@aspect_bazel_lib//lib:repositories.bzl", "aspect_bazel_lib_dependencies")
-load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
 load("@bazel_skylib//:workspace.bzl", "bazel_skylib_workspace")
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
@@ -13,8 +12,6 @@ load("@com_github_3rdparty_stout//bazel:deps.bzl", stout_deps = "deps")
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
 load("@com_github_reboot_dev_pyprotoc_plugin//bazel:deps.bzl", pyprotoc_plugin_deps = "deps")
 load("@hermetic_cc_toolchain//toolchain:defs.bzl", zig_toolchains = "toolchains")
-load("@io_bazel_rules_go//go:deps.bzl", "go_register_toolchains", "go_rules_dependencies")
-load("@io_bazel_rules_webtesting//web:go_repositories.bzl", web_test_go_repositories = "go_internal_repositories")
 load("@io_bazel_rules_webtesting//web:py_repositories.bzl", web_test_py_repositories = "py_repositories")
 load("@io_bazel_rules_webtesting//web:repositories.bzl", "web_test_repositories")
 load("@io_bazel_rules_webtesting//web/versioned:browsers-0.3.3.bzl", "browser_repositories")
@@ -23,17 +20,22 @@ load("@mypy_integration_pip_deps//:requirements.bzl", mypy_integration_pypi_deps
 load("@rbt_pypi//:requirements.bzl", rbt_pypi_deps = "install_deps")
 load("@rules_buf//buf:defs.bzl", "buf_dependencies")
 load("@rules_buf//buf:repositories.bzl", "rules_buf_dependencies", "rules_buf_toolchains")
+load("@rules_foreign_cc//foreign_cc:repositories.bzl", "rules_foreign_cc_dependencies")
 load("@rules_oci//oci:dependencies.bzl", "rules_oci_dependencies")
 load("@rules_pkg//:deps.bzl", "rules_pkg_dependencies")
-load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies", "rules_proto_toolchains")
+load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies")
+load("@rules_proto//proto:toolchains.bzl", "rules_proto_toolchains")
 load("//bazel:detect_host_arch.bzl", "detect_host_arch")
 load("//bazel:dockerfile_oci_image.bzl", "dockerfile_oci_image")
 
 def deps():
     """Adds external repositories/archives needed by Reboot (phase 2)."""
+
     expected_deps()
 
-    rbt_pypi_deps()
+    # TODO: This has to happen first, for obscure Google dependency reasons.
+    # This should hopefully be resolved once we move to Bazel modules.
+    grpc_deps()
 
     stout_deps()
 
@@ -56,13 +58,6 @@ def deps():
     rules_oci_dependencies()
 
     rules_pkg_dependencies()
-
-    grpc_deps()
-
-    go_rules_dependencies()
-    go_register_toolchains()
-
-    gazelle_dependencies()
 
     jemalloc_deps()
 
@@ -94,10 +89,15 @@ def deps():
     mypy_integration_repositories()
     mypy_integration_pypi_deps()
 
+    rbt_pypi_deps()
+
     # Buf related dependencies:
     # https://github.com/bufbuild/rules_buf
     rules_buf_dependencies()
-    rules_buf_toolchains(version = "v1.5.0")
+    rules_buf_toolchains(
+        version = "v1.5.0",
+        sha256 = "2e53b6cbff35121058ecd447b37d484f1ca4da88a3e8a771c1e868be3bb8fdca",
+    )
     rules_proto_dependencies()
     rules_proto_toolchains()
 
@@ -113,7 +113,6 @@ def deps():
 
     # Dependencies for WebDriver.
     web_test_repositories()
-    web_test_go_repositories()
     web_test_py_repositories()
 
     # For Chromium to work, a local version must be found on the workstation.
@@ -123,6 +122,8 @@ def deps():
 
     # Dependency to use write_source_files.
     aspect_bazel_lib_dependencies()
+
+    rules_foreign_cc_dependencies()
 
     # Plain zig_toolchains() will pick reasonable defaults. See
     # toolchain/defs.bzl:toolchains on how to change the Zig SDK version and
