@@ -1978,6 +1978,12 @@ class {{ state.proto.name }}Authorizer(
               {{ method.input_type }},
             ]
         ] = None,
+        {{ method.proto.name | to_snake }}: IMPORT_typing.Optional[
+            IMPORT_rebootdev.aio.auth.authorizers.AuthorizerRule[
+              {{ state.pb2_name }}.{{ state.proto.name }},
+              {{ method.input_type }},
+            ]
+        ] = None,
         {% endfor %}
         {% endfor %}
         # NOTE: using `_` prefix for `_default` so as not to collide
@@ -1992,7 +1998,11 @@ class {{ state.proto.name }}Authorizer(
     ):
         {% for service in state.services %}
         {% for method in service.methods %}
-        self._{{ method.proto.name }} = {{ method.proto.name }}
+        if {{ method.proto.name | to_snake }} is not None and {{ method.proto.name }} is not None:
+            raise ValueError(
+                f"Cannot specify both '{{ method.proto.name }}' and '{{ method.proto.name | to_snake }}' authorizer rules"
+            )
+        self._{{ method.proto.name | to_snake }} = {{ method.proto.name | to_snake }} or {{ method.proto.name }}
         {% endfor %}
         {% endfor %}
         self.__default = _default
@@ -2041,7 +2051,7 @@ class {{ state.proto.name }}Authorizer(
         request: {{ method.input_type }},
         {% endif %}
     ) -> IMPORT_rebootdev.aio.auth.authorizers.Authorizer.Decision:
-        return await (self._{{ method.proto.name }} or self.__default).execute(
+        return await (self._{{ method.proto.name | to_snake }} or self.__default).execute(
             context=context,
             {% if not method.options.proto.constructor %}
             state=IMPORT_typing.cast({{ state.pb2_name }}.{{ state.proto.name }}, state),

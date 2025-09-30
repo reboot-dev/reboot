@@ -48,7 +48,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}.singleton.Servicer):
     {% for method in service.methods %}
     {% if method.options.proto.kind == 'reader' %}
 
-    async def {{ method.proto.name }}(
+    async def {{ method.proto.name | to_snake }}(
         self,
         context: ReaderContext,
         {% if not method.options.proto.state_streaming %}
@@ -96,7 +96,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}.singleton.Servicer):
         {% endif %}
     {% elif method.options.proto.kind == 'writer' %}
 
-    async def {{ method.proto.name }}(
+    async def {{ method.proto.name | to_snake}}(
         self,
         context: WriterContext,
         state: {{ state.proto.name }}.State,
@@ -115,7 +115,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}.singleton.Servicer):
         raise NotImplementedError
     {% elif method.options.proto.kind == 'transaction' %}
 
-    async def {{ method.proto.name }}(
+    async def {{ method.proto.name | to_snake }}(
         self,
         context: TransactionContext,
         state: {{ state.proto.name }}.State,
@@ -134,7 +134,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}.singleton.Servicer):
         raise NotImplementedError
     {% elif method.options.proto.kind == 'workflow' %}
 
-    async def {{ method.proto.name }}(
+    async def {{ method.proto.name | to_snake }}(
         self,
         context: WorkflowContext,
         request: {{ method.input_type_name }},
