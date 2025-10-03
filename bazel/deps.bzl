@@ -2,7 +2,6 @@
 
 load("@aspect_bazel_lib//lib:repositories.bzl", "aspect_bazel_lib_dependencies")
 load("@bazel_skylib//:workspace.bzl", "bazel_skylib_workspace")
-load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
 load("@buildifier_prebuilt//:defs.bzl", "buildifier_prebuilt_register_toolchains")
 load("@buildifier_prebuilt//:deps.bzl", "buildifier_prebuilt_deps")
@@ -11,6 +10,7 @@ load("@com_github_3rdparty_bazel_rules_tl_expected//bazel:deps.bzl", expected_de
 load("@com_github_3rdparty_stout//bazel:deps.bzl", stout_deps = "deps")
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
 load("@com_github_reboot_dev_pyprotoc_plugin//bazel:deps.bzl", pyprotoc_plugin_deps = "deps")
+load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
 load("@hermetic_cc_toolchain//toolchain:defs.bzl", zig_toolchains = "toolchains")
 load("@io_bazel_rules_webtesting//web:py_repositories.bzl", web_test_py_repositories = "py_repositories")
 load("@io_bazel_rules_webtesting//web:repositories.bzl", "web_test_repositories")
@@ -18,7 +18,6 @@ load("@io_bazel_rules_webtesting//web/versioned:browsers-0.3.3.bzl", "browser_re
 load("@mypy_integration//repositories:repositories.bzl", mypy_integration_repositories = "repositories")
 load("@mypy_integration_pip_deps//:requirements.bzl", mypy_integration_pypi_deps = "install_deps")
 load("@rbt_pypi//:requirements.bzl", rbt_pypi_deps = "install_deps")
-load("@rules_buf//buf:defs.bzl", "buf_dependencies")
 load("@rules_buf//buf:repositories.bzl", "rules_buf_dependencies", "rules_buf_toolchains")
 load("@rules_foreign_cc//foreign_cc:repositories.bzl", "rules_foreign_cc_dependencies")
 load("@rules_oci//oci:dependencies.bzl", "rules_oci_dependencies")
@@ -31,29 +30,17 @@ load("//bazel:dockerfile_oci_image.bzl", "dockerfile_oci_image")
 def deps():
     """Adds external repositories/archives needed by Reboot (phase 2)."""
 
-    expected_deps()
-
     # TODO: This has to happen first, for obscure Google dependency reasons.
     # This should hopefully be resolved once we move to Bazel modules.
     grpc_deps()
 
+    protobuf_deps()
+
+    expected_deps()
+
     stout_deps()
 
     pyprotoc_plugin_deps()
-
-    # TODO: BoringSSL is pulled in by some transitive dependency but the version
-    # that is depended on fails to build on certain platforms (e.g., OSX
-    # x86-64). For now, workaround this by pinning a specific version.
-    maybe(
-        git_repository,
-        name = "boringssl",
-        # BoringSSL doesn't usually cut releases, so we use a commit
-        # from the 'main-with-bazel' branch, that has bazel rules for
-        # it's dependencies.
-        commit = "652d66d1feb8ba612e776e03182fa1c8f716d265",
-        remote = "https://boringssl.googlesource.com/boringssl",
-        shallow_since = "1705953338 +0000",
-    )
 
     rules_oci_dependencies()
 
@@ -91,25 +78,14 @@ def deps():
 
     rbt_pypi_deps()
 
-    # Buf related dependencies:
-    # https://github.com/bufbuild/rules_buf
     rules_buf_dependencies()
     rules_buf_toolchains(
         version = "v1.5.0",
         sha256 = "2e53b6cbff35121058ecd447b37d484f1ca4da88a3e8a771c1e868be3bb8fdca",
     )
+
     rules_proto_dependencies()
     rules_proto_toolchains()
-
-    buf_dependencies(
-        name = "buf_deps_envoy",
-        modules = [
-            "buf.build/envoyproxy/envoy:a244c7c7e6f745a18c18c15e996b1101",
-            "buf.build/envoyproxy/protoc-gen-validate:dc09a417d27241f7b069feae2cd74a0e",
-            "buf.build/cncf/xds:46e39c7b9b4321731ebe247f2e176fdf0518d76e",
-            "buf.build/opencensus/opencensus:c099df6008e041be95f2bfbfc7a20c3a",
-        ],
-    )
 
     # Dependencies for WebDriver.
     web_test_repositories()
