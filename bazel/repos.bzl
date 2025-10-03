@@ -199,3 +199,17 @@ def repos():
         commit = "c703632657bf4ec9177d9aea0447166d424b3b74",
         shallow_since = "1654243887 +0300",
     )
+
+    # TODO: BoringSSL is pulled in by some transitive dependency but the version
+    # that is depended on fails to build on certain platforms (e.g., OSX
+    # x86-64). For now, workaround this by pinning a specific version.
+    maybe(
+        git_repository,
+        name = "boringssl",
+        # BoringSSL doesn't usually cut releases, so we use a commit
+        # from the 'main-with-bazel' branch, that has bazel rules for
+        # it's dependencies.
+        commit = "652d66d1feb8ba612e776e03182fa1c8f716d265",
+        remote = "https://boringssl.googlesource.com/boringssl",
+        shallow_since = "1705953338 +0000",
+    )

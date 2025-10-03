@@ -349,13 +349,27 @@ class RebootProtocPlugin(ProtocPlugin):
                 # `Delete`: clashes in JavaScript once it becomes the
                 # lower-case version `delete`.
                 #
+                # `State`: used by the generated servicers to access the
+                # current state.
+                #
+                # `Schedule`: used to schedule tasks.
+                #
+                # `Spawn`: used to spawn tasks.
+                #
                 # In the future we may plan to allow overriding these,
                 # but for now we don't. However, we already had these
                 # methods for our `Secret` type so we special case it.
                 if (
                     service.full_name
                     not in ["rbt.cloud.v1alpha1.secrets.SecretMethods"] and
-                    method.name in ["Read", "Write", "Delete"]
+                    method.name in [
+                        "Read",
+                        "Write",
+                        "Delete",
+                        "State",
+                        "Schedule",
+                        "Spawn",
+                    ]
                 ):
                     raise UserProtoError(
                         f"Reboot method '{service.full_name}/{method.name}' "

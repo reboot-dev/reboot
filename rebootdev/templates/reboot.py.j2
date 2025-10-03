@@ -3854,13 +3854,13 @@ class {{ client.proto.state_name }}:
                 )
 
             {% if not constants.has_read and client.state is not none %}
-            async def Read(
+            async def read(
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
             ) -> {{ pb2_name }}.{{ client.proto.state_name }}:
                 if self._weak_reference._servicer is None:
                     raise RuntimeError(
-                        "`Read()` is currently only supported within workflows; "
+                        "`read()` is currently only supported within workflows; "
                         "Please reach out and let us know your use case if this "
                         "is important for you!"
                     )
@@ -3874,7 +3874,7 @@ class {{ client.proto.state_name }}:
 
             {% if not constants.has_write and client.state is not none %}
             @IMPORT_typing.overload
-            async def Write(
+            async def write(
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
                 writer: {{ client.proto.state_name }}BaseServicer.InlineWriterCallable[None],
@@ -3884,7 +3884,7 @@ class {{ client.proto.state_name }}:
                 ...
 
             @IMPORT_typing.overload
-            async def Write(
+            async def write(
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
                 writer: {{ client.proto.state_name }}BaseServicer.InlineWriterCallable[{{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult],
@@ -3893,7 +3893,7 @@ class {{ client.proto.state_name }}:
             ) -> {{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult:
                 ...
 
-            async def Write(
+            async def write(
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
                 writer: {{ client.proto.state_name }}BaseServicer.InlineWriterCallable[{{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult],
@@ -3902,7 +3902,7 @@ class {{ client.proto.state_name }}:
             ) -> {{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult:
                 if self._weak_reference._servicer is None:
                     raise RuntimeError(
-                        "`Write()` is currently only supported within workflows; "
+                        "`write()` is currently only supported within workflows; "
                         "Please reach out and let us know your use case if this "
                         "is important for you!"
                     )
@@ -4126,7 +4126,7 @@ class {{ client.proto.state_name }}:
                 self._idempotency_alias = idempotency_alias
 
             {% if not constants.has_read and client.state is not none %}
-            def Read(
+            def read(
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
             ) -> {{ client.proto.state_name }}.WeakReference._UntilChangesSatisfies[{{ pb2_name }}.{{ client.proto.state_name }}]:
@@ -4136,7 +4136,7 @@ class {{ client.proto.state_name }}:
                 )
 
                 async def callable():
-                    return await self._weak_reference.Read(context)
+                    return await self._weak_reference.read(context)
 
                 return {{ client.proto.state_name }}.WeakReference._UntilChangesSatisfies(
                     idempotency_alias=self._idempotency_alias,
@@ -4580,7 +4580,7 @@ class {{ client.proto.state_name }}:
             {% endfor %}
 
         {% if not constants.has_read and client.state is not none %}
-        async def Read(
+        async def read(
             self,
             context: IMPORT_reboot_aio_contexts.WorkflowContext,
         ) -> {{ pb2_name }}.{{ client.proto.state_name }}:
@@ -4590,12 +4590,12 @@ class {{ client.proto.state_name }}:
                     self.per_iteration() if context.within_loop()
                     else self.per_workflow()
                 )
-            ).Read(context)
+            ).read(context)
         {% endif %}
 
         {% if not constants.has_write and client.state is not none %}
         @IMPORT_typing.overload
-        async def Write(
+        async def write(
             self,
             context: IMPORT_reboot_aio_contexts.WorkflowContext,
             writer: {{ client.proto.state_name }}BaseServicer.InlineWriterCallable[None],
@@ -4605,7 +4605,7 @@ class {{ client.proto.state_name }}:
             ...
 
         @IMPORT_typing.overload
-        async def Write(
+        async def write(
             self,
             context: IMPORT_reboot_aio_contexts.WorkflowContext,
             writer: {{ client.proto.state_name }}BaseServicer.InlineWriterCallable[{{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult],
@@ -4614,7 +4614,7 @@ class {{ client.proto.state_name }}:
         ) -> {{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult:
             ...
 
-        async def Write(
+        async def write(
             self,
             context: IMPORT_reboot_aio_contexts.WorkflowContext,
             writer: {{ client.proto.state_name }}BaseServicer.InlineWriterCallable[{{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult],
@@ -4628,7 +4628,7 @@ class {{ client.proto.state_name }}:
                     self.per_iteration() if context.within_loop()
                     else self.per_workflow()
                 )
-            ).Write(
+            ).write(
                 context, writer, type=type
             )
         {% endif %}
