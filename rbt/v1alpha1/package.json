@@ -1,6 +1,6 @@
 {
   "name": "@reboot-dev/reboot-api",
-  "version": "0.38.3",
+  "version": "0.38.4",
   "type": "module",
   "description": "npm package for Reboot API",
   "main": "index.js",
