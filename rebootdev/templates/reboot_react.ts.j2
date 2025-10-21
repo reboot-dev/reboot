@@ -1347,7 +1347,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
       return () => {
         instance.unuse{{ method.proto.name | to_camel }}(id, request, bearerToken);
       };
-    }, [request, bearerToken]);
+    }, [instance, request, bearerToken]);
 
     return { response, isLoading, aborted };
   }
@@ -1444,44 +1444,45 @@ export const use{{ client.proto.state_name | to_camel }} = (
   {% endfor %}
   {% endfor %}
 
-  return {
-    mutators: {
+  // Don't re-render if `id` hasn't changed.
+    return useMemo(() => ({
+      mutators: {
+        {% for service in client.services %}
+        {% for method in service.methods %}
+        {% if method.options.proto.kind in ['writer', 'transaction'] %}
+        {{ method.proto.name | to_lower_camel }},
+        {% endif %}
+        {% endfor %}
+        {% endfor %}
+      },
+      idempotently: ({ key }: { key: string }) => {
+      return {
+        {% for service in client.services %}
+        {% for method in service.methods %}
+        {% if method.options.proto.kind in ['writer', 'transaction'] %}
+        {{ method.proto.name | to_lower_camel }}: (
+          partialRequest?:{{ client.proto.state_name }}.Partial{{ method.proto.name}}Request,
+          options?: { metadata?: any }
+        ) => {{ method.proto.name | to_lower_camel }}(partialRequest, { ...options, key }),
+        {% endif %}
+        {% endfor %}
+        {% endfor %}
+      };
+    },
       {% for service in client.services %}
       {% for method in service.methods %}
       {% if method.options.proto.kind in ['writer', 'transaction'] %}
       {{ method.proto.name | to_lower_camel }},
       {% endif %}
-      {% endfor %}
-      {% endfor %}
-    },
-    idempotently: ({ key }: { key: string }) => {
-    return {
-      {% for service in client.services %}
-      {% for method in service.methods %}
-      {% if method.options.proto.kind in ['writer', 'transaction'] %}
-      {{ method.proto.name | to_lower_camel }}: (
-        partialRequest?:{{ client.proto.state_name }}.Partial{{ method.proto.name}}Request,
-        options?: { metadata?: any }
-      ) => {{ method.proto.name | to_lower_camel }}(partialRequest, { ...options, key }),
+      {% if method.options.proto.kind == 'reader' %}
+      {% if not method.proto.server_streaming and not method.proto.client_streaming %}
+      {{ method.proto.name | to_lower_camel }},
+      use{{ method.proto.name | to_camel }},
+      {% endif %}
       {% endif %}
       {% endfor %}
       {% endfor %}
-    };
-  },
-    {% for service in client.services %}
-    {% for method in service.methods %}
-    {% if method.options.proto.kind in ['writer', 'transaction'] %}
-    {{ method.proto.name | to_lower_camel }},
-    {% endif %}
-    {% if method.options.proto.kind == 'reader' %}
-    {% if not method.proto.server_streaming and not method.proto.client_streaming %}
-    {{ method.proto.name | to_lower_camel }},
-    use{{ method.proto.name | to_camel }},
-    {% endif %}
-    {% endif %}
-    {% endfor %}
-    {% endfor %}
-  };
+    }), [id]);
 };
 
 
