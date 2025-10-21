@@ -1,11 +1,11 @@
 import asyncio
-import uuid
 from collections import OrderedDict
 from google.protobuf.message import Message
 from google.protobuf.timestamp_pb2 import Timestamp
 from rbt.v1alpha1 import sidecar_pb2, tasks_pb2
 from rebootdev.time import DateTimeWithTimeZone
 from typing import Iterable, Optional
+from uuid import UUID
 
 # Target capacity of the tasks responses cache. This is just a target
 # because we want to keep all entries for tasks that are still pending
@@ -104,7 +104,7 @@ class TasksCache:
         """
         task_uuid = task_id.task_uuid
 
-        assert task_uuid not in self._cache, f"Task {uuid.UUID(bytes=task_uuid)} already in cache"
+        assert task_uuid not in self._cache, f"Task {UUID(bytes=task_uuid)} already in cache"
 
         future: asyncio.Future[bytes] = asyncio.Future()
 
