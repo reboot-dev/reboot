@@ -12,7 +12,6 @@
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
-load("@com_github_3rdparty_bazel_rules_jemalloc//bazel:repos.bzl", jemalloc_repos = "repos")
 load("@com_github_3rdparty_stout//bazel:repos.bzl", stout_repos = "repos")
 load("@com_github_reboot_dev_pyprotoc_plugin//bazel:repos.bzl", pyprotoc_plugin_repos = "repos")
 
@@ -58,8 +57,6 @@ def repos():
     stout_repos()
 
     pyprotoc_plugin_repos()
-
-    jemalloc_repos()
 
     # Need `rules_foreign_cc` for building RocksDB.
     maybe(

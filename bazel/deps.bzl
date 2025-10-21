@@ -4,7 +4,6 @@ load("@aspect_bazel_lib//lib:repositories.bzl", "aspect_bazel_lib_dependencies")
 load("@bazel_skylib//:workspace.bzl", "bazel_skylib_workspace")
 load("@buildifier_prebuilt//:defs.bzl", "buildifier_prebuilt_register_toolchains")
 load("@buildifier_prebuilt//:deps.bzl", "buildifier_prebuilt_deps")
-load("@com_github_3rdparty_bazel_rules_jemalloc//bazel:deps.bzl", jemalloc_deps = "deps")
 load("@com_github_3rdparty_bazel_rules_tl_expected//bazel:deps.bzl", expected_deps = "deps")
 load("@com_github_3rdparty_stout//bazel:deps.bzl", stout_deps = "deps")
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
@@ -44,8 +43,6 @@ def deps():
     rules_oci_dependencies()
 
     rules_pkg_dependencies()
-
-    jemalloc_deps()
 
     dockerfile_oci_image(
         name = "respect_base_image",
