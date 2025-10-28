@@ -327,7 +327,7 @@ def _js_proto_files(
             # want to find the path to the `node_modules` directory above it.
             # `protobuf_pkg_dir` should look like:
             #
-            # [...]/node_modules/.aspect_rules_js/@bufbuild+protobuf@1.3.2/node_modules/@bufbuild/protobuf
+            # [...]/node_modules/.aspect_rules_js/@bufbuild+protobuf@1.10.1/node_modules/@bufbuild/protobuf
             #
             # So we strip off the last 5 elements of the path.
             #

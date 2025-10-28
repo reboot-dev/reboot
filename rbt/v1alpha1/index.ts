@@ -9,6 +9,40 @@ export * as nodejs_pb from "./nodejs_pb.js";
 export * as react_pb from "./react_pb.js";
 export * as tasks_pb from "./tasks_pb.js";
 
+let protobufVersionChecked = false;
+
+function ensureProtobufVersionChecked() {
+  if (protobufVersionChecked) {
+    return;
+  }
+  // Check if this looks like v2 by looking for v2-specific APIs.
+  // In v2, there's typically a 'create' function on message types
+  // and different schema/reflection APIs.
+  const hasProto3 = "proto3" in protobuf_es;
+  const hasCodegenInfo = "codegenInfo" in protobuf_es;
+
+  if (!hasProto3 || !hasCodegenInfo) {
+    throw new Error(
+      `It looks like you might have '@bufbuild/protobuf' V2 installed. ` +
+        `Reboot requires '@bufbuild/protobuf' V1. ` +
+        `Please downgrade to a V1 version (e.g., 1.10.1).`
+    );
+  }
+  protobufVersionChecked = true;
+}
+
+ensureProtobufVersionChecked();
+
+export function check_bufbuild_protobuf_library(protobuf_es_message: any) {
+  if (protobuf_es_message !== protobuf_es.Message) {
+    throw new Error(
+      `It looks like you have multiple versions of '@bufbuild/protobuf' ` +
+        `installed. Reboot requires '@bufbuild/protobuf' V1. Please ` +
+        `ensure that there is only one version in your node_modules.`
+    );
+  }
+}
+
 // We are using this helper function to raise an exception if the assertion
 // fails because console.assert does not do this and we can't use
 // `assert` from Node.js because it is not available in the browser.

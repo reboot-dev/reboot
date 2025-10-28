@@ -58,6 +58,8 @@ export {
 {% endif %}
 {% endif %}
 
+reboot_api.check_bufbuild_protobuf_library(protobuf_es.Message);
+
 {% for client in clients %}
 {% for service in client.services %}
 {% for method in service.methods %}

@@ -86,6 +86,8 @@ import type { StandardSchemaV1 } from "@standard-schema/spec";
 import * as protobuf_es from "@bufbuild/protobuf";
 import * as reboot_api from "@reboot-dev/reboot-api";
 
+reboot_api.check_bufbuild_protobuf_library(protobuf_es.Message);
+
 {% if imports|length > 0 %}
 // Include all transitive imports.
 {% for import_path, unique_name in imports.items() %}
