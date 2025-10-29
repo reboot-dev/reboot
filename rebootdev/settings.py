@@ -169,9 +169,11 @@ ONLY_LOCALHOST_NETWORK_ADDRESS = '127.0.0.1'
 # Furthermore, many environments may only have one of these ports exposed.
 #
 # The insecure port serves unencrypted traffic. The secure port serves traffic
-# that uses TLS.
+# that uses TLS. The trusted port serves unencrypted traffic that we
+# implicitly trust because of where it comes from (e.g., localhost).
 DEFAULT_INSECURE_PORT = 9990
 DEFAULT_SECURE_PORT = 9991
+DEFAULT_TRUSTED_PORT = 9992
 
 # Normally, application IDs are not very human-readable - they're hashes derived
 # from a human-readable name. However, we choose a hardcoded human-readable ID
