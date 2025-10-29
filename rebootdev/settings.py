@@ -3,7 +3,7 @@
 # * <possibly other languages by the time you read this>
 
 # gRPC max message size to transmit large state data.
-MAX_SIDECAR_GRPC_MESSAGE_LENGTH_BYTES = 100 * 1024 * 1024
+MAX_DATABASE_GRPC_MESSAGE_LENGTH_BYTES = 100 * 1024 * 1024
 
 # gRPC max response size (our limit; gRPC doesn't specify a limit
 # normally). See: https://github.com/reboot-dev/mono/issues/3944
@@ -113,7 +113,7 @@ ENVVAR_RBT_EFFECT_VALIDATION = 'RBT_EFFECT_VALIDATION'
 ENVVAR_RBT_SECRETS_DIRECTORY = 'RBT_SECRETS_DIRECTORY'
 ENVVAR_RBT_STATE_DIRECTORY = 'RBT_STATE_DIRECTORY'
 ENVVAR_RBT_NODEJS = 'RBT_NODEJS'
-ENVVAR_RBT_PARTITIONS = 'RBT_PARTITIONS'
+ENVVAR_RBT_SERVERS = 'RBT_SERVERS'
 
 # Environment variable indicating that `rbt` is being invoked from
 # Node.js.
@@ -194,8 +194,9 @@ MAX_ACTOR_ID_LENGTH = 128
 MAX_IDEMPOTENCY_KEY_LENGTH = 128
 MAX_BEARER_TOKEN_LENGTH = 4096
 
-# The suffix given to sidecar state directories.
-SIDECAR_SUFFIX = "-sidecar"
+# The suffix given to database state directories. This must continue to
+# use the old "-sidecar" naming, to ensure backwards compatibility.
+DATABASE_SUFFIX = "-sidecar"
 
 # Local envoy specific environment variables that impact how it gets
 # configured.
@@ -218,12 +219,15 @@ ENVVAR_LOCAL_ENVOY_DEBUG = 'REBOOT_LOCAL_ENVOY_DEBUG'
 # Whether or not signal manipulation is available.
 ENVVAR_SIGNALS_AVAILABLE = 'REBOOT_SIGNALS_AVAILABLE'
 
-# Args for launching a nodejs based consensus.
-ENVVAR_NODEJS_CONSENSUS = 'REBOOT_NODEJS_CONSENSUS'
-ENVVAR_NODEJS_CONSENSUS_BASE64_ARGS = 'REBOOT_NODEJS_CONSENSUS_BASE64_ARGS'
+# Args for launching a nodejs based server.
+ENVVAR_NODEJS_SERVER = 'REBOOT_NODEJS_SERVER'
+ENVVAR_NODEJS_SERVER_BASE64_ARGS = 'REBOOT_NODEJS_SERVER_BASE64_ARGS'
 
-# An environment variable that's only set when running in the Resemble Cloud.
+# Environment variables that are only set when running in the Reboot
+# Cloud.
 ENVVAR_REBOOT_CLOUD_VERSION = 'REBOOT_CLOUD_VERSION'
+ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS = 'REBOOT_CLOUD_DATABASE_ADDRESS'
+ENVVAR_REBOOT_CLOUD_REPLICA_INDEX = 'REBOOT_CLOUD_REPLICA_INDEX'
 
 # Environment variable that indicates that we are running `bazel test`, which
 # should be set by the test runner. We rely on this to determine whether or not

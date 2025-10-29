@@ -133,6 +133,12 @@ proto_library(
     ],
 )
 
+cc_proto_library(
+    name = "application_metadata_cc_proto",
+    visibility = ["//visibility:public"],
+    deps = [":application_metadata_proto"],
+)
+
 py_proto_library(
     name = "application_metadata_py_proto",
     visibility = ["//visibility:public"],
@@ -140,10 +146,11 @@ py_proto_library(
 )
 
 proto_library(
-    name = "sidecar_proto",
-    srcs = [":sidecar.proto"],
+    name = "database_proto",
+    srcs = [":database.proto"],
     visibility = ["//visibility:public"],
     deps = [
+        ":application_metadata_proto",
         ":tasks_proto",
         "@com_google_protobuf//:any_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -151,33 +158,33 @@ proto_library(
 )
 
 cc_proto_library(
-    name = "sidecar_cc_proto",
+    name = "database_cc_proto",
     visibility = ["//visibility:public"],
-    deps = [":sidecar_proto"],
+    deps = [":database_proto"],
 )
 
 cc_grpc_library(
-    name = "sidecar_cc_grpc",
-    srcs = [":sidecar_proto"],
+    name = "database_cc_grpc",
+    srcs = [":database_proto"],
     grpc_only = True,
     visibility = ["//visibility:public"],
     deps = [
-        ":sidecar_cc_proto",
+        ":database_cc_proto",
         "@com_github_grpc_grpc//:grpc++",
     ],
 )
 
 py_proto_library(
-    name = "sidecar_py_proto",
+    name = "database_py_proto",
     visibility = ["//visibility:public"],
-    deps = [":sidecar_proto"],
+    deps = [":database_proto"],
 )
 
 py_grpc_library(
-    name = "sidecar_py_grpc",
-    srcs = [":sidecar_proto"],
+    name = "database_py_grpc",
+    srcs = [":database_proto"],
     visibility = ["//visibility:public"],
-    deps = [":sidecar_py_proto"],
+    deps = [":database_py_proto"],
 )
 
 proto_library(

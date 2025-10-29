@@ -4,6 +4,7 @@ package rbt.v1alpha1;
 
 import "google/protobuf/any.proto";
 import "google/protobuf/timestamp.proto";
+import "rbt/v1alpha1/application_metadata.proto";
 import "rbt/v1alpha1/tasks.proto";
 
 ////////////////////////////////////////////////////////////////////////
@@ -19,7 +20,7 @@ message ShardInfo {
   bytes shard_first_key = 2;
 }
 
-message ConsensusInfo {
+message ServerInfo {
   repeated ShardInfo shard_infos = 1;
 }
 
@@ -38,7 +39,7 @@ message Actor {
 
 ////////////////////////////////////////////////////////////////////////
 
-// Sidecar specific transaction message, not used by the 'Coordinator'
+// Database specific transaction message, not used by the 'Coordinator'
 // or 'Participant' services defined in 'transactions.proto'.
 message Transaction {
   string state_type = 1;
@@ -68,7 +69,7 @@ message Transaction {
 ////////////////////////////////////////////////////////////////////////
 
 // NOTE: Tasks are exported as JSON in backups, as well as on disk in the
-// sidecar.
+// database.
 message Task {
   reserved 8;
 
@@ -117,7 +118,7 @@ message Participants {
 ////////////////////////////////////////////////////////////////////////
 
 // NOTE: IdempotentMutations are exported as JSON in backups, as
-// well as on disk in the sidecar.
+// well as on disk in the database.
 message IdempotentMutation {
   // NOTE: The state_type and state_ref were added in persistence version 1
   // to allow mutations to be partitioned during import/export.
@@ -248,6 +249,10 @@ message FindRequest {
   // exhausting memory in the client or server. A zero limit is not
   // special cased: no records will be returned for `limit=0`.
   uint32 limit = 4;
+
+  // Shard IDs to search within. Only state refs belonging to these shards
+  // will be returned. At least one shard ID must be specified.
+  repeated string shard_ids = 5;
 }
 
 message FindResponse {
@@ -299,10 +304,14 @@ message StoreResponse {}
 ////////////////////////////////////////////////////////////////////////
 
 message RecoverRequest {
-  // Mapping from fully qualified state type names to state tags (as defined in
-  // `rebootdev.aio.types`). Used to implement backwards compatibility from
-  // persistence version 0 to version 1.
+  // Mapping from fully qualified state type names to state tags (as
+  // defined in `rebootdev.aio.types`). Used to implement backwards
+  // compatibility from persistence version 0 to version 1.
   map<string, string> state_tags_by_state_type = 1;
+
+  // Shard IDs to recover data for. Only data belonging to these shards
+  // will be returned. At least one shard ID must be specified.
+  repeated string shard_ids = 2;
 }
 
 message RecoverResponse {
@@ -312,12 +321,14 @@ message RecoverResponse {
   repeated Task pending_tasks = 1;
   repeated Transaction participant_transactions = 2;
 
-  // Transaction UUID -> Participants for every transaction that a
-  // coordinator completed the prepare phase of two phase commit.
+  // Transaction UUID -> PreparedTransactionCoordinator for every
+  // transaction that a coordinator completed the prepare phase of two
+  // phase commit.
   //
-  // NOTE: because a map key can not be bytes we pass a stringified
-  // UUID where as other places we pass the UUID in its bytes form.
-  map<string, Participants> prepared_coordinator_transactions = 3;
+  // NOTE: because a map key can not be bytes we pass a stringified UUID
+  // where as other places we pass the UUID in its bytes form.
+  map<string, PreparedTransactionCoordinator>
+      prepared_transaction_coordinators = 3;
 
   repeated IdempotentMutation idempotent_mutations = 4;
 }
@@ -351,9 +362,21 @@ message TransactionParticipantAbortResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
+// Message representing a prepared transaction from the coordinator's
+// perspective.
+message PreparedTransactionCoordinator {
+  // The coordinator's `state_ref`.
+  string state_ref = 1;
+  // The participants in this transaction.
+  Participants participants = 2;
+}
+
 message TransactionCoordinatorPreparedRequest {
   bytes transaction_id = 1;
-  Participants participants = 2;
+  // Deprecated: Use `prepared_transaction_coordinator` instead.
+  Participants participants = 2 [deprecated = true];
+  // New field that includes state_ref for shard-aware storage.
+  PreparedTransactionCoordinator prepared_transaction_coordinator = 3;
 }
 
 message TransactionCoordinatorPreparedResponse {}
@@ -362,14 +385,32 @@ message TransactionCoordinatorPreparedResponse {}
 
 message TransactionCoordinatorCleanupRequest {
   bytes transaction_id = 1;
+  string coordinator_state_ref = 2;
 }
 
 message TransactionCoordinatorCleanupResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
+message GetApplicationMetadataRequest {}
+
+message GetApplicationMetadataResponse {
+  optional ApplicationMetadata metadata = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message StoreApplicationMetadataRequest {
+  ApplicationMetadata metadata = 1;
+}
+
+message StoreApplicationMetadataResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
 message ExportRequest {
   string state_type = 1;
+  repeated string shard_ids = 2;
 }
 
 message ExportItem {
@@ -386,12 +427,12 @@ message ExportResponse {
 
 ////////////////////////////////////////////////////////////////////////
 
-// NOTE: This sidecar API expects each `ApplicationDeployment` to get its own
-// sidecar. If we want to allow two different consensuses for two different
-// `ApplicationDeployment`s to use the same sidecar, we will need to add
+// NOTE: This database API expects each `ApplicationDeployment` to get its own
+// database. If we want to allow two different servers for two different
+// `ApplicationDeployment`s to use the same database, we will need to add
 // disambiguation for `ApplicationDeployment`-level information (such as encoded
 // `FileDescriptorSet`s).
-service Sidecar {
+service Database {
   // Returns one page of interleaved state machines from the datastore.
   rpc ColocatedRange(ColocatedRangeRequest)
       returns (ColocatedRangeResponse);
@@ -431,6 +472,14 @@ service Sidecar {
   // TODO: This should be streaming: see #3329.
   rpc Export(ExportRequest)
       returns (ExportResponse);
+
+  // Gets application metadata from persistent storage.
+  rpc GetApplicationMetadata(GetApplicationMetadataRequest)
+      returns (GetApplicationMetadataResponse);
+
+  // Stores application metadata to persistent storage.
+  rpc StoreApplicationMetadata(StoreApplicationMetadataRequest)
+      returns (StoreApplicationMetadataResponse);
 }
 
 ////////////////////////////////////////////////////////////////////////

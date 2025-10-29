@@ -13,9 +13,9 @@ py_library(
         ":idempotency_py",
         ":tasks_py",
         ":types_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:react_py_grpc",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:react_py_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:sidecar_py_proto",
         "@com_github_reboot_dev_reboot//rebootdev:time_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio/auth:__init___py",
         "@com_github_reboot_dev_reboot//rebootdev/aio/backoff:python",
@@ -31,6 +31,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("grpcio"),
+        requirement("opentelemetry-api"),
         ":call_py",
         ":types_py",
         "@com_github_reboot_dev_reboot//rebootdev:time_py",
@@ -97,7 +98,7 @@ py_library(
         ":once_py",
         ":servicers_py",
         ":tasks_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:sidecar_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:transactions_py_grpc",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:transactions_py_proto",
@@ -107,8 +108,8 @@ py_library(
         "@com_github_reboot_dev_reboot//rebootdev/aio/internals:channel_manager_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio/internals:middleware_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio/internals:tasks_dispatcher_py",
-        "@com_github_reboot_dev_reboot//rebootdev/consensus:service_descriptor_validator_py",
-        "@com_github_reboot_dev_reboot//rebootdev/consensus:sidecar_py",
+        "@com_github_reboot_dev_reboot//rebootdev/server:database_py",
+        "@com_github_reboot_dev_reboot//rebootdev/server:service_descriptor_validator_py",
     ],
 )
 
@@ -186,7 +187,7 @@ py_library(
     deps = [
         requirement("protobuf"),
         ":types_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:sidecar_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
         "@com_github_reboot_dev_reboot//rebootdev:time_py",
     ],

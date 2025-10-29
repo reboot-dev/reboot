@@ -171,7 +171,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         *,
         servicer: {{ state.proto.name }}BaseServicer,
         application_id: IMPORT_reboot_aio_types.ApplicationId,
-        consensus_id: IMPORT_reboot_aio_types.ConsensusId,
+        server_id: IMPORT_reboot_aio_types.ServerId,
         state_manager: IMPORT_reboot_aio_state_managers.StateManager,
         placement_client: IMPORT_reboot_aio_placement.PlacementClient,
         channel_manager: IMPORT_reboot_aio_internals_channel_manager._ChannelManager,
@@ -183,7 +183,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
     ):
         super().__init__(
             application_id=application_id,
-            consensus_id=consensus_id,
+            server_id=server_id,
             state_type_name = IMPORT_reboot_aio_types.StateTypeName('{{ state.proto.full_name }}'),
             service_names = [
                 {% for service in state.services %}
@@ -305,12 +305,12 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         deserialized from the provided 'request_bytes' for each state
         update that creates a different response.
 
-        # The caller (react.py) should have already ensured that this consensus
+        # The caller (react.py) should have already ensured that this server
         # is authoritative for this traffic.
-        assert self.placement_client.consensus_for_actor(
+        assert self.placement_client.server_for_actor(
             headers.application_id,
             headers.state_ref,
-        ) == self._consensus_id
+        ) == self._server_id
 
         NOTE: only unary reader methods are supported."""
         {# NOTE: need to use 'namespace' so we can update it within the loop. #}
@@ -478,7 +478,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             call_backoff = IMPORT_reboot_aio_backoff.Backoff()
             while True:
                 # We make a full-fledged gRPC call, so that if this traffic
-                # was misrouted (i.e. this consensus is not authoritative
+                # was misrouted (i.e. this server is not authoritative
                 # for the state), it will now go to the right place. The
                 # receiving middleware will handle things like effect
                 # validation and so forth.
@@ -1207,18 +1207,18 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         headers = IMPORT_reboot_aio_headers.Headers.from_grpc_context(grpc_context)
         assert headers.application_id is not None  # Guaranteed by `Headers`.
 
-        # Confirm whether this is the right consensus to be serving this
+        # Confirm whether this is the right server to be serving this
         # request.
-        authoritative_consensus = self.placement_client.consensus_for_actor(
+        authoritative_server = self.placement_client.server_for_actor(
             headers.application_id,
             headers.state_ref,
         )
-        if authoritative_consensus != self.consensus_id:
-            # This is NOT the correct consensus. Fail.
+        if authoritative_server != self.server_id:
+            # This is NOT the correct server. Fail.
             await grpc_context.abort(
                 IMPORT_grpc.StatusCode.UNAVAILABLE,
-                f"Consensus '{self.consensus_id}' is not authoritative for this "
-                f"request; consensus '{authoritative_consensus}' is.",
+                f"Server '{self.server_id}' is not authoritative for this "
+                f"request; server '{authoritative_server}' is.",
             )
             raise  # Unreachable but necessary for mypy.
 
@@ -2103,7 +2103,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         self,
         *,
         application_id: IMPORT_reboot_aio_types.ApplicationId,
-        consensus_id: IMPORT_reboot_aio_types.ConsensusId,
+        server_id: IMPORT_reboot_aio_types.ServerId,
         state_manager: IMPORT_reboot_aio_state_managers.StateManager,
         placement_client: IMPORT_reboot_aio_placement.PlacementClient,
         channel_manager: IMPORT_reboot_aio_internals_channel_manager._ChannelManager,
@@ -2116,7 +2116,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         self._middleware = {{ state.proto.name }}ServicerMiddleware(
             servicer=self,
             application_id=application_id,
-            consensus_id=consensus_id,
+            server_id=server_id,
             state_manager=state_manager,
             placement_client=placement_client,
             channel_manager=channel_manager,

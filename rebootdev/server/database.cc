@@ -1,6 +1,11 @@
-#include "rebootdev/consensus/sidecar.h"
+#include "rebootdev/server/database.h"
+
+#include <openssl/sha.h>
 
 #include <filesystem>
+#include <fstream>
+#include <ios>
+#include <unordered_set>
 
 #include "absl/strings/str_split.h"
 #include "absl/strings/strip.h"
@@ -10,7 +15,8 @@
 #include "glog/logging.h"
 #include "google/protobuf/util/message_differencer.h"
 #include "grpcpp/server_builder.h"
-#include "rbt/v1alpha1/sidecar.grpc.pb.h"
+#include "rbt/v1alpha1/application_metadata.pb.h"
+#include "rbt/v1alpha1/database.grpc.pb.h"
 #include "rbt/v1alpha1/tasks.pb.h"
 #include "rocksdb/db.h"
 #include "rocksdb/filter_policy.h"
@@ -26,24 +32,30 @@
 using id::UUID;
 
 using rbt::v1alpha1::Actor;
+using rbt::v1alpha1::ApplicationMetadata;
 using rbt::v1alpha1::ColocatedRangeRequest;
 using rbt::v1alpha1::ColocatedRangeResponse;
 using rbt::v1alpha1::ColocatedReverseRangeRequest;
 using rbt::v1alpha1::ColocatedReverseRangeResponse;
 using rbt::v1alpha1::ColocatedUpsert;
-using rbt::v1alpha1::ConsensusInfo;
 using rbt::v1alpha1::ExportItem;
 using rbt::v1alpha1::ExportRequest;
 using rbt::v1alpha1::ExportResponse;
 using rbt::v1alpha1::FindRequest;
 using rbt::v1alpha1::FindResponse;
+using rbt::v1alpha1::GetApplicationMetadataRequest;
+using rbt::v1alpha1::GetApplicationMetadataResponse;
 using rbt::v1alpha1::IdempotentMutation;
 using rbt::v1alpha1::LoadRequest;
 using rbt::v1alpha1::LoadResponse;
 using rbt::v1alpha1::Participants;
 using rbt::v1alpha1::PersistenceVersion;
+using rbt::v1alpha1::PreparedTransactionCoordinator;
 using rbt::v1alpha1::RecoverRequest;
 using rbt::v1alpha1::RecoverResponse;
+using rbt::v1alpha1::ServerInfo;
+using rbt::v1alpha1::StoreApplicationMetadataRequest;
+using rbt::v1alpha1::StoreApplicationMetadataResponse;
 using rbt::v1alpha1::StoreRequest;
 using rbt::v1alpha1::StoreResponse;
 using rbt::v1alpha1::Task;
@@ -67,7 +79,7 @@ using tl::make_unexpected;
 
 ////////////////////////////////////////////////////////////////////////
 
-namespace rbt::consensus {
+namespace rbt::server {
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -129,15 +141,21 @@ class PrefixToLastFSlashExtractor : public rocksdb::SliceTransform {
 
 ////////////////////////////////////////////////////////////////////////
 
-class SidecarService final : public rbt::v1alpha1::Sidecar::Service {
+class DatabaseService final : public rbt::v1alpha1::Database::Service {
  public:
-  // Returns a type-erased instance of 'SidecarService' or an error if
-  // a 'SidecarService' could not be instantiated.
+  // Returns a type-erased instance of 'DatabaseService' or an error if
+  // a 'DatabaseService' could not be instantiated.
   static expected<std::unique_ptr<grpc::Service>> Instantiate(
-      const std::filesystem::path& db_path,
-      const ConsensusInfo& consensus_info);
+      const std::filesystem::path& state_directory,
+      const ServerInfo& server_info);
 
-  ~SidecarService() override;
+  ~DatabaseService() override;
+
+  // Enable legacy coordinator prepared format. This should only be used in
+  // tests.
+  void SetAllowLegacyCoordinatorPrepared(bool allow) {
+    allow_legacy_coordinator_prepared_ = allow;
+  }
 
   // Service methods.
   grpc::Status ColocatedRange(
@@ -188,15 +206,35 @@ class SidecarService final : public rbt::v1alpha1::Sidecar::Service {
       grpc::ServerContext* context,
       const ExportRequest* request,
       ExportResponse* response) override;
+  grpc::Status GetApplicationMetadata(
+      grpc::ServerContext* context,
+      const GetApplicationMetadataRequest* request,
+      GetApplicationMetadataResponse* response) override;
+  grpc::Status StoreApplicationMetadata(
+      grpc::ServerContext* context,
+      const StoreApplicationMetadataRequest* request,
+      StoreApplicationMetadataResponse* response) override;
 
  private:
-  SidecarService(
+  DatabaseService(
+      const std::filesystem::path& state_directory,
       std::shared_ptr<rocksdb::Statistics> statistics,
       std::vector<rocksdb::ColumnFamilyHandle*>&& column_family_handles,
-      std::unique_ptr<rocksdb::TransactionDB>&& db)
-    : statistics_(statistics),
+      std::unique_ptr<rocksdb::TransactionDB>&& db,
+      const ServerInfo& server_info)
+    : state_directory_(state_directory),
+      // The application metadata is serialized proto bytes stored in a file,
+      // not in RocksDB. This is for backwards compatibility with previous
+      // Reboot versions.
+      metadata_path_(state_directory / "__metadata"),
+      statistics_(statistics),
       column_family_handles_(std::move(column_family_handles)),
-      db_(std::move(db)) {}
+      db_(std::move(db)),
+      server_info_(server_info) {
+    CHECK(server_info_.shard_infos_size() > 0)
+        << "Server info must contain at least one shard.";
+  }
+
 
   // Migrate from previous persistence versions to the current version,
   // if necessary.
@@ -244,13 +282,15 @@ class SidecarService final : public rbt::v1alpha1::Sidecar::Service {
 
   // Helper for recovering tasks.
   std::set<std::string> RecoverTasks(
-      grpc::ServerWriter<RecoverResponse>& responses);
+      grpc::ServerWriter<RecoverResponse>& responses,
+      const std::unordered_set<std::string>& shard_ids);
 
   // Helper for recovering transactions.
   expected<void> RecoverTransactions(
       grpc::ServerWriter<RecoverResponse>& responses,
       const std::set<std::string>& committed_task_uuids,
-      const std::set<std::string>& committed_idempotency_keys);
+      const std::set<std::string>& committed_idempotency_keys,
+      const std::unordered_set<std::string>& shard_ids);
 
   // Helper for recovering uncommitted tasks within a transaction.
   void RecoverTransactionTasks(
@@ -267,7 +307,23 @@ class SidecarService final : public rbt::v1alpha1::Sidecar::Service {
 
   // Helper for recovering idempotent mutations.
   std::set<std::string> RecoverIdempotentMutations(
-      grpc::ServerWriter<RecoverResponse>& responses);
+      grpc::ServerWriter<RecoverResponse>& responses,
+      const std::unordered_set<std::string>& shard_ids);
+
+  // Check if a state ref belongs to any of the specified shards.
+  bool BelongsToShard(
+      std::string_view state_type,
+      std::string_view state_ref,
+      const std::unordered_set<std::string>& shard_ids) const;
+
+  // Helper function to compute SHA1 hash of the first component of a state_ref.
+  std::string ComputeStateRefHash(std::string_view state_ref) const;
+
+  // Helper function to determine which shard owns a given hash.
+  std::string GetShardForHash(const std::string& hash_str) const;
+
+  // Helper function to determine which shard owns a given state_ref.
+  std::string GetShardForStateRef(std::string_view state_ref) const;
 
   // Helper for sending a response to the client and clearing the batch.
   template <typename T>
@@ -298,6 +354,8 @@ class SidecarService final : public rbt::v1alpha1::Sidecar::Service {
   // Mutex owning instance members.
   std::mutex mutex_;
 
+  std::filesystem::path state_directory_;
+  std::filesystem::path metadata_path_;
   std::shared_ptr<rocksdb::Statistics> statistics_;
 
   // Collection of column family handles, one for each state type. Note
@@ -308,6 +366,9 @@ class SidecarService final : public rbt::v1alpha1::Sidecar::Service {
 
   std::unique_ptr<rocksdb::TransactionDB> db_;
 
+  // Server info containing shard information.
+  ServerInfo server_info_;
+
   // We track ongoing transactions indexed by 'state_ref' because there should
   // only ever be a single transaction per actor and we want to be able to
   // look up whether or not a actor is currently in a transaction.
@@ -315,11 +376,16 @@ class SidecarService final : public rbt::v1alpha1::Sidecar::Service {
       std::string, // An actor id.
       stout::Borrowable<std::unique_ptr<rocksdb::Transaction>>>
       txns_;
+
+  // Flag to control whether newly prepared coordinator transactions are allowed
+  // to use the "legacy" format (i.e. not providing a coordinator state ref).
+  // This should only be true for tests.
+  bool allow_legacy_coordinator_prepared_ = false;
 };
 
 ////////////////////////////////////////////////////////////////////////
 
-SidecarService::~SidecarService() {
+DatabaseService::~DatabaseService() {
   for (auto* column_family_handle : column_family_handles_) {
     rocksdb::Status status =
         db_->DestroyColumnFamilyHandle(column_family_handle);
@@ -399,7 +465,7 @@ std::string MakeTaskKey(const TaskId& task_id) {
 #define CURRENT_PERSISTENCE_VERSION 3
 
 constexpr std::string_view kPersistenceVersionKey = "persistence_version";
-constexpr std::string_view kConsensusInfoKey = "consensus_info";
+constexpr std::string_view kServerInfoKey = "server_info";
 
 expected<void> WritePersistenceVersion(rocksdb::DB* db, int version) {
   PersistenceVersion pv;
@@ -424,62 +490,72 @@ expected<void> WritePersistenceVersion(rocksdb::DB* db, int version) {
   return {};
 }
 
-expected<void> WriteConsensusInfo(
+expected<void> WriteServerInfo(
     rocksdb::DB* db,
-    const ConsensusInfo& consensus_info) {
-  std::string serialized_consensus_info;
-  if (!consensus_info.SerializeToString(&serialized_consensus_info)) {
+    const ServerInfo& server_info) {
+  std::string serialized_server_info;
+  if (!server_info.SerializeToString(&serialized_server_info)) {
     return make_unexpected(fmt::format(
-        "Failed to serialize consensus info: {}",
-        consensus_info.ShortDebugString()));
+        "Failed to serialize server info: {}",
+        server_info.ShortDebugString()));
   }
   rocksdb::Status status = db->Put(
       DefaultWriteOptions(),
-      rocksdb::Slice(kConsensusInfoKey),
-      rocksdb::Slice(serialized_consensus_info));
+      rocksdb::Slice(kServerInfoKey),
+      rocksdb::Slice(serialized_server_info));
   if (!status.ok()) {
     return make_unexpected(fmt::format(
-        "Failed to write consensus info: {}",
+        "Failed to write server info: {}",
         status.ToString()));
   }
 
   return {};
 }
 
-expected<void> ValidateConsensusInfo(
+expected<void> ValidateServerInfo(
     rocksdb::DB* db,
-    const ConsensusInfo& expected_consensus_info) {
-  std::string serialized_consensus_info;
+    const ServerInfo& expected_server_info) {
+  std::string serialized_server_info;
   rocksdb::Status status = db->Get(
       rocksdb::ReadOptions(),
-      kConsensusInfoKey,
-      &serialized_consensus_info);
+      kServerInfoKey,
+      &serialized_server_info);
   if (status.ok()) {
-    ConsensusInfo actual_consensus_info;
-    CHECK(actual_consensus_info.ParseFromString(
-        std::move(serialized_consensus_info)));
+    ServerInfo actual_server_info;
+    CHECK(actual_server_info.ParseFromString(
+        std::move(serialized_server_info)));
+
+    if (actual_server_info.shard_infos_size() == 1
+        && actual_server_info.shard_infos(0).shard_id() == "cloud-shard-0"
+        && expected_server_info.shard_infos(0).shard_first_key() == "") {
+      // This is a special case for backwards compatibility with
+      // single-shard databases created before "real" shard IDs were introduced.
+      // The old shard ID was never used, so it's safe to ignore it. Overwrite
+      // the legacy format with the new format.
+      return WriteServerInfo(db, expected_server_info);
+    }
 
     if (!google::protobuf::util::MessageDifferencer::Equals(
-            actual_consensus_info,
-            expected_consensus_info)) {
+            actual_server_info,
+            expected_server_info)) {
       // This is not a particularly friendly error message, but it is only a
       // backstop for a higher-level error message rendered by the
-      // ConsensusManager (which will tell a user how their shard count
+      // ServerManager (which will tell a user how their shard count
       // changed). A user should not see this check unless there is an issue in
       // that check.
       return make_unexpected(fmt::format(
-          "Consensus information mismatched:\nactual: {}\nvs\nexpected: {}\n",
-          actual_consensus_info.ShortDebugString(),
-          expected_consensus_info.ShortDebugString()));
+          "Server information mismatched:\nactual: {}\nvs\nexpected: {}\n",
+          actual_server_info.ShortDebugString(),
+          expected_server_info.ShortDebugString()));
     }
   } else if (status.IsNotFound()) {
     // TODO: For backwards compatibility for #2910, we currently write the
-    // ConsensusInfo if it is not found. After #2910 has been stably shipped
+    // ServerInfo if it is not found. After #2910 has been stably shipped
     // for a while, we should error for this case instead.
-    return WriteConsensusInfo(db, expected_consensus_info);
+    return WriteServerInfo(db, expected_server_info);
   } else {
     return make_unexpected(fmt::format(
-        "Failed to read consensus info: {}",
+        "Failed to read server info: {}",
         status.ToString()));
   }
 
@@ -488,7 +564,7 @@ expected<void> ValidateConsensusInfo(
 
 ////////////////////////////////////////////////////////////////////////
 
-std::string SidecarService::ListDatabaseKeys() {
+std::string DatabaseService::ListDatabaseKeys() {
   std::ostringstream stream;
   stream << "{";
   for (rocksdb::ColumnFamilyHandle* column_family_handle :
@@ -512,7 +588,8 @@ std::string SidecarService::ListDatabaseKeys() {
 
 ////////////////////////////////////////////////////////////////////////
 
-expected<rocksdb::ColumnFamilyHandle*> SidecarService::LookupColumnFamilyHandle(
+expected<rocksdb::ColumnFamilyHandle*>
+DatabaseService::LookupColumnFamilyHandle(
     const std::string& state_type) {
   // TODO: ensure `mutex_` is currently held by this thread.
 
@@ -536,7 +613,7 @@ expected<rocksdb::ColumnFamilyHandle*> SidecarService::LookupColumnFamilyHandle(
 ////////////////////////////////////////////////////////////////////////
 
 expected<rocksdb::ColumnFamilyHandle*>
-SidecarService::LookupOrCreateColumnFamilyHandle(
+DatabaseService::LookupOrCreateColumnFamilyHandle(
     const std::string& state_type) {
   // TODO: ensure `mutex_` is currently held by this thread.
 
@@ -612,8 +689,7 @@ std::string GetStateRef(const rocksdb::Transaction& txn) {
 
 #define TRANSACTION_PARTICIPANT_KEY_PREFIX "transaction-participant"
 
-// Returns a key for storing in rocksdb that represents a transaction
-// participant.
+// Returns a RocksDB key that represents a transaction participant.
 std::string MakeTransactionParticipantKey(
     const std::string& state_type,
     const std::string& state_ref) {
@@ -625,15 +701,31 @@ std::string MakeTransactionParticipantKey(
 
 ////////////////////////////////////////////////////////////////////////
 
-#define TRANSACTION_PREPARED_KEY_PREFIX "transaction-prepared"
+// Legacy prefix for coordinator transactions without shard information.
+// Used for backward compatibility.
+// (check_line_length skip)
+#define LEGACY_PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX "transaction-prepared"
 
-// Returns a key for storing in rocksdb that represents a prepared
-// transaction, i.e., a transaction that a coordinator has completed
-// the prepare phase on, and thus can tell all participants to commit.
-// We use a stringified UUID to make debugging easier.
-std::string MakeTransactionPreparedKey(const UUID& transaction_id) {
+// Prefix for shard-aware coordinator transactions.
+// (check_line_length skip)
+#define PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX "prepared-transaction-coordinator"
+
+// Returns a RocksDB key that represents a prepared transaction from the
+// coordinator's perspective, including shard information.
+std::string MakePreparedTransactionCoordinatorKey(
+    const std::string& shard_id,
+    const UUID& transaction_id) {
   return fmt::format(
-      TRANSACTION_PREPARED_KEY_PREFIX ":{}",
+      PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX ":{}:{}",
+      shard_id,
+      transaction_id.toString());
+}
+
+// Legacy function for backward compatibility. Returns a key without shard
+// information.
+std::string MakeLegacyTransactionPreparedKey(const UUID& transaction_id) {
+  return fmt::format(
+      LEGACY_PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX ":{}",
       transaction_id.toString());
 }
 
@@ -654,7 +746,7 @@ std::string MakeIdempotentMutationKey(const UUID& idempotency_key) {
 ////////////////////////////////////////////////////////////////////////
 
 expected<stout::borrowed_ref<rocksdb::Transaction>>
-SidecarService::LookupTransaction(
+DatabaseService::LookupTransaction(
     const std::string& state_type,
     const std::string& state_ref) {
   // TODO: ensure `mutex_` is currently held by this thread.
@@ -674,7 +766,7 @@ SidecarService::LookupTransaction(
 ////////////////////////////////////////////////////////////////////////
 
 expected<stout::borrowed_ref<rocksdb::Transaction>>
-SidecarService::LookupOrBeginTransaction(
+DatabaseService::LookupOrBeginTransaction(
     const Transaction& transaction,
     bool store_participant) {
   // TODO: ensure `mutex_` is currently held by this thread.
@@ -772,7 +864,7 @@ SidecarService::LookupOrBeginTransaction(
       }
     }
 
-    REBOOT_SIDECAR_LOG(1)
+    REBOOT_DATABASE_LOG(1)
         << "Beginning transaction '" << transaction_id->toString()
         << "' for state type '" << transaction.state_type()
         << "' actor '" << transaction.state_ref() << "'";
@@ -824,7 +916,7 @@ SidecarService::LookupOrBeginTransaction(
 
 ////////////////////////////////////////////////////////////////////////
 
-void SidecarService::DeleteTransaction(
+void DatabaseService::DeleteTransaction(
     expected<stout::borrowed_ref<rocksdb::Transaction>>&& txn) {
   // TODO: ensure `mutex_` is currently held by this thread.
 
@@ -841,18 +933,18 @@ void SidecarService::DeleteTransaction(
 
 ////////////////////////////////////////////////////////////////////////
 
-bool SidecarService::HasTransaction(const std::string& state_ref) {
+bool DatabaseService::HasTransaction(const std::string& state_ref) {
   // TODO: ensure `mutex_` is currently held by this thread.
   return txns_.find(state_ref) != std::end(txns_);
 }
 
 ////////////////////////////////////////////////////////////////////////
 
-expected<std::unique_ptr<grpc::Service>> SidecarService::Instantiate(
-    const std::filesystem::path& db_path,
-    const ConsensusInfo& consensus_info) {
-  REBOOT_SIDECAR_LOG(1)
-      << "Attempting to open rocksdb at '" << db_path.string() << "'";
+expected<std::unique_ptr<grpc::Service>> DatabaseService::Instantiate(
+    const std::filesystem::path& state_directory,
+    const ServerInfo& server_info) {
+  REBOOT_DATABASE_LOG(1)
+      << "Attempting to open rocksdb at '" << state_directory.string() << "'";
 
   // First get out all of the column families that we have in the
   // database so we can open the database with column family handles.
@@ -860,7 +952,7 @@ expected<std::unique_ptr<grpc::Service>> SidecarService::Instantiate(
 
   rocksdb::Status status = rocksdb::DB::ListColumnFamilies(
       rocksdb::Options(),
-      db_path.string(),
+      state_directory.string(),
       &column_families);
 
   if (!status.ok()) {
@@ -875,38 +967,39 @@ expected<std::unique_ptr<grpc::Service>> SidecarService::Instantiate(
 
     rocksdb::DB* db = nullptr;
 
-    REBOOT_SIDECAR_LOG(1)
-        << "Trying to open _new_ rocksdb at '" << db_path.string() << "'";
+    REBOOT_DATABASE_LOG(1)
+        << "Trying to open _new_ rocksdb at '"
+        << state_directory.string() << "'";
 
     status = rocksdb::DB::Open(
         options,
-        db_path.string(),
+        state_directory.string(),
         &db);
 
     if (!status.ok()) {
       return make_unexpected(fmt::format(
           "Failed to open _new_ rocksdb at '{}': {}",
-          db_path.string(),
+          state_directory.string(),
           status.ToString()));
     }
 
     // We've created a new database. Write the current persistence version and
-    // the consensus info.
+    // the server info.
     expected<void> write_persistence_version =
         WritePersistenceVersion(db, CURRENT_PERSISTENCE_VERSION);
     if (!write_persistence_version.has_value()) {
       return make_unexpected(fmt::format(
           "Failed to write persistence version in _new_ rocksdb at '{}': {}",
-          db_path.string(),
+          state_directory.string(),
           write_persistence_version.error()));
     }
-    expected<void> write_consensus_info =
-        WriteConsensusInfo(db, consensus_info);
-    if (!write_consensus_info.has_value()) {
+    expected<void> write_server_info =
+        WriteServerInfo(db, server_info);
+    if (!write_server_info.has_value()) {
       return make_unexpected(fmt::format(
-          "Failed to write consensus info in _new_ rocksdb at '{}': {}",
-          db_path.string(),
-          write_consensus_info.error()));
+          "Failed to write server info in _new_ rocksdb at '{}': {}",
+          state_directory.string(),
+          write_server_info.error()));
     }
 
     // NOTE: If we do not flush, then immediately closing the database after
@@ -923,7 +1016,7 @@ expected<std::unique_ptr<grpc::Service>> SidecarService::Instantiate(
 
     status = rocksdb::DB::ListColumnFamilies(
         rocksdb::Options(),
-        db_path.string(),
+        state_directory.string(),
         &column_families);
 
     if (!status.ok()) {
@@ -959,11 +1052,23 @@ expected<std::unique_ptr<grpc::Service>> SidecarService::Instantiate(
   // Info logs are written to filenames which are prefixed with the absolute
   // path of the data directory, which is collision safe.
   db_options.db_log_dir = "/tmp/rocksdb";
+  // TODO(rjh): use "production" values here when deployed on the Cloud. The
+  //            default values are _extremely_ conservative. One LLM suggests:
+  //            * table_options.block_cache = 60-70% of available RAM. This is
+  //                  the most important setting, and ~1000x the default.
+  //                  TODO: how much does it help in Reboot's write-heavy
+  //                  workload?
+  //            * db_options.write_buffer_size = 256 MB (per memtable).
+  //            * db_options.max_write_buffer_number = 3 or 4.
+  //            * db_options.db_write_buffer_size = 1GB (total across all column
+  //                  families)
+  //            * db_options.max_background_jobs = 50-75% of CPU cores
+  //            * db_options.max_subcompactions = 4 (for parallelism)
 
   status = rocksdb::TransactionDB::Open(
       db_options,
       txn_options,
-      db_path.string(),
+      state_directory.string(),
       column_family_descriptors,
       &column_family_handles,
       &txn_db);
@@ -971,22 +1076,22 @@ expected<std::unique_ptr<grpc::Service>> SidecarService::Instantiate(
   if (!status.ok()) {
     return make_unexpected(fmt::format(
         "Failed to open rocksdb at '{}': {}",
-        db_path.string(),
+        state_directory.string(),
         status.ToString()));
   }
 
-  // Validate that we are opening a store with the expected consensus info.
-  expected<void> validate_consensus_info =
-      ValidateConsensusInfo(txn_db, consensus_info);
-  if (!validate_consensus_info.has_value()) {
+  // Validate that we are opening a store with the expected server info.
+  expected<void> validate_server_info =
+      ValidateServerInfo(txn_db, server_info);
+  if (!validate_server_info.has_value()) {
     return make_unexpected(fmt::format(
-        "Could not validate consensus information for '{}': {}",
-        db_path.string(),
-        validate_consensus_info.error()));
+        "Could not validate server information for '{}': {}",
+        state_directory.string(),
+        validate_server_info.error()));
   }
 
-  REBOOT_SIDECAR_LOG(1)
-      << "Opened rocksdb at '" << db_path.string()
+  REBOOT_DATABASE_LOG(1)
+      << "Opened rocksdb at '" << state_directory.string()
       << "' with the following column family handles (i.e., state types): "
       << fmt::format("{}", column_families);
 
@@ -996,21 +1101,23 @@ expected<std::unique_ptr<grpc::Service>> SidecarService::Instantiate(
   // what is stored.
 
   return std::unique_ptr<grpc::Service>(
-      new SidecarService(
+      new DatabaseService(
+          state_directory,
           statistics,
           std::move(column_family_handles),
-          std::unique_ptr<rocksdb::TransactionDB>(txn_db)));
+          std::unique_ptr<rocksdb::TransactionDB>(txn_db),
+          server_info));
 }
 
 ////////////////////////////////////////////////////////////////////////
 
-grpc::Status SidecarService::ColocatedRange(
+grpc::Status DatabaseService::ColocatedRange(
     grpc::ServerContext* context,
     const ColocatedRangeRequest* request,
     ColocatedRangeResponse* response) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_SIDECAR_LOG(1)
+  REBOOT_DATABASE_LOG(1)
       << "ColocatedRange { " << request->ShortDebugString() << " }";
 
   expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
@@ -1104,13 +1211,13 @@ grpc::Status SidecarService::ColocatedRange(
 
 ////////////////////////////////////////////////////////////////////////
 
-grpc::Status SidecarService::ColocatedReverseRange(
+grpc::Status DatabaseService::ColocatedReverseRange(
     grpc::ServerContext* context,
     const ColocatedReverseRangeRequest* request,
     ColocatedReverseRangeResponse* response) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_SIDECAR_LOG(1)
+  REBOOT_DATABASE_LOG(1)
       << "ColocatedReverseRange { " << request->ShortDebugString() << " }";
 
   expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
@@ -1220,13 +1327,25 @@ grpc::Status SidecarService::ColocatedReverseRange(
 
 ////////////////////////////////////////////////////////////////////////
 
-grpc::Status SidecarService::Find(
+grpc::Status DatabaseService::Find(
     grpc::ServerContext* context,
     const FindRequest* request,
     FindResponse* response) {
   std::unique_lock lock(mutex_);
-  REBOOT_SIDECAR_LOG(1)
+  REBOOT_DATABASE_LOG(1)
       << "Find { " << request->ShortDebugString() << " }";
+
+  // Validate that shard_ids are provided.
+  if (request->shard_ids().empty()) {
+    return grpc::Status(
+        grpc::INVALID_ARGUMENT,
+        "shard_ids are required for Find request");
+  }
+
+  // Convert to unordered_set for efficient lookups.
+  std::unordered_set<std::string> shard_ids(
+      request->shard_ids().begin(),
+      request->shard_ids().end());
 
   expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
       LookupColumnFamilyHandle(request->state_type());
@@ -1264,7 +1383,8 @@ grpc::Status SidecarService::Find(
     }
 
     // Collect up to 'limit' entries going forward.
-    for (uint32_t i = 0; i < request->limit() && it->Valid(); ++i) {
+    uint32_t added_count = 0;
+    while (added_count < request->limit() && it->Valid()) {
       std::string_view key_view = it->key().ToStringView();
       const std::string prefix = STATE_KEY_PREFIX ":";
       if (key_view.size() < prefix.size()
@@ -1273,7 +1393,14 @@ grpc::Status SidecarService::Find(
         break;
       }
       std::string_view state_ref = GetStateRefFromActorStateKey(key_view);
-      response->add_state_refs(std::string(state_ref));
+      // Only include state refs that belong to the requested shards.
+      if (BelongsToShard(
+              request->state_type(),
+              state_ref,
+              shard_ids)) {
+        response->add_state_refs(std::string(state_ref));
+        ++added_count;
+      }
       it->Next();
     }
   } else if (request->has_until()) {
@@ -1294,7 +1421,8 @@ grpc::Status SidecarService::Find(
     // Collect up to 'limit' entries going backward, but we need to
     // reverse them since we want to return in forward order.
     std::vector<std::string> state_refs;
-    for (uint32_t i = 0; i < request->limit() && it->Valid(); ++i) {
+    uint32_t added_count = 0;
+    while (added_count < request->limit() && it->Valid()) {
       std::string_view key_view = it->key().ToStringView();
       const std::string prefix = STATE_KEY_PREFIX ":";
       if (key_view.size() < prefix.size()
@@ -1303,7 +1431,14 @@ grpc::Status SidecarService::Find(
         break;
       }
       std::string_view state_ref = GetStateRefFromActorStateKey(key_view);
-      state_refs.push_back(std::string(state_ref));
+      // Only include state refs that belong to the requested shards.
+      if (BelongsToShard(
+              request->state_type(),
+              state_ref,
+              shard_ids)) {
+        state_refs.push_back(std::string(state_ref));
+        ++added_count;
+      }
       it->Prev();
     }
 
@@ -1329,13 +1464,13 @@ grpc::Status SidecarService::Find(
 
 ////////////////////////////////////////////////////////////////////////
 
-grpc::Status SidecarService::Load(
+grpc::Status DatabaseService::Load(
     grpc::ServerContext* context,
     const LoadRequest* request,
     LoadResponse* response) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_SIDECAR_LOG(1)
+  REBOOT_DATABASE_LOG(1)
       << "Load { " << request->ShortDebugString() << " }";
 
   std::vector<rocksdb::ColumnFamilyHandle*> column_families;
@@ -1486,7 +1621,7 @@ expected<void> ValidateTransactionalStore(const StoreRequest& request) {
 // Helper that extracts the state_type/actor for a store request that is
 // being made within a transaction. Also validates that the request
 // only has one state_type/actor for all actor and task upserts.
-expected<void> SidecarService::ValidateNonTransactionalStore(
+expected<void> DatabaseService::ValidateNonTransactionalStore(
     const StoreRequest& request) {
   for (const Actor& actor : request.actor_upserts()) {
     if (HasTransaction(actor.state_ref())) {
@@ -1509,13 +1644,13 @@ expected<void> SidecarService::ValidateNonTransactionalStore(
 
 ////////////////////////////////////////////////////////////////////////
 
-grpc::Status SidecarService::Store(
+grpc::Status DatabaseService::Store(
     grpc::ServerContext* context,
     const StoreRequest* request,
     StoreResponse* response) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_SIDECAR_LOG(1)
+  REBOOT_DATABASE_LOG(1)
       << "Store { " << request->ShortDebugString() << " }";
 
   // Helper for either adding all of the state updates to a
@@ -1537,7 +1672,7 @@ grpc::Status SidecarService::Store(
       // this will just be an empty column family, but we could
       // consider deleting any empty column families at a later
       // point, especially once we are rebalancing state types and
-      // actors across multiple consensuses.
+      // actors across multiple servers.
 
       expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
           LookupOrCreateColumnFamilyHandle(actor.state_type());
@@ -1571,7 +1706,7 @@ grpc::Status SidecarService::Store(
       // this will just be an empty column family, but we could
       // consider deleting any empty column families at a later
       // point, especially once we are rebalancing state types and
-      // actors across multiple consensuses.
+      // actors across multiple servers.
 
       expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
           LookupOrCreateColumnFamilyHandle(task.task_id().state_type());
@@ -1771,14 +1906,14 @@ grpc::Status SidecarService::Store(
 
 ////////////////////////////////////////////////////////////////////////
 
-grpc::Status SidecarService::TransactionParticipantPrepare(
+grpc::Status DatabaseService::TransactionParticipantPrepare(
     grpc::ServerContext* context,
     const TransactionParticipantPrepareRequest* request,
     TransactionParticipantPrepareResponse* response) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_SIDECAR_LOG(1) << "TransactionParticipantPrepare { "
-                        << request->ShortDebugString() << " }";
+  REBOOT_DATABASE_LOG(1) << "TransactionParticipantPrepare { "
+                         << request->ShortDebugString() << " }";
 
   expected<stout::borrowed_ref<rocksdb::Transaction>> txn =
       LookupTransaction(
@@ -1827,14 +1962,14 @@ grpc::Status SidecarService::TransactionParticipantPrepare(
 
 ////////////////////////////////////////////////////////////////////////
 
-grpc::Status SidecarService::TransactionParticipantCommit(
+grpc::Status DatabaseService::TransactionParticipantCommit(
     grpc::ServerContext* context,
     const TransactionParticipantCommitRequest* request,
     TransactionParticipantCommitResponse* response) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_SIDECAR_LOG(1) << "TransactionParticipantCommit { "
-                        << request->ShortDebugString() << " }";
+  REBOOT_DATABASE_LOG(1) << "TransactionParticipantCommit { "
+                         << request->ShortDebugString() << " }";
 
   expected<stout::borrowed_ref<rocksdb::Transaction>> txn =
       LookupTransaction(
@@ -1873,14 +2008,14 @@ grpc::Status SidecarService::TransactionParticipantCommit(
 
 ////////////////////////////////////////////////////////////////////////
 
-grpc::Status SidecarService::TransactionParticipantAbort(
+grpc::Status DatabaseService::TransactionParticipantAbort(
     grpc::ServerContext* context,
     const TransactionParticipantAbortRequest* request,
     TransactionParticipantAbortResponse* response) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_SIDECAR_LOG(1) << "TransactionParticipantAbort { "
-                        << request->ShortDebugString() << " }";
+  REBOOT_DATABASE_LOG(1) << "TransactionParticipantAbort { "
+                         << request->ShortDebugString() << " }";
 
   expected<stout::borrowed_ref<rocksdb::Transaction>> txn =
       LookupTransaction(
@@ -1935,14 +2070,14 @@ grpc::Status SidecarService::TransactionParticipantAbort(
 
 ////////////////////////////////////////////////////////////////////////
 
-grpc::Status SidecarService::TransactionCoordinatorPrepared(
+grpc::Status DatabaseService::TransactionCoordinatorPrepared(
     grpc::ServerContext* context,
     const TransactionCoordinatorPreparedRequest* request,
     TransactionCoordinatorPreparedResponse* response) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_SIDECAR_LOG(1) << "TransactionCoordinatorPrepared { "
-                        << request->ShortDebugString() << " }";
+  REBOOT_DATABASE_LOG(1) << "TransactionCoordinatorPrepared { "
+                         << request->ShortDebugString() << " }";
 
   // Get out the transaction's UUID.
   Try<UUID> transaction_id = UUID::fromBytes(request->transaction_id());
@@ -1954,17 +2089,47 @@ grpc::Status SidecarService::TransactionCoordinatorPrepared(
             transaction_id.error()));
   }
 
+  std::string key;
   std::string data;
-  if (!request->participants().SerializeToString(&data)) {
-    return grpc::Status(
-        grpc::UNKNOWN,
-        fmt::format(
-            "Failed to store transaction '{}' as prepared: "
-            "Failed to serialize",
-            transaction_id->toString()));
-  }
 
-  const std::string& key = MakeTransactionPreparedKey(*transaction_id);
+  if (request->has_prepared_transaction_coordinator()) {
+    // New format with shard-aware storage.
+    const auto& coordinator = request->prepared_transaction_coordinator();
+
+    // Compute shard ID based on the coordinator's state_ref.
+    std::string shard_id = GetShardForStateRef(coordinator.state_ref());
+    key = MakePreparedTransactionCoordinatorKey(shard_id, *transaction_id);
+
+    if (!coordinator.SerializeToString(&data)) {
+      return grpc::Status(
+          grpc::UNKNOWN,
+          fmt::format(
+              "Failed to store transaction '{}' as prepared: "
+              "Failed to serialize",
+              transaction_id->toString()));
+    }
+  } else {
+    if (!allow_legacy_coordinator_prepared_) {
+      return grpc::Status(
+          grpc::INVALID_ARGUMENT,
+          fmt::format(
+              "Legacy coordinator prepared format is not allowed. "
+              "Transaction '{}' must use the new format with "
+              "transaction_coordinator field.",
+              transaction_id->toString()));
+    }
+
+    // This is deprecated but kept to test our backwards compatibility story.
+    key = MakeLegacyTransactionPreparedKey(*transaction_id);
+    if (!request->participants().SerializeToString(&data)) {
+      return grpc::Status(
+          grpc::UNKNOWN,
+          fmt::format(
+              "Failed to store transaction '{}' as prepared: "
+              "Failed to serialize",
+              transaction_id->toString()));
+    }
+  }
 
   // NOTE: invariant for now is that a coordinator will not try
   // and perform this call more than once and thus we don't need
@@ -1993,14 +2158,14 @@ grpc::Status SidecarService::TransactionCoordinatorPrepared(
 
 ////////////////////////////////////////////////////////////////////////
 
-grpc::Status SidecarService::TransactionCoordinatorCleanup(
+grpc::Status DatabaseService::TransactionCoordinatorCleanup(
     grpc::ServerContext* context,
     const TransactionCoordinatorCleanupRequest* request,
     TransactionCoordinatorCleanupResponse* response) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_SIDECAR_LOG(1) << "TransactionCoordinatorCleanup { "
-                        << request->ShortDebugString() << " }";
+  REBOOT_DATABASE_LOG(1) << "TransactionCoordinatorCleanup { "
+                         << request->ShortDebugString() << " }";
 
   Try<UUID> transaction_id = UUID::fromBytes(request->transaction_id());
   if (transaction_id.isError()) {
@@ -2011,32 +2176,61 @@ grpc::Status SidecarService::TransactionCoordinatorCleanup(
             transaction_id.error()));
   }
 
-  const std::string& key = MakeTransactionPreparedKey(*transaction_id);
-  rocksdb::Status status = db_->Delete(
-      DefaultWriteOptions(),
-      rocksdb::Slice(key));
-
-  if (status.ok()) {
-    return grpc::Status::OK;
+  // Where to delete the transaction (legacy, or sharded key) depends on whether
+  // the request contained a `coordinator_state_ref`.
+  rocksdb::Status status;
+  if (request->coordinator_state_ref().empty()) {
+    // This means legacy format - delete from a legacy key.
+    const std::string& legacy_key = MakeLegacyTransactionPreparedKey(
+        *transaction_id);
+    status = db_->Delete(
+        DefaultWriteOptions(),
+        rocksdb::Slice(legacy_key));
   } else {
+    // This means modern (sharded) format - compute shard and delete.
+    std::string shard_id = GetShardForStateRef(
+        request->coordinator_state_ref());
+    const std::string& shard_key = MakePreparedTransactionCoordinatorKey(
+        shard_id,
+        *transaction_id);
+    status = db_->Delete(
+        DefaultWriteOptions(),
+        rocksdb::Slice(shard_key));
+  }
+
+  if (!status.ok()) {
     return grpc::Status(
         grpc::UNKNOWN,
         fmt::format(
-            "Failed to cleanup: {}",
+            "Failed to cleanup transaction: {}",
             status.ToString()));
   }
+
+  return grpc::Status::OK;
 }
 
 ////////////////////////////////////////////////////////////////////////
 
-grpc::Status SidecarService::Export(
+grpc::Status DatabaseService::Export(
     grpc::ServerContext* context,
     const ExportRequest* request,
     ExportResponse* response) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_SIDECAR_LOG(1) << "Export { "
-                        << request->ShortDebugString() << " }";
+  REBOOT_DATABASE_LOG(1) << "Export { "
+                         << request->ShortDebugString() << " }";
+
+  // Validate that shard_ids are provided.
+  if (request->shard_ids().empty()) {
+    return grpc::Status(
+        grpc::INVALID_ARGUMENT,
+        "shard_ids are required for Export request");
+  }
+
+  // Convert to unordered_set for efficient lookups.
+  std::unordered_set<std::string> shard_ids(
+      request->shard_ids().begin(),
+      request->shard_ids().end());
 
   expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
       LookupOrCreateColumnFamilyHandle(request->state_type());
@@ -2068,22 +2262,28 @@ grpc::Status SidecarService::Export(
 
     std::string_view key_type_prefix =
         it->key().ToStringView().substr(0, colon_position);
-    ExportItem* item = response->add_items();
+
+    ExportItem item;
+    std::string state_ref;
     if (key_type_prefix == STATE_KEY_PREFIX) {
-      Actor* actor = item->mutable_actor();
+      state_ref = std::string(GetStateRefFromActorStateKey(
+          it->key().ToStringView()));
+      auto* actor = item.mutable_actor();
       actor->set_state_type(request->state_type());
-      actor->set_state_ref(
-          std::string(GetStateRefFromActorStateKey(
-              it->key().ToStringView())));
+      actor->set_state_ref(state_ref);
       actor->set_state(it->value().ToString());
     } else if (key_type_prefix == TASK_KEY_PREFIX) {
-      CHECK(item->mutable_task()->ParseFromArray(
+      auto* task = item.mutable_task();
+      CHECK(task->ParseFromArray(
           it->value().data(),
           it->value().size()));
+      state_ref = task->task_id().state_ref();
     } else if (key_type_prefix == IDEMPOTENT_MUTATION_KEY_PREFIX) {
-      CHECK(item->mutable_idempotent_mutation()->ParseFromArray(
+      auto* mutation = item.mutable_idempotent_mutation();
+      CHECK(mutation->ParseFromArray(
           it->value().data(),
           it->value().size()));
+      state_ref = mutation->state_ref();
     } else {
       return grpc::Status(
           grpc::UNKNOWN,
@@ -2092,6 +2292,16 @@ grpc::Status SidecarService::Export(
               request->state_type(),
               it->key().ToStringView()));
     }
+
+    // If this item doesn't belong to one of the requested shards, skip it.
+    if (!BelongsToShard(
+            request->state_type(),
+            state_ref,
+            shard_ids)) {
+      continue;
+    }
+
+    *response->add_items() = std::move(item);
   }
 
   if (!it->status().ok()) {
@@ -2108,8 +2318,104 @@ grpc::Status SidecarService::Export(
 
 ////////////////////////////////////////////////////////////////////////
 
-std::set<std::string> SidecarService::RecoverTasks(
-    grpc::ServerWriter<RecoverResponse>& responses) {
+grpc::Status DatabaseService::GetApplicationMetadata(
+    grpc::ServerContext* context,
+    const GetApplicationMetadataRequest* request,
+    GetApplicationMetadataResponse* response) {
+  std::unique_lock lock(mutex_);
+
+  REBOOT_DATABASE_LOG(1) << "GetApplicationMetadata { "
+                         << request->ShortDebugString() << " }";
+
+
+  if (!std::filesystem::exists(metadata_path_)) {
+    // No metadata file exists yet; that likely means this is the first time
+    // this application is starting. Return empty metadata, the caller will
+    // understand that that means we don't have any. The caller will soon call
+    // `StoreApplicationMetadata` to set some real metadata.
+    return grpc::Status::OK;
+  }
+
+  std::ifstream file(metadata_path_, std::ios::binary);
+  if (!file.is_open()) {
+    return grpc::Status(
+        grpc::INTERNAL,
+        fmt::format(
+            "Failed to open metadata file: {}",
+            metadata_path_.string()));
+  }
+
+  std::string serialized_metadata(
+      (std::istreambuf_iterator<char>(file)),
+      std::istreambuf_iterator<char>());
+  file.close();
+
+  // We expect the file to contain a valid serialized ApplicationMetadata proto.
+  // It's possible that the file is empty (i.e. `StoreApplicationMetadata` could
+  // have set an empty metadata), but it should never contain invalid data.
+  if (!response->mutable_metadata()->ParseFromString(serialized_metadata)) {
+    return grpc::Status(
+        grpc::INTERNAL,
+        "Failed to parse metadata from file");
+  }
+
+  return grpc::Status::OK;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+grpc::Status DatabaseService::StoreApplicationMetadata(
+    grpc::ServerContext* context,
+    const StoreApplicationMetadataRequest* request,
+    StoreApplicationMetadataResponse* response) {
+  std::unique_lock lock(mutex_);
+
+  REBOOT_DATABASE_LOG(1) << "StoreApplicationMetadata { "
+                         << request->metadata().ShortDebugString() << " }";
+
+
+  // Create the directory if it doesn't already exist.
+  std::error_code ec;
+  std::filesystem::create_directories(state_directory_, ec);
+  if (ec) {
+    return grpc::Status(
+        grpc::INTERNAL,
+        fmt::format(
+            "Failed to create directory {}: {}",
+            state_directory_.string(),
+            ec.message()));
+  }
+
+  std::string serialized_metadata = request->metadata().SerializeAsString();
+
+  std::ofstream file(metadata_path_, std::ios::binary | std::ios::trunc);
+  if (!file.is_open()) {
+    return grpc::Status(
+        grpc::INTERNAL,
+        fmt::format(
+            "Failed to open metadata file for writing: {}",
+            metadata_path_.string()));
+  }
+
+  file.write(serialized_metadata.data(), serialized_metadata.size());
+  file.flush();
+
+  if (file.fail()) {
+    return grpc::Status(
+        grpc::INTERNAL,
+        "Failed to write metadata to file");
+  }
+
+  file.close();
+
+  return grpc::Status::OK;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+std::set<std::string> DatabaseService::RecoverTasks(
+    grpc::ServerWriter<RecoverResponse>& responses,
+    const std::unordered_set<std::string>& shard_ids) {
   // Scan through all column families' set of tasks to find the
   // pending ones.
   //
@@ -2146,7 +2452,12 @@ std::set<std::string> SidecarService::RecoverTasks(
           task.ParseFromArray(
               iterator->value().data(),
               iterator->value().size()));
-      if (task.status() == Task::PENDING) {
+
+      if (task.status() == Task::PENDING
+          && BelongsToShard(
+              task.task_id().state_type(),
+              task.task_id().state_ref(),
+              shard_ids)) {
         committed_task_uuids.insert(task.task_id().task_uuid());
         *response.add_pending_tasks() = std::move(task);
 
@@ -2172,7 +2483,7 @@ std::set<std::string> SidecarService::RecoverTasks(
 
 ////////////////////////////////////////////////////////////////////////
 
-void SidecarService::RecoverTransactionTasks(
+void DatabaseService::RecoverTransactionTasks(
     const std::set<std::string>& committed_task_uuids,
     Transaction& transaction,
     stout::borrowed_ref<rocksdb::Transaction>& txn) {
@@ -2217,7 +2528,7 @@ void SidecarService::RecoverTransactionTasks(
 
 ////////////////////////////////////////////////////////////////////////
 
-void SidecarService::RecoverTransactionIdempotentMutations(
+void DatabaseService::RecoverTransactionIdempotentMutations(
     const std::set<std::string>& committed_idempotency_keys,
     Transaction& transaction,
     stout::borrowed_ref<rocksdb::Transaction>& txn) {
@@ -2262,18 +2573,29 @@ void SidecarService::RecoverTransactionIdempotentMutations(
 
 ////////////////////////////////////////////////////////////////////////
 
-expected<void> SidecarService::RecoverTransactions(
+expected<void> DatabaseService::RecoverTransactions(
     grpc::ServerWriter<RecoverResponse>& responses,
     const std::set<std::string>& committed_task_uuids,
-    const std::set<std::string>& committed_idempotency_keys) {
-  // Recover all of the transactions that were prepared.
-  std::vector<rocksdb::Transaction*> txns;
-  db_->GetAllPreparedTransactions(&txns);
-  for (rocksdb::Transaction* txn : txns) {
-    auto [_, inserted] = txns_.try_emplace(
-        GetStateRef(*txn),
-        std::unique_ptr<rocksdb::Transaction>(txn));
-    CHECK(inserted);
+    const std::set<std::string>& committed_idempotency_keys,
+    const std::unordered_set<std::string>& shard_ids) {
+  // Since every server will call `Recover()` on every startup, this method
+  // may run many times. If this is the first time, then we must recover the
+  // transactions from the database. Otherwise, they should already be in
+  // 'txns_', in which case it's NOT safe to recover them again (we may have
+  // changed them) and we should simply do nothing.
+  //
+  // Edge case: if there are no transactions, then we're not sure whether this
+  // is the first time we're recovering or not, so we recover from the database
+  // every time just in case. This is safe, because recovery is a NOOP if indeed
+  // it turns out that there are no transactions.
+  if (txns_.empty()) {
+    // Recover all of the transactions that were previously prepared.
+    std::vector<rocksdb::Transaction*> txns;
+    db_->GetAllPreparedTransactions(&txns);
+    for (rocksdb::Transaction* txn : txns) {
+      std::string state_ref = GetStateRef(*txn);
+      txns_.emplace(state_ref, std::unique_ptr<rocksdb::Transaction>(txn));
+    }
   }
 
   std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
@@ -2299,35 +2621,57 @@ expected<void> SidecarService::RecoverTransactions(
                  .ToStringView()
                  .find(TRANSACTION_PARTICIPANT_KEY_PREFIX)
              == 0) {
-    Transaction& transaction = *response.add_participant_transactions();
+    Transaction transaction;
 
     CHECK(transaction.ParseFromArray(
         iterator->value().data(),
         iterator->value().size()));
 
+    if (!BelongsToShard(
+            transaction.state_type(),
+            transaction.state_ref(),
+            shard_ids)) {
+      // Not for any of our shards; skip it.
+      iterator->Next();
+      continue;
+    }
+
+    Transaction& added_transaction = *response.add_participant_transactions();
+    added_transaction = transaction;
+
     expected<stout::borrowed_ref<rocksdb::Transaction>> txn =
-        LookupTransaction(transaction.state_type(), transaction.state_ref());
+        LookupTransaction(
+            added_transaction.state_type(),
+            added_transaction.state_ref());
 
     if (txn.has_value()) {
-      CHECK_EQ((*txn)->GetState(), rocksdb::Transaction::PREPARED);
-      transaction.set_prepared(true);
+      // On multiple Recover() calls, transactions may no longer be prepared
+      // if they were committed/aborted since the previous recovery.
+      if ((*txn)->GetState() == rocksdb::Transaction::PREPARED) {
+        added_transaction.set_prepared(true);
 
-      // Now recover any tasks for our actor that we'll need to dispatch if the
-      // transaction gets committed.
-      RecoverTransactionTasks(
-          committed_task_uuids,
-          transaction,
-          *txn);
+        // Now recover any tasks for our actor that we'll need to dispatch if
+        // the transaction gets committed.
+        RecoverTransactionTasks(
+            committed_task_uuids,
+            added_transaction,
+            *txn);
 
-      // Now recover any idempotent mutations for our actor that are part of the
-      // transaction.
-      RecoverTransactionIdempotentMutations(
-          committed_idempotency_keys,
-          transaction,
-          *txn);
+        // Now recover any idempotent mutations for our actor that are part of
+        // the transaction.
+        RecoverTransactionIdempotentMutations(
+            committed_idempotency_keys,
+            added_transaction,
+            *txn);
+      } else {
+        // Transaction exists but is not prepared - skip it.
+        response.mutable_participant_transactions()->RemoveLast();
+        iterator->Next();
+        continue;
+      }
     } else {
       txn = LookupOrBeginTransaction(
-          transaction,
+          added_transaction,
           /* store_participant = */ false);
 
       if (!txn.has_value()) {
@@ -2359,10 +2703,6 @@ expected<void> SidecarService::RecoverTransactions(
   // committed and thus deleted the record of the transaction but we
   // have not yet completed the coordinator's "commit control loop".
 
-  // TODO: investigate using "prefix seek" for better performance, see:
-  // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
-  iterator->Seek(rocksdb::Slice(TRANSACTION_PREPARED_KEY_PREFIX));
-
   // We don't know what is the best batch size for this, so we
   // just use a number that is small enough to not cause
   // performance issues, but large enough to not cause too many
@@ -2370,25 +2710,120 @@ expected<void> SidecarService::RecoverTransactions(
   // TODO: This should be configurable and pick the better value for default.
   static size_t RECOVER_COORDINATOR_TRANSACTIONS_BATCH_SIZE = 256;
 
+  // First, handle legacy coordinator transactions (for backward compatibility).
+  //
+  // Legacy coordinator transactions were written before we associated them with
+  // shards. Fortunately, we are free to recover them into any shard we like:
+  // any server can be the coordinator for any transaction, it's only
+  // important that there's only one. We arbitrarily decide that it's the first
+  // shard that coordinates the legacy transactions.
+  CHECK(server_info_.shard_infos_size() > 0);
+  const std::string& first_shard_id = server_info_.shard_infos(0).shard_id();
+  const bool recovering_first_shard =
+      shard_ids.find(first_shard_id) != shard_ids.end();
+
+  if (recovering_first_shard) {
+    REBOOT_DATABASE_LOG(1)
+        << "Recovering legacy prepared transactions into shard '"
+        << first_shard_id << "'";
+
+    iterator->Seek(rocksdb::Slice(
+        LEGACY_PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX));
+
+    while (iterator->Valid()
+           && iterator->key()
+                   .ToStringView()
+                   .find(LEGACY_PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX)
+               == 0) {
+      // NOTE: we use the stringified form of the UUID as the index
+      // because a protobuf 'map' can not have a bytes key. We also
+      // store the stringified version of the transaction UUID in the
+      // suffix of the rocksdb key for easier debugging so all we need
+      // to do here is extract it.
+      const std::string_view transaction_id =
+          iterator->key()
+              .ToStringView()
+              .substr(
+                  strlen(LEGACY_PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX)
+                  + 1);
+
+
+      // There's no way to convince `clang-format` to format the following line
+      // in a way that doesn't violate our 80-character line length limit.
+      // (check_line_length skip)
+      PreparedTransactionCoordinator& coordinator_entry = (*response.mutable_prepared_transaction_coordinators())[transaction_id];
+
+      // For legacy transactions we don't have a coordinator state reference,
+      // so we leave `state_ref` empty and only populate `participants`.
+      Participants participants;
+      CHECK(participants.ParseFromArray(
+          iterator->value().data(),
+          iterator->value().size()));
+
+      *coordinator_entry.mutable_participants() = std::move(participants);
+
+      MaybeWriteAndClearResponse(
+          responses,
+          response,
+          batch_size,
+          RECOVER_COORDINATOR_TRANSACTIONS_BATCH_SIZE);
+
+      iterator->Next();
+    }
+  } else {
+    REBOOT_DATABASE_LOG(1)
+        << "Skipping recovery of legacy prepared transactions because "
+        << "we're not recovering the first shard '" << first_shard_id
+        << "'";
+  }
+
+  // Now recover shard-aware coordinator transactions. We expect the number of
+  // prepared transactions to be relatively low; normally lower than the number
+  // of shards. Therefore we scan all prepared transactions, rather than
+  // prefix-seeking to each shard specifically.
+  std::string prefix = PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX;
+
+  iterator->Seek(rocksdb::Slice(prefix));
+
   while (iterator->Valid()
          && iterator->key()
                  .ToStringView()
-                 .find(TRANSACTION_PREPARED_KEY_PREFIX)
+                 .find(prefix)
              == 0) {
-    // NOTE: we use the stringified form of the UUID as the index
-    // because a protobuf 'map' can not have a bytes key. We also
-    // store the stringified version of the transaction UUID in the
-    // suffix of the rocksdb key for easier debugging so all we need
-    // to do here is extract it.
-    const std::string_view transaction_id =
-        iterator->key()
-            .ToStringView()
-            .substr(strlen(TRANSACTION_PREPARED_KEY_PREFIX) + 1);
+    // Parse the key format: `prefix:shard_id:transaction_id`.
+    std::string_view key_view = iterator->key().ToStringView();
 
-    Participants& participants =
-        (*response.mutable_prepared_coordinator_transactions())[transaction_id];
+    // Skip the prefix.
+    size_t prefix_len = strlen(PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX);
+    if (key_view.size() <= prefix_len + 1) {
+      iterator->Next();
+      continue;
+    }
+    key_view = key_view.substr(prefix_len + 1); // Skip "prefix:"
 
-    CHECK(participants.ParseFromArray(
+    // Extract shard ID and transaction ID.
+    size_t colon_pos = key_view.find(':');
+    if (colon_pos == std::string::npos) {
+      iterator->Next();
+      continue;
+    }
+
+    std::string_view key_shard_id = key_view.substr(0, colon_pos);
+    std::string_view transaction_id = key_view.substr(colon_pos + 1);
+
+    // Check if this shard was requested.
+    if (shard_ids.find(std::string(key_shard_id)) == shard_ids.end()) {
+      iterator->Next();
+      continue;
+    }
+
+    // Parse the stored `PreparedTransactionCoordinator`; it can go straight
+    // into the response.
+    PreparedTransactionCoordinator& coordinator_entry =
+        (*response.mutable_prepared_transaction_coordinators())
+            [std::string(transaction_id)];
+
+    CHECK(coordinator_entry.ParseFromArray(
         iterator->value().data(),
         iterator->value().size()));
 
@@ -2412,8 +2847,9 @@ expected<void> SidecarService::RecoverTransactions(
 
 ////////////////////////////////////////////////////////////////////////
 
-std::set<std::string> SidecarService::RecoverIdempotentMutations(
-    grpc::ServerWriter<RecoverResponse>& responses) {
+std::set<std::string> DatabaseService::RecoverIdempotentMutations(
+    grpc::ServerWriter<RecoverResponse>& responses,
+    const std::unordered_set<std::string>& shard_ids) {
   // Return the committed idempotency keys so we can differentiate
   // _committed_ vs _uncommitted_ ones that are part of transactions.
   std::set<std::string> committed_idempotency_keys;
@@ -2449,20 +2885,27 @@ std::set<std::string> SidecarService::RecoverIdempotentMutations(
                    .ToStringView()
                    .find(IDEMPOTENT_MUTATION_KEY_PREFIX)
                == 0) {
-      IdempotentMutation& idempotent_mutation =
-          *response.add_idempotent_mutations();
+      IdempotentMutation idempotent_mutation;
 
       CHECK(idempotent_mutation.ParseFromArray(
           iterator->value().data(),
           iterator->value().size()));
 
-      committed_idempotency_keys.insert(idempotent_mutation.key());
+      // Only send this idempotent mutation if its state ref falls within one of
+      // the requested shards.
+      if (BelongsToShard(
+              idempotent_mutation.state_type(),
+              idempotent_mutation.state_ref(),
+              shard_ids)) {
+        committed_idempotency_keys.insert(idempotent_mutation.key());
+        *response.add_idempotent_mutations() = std::move(idempotent_mutation);
 
-      MaybeWriteAndClearResponse(
-          responses,
-          response,
-          batch_size,
-          RECOVER_IDEMPOTENT_MUTATIONS_BATCH_SIZE);
+        MaybeWriteAndClearResponse(
+            responses,
+            response,
+            batch_size,
+            RECOVER_IDEMPOTENT_MUTATIONS_BATCH_SIZE);
+      }
 
       iterator->Next();
     }
@@ -2536,7 +2979,7 @@ expected<void> MaybeMigrateTaskId(
 
 // This migration deletes Tasks which did not have `Any` response values
 // (i.e. from before #2580).
-expected<void> SidecarService::MigratePersistence2To3(
+expected<void> DatabaseService::MigratePersistence2To3(
     const RecoverRequest& request) {
   for (rocksdb::ColumnFamilyHandle* column_family_handle :
        column_family_handles_) {
@@ -2578,7 +3021,7 @@ expected<void> SidecarService::MigratePersistence2To3(
   return WritePersistenceVersion(db_.get(), 3);
 }
 
-expected<void> SidecarService::MaybeMigratePersistence(
+expected<void> DatabaseService::MaybeMigratePersistence(
     const RecoverRequest& request) {
   // Read the persistence version from the default column family.
   std::string serialized_pv_get;
@@ -2620,7 +3063,7 @@ expected<void> SidecarService::MaybeMigratePersistence(
       << "Persistence version " << version << " is no longer supported";
 
   for (; version < CURRENT_PERSISTENCE_VERSION; version++) {
-    REBOOT_SIDECAR_LOG(0)
+    REBOOT_DATABASE_LOG(0)
         << "Migrating persistence from version { " << version << " }";
     expected<void> migrate;
     switch (version) {
@@ -2638,16 +3081,99 @@ expected<void> SidecarService::MaybeMigratePersistence(
   return {};
 }
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// Helper functions for sharding logic. These must match the logic in:
+// - `public/rebootdev/aio/placement.py`'s `PlanOnlyPlacementClient` (the Python
+//   routing logic).
+// - `compute_header_x_reboot_server_id.lua.j2` (the Envoy routing logic).
+//
+////////////////////////////////////////////////////////////////////////////////
+
+// Helper function to compute SHA1 hash of the first component of a state_ref.
+// The first component is the part before the first '/' character.
+std::string DatabaseService::ComputeStateRefHash(
+    std::string_view state_ref) const {
+  // Extract the first component of the state ref (before any '/').
+  std::string_view first_component = state_ref;
+  size_t slash_pos = state_ref.find('/');
+  if (slash_pos != std::string::npos) {
+    first_component = state_ref.substr(0, slash_pos);
+  }
+
+  // Compute SHA1 hash of the first component.
+  unsigned char hash[SHA_DIGEST_LENGTH];
+  SHA1(
+      reinterpret_cast<const unsigned char*>(first_component.data()),
+      first_component.size(),
+      hash);
+
+  return std::string(reinterpret_cast<const char*>(hash), SHA_DIGEST_LENGTH);
+}
+
+// Helper function to determine which shard owns a given hash.
+// Returns the shard_id or empty string if no shard is found.
+std::string DatabaseService::GetShardForHash(
+    const std::string& hash_str) const {
+  // We should always have at least one shard configured.
+  CHECK(!server_info_.shard_infos().empty())
+      << "No shards configured - this should not happen";
+
+  // Find the shard that should own this hash. The shards are ordered by their
+  // `first_key`; we iterate backwards to find the last shard whose `first_key`
+  // falls before this hash.
+  for (int i = server_info_.shard_infos().size() - 1; i >= 0; i--) {
+    const auto& shard_info = server_info_.shard_infos(i);
+    if (shard_info.shard_first_key() <= hash_str) {
+      return shard_info.shard_id();
+    }
+  }
+
+  CHECK(false) << "No shard found for hash " << hash_str
+               << " - this indicates a serious shard configuration error";
+}
+
+// Helper function to determine which shard owns a given state_ref.
+std::string DatabaseService::GetShardForStateRef(
+    std::string_view state_ref) const {
+  std::string hash_str = ComputeStateRefHash(state_ref);
+  return GetShardForHash(hash_str);
+}
+
 ////////////////////////////////////////////////////////////////////////
 
-grpc::Status SidecarService::Recover(
+bool DatabaseService::BelongsToShard(
+    std::string_view state_type,
+    std::string_view state_ref,
+    const std::unordered_set<std::string>& shard_ids) const {
+  // We should always have shards configured.
+  CHECK(!server_info_.shard_infos().empty())
+      << "No shards configured - this should not happen";
+
+  // Determine which shard owns this state_ref.
+  std::string target_shard_id = GetShardForStateRef(state_ref);
+
+  // Check if the target shard is in the set of requested shards.
+  return shard_ids.find(target_shard_id) != shard_ids.end();
+}
+
+////////////////////////////////////////////////////////////////////////
+
+grpc::Status DatabaseService::Recover(
     grpc::ServerContext* context,
     const RecoverRequest* request,
     grpc::ServerWriter<RecoverResponse>* responses) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_SIDECAR_LOG(1)
+  REBOOT_DATABASE_LOG(1)
       << "Recover { " << request->ShortDebugString() << " }";
+
+  // Validate that shard_ids are provided.
+  if (request->shard_ids().empty()) {
+    return grpc::Status(
+        grpc::INVALID_ARGUMENT,
+        "shard_ids are required for Recover request");
+  }
 
   // (0) Migrate to the current persistence version, if necessary.
   expected<void> maybe_migrate = MaybeMigratePersistence(*request);
@@ -2655,23 +3181,31 @@ grpc::Status SidecarService::Recover(
     return grpc::Status(grpc::UNKNOWN, maybe_migrate.error());
   }
 
+  // Handle the `shard_ids` as a hash set for efficiency.
+  std::unordered_set<std::string> shard_ids(
+      request->shard_ids().begin(),
+      request->shard_ids().end());
+
   // (1) Recover tasks _before_ recovering transactions because
   // transactions need to know the recovered committed tasks to
   // recover uncommitted tasks.
-  std::set<std::string> committed_task_uuids = RecoverTasks(*responses);
+  std::set<std::string> committed_task_uuids = RecoverTasks(
+      *responses,
+      shard_ids);
 
   // (2) Recover idempotent mutations _before_ recovering
   // transactions because transactions need to know the
   // recovered committed idempotent mutations to recover
   // uncommitted idempotent mutations.
   std::set<std::string> committed_idempotent_mutations =
-      RecoverIdempotentMutations(*responses);
+      RecoverIdempotentMutations(*responses, shard_ids);
 
   // (3) Recover transactions.
   expected<void> recover_transactions = RecoverTransactions(
       *responses,
       committed_task_uuids,
-      committed_idempotent_mutations);
+      committed_idempotent_mutations,
+      shard_ids);
 
   if (!recover_transactions.has_value()) {
     return grpc::Status(grpc::UNKNOWN, recover_transactions.error());
@@ -2682,10 +3216,10 @@ grpc::Status SidecarService::Recover(
 
 ////////////////////////////////////////////////////////////////////////
 
-expected<std::unique_ptr<SidecarServer>>
-SidecarServer::Instantiate(
-    const std::filesystem::path& db_path,
-    const ConsensusInfo& consensus_info,
+expected<std::unique_ptr<DatabaseServer>>
+DatabaseServer::Instantiate(
+    const std::filesystem::path& state_directory,
+    const ServerInfo& server_info,
     std::string address) {
   grpc::ServerBuilder builder;
 
@@ -2705,7 +3239,7 @@ SidecarServer::Instantiate(
   }
 
   expected<std::unique_ptr<grpc::Service>> service =
-      SidecarService::Instantiate(db_path, consensus_info);
+      DatabaseService::Instantiate(state_directory, server_info);
 
   if (!service.has_value()) {
     throw std::runtime_error(fmt::format(
@@ -2723,10 +3257,10 @@ SidecarServer::Instantiate(
     address = fmt::format("{}:{}", absl::StripSuffix(address, ":0"), *port);
   }
 
-  REBOOT_SIDECAR_LOG(1) << "sidecar gRPC server listening on " << address;
+  REBOOT_DATABASE_LOG(1) << "sidecar gRPC server listening on " << address;
 
-  return std::unique_ptr<SidecarServer>(
-      new SidecarServer(
+  return std::unique_ptr<DatabaseServer>(
+      new DatabaseServer(
           std::move(service.value()),
           std::move(server),
           address));
@@ -2734,6 +3268,15 @@ SidecarServer::Instantiate(
 
 ////////////////////////////////////////////////////////////////////////
 
-} // namespace rbt::consensus
+void TestOnly_EnableLegacyCoordinatorPrepared(grpc::Service* service) {
+  auto* sidecar_service = dynamic_cast<DatabaseService*>(service);
+  if (sidecar_service) {
+    sidecar_service->SetAllowLegacyCoordinatorPrepared(true);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+} // namespace rbt::server
 
 ////////////////////////////////////////////////////////////////////////

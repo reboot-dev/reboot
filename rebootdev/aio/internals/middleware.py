@@ -29,7 +29,7 @@ from rebootdev.aio.placement import PlacementClient
 from rebootdev.aio.tasks import TaskEffect
 from rebootdev.aio.types import (
     ApplicationId,
-    ConsensusId,
+    ServerId,
     ServiceName,
     StateRef,
     StateTypeName,
@@ -90,7 +90,7 @@ class Middleware(ABC):
         self,
         *,
         application_id: ApplicationId,
-        consensus_id: ConsensusId,
+        server_id: ServerId,
         state_type_name: StateTypeName,
         service_names: list[ServiceName],
         placement_client: PlacementClient,
@@ -99,7 +99,7 @@ class Middleware(ABC):
         app_internal_api_key_secret: str,
     ):
         self._application_id = application_id
-        self._consensus_id = consensus_id
+        self._server_id = server_id
         self._state_type_name = state_type_name
         assert len(service_names) > 0
         self._service_names = service_names
@@ -114,8 +114,8 @@ class Middleware(ABC):
         return self._application_id
 
     @property
-    def consensus_id(self) -> ConsensusId:
-        return self._consensus_id
+    def server_id(self) -> ServerId:
+        return self._server_id
 
     @property
     def state_type_name(self) -> StateTypeName:

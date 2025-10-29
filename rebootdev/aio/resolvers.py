@@ -168,10 +168,10 @@ class DirectResolver(ActorResolver):
         if application_id is None:
             return None
 
-        # Route to a random consensus in this application.
-        consensuses = self._placement_client.known_consensuses(application_id)
-        return self._placement_client.address_for_consensus(
-            random.choice(consensuses)
+        # Route to a random server in this application.
+        servers = self._placement_client.known_servers(application_id)
+        return self._placement_client.address_for_server(
+            random.choice(servers)
         )
 
     async def wait_for_service_names(

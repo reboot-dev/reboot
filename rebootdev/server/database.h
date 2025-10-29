@@ -12,7 +12,7 @@
 #include "grpcpp/security/credentials.h"
 #include "grpcpp/server.h"
 #include "grpcpp/support/channel_arguments.h"
-#include "rbt/v1alpha1/sidecar.grpc.pb.h"
+#include "rbt/v1alpha1/database.grpc.pb.h"
 #include "rbt/v1alpha1/tasks.pb.h"
 #include "rebootdev/settings.h"
 #include "stout/borrowable.h"
@@ -20,66 +20,66 @@
 
 ////////////////////////////////////////////////////////////////////////
 
-namespace rbt::consensus {
+namespace rbt::server {
 
 ////////////////////////////////////////////////////////////////////////
 
 // A helper function to answer the question "are we logging the given verbosity
 // level?".
-inline bool RebootSidecarLogLevelEnabled(int verbosity) {
+inline bool RebootDatabaseLogLevelEnabled(int verbosity) {
   // Reboot's logging is enabled for `verbosity` if the value of the
-  // `REBOOT_SIDECAR_LOG_VERBOSITY` environment variable is higher than or
+  // `REBOOT_DATABASE_LOG_VERBOSITY` environment variable is higher than or
   // equal to `verbosity`. If unset, the default `...LOG_VERBOSITY` is 0 (i.e.,
   // no logging).
-  static const char* variable = std::getenv("REBOOT_SIDECAR_LOG_VERBOSITY");
+  static const char* variable = std::getenv("REBOOT_DATABASE_LOG_VERBOSITY");
   static int chosen_verbosity = variable != nullptr ? atoi(variable) : 0;
   return chosen_verbosity >= verbosity;
 }
 
-#define REBOOT_SIDECAR_LOG(level) \
-  LOG_IF(INFO, RebootSidecarLogLevelEnabled(level))
+#define REBOOT_DATABASE_LOG(level) \
+  LOG_IF(INFO, RebootDatabaseLogLevelEnabled(level))
 
 ////////////////////////////////////////////////////////////////////////
 
-// NOTE: there are two distinct "sidecar" types: 'SidecarService' and
-// 'SidecarServer'.
+// NOTE: there are two distinct "database" types: 'DatabaseService' and
+// 'DatabaseServer'.
 //
-// 'SidecarService' is the actual implementation of the gRPC service.
+// 'DatabaseService' is the actual implementation of the gRPC service.
 //
-// 'SidecarServer' is the combination of both the instantiated
-// 'SidecarService' and a gRPC server.
+// 'DatabaseServer' is the combination of both the instantiated
+// 'DatabaseService' and a gRPC server.
 
 ////////////////////////////////////////////////////////////////////////
 
-// Abstraction for encapsulating and running a sidecar including the
+// Abstraction for encapsulating and running a database including the
 // necessary gRPC server.
-class SidecarServer final {
+class DatabaseServer final {
  public:
-  static tl::expected<std::unique_ptr<SidecarServer>, std::string> Instantiate(
-      const std::filesystem::path& db_path,
-      const rbt::v1alpha1::ConsensusInfo& consensus_info,
+  static tl::expected<std::unique_ptr<DatabaseServer>, std::string> Instantiate(
+      const std::filesystem::path& state_directory,
+      const rbt::v1alpha1::ServerInfo& server_info,
       std::string address = "127.0.0.1:0");
 
-  ~SidecarServer() {
+  ~DatabaseServer() {
     Shutdown();
     Wait();
   }
 
   void Shutdown() {
     if (server_) {
-      REBOOT_SIDECAR_LOG(1)
-          << "Shutting down sidecar gRPC server at " << address_;
+      REBOOT_DATABASE_LOG(1)
+          << "Shutting down database gRPC server at " << address_;
       server_->Shutdown();
     }
   }
 
   void Wait() {
     if (server_) {
-      REBOOT_SIDECAR_LOG(1)
-          << "Waiting for sidecar gRPC server at " << address_;
+      REBOOT_DATABASE_LOG(1)
+          << "Waiting for database gRPC server at " << address_;
       server_->Wait();
-      REBOOT_SIDECAR_LOG(1)
-          << "Waited for sidecar gRPC server at " << address_;
+      REBOOT_DATABASE_LOG(1)
+          << "Waited for database gRPC server at " << address_;
       server_.reset();
       service_.reset();
     }
@@ -93,8 +93,14 @@ class SidecarServer final {
     return address_;
   }
 
+  // Get the underlying service for testing purposes. This should only be used
+  // in tests.
+  grpc::Service* TestOnly_GetService() {
+    return service_.get();
+  }
+
  private:
-  SidecarServer(
+  DatabaseServer(
       std::unique_ptr<grpc::Service>&& service,
       std::unique_ptr<grpc::Server>&& server,
       const std::string& address)
@@ -109,6 +115,12 @@ class SidecarServer final {
 
 ////////////////////////////////////////////////////////////////////////
 
-} // namespace rbt::consensus
+// Function to enable legacy coordinator prepared format for testing.
+// This should only be used in tests.
+void TestOnly_EnableLegacyCoordinatorPrepared(grpc::Service* service);
+
+////////////////////////////////////////////////////////////////////////
+
+} // namespace rbt::server
 
 ////////////////////////////////////////////////////////////////////////

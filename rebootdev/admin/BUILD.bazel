@@ -7,6 +7,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
-        "@com_github_reboot_dev_reboot//rebootdev/consensus:sidecar_py",
+        "@com_github_reboot_dev_reboot//rebootdev/server:database_py",
     ],
 )

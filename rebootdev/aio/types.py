@@ -18,8 +18,8 @@ ServiceName = NewType("ServiceName", str)
 StateTypeName = NewType("StateTypeName", str)  # Note: fully-qualified!
 StateTypeTag = NewType("StateTypeTag", str)
 ShardId = str
-PartitionId = str
-ConsensusId = str
+DatabaseId = str
+ServerId = str
 GrpcMetadata = tuple[tuple[str, str], ...]
 RoutableAddress = str
 KubernetesNamespace = str
@@ -33,7 +33,7 @@ ConfigRunId = NewType("ConfigRunId", str)
 @dataclass(frozen=True)
 class StateRef:
     r"""An StateRef is the globally unique id of a state machine, and acts as the
-    partitioning key to assign state machines to consensuses.
+    partitioning key to assign state machines to servers.
 
     An StateRef is a `/`-separated compound id, with `\` disallowed (because it
     is used to encode `/` in a way that is simple to decode).
@@ -75,7 +75,7 @@ class StateRef:
     @classmethod
     def from_maybe_readable(cls, candidate: str) -> StateRef:
         # NOTE: there is a Lua equivalent of this function in
-        # `compute_header_x_reboot_consensus_id.lua.j2`; we MUST keep them in
+        # `compute_header_x_reboot_server_id.lua.j2`; we MUST keep them in
         # sync for our routing logic to work.
         if cls.is_state_ref(candidate):
             return StateRef(candidate)
@@ -244,7 +244,7 @@ _STATE_TYPE_TAG_LENGTH = 14
 
 def state_type_tag_for_name(state_type: StateTypeName) -> StateTypeTag:
     # NOTE: there is a Lua equivalent of this function in
-    # `compute_header_x_reboot_consensus_id.lua.j2`; we MUST keep them in sync
+    # `compute_header_x_reboot_server_id.lua.j2`; we MUST keep them in sync
     # for our routing logic to work.
     state_type_tag = _state_type_tags.get(state_type)
     if state_type_tag is None:

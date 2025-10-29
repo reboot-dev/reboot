@@ -101,10 +101,15 @@ message ApplicationConfig {
     //            it's confusing.
     uint32 revision_number = 10;
 
-    // The number of consensuses to run for this application.
+    // The number of servers to run for this application.
     // NOTE: Must be a power of 2.
     // Unset means: use default.
-    optional uint32 consensuses = 7;
+    optional uint32 servers = 7;
+
+    // The version of Reboot running in this application. This is used
+    // by the controller to determine what features are supported by the
+    // application.
+    string reboot_version = 11;
   }
 
   Spec spec = 2;

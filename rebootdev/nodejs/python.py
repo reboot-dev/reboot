@@ -27,7 +27,7 @@ from typing import Awaitable, Callable, Optional, Sequence, TypeVar
 # Callable into nodejs for launching a subprocess that gets installed
 # from C++, see `PythonNodeAdaptor::Initialize` in
 # 'reboot_native.cc'.
-launch_subprocess_consensus: Callable[[str], Awaitable[str]]
+launch_subprocess_server: Callable[[str], Awaitable[str]]
 
 # Functions that will be run the next time the event loop's `read_fd`
 # has bytes pushed to it. This is intended to be used by

@@ -5,10 +5,8 @@ package rbt.v1alpha1;
 import "google/protobuf/descriptor.proto";
 
 // Metadata written locally by an Application to track per-Application
-// information, independent of any per-Consensus data.
+// information, independent of any per-Server data.
 message ApplicationMetadata {
-  // The number of consensuses expected in the local application directory.
-  int32 consensus_count = 1;
   // The most recent file descriptor set describing the Application's schema.
   optional google.protobuf.FileDescriptorSet file_descriptor_set = 5;
 }

@@ -9,8 +9,8 @@ from rebootdev.aio.call import validate_ascii
 from rebootdev.aio.internals.contextvars import get_application_id
 from rebootdev.aio.types import (
     ApplicationId,
-    ConsensusId,
     GrpcMetadata,
+    ServerId,
     StateId,
     StateRef,
     StateTypeName,
@@ -43,9 +43,9 @@ from typing import Any, Callable, Optional
 APPLICATION_ID_HEADER = 'x-reboot-application-id'
 # The header that carries state reference information.
 STATE_REF_HEADER = 'x-reboot-state-ref'
-# The header that carries information about which consensus this request should
+# The header that carries information about which server this request should
 # be handled by.
-CONSENSUS_ID_HEADER = 'x-reboot-consensus-id'
+SERVER_ID_HEADER = 'x-reboot-server-id'
 
 # The id of the workflow being executed, if any.
 WORKFLOW_ID_HEADER = 'x-reboot-workflow-id'
@@ -111,7 +111,7 @@ class Headers:
 
     task_schedule: Optional[DateTimeWithTimeZone] = None
 
-    consensus_id: Optional[ConsensusId] = None
+    server_id: Optional[ServerId] = None
 
     cookie: Optional[str] = None
 
@@ -167,7 +167,7 @@ class Headers:
         """
         return Headers(
             application_id=self.application_id,
-            consensus_id=self.consensus_id,
+            server_id=self.server_id,
             state_ref=self.state_ref,
             cookie=self.cookie,
             forwarded_client_cert=self.forwarded_client_cert,
@@ -229,7 +229,7 @@ class Headers:
         application_id = get_application_id()
         assert application_id is not None
 
-        consensus_id = extract_maybe(CONSENSUS_ID_HEADER)
+        server_id = extract_maybe(SERVER_ID_HEADER)
 
         # We use `from_maybe_readable` as an affordance for hand-written calls.
         state_ref = StateRef.from_maybe_readable(extract(STATE_REF_HEADER))
@@ -295,7 +295,7 @@ class Headers:
 
         return cls(
             application_id=application_id,
-            consensus_id=consensus_id,
+            server_id=server_id,
             state_ref=state_ref,
             workflow_id=workflow_id,
             transaction_ids=transaction_ids,
@@ -325,9 +325,9 @@ class Headers:
                 return ((APPLICATION_ID_HEADER, self.application_id),)
             return ()
 
-        def maybe_add_consensus_id_header() -> GrpcMetadata | tuple[()]:
-            if self.consensus_id is not None:
-                return ((CONSENSUS_ID_HEADER, self.consensus_id),)
+        def maybe_add_server_id_header() -> GrpcMetadata | tuple[()]:
+            if self.server_id is not None:
+                return ((SERVER_ID_HEADER, self.server_id),)
             return ()
 
         def maybe_add_authorization_header() -> GrpcMetadata | tuple[()]:
@@ -399,8 +399,7 @@ class Headers:
 
         return (
             ((STATE_REF_HEADER, self.state_ref.to_str()),) +
-            maybe_add_application_id_header() +
-            maybe_add_consensus_id_header() +
+            maybe_add_application_id_header() + maybe_add_server_id_header() +
             maybe_add_authorization_header() + maybe_add_cookie_header() +
             maybe_add_app_internal_authorization_header() +
             maybe_add_transaction_headers() + maybe_add_workflow_headers() +

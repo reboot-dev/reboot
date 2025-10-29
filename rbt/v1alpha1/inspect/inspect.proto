@@ -17,9 +17,9 @@ message GetStateTypesResponse {
 ////////////////////////////////////////////////////////////////////////
 
 message GetStateIdsRequest {
-  // If set, only return state IDs held by the given consensus ID. If not set
-  // (or left at default), return all state IDs held by all consensuses.
-  string only_consensus_id = 1;
+  // If set, only return state IDs held by the given server ID. If not set
+  // (or left at default), return all state IDs held by all servers.
+  string only_server_id = 1;
 
   // The state type to get state IDs for.
   string state_type = 2;
