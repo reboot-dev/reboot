@@ -630,7 +630,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
           if (this.refs > 0) {
             if (this.runningMutates.length > 0) {
               console.warn(
-                `WebSocket disconnected, ${this.runningMutates.length} outstanding mutations will be retried when we reconnect`
+                `[Reboot] WebSocket disconnected, ${this.runningMutates.length} outstanding mutations will be retried when we reconnect`
               );
             }
 
@@ -1053,7 +1053,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
             const aborted = {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(status);
 
             console.warn(
-              `'{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' aborted with ${aborted.message}`
+              `[Reboot] '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' aborted with ${aborted.message}`
             );
 
             removeMutationsAndSetPending();
@@ -1321,7 +1321,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
           const aborted = {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(status);
 
           console.warn(
-            `'{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' aborted with ${aborted.message}`
+            `[Reboot] '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' aborted with ${aborted.message}`
           );
 
           setAborted(aborted);
@@ -1382,11 +1382,11 @@ export const use{{ client.proto.state_name | to_camel }} = (
           } else if (e instanceof Error) {
             console.error(e);
           } else {
-            console.error(`Unknown error: ${JSON.stringify(e)}`);
+            console.error(`[Reboot] Unknown error: ${JSON.stringify(e)}`);
           }
         }
 
-        console.warn(`Retrying call to {{ proto.package_name }}.{{ service.proto.name }}.{{ method.proto.name }} after backoff ...`);
+        console.warn(`[Reboot] Retrying call to {{ proto.package_name }}.{{ service.proto.name }}.{{ method.proto.name }} after backoff ...`);
 
         await backoff.wait();
       }
@@ -1401,7 +1401,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
         const aborted = {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(status);
 
         console.warn(
-          `'{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' aborted with ${aborted.message}`
+          `[Reboot] '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' aborted with ${aborted.message}`
         );
 
         return { aborted };
