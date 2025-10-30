@@ -2785,12 +2785,6 @@ class SidecarStateManager(
                 # can happen after the coordinator restarts if it tries to abort
                 # before it has (re)discovered the location of the participant.
                 # That's OK; see the comment in the `except` block.
-                #
-                # TODO(rjh, benh): post-restart aborts are common, since all
-                # uncommitted in-flight transactions must abort on coordinator
-                # restart. Such aborts are likely to not go through in
-                # `DirectResolver` environments, due to the above race. Consider
-                # ways of avoiding this inefficiency.
                 channel = channel_manager.get_channel_to_state(
                     state_type,
                     state_ref,

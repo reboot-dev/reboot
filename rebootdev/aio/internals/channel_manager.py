@@ -46,6 +46,9 @@ class _ChannelManager:
 
         self._channels_by_address: dict[RoutableAddress, grpc.aio.Channel] = {}
 
+    def update_resolver(self, resolver: ActorResolver) -> None:
+        self._resolver = resolver
+
     def get_channel_to(self, address: RoutableAddress) -> grpc.aio.Channel:
         if (
             address not in self._channels_by_address or
