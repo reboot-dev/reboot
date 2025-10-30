@@ -43,6 +43,164 @@ export function check_bufbuild_protobuf_library(protobuf_es_message: any) {
   }
 }
 
+export const requestSchema = z.union([
+  z.instanceof(z.ZodObject),
+  z.record(z.string(), z.instanceof(z.ZodType)),
+]);
+
+export type Request = z.infer<typeof requestSchema>;
+
+export const responseSchema = z.union([
+  z.instanceof(z.ZodObject),
+  z.record(z.string(), z.instanceof(z.ZodType)),
+  z.instanceof(z.ZodVoid),
+]);
+
+export type Response = z.infer<typeof responseSchema>;
+
+export const errorsSchema = z.union([
+  z.tuple([z.instanceof(z.ZodObject)], z.instanceof(z.ZodObject)),
+  z.instanceof(z.ZodDiscriminatedUnion),
+]);
+
+export type Errors = z.infer<typeof errorsSchema>;
+
+export const constructibleMethodSchema = z.object({
+  kind: z.literal(["writer", "transaction"]),
+  factory: z.object({}).optional(),
+  request: requestSchema,
+  response: responseSchema,
+  errors: errorsSchema.optional(),
+});
+
+export const notConstructibleMethodSchema = z.object({
+  kind: z.literal(["reader", "workflow"]),
+  request: requestSchema,
+  response: responseSchema,
+  errors: errorsSchema.optional(),
+});
+
+export const methodsSchema = z.record(
+  z.string(),
+  z.discriminatedUnion("kind", [
+    constructibleMethodSchema,
+    notConstructibleMethodSchema,
+  ])
+);
+
+export type Methods = z.infer<typeof methodsSchema>;
+
+export type Reader = z.infer<typeof notConstructibleMethodSchema> & {
+  kind: "reader";
+};
+export type Writer = z.infer<typeof constructibleMethodSchema> & {
+  kind: "writer";
+};
+export type Transaction = z.infer<typeof constructibleMethodSchema> & {
+  kind: "transaction";
+};
+export type Workflow = z.infer<typeof notConstructibleMethodSchema> & {
+  kind: "workflow";
+};
+
+export function reader({
+  request,
+  response,
+  errors,
+}: {
+  request: Request;
+  response: Response;
+  errors?: Errors;
+}): Reader {
+  return {
+    kind: "reader" as const,
+    request,
+    response,
+    errors,
+  };
+}
+
+export function writer({
+  request,
+  response,
+  errors,
+  factory,
+}: {
+  request: Request;
+  response: Response;
+  errors?: Errors;
+  factory?: {};
+}): Writer {
+  return {
+    kind: "writer" as const,
+    request,
+    response,
+    errors,
+    factory,
+  };
+}
+
+export function transaction({
+  request,
+  response,
+  errors,
+  factory,
+}: {
+  request: Request;
+  response: Response;
+  errors?: Errors;
+  factory?: {};
+}): Transaction {
+  return {
+    kind: "transaction" as const,
+    request,
+    response,
+    errors,
+    factory,
+  };
+}
+
+export function workflow({
+  request,
+  response,
+  errors,
+}: {
+  request: Request;
+  response: Response;
+  errors?: Errors;
+}): Workflow {
+  return {
+    kind: "workflow" as const,
+    request,
+    response,
+    errors,
+  };
+}
+
+export const stateSchema = z.union([
+  z.instanceof(z.ZodObject),
+  z.record(z.string(), z.instanceof(z.ZodType)),
+]);
+
+export type State = z.infer<typeof stateSchema>;
+
+export const typeSchema = z.object({
+  state: stateSchema,
+  methods: methodsSchema,
+});
+
+export type Type = z.infer<typeof typeSchema>;
+
+export const apiSchema = z.record(
+  z.string(),
+  z.object({
+    state: stateSchema,
+    methods: methodsSchema,
+  })
+);
+
+export type API = z.infer<typeof apiSchema>;
+
 // We are using this helper function to raise an exception if the assertion
 // fails because console.assert does not do this and we can't use
 // `assert` from Node.js because it is not available in the browser.
