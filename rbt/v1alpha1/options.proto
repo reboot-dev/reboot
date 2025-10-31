@@ -116,6 +116,9 @@ message FileOptions {
   // Path to TypeScript schema that we want to be able to import in
   // our generated code.
   optional string zod = 1;
+  // Path to Python schema that we want to be able to import in
+  // our generated code.
+  optional string pydantic = 2;
 }
 
 extend google.protobuf.FileOptions {
