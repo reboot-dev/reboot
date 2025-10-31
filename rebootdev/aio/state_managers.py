@@ -5,6 +5,7 @@ import grpc
 import log.log
 import logging
 import sys
+import traceback
 import uuid
 from abc import ABC, abstractmethod
 from collections import defaultdict
@@ -17,7 +18,7 @@ from google.protobuf.message import Message
 from grpc.aio import AioRpcError
 from log.log import log_at_most_once_per
 from rbt.v1alpha1 import (
-    sidecar_pb2,
+    database_pb2,
     tasks_pb2,
     transactions_pb2,
     transactions_pb2_grpc,
@@ -62,12 +63,12 @@ from rebootdev.aio.types import (
     assert_type,
     state_type_tag_for_name,
 )
-from rebootdev.consensus.sidecar import (
+from rebootdev.server.database import (
     SORTED_MAP_ENTRY_TYPE_NAME,
     SORTED_MAP_TYPE_NAME,
-    SidecarClient,
-    SidecarServer,
-    SidecarServerFailed,
+    DatabaseClient,
+    DatabaseServer,
+    DatabaseServerFailed,
 )
 from rebootdev.time import DateTimeWithTimeZone
 from typing import (
@@ -191,7 +192,7 @@ class StateManager(ABC):
         @classmethod
         def from_sidecar(
             cls,
-            transaction: sidecar_pb2.Transaction,
+            transaction: database_pb2.Transaction,
             middleware: Middleware,
         ) -> StateManager.Transaction:
             return cls(
@@ -241,9 +242,8 @@ class StateManager(ABC):
             must_abort: bool = False,
             tasks: Optional[list[TaskEffect]] = None,
             idempotency_key: Optional[uuid.UUID] = None,
-            idempotent_mutations: Optional[dict[uuid.UUID,
-                                                sidecar_pb2.IdempotentMutation]
-                                          ] = None,
+            idempotent_mutations: Optional[dict[
+                uuid.UUID, database_pb2.IdempotentMutation]] = None,
         ) -> None:
             self._ids = transaction_ids
 
@@ -414,7 +414,7 @@ class StateManager(ABC):
     @abstractmethod
     async def export_items(
         self, state_type: StateTypeName
-    ) -> AsyncIterator[sidecar_pb2.ExportItem]:
+    ) -> AsyncIterator[database_pb2.ExportItem]:
         """Exports the committed state of all actors of the given type."""
         raise NotImplementedError
         yield  # Necessary for type checking.
@@ -424,7 +424,7 @@ class StateManager(ABC):
         self,
         state_type: StateTypeName,
         state_ref: StateRef,
-        task: sidecar_pb2.Task,
+        task: database_pb2.Task,
         middleware: Middleware,
     ) -> None:
         """Imports state for an actor, overwriting on collision."""
@@ -456,7 +456,7 @@ class StateManager(ABC):
         self,
         state_type: StateTypeName,
         state_ref: StateRef,
-        idempotent_mutation: sidecar_pb2.IdempotentMutation,
+        idempotent_mutation: database_pb2.IdempotentMutation,
     ) -> None:
         """Imports state for an actor, overwriting on collision."""
         raise NotImplementedError
@@ -603,7 +603,7 @@ class StateManager(ABC):
     def check_for_idempotent_mutation(
         self,
         context: WriterContext | WorkflowContext | TransactionContext,
-    ) -> Optional[sidecar_pb2.IdempotentMutation]:
+    ) -> Optional[database_pb2.IdempotentMutation]:
         """Helper for code generated writers and transactions that returns the
         serialized response if the mutation has been performed or None
         if the mutation has not been performed.
@@ -614,7 +614,7 @@ class StateManager(ABC):
     async def load_task_response(
         self,
         task_id: tasks_pb2.TaskId,
-    ) -> Optional[tuple[tasks_pb2.TaskResponseOrError, sidecar_pb2.Task]]:
+    ) -> Optional[tuple[tasks_pb2.TaskResponseOrError, database_pb2.Task]]:
         """Loads the response for the given task. Returns None if the task is
         not yet complete. Throws if the task ID is not recognized.
         """
@@ -765,10 +765,12 @@ class SidecarStateManager(
     def __init__(
         self,
         *,
-        sidecar_address: str,
+        database_address: str,
         serviceables: list[Serviceable],
+        shards: list[database_pb2.ShardInfo],
     ) -> None:
-        self._sidecar_client = SidecarClient(sidecar_address)
+        self._database_client = DatabaseClient(database_address)
+        self._shards = shards
 
         self._state_type_by_state_tag: dict[str, StateTypeName] = {}
 
@@ -861,7 +863,7 @@ class SidecarStateManager(
 
         # Idempotent mutations keyed by the idempotency key.
         self._idempotent_mutations: dict[uuid.UUID,
-                                         sidecar_pb2.IdempotentMutation] = {}
+                                         database_pb2.IdempotentMutation] = {}
 
     async def shutdown(self) -> None:
         """Shuts down this state manager, which includes cancellation of
@@ -883,6 +885,10 @@ class SidecarStateManager(
             except asyncio.CancelledError:
                 pass
 
+    async def shutdown_and_wait(self):
+        await self.shutdown()
+        await self.wait()
+
     async def actors(
         self,
         state_type: StateTypeName,
@@ -897,7 +903,7 @@ class SidecarStateManager(
                 # Make a call to the sidecar to get the list of actors
                 # of the given type. This avoids us having to have a
                 # full list of all actor IDs in memory.
-                yield await self._sidecar_client.find(
+                yield await self._database_client.find(
                     state_type,
                     # TODO(rjh): returning all actors IDs is not very
                     #            scalable. Instead, we should take
@@ -906,6 +912,7 @@ class SidecarStateManager(
                     #            they want the limit to be.
                     start_id="",
                     limit=2**32 - 1,  # Max for proto `uint32`.
+                    shard_ids=[shard.shard_id for shard in self._shards],
                 )
 
                 await event.wait()
@@ -922,20 +929,21 @@ class SidecarStateManager(
 
     async def export_items(
         self, state_type: StateTypeName
-    ) -> AsyncIterator[sidecar_pb2.ExportItem]:
-        async for item in self._sidecar_client.export(state_type):
+    ) -> AsyncIterator[database_pb2.ExportItem]:
+        shard_ids = [shard.shard_id for shard in self._shards]
+        async for item in self._database_client.export(state_type, shard_ids):
             yield item
 
     async def import_task(
         self,
         state_type: StateTypeName,
         state_ref: StateRef,
-        task: sidecar_pb2.Task,
+        task: database_pb2.Task,
         middleware: Middleware,
     ) -> None:
         async with self._mutator_locks[state_type][state_ref]:
             pending_task_effect = (
-                None if task.status == sidecar_pb2.Task.Status.COMPLETED else
+                None if task.status == database_pb2.Task.Status.COMPLETED else
                 self._get_task_effect_from_sidecar_task(middleware, task)
             )
             if pending_task_effect is not None:
@@ -1012,7 +1020,7 @@ class SidecarStateManager(
         self,
         state_type: StateTypeName,
         state_ref: StateRef,
-        idempotent_mutation: sidecar_pb2.IdempotentMutation,
+        idempotent_mutation: database_pb2.IdempotentMutation,
     ) -> None:
         async with self._mutator_locks[state_type][state_ref]:
             await self._store(
@@ -1168,7 +1176,7 @@ class SidecarStateManager(
                     ):
                         data: Optional[
                             bytes
-                        ] = await self._sidecar_client.load_actor_state(
+                        ] = await self._database_client.load_actor_state(
                             state_type_name, state_ref
                         )
                     if data is not None:
@@ -1324,9 +1332,9 @@ class SidecarStateManager(
         state_ref: StateRef,
         effects: Optional[Effects] = None,
         transaction: Optional[StateManager.Transaction] = None,
-        task: Optional[sidecar_pb2.Task] = None,
+        task: Optional[database_pb2.Task] = None,
         idempotency_key: Optional[uuid.UUID] = None,
-        idempotent_mutation: Optional[sidecar_pb2.IdempotentMutation] = None,
+        idempotent_mutation: Optional[database_pb2.IdempotentMutation] = None,
         constructor: bool = False,
         sync: bool = True,
     ) -> None:
@@ -1334,9 +1342,9 @@ class SidecarStateManager(
 
         Code should use writer(), not _store() directly.
         """
-        task_upserts: list[sidecar_pb2.Task] = []
-        actor_upserts: list[sidecar_pb2.Actor] = []
-        colocated_upserts: list[sidecar_pb2.ColocatedUpsert] = []
+        task_upserts: list[database_pb2.Task] = []
+        actor_upserts: list[database_pb2.Actor] = []
+        colocated_upserts: list[database_pb2.ColocatedUpsert] = []
         ensure_state_types_created: list[StateTypeName] = []
 
         # NOTE: to be safe, we create a copy of state in case a
@@ -1359,7 +1367,7 @@ class SidecarStateManager(
                 state_copy.CopyFrom(effects.state)
 
                 actor_upserts.append(
-                    sidecar_pb2.Actor(
+                    database_pb2.Actor(
                         state_type=state_type,
                         state_ref=state_ref.to_str(),
                         state=state_copy.SerializeToString(),
@@ -1383,7 +1391,7 @@ class SidecarStateManager(
                         f"please use the {SORTED_MAP_TYPE_NAME} builtin type."
                     )
                 colocated_upserts.extend(
-                    sidecar_pb2.ColocatedUpsert(
+                    database_pb2.ColocatedUpsert(
                         state_type=SORTED_MAP_ENTRY_TYPE_NAME,
                         key=state_ref.colocate(
                             SORTED_MAP_ENTRY_TYPE_NAME, StateId(key)
@@ -1411,7 +1419,7 @@ class SidecarStateManager(
 
             response = effects.response
 
-            idempotent_mutation = sidecar_pb2.IdempotentMutation(
+            idempotent_mutation = database_pb2.IdempotentMutation(
                 state_type=state_type,
                 state_ref=state_ref.to_str(),
                 key=idempotency_key.bytes,
@@ -1446,12 +1454,12 @@ class SidecarStateManager(
 
         # NOTE: we _must_ store the data in the sidecar _before_
         # updating in memory state in case the store fails.
-        await self._sidecar_client.store(
+        await self._database_client.store(
             actor_upserts,
             task_upserts,
             colocated_upserts,
             ensure_state_types_created,
-            sidecar_pb2.Transaction(
+            database_pb2.Transaction(
                 state_type=state_type,
                 state_ref=state_ref.to_str(),
                 transaction_ids=[
@@ -2160,10 +2168,10 @@ class SidecarStateManager(
             await self._store(
                 state_type=state_type,
                 state_ref=state_ref,
-                task=sidecar_pb2.Task(
+                task=database_pb2.Task(
                     task_id=task_effect.task_id,
                     method=task_effect.method_name,
-                    status=sidecar_pb2.Task.Status.COMPLETED,
+                    status=database_pb2.Task.Status.COMPLETED,
                     request=task_effect.request.SerializeToString(),
                     response=task_response,
                     error=task_error,
@@ -2454,8 +2462,10 @@ class SidecarStateManager(
             # TODO(benh): if all of the participants were able to
             # prepare successfully consider retrying the sidecar call
             # more than once!
-            await self._sidecar_client.transaction_coordinator_prepared(
-                transaction.root_id, context.participants
+            await self._database_client.transaction_coordinator_prepared(
+                transaction_id=transaction.root_id,
+                transaction_coordinator_state_ref=state_ref,
+                participants=context.participants
             )
 
             participants = self._coordinator_participants[transaction.root_id]
@@ -2512,6 +2522,7 @@ class SidecarStateManager(
                     channel_manager=context.channel_manager,
                     transaction_id=transaction.root_id,
                     participants=context.participants,
+                    coordinator_state_ref=state_ref,
                 ),
                 name=
                 f'self._transaction_coordinator_commit_control_loop(...) in {__name__}',
@@ -2530,7 +2541,7 @@ class SidecarStateManager(
     def check_for_idempotent_mutation(
         self,
         context: WriterContext | WorkflowContext | TransactionContext,
-    ) -> Optional[sidecar_pb2.IdempotentMutation]:
+    ) -> Optional[database_pb2.IdempotentMutation]:
         """Override of StateManager.check_for_idempotent_mutation(...)
         for SidecarStateManager.
         """
@@ -2593,11 +2604,11 @@ class SidecarStateManager(
     async def load_task_response(
         self,
         task_id: tasks_pb2.TaskId,
-    ) -> Optional[tuple[tasks_pb2.TaskResponseOrError, sidecar_pb2.Task]]:
+    ) -> Optional[tuple[tasks_pb2.TaskResponseOrError, database_pb2.Task]]:
         """Loads the response for the given task. Returns None if the task is
         not yet complete. Throws if the task ID is not recognized.
         """
-        return await self._sidecar_client.load_task_response(task_id)
+        return await self._database_client.load_task_response(task_id)
 
     async def read(
         self,
@@ -2799,7 +2810,7 @@ class SidecarStateManager(
         while not transaction.finished():
             try:
                 # Getting a channel to the coordinator may fail, for example
-                # because this consensus is still (re)starting and hasn't
+                # because this server is still (re)starting and hasn't
                 # (re)learnt the location of the coordinator yet. That's OK;
                 # we'll retry later.
                 channel = channel_manager.get_channel_to_state(
@@ -2854,7 +2865,7 @@ class SidecarStateManager(
         transaction_id = uuid.UUID(bytes=request.transaction_id)
 
         # If we don't know about the transaction than treat is as
-        # aborted. This is possible, e.g., after a consensus where a
+        # aborted. This is possible, e.g., after a server where a
         # coordinator was running gets restarted before finishing a
         # transaction and thus all participants that are trying to
         # watch need to find out that the transaction should be
@@ -2930,7 +2941,7 @@ class SidecarStateManager(
             # store the state in memory and pass the updated state and
             # tasks to the sidecar here.
 
-            await self._sidecar_client.transaction_participant_prepare(
+            await self._database_client.transaction_participant_prepare(
                 state_type, state_ref
             )
 
@@ -3048,7 +3059,7 @@ class SidecarStateManager(
         async with transaction.lock:
             if not transaction.finished():
                 # TODO(benh): add test case for sidecar failure!
-                await self._sidecar_client.transaction_participant_commit(
+                await self._database_client.transaction_participant_commit(
                     state_type, state_ref
                 )
 
@@ -3063,93 +3074,115 @@ class SidecarStateManager(
                 # After this comment nothing can be retried again so
                 # it SHOULD NOT RAISE.
 
-                queues = self._streaming_readers[state_type].get(state_ref)
+                try:
+                    queues = self._streaming_readers[state_type].get(state_ref)
 
-                state_was_cached = state_ref in self._states[state_type]
-                if transaction.state is not None:
-                    self._states[state_type][state_ref] = transaction.state
-                else:
-                    # This can occur during the recovery process, when the
-                    # transaction is already prepared. In that case, we expect
-                    # `transaction.state` to be `None` and we also expect that
-                    # there will not be any state stored in `self._states`. Once
-                    # the transaction gets committed then a subsequent reader
-                    # or writer will retrieve the committed state from disk
-                    # storage which will properly store it in `self._states`.
-                    #
-                    # Additionally, during recover we do not expect to have any
-                    # active streaming readers so `queues` should be `None`.
-                    assert queues is None
-                    assert self._states[state_type].get(state_ref) is None
+                    state_was_cached = state_ref in self._states[state_type]
+                    if transaction.state is not None:
+                        self._states[state_type][state_ref] = transaction.state
+                    else:
+                        # This can occur during the recovery process, when the
+                        # transaction is already prepared. In that case, we expect
+                        # `transaction.state` to be `None` and we also expect that
+                        # there will not be any state stored in `self._states`. Once
+                        # the transaction gets committed then a subsequent reader
+                        # or writer will retrieve the committed state from disk
+                        # storage which will properly store it in `self._states`.
+                        #
+                        # Additionally, during recover we do not expect to have any
+                        # active streaming readers so `queues` should be `None`.
+                        assert queues is None
+                        assert self._states[state_type].get(state_ref) is None
 
-                if queues is not None:
-                    for queue in queues:
-                        # NOTE: we defer making a reader specific copy
-                        # of this state until the reader actually
-                        # reads it to reduce memory usage.
-                        queue.put_nowait(
-                            (
-                                transaction.state,
-                                transaction.idempotency_key,
+                    if queues is not None:
+                        for queue in queues:
+                            # NOTE: we defer making a reader specific copy
+                            # of this state until the reader actually
+                            # reads it to reduce memory usage.
+                            queue.put_nowait(
+                                (
+                                    transaction.state,
+                                    transaction.idempotency_key,
+                                )
                             )
+
+                    # NOTE: while dispatching tasks is idempotent and can
+                    # be "retried" if necessary, the tasks should not run
+                    # until after the state has been updated since they
+                    # may rely on that state!
+                    if len(transaction.tasks) > 0:
+                        transaction.tasks_dispatcher.dispatch(
+                            transaction.tasks
                         )
 
-                # NOTE: while dispatching tasks is idempotent and can
-                # be "retried" if necessary, the tasks should not run
-                # until after the state has been updated since they
-                # may rely on that state!
-                if len(transaction.tasks) > 0:
-                    transaction.tasks_dispatcher.dispatch(transaction.tasks)
+                    if not state_was_cached:
+                        # We MAY have just added this actor as a new state.
+                        # Notify anybody watching for a change in the
+                        # existant actors.
+                        #
+                        # Note that it's OK to only consider this
+                        # participant's state ref. If there's another
+                        # participant that was added in this transaction,
+                        # its state manager will perform the notification.
+                        for event in self._actors_list_maybe_changed_events:
+                            event.set()
 
-                if not state_was_cached:
-                    # We MAY have just added this actor as a new state.
-                    # Notify anybody watching for a change in the
-                    # existant actors.
+                    # Add all idempotent mutations that occurred within
+                    # this transaction.
                     #
-                    # Note that it's OK to only consider this
-                    # participant's state ref. If there's another
-                    # participant that was added in this transaction,
-                    # its state manager will perform the notification.
-                    for event in self._actors_list_maybe_changed_events:
-                        event.set()
+                    # TODO(benh): once the transaction is committed the
+                    # idempotency keys used for mutations within the
+                    # transaction are really only useful for detecting when
+                    # a user has incorrectly reused an idempotency key. We
+                    # don't do any of those checks now, and in the future
+                    # we might explicitly decide _not_ to store
+                    # idempotency keys within a transaction to improve
+                    # performance (or possibly make it configurable so
+                    # users can tradeoff performance for better error
+                    # detection of their own code).
+                    self._idempotent_mutations.update(
+                        transaction.idempotent_mutations
+                    )
 
-                # Add all idempotent mutations that occurred within
-                # this transaction.
-                #
-                # TODO(benh): once the transaction is committed the
-                # idempotency keys used for mutations within the
-                # transaction are really only useful for detecting when
-                # a user has incorrectly reused an idempotency key. We
-                # don't do any of those checks now, and in the future
-                # we might explicitly decide _not_ to store
-                # idempotency keys within a transaction to improve
-                # performance (or possibly make it configurable so
-                # users can tradeoff performance for better error
-                # detection of their own code).
-                self._idempotent_mutations.update(
-                    transaction.idempotent_mutations
-                )
+                    transaction.commit()
 
-                transaction.commit()
+                    _ = self._participant_transactions[state_type].pop(
+                        state_ref
+                    )
 
-                _ = self._participant_transactions[state_type].pop(state_ref)
+                    semaphore = self._participant_transactions_semaphore[
+                        state_type][state_ref]
 
-                semaphore = self._participant_transactions_semaphore[
-                    state_type][state_ref]
+                    semaphore.release()
 
-                semaphore.release()
+                    if not semaphore.locked():
+                        del self._participant_transactions_semaphore[
+                            state_type][state_ref]
+                        if len(
+                            self.
+                            _participant_transactions_semaphore[state_type]
+                        ) == 0:
+                            del self._participant_transactions_semaphore[
+                                state_type]
 
-                if not semaphore.locked():
-                    del self._participant_transactions_semaphore[state_type][
-                        state_ref]
-                    if len(
-                        self._participant_transactions_semaphore[state_type]
-                    ) == 0:
-                        del self._participant_transactions_semaphore[state_type
-                                                                    ]
-
-                assert self._mutator_locks[state_type][state_ref].locked()
-                self._mutator_locks[state_type][state_ref].release()
+                    assert self._mutator_locks[state_type][state_ref].locked()
+                    self._mutator_locks[state_type][state_ref].release()
+                except BaseException as e:
+                    print(
+                        "##### WOW! YOU'VE FOUND A BUG IN REBOOT! #####\n"
+                        "Please report this to the maintainers:\n"
+                        "  https://github.com/reboot-dev/reboot/issues/new?template=bug_report.md\n"
+                        "Include the following error message:\n"
+                        "  Raised exception in critical exception-intolerant "
+                        "  Commit section:\n"
+                        f"    {type(e)}: '{e}'\n"
+                        "  Stack trace follows.\n"
+                        "\n"
+                        f"{traceback.format_exc()}"
+                        "##############################################",
+                        file=sys.stderr,
+                    )
+                    raise e
 
     async def transaction_participant_abort(
         self, transaction: StateManager.Transaction
@@ -3168,7 +3201,7 @@ class SidecarStateManager(
                 # persisted anything.
                 if transaction.stored:
                     # TODO(benh): add test case for sidecar failure!
-                    await self._sidecar_client.transaction_participant_abort(
+                    await self._database_client.transaction_participant_abort(
                         state_type, state_ref
                     )
 
@@ -3183,31 +3216,51 @@ class SidecarStateManager(
                 # After this comment nothing can be retried again so
                 # it SHOULD NOT RAISE.
 
-                # Need to abort all streaming readers that are part of
-                # this transaction!
-                for queue in transaction.streaming_readers:
-                    queue.put_nowait(None)
+                try:
+                    # Need to abort all streaming readers that are part of
+                    # this transaction!
+                    for queue in transaction.streaming_readers:
+                        queue.put_nowait(None)
 
-                transaction.abort()
+                    transaction.abort()
 
-                _ = self._participant_transactions[state_type].pop(state_ref)
+                    _ = self._participant_transactions[state_type].pop(
+                        state_ref
+                    )
 
-                semaphore = self._participant_transactions_semaphore[
-                    state_type][state_ref]
+                    semaphore = self._participant_transactions_semaphore[
+                        state_type][state_ref]
 
-                semaphore.release()
+                    semaphore.release()
 
-                if not semaphore.locked():
-                    del self._participant_transactions_semaphore[state_type][
-                        state_ref]
-                    if len(
-                        self._participant_transactions_semaphore[state_type]
-                    ) == 0:
-                        del self._participant_transactions_semaphore[state_type
-                                                                    ]
+                    if not semaphore.locked():
+                        del self._participant_transactions_semaphore[
+                            state_type][state_ref]
+                        if len(
+                            self.
+                            _participant_transactions_semaphore[state_type]
+                        ) == 0:
+                            del self._participant_transactions_semaphore[
+                                state_type]
 
-                assert self._mutator_locks[state_type][state_ref].locked()
-                self._mutator_locks[state_type][state_ref].release()
+                    assert self._mutator_locks[state_type][state_ref].locked()
+                    self._mutator_locks[state_type][state_ref].release()
+                except BaseException as e:
+                    print(
+                        "##### WOW! YOU'VE FOUND A BUG IN REBOOT! #####\n"
+                        "Please report this to the maintainers:\n"
+                        "  https://github.com/reboot-dev/reboot/issues/new?template=bug_report.md\n"
+                        "Include the following error message:\n"
+                        "  Raised exception in critical exception-intolerant "
+                        "  Abort section:\n"
+                        f"    {type(e)}: '{e}'\n"
+                        "  Stack trace follows.\n"
+                        "\n"
+                        f"{traceback.format_exc()}"
+                        "##############################################",
+                        file=sys.stderr,
+                    )
+                    raise e
 
     async def _colocated_omnidirectional_range(
         self,
@@ -3218,7 +3271,7 @@ class SidecarStateManager(
         limit: int,
         reverse: bool,
     ) -> list[tuple[str, bytes]]:
-        transaction = None if context.transaction_ids is None else sidecar_pb2.Transaction(
+        transaction = None if context.transaction_ids is None else database_pb2.Transaction(
             state_type=context.state_type_name,
             state_ref=context._state_ref.to_str(),
             transaction_ids=[
@@ -3247,7 +3300,7 @@ class SidecarStateManager(
         )
 
         if reverse:
-            page = await self._sidecar_client.colocated_reverse_range(
+            page = await self._database_client.colocated_reverse_range(
                 parent_state_ref=parent_state_ref,
                 start=start_ref,
                 end=end_ref,
@@ -3255,7 +3308,7 @@ class SidecarStateManager(
                 transaction=transaction,
             )
         else:
-            page = await self._sidecar_client.colocated_range(
+            page = await self._database_client.colocated_range(
                 parent_state_ref=parent_state_ref,
                 start=start_ref,
                 end=end_ref,
@@ -3319,11 +3372,12 @@ class SidecarStateManager(
         middleware_by_state_type_name: dict[StateTypeName, Middleware],
     ) -> None:
         """Attempt to recover server state after a potential restart."""
-        recover_response = await self._sidecar_client.recover(
+        recover_response = await self._database_client.recover(
             {
                 state_type: state_type_tag_for_name(state_type)
                 for state_type in middleware_by_state_type_name.keys()
-            }
+            },
+            shard_ids=[shard.shard_id for shard in self._shards],
         )
 
         # Need to declare this up here as it is used in multiple scopes.
@@ -3395,11 +3449,16 @@ class SidecarStateManager(
                 name=f'self._transaction_participant_watch(...) in {__name__}',
             )
 
-        for (transaction_id, participants) in [
-            (uuid.UUID(transaction_id), participants)
-            for (transaction_id, participants
-                ) in recover_response.prepared_coordinator_transactions.items()
+        for (transaction_id, coordinator) in [
+            (uuid.UUID(transaction_id), coordinator)
+            for (transaction_id, coordinator
+                ) in recover_response.prepared_transaction_coordinators.items()
         ]:
+            participants = coordinator.participants
+            coordinator_state_ref = StateRef(
+                coordinator.state_ref
+            ) if coordinator.state_ref else None
+
             self._coordinator_participants[transaction_id] = asyncio.Future()
             self._coordinator_participants[transaction_id].set_result(
                 participants
@@ -3413,6 +3472,7 @@ class SidecarStateManager(
                     channel_manager=channel_manager,
                     transaction_id=transaction_id,
                     participants=Participants.from_sidecar(participants),
+                    coordinator_state_ref=coordinator_state_ref,
                 ),
                 name=
                 f'self._transaction_coordinator_commit_control_loop(...) in {__name__}',
@@ -3426,7 +3486,7 @@ class SidecarStateManager(
     def _get_task_effect_from_sidecar_task(
         self,
         middleware: Middleware,
-        task: sidecar_pb2.Task,
+        task: database_pb2.Task,
     ) -> TaskEffect:
         if task.method not in middleware.request_type_by_method_name:
             # TODO(#1443): Clean up this error handling once we have
@@ -3455,6 +3515,7 @@ class SidecarStateManager(
         channel_manager: _ChannelManager,
         transaction_id: uuid.UUID,
         participants: Participants,
+        coordinator_state_ref: Optional[StateRef],
     ) -> None:
         backoff = Backoff()
         is_retry = False
@@ -3492,8 +3553,9 @@ class SidecarStateManager(
                 # recover, but participants will acknowledge the transaction
                 # as already completed, and allow us to exit the loop the
                 # second time.
-                await self._sidecar_client.transaction_coordinator_cleanup(
-                    transaction_id
+                await self._database_client.transaction_coordinator_cleanup(
+                    transaction_id=transaction_id,
+                    coordinator_state_ref=coordinator_state_ref,
                 )
 
                 break
@@ -3540,21 +3602,21 @@ class SidecarStateManager(
 
 class LocalSidecarStateManager(SidecarStateManager):
     """Implementation of state manager that also encapsulates a
-    'SidecarServer' for local use.
+    'DatabaseServer' for local use.
     """
 
     def __init__(
         self,
         directory: str,
-        shards: list[sidecar_pb2.ShardInfo],
+        shards: list[database_pb2.ShardInfo],
         serviceables: list[Serviceable],
     ):
         try:
-            self._sidecar = SidecarServer(
+            self._sidecar = DatabaseServer(
                 directory,
-                sidecar_pb2.ConsensusInfo(shard_infos=shards),
+                database_pb2.ServerInfo(shard_infos=shards),
             )
-        except SidecarServerFailed as e:
+        except DatabaseServerFailed as e:
             if (
                 'Failed to instantiate service' in str(e) and
                 '/LOCK:' in str(e)
@@ -3571,8 +3633,9 @@ class LocalSidecarStateManager(SidecarStateManager):
         # Now call our super constructor with the sidecar address and the
         # serviceables list.
         super().__init__(
-            sidecar_address=self._sidecar.address,
+            database_address=self._sidecar.address,
             serviceables=serviceables,
+            shards=shards,
         )
 
     async def shutdown_and_wait(self):
@@ -3581,19 +3644,10 @@ class LocalSidecarStateManager(SidecarStateManager):
         must be fully shut down (including `wait`ing for it) before it's safe to
         shut down the sidecar.
         """
-        # First stop the state manager that's using the sidecar server.
-        await super().shutdown()
-        # Wait for the state manager to be fully shut down, so that we're sure
-        # nobody needs the sidecar server anymore.
-        await super().wait()
+        # Stop the state manager that's using the sidecar server, then
+        # wait for it to be fully shut down, so that we're sure nobody
+        # needs the sidecar server anymore.
+        await super().shutdown_and_wait()
 
-        # Now shut down the sidecar server. These methods are synchronous C++,
-        # so the blocking `wait()` must be called through `run_in_executor` to
-        # not block the event loop.
-        self._sidecar.shutdown()
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            # Use the default executor.
-            executor=None,
-            func=self._sidecar.wait,
-        )
+        # Now it's safe to shut down the sidecar server.
+        await self._sidecar.shutdown_and_wait()

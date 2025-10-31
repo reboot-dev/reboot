@@ -2,7 +2,7 @@ import asyncio
 from collections import OrderedDict
 from google.protobuf.message import Message
 from google.protobuf.timestamp_pb2 import Timestamp
-from rbt.v1alpha1 import sidecar_pb2, tasks_pb2
+from rbt.v1alpha1 import database_pb2, tasks_pb2
 from rebootdev.time import DateTimeWithTimeZone
 from typing import Iterable, Optional
 from uuid import UUID
@@ -227,7 +227,7 @@ class TasksCache:
         task_id: tasks_pb2.TaskId,
         response: bytes,
         timestamp: Timestamp,
-        status: sidecar_pb2.Task.Status.ValueType,
+        status: database_pb2.Task.Status.ValueType,
         method: str,
         iteration: int = 0,
     ) -> None:
@@ -235,7 +235,7 @@ class TasksCache:
 
         # When we have a response for a task, we know that the task
         # must have completed.
-        assert status == sidecar_pb2.Task.Status.COMPLETED
+        assert status == database_pb2.Task.Status.COMPLETED
 
         uuid = task_id.task_uuid
         if uuid not in self._cache:

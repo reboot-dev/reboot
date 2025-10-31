@@ -10,9 +10,8 @@ from rebootdev.aio.aborted import is_grpc_retryable_exception
 from rebootdev.aio.backoff import Backoff
 from rebootdev.aio.types import (
     ApplicationId,
-    ConsensusId,
-    PartitionId,
     RoutableAddress,
+    ServerId,
     ServiceName,
     ShardId,
     StateRef,
@@ -48,20 +47,20 @@ class PlacementClient(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def consensus_for_shard(self, shard_id: ShardId) -> ConsensusId:
+    def server_for_shard(self, shard_id: ShardId) -> ServerId:
         """
-        Given a shard ID, return the consensus ID that is authoritative for this
+        Given a shard ID, return the server ID that is authoritative for this
         shard. Note that the returned information may be stale.
         """
         raise NotImplementedError()
 
     @abstractmethod
-    def address_for_consensus(
+    def address_for_server(
         self,
-        consensus_id: ConsensusId,
+        server_id: ServerId,
     ) -> RoutableAddress:
         """
-        Given a consensus ID, return the routable address of the consensus.
+        Given a server ID, return the routable address of the server.
         """
         raise NotImplementedError()
 
@@ -100,12 +99,12 @@ class PlacementClient(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def known_consensuses(
+    def known_servers(
         self,
         application_id: ApplicationId,
-    ) -> list[ConsensusId]:
+    ) -> list[ServerId]:
         """
-        Return a list of all known consensus IDs for the given application.
+        Return a list of all known server IDs for the given application.
         """
         raise NotImplementedError()
 
@@ -126,20 +125,20 @@ class PlacementClient(ABC):
         """
         await self._changed.wait()
 
-    def consensus_for_actor(
+    def server_for_actor(
         self,
         application_id: ApplicationId,
         state_ref: StateRef,
-    ) -> ConsensusId:
+    ) -> ServerId:
         """
-        Return the consensus ID that is authoritative for the given actor. Note
+        Return the server ID that is authoritative for the given actor. Note
         that the returned information may be stale.
 
         Raises `UnknownApplicationError` if the `application_id` is not known.
         """
         assert isinstance(state_ref, StateRef)
         shard_id = self.shard_for_actor(application_id, state_ref)
-        return self.consensus_for_shard(shard_id)
+        return self.server_for_shard(shard_id)
 
     def address_for_actor(
         self,
@@ -147,21 +146,13 @@ class PlacementClient(ABC):
         state_ref: StateRef,
     ) -> RoutableAddress:
         """
-        Returns the routable address of the consensus that is authoritative for
+        Returns the routable address of the server that is authoritative for
         the given actor. Note that the returned information may be stale.
 
         Raises `UnknownApplicationError` if the `application_id` is not known.
         """
-        consensus_id = self.consensus_for_actor(application_id, state_ref)
-        return self.address_for_consensus(consensus_id)
-
-    def partition_for_consensus(
-        self,
-        consensus_id: ConsensusId,
-    ) -> PartitionId:
-        # For now, every consensus has its own partition, and partition IDs are
-        # the same as the consensus ID.
-        return consensus_id
+        server_id = self.server_for_actor(application_id, state_ref)
+        return self.address_for_server(server_id)
 
     async def start(self):
         pass
@@ -170,7 +161,7 @@ class PlacementClient(ABC):
         pass
 
     # TODO: so far all of these methods are read-only, but in the future we'll
-    #       add methods that allow consensuses to provide feedback on their
+    #       add methods that allow servers to provide feedback on their
     #       current state - for example about which shards are currently loaded,
     #       which are being handed off, where future ideal split points could
     #       be, and so forth.
@@ -181,14 +172,14 @@ class StaticPlacementClient(PlacementClient):
     """
     A placement client that always answers the same for all queries.
 
-    Useful (for example) in settings where there is only ever one consensus, and
+    Useful (for example) in settings where there is only ever one server, and
     we don't want to place load on the controller by learning about this one
-    consensus by making RPCs, like in the (current) Reboot Cloud.
+    server by making RPCs, like in the (current) Reboot Cloud.
     """
     SHARD_ID: ClassVar[ShardId] = "myself"
 
     application_id: ApplicationId
-    consensus_id: ConsensusId
+    server_id: ServerId
     address: str
 
     def shard_for_actor(
@@ -199,13 +190,11 @@ class StaticPlacementClient(PlacementClient):
         assert application_id == self.application_id
         return self.SHARD_ID
 
-    def consensus_for_shard(self, shard_id: ShardId) -> ConsensusId:
-        return self.consensus_id
+    def server_for_shard(self, shard_id: ShardId) -> ServerId:
+        return self.server_id
 
-    def address_for_consensus(
-        self, consensus_id: ConsensusId
-    ) -> RoutableAddress:
-        assert consensus_id == self.consensus_id
+    def address_for_server(self, server_id: ServerId) -> RoutableAddress:
+        assert server_id == self.server_id
         return self.address
 
     def known_application_ids(self) -> Iterable[ApplicationId]:
@@ -221,14 +210,14 @@ class StaticPlacementClient(PlacementClient):
     ) -> list[StateTypeName]:
         return []
 
-    def known_consensuses(
+    def known_servers(
         self,
         application_id: ApplicationId,
-    ) -> list[ConsensusId]:
-        return [self.consensus_id]
+    ) -> list[ServerId]:
+        return [self.server_id]
 
 
-# TODO: Unify with `consensuses.Shard`.
+# TODO: Unify with `servers.Shard`.
 @dataclass
 class ShardMapEntry:
     shard_id: ShardId
@@ -253,8 +242,8 @@ class PlanOnlyPlacementClient(PlacementClient):
         # entry's `first_key`.
         self._shard_list_by_application: dict[ApplicationId,
                                               list[ShardMapEntry]] = {}
-        self._consensus_by_shard: dict[ShardId, ConsensusId] = {}
-        self._address_by_consensus: dict[ConsensusId, RoutableAddress] = {}
+        self._server_by_shard: dict[ShardId, ServerId] = {}
+        self._address_by_server: dict[ServerId, RoutableAddress] = {}
         self._services_by_application: dict[ApplicationId,
                                             list[ServiceName]] = {}
         self._state_types_by_application: dict[ApplicationId,
@@ -288,14 +277,14 @@ class PlanOnlyPlacementClient(PlacementClient):
             f"'{state_ref_hash.hex()}'."
         )
 
-    def consensus_for_shard(self, shard_id: ShardId) -> ConsensusId:
-        return self._consensus_by_shard[shard_id]
+    def server_for_shard(self, shard_id: ShardId) -> ServerId:
+        return self._server_by_shard[shard_id]
 
-    def address_for_consensus(
+    def address_for_server(
         self,
-        consensus_id: ConsensusId,
+        server_id: ServerId,
     ) -> RoutableAddress:
-        return self._address_by_consensus[consensus_id]
+        return self._address_by_server[server_id]
 
     def known_application_ids(self) -> Iterable[ApplicationId]:
         return self._services_by_application.keys()
@@ -320,11 +309,11 @@ class PlanOnlyPlacementClient(PlacementClient):
             raise UnknownApplicationError(application_id)
         return list(known_state_types)
 
-    def known_consensuses(
+    def known_servers(
         self,
         application_id: ApplicationId,
-    ) -> list[ConsensusId]:
-        return list(self._address_by_consensus.keys())
+    ) -> list[ServerId]:
+        return list(self._address_by_server.keys())
 
     async def wait_for_version(self, version: int):
         while self._version < version:
@@ -375,14 +364,14 @@ class PlanOnlyPlacementClient(PlacementClient):
     async def _handle_plan(
         self,
         plan: placement_planner_pb2.Plan,
-        consensuses: Iterable[placement_planner_pb2.Consensus],
+        servers: Iterable[placement_planner_pb2.Server],
     ):
         # We won't `await` anything in the code below, therefore we'll never
         # yield the event loop to anyone else, so replacing the following state
         # variables will be perceived as atomic.
         self._shard_list_by_application = {}
-        self._consensus_by_shard = {}
-        self._address_by_consensus = {}
+        self._server_by_shard = {}
+        self._address_by_server = {}
         self._services_by_application = {}
         self._state_types_by_application = {}
         for application in plan.applications:
@@ -400,7 +389,7 @@ class PlanOnlyPlacementClient(PlacementClient):
                         first_key=shard.range.first_key,
                     )
                 )
-                self._consensus_by_shard[shard.id] = shard.consensus_id
+                self._server_by_shard[shard.id] = shard.server_id
             self._shard_list_by_application[application.id] = new_shard_list
 
             self._services_by_application[application.id] = [
@@ -411,10 +400,9 @@ class PlanOnlyPlacementClient(PlacementClient):
                 for service in application.services
             )
 
-        for consensus in consensuses:
-            self._address_by_consensus[
-                consensus.id
-            ] = f"{consensus.address.host}:{consensus.address.port}"
+        for server in servers:
+            self._address_by_server[
+                server.id] = f"{server.address.host}:{server.address.port}"
 
         self._version = plan.version
         self._mark_changed()
@@ -436,7 +424,7 @@ class PlanOnlyPlacementClient(PlacementClient):
                 try:
                     async for response in stub.ListenForPlan(request):
                         await self._handle_plan(
-                            response.plan, response.consensuses
+                            response.plan, response.servers
                         )
                 except asyncio.CancelledError:
                     # That's normal course of business, we're shutting down.
@@ -495,4 +483,4 @@ class PlanOnlyPlacementClient(PlacementClient):
 
 # TODO: implement a `ControlledPlacementClient` that handles transitions between
 #       plans gracefully, by listening to an intermediate control plane that
-#       coordinates handoffs of shards between consensuses, and so forth.
+#       coordinates handoffs of shards between servers, and so forth.

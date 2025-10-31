@@ -3,16 +3,16 @@ load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 load("@rules_python//python:defs.bzl", "py_library")
 
 cc_library(
-    name = "sidecar_cc",
-    srcs = ["sidecar.cc"],
-    hdrs = ["sidecar.h"],
+    name = "database_cc",
+    srcs = ["database.cc"],
+    hdrs = ["database.h"],
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_3rdparty_stout//:stout",
         "@com_github_facebook_rocksdb//:rocksdb",
         "@com_github_fmtlib_fmt//:fmt",
         "@com_github_google_glog//:glog",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:sidecar_cc_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_cc_grpc",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_cc_proto",
         "@com_github_reboot_dev_reboot//rebootdev:settings_cc",
         "@com_github_tl_expected//:expected",
@@ -20,19 +20,30 @@ cc_library(
 )
 
 cc_binary(
-    name = "sidecar_native",
-    srcs = ["sidecar_native.cc"],
+    name = "database_native",
+    srcs = ["database_native.cc"],
     linkshared = True,
+    visibility = ["//visibility:public"],
     deps = [
-        ":sidecar_cc",
+        ":database_cc",
+    ],
+)
+
+# An executable (not `linkshared`) version of the target above.
+cc_binary(
+    name = "database",
+    srcs = ["database_native.cc"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":database_cc",
     ],
 )
 
 py_library(
-    name = "sidecar_py",
-    srcs = ["sidecar.py"],
+    name = "database_py",
+    srcs = ["database.py"],
     data = [
-        ":sidecar_native",
+        ":database_native",
     ],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
@@ -40,8 +51,8 @@ py_library(
         requirement("cffi"),
         requirement("grpcio"),
         requirement("protobuf"),
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:sidecar_py_grpc",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:sidecar_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
         "@com_github_reboot_dev_reboot//rebootdev:settings_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio:contexts_py",

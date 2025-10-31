@@ -17,7 +17,6 @@ import {
   useMemo,
   useState,
 } from "react";
-import { unstable_batchedUpdates } from "react-dom";
 import { v4 as uuidv4 } from "uuid";
 {% if proto.messages_and_enums|length > 0 or states|length > 0 %}
 // NOTE NOTE NOTE
@@ -58,6 +57,8 @@ export {
 } from "./{{ pb_name }}{% if react_extensions %}.js{% endif %}";
 {% endif %}
 {% endif %}
+
+reboot_api.check_bufbuild_protobuf_library(protobuf_es.Message);
 
 {% for client in clients %}
 {% for service in client.services %}
@@ -629,7 +630,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
           if (this.refs > 0) {
             if (this.runningMutates.length > 0) {
               console.warn(
-                `WebSocket disconnected, ${this.runningMutates.length} outstanding mutations will be retried when we reconnect`
+                `[Reboot] WebSocket disconnected, ${this.runningMutates.length} outstanding mutations will be retried when we reconnect`
               );
             }
 
@@ -792,11 +793,9 @@ class {{ client.proto.state_name | to_camel }}Instance {
             await this.flushMutations();
           }
 
-          unstable_batchedUpdates(() => {
-            for (const setIsLoading of Object.values(reader.setIsLoadings)) {
-              setIsLoading(true);
-            }
-          });
+          for (const setIsLoading of Object.values(reader.setIsLoadings)) {
+            setIsLoading(true);
+          }
 
           const queryResponses = reboot_web.reactiveReader({
             endpoint: `${this.url}/__/reboot/rpc/${this.stateRef}`,
@@ -812,11 +811,9 @@ class {{ client.proto.state_name | to_camel }}Instance {
               loaded = true;
             }
 
-            unstable_batchedUpdates(() => {
-              for (const setIsLoading of Object.values(reader.setIsLoadings)) {
-                setIsLoading(false);
-              }
-            });
+            for (const setIsLoading of Object.values(reader.setIsLoadings)) {
+              setIsLoading(false);
+            }
 
             const response = queryResponse.responseOrStatus.case === "response"
               ? responseType.fromBinary(queryResponse.responseOrStatus.value)
@@ -880,12 +877,10 @@ class {{ client.proto.state_name | to_camel }}Instance {
 	          // pass on the response because it might contain new data that should get shown to the
 	          // user (e.g., in a chat app this could be a new chat message from a different user).
             else if (response !== undefined && !haveOrphans) {
-              unstable_batchedUpdates(() => {
-                reader.response = response;
-                for (const setResponse of Object.values(reader.setResponses)) {
-                  setResponse(response);
-                }
-              });
+              reader.response = response;
+              for (const setResponse of Object.values(reader.setResponses)) {
+                setResponse(response);
+              }
             }
           }
 
@@ -906,25 +901,23 @@ class {{ client.proto.state_name | to_camel }}Instance {
             return;
           }
 
-          unstable_batchedUpdates(() => {
-            for (const setIsLoading of Object.values(reader.setIsLoadings)) {
-              setIsLoading(false);
+          for (const setIsLoading of Object.values(reader.setIsLoadings)) {
+            setIsLoading(false);
+          }
+          for (const setStatus of Object.values(reader.setStatuses)) {
+            if (e instanceof reboot_api.Status) {
+              setStatus(e);
+            } else {
+              setStatus(
+                new reboot_api.Status({
+                  code: reboot_api.StatusCode.UNKNOWN,
+                  message: e instanceof Error
+                    ? e.message
+                    : JSON.stringify(e),
+                })
+              );
             }
-            for (const setStatus of Object.values(reader.setStatuses)) {
-              if (e instanceof reboot_api.Status) {
-                setStatus(e);
-              } else {
-                setStatus(
-                  new reboot_api.Status({
-                    code: reboot_api.StatusCode.UNKNOWN,
-                    message: e instanceof Error
-                      ? e.message
-                      : JSON.stringify(e),
-                  })
-                );
-              }
-            }
-          });
+          }
 
           throw e; // This just retries!
         }
@@ -963,11 +956,9 @@ class {{ client.proto.state_name | to_camel }}Instance {
       callbacks = callbacks.concat(callback);
       remainingObservers -= 1;
       if (remainingObservers === 0) {
-        unstable_batchedUpdates(() => {
-          for (const callback of callbacks) {
-            callback();
-          }
-        });
+        for (const callback of callbacks) {
+          callback();
+        }
         event.set();
       }
       return event.wait();
@@ -985,11 +976,9 @@ class {{ client.proto.state_name | to_camel }}Instance {
 
     this.use{{ method.proto.name | to_camel }}Mutations = this.use{{ method.proto.name | to_camel }}Mutations.concat(mutation);
 
-    unstable_batchedUpdates(() => {
-      for (const setPending of Object.values(this.use{{ method.proto.name | to_camel }}SetPendings)) {
-        setPending(this.use{{ method.proto.name | to_camel }}Mutations);
-      }
-    });
+    for (const setPending of Object.values(this.use{{ method.proto.name | to_camel }}SetPendings)) {
+      setPending(this.use{{ method.proto.name | to_camel }}Mutations);
+    }
 
     return new Promise<
       reboot_web.ResponseOrAborted<
@@ -1020,11 +1009,9 @@ class {{ client.proto.state_name | to_camel }}Instance {
             }
 
             if (rerender) {
-              unstable_batchedUpdates(() => {
-                for (const setPending of Object.values(this.use{{ method.proto.name | to_camel }}SetPendings)) {
-                  setPending(this.use{{ method.proto.name | to_camel }}Mutations);
-                }
-              });
+              for (const setPending of Object.values(this.use{{ method.proto.name | to_camel }}SetPendings)) {
+                setPending(this.use{{ method.proto.name | to_camel }}Mutations);
+              }
             }
           }
         );
@@ -1033,11 +1020,9 @@ class {{ client.proto.state_name | to_camel }}Instance {
           this.use{{ method.proto.name | to_camel }}Mutations =
             this.use{{ method.proto.name | to_camel }}Mutations.filter(m => m !== mutation);
 
-          unstable_batchedUpdates(() => {
-            for (const setPending of Object.values(this.use{{ method.proto.name | to_camel }}SetPendings)) {
-              setPending(this.use{{ method.proto.name | to_camel }}Mutations);
-            }
-          });
+          for (const setPending of Object.values(this.use{{ method.proto.name | to_camel }}SetPendings)) {
+            setPending(this.use{{ method.proto.name | to_camel }}Mutations);
+          }
         }
 
 
@@ -1068,7 +1053,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
             const aborted = {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(status);
 
             console.warn(
-              `'{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' aborted with ${aborted.message}`
+              `[Reboot] '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' aborted with ${aborted.message}`
             );
 
             removeMutationsAndSetPending();
@@ -1328,17 +1313,15 @@ export const use{{ client.proto.state_name | to_camel }} = (
         request,
         bearerToken,
         (response: {{ method.output_type }}) => {
-          unstable_batchedUpdates(() => {
-            setAborted(undefined);
-            setResponse({{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(response));
-          });
+          setAborted(undefined);
+          setResponse({{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(response));
         },
         setIsLoading,
         (status: reboot_api.Status) => {
           const aborted = {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(status);
 
           console.warn(
-            `'{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' aborted with ${aborted.message}`
+            `[Reboot] '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' aborted with ${aborted.message}`
           );
 
           setAborted(aborted);
@@ -1399,11 +1382,11 @@ export const use{{ client.proto.state_name | to_camel }} = (
           } else if (e instanceof Error) {
             console.error(e);
           } else {
-            console.error(`Unknown error: ${JSON.stringify(e)}`);
+            console.error(`[Reboot] Unknown error: ${JSON.stringify(e)}`);
           }
         }
 
-        console.warn(`Retrying call to {{ proto.package_name }}.{{ service.proto.name }}.{{ method.proto.name }} after backoff ...`);
+        console.warn(`[Reboot] Retrying call to {{ proto.package_name }}.{{ service.proto.name }}.{{ method.proto.name }} after backoff ...`);
 
         await backoff.wait();
       }
@@ -1418,7 +1401,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
         const aborted = {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(status);
 
         console.warn(
-          `'{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' aborted with ${aborted.message}`
+          `[Reboot] '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' aborted with ${aborted.message}`
         );
 
         return { aborted };

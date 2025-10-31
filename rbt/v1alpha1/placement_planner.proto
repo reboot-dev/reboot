@@ -17,8 +17,8 @@ message ListenForPlanRequest {}
 message ListenForPlanResponse {
   Plan plan = 1;
   // TODO: drop the following field here. Instead, have a stand-alone service
-  //       that tracks consensuses (and other things, like shards).
-  repeated Consensus consensuses = 2;
+  //       that tracks servers (and other things, like shards).
+  repeated Server servers = 2;
 }
 
 message Plan {
@@ -42,7 +42,7 @@ message Plan {
     message Shard {
       string id = 1;
       KeyRange range = 2;
-      string consensus_id = 3;
+      string server_id = 3;
 
       message KeyRange {
         bytes first_key = 1;  // Inclusive.
@@ -54,17 +54,17 @@ message Plan {
   }
 }
 
-message Consensus {
-  // E.g. "c1234". Matches `ShardAssignment.consensus_id`.
+message Server {
+  // E.g. "c1234". Matches `ShardAssignment.server_id`.
   string id = 1;
 
   string application_id = 5;
   uint32 revision_number = 7;
 
-  // The routable address for this consensus.
+  // The routable address for this server.
   Address address = 2;
 
-  // The kubernetes namespace in which the consensus lives. Unused if not on
+  // The kubernetes namespace in which the server lives. Unused if not on
   // kubernetes.
   string namespace = 4;
 
@@ -75,6 +75,11 @@ message Consensus {
     int32 port = 2;
   }
 
-  // `FileDescriptorSet` for this consensus.
+  // `FileDescriptorSet` for this server.
   google.protobuf.FileDescriptorSet file_descriptor_set = 6;
+
+  // The version of Reboot running in this application. This is used
+  // by the controller to determine what features are supported by the
+  // application.
+  string reboot_version = 8;
 }

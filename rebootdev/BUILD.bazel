@@ -10,12 +10,24 @@ exports_files([
 ])
 
 py_library(
+    name = "api_py",
+    srcs = ["api.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("protobuf"),
+        requirement("pydantic"),
+    ],
+)
+
+py_library(
     name = "protobuf_py",
     srcs = ["protobuf.py"],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
         requirement("protobuf"),
+        requirement("pydantic"),
     ],
 )
 
@@ -28,7 +40,7 @@ py_library(
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
         "@com_github_reboot_dev_reboot//rebootdev/aio:servicers_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
-        "@com_github_reboot_dev_reboot//rebootdev/consensus:service_descriptor_validator_py",
+        "@com_github_reboot_dev_reboot//rebootdev/server:service_descriptor_validator_py",
         "@googleapis//google/api:annotations_py_proto",
         "@googleapis//google/rpc:error_details_py_proto",
         requirement("protobuf"),

@@ -131,7 +131,9 @@ class TasksDispatcher:
 
         # If stop has been requested we should not dispatch any new tasks.
         if self._stop_requested.is_set():
-            raise ValueError('Stop requested')
+            # Return, don't raise, since this method can be called from
+            # contexts where it isn't safe to raise.
+            return
 
         async def dispatch_retry_loop(
             task: TaskEffect,

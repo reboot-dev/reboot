@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from google.protobuf import json_format, struct_pb2
 from google.protobuf.message import Message
 from rebootdev.aio.types import StateTypeName
-from rebootdev.consensus.sidecar import SORTED_MAP_ENTRY_TYPE_NAME
+from rebootdev.server.database import SORTED_MAP_ENTRY_TYPE_NAME
 from typing import Iterable, TypeAlias
 
 StoredBytes: TypeAlias = bytes

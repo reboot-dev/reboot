@@ -51,6 +51,8 @@ export {
 
 import * as protobuf_es from "@bufbuild/protobuf";
 
+reboot_api.check_bufbuild_protobuf_library(protobuf_es.Message);
+
 {% if imports|length > 0%}
 // Include all transitive imports.
 {% for import_path, unique_name in imports.items() %}
