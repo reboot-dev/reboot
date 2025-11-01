@@ -68,7 +68,7 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:sidecar_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
         "@com_github_reboot_dev_reboot//rebootdev:time_py",
     ],

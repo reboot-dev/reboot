@@ -13,7 +13,7 @@ from datetime import timedelta
 from enum import Enum
 from google.protobuf.message import Message
 from logging import Logger
-from rbt.v1alpha1 import errors_pb2, react_pb2, react_pb2_grpc, sidecar_pb2
+from rbt.v1alpha1 import database_pb2, errors_pb2, react_pb2, react_pb2_grpc
 from rebootdev.aio.aborted import SystemAborted, is_grpc_retryable_exception
 from rebootdev.aio.auth import Auth
 from rebootdev.aio.backoff import Backoff
@@ -72,7 +72,7 @@ class Participants:
     _aborted: bool
 
     @classmethod
-    def from_sidecar(cls, participants: sidecar_pb2.Participants):
+    def from_sidecar(cls, participants: database_pb2.Participants):
         """Constructs an instance from the sidecar protobuf representation."""
         result = cls()
         for (state_type, state_refs) in participants.should_commit.items():
@@ -83,12 +83,12 @@ class Participants:
                 result.add(state_type, StateRef(state_ref), abort=True)
         return result
 
-    def to_sidecar(self) -> sidecar_pb2.Participants:
+    def to_sidecar(self) -> database_pb2.Participants:
         """Helper to construct the sidecar protobuf representation."""
-        return sidecar_pb2.Participants(
+        return database_pb2.Participants(
             should_commit={
                 state_type:
-                    sidecar_pb2.Participants.StateRefs(
+                    database_pb2.Participants.StateRefs(
                         state_refs=[
                             state_ref.to_str() for state_ref in state_refs
                         ]
@@ -97,7 +97,7 @@ class Participants:
             },
             should_abort={
                 state_type:
-                    sidecar_pb2.Participants.StateRefs(
+                    database_pb2.Participants.StateRefs(
                         state_refs=[
                             state_ref.to_str() for state_ref in state_refs
                         ]

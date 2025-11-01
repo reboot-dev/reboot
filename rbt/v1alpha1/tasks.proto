@@ -46,7 +46,7 @@ message TaskInfo {
   // that tasks that don't loop are still considered to complete one
   // iteration.
   uint64 iterations = 6;
-  // Number of runs that failed in a retry loop recently (since the consensus
+  // Number of runs that failed in a retry loop recently (since the server
   // most recently came up).
   uint64 num_runs_failed_recently = 7;
 }
@@ -71,9 +71,9 @@ message WaitResponse {
 ////////////////////////////////////////////////////////////////////////
 
 message ListTasksRequest {
-  // If set, only return pending tasks held by the given consensus ID. If not
-  // set (or left at default), return all pending tasks held by all consensuses.
-  optional string only_consensus_id = 1;
+  // If set, only return pending tasks held by the given server ID. If not
+  // set (or left at default), return all pending tasks held by all servers.
+  optional string only_server_id = 1;
 }
 
 message ListTasksResponse {

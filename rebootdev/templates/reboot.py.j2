@@ -87,14 +87,9 @@ from rebootdev.time import DateTimeWithTimeZone as IMPORT_reboot_time_DateTimeWi
 import rbt.v1alpha1 as IMPORT_rbt_v1alpha1
 import rbt.v1alpha1.nodejs_pb2 as IMPORT_rbt_v1alpha1_nodejs_pb2
 import google.protobuf.any_pb2 as IMPORT_google_protobuf_any_pb2
+import sys as IMPORT_sys
 
-{% if imports | length > 0 %}
-# User defined or referenced imports.
-{% for module in imports | sort %}
-import {{ module }}
-{% endfor %}
-{% endif %}
-{% if proto.messages_and_enums | length > 0 %}
+{% if not options.proto.pydantic and proto.messages_and_enums | length > 0 %}
 # Additionally re-export all messages and enums from the pb2 module.
 from {{ pb2_name }} import (
 {% for message in proto.messages_and_enums | unique | sort %}
@@ -103,7 +98,111 @@ from {{ pb2_name }} import (
 )
 {% endif %}
 
+{% if imports | length > 0 %}
+# User defined or referenced imports.
+{% for module in imports | sort %}
+import {{ module }}
+{% endfor %}
+{% endif %}
+
 logger = IMPORT_log_log.get_logger(__name__)
+
+# We won't validate Pydantic state models while they are under construction.
+states_being_constructed: set[str] = set()
+
+{% if options.proto.pydantic %}
+
+import pydantic as IMPORT_pydantic
+from {{ options.proto.pydantic }} import api as IMPORT_api
+import rebootdev.api as IMPORT_reboot_api
+{% endif %}
+
+{% for client in clients %}
+
+{% if client.state is not none %}
+def {{ client.proto.state_name }}ToProto(state: {{ client.proto.state_name }}.State, protobuf_state: {{ pb2_name }}.{{ client.proto.state_name }}):
+    {% if options.proto.pydantic %}
+    proto = IMPORT_reboot_api.pydantic_to_proto(
+        state,
+        IMPORT_pydantic.BaseModel,
+        {{ pb2_name }}.{{ client.proto.state_name }},
+    )
+    protobuf_state.CopyFrom(proto)
+    {% else %}
+    pass
+    {% endif %}
+
+def {{ client.proto.state_name }}FromProto(
+    state: {{ pb2_name }}.{{ client.proto.state_name }},
+    validate: bool = True,
+) -> {{ client.proto.state_name }}.State:
+    {% if options.proto.pydantic %}
+    return IMPORT_reboot_api.proto_to_pydantic(
+        state,
+        {{ client.proto.state_name }}.State,
+        validate,
+    )
+    {% else %}
+    return state
+    {% endif %}
+{% endif %}
+{% for service in client.services %}
+{% for method in service.methods %}
+def {{ client.proto.state_name }}{{ method.proto.name }}ResponseToProto(
+    response: {{ client.proto.state_name }}.{{ method.proto.name }}Response
+) -> {{ method.output_type }}:
+    {% if options.proto.pydantic %}
+    if response is not None:
+        return IMPORT_reboot_api.pydantic_to_proto(
+            response,
+            IMPORT_pydantic.BaseModel,
+            {{ method.output_type }}
+        )
+    return {{ method.output_type }}()
+    {% else %}
+    return response
+    {% endif %}
+
+def {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(
+    response: {{ method.output_type }}
+) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
+    {% if options.proto.pydantic %}
+    return IMPORT_reboot_api.proto_to_pydantic(
+        response,
+        {{ client.proto.state_name }}.{{ method.proto.name }}Response
+    )
+    {% else %}
+    return response
+    {% endif %}
+
+def {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(
+    request: {{ client.proto.state_name }}.{{ method.proto.name }}Request
+) -> {{ method.input_type }}:
+    {% if options.proto.pydantic %}
+    return IMPORT_reboot_api.pydantic_to_proto(
+        request,
+        IMPORT_pydantic.BaseModel,
+        {{ method.input_type }},
+    )
+    {% else %}
+    return request
+    {% endif %}
+
+def {{ client.proto.state_name }}{{ method.proto.name }}RequestFromProto(
+    request: {{ method.input_type }}
+) -> {{ client.proto.state_name }}.{{ method.proto.name }}Request:
+    {% if options.proto.pydantic %}
+    return IMPORT_reboot_api.proto_to_pydantic(
+        request,
+        {{ client.proto.state_name }}.{{ method.proto.name }}Request
+    )
+    {% else %}
+    return request
+    {% endif %}
+
+{% endfor %}
+{% endfor %}
+{% endfor %}
 
 ############################ Legacy gRPC Servicers ############################
 # This section is relevant (only) for servicers that implement a legacy gRPC
@@ -171,7 +270,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         *,
         servicer: {{ state.proto.name }}BaseServicer,
         application_id: IMPORT_reboot_aio_types.ApplicationId,
-        consensus_id: IMPORT_reboot_aio_types.ConsensusId,
+        server_id: IMPORT_reboot_aio_types.ServerId,
         state_manager: IMPORT_reboot_aio_state_managers.StateManager,
         placement_client: IMPORT_reboot_aio_placement.PlacementClient,
         channel_manager: IMPORT_reboot_aio_internals_channel_manager._ChannelManager,
@@ -183,7 +282,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
     ):
         super().__init__(
             application_id=application_id,
-            consensus_id=consensus_id,
+            server_id=server_id,
             state_type_name = IMPORT_reboot_aio_types.StateTypeName('{{ state.proto.full_name }}'),
             service_names = [
                 {% for service in state.services %}
@@ -305,12 +404,12 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         deserialized from the provided 'request_bytes' for each state
         update that creates a different response.
 
-        # The caller (react.py) should have already ensured that this consensus
+        # The caller (react.py) should have already ensured that this server
         # is authoritative for this traffic.
-        assert self.placement_client.consensus_for_actor(
+        assert self.placement_client.server_for_actor(
             headers.application_id,
             headers.state_ref,
-        ) == self._consensus_id
+        ) == self._server_id
 
         NOTE: only unary reader methods are supported."""
         {# NOTE: need to use 'namespace' so we can update it within the loop. #}
@@ -478,7 +577,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             call_backoff = IMPORT_reboot_aio_backoff.Backoff()
             while True:
                 # We make a full-fledged gRPC call, so that if this traffic
-                # was misrouted (i.e. this consensus is not authoritative
+                # was misrouted (i.e. this server is not authoritative
                 # for the state), it will now go to the right place. The
                 # receiving middleware will handle things like effect
                 # validation and so forth.
@@ -752,16 +851,27 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
     ) -> {{ state.proto.name }}.{{ method.proto.name }}Effects:
     {% endif %}
         try:
+            {% if method.options.proto.constructor %}
+            states_being_constructed.add(context.state_id)
+            {% endif %}
+            {% if not method.options.proto.state_streaming and not method.options.proto.kind == 'workflow' %}
+            typed_state: {{ state.proto.name }}.State = {{ state.proto.name }}FromProto(state, validate=(context.state_id not in states_being_constructed))
+            {% endif %}
             {% if not method.proto.server_streaming %}
             response = (
                 await self._servicer._{{ method.proto.name }}(
                     context=context,
                     {% if not method.options.proto.kind == 'workflow' %}
-                    state{% if method.options.proto.state_streaming %}s{% endif %}=state{% if method.options.proto.state_streaming %}s{% endif %},
+                    state{% if method.options.proto.state_streaming %}s{% endif %}={% if method.options.proto.state_streaming %}states{% else %}typed_state{% endif %},
                     {% endif %}
                     request{% if method.proto.client_streaming %}s{% endif %}=request{% if method.proto.client_streaming %}s{% endif +%}
                 )
             )
+
+            {% if not method.options.proto.state_streaming and not method.options.proto.kind == 'workflow' %}
+            {{ state.proto.name }}ToProto(typed_state, state)
+            {% endif %}
+
             IMPORT_reboot_aio_types.assert_type(
                 response,
                 [{{ method.output_type }}],
@@ -913,6 +1023,12 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 # information.
                 message=f"unhandled (in '{{ state.proto.full_name }}.{{ method.proto.name }}') {type(exception).__name__}: {exception}"
             )
+        finally:
+            {% if method.options.proto.constructor %}
+            states_being_constructed.remove(context.state_id)
+            {% else %}
+            pass
+            {% endif %}
 
     {% if method.options.proto.kind != 'workflow' %}
     {% if not method.proto.server_streaming %}
@@ -1207,18 +1323,18 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         headers = IMPORT_reboot_aio_headers.Headers.from_grpc_context(grpc_context)
         assert headers.application_id is not None  # Guaranteed by `Headers`.
 
-        # Confirm whether this is the right consensus to be serving this
+        # Confirm whether this is the right server to be serving this
         # request.
-        authoritative_consensus = self.placement_client.consensus_for_actor(
+        authoritative_server = self.placement_client.server_for_actor(
             headers.application_id,
             headers.state_ref,
         )
-        if authoritative_consensus != self.consensus_id:
-            # This is NOT the correct consensus. Fail.
+        if authoritative_server != self.server_id:
+            # This is NOT the correct server. Fail.
             await grpc_context.abort(
                 IMPORT_grpc.StatusCode.UNAVAILABLE,
-                f"Consensus '{self.consensus_id}' is not authoritative for this "
-                f"request; consensus '{authoritative_consensus}' is.",
+                f"Server '{self.server_id}' is not authoritative for this "
+                f"request; server '{authoritative_server}' is.",
             )
             raise  # Unreachable but necessary for mypy.
 
@@ -2103,7 +2219,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         self,
         *,
         application_id: IMPORT_reboot_aio_types.ApplicationId,
-        consensus_id: IMPORT_reboot_aio_types.ConsensusId,
+        server_id: IMPORT_reboot_aio_types.ServerId,
         state_manager: IMPORT_reboot_aio_state_managers.StateManager,
         placement_client: IMPORT_reboot_aio_placement.PlacementClient,
         channel_manager: IMPORT_reboot_aio_internals_channel_manager._ChannelManager,
@@ -2116,7 +2232,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         self._middleware = {{ state.proto.name }}ServicerMiddleware(
             servicer=self,
             application_id=application_id,
-            consensus_id=consensus_id,
+            server_id=server_id,
             state_manager=state_manager,
             placement_client=placement_client,
             channel_manager=channel_manager,
@@ -2669,9 +2785,9 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         self,
         context: IMPORT_reboot_aio_contexts.ReaderContext,
         {% if not method.options.proto.state_streaming %}
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        state: {{ state.proto.name }}.State,
         {% else %}
-        states: IMPORT_typing.AsyncIterable[{{ state.pb2_name }}.{{ state.proto.name }}],
+        states: IMPORT_typing.AsyncIterable[{{ state.proto.name }}.State],
         {% endif %}
         {% if not method.proto.client_streaming %}
         request: {{ method.input_type }},
@@ -2692,7 +2808,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
     async def _{{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.WriterContext,
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        state: {{ state.proto.name }}.State,
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
         raise NotImplementedError
@@ -2701,7 +2817,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
     async def _{{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        state: {{ state.proto.name }}.State,
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
         raise NotImplementedError
@@ -2739,9 +2855,9 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         self,
         context: IMPORT_reboot_aio_contexts.ReaderContext,
         {% if not method.options.proto.state_streaming %}
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        state: {{ state.proto.name }}.State,
         {% else %}
-        states: IMPORT_typing.AsyncIterable[{{ state.pb2_name }}.{{ state.proto.name }}],
+        states: IMPORT_typing.AsyncIterable[{{ state.proto.name }}.State],
         {% endif %}
         {% if not method.proto.client_streaming %}
         request: {{ method.input_type }},
@@ -2808,7 +2924,7 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     async def {{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.WriterContext,
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        state: {{ state.proto.name }}.State,
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
         # During the migration from 'PascalCase' to 'snake_case' method
@@ -2841,7 +2957,7 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     async def {{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        state: {{ state.proto.name }}.State,
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
         # During the migration from 'PascalCase' to 'snake_case' method
@@ -2909,9 +3025,9 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         self,
         context: IMPORT_reboot_aio_contexts.ReaderContext,
         {% if not method.options.proto.state_streaming %}
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        state: {{ state.proto.name }}.State,
         {% else %}
-        states: IMPORT_typing.AsyncIterable[{{ state.pb2_name }}.{{ state.proto.name }}],
+        states: IMPORT_typing.AsyncIterable[{{ state.proto.name }}.State],
         {% endif %}
         {% if not method.proto.client_streaming %}
         request: {{ method.input_type }},
@@ -2931,15 +3047,20 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
                 level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 python_specific=True,
         ):
+            {% if method.proto.client_streaming %}
+            typed_requests = requests
+            {% else %}
+            typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
+            {% endif %}
             response{% if method.proto.server_streaming %}s{% endif %} = (
                 self.{{ method.proto.name }}(
                     context,
                     state{% if method.options.proto.state_streaming %}s{% endif %},
-                    request{% if method.proto.client_streaming %}s{% endif %},
+                    typed_request{% if method.proto.client_streaming %}s{% endif %},
                 )
             )
             {% if not method.proto.server_streaming %}
-            return await response
+            return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(await response)
             {% else %}
             async for response in responses:
                 yield response
@@ -2948,7 +3069,7 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     async def _{{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.WriterContext,
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        state: {{ state.proto.name }}.State,
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
         # Wrap the call to the developer's method in a `span` so that it
@@ -2959,13 +3080,14 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
                 level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 python_specific=True,
         ):
-            return await self.{{ method.proto.name }}(context, state, request)
+            typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
+            return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(await self.{{ method.proto.name }}(context, state, typed_request))
 
     {% elif method.options.proto.kind == 'transaction' %}
     async def _{{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        state: {{ state.proto.name }}.State,
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
         # Wrap the call to the developer's method in a `span` so that it
@@ -2976,7 +3098,8 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
                 level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 python_specific=True,
         ):
-            return await self.{{ method.proto.name }}(context, state, request)
+            typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
+            return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(await self.{{ method.proto.name }}(context, state, typed_request))
 
     {% elif method.options.proto.kind == 'workflow' %}
     async def _{{ method.proto.name }}(
@@ -2992,7 +3115,8 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
                 level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 python_specific=True,
         ):
-            return await self.{{ method.proto.name }}(context, request)
+            typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
+            return await self.{{ method.proto.name }}(context, typed_request)
 
     {% endif %}
 
@@ -3003,7 +3127,7 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
 class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
 
     _state: IMPORT_contextvars.ContextVar[
-        IMPORT_typing.Optional[{{ state.pb2_name }}.{{ state.proto.name }}]
+        IMPORT_typing.Optional[{{ state.proto.name }}.State]
     ] = IMPORT_contextvars.ContextVar(
         'Provides access to state for each call, i.e., there may be '
         'multiple readers executing concurrently but each might have '
@@ -3029,7 +3153,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         return instance
 
     @property
-    def state(self) -> {{ state.pb2_name }}.{{ state.proto.name }}:
+    def state(self) -> {{ state.proto.name }}.State:
         state = {{ state.proto.name }}Servicer._state.get()
         if state is None:
             raise RuntimeError(
@@ -3045,7 +3169,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         return state
 
     @state.setter
-    def state(self, new_state: {{ state.pb2_name }}.{{ state.proto.name }}):
+    def state(self, new_state: {{ state.proto.name }}.State):
         state = {{ state.proto.name }}Servicer._state.get()
         if state is None:
             raise RuntimeError(
@@ -3058,7 +3182,12 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
                 "`workflow ` is not _atomic_; use "
                 "`await self.ref().write(...)` instead"
             )
+        {% if options.proto.pydantic %}
+        for field_name, field_value in new_state.model_dump().items():
+            setattr(state, field_name, field_value)
+        {% else %}
         state.CopyFrom(new_state)
+        {% endif %}
 
     {% for service in state.services %}
     {% for method in service.methods %}
@@ -3078,8 +3207,8 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         {% elif method.options.proto.kind == 'workflow' %}
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
         {% endif %}
-        request: {{ method.input_type }},
-    ) -> {{ method.output_type }}:
+        request: {{ state.proto.name }}.{{ method.proto.name }}Request,
+    ) -> {{ state.proto.name }}.{{ method.proto.name }}Response:
         # During the migration from 'PascalCase' to 'snake_case' method
         # naming in Python servicers, we call the 'snake_case' version
         # by default, so new names will do the correct thing making the
@@ -3105,8 +3234,8 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         {% elif method.options.proto.kind == 'workflow' %}
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
         {% endif %}
-        request: {{ method.input_type }},
-    ) -> {{ method.output_type }}:
+        request: {{ state.proto.name }}.{{ method.proto.name }}Request,
+    ) -> {{ state.proto.name }}.{{ method.proto.name }}Response:
         raise NotImplementedError
 
     {% endfor %}
@@ -3120,9 +3249,9 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         self,
         context: IMPORT_reboot_aio_contexts.ReaderContext,
         {% if not method.options.proto.state_streaming %}
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        state: {{ state.proto.name }}.State,
         {% else %}
-        states: IMPORT_typing.AsyncIterable[{{ state.pb2_name }}.{{ state.proto.name }}],
+        states: IMPORT_typing.AsyncIterable[{{ state.proto.name }}.State],
         {% endif %}
         {% if not method.proto.client_streaming %}
         request: {{ method.input_type }},
@@ -3166,7 +3295,8 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                     python_specific=True,
             ):
-                return await instance.{{ method.proto.name }}(context, request)
+                typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
+                return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(await instance.{{ method.proto.name }}(context, typed_request))
         finally:
             {{ state.proto.name }}Servicer._state.set(None)
         {% endif %}
@@ -3174,7 +3304,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
     async def _{{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.WriterContext,
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        state: {{ state.proto.name }}.State,
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
         # We should have an asyncio task and thus context per request,
@@ -3192,14 +3322,15 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                     python_specific=True,
             ):
-                return await instance.{{ method.proto.name }}(context, request)
+                typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
+                return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(await instance.{{ method.proto.name }}(context, typed_request))
         finally:
             {{ state.proto.name }}Servicer._state.set(None)
     {% elif method.options.proto.kind == 'transaction' %}
     async def _{{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        state: {{ state.proto.name }}.State,
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
         # We should have an asyncio task and thus context per request,
@@ -3217,7 +3348,8 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                     python_specific=True,
             ):
-                return await instance.{{ method.proto.name }}(context, request)
+                typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
+                return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(await instance.{{ method.proto.name }}(context, typed_request))
         finally:
             {{ state.proto.name }}Servicer._state.set(None)
     {% elif method.options.proto.kind == 'workflow' %}
@@ -3237,7 +3369,8 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                     python_specific=True,
             ):
-                return await instance.{{ method.proto.name }}(context, request)
+                typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
+                return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(await instance.{{ method.proto.name }}(context, typed_request))
         finally:
             {{ state.proto.name }}Servicer._workflow.set(False)
     {% endif %}
@@ -3289,8 +3422,18 @@ class {{ client.proto.state_name }}:
 
     Authorizer: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Authorizer
 
-    State: IMPORT_typing.TypeAlias = {{ pb2_name }}.{{ client.proto.state_name }}
+    State: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_api.{{ client.proto.state_name }}.state{% else %}{{ pb2_name }}.{{ client.proto.state_name }}{% endif %}
     {% endif %}
+
+    {% for service in client.services %}
+    {% for method in service.methods %}
+
+    {{ method.proto.name }}Request: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}'].request{% else %}{{ method.input_type }}{% endif %}
+
+    {{ method.proto.name }}Response: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}'].response{% else %}{{ method.output_type }}{% endif %}
+
+    {% endfor %}
+    {% endfor %}
 
     __state_type_name__ = IMPORT_reboot_aio_types.StateTypeName("{{ client.proto.state_full_name }}")
 
@@ -3335,7 +3478,7 @@ class {{ client.proto.state_name }}:
         def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
             return self._task_id
 
-        def __await__(self) -> IMPORT_typing.Generator[None, None, {{ method.output_type }}]:
+        def __await__(self) -> IMPORT_typing.Generator[None, None, {{ client.proto.state_name }}.{{ method.proto.name }}Response]:
             """Awaits for task to finish and returns its response."""
             async def wait_for_task() -> {{ method.output_type }}:
                 channel = self._channel_manager.get_channel_to_state(
@@ -3398,7 +3541,7 @@ class {{ client.proto.state_name }}:
                         raise IMPORT_asyncio.CancelledError("Task was cancelled by a TasksServicer")
                     else:
                         response_or_error.Unpack(response)
-                        return response
+                        return {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(response)
 
             return wait_for_task().__await__()
 
@@ -4673,13 +4816,15 @@ class {{ client.proto.state_name }}:
                 error_message_supplement=error_message_supplement(),
             )
 
-            return await (
-                await __this__.spawn().{{ method.proto.name }}(
-                    __context__,
-                    __options__,
-                    {% for name in method.input_type_fields %}
-                    {{ name }}={{ name }},
-                    {% endfor %}
+            return {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(
+                await (
+                    await __this__.spawn().{{ method.proto.name }}(
+                        __context__,
+                        __options__,
+                        {% for name in method.input_type_fields %}
+                        {{ name }}={{ name }},
+                        {% endfor %}
+                    )
                 )
             )
 
@@ -4778,11 +4923,13 @@ class {{ client.proto.state_name }}:
                 if __options__.bearer_token is not None:
                     __bearer_token__ = __options__.bearer_token
             {% if not method.proto.server_streaming %}
-            return await __this__._reader(__context__).{{ method.proto.name }}(
-                __request{% if method.proto.client_streaming %}s__{% else %}__{% endif %},
-                metadata=__metadata__,
-                bearer_token=__bearer_token__,
-                idempotency=__options__.idempotency if __options__ is not None else None,
+            return {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(
+                await __this__._reader(__context__).{{ method.proto.name }}(
+                    __request{% if method.proto.client_streaming %}s__{% else %}__{% endif %},
+                    metadata=__metadata__,
+                    bearer_token=__bearer_token__,
+                    idempotency=__options__.idempotency if __options__ is not None else None,
+                )
             )
             {% else %}
             __call__ = __this__._reader(__context__).{{ method.proto.name }}(
@@ -4876,18 +5023,22 @@ class {{ client.proto.state_name }}:
                     __bearer_token__ = __options__.bearer_token
 
             {% if method.options.proto.kind == 'writer' %}
-            return await __this__._writer(__context__).{{ method.proto.name }}(
-                __request__,
-                idempotency=__idempotency__,
-                metadata=__metadata__,
-                bearer_token=__bearer_token__,
+            return {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(
+                await __this__._writer(__context__).{{ method.proto.name }}(
+                    __request__,
+                    idempotency=__idempotency__,
+                    metadata=__metadata__,
+                    bearer_token=__bearer_token__,
+                )
             )
             {% elif method.options.proto.kind == 'transaction' %}
-            return await __this__._workflow(__context__).{{ method.proto.name }}(
-                __request__,
-                idempotency=__idempotency__,
-                metadata=__metadata__,
-                bearer_token=__bearer_token__,
+            return {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(
+                await __this__._workflow(__context__).{{ method.proto.name }}(
+                    __request__,
+                    idempotency=__idempotency__,
+                    metadata=__metadata__,
+                    bearer_token=__bearer_token__,
+                )
             )
             {% endif %}
 
@@ -5086,11 +5237,13 @@ class {{ client.proto.state_name }}:
         {% endif %}
         return (
             __reference__,
-            await __stub__.{{ method.proto.name }}(
-                __request__,
-                idempotency=__idempotency__,
-                metadata=__metadata__,
-                bearer_token=__bearer_token__,
+            {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(
+                await __stub__.{{ method.proto.name }}(
+                    __request__,
+                    idempotency=__idempotency__,
+                    metadata=__metadata__,
+                    bearer_token=__bearer_token__,
+                )
             )
         )
 

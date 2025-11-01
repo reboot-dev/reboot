@@ -12,9 +12,7 @@ from rbt.v1alpha1 import errors_pb2
 from rebootdev.aio.exceptions import InputError
 from rebootdev.aio.servicers import Routable
 from rebootdev.aio.types import ServiceName
-from rebootdev.consensus.service_descriptor_validator import (
-    ProtoValidationError,
-)
+from rebootdev.server.service_descriptor_validator import ProtoValidationError
 # TODO: Generated code. See https://github.com/reboot-dev/mono/issues/1698
 from typing import Optional, TypeVar
 

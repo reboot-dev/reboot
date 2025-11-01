@@ -2,10 +2,10 @@ import os
 from contextlib import asynccontextmanager
 from enum import Enum
 from rebootdev.settings import (
-    ENVVAR_NODEJS_CONSENSUS,
+    ENVVAR_NODEJS_SERVER,
     ENVVAR_RBT_DEV,
-    ENVVAR_RBT_PARTITIONS,
     ENVVAR_RBT_SERVE,
+    ENVVAR_RBT_SERVERS,
     ENVVAR_REBOOT_CLOUD_VERSION,
     ENVVAR_REBOOT_NODEJS,
 )
@@ -42,14 +42,14 @@ def detect_run_environment() -> RunEnvironment:
     raise InvalidRunEnvironment()
 
 
-def within_nodejs_consensus():
-    """Internal helper to determine if we're within a Node.js _consensus_.
+def within_nodejs_server():
+    """Internal helper to determine if we're within a Node.js _server_.
 
     NOTE: THIS DOESN'T TELL US IF WE'RE RUNNING FROM WITHIN
-    NODE.JS, JUST IF WE'RE IN A NODE.JS CONSENSUS!
+    NODE.JS, JUST IF WE'RE IN A NODE.JS SERVER!
 
     """
-    return os.environ.get(ENVVAR_NODEJS_CONSENSUS, 'false').lower() == 'true'
+    return os.environ.get(ENVVAR_NODEJS_SERVER, 'false').lower() == 'true'
 
 
 def on_cloud() -> bool:
@@ -90,9 +90,9 @@ async def fake_rbt_dev_environment():
     """Temporarily sets the run environment to resemble a valid `rbt dev`"""
 
     previous_rbt_dev_value = os.environ.get(ENVVAR_RBT_DEV)
-    previous_rbt_partitions_value = os.environ.get(ENVVAR_RBT_PARTITIONS)
+    previous_rbt_servers_value = os.environ.get(ENVVAR_RBT_SERVERS)
     os.environ[ENVVAR_RBT_DEV] = 'true'
-    os.environ[ENVVAR_RBT_PARTITIONS] = '1'
+    os.environ[ENVVAR_RBT_SERVERS] = '1'
 
     try:
         yield
@@ -105,4 +105,4 @@ async def fake_rbt_dev_environment():
                 os.environ[envvar_name] = previous_value
 
         reset(ENVVAR_RBT_DEV, previous_rbt_dev_value)
-        reset(ENVVAR_RBT_PARTITIONS, previous_rbt_partitions_value)
+        reset(ENVVAR_RBT_SERVERS, previous_rbt_servers_value)

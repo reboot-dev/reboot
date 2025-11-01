@@ -76,7 +76,7 @@ def force_flush(*args, **kwargs):
     # Before shutting down this process we must force-flush the
     # providers, to make sure all spans are recorded. If there are
     # unflushed traces this may take a moment, but without it
-    # short-lived processes (e.g. consensuses in unit tests) would never
+    # short-lived processes (e.g. servers in unit tests) would never
     # get to flush their traces.
     global _providers
     for provider in _providers.values():
@@ -92,7 +92,7 @@ def force_flush_and_shutdown(*args, **kwargs):
     # Before shutting down this process we must force-flush the
     # providers, to make sure all spans are recorded. If there are
     # unflushed traces this may take a moment, but without it
-    # short-lived processes (e.g. consensuses in unit tests) would never
+    # short-lived processes (e.g. servers in unit tests) would never
     # get to flush their traces.
     force_flush(*args, **kwargs)
     global _providers
@@ -150,7 +150,7 @@ def _start(process_name: str):
     for provider in _providers.values():
         provider.add_span_processor(_processor)
 
-    # Consensuses while being shut down (e.g. at the end of tests)
+    # Servers while being shut down (e.g. at the end of tests)
     # should flush their traces.
     install_cleanup([signal.SIGTERM], force_flush_and_shutdown)
 
@@ -160,9 +160,7 @@ def _start(process_name: str):
 _start_once = Once(_start)
 
 
-def start(
-    process_name: Optional[str] = None, consensus_id: Optional[str] = None
-):
+def start(process_name: Optional[str] = None, server_id: Optional[str] = None):
     if process_name is None:
         # TODO(rjh): make sure all paths in the Cloud set this
         #            environment variable (not just customer containers
@@ -173,12 +171,12 @@ def start(
         #            `assert`.
         process_name = os.environ.get(ENVVAR_RBT_NAME, "Reboot Application")
 
-    if consensus_id is not None:
-        # Consensus IDs have an application ID prefix; that's redundant
+    if server_id is not None:
+        # Server IDs have an application ID prefix; that's redundant
         # with the (nicer) application name we already have, so strip
         # it.
-        consensus_id = consensus_id.split("-", 1)[-1]
-        process_name = f"{process_name} (consensus {consensus_id})"
+        server_id = server_id.split("-", 1)[-1]
+        process_name = f"{process_name} (server {server_id})"
 
     _start_once(process_name)
 

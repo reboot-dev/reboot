@@ -6,13 +6,13 @@ import "google/protobuf/struct.proto";
 
 ////////////////////////////////////////////////////////////////////////
 
-message ListConsensusesRequest {}
-message ListConsensusesResponse {
-  repeated string consensus_ids = 1;
+message ListServersRequest {}
+message ListServersResponse {
+  repeated string server_ids = 1;
 }
 
 message ExportRequest {
-  string consensus_id = 1;
+  string server_id = 1;
 }
 
 message ExportImportItem {
@@ -31,8 +31,8 @@ message ImportResponse {}
 ////////////////////////////////////////////////////////////////////////
 
 service ExportImport {
-  rpc ListConsensuses(ListConsensusesRequest)
-      returns (ListConsensusesResponse);
+  rpc ListServers(ListServersRequest)
+      returns (ListServersResponse);
   rpc Export(ExportRequest) returns (stream ExportImportItem);
   rpc Import(stream ExportImportItem) returns (ImportResponse);
 }
