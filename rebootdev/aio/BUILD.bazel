@@ -96,6 +96,7 @@ py_library(
     deps = [
         ":contexts_py",
         ":once_py",
+        ":placement_py",
         ":servicers_py",
         ":tasks_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",

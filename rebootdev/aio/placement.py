@@ -18,7 +18,7 @@ from rebootdev.aio.types import (
     StateTypeName,
 )
 from rebootdev.grpc.options import make_retry_channel_options
-from typing import ClassVar, Iterable, Optional
+from typing import Iterable, Optional
 
 logger = get_logger(__name__)
 
@@ -176,11 +176,11 @@ class StaticPlacementClient(PlacementClient):
     we don't want to place load on the controller by learning about this one
     server by making RPCs, like in the (current) Reboot Cloud.
     """
-    SHARD_ID: ClassVar[ShardId] = "myself"
 
     application_id: ApplicationId
     server_id: ServerId
     address: str
+    shard_id: ShardId
 
     def shard_for_actor(
         self,
@@ -188,7 +188,7 @@ class StaticPlacementClient(PlacementClient):
         state_ref: StateRef,
     ) -> ShardId:
         assert application_id == self.application_id
-        return self.SHARD_ID
+        return self.shard_id
 
     def server_for_shard(self, shard_id: ShardId) -> ServerId:
         return self.server_id

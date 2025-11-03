@@ -52,6 +52,7 @@ from rebootdev.aio.internals.tasks_dispatcher import (
     TasksDispatcher,
 )
 from rebootdev.aio.once import AsyncOnce
+from rebootdev.aio.placement import PlacementClient
 from rebootdev.aio.servicers import RebootServiceable, Serviceable
 from rebootdev.aio.tasks import TaskEffect
 from rebootdev.aio.tracing import asynccontextmanager_span, function_span, span
@@ -768,9 +769,13 @@ class SidecarStateManager(
         database_address: str,
         serviceables: list[Serviceable],
         shards: list[database_pb2.ShardInfo],
+        placement_client: PlacementClient,
+        application_id: ApplicationId,
     ) -> None:
         self._database_client = DatabaseClient(database_address)
         self._shards = shards
+        self._placement_client = placement_client
+        self._application_id = application_id
 
         self._state_type_by_state_tag: dict[str, StateTypeName] = {}
 
@@ -1780,7 +1785,9 @@ class SidecarStateManager(
             if transaction.watch_task is None and not transaction.finished():
                 transaction.watch_task = asyncio.create_task(
                     self._transaction_participant_watch(
-                        context.channel_manager, transaction
+                        context.application_id,
+                        context.channel_manager,
+                        transaction,
                     ),
                     name=
                     f'self._transaction_participant_watch(...) in {__name__}',
@@ -2816,6 +2823,7 @@ class SidecarStateManager(
 
     async def _transaction_participant_watch(
         self,
+        application_id: ApplicationId,
         channel_manager: _ChannelManager,
         transaction: StateManager.Transaction,
     ):
@@ -2849,7 +2857,11 @@ class SidecarStateManager(
                         transaction_id=transaction.root_id.bytes,
                         state_type=transaction.state_type,
                         state_ref=transaction.state_ref.to_str(),
-                    )
+                    ),
+                    metadata=Headers(
+                        application_id=application_id,
+                        state_ref=transaction.coordinator_state_ref,
+                    ).to_grpc_metadata(),
                 )
 
                 if not watch_response.aborted:
@@ -2878,6 +2890,23 @@ class SidecarStateManager(
         grpc_context: grpc.aio.ServicerContext,
     ) -> transactions_pb2.WatchResponse:
         transaction_id = uuid.UUID(bytes=request.transaction_id)
+
+        # Extract metadata from grpc_context and assert that the coordinator
+        # state_ref was set (which is crucial for routing).
+        headers = Headers.from_grpc_context(grpc_context)
+        coordinator_state_ref = headers.state_ref
+
+        # Assert that this StateManager is authoritative for the coordinator_state_ref.
+        shard_for_coordinator = self._placement_client.shard_for_actor(
+            self._application_id,
+            coordinator_state_ref,
+        )
+        authoritative_shards = [shard.shard_id for shard in self._shards]
+        assert shard_for_coordinator in authoritative_shards, (
+            f"Watch RPC for txn_id={transaction_id} routed to wrong StateManager! "
+            f"Coordinator {coordinator_state_ref.id} should be on shard {shard_for_coordinator}, "
+            f"but this StateManager is authoritative for shards {authoritative_shards}"
+        )
 
         # If we don't know about the transaction than treat is as
         # aborted. This is possible, e.g., after a server where a
@@ -2937,7 +2966,7 @@ class SidecarStateManager(
                 f"No pending transaction for state type '{state_type}' "
                 f"state '{state_ref.id}'"
             )
-        elif transaction.root_id != transaction_id:
+        if transaction.root_id != transaction_id:
             raise RuntimeError('Pending transaction id differs')
         else:
             # All RPCs that are part of this transaction should
@@ -3459,7 +3488,9 @@ class SidecarStateManager(
 
             transaction.watch_task = asyncio.create_task(
                 self._transaction_participant_watch(
-                    channel_manager, transaction
+                    application_id,
+                    channel_manager,
+                    transaction,
                 ),
                 name=f'self._transaction_participant_watch(...) in {__name__}',
             )
