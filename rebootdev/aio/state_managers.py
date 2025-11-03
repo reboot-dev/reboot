@@ -877,6 +877,12 @@ class SidecarStateManager(
         for task in self._coordinator_commit_control_loop_tasks.values():
             task.cancel()
 
+        # Cancel all participant watch tasks.
+        for state_type_transactions in self._participant_transactions.values():
+            for transaction in state_type_transactions.values():
+                if transaction.watch_task is not None:
+                    transaction.watch_task.cancel()
+
     async def wait(self) -> None:
         """Waits for this state manager to be fully shut down."""
         for task in self._coordinator_commit_control_loop_tasks.values():
@@ -884,6 +890,15 @@ class SidecarStateManager(
                 await task
             except asyncio.CancelledError:
                 pass
+
+        # Wait for all participant watch tasks to complete.
+        for state_type_transactions in self._participant_transactions.values():
+            for transaction in state_type_transactions.values():
+                if transaction.watch_task is not None:
+                    try:
+                        await transaction.watch_task
+                    except asyncio.CancelledError:
+                        pass
 
     async def shutdown_and_wait(self):
         await self.shutdown()
