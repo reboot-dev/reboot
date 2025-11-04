@@ -406,7 +406,7 @@ class Stub:
             ):
 
                 self._context.react.invalidate(
-                    state_type_name=state_type_name,
+                    service_name=service_name,
                     state_ref=self._headers.state_ref,
                 )
 
