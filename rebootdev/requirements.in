@@ -19,7 +19,7 @@ packaging>=23.1 # Latest as of 2023/04/12.
 pathspec==0.12.1 # Latest as of 2024/04/22.
 protobuf==5.28.3 # Aligned with `grpcio`.
 psutil==6.0.0 # Latest as of 2024/09/10.
-pyjwt==2.8.0 # Latest as of 2024/01/17.
+pyjwt==2.10.1 # Latest as of 2024/11/27.
 pyprctl==0.1.3 # Latest as of 2023/06/04.
 pyyaml==6.0.2 # Latest as of 2024/09/16.
 sortedcontainers==2.4.0 # Latest as of 2025/01/22.
