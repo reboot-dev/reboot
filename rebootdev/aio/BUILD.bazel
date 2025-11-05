@@ -2,6 +2,17 @@ load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
+    name = "caller_id_py",
+    srcs = ["caller_id.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":types_py",
+        "@com_github_reboot_dev_reboot//rebootdev:naming_py",
+    ],
+)
+
+py_library(
     name = "contexts_py",
     srcs = ["contexts.py"],
     srcs_version = "PY3",
@@ -9,6 +20,7 @@ py_library(
     deps = [
         requirement("grpcio"),
         ":aborted_py",
+        ":caller_id_py",
         ":headers_py",
         ":idempotency_py",
         ":tasks_py",

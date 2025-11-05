@@ -31,7 +31,7 @@ class ExternalContext(IdempotencyManager):
         idempotency_seed: Optional[uuid.UUID] = None,
         idempotency_required: bool = False,
         idempotency_required_reason: Optional[str] = None,
-        app_internal_authorization: Optional[str] = None,
+        caller_id: Optional[str] = None,
     ):
         if gateway is not None or secure_channel is not None:
             raise ValueError(
@@ -109,7 +109,7 @@ class ExternalContext(IdempotencyManager):
         self._name = name
         self._channel_manager = channel_manager
         self._bearer_token = bearer_token
-        self._app_internal_authorization = app_internal_authorization
+        self._caller_id = caller_id
 
     @property
     def name(self) -> str:
@@ -126,8 +126,8 @@ class ExternalContext(IdempotencyManager):
         return self._bearer_token
 
     @property
-    def app_internal_authorization(self) -> Optional[str]:
-        return self._app_internal_authorization
+    def caller_id(self) -> Optional[str]:
+        return self._caller_id
 
     def legacy_grpc_channel(self) -> grpc.aio.Channel:
         """Get a gRPC channel that can connect to any Reboot-hosted legacy

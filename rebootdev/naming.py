@@ -106,6 +106,12 @@ def _is_valid_id_suffix(id_suffix: str) -> bool:
     )
 
 
+def ensure_valid_space_id(space_id: str) -> SpaceId:
+    if not is_valid_space_id(space_id):
+        raise ValueError(f"'{space_id}' is not a valid SpaceId")
+    return SpaceId(space_id)
+
+
 def is_valid_space_id(space_id: SpaceId) -> bool:
     return (
         space_id.startswith("s") and
@@ -133,7 +139,7 @@ def get_space_id(qualified_space_name: QualifiedSpaceName) -> SpaceId:
 
 def ensure_valid_application_id(application_id: str) -> ApplicationId:
     if not is_valid_application_id(application_id):
-        raise ValueError(f"`{application_id}` is not a valid ApplicationId")
+        raise ValueError(f"'{application_id}' is not a valid ApplicationId")
     return ApplicationId(application_id)
 
 
