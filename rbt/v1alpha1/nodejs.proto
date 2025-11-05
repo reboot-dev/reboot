@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package rbt.v1alpha1;
 
-import "rbt/v1alpha1/tasks.proto";
-
 ////////////////////////////////////////////////////////////////////////
 
 // Context properties.
