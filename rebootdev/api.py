@@ -147,7 +147,7 @@ def pydantic_to_proto(
 
         output = output_type()
 
-        for field_name, field_info in input.model_fields.items():
+        for field_name, field_info in type(input).model_fields.items():
             input_field = getattr(input, field_name)
             if input_field is None:
                 # If the Pydantic field is 'None', we skip setting it
