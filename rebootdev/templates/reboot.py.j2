@@ -1799,10 +1799,6 @@ class {{ client.proto.state_name }}WriterStub(_{{ client.proto.state_name }}Stub
     {% else %}
     ) -> IMPORT_typing.AsyncIterable[{{ method.output_type }}]:
     {% endif %}
-        {% if not method.proto.client_streaming %}
-        proto_request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(request)
-        {% endif %}
-
         async with self._call(
             IMPORT_reboot_aio_types.StateTypeName('{{ client.proto.state_full_name }}'),
             IMPORT_reboot_aio_types.ServiceName('{{ service.proto.full_name }}'),
@@ -1811,7 +1807,7 @@ class {{ client.proto.state_name }}WriterStub(_{{ client.proto.state_name }}Stub
             {% if method.proto.client_streaming %}
             requests,
             {% else %}
-            proto_request,
+            {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(request),
             {% endif %}
             unary={{ not method.proto.client_streaming and not method.proto.server_streaming }},
             reader=True,
@@ -1905,9 +1901,6 @@ class {{ client.proto.state_name }}WorkflowStub(_{{ client.proto.state_name }}St
     {% else %}
     ) -> IMPORT_typing.AsyncIterable[{{ method.output_type }}]:
     {% endif %}
-        {% if not method.proto.client_streaming %}
-        proto_request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(request)
-        {% endif %}
         async with self._call(
             IMPORT_reboot_aio_types.StateTypeName('{{ client.proto.state_full_name }}'),
             IMPORT_reboot_aio_types.ServiceName('{{ service.proto.full_name }}'),
@@ -1916,7 +1909,7 @@ class {{ client.proto.state_name }}WorkflowStub(_{{ client.proto.state_name }}St
             {% if method.proto.client_streaming %}
             requests,
             {% else %}
-            proto_request,
+            {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(request),
             {% endif %}
             unary={{ not method.proto.client_streaming and not method.proto.server_streaming }},
             reader=True,
@@ -3867,7 +3860,11 @@ class {{ client.proto.state_name }}:
                 *,
                 {% endif %}
                 {% if options.proto.pydantic %}
+                {% if type.startswith('IMPORT_typing.Optional') %}
+                {{ name }}: {{ type }} = None,
+                {% else %}
                 {{ name }}: {{ type }},
+                {% endif %}
                 {% else %}
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
                 {% endif %}
@@ -3942,9 +3939,7 @@ class {{ client.proto.state_name }}:
                             f"of required type '{{ type.removeprefix('IMPORT_') }}'"
                         )
                     {% endfor %}
-                    {% endif %}
 
-                    {% if not options.proto.pydantic %}
                     # TODO: mypy-protobuf declares that
                     # `google.protobuf.message.Message` constructor arguments are
                     # always non-None, when in reality they are optional.
@@ -3954,10 +3949,6 @@ class {{ client.proto.state_name }}:
                         {{ name }}={{ name }}, # type: ignore[arg-type]
                         {% endfor %}
                     )
-
-                __proto_request__ = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(
-                    __request__
-                )
 
                 __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
                 __bearer_token__: IMPORT_typing.Optional[str] = None
@@ -4017,7 +4008,9 @@ class {{ client.proto.state_name }}:
                             ).Query(
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='{{ method.proto.name }}',
-                                    request=__proto_request__.SerializeToString(),
+                                    request={{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(
+                                        __request__
+                                    ).SerializeToString(),
                                 ),
                                 metadata=__metadata__,
                             )
@@ -4197,7 +4190,11 @@ class {{ client.proto.state_name }}:
                 *,
                 {% endif %}
                 {% if options.proto.pydantic %}
+                {% if type.startswith('IMPORT_typing.Optional') %}
+                {{ name }}: {{ type }} = None,
+                {% else %}
                 {{ name }}: {{ type }},
+                {% endif %}
                 {% else %}
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
                 {% endif %}
@@ -4325,7 +4322,11 @@ class {{ client.proto.state_name }}:
                 *,
                 {% endif %}
                 {% if options.proto.pydantic %}
+                {% if type.startswith('IMPORT_typing.Optional') %}
+                {{ name }}: {{ type }} = None,
+                {% else %}
                 {{ name }}: {{ type }},
+                {% endif %}
                 {% else %}
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
                 {% endif %}
@@ -4361,11 +4362,8 @@ class {{ client.proto.state_name }}:
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
                 IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
 
-                __call_with_request__: bool = False
                 __request__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request] = None
                 if isinstance(__request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request):
-                    __call_with_request__ = True
-
                     assert __request_or_options__ is not None
                     assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                     __options__ = __options__ or IMPORT_reboot_aio_call.Options()
@@ -4377,8 +4375,6 @@ class {{ client.proto.state_name }}:
 
                     __request__ = __request_or_options__
                 else:
-                    __call_with_request__ = False
-
                     assert __options__ is None
                     assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
                     __options__ = __request_or_options__ or IMPORT_reboot_aio_call.Options()
@@ -4402,9 +4398,7 @@ class {{ client.proto.state_name }}:
                             f"of required type '{{ type.removeprefix('IMPORT_') }}'"
                         )
                     {% endfor %}
-                    {% endif %}
 
-                    {% if not options.proto.pydantic %}
                     # TODO: mypy-protobuf declares that
                     # `IMPORT_google_protobuf_message.Message` constructor arguments are
                     # always non-None, when in reality they are optional.
@@ -4429,20 +4423,11 @@ class {{ client.proto.state_name }}:
                     generated_idempotency=__this__._idempotency.generated,
                 )
 
-                if __call_with_request__:
-                    return await __this__._weak_reference.{{ method.proto.name }}(
-                        __context__,
-                        __request__,
-                        __options__,
-                    )
-                else:
-                    return await __this__._weak_reference.{{ method.proto.name }}(
-                        __context__,
-                        __options__,
-                        {% for name in method.input_type_fields %}
-                        {{ name }}={{ name }},
-                        {% endfor %}
-                    )
+                return await __this__._weak_reference.{{ method.proto.name }}(
+                    __context__,
+                    __request__,
+                    __options__,
+                )
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
@@ -4592,7 +4577,11 @@ class {{ client.proto.state_name }}:
                 *,
                 {% endif %}
                 {% if options.proto.pydantic %}
+                {% if type.startswith('IMPORT_typing.Optional') %}
+                {{ name }}: {{ type }} = None,
+                {% else %}
                 {{ name }}: {{ type }},
+                {% endif %}
                 {% else %}
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
                 {% endif %}
@@ -4628,10 +4617,8 @@ class {{ client.proto.state_name }}:
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
                 )
 
-                __call_with_request__: bool = False
                 __request__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request] = None
                 if isinstance(__request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request):
-                    __call_with_request__ = True
                     assert __request_or_options__ is not None
                     assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                     __options__ = __options__ or IMPORT_reboot_aio_call.Options()
@@ -4643,8 +4630,6 @@ class {{ client.proto.state_name }}:
 
                     __request__ = __request_or_options__
                 else:
-                    __call_with_request__ = False
-
                     assert __options__ is None
                     assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
                     __options__ = __request_or_options__ or IMPORT_reboot_aio_call.Options()
@@ -4668,24 +4653,23 @@ class {{ client.proto.state_name }}:
                             f"of required type '{{ type.removeprefix('IMPORT_') }}'"
                         )
                     {% endfor %}
+
+                    # TODO: mypy-protobuf declares that
+                    # `IMPORT_google_protobuf_message.Message` constructor arguments are
+                    # always non-None, when in reality they are optional.
                     {% endif %}
+                    __request__ = {{ client.proto.state_name }}.{{ method.proto.name }}Request(
+                        {% for name in method.input_type_fields %}
+                        {{ name }}={{ name }}, # type: ignore[arg-type]
+                        {% endfor %}
+                    )
 
                 async def callable():
-                    if __call_with_request__:
-                        assert __request__ is not None
-                        return await __this__._weak_reference.{{ method.proto.name }}(
-                            __context__,
-                            __request__,
-                            __options__,
-                        )
-                    else:
-                        return await __this__._weak_reference.{{ method.proto.name }}(
-                            __context__,
-                            __options__,
-                            {% for name in method.input_type_fields %}
-                            {{ name }}={{ name }},
-                            {% endfor %}
-                        )
+                    return await __this__._weak_reference.{{ method.proto.name }}(
+                        __context__,
+                        __request__,
+                        __options__,
+                    )
 
                 return {{ client.proto.state_name }}.WeakReference._UntilChangesSatisfies(
                     idempotency_alias=__this__._idempotency_alias,
@@ -4755,7 +4739,11 @@ class {{ client.proto.state_name }}:
                 *,
                 {% endif %}
                 {% if options.proto.pydantic %}
+                {% if type.startswith('IMPORT_typing.Optional') %}
+                {{ name }}: {{ type }} = None,
+                {% else %}
                 {{ name }}: {{ type }},
+                {% endif %}
                 {% else %}
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
                 {% endif %}
@@ -4820,9 +4808,7 @@ class {{ client.proto.state_name }}:
                             f"of required type '{{ type.removeprefix('IMPORT_') }}'"
                         )
                     {% endfor %}
-                    {% endif %}
 
-                    {% if not options.proto.pydantic %}
                     # TODO: mypy-protobuf declares that
                     # `IMPORT_google_protobuf_message.Message` constructor arguments are
                     # always non-None, when in reality they are optional.
@@ -4924,7 +4910,11 @@ class {{ client.proto.state_name }}:
                 *,
                 {% endif %}
                 {% if options.proto.pydantic %}
+                {% if type.startswith('IMPORT_typing.Optional') %}
+                {{ name }}: {{ type }} = None,
+                {% else %}
                 {{ name }}: {{ type }},
+                {% endif %}
                 {% else %}
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
                 {% endif %}
@@ -4992,9 +4982,7 @@ class {{ client.proto.state_name }}:
                             f"of required type '{{ type.removeprefix('IMPORT_') }}'"
                         )
                     {% endfor %}
-                    {% endif %}
 
-                    {% if not options.proto.pydantic %}
                     # TODO: mypy-protobuf declares that
                     # `IMPORT_google_protobuf_message.Message` constructor arguments are
                     # always non-None, when in reality they are optional.
@@ -5120,7 +5108,11 @@ class {{ client.proto.state_name }}:
                 *,
                 {% endif %}
                 {% if options.proto.pydantic %}
+                {% if type.startswith('IMPORT_typing.Optional') %}
+                {{ name }}: {{ type }} = None,
+                {% else %}
                 {{ name }}: {{ type }},
+                {% endif %}
                 {% else %}
                 {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
                 {% endif %}
@@ -5185,9 +5177,7 @@ class {{ client.proto.state_name }}:
                             f"of required type '{{ type.removeprefix('IMPORT_') }}'"
                         )
                     {% endfor %}
-                    {% endif %}
 
-                    {% if not options.proto.pydantic %}
                     # TODO: mypy-protobuf declares that
                     # `IMPORT_google_protobuf_message.Message` constructor arguments are
                     # always non-None, when in reality they are optional.
@@ -5325,7 +5315,11 @@ class {{ client.proto.state_name }}:
             *,
             {% endif %}
             {% if options.proto.pydantic %}
+            {% if type.startswith('IMPORT_typing.Optional') %}
+            {{ name }}: {{ type }} = None,
+            {% else %}
             {{ name }}: {{ type }},
+            {% endif %}
             {% else %}
             {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
             {% endif %}
@@ -5471,7 +5465,11 @@ class {{ client.proto.state_name }}:
             *,
             {% endif %}
             {% if options.proto.pydantic %}
+            {% if type.startswith('IMPORT_typing.Optional') %}
+            {{ name }}: {{ type }} = None,
+            {% else %}
             {{ name }}: {{ type }},
+            {% endif %}
             {% else %}
             {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
             {% endif %}
@@ -5522,13 +5520,10 @@ class {{ client.proto.state_name }}:
             assert __options__ is None
             assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
             __options__ = __request_or_options__
-            {% endif %}
-
-            {% if not method.proto.server_streaming and not method.proto.client_streaming %}
-            __call_with_request__: bool = False
+            {% else %}
+            __request__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request] = None
 
             if isinstance(__request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request):
-                __call_with_request__ = True
                 assert __request_or_options__ is not None
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -5536,8 +5531,9 @@ class {{ client.proto.state_name }}:
                 {% for name in method.input_type_fields %}
                 assert {{ name }} is None
                 {% endfor %}
+
+                __request__ = __request_or_options__
             else:
-                __call_with_request__ = False
                 assert __options__ is None
                 assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
                 __options__ = __request_or_options__
@@ -5561,69 +5557,7 @@ class {{ client.proto.state_name }}:
                         f"of required type '{{ type.removeprefix('IMPORT_') }}'"
                     )
                 {% endfor %}
-                {% endif %}
 
-            # Within a `workflow`, all "bare" calls are
-            # `per_workflow()` calls, unless we're within a control
-            # loop, in which case they are syntactic sugar for
-            # `per_iteration()`.
-            #
-            # Unless we are "within until" in which case all "bare"
-            # calls are `.always().
-            if __options__ is None or __options__.idempotency is None:
-                if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
-                    if __call_with_request__:
-                        assert __request_or_options__ is not None and isinstance(__request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request)
-                        return await (
-                            __this__.always() if __context__.within_until()
-                            else (
-                                __this__.per_iteration() if __context__.within_loop()
-                                else __this__.per_workflow()
-                            )
-                        ).{{ method.proto.name }}(
-                            __context__,
-                            __request_or_options__,
-                            __options__ or IMPORT_reboot_aio_call.Options(),
-                        )
-                    else:
-                        return await (
-                            __this__.always() if __context__.within_until()
-                            else (
-                                __this__.per_iteration() if __context__.within_loop()
-                                else __this__.per_workflow()
-                            )
-                        ).{{ method.proto.name }}(
-                            __context__,
-                            __options__ or IMPORT_reboot_aio_call.Options(),
-                            {% for name in method.input_type_fields %}
-                            {{ name }}={{ name }},
-                            {% endfor %}
-                        )
-                elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
-                    if __call_with_request__:
-                        assert __request_or_options__ is not None and isinstance(__request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request)
-                        return await __this__.idempotently().{{ method.proto.name }}(
-                            __context__,
-                            __request_or_options__,
-                            __options__ or IMPORT_reboot_aio_call.Options(),
-                        )
-                    else:
-                        return await __this__.idempotently().{{ method.proto.name }}(
-                            __context__,
-                            __options__ or IMPORT_reboot_aio_call.Options(),
-                            {% for name in method.input_type_fields %}
-                            {{ name }}={{ name }},
-                            {% endfor %}
-                        )
-            {% endif %}
-
-            {% if not method.proto.client_streaming %}
-
-            __request__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request] = None
-            if isinstance(__request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request):
-                __request__ = __request_or_options__
-            else:
-                {% if not options.proto.pydantic %}
                 # TODO: mypy-protobuf declares that
                 # `IMPORT_google_protobuf_message.Message` constructor arguments are
                 # always non-None, when in reality they are optional.
@@ -5633,8 +5567,37 @@ class {{ client.proto.state_name }}:
                     {{ name }}={{ name }}, # type: ignore[arg-type]
                     {% endfor %}
                 )
-
             {% endif %}
+
+            {% if not method.proto.server_streaming and not method.proto.client_streaming %}
+            # Within a `workflow`, all "bare" calls are
+            # `per_workflow()` calls, unless we're within a control
+            # loop, in which case they are syntactic sugar for
+            # `per_iteration()`.
+            #
+            # Unless we are "within until" in which case all "bare"
+            # calls are `.always().
+            if __options__ is None or __options__.idempotency is None:
+                if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return await (
+                        __this__.always() if __context__.within_until()
+                        else (
+                            __this__.per_iteration() if __context__.within_loop()
+                            else __this__.per_workflow()
+                        )
+                    ).{{ method.proto.name }}(
+                        __context__,
+                        __request__,
+                        __options__ or IMPORT_reboot_aio_call.Options(),
+                    )
+                elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
+                    return await __this__.idempotently().{{ method.proto.name }}(
+                        __context__,
+                        __request__,
+                        __options__ or IMPORT_reboot_aio_call.Options(),
+                    )
+            {% endif %}
+
             __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
             __bearer_token__: IMPORT_typing.Optional[str] = None
             if __options__ is not None:
@@ -5684,7 +5647,11 @@ class {{ client.proto.state_name }}:
             *,
             {% endif %}
             {% if options.proto.pydantic %}
+            {% if type.startswith('IMPORT_typing.Optional') %}
+            {{ name }}: {{ type }} = None,
+            {% else %}
             {{ name }}: {{ type }},
+            {% endif %}
             {% else %}
             {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
             {% endif %}
@@ -5713,10 +5680,8 @@ class {{ client.proto.state_name }}:
             IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
             IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
 
-            __call_with_request__: bool = False
             __request__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request] = None
             if isinstance(__request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request):
-                __call_with_request__ = True
                 assert __request_or_options__ is not None
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
@@ -5727,7 +5692,6 @@ class {{ client.proto.state_name }}:
 
                 __request__ = __request_or_options__
             else:
-                __call_with_request__ = False
                 assert __options__ is None
                 assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
                 __options__ = __request_or_options__
@@ -5751,9 +5715,7 @@ class {{ client.proto.state_name }}:
                         f"of required type '{{ type.removeprefix('IMPORT_') }}'"
                     )
                 {% endfor %}
-                {% endif %}
 
-                {% if not options.proto.pydantic %}
                 # TODO: mypy-protobuf declares that
                 # `google.protobuf.message.Message` constructor arguments are
                 # always non-None, when in reality they are optional.
@@ -5770,41 +5732,20 @@ class {{ client.proto.state_name }}:
             # `per_iteration()`.
             if __options__ is None or __options__.idempotency is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
-                    if __call_with_request__:
-                        return await (
-                            __this__.per_iteration() if __context__.within_loop()
-                            else __this__.per_workflow()
-                        ).{{ method.proto.name }}(
-                            __context__,
-                            __request__,
-                            __options__ or IMPORT_reboot_aio_call.Options(),
-                        )
-                    else:
-                        return await (
-                            __this__.per_iteration() if __context__.within_loop()
-                            else __this__.per_workflow()
-                        ).{{ method.proto.name }}(
-                            __context__,
-                            __options__ or IMPORT_reboot_aio_call.Options(),
-                            {% for name in method.input_type_fields %}
-                            {{ name }}={{ name }},
-                            {% endfor %}
-                        )
+                    return await (
+                        __this__.per_iteration() if __context__.within_loop()
+                        else __this__.per_workflow()
+                    ).{{ method.proto.name }}(
+                        __context__,
+                        __request__,
+                        __options__ or IMPORT_reboot_aio_call.Options(),
+                    )
                 elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
-                    if __call_with_request__:
-                        return await __this__.idempotently().{{ method.proto.name }}(
-                            __context__,
-                            __request__,
-                            __options__ or IMPORT_reboot_aio_call.Options(),
-                        )
-                    else:
-                        return await __this__.idempotently().{{ method.proto.name }}(
-                            __context__,
-                            __options__ or IMPORT_reboot_aio_call.Options(),
-                            {% for name in method.input_type_fields %}
-                            {{ name }}={{ name }},
-                            {% endfor %}
-                        )
+                    return await __this__.idempotently().{{ method.proto.name }}(
+                        __context__,
+                        __request__,
+                        __options__ or IMPORT_reboot_aio_call.Options(),
+                    )
 
             __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None
             __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
@@ -5884,7 +5825,11 @@ class {{ client.proto.state_name }}:
             *,
             {% endif %}
             {% if options.proto.pydantic %}
+            {% if type.startswith('IMPORT_typing.Optional') %}
+            {{ name }}: {{ type }} = None,
+            {% else %}
             {{ name }}: {{ type }},
+            {% endif %}
             {% else %}
             {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
             {% endif %}
@@ -6039,7 +5984,11 @@ class {{ client.proto.state_name }}:
         *,
         {% endif %}
         {% if options.proto.pydantic %}
+        {% if type.startswith('IMPORT_typing.Optional') %}
+        {{ name }}: {{ type }} = None,
+        {% else %}
         {{ name }}: {{ type }},
+        {% endif %}
         {% else %}
         {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
         {% endif %}
@@ -6078,11 +6027,7 @@ class {{ client.proto.state_name }}:
         __state_id__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId] = None
         __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None
 
-        __call_with_request__: bool = False
-
         if isinstance(__request_or_state_id__, {{ client.proto.state_name }}.{{ method.proto.name }}Request):
-            __call_with_request__ = True
-
             assert __request_or_state_id__ is not None
             assert __state_id_or_options__ is None or isinstance(__state_id_or_options__, IMPORT_reboot_aio_types.StateId)
             assert __options_or_idempotency__ is None or isinstance(__options_or_idempotency__, IMPORT_reboot_aio_call.Options)
@@ -6097,8 +6042,6 @@ class {{ client.proto.state_name }}:
             __state_id__ = __state_id_or_options__
             __options__ = __options_or_idempotency__
         else:
-            __call_with_request__ = False
-
             assert __request_or_state_id__ is None or isinstance(__request_or_state_id__, IMPORT_reboot_aio_types.StateId)
             assert __state_id_or_options__ is None or isinstance(__state_id_or_options__, IMPORT_reboot_aio_call.Options)
             assert __options_or_idempotency__ is None or isinstance(__options_or_idempotency__, IMPORT_reboot_aio_idempotency.Idempotency)
@@ -6123,9 +6066,7 @@ class {{ client.proto.state_name }}:
                     f"of required type '{{ type.removeprefix('IMPORT_') }}'"
                 )
             {% endfor %}
-            {% endif %}
 
-            {% if not options.proto.pydantic %}
             # TODO: mypy-protobuf declares that
             # `google.protobuf.message.Message` constructor arguments are
             # always non-None, when in reality they are optional.
@@ -6141,51 +6082,25 @@ class {{ client.proto.state_name }}:
 
         if __idempotency__ is None:
             if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
-                if __call_with_request__:
-                    return await (
-                        __cls__.always() if __context__.within_until()
-                        else (
-                            __cls__.per_iteration() if __context__.within_loop()
-                            else __cls__.per_workflow()
-                        )
-                    ).{{ method.proto.name }}(
-                        __context__,
-                        __request__,
-                        __state_id__,
-                        __options__,
+                return await (
+                    __cls__.always() if __context__.within_until()
+                    else (
+                        __cls__.per_iteration() if __context__.within_loop()
+                        else __cls__.per_workflow()
                     )
-                else:
-                    return await (
-                        __cls__.always() if __context__.within_until()
-                        else (
-                            __cls__.per_iteration() if __context__.within_loop()
-                            else __cls__.per_workflow()
-                        )
-                    ).{{ method.proto.name }}(
-                        __context__,
-                        __state_id__,
-                        __options__,
-                        {% for name in method.input_type_fields %}
-                        {{ name }}={{ name }},
-                        {% endfor %}
-                    )
+                ).{{ method.proto.name }}(
+                    __context__,
+                    __request__,
+                    __state_id__,
+                    __options__,
+                )
             elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
-                if __call_with_request__:
-                    return await __cls__.idempotently().{{ method.proto.name }}(
-                        __context__,
-                        __request__,
-                        __state_id__,
-                        __options__,
-                    )
-                else:
-                    return await __cls__.idempotently().{{ method.proto.name }}(
-                        __context__,
-                        __state_id__,
-                        __options__,
-                        {% for name in method.input_type_fields %}
-                        {{ name }}={{ name }},
-                        {% endfor %}
-                    )
+                return await __cls__.idempotently().{{ method.proto.name }}(
+                    __context__,
+                    __request__,
+                    __state_id__,
+                    __options__,
+                )
 
         __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
         __bearer_token__: IMPORT_typing.Optional[str] = None
@@ -6321,7 +6236,11 @@ class {{ client.proto.state_name }}:
             *,
             {% endif %}
             {% if options.proto.pydantic %}
+            {% if type.startswith('IMPORT_typing.Optional') %}
+            {{ name }}: {{ type }} = None,
+            {% else %}
             {{ name }}: {{ type }},
+            {% endif %}
             {% else %}
             {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
             {% endif %}

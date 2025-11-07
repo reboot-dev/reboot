@@ -13,7 +13,7 @@ from google.protobuf.descriptor import (
     MethodDescriptor,
 )
 from google.protobuf.descriptor_pool import DescriptorPool
-from rebootdev.api import API
+from rebootdev.api import API, to_snake_case
 from rebootdev.options import get_method_options
 from rebootdev.protoc_gen_reboot_generic import (
     METHODS_SUFFIX,
@@ -93,11 +93,6 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
         plugin generates Python Reboot code."""
         if pool is not None:
             self.pool = pool
-
-    @classmethod
-    def _to_snake_case(cls, input: str) -> str:
-        splitted_input = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', input)
-        return re.sub('([a-z0-9])([A-Z])', r'\1_\2', splitted_input).lower()
 
     def _py_service(
         self,
@@ -330,7 +325,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
 
         assert pydantic_service is not None
         pydantic_method = pydantic_service.methods.get(
-            cls._to_snake_case(method_name),
+            to_snake_case(method_name),
             None,
         )
         assert pydantic_method is not None
@@ -358,7 +353,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
 
             assert pydantic_service is not None
             pydantic_method = pydantic_service.methods.get(
-                cls._to_snake_case(method_name),
+                to_snake_case(method_name),
                 None,
             )
             assert pydantic_method is not None
@@ -370,54 +365,56 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
         cls,
         request: Optional[Type[pydantic.BaseModel]],
     ) -> dict[str, str]:
-        fields: dict[str, str] = {}
         if request is None:
-            return fields
+            return {}
 
-        for field_name, field_type in request.model_fields.items():
-            annotation = field_type.annotation
-            annotation_string = str(annotation)
+        fields: dict[str, str] = {}
 
-            origin = get_origin(annotation)
+        for field_name, field_info in request.model_fields.items():
+            field_type = field_info.annotation
+            field_type_string: Optional[str] = None
+
+            origin = get_origin(field_type)
 
             if origin is Union:
-                # Currently only supports Optional[T] from the top-level
-                # BaseModel.
+                # Currently only supports 'Optional[T]' from the top-level
+                # 'BaseModel'.
                 non_none_args = [
-                    arg for arg in get_args(annotation)
+                    arg for arg in get_args(field_type)
                     if arg is not type(None)
                 ]
                 assert len(non_none_args) == 1
-                assert annotation is not None
+                assert field_type is not None
                 # To avoid name conflicts in the generated code, we import the
                 # 'typing' module as 'IMPORT_typing'.
-                assert annotation.__name__.startswith('Optional')
-                # Calling 'annotation.__name__' gives just 'Optional', but we
-                # need to reconstruct the full string.
-                annotation_string = f'IMPORT_{annotation}'
+                assert str(field_type).startswith('typing.Optional')
+                field_type_string = f'IMPORT_{field_type}'
             elif origin is None:
                 # It can happen if we have a primitive type or another
                 # BaseModel.
-                assert isinstance(annotation, type)
+                assert isinstance(field_type, type)
                 # Annotation at that point will be '<class 'int'>',
                 # '<class 'AnotherModel'>', etc., so we need to get the actual
                 # type string.
-                if issubclass(annotation, pydantic.BaseModel):
-                    annotation_string = f'{annotation.__module__}.{annotation.__name__}'
+                if issubclass(field_type, pydantic.BaseModel):
+                    field_type_string = f'{field_type.__module__}.{field_type.__name__}'
                 else:
                     # Primitive type does not need module prefix.
-                    annotation_string = annotation.__name__
+                    field_type_string = field_type.__name__
             elif origin is list or origin is dict:
-                # 'list' and 'dict' annotations are correct as is.
-                pass
+                # 'list' and 'dict' types should just be what was
+                # specified in the Pydantic model.
+                field_type_string = str(field_type)
             else:
                 raise UserProtoError(
-                    f"Unsupported field type annotation '{annotation}' for "
-                    f"field '{field_name}' in Pydantic model "
+                    f"Unsupported field type '{field_type}' for field "
+                    f"'{field_name}' in Pydantic model "
                     f"'{request.__name__}'."
                 )
 
-            fields[field_name] = annotation_string
+            assert field_type_string is not None
+
+            fields[field_name] = field_type_string
         return fields
 
     @classmethod
