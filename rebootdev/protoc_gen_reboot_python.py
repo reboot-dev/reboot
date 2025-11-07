@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
+import importlib
 import os
+import pydantic  # type: ignore[import]
 import re
 import rebootdev.aio.tracing
 import sys
@@ -11,8 +13,10 @@ from google.protobuf.descriptor import (
     MethodDescriptor,
 )
 from google.protobuf.descriptor_pool import DescriptorPool
+from rebootdev.api import API
 from rebootdev.options import get_method_options
 from rebootdev.protoc_gen_reboot_generic import (
+    METHODS_SUFFIX,
     BaseClient,
     BaseFile,
     BaseLegacyGrpcService,
@@ -25,7 +29,7 @@ from rebootdev.protoc_gen_reboot_generic import (
     RebootProtocPlugin,
     UserProtoError,
 )
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Type, Union, get_args, get_origin
 
 PythonType = str
 
@@ -43,6 +47,7 @@ class PythonMethod(BaseMethod):
     output_type: PythonType
     output_type_name: PythonType
     input_type_fields: dict[str, str]
+    has_non_none_request: bool
 
 
 @dataclass
@@ -89,7 +94,34 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
         if pool is not None:
             self.pool = pool
 
-    def _py_service(self, service: BaseService) -> PythonService:
+    @classmethod
+    def _to_snake_case(cls, input: str) -> str:
+        splitted_input = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', input)
+        return re.sub('([a-z0-9])([A-Z])', r'\1_\2', splitted_input).lower()
+
+    def _py_service(
+        self,
+        service: BaseService,
+        pydantic_schema_module: Optional[str],
+    ) -> PythonService:
+
+        api: Optional[API] = None
+        if pydantic_schema_module is not None:
+            try:
+                module = importlib.import_module(pydantic_schema_module)
+            except ImportError as e:
+                raise RuntimeError(
+                    f"Could not import pydantic schema module "
+                    f"'{pydantic_schema_module}': {e}"
+                ) from e
+
+            if not hasattr(module, 'api'):
+                raise RuntimeError(
+                    f"Pydantic schema module '{pydantic_schema_module}' does "
+                    f"not have an 'api' attribute defined."
+                )
+            api = module.api
+
         return PythonService(
             proto=service.proto,
             options=service.options,
@@ -112,8 +144,16 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                     output_type_name=self._py_type_name(
                         method.proto._descriptor.output_type
                     ),
-                    input_type_fields=self._analyze_message_fields(
-                        method.proto._descriptor.input_type
+                    input_type_fields=self._analyze_input_type_fields(
+                        method.proto._descriptor.input_type,
+                        api,
+                        service.proto.name,
+                        method.proto.name,
+                    ),
+                    has_non_none_request=self._analyze_has_non_none_request(
+                        api,
+                        service.proto.name,
+                        method.proto.name,
                     ),
                 ) for method in service.methods
             ],
@@ -125,7 +165,10 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
     def _py_state(self, file: BaseFile, state: BaseState) -> PythonState:
         return PythonState(
             proto=state.proto,
-            services=[self._py_service(service) for service in state.services],
+            services=[
+                self._py_service(service, file.options.proto.pydantic)
+                for service in state.services
+            ],
             pb2_name=self._pb2_module_name(file.proto._descriptor),
         )
 
@@ -146,7 +189,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                 PythonClient(
                     proto=client.proto,
                     services=[
-                        self._py_service(service)
+                        self._py_service(service, file.options.proto.pydantic)
                         for service in client.services
                     ],
                     state=self._py_state(file, client.state)
@@ -269,6 +312,113 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
             imports = imports.union(cls._analyze_imports(dependency))
 
         return imports
+
+    @classmethod
+    def _analyze_has_non_none_request(
+        cls,
+        api: Optional[API],
+        service_name: str,
+        method_name: str,
+    ) -> bool:
+        if api is None:
+            # For protobuf-only APIs, we always have input messages.
+            return True
+
+        assert service_name.endswith(METHODS_SUFFIX)
+        state_name = service_name[:-len(METHODS_SUFFIX)]
+        pydantic_service = getattr(api, state_name, None)
+
+        assert pydantic_service is not None
+        pydantic_method = pydantic_service.methods.get(
+            cls._to_snake_case(method_name),
+            None,
+        )
+        assert pydantic_method is not None
+
+        return pydantic_method.request is not None
+
+    @classmethod
+    def _analyze_input_type_fields(
+        cls,
+        message: Descriptor,
+        api: Optional[API],
+        service_name: str,
+        method_name: str,
+    ) -> dict[str, str]:
+        """Helper to analyze input type fields either from protobuf message
+        descriptor or from Pydantic model in the API.
+        """
+
+        if api is None:
+            return cls._analyze_message_fields(message)
+        else:
+            assert service_name.endswith(METHODS_SUFFIX)
+            state_name = service_name[:-len(METHODS_SUFFIX)]
+            pydantic_service = getattr(api, state_name, None)
+
+            assert pydantic_service is not None
+            pydantic_method = pydantic_service.methods.get(
+                cls._to_snake_case(method_name),
+                None,
+            )
+            assert pydantic_method is not None
+
+            return cls._analyze_pydantic_fields(pydantic_method.request)
+
+    @classmethod
+    def _analyze_pydantic_fields(
+        cls,
+        request: Optional[Type[pydantic.BaseModel]],
+    ) -> dict[str, str]:
+        fields: dict[str, str] = {}
+        if request is None:
+            return fields
+
+        for field_name, field_type in request.model_fields.items():
+            annotation = field_type.annotation
+            annotation_string = str(annotation)
+
+            origin = get_origin(annotation)
+
+            if origin is Union:
+                # Currently only supports Optional[T] from the top-level
+                # BaseModel.
+                non_none_args = [
+                    arg for arg in get_args(annotation)
+                    if arg is not type(None)
+                ]
+                assert len(non_none_args) == 1
+                assert annotation is not None
+                # To avoid name conflicts in the generated code, we import the
+                # 'typing' module as 'IMPORT_typing'.
+                assert annotation.__name__.startswith('Optional')
+                # Calling 'annotation.__name__' gives just 'Optional', but we
+                # need to reconstruct the full string.
+                annotation_string = f'IMPORT_{annotation}'
+            elif origin is None:
+                # It can happen if we have a primitive type or another
+                # BaseModel.
+                assert isinstance(annotation, type)
+                # Annotation at that point will be '<class 'int'>',
+                # '<class 'AnotherModel'>', etc., so we need to get the actual
+                # type string.
+                if issubclass(annotation, pydantic.BaseModel):
+                    annotation_string = f'{annotation.__module__}.{annotation.__name__}'
+                else:
+                    # Primitive type does not need module prefix.
+                    annotation_string = annotation.__name__
+            elif origin is list or origin is dict:
+                # 'list' and 'dict' annotations are correct as is.
+                pass
+            else:
+                raise UserProtoError(
+                    f"Unsupported field type annotation '{annotation}' for "
+                    f"field '{field_name}' in Pydantic model "
+                    f"'{request.__name__}'."
+                )
+
+            fields[field_name] = annotation_string
+        return fields
 
     @classmethod
     def _analyze_message_fields(
