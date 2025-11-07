@@ -4680,12 +4680,12 @@ class {{ client.proto.state_name }}:
                         )
                     else:
                         return await __this__._weak_reference.{{ method.proto.name }}(
-                        __context__,
-                        __options__,
-                        {% for name in method.input_type_fields %}
-                        {{ name }}={{ name }},
-                        {% endfor %}
-                    )
+                            __context__,
+                            __options__,
+                            {% for name in method.input_type_fields %}
+                            {{ name }}={{ name }},
+                            {% endfor %}
+                        )
 
                 return {{ client.proto.state_name }}.WeakReference._UntilChangesSatisfies(
                     idempotency_alias=__this__._idempotency_alias,
@@ -5432,7 +5432,15 @@ class {{ client.proto.state_name }}:
         {{ method.proto.name | to_snake }} = {{ method.proto.name }}
         {% elif method.options.proto.kind == 'reader' %}
         @IMPORT_typing.overload
+        {# To make mypy happy when we are returning 'AsyncIterable'
+        we need to drop the `async`, so mypy will treat the result of
+        the method as an `AsyncIterable`, but not coroutine.
+        See more https://github.com/python/mypy/issues/10301#}
+        {% if not method.proto.server_streaming %}
         async def {{ method.proto.name }}(
+        {% else %}
+        def {{ method.proto.name }}(
+        {% endif %}
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
@@ -5445,7 +5453,15 @@ class {{ client.proto.state_name }}:
             ...
 
         @IMPORT_typing.overload
+        {# To make mypy happy when we are returning 'AsyncIterable'
+        we need to drop the `async`, so mypy will treat the result of
+        the method as an `AsyncIterable`, but not coroutine.
+        See more https://github.com/python/mypy/issues/10301#}
+        {% if not method.proto.server_streaming %}
         async def {{ method.proto.name }}(
+        {% else %}
+        def {{ method.proto.name }}(
+        {% endif %}
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
