@@ -600,7 +600,7 @@ class React:
     def invalidate(
         self,
         *,
-        state_type_name: StateTypeName,
+        service_name: ServiceName,
         state_ref: StateRef,
     ):
         """Invalidates a querier, if it exists, but does _NOT_ cancel it
@@ -613,8 +613,10 @@ class React:
         idempotency key of mutations to ensure we read our writes.
         """
         for key, querier in self._queriers.items():
-            if key.startswith(f'{state_type_name}.'
-                             ) and key.endswith(f'/{state_ref}'):
+            if (
+                key.startswith(f'{service_name}.') and
+                key.endswith(f'/{state_ref}')
+            ):
                 querier.invalidated = True
 
 
