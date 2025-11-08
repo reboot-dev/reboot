@@ -6084,7 +6084,12 @@ class {{ client.proto.state_name }}:
             assert __options_or_idempotency__ is None or isinstance(__options_or_idempotency__, IMPORT_reboot_aio_idempotency.Idempotency)
             __idempotency__ = __options_or_idempotency__
         else:
-            assert __state_id_or_request_or_options__ is None or isinstance(__state_id_or_request_or_options__, IMPORT_reboot_aio_call.Options)
+            assert (
+                __state_id_or_request_or_options__ is None
+                or isinstance(__state_id_or_request_or_options__, IMPORT_reboot_aio_call.Options)
+            ), "Invalid argument type. Did you pass:\n" \
+            "  - A 'state_id' that is not of type 'reboot.aio.types.StateId'?\n" \
+            "  - 'options' that are not of type 'reboot.aio.call.Options'?"
             __options__ = __state_id_or_request_or_options__
             assert __request_or_options_or_idempotency__ is None or isinstance(__request_or_options_or_idempotency__, IMPORT_reboot_aio_idempotency.Idempotency)
             __idempotency__ = __request_or_options_or_idempotency__
