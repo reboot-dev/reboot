@@ -372,6 +372,9 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
 
         for field_name, field_info in request.model_fields.items():
             field_type = field_info.annotation
+
+            # Now determine the string representation of this type which
+            # we need for the Jinja template.
             field_type_string: Optional[str] = None
 
             origin = get_origin(field_type)

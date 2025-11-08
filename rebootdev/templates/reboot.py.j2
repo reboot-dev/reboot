@@ -6397,12 +6397,26 @@ class {{ client.proto.state_name }}:
                     {% endfor %}
                 )
 
+            __args__: tuple[IMPORT_typing.Any, ...]
+
+            if __state_id__ is not None:
+                __args__ = (
+                    __context__,
+                    __state_id__,
+                    __request__,
+                    __options__,
+                    __this__._idempotency,
+                )
+            else:
+                __args__ = (
+                    __context__,
+                    __request__,
+                    __options__,
+                    __this__._idempotency,
+                )
+
             return await {{ client.proto.state_name }}.{{ method.proto.name }}(
-                __context__=__context__,
-                __state_id_or_request_or_options__=__state_id__,
-                __request_or_options_or_idempotency__=__request__,
-                __options_or_idempotency__=__options__,
-                __idempotency__=__this__._idempotency,
+                *__args__,
             )
 
         # Keep the original functions on the client, so old code will
