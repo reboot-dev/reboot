@@ -45,14 +45,14 @@ def pydantic_to_proto(
     input_type_or_origin = get_origin(input_type)
     if input_type_or_origin is None:
         # If the type has no origin, it is either a primitive type
-        # or a pydantic BaseModel. Otherwise it will be a collection
+        # or a pydantic 'BaseModel'. Otherwise it will be a collection
         # type like 'list' or 'dict'.
         input_type_or_origin = input_type
 
     if input_type_or_origin is Union:
-        # Currently only supports Optional[T] from the top-level
-        # BaseModel. We will get there only if the Optional[T] field has
-        # a value and to process it we have to extract the actual type T.
+        # Currently only supports 'Optional[T]' from the top-level
+        # 'BaseModel'. We will get there only if the 'Optional[T]' field has
+        # a value and to process it we have to extract the actual type 'T'.
         non_none_args = [
             arg for arg in get_args(input_type) if arg is not type(None)
         ]
@@ -147,7 +147,7 @@ def pydantic_to_proto(
 
         output = output_type()
 
-        for field_name, field_info in input.model_fields.items():
+        for field_name, field_info in type(input).model_fields.items():
             input_field = getattr(input, field_name)
             if input_field is None:
                 # If the Pydantic field is 'None', we skip setting it
@@ -233,9 +233,9 @@ def proto_to_pydantic(
         output_type_or_origin = output_type
 
     if output_type_or_origin is Union:
-        # Currently only supports Optional[T] from the top-level
-        # BaseModel. We will get there only if the Optional[T] field has
-        # a value and to process it we have to extract the actual type T.
+        # Currently only supports 'Optional[T]' from the top-level
+        # 'BaseModel'. We will get there only if the 'Optional[T]' field has
+        # a value and to process it we have to extract the actual type 'T'.
         non_none_args = [
             arg for arg in get_args(output_type) if arg is not type(None)
         ]
@@ -381,8 +381,18 @@ class Workflow(MethodModel):
 MethodType = Union[Writer, Reader, Transaction, Workflow]
 
 
-def is_snake_case(s):
-    return re.match(r'^[a-z0-9]+(_[a-z0-9]+)*$', s) is not None
+def is_snake_case(input: str) -> bool:
+    return re.match(r'^[a-z0-9]+(_[a-z0-9]+)*$', input) is not None
+
+
+def to_snake_case(input: str) -> str:
+    snake_case_words = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', input)
+    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', snake_case_words).lower()
+
+
+def to_pascal_case(input: str) -> str:
+    """Convert snake_case to PascalCase."""
+    return ''.join(word.capitalize() for word in input.split('_'))
 
 
 Methods = dict[str, MethodType]
@@ -421,12 +431,19 @@ class API(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra='allow')
 
     def __init__(self, **types: Type):
-        for name, data_type in types.items():
+        for type_name, data_type in types.items():
             if not isinstance(data_type, Type):
                 raise ValueError(
-                    f"Data type '{name}' must be a 'Type' instance, "
+                    f"Data type '{type_name}' must be a 'Type' instance, "
                     f"got '{__builtins__.type(data_type)}'"
                 )
+            for name, method in data_type.methods.items():
+                if len(method.errors) != 0:
+                    raise ValueError(
+                        f"Method '{name}' of data type '{type_name}' "
+                        f"cannot define 'errors' yet. "
+                        f"The feature is coming soon."
+                    )
 
         super().__init__(**types)
 
