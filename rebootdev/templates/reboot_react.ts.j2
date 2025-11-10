@@ -58,6 +58,9 @@ export {
 {% endif %}
 {% endif %}
 
+export const offlineCacheStorageType: reboot_web.OfflineCacheStorageType =
+  reboot_web.offlineCache.offlineCacheStorageType;
+
 reboot_api.check_bufbuild_protobuf_library(protobuf_es.Message);
 
 {% for client in clients %}
@@ -1305,16 +1308,61 @@ export const use{{ client.proto.state_name | to_camel }} = (
     const rebootClient = reboot_react.useRebootClient();
 
     const bearerToken = rebootClient.bearerToken;
+    const offlineCacheEnabled = rebootClient.offlineCacheEnabled;
 
     useEffect(() => {
+      let cacheKey;
+
+      if (offlineCacheEnabled) {
+        cacheKey =
+        `${stateRef}:${reboot_web.calcSha256(request.toBinary()).hex()}`;
+        
+        reboot_web.offlineCache.get(cacheKey).then((cachedResponse) => {
+          if (cachedResponse == null) {
+            return;
+          }
+
+          if (cachedResponse !== JSON.stringify(response)) {
+            const shapedCachedResponse = 
+              {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(
+                JSON.parse(cachedResponse)
+              );
+            setResponse(shapedCachedResponse);
+            setIsLoading(false);
+          }
+        }).catch((error) => {
+          console.warn(
+            `[Reboot] Retrieval of offline reader cache entry for '{{
+            client.proto.state_name | to_camel }}.{{ method.proto.name |
+            to_camel }}' errored with ${error}`
+          );
+        });
+      }
+
       const id = uuidv4();
+
       instance.use{{ method.proto.name | to_camel }}(
         id,
         request,
         bearerToken,
         (response: {{ method.output_type }}) => {
           setAborted(undefined);
-          setResponse({{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(response));
+          const shapedResponse = {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(response);
+
+          // Always override with the response from the server as it is the source of truth.
+          setResponse(shapedResponse);
+
+          if (offlineCacheEnabled) {
+            const cachedResponse = JSON.stringify(response);
+            reboot_web.offlineCache.set(cacheKey, cachedResponse)
+              .catch((error) => {
+                console.warn(
+                  `[Reboot] Setting of offline reader cache entry for '{{
+                  client.proto.state_name | to_camel }}.{{ method.proto.name |
+                  to_camel }}' errored with ${error}`
+                );
+              });
+          }
         },
         setIsLoading,
         (status: reboot_api.Status) => {
@@ -1327,6 +1375,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
           setAborted(aborted);
         },
       );
+
       return () => {
         instance.unuse{{ method.proto.name | to_camel }}(id, request, bearerToken);
       };
