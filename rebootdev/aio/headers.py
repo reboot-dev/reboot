@@ -80,8 +80,6 @@ TASK_SCHEDULE = 'x-reboot-task-schedule'
 # a request and thus we don't try and extract it).
 TASK_ID_UUID = 'x-reboot-task-id-uuid'
 
-FORWARDED_CLIENT_CERT_HEADER = 'x-forwarded-client-cert'
-
 # OpenTelemetry W3C Trace Context header
 # See: https://www.w3.org/TR/trace-context/
 TRACEPARENT_HEADER = 'traceparent'
@@ -126,10 +124,6 @@ class Headers:
     # that called, but it doesn't identify the user on whose behalf
     # the call was made - that information would be in the bearer token.
     caller_id: Optional[str] = None
-
-    # TODO(rjh): remove this header once `caller_id` is used everywhere
-    #            instead.
-    forwarded_client_cert: Optional[str] = None
 
     # OpenTelemetry W3C Trace Context headers for manual span context
     # propagation when not using opentelemetry's automatic gRPC interceptors.
@@ -179,7 +173,6 @@ class Headers:
             server_id=self.server_id,
             state_ref=self.state_ref,
             cookie=self.cookie,
-            forwarded_client_cert=self.forwarded_client_cert,
             caller_id=self.caller_id,
             bearer_token=self.bearer_token,
             traceparent=self.traceparent,
@@ -293,10 +286,6 @@ class Headers:
 
         caller_id: Optional[str] = extract_maybe(CALLER_ID_HEADER)
 
-        forwarded_client_cert: Optional[str] = extract_maybe(
-            FORWARDED_CLIENT_CERT_HEADER
-        )
-
         traceparent: Optional[str] = extract_maybe(TRACEPARENT_HEADER)
         tracestate: Optional[str] = extract_maybe(TRACESTATE_HEADER)
 
@@ -314,7 +303,6 @@ class Headers:
             task_schedule=task_schedule,
             cookie=cookie,
             caller_id=caller_id,
-            forwarded_client_cert=forwarded_client_cert,
             traceparent=traceparent,
             tracestate=tracestate,
         )
