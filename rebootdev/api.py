@@ -395,6 +395,22 @@ def to_pascal_case(input: str) -> str:
     return ''.join(word.capitalize() for word in input.split('_'))
 
 
+def snake_to_camel(snake_str: str) -> str:
+    """Convert snake_case to camelCase."""
+    components = snake_str.split('_')
+    return components[0] + ''.join(
+        word.capitalize() for word in components[1:]
+    )
+
+
+def get_field_tag(field_info) -> Optional[int]:
+    """Get the tag from a Pydantic field's json_schema_extra."""
+    json_schema_extra = getattr(field_info, 'json_schema_extra', {})
+    if isinstance(json_schema_extra, dict) and 'tag' in json_schema_extra:
+        return json_schema_extra['tag']
+    return None
+
+
 Methods = dict[str, MethodType]
 
 
