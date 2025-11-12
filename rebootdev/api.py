@@ -355,7 +355,7 @@ class MethodModel(pydantic.BaseModel):
     Base class for method type definitions in Reboot API.
     Contains common fields for all method types (Reader, Writer, Transaction, Workflow).
     """
-    request: typing.Type[pydantic.BaseModel]
+    request: Optional[typing.Type[pydantic.BaseModel]]
     response: Optional[typing.Type[pydantic.BaseModel]]
     errors: list[typing.Type[pydantic.BaseModel]] = []
     factory: bool = False

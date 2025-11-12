@@ -5,6 +5,7 @@ import typing
 from abc import ABC, abstractmethod
 from google.protobuf.message import Message
 from log.log import get_logger, log_at_most_once_per
+from pydantic import BaseModel  # type: ignore[import]
 from rebootdev.aio.contexts import ReaderContext
 from rebootdev.run_environments import (
     on_cloud,
@@ -131,8 +132,8 @@ def deny() -> AuthorizerRule[Message, Message]:
             self,
             *,
             context: ReaderContext,
-            state: Optional[Message],
-            request: Optional[Message],
+            state: Optional[Message | BaseModel],
+            request: Optional[Message | BaseModel],
             **kwargs,
         ) -> Authorizer.Decision:
             return rbt.v1alpha1.errors_pb2.PermissionDenied()
@@ -148,8 +149,8 @@ def allow() -> AuthorizerRule[Message, Message]:
             self,
             *,
             context: ReaderContext,
-            state: Optional[Message],
-            request: Optional[Message],
+            state: Optional[Message | BaseModel],
+            request: Optional[Message | BaseModel],
             **kwargs,
         ) -> Authorizer.Decision:
             return rbt.v1alpha1.errors_pb2.Ok()
@@ -203,8 +204,8 @@ def allow_if(
             self,
             *,
             context: ReaderContext,
-            state: Optional[ContravariantStateType],
-            request: Optional[ContravariantRequestType],
+            state: Optional[ContravariantStateType | BaseModel],
+            request: Optional[ContravariantRequestType | BaseModel],
             **kwargs,
         ) -> Authorizer.Decision:
 
@@ -311,8 +312,8 @@ class DefaultAuthorizer(Authorizer[Message, Message]):
         *,
         method_name: str,
         context: ReaderContext,
-        state: Optional[Message],
-        request: Optional[Message],
+        state: Optional[Message | BaseModel],
+        request: Optional[Message | BaseModel],
         **kwargs,
     ) -> Authorizer.Decision:
         # Allow if app internal.
