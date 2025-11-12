@@ -562,11 +562,20 @@ class RebootProtocPlugin(ProtocPlugin):
         # Then ask the language-specific logic to add any further information
         # that this specific language needs.
 
-        if base_file.options.proto.zod is not None and not generating_python_from_nodejs:
+        if (
+            base_file.options.proto.zod is not None and
+            not generating_python_from_nodejs and
+            base_file.options.proto.pydantic is None
+        ):
             # The 'base_file.options.proto.zod' path is written by the
             # 'rbt-schema-to-proto' script as an absolute path to the
             # schema file, however we need to convert it to a relative
             # path so that the generated code can import it correctly.
+            #
+            # If 'base_file.options.proto.pydantic' is set, that means
+            # we're generating a Pydantic-based proto file, which already
+            # has a correct import path for the Zod schema, so we
+            # don't need to convert it to a relative path here.
             assert output_directory is not None
             relative_schema_import_path = self.compute_relative_import_path(
                 output_directory=output_directory,

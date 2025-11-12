@@ -113,9 +113,6 @@ states_being_constructed: set[str] = set()
 {% if options.proto.pydantic %}
 
 import pydantic as IMPORT_pydantic
-# To be able to access Pydantic models defined in the API by the full
-# qualified name we need to import the top level module.
-import {{ options.proto.pydantic.split('.')[0] }}
 from {{ options.proto.pydantic }} import api as IMPORT_api
 import rebootdev.api as IMPORT_reboot_api
 {% endif %}
