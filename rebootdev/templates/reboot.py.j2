@@ -3982,6 +3982,10 @@ class {{ client.proto.state_name }}:
                         # It is safe to use app-internal auth given we know we're talking to
                         # the same application.
                         __app_internal_authorization__ = __context__._app_internal_api_key_secret
+                elif isinstance(__context__, IMPORT_reboot_aio_external.ExternalContext):
+                    # Extract `app_internal_authorization` from `ExternalContext`, similar to
+                    # how we extract `bearer_token` above.
+                    __app_internal_authorization__ = __context__.app_internal_authorization
 
                 __headers__ = IMPORT_reboot_aio_headers.Headers(
                     bearer_token=__bearer_token__,
