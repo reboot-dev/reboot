@@ -88,30 +88,65 @@ export const methodsSchema = z.record(
   ])
 );
 
-export type Methods = z.infer<typeof methodsSchema>;
-
-export type Reader = z.infer<typeof notConstructibleMethodSchema> & {
+export type Reader<
+  RequestType extends Request,
+  ResponseType extends Response,
+  ErrorsType extends Errors | undefined
+> = {
   kind: "reader";
-};
-export type Writer = z.infer<typeof constructibleMethodSchema> & {
-  kind: "writer";
-};
-export type Transaction = z.infer<typeof constructibleMethodSchema> & {
-  kind: "transaction";
-};
-export type Workflow = z.infer<typeof notConstructibleMethodSchema> & {
-  kind: "workflow";
+  request: RequestType;
+  response: ResponseType;
+  errors?: ErrorsType;
 };
 
-export function reader({
+export type Writer<
+  RequestType extends Request,
+  ResponseType extends Response,
+  ErrorsType extends Errors | undefined
+> = {
+  kind: "writer";
+  request: RequestType;
+  response: ResponseType;
+  errors?: ErrorsType;
+  factory?: {};
+};
+
+export type Transaction<
+  RequestType extends Request,
+  ResponseType extends Response,
+  ErrorsType extends Errors | undefined
+> = {
+  kind: "transaction";
+  request: RequestType;
+  response: ResponseType;
+  errors?: ErrorsType;
+  factory?: {};
+};
+
+export type Workflow<
+  RequestType extends Request,
+  ResponseType extends Response,
+  ErrorsType extends Errors | undefined
+> = {
+  kind: "workflow";
+  request: RequestType;
+  response: ResponseType;
+  errors?: ErrorsType;
+};
+
+export function reader<
+  RequestType extends Request,
+  ResponseType extends Response,
+  ErrorsType extends Errors | undefined
+>({
   request,
   response,
   errors,
 }: {
-  request: Request;
-  response: Response;
-  errors?: Errors;
-}): Reader {
+  request: RequestType;
+  response: ResponseType;
+  errors?: ErrorsType;
+}): Reader<RequestType, ResponseType, ErrorsType> {
   return {
     kind: "reader" as const,
     request,
@@ -120,17 +155,21 @@ export function reader({
   };
 }
 
-export function writer({
+export function writer<
+  RequestType extends Request,
+  ResponseType extends Response,
+  ErrorsType extends Errors | undefined
+>({
   request,
   response,
   errors,
   factory,
 }: {
-  request: Request;
-  response: Response;
-  errors?: Errors;
+  request: RequestType;
+  response: ResponseType;
+  errors?: ErrorsType;
   factory?: {};
-}): Writer {
+}): Writer<RequestType, ResponseType, ErrorsType> {
   return {
     kind: "writer" as const,
     request,
@@ -140,17 +179,21 @@ export function writer({
   };
 }
 
-export function transaction({
+export function transaction<
+  RequestType extends Request,
+  ResponseType extends Response,
+  ErrorsType extends Errors | undefined
+>({
   request,
   response,
   errors,
   factory,
 }: {
-  request: Request;
-  response: Response;
-  errors?: Errors;
+  request: RequestType;
+  response: ResponseType;
+  errors?: ErrorsType;
   factory?: {};
-}): Transaction {
+}): Transaction<RequestType, ResponseType, ErrorsType> {
   return {
     kind: "transaction" as const,
     request,
@@ -160,15 +203,19 @@ export function transaction({
   };
 }
 
-export function workflow({
+export function workflow<
+  RequestType extends Request,
+  ResponseType extends Response,
+  ErrorsType extends Errors | undefined
+>({
   request,
   response,
   errors,
 }: {
-  request: Request;
-  response: Response;
-  errors?: Errors;
-}): Workflow {
+  request: RequestType;
+  response: ResponseType;
+  errors?: ErrorsType;
+}): Workflow<RequestType, ResponseType, ErrorsType> {
   return {
     kind: "workflow" as const,
     request,
@@ -182,24 +229,10 @@ export const stateSchema = z.union([
   z.record(z.string(), z.instanceof(z.ZodType)),
 ]);
 
-export type State = z.infer<typeof stateSchema>;
-
 export const typeSchema = z.object({
   state: stateSchema,
   methods: methodsSchema,
 });
-
-export type Type = z.infer<typeof typeSchema>;
-
-export const apiSchema = z.record(
-  z.string(),
-  z.object({
-    state: stateSchema,
-    methods: methodsSchema,
-  })
-);
-
-export type API = z.infer<typeof apiSchema>;
 
 // We are using this helper function to raise an exception if the assertion
 // fails because console.assert does not do this and we can't use
