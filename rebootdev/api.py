@@ -411,11 +411,26 @@ def get_field_tag(field_info) -> Optional[int]:
     return None
 
 
-Methods = dict[str, MethodType]
+# We need to define 'Methods' as a class, so Python typing can
+# properly identify it as a type for 'Type.methods' field.
+# Otherwise we will see error like:
+# Argument "methods" to "Type" has incompatible type
+# "dict[str, MethodModel]"; expected "dict[str, Writer | Reader
+# | Transaction | Workflow]".
+class Methods(dict[str, MethodType]):
+
+    def __init__(self, **methods: MethodType):
+        super().__init__(**methods)
 
 
 class Type(pydantic.BaseModel):
     """Represents a Reboot data type with state and methods."""
+
+    # 'Methods' is a dict, so we need to allow arbitrary types
+    # to avoid Pydantic validation errors.
+    model_config = pydantic.ConfigDict(
+        arbitrary_types_allowed=True,
+    )
 
     state: typing.Type[pydantic.BaseModel]
     methods: Methods
