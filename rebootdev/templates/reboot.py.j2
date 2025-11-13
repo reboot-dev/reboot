@@ -474,9 +474,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                         method_name='{{ method.proto.full_name }}',
                         headers=headers,
                         auth=context.auth,
-                        {% if method.has_non_none_request %}
                         request=request,
-                        {% endif %}
                     ),
                 ) as states:
                     async for (state, idempotency_keys) in states:
@@ -490,9 +488,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                             return await self.__{{ method.proto.name }}(
                                 context,
                                 state,
-                                {% if method.has_non_none_request %}
                                 request,
-                                {% endif %}
                                 validating_effects=validating_effects,
                             )
 
@@ -738,9 +734,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                         {% elif method.options.proto.kind == 'workflow' %}
                         response = await self.__{{ method.proto.name }}(
                             context,
-                            {% if method.has_non_none_request %}
-                            {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(IMPORT_typing.cast({{ method.input_type }}, task.request)),
-                            {% endif %}
+                            IMPORT_typing.cast({{ method.input_type }}, task.request),
                             validating_effects=validating_effects,
                         )
                         {% endif %}
@@ -858,12 +852,10 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         states: IMPORT_typing.AsyncIterable[{{ state.pb2_name }}.{{ state.proto.name }}],
         {% endif %}
         {% endif %}
-        {% if method.has_non_none_request %}
         {% if not method.proto.client_streaming %}
         request: {{ method.input_type }},
         {% else %}
         requests: IMPORT_typing.AsyncIterable[{{ method.input_type }}],
-        {% endif %}
         {% endif %}
         *,
         validating_effects: bool,
@@ -890,7 +882,6 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     {% if not method.options.proto.kind == 'workflow' %}
                     state{% if method.options.proto.state_streaming %}s{% endif %}={% if method.options.proto.state_streaming %}states{% else %}typed_state{% endif %},
                     {% endif %}
-                    {% if method.has_non_none_request %}
                     request{% if method.proto.client_streaming %}s{% endif %}=request{% if method.proto.client_streaming %}s{% endif +%}
                     {% endif %}
                 )
@@ -925,9 +916,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             async for response in self._servicer._{{ method.proto.name }}(
                 context=context,
                 state{% if method.options.proto.state_streaming %}s{% endif %}=state{% if method.options.proto.state_streaming %}s{% endif %},
-                {% if method.has_non_none_request %}
                 request{% if method.proto.client_streaming %}s{% endif %}=request{% if method.proto.client_streaming %}s{% endif +%}
-                {% endif %}
             ):
                 IMPORT_reboot_aio_types.assert_type(response, [{{ method.output_type }}])
                 yield response
@@ -1074,12 +1063,10 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
     {% endif %}
     async def _{{ method.proto.name }}(
         self,
-        {% if method.has_non_none_request %}
         {% if not method.proto.client_streaming %}
         request: {{ method.input_type }},
         {% else %}
         requests: IMPORT_typing.AsyncIterable[{{ method.input_type }}],
-        {% endif %}
         {% endif %}
         context: IMPORT_reboot_aio_contexts.{{ method.options.proto.kind | to_camel }}Context,
         *,
@@ -1127,7 +1114,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 method_name='{{ method.proto.full_name }}',
                 headers=context._headers,
                 auth=context.auth,
-                {% if not method.proto.client_streaming and method.has_non_none_request %}
+                {% if not method.proto.client_streaming %}
                 request=request,
                 {% endif %}
             )
@@ -1148,9 +1135,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 response = await self.__{{ method.proto.name }}(
                     context,
                     state{% if method.options.proto.state_streaming %}s{% endif %},
-                    {% if method.has_non_none_request %}
                     request{% if method.proto.client_streaming %}s{% endif +%},
-                    {% endif %}
                     validating_effects=validating_effects,
                 )
                 return response
@@ -1158,9 +1143,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 async for response in self.__{{ method.proto.name }}(
                     context,
                     state{% if method.options.proto.state_streaming %}s{% endif %},
-                    {% if method.has_non_none_request %}
                     request{% if method.proto.client_streaming %}s{% endif +%},
-                    {% endif %}
                     validating_effects=True,
                 ):
                     yield response
@@ -1174,9 +1157,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     method_name='{{ method.proto.full_name }}',
                     headers=context._headers,
                     auth=context.auth,
-                    {% if method.has_non_none_request %}
                     request=request,
-                    {% endif %}
                 ),
                 transaction=transaction,
                 from_constructor={{ method.options.proto.constructor }},
@@ -1186,9 +1167,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 effects = await self.__{{ method.proto.name }}(
                     context,
                     state,
-                    {% if method.has_non_none_request %}
                     request,
-                    {% endif %}
                     validating_effects=validating_effects,
                 )
 
@@ -1208,9 +1187,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     method_name='{{ method.proto.full_name }}',
                     headers=context._headers,
                     auth=context.auth,
-                    {% if method.has_non_none_request %}
                     request=request,
-                    {% endif %}
                 ),
                 from_constructor={{ method.options.proto.constructor }},
                 requires_constructor={{ service.proto.requires_constructor }}
@@ -1219,9 +1196,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 response = await self.__{{ method.proto.name }}(
                     context,
                     state,
-                    {% if method.has_non_none_request %}
                     request,
-                    {% endif %}
                     validating_effects=validating_effects,
                 )
 
@@ -1308,9 +1283,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     method_name='{{ method.proto.full_name }}',
                     headers=context._headers,
                     auth=context.auth,
-                    {% if method.has_non_none_request %}
                     request=request,
-                    {% endif %}
                 ),
                 from_constructor={{ method.options.proto.constructor }},
                 requires_constructor={{ service.proto.requires_constructor }}
@@ -1436,26 +1409,14 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
 
                 {% if not method.proto.server_streaming %}
                 return await self._{{ method.proto.name }}(
-                    {% if method.has_non_none_request %}
-                    {% if not method.proto.client_streaming %}
-                    request,
-                    {% else %}
-                    requests,
-                    {% endif %}
-                    {% endif %}
+                    request{% if method.proto.client_streaming %}s{% endif %},
                     context,
                     validating_effects=validating_effects,
                     grpc_context=grpc_context,
                 )
                 {% else %}
                 async for response in self._{{ method.proto.name }}(
-                    {% if method.has_non_none_request %}
-                    {% if not method.proto.client_streaming %}
-                    request,
-                    {% else %}
-                    requests,
-                    {% endif %}
-                    {% endif %}
+                    request{% if method.proto.client_streaming %}s{% endif %},
                     context,
                     validating_effects=True,
                     grpc_context=grpc_context,
@@ -2205,14 +2166,14 @@ class {{ state.proto.name }}Authorizer(
         {% for method in service.methods %}
         {{ method.proto.name }}: IMPORT_typing.Optional[
             IMPORT_rebootdev.aio.auth.authorizers.AuthorizerRule[
-              {{ state.pb2_name }}.{{ state.proto.name }},
-              {{ method.input_type }},
+              {{ state.proto.name }}.State,
+              {{ state.proto.name }}.{{ method.proto.name }}Request,
             ]
         ] = None,
         {{ method.proto.name | to_snake }}: IMPORT_typing.Optional[
             IMPORT_rebootdev.aio.auth.authorizers.AuthorizerRule[
-              {{ state.pb2_name }}.{{ state.proto.name }},
-              {{ method.input_type }},
+              {{ state.proto.name }}.State,
+              {{ state.proto.name }}.{{ method.proto.name }}Request,
             ]
         ] = None,
         {% endfor %}
@@ -2915,12 +2876,10 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         {% else %}
         states: IMPORT_typing.AsyncIterable[{{ state.proto.name }}.State],
         {% endif %}
-        {% if method.has_non_none_request %}
         {% if not method.proto.client_streaming %}
         request: {{ method.input_type }},
         {% else %}
         requests: IMPORT_typing.AsyncIterable[{{ method.input_type }}],
-        {% endif %}
         {% endif %}
     {% if not method.proto.server_streaming %}
     ) -> {{ method.output_type }}:
@@ -2937,9 +2896,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         self,
         context: IMPORT_reboot_aio_contexts.WriterContext,
         state: {{ state.proto.name }}.State,
-        {% if method.has_non_none_request %}
         request: {{ method.input_type }},
-        {% endif %}
     ) -> {{ method.output_type }}:
         raise NotImplementedError
     {% elif method.options.proto.kind == 'transaction' %}
@@ -2948,9 +2905,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
         state: {{ state.proto.name }}.State,
-        {% if method.has_non_none_request %}
         request: {{ method.input_type }},
-        {% endif %}
     ) -> {{ method.output_type }}:
         raise NotImplementedError
     {% elif method.options.proto.kind == 'workflow' %}
@@ -2958,9 +2913,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
     async def _{{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
-        {% if method.has_non_none_request %}
         request: {{ method.input_type }},
-        {% endif %}
     ) -> {{ method.output_type }}:
         raise NotImplementedError
     {% endif %}
@@ -3038,7 +2991,7 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         self,
         context: IMPORT_reboot_aio_contexts.ReaderContext,
         {% if not method.options.proto.state_streaming %}
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        state: {{ state.proto.name }}.State,
         {% else %}
         states: IMPORT_typing.AsyncIterable[{{ state.pb2_name }}.{{ state.proto.name }}],
         {% endif %}
@@ -3130,7 +3083,7 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     async def {{ method.proto.name | to_snake }}(
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        state: {{ state.proto.name }}.State,
         {% if method.has_non_none_request %}
         request: {{ state.proto.name}}.{{ method.proto.name }}Request,
         {% endif %}
@@ -3189,12 +3142,10 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         {% else %}
         states: IMPORT_typing.AsyncIterable[{{ state.proto.name }}.State],
         {% endif %}
-        {% if method.has_non_none_request %}
         {% if not method.proto.client_streaming %}
         request: {{ method.input_type }},
         {% else %}
         requests: IMPORT_typing.AsyncIterable[{{ method.input_type }}],
-        {% endif %}
         {% endif %}
     {% if not method.proto.server_streaming %}
     ) -> {{ method.output_type }}:
@@ -3236,9 +3187,7 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         self,
         context: IMPORT_reboot_aio_contexts.WriterContext,
         state: {{ state.proto.name }}.State,
-        {% if method.has_non_none_request %}
         request: {{ method.input_type }},
-        {% endif %}
     ) -> {{ method.output_type }}:
         # Wrap the call to the developer's method in a `span` so that it
         # is traced using its fully-qualified Python name.
@@ -3266,9 +3215,7 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
         state: {{ state.proto.name }}.State,
-        {% if method.has_non_none_request %}
         request: {{ method.input_type }},
-        {% endif %}
     ) -> {{ method.output_type }}:
         # Wrap the call to the developer's method in a `span` so that it
         # is traced using its fully-qualified Python name.
@@ -3295,9 +3242,7 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     async def _{{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
-        {% if method.has_non_none_request %}
         request: {{ method.input_type }},
-        {% endif %}
     ) -> {{ method.output_type }}:
         # Wrap the call to the developer's method in a `span` so that it
         # is traced using its fully-qualified Python name.
@@ -3460,12 +3405,10 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         {% else %}
         states: IMPORT_typing.AsyncIterable[{{ state.proto.name }}.State],
         {% endif %}
-        {% if method.has_non_none_request %}
         {% if not method.proto.client_streaming %}
         request: {{ method.input_type }},
         {% else %}
         requests: IMPORT_typing.AsyncIterable[{{ method.input_type }}],
-        {% endif %}
         {% endif %}
     {% if not method.proto.server_streaming %}
     ) -> {{ method.output_type }}:
@@ -3524,9 +3467,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         self,
         context: IMPORT_reboot_aio_contexts.WriterContext,
         state: {{ state.proto.name }}.State,
-        {% if method.has_non_none_request %}
         request: {{ method.input_type }},
-        {% endif %}
     ) -> {{ method.output_type }}:
         # We should have an asyncio task and thus context per request,
         # let's confirm this assumption by making sure that
@@ -3562,9 +3503,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
         state: {{ state.proto.name }}.State,
-        {% if method.has_non_none_request %}
         request: {{ method.input_type }},
-        {% endif %}
     ) -> {{ method.output_type }}:
         # We should have an asyncio task and thus context per request,
         # let's confirm this assumption by making sure that
@@ -3599,9 +3538,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
     async def _{{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
-        {% if method.has_non_none_request %}
         request: {{ method.input_type }},
-        {% endif %}
     ) -> {{ method.output_type }}:
         {{ state.proto.name }}Servicer._workflow.set(True)
         try:
