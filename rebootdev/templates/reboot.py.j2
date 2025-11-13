@@ -883,7 +883,6 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     state{% if method.options.proto.state_streaming %}s{% endif %}={% if method.options.proto.state_streaming %}states{% else %}typed_state{% endif %},
                     {% endif %}
                     request{% if method.proto.client_streaming %}s{% endif %}=request{% if method.proto.client_streaming %}s{% endif +%}
-                    {% endif %}
                 )
             )
 
