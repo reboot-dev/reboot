@@ -36,10 +36,14 @@ RequestType = TypeVar('RequestType', bound=Message)
 RequestTypes = TypeVar('RequestTypes', bound=Message)
 
 ContravariantStateType = TypeVar(
-    'ContravariantStateType', bound=Message, contravariant=True
+    'ContravariantStateType',
+    bound=Message | BaseModel,
+    contravariant=True,
 )
 ContravariantRequestType = TypeVar(
-    'ContravariantRequestType', bound=Message, contravariant=True
+    'ContravariantRequestType',
+    bound=Message | BaseModel | None,
+    contravariant=True,
 )
 
 
@@ -204,8 +208,8 @@ def allow_if(
             self,
             *,
             context: ReaderContext,
-            state: Optional[ContravariantStateType | BaseModel],
-            request: Optional[ContravariantRequestType | BaseModel],
+            state: Optional[ContravariantStateType],
+            request: Optional[ContravariantRequestType],
             **kwargs,
         ) -> Authorizer.Decision:
 
