@@ -315,8 +315,14 @@ def proto_to_pydantic(
                 output[field_name] = None
 
         return output_type(**output)
-    elif issubclass(output_type_or_origin, (int, float, str, bool)):
+    elif issubclass(output_type_or_origin, (float, str, bool)):
+        assert isinstance(input, (float, str, bool))
         return input
+    elif issubclass(output_type_or_origin, int):
+        # We map Python 'int' to Protobuf 'double', so we need to
+        # truncate the float value back to int here.
+        assert isinstance(input, (int, float))
+        return int(input)
     else:
         raise ValueError(
             f"Unexpected output type in 'proto_to_pydantic'. "
@@ -355,7 +361,7 @@ class MethodModel(pydantic.BaseModel):
     Base class for method type definitions in Reboot API.
     Contains common fields for all method types (Reader, Writer, Transaction, Workflow).
     """
-    request: typing.Type[pydantic.BaseModel]
+    request: Optional[typing.Type[pydantic.BaseModel]]
     response: Optional[typing.Type[pydantic.BaseModel]]
     errors: list[typing.Type[pydantic.BaseModel]] = []
     factory: bool = False
@@ -395,11 +401,42 @@ def to_pascal_case(input: str) -> str:
     return ''.join(word.capitalize() for word in input.split('_'))
 
 
-Methods = dict[str, MethodType]
+def snake_to_camel(snake_str: str) -> str:
+    """Convert snake_case to camelCase."""
+    components = snake_str.split('_')
+    return components[0] + ''.join(
+        word.capitalize() for word in components[1:]
+    )
+
+
+def get_field_tag(field_info) -> Optional[int]:
+    """Get the tag from a Pydantic field's json_schema_extra."""
+    json_schema_extra = getattr(field_info, 'json_schema_extra', {})
+    if isinstance(json_schema_extra, dict) and 'tag' in json_schema_extra:
+        return json_schema_extra['tag']
+    return None
+
+
+# We need to define 'Methods' as a class, so Python typing can
+# properly identify it as a type for 'Type.methods' field.
+# Otherwise we will see error like:
+# Argument "methods" to "Type" has incompatible type
+# "dict[str, MethodModel]"; expected "dict[str, Writer | Reader
+# | Transaction | Workflow]".
+class Methods(dict[str, MethodType]):
+
+    def __init__(self, **methods: MethodType):
+        super().__init__(**methods)
 
 
 class Type(pydantic.BaseModel):
     """Represents a Reboot data type with state and methods."""
+
+    # 'Methods' is a dict, so we need to allow arbitrary types
+    # to avoid Pydantic validation errors.
+    model_config = pydantic.ConfigDict(
+        arbitrary_types_allowed=True,
+    )
 
     state: typing.Type[pydantic.BaseModel]
     methods: Methods

@@ -62,6 +62,7 @@ from datetime import timedelta as IMPORT_datetime_timedelta
 from datetime import timezone as IMPORT_datetime_timezone
 from google.protobuf import timestamp_pb2 as IMPORT_google_protobuf_timestamp_pb2
 from google.protobuf import wrappers_pb2 as IMPORT_google_protobuf_wrappers_pb2
+from google.protobuf.empty_pb2 import Empty as IMPORT_google_protobuf_empty_pb2_Empty
 import rebootdev.aio.tracing as IMPORT_reboot_aio_tracing
 from google.rpc import status_pb2 as IMPORT_google_rpc_status_pb2
 from tzlocal import get_localzone as IMPORT_tzlocal_get_localzone
@@ -113,9 +114,6 @@ states_being_constructed: set[str] = set()
 {% if options.proto.pydantic %}
 
 import pydantic as IMPORT_pydantic
-# To be able to access Pydantic models defined in the API by the full
-# qualified name we need to import the top level module.
-import {{ options.proto.pydantic.split('.')[0] }}
 from {{ options.proto.pydantic }} import api as IMPORT_api
 import rebootdev.api as IMPORT_reboot_api
 {% endif %}
@@ -183,9 +181,12 @@ def {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(
     {% endif %}
 
 def {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(
+    {% if method.has_non_none_request %}
     request: {{ client.proto.state_name }}.{{ method.proto.name }}Request
+    {% endif %}
 ) -> {{ method.input_type }}:
     {% if options.proto.pydantic %}
+    {% if method.has_non_none_request %}
     assert isinstance(request, IMPORT_pydantic.BaseModel)
     return IMPORT_reboot_api.pydantic_to_proto(
         request,
@@ -193,9 +194,14 @@ def {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(
         {{ method.input_type }},
     )
     {% else %}
+    assert issubclass({{ method.input_type }}, IMPORT_google_protobuf_empty_pb2_Empty)
+    return {{ method.input_type }}()
+    {% endif %}
+    {% else %}
     return request
     {% endif %}
 
+{% if method.has_non_none_request %}
 def {{ client.proto.state_name }}{{ method.proto.name }}RequestFromProto(
     request: {{ method.input_type }}
 ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Request:
@@ -208,6 +214,7 @@ def {{ client.proto.state_name }}{{ method.proto.name }}RequestFromProto(
     {% else %}
     return request
     {% endif %}
+{% endif %}
 
 {% endfor %}
 {% endfor %}
@@ -714,7 +721,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                             context=context,
                             state_ref=context._state_ref,
                         ).{{ method.proto.name }}(
+                            {% if method.has_non_none_request %}
                             {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(IMPORT_typing.cast({{ method.input_type }}, task.request)),
+                            {% endif %}
                             bearer_token=__internal_magic_token__,
                             {% if method.options.proto.kind in ['writer', 'transaction'] %}
                             idempotency=IMPORT_reboot_aio_idempotency.Idempotency(
@@ -725,7 +734,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                         {% elif method.options.proto.kind == 'workflow' %}
                         response = await self.__{{ method.proto.name }}(
                             context,
-                            {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(IMPORT_typing.cast({{ method.input_type }}, task.request)),
+                            IMPORT_typing.cast({{ method.input_type }}, task.request),
                             validating_effects=validating_effects,
                         )
                         {% endif %}
@@ -1283,7 +1292,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     context=context,
                     state_ref=context._state_ref,
                 ).{{ method.proto.name }}(
+                    {% if method.has_non_none_request %}
                     {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request),
+                    {% endif %}
                     schedule=context._headers.task_schedule,
                 )
 
@@ -1397,22 +1408,14 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
 
                 {% if not method.proto.server_streaming %}
                 return await self._{{ method.proto.name }}(
-                    {% if not method.proto.client_streaming %}
-                    request,
-                    {% else %}
-                    requests,
-                    {% endif %}
+                    request{% if method.proto.client_streaming %}s{% endif %},
                     context,
                     validating_effects=validating_effects,
                     grpc_context=grpc_context,
                 )
                 {% else %}
                 async for response in self._{{ method.proto.name }}(
-                    {% if not method.proto.client_streaming %}
-                    request,
-                    {% else %}
-                    requests,
-                    {% endif %}
+                    request{% if method.proto.client_streaming %}s{% endif %},
                     context,
                     validating_effects=True,
                     grpc_context=grpc_context,
@@ -1662,10 +1665,12 @@ class {{ client.proto.state_name }}ReaderStub(_{{ client.proto.state_name }}Stub
     {%- if method.options.proto.kind == 'reader' %}
     async def {{ method.proto.name }}(
         self,
+        {% if method.has_non_none_request %}
         {% if not method.proto.client_streaming %}
         request: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
         {% else %}
         requests: IMPORT_typing.AsyncIterable[{{ method.input_type }}],
+        {% endif %}
         {% endif %}
         *,
         metadata: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None,
@@ -1681,7 +1686,11 @@ class {{ client.proto.state_name }}ReaderStub(_{{ client.proto.state_name }}Stub
         method = '{{ method.proto.name }}'
 
         {% if not method.proto.client_streaming %}
-        proto_request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(request)
+        proto_request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(
+            {% if method.has_non_none_request %}
+            request,
+            {% endif %}
+        )
         {% endif %}
 
         async def call():
@@ -1786,10 +1795,12 @@ class {{ client.proto.state_name }}WriterStub(_{{ client.proto.state_name }}Stub
     {%- if method.options.proto.kind == 'reader' %}
     async def {{ method.proto.name }}(
         self,
+        {% if method.has_non_none_request %}
         {% if not method.proto.client_streaming %}
         request: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
         {% else %}
         requests: IMPORT_typing.AsyncIterable[{{ method.input_type }}],
+        {% endif %}
         {% endif %}
         *,
         metadata: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None,
@@ -1807,7 +1818,11 @@ class {{ client.proto.state_name }}WriterStub(_{{ client.proto.state_name }}Stub
             {% if method.proto.client_streaming %}
             requests,
             {% else %}
-            {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(request),
+            {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(
+                {% if method.has_non_none_request %}
+                request,
+                {% endif %}
+            ),
             {% endif %}
             unary={{ not method.proto.client_streaming and not method.proto.server_streaming }},
             reader=True,
@@ -1827,13 +1842,19 @@ class {{ client.proto.state_name }}WriterStub(_{{ client.proto.state_name }}Stub
     {% elif method.options.proto.kind == 'writer' %}
     async def {{ method.proto.name }}(
         self,
+        {% if method.has_non_none_request %}
         request: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
+        {% endif %}
         idempotency: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         *,
         metadata: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None,
         bearer_token: IMPORT_typing.Optional[str] = None,
     ) -> {{ method.output_type }}:
-        proto_request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(request)
+        proto_request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(
+            {% if method.has_non_none_request %}
+            request,
+            {% endif %}
+        )
         with self._idempotency_manager.idempotently(
             state_type_name=IMPORT_reboot_aio_types.StateTypeName('{{ client.proto.state_full_name }}'),
             state_ref=self._headers.state_ref,
@@ -1888,10 +1909,12 @@ class {{ client.proto.state_name }}WorkflowStub(_{{ client.proto.state_name }}St
     {%- if method.options.proto.kind == 'reader' %}
     async def {{ method.proto.name }}(
         self,
+        {% if method.has_non_none_request %}
         {% if not method.proto.client_streaming %}
         request: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
         {% else %}
         requests: IMPORT_typing.AsyncIterable[{{ method.input_type }}],
+        {% endif %}
         {% endif %}
         *,
         metadata: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None,
@@ -1909,7 +1932,11 @@ class {{ client.proto.state_name }}WorkflowStub(_{{ client.proto.state_name }}St
             {% if method.proto.client_streaming %}
             requests,
             {% else %}
-            {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(request),
+            {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(
+                {% if method.has_non_none_request %}
+                request,
+                {% endif %}
+            ),
             {% endif %}
             unary={{ not method.proto.client_streaming and not method.proto.server_streaming }},
             reader=True,
@@ -1929,14 +1956,20 @@ class {{ client.proto.state_name }}WorkflowStub(_{{ client.proto.state_name }}St
     {% elif method.options.proto.kind in ['writer', 'transaction'] %}
     async def {{ method.proto.name }}(
         self,
+        {% if method.has_non_none_request %}
         request: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
+        {% endif %}
         idempotency: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         *,
         metadata: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None,
         bearer_token: IMPORT_typing.Optional[str] = None,
     ) -> {{ method.output_type }}:
         idempotency_key: IMPORT_typing.Optional[IMPORT_uuid.UUID]
-        proto_request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(request)
+        proto_request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(
+            {% if method.has_non_none_request %}
+            request,
+            {% endif %}
+        )
 
         with self._idempotency_manager.idempotently(
             state_type_name=IMPORT_reboot_aio_types.StateTypeName('{{ client.proto.state_full_name }}'),
@@ -1993,14 +2026,20 @@ class {{ client.proto.state_name }}TasksStub(_{{ client.proto.state_name }}Stub)
     {% if not method.options.proto.constructor and not method.proto.server_streaming %}
     async def {{ method.proto.name }}(
         self,
+        {% if method.has_non_none_request %}
         request: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
+        {% endif %}
         idempotency: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         *,
         metadata: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None,
         bearer_token: IMPORT_typing.Optional[str] = None,
     ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
         idempotency_key: IMPORT_typing.Optional[IMPORT_uuid.UUID]
-        proto_request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(request)
+        proto_request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(
+            {% if method.has_non_none_request %}
+            request,
+            {% endif %}
+        )
 
         with self._idempotency_manager.idempotently(
             state_type_name=IMPORT_reboot_aio_types.StateTypeName('{{ client.proto.state_full_name }}'),
@@ -2065,7 +2104,9 @@ class {{ client.proto.state_name }}ServicerTasks:
     {% for method in service.methods %}
     async def {{ method.proto.name }}(
         self,
+        {% if method.has_non_none_request %}
         request: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
+        {% endif %}
         *,
         schedule: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
     ) -> IMPORT_reboot_aio_tasks.TaskEffect:
@@ -2074,7 +2115,11 @@ class {{ client.proto.state_name }}ServicerTasks:
             state_type=IMPORT_reboot_aio_types.StateTypeName('{{ client.proto.state_full_name }}'),
             state_ref=self._state_ref,
             method_name='{{ method.proto.name }}',
-            request={{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(request),
+            request={{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(
+                {% if method.has_non_none_request %}
+                request,
+                {% endif %}
+            ),
             schedule=(IMPORT_reboot_time_DateTimeWithTimeZone.now() + schedule) if isinstance(
                 schedule, IMPORT_datetime_timedelta
             ) else schedule,
@@ -2120,14 +2165,14 @@ class {{ state.proto.name }}Authorizer(
         {% for method in service.methods %}
         {{ method.proto.name }}: IMPORT_typing.Optional[
             IMPORT_rebootdev.aio.auth.authorizers.AuthorizerRule[
-              {{ state.pb2_name }}.{{ state.proto.name }},
-              {{ method.input_type }},
+              {{ state.proto.name }}.State,
+              {{ state.proto.name }}.{{ method.proto.name }}Request,
             ]
         ] = None,
         {{ method.proto.name | to_snake }}: IMPORT_typing.Optional[
             IMPORT_rebootdev.aio.auth.authorizers.AuthorizerRule[
-              {{ state.pb2_name }}.{{ state.proto.name }},
-              {{ method.input_type }},
+              {{ state.proto.name }}.State,
+              {{ state.proto.name }}.{{ method.proto.name }}Request,
             ]
         ] = None,
         {% endfor %}
@@ -2172,10 +2217,18 @@ class {{ state.proto.name }}Authorizer(
             return await self.{{ method.proto.name }}(
                 context=context,
                 {% if not method.options.proto.constructor %}
+                {% if options.proto.pydantic %}
+                state={{ state.proto.name }}FromProto(state) if state is not None else state,
+                {% else %}
                 state=IMPORT_typing.cast({{ state.pb2_name }}.{{ state.proto.name }}, state),
                 {% endif %}
-                {% if not (method.options.proto.kind == 'reader' and method.proto.client_streaming) %}
+                {% endif %}
+                {% if not (method.options.proto.kind == 'reader' and method.proto.client_streaming) and method.has_non_none_request %}
+                {% if options.proto.pydantic %}
+                request={{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request) if request is not None else request,
+                {% else %}
                 request=IMPORT_typing.cast({{ method.input_type }}, request),
+                {% endif %}
                 {% endif %}
             )
         {% endfor %}
@@ -2191,22 +2244,25 @@ class {{ state.proto.name }}Authorizer(
         *,
         context: IMPORT_reboot_aio_contexts.ReaderContext,
         {% if not method.options.proto.constructor %}
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        state: {{ state.proto.name }}.State,
         {% endif %}
-        {% if not (method.options.proto.kind == 'reader' and method.proto.client_streaming) %}
-        request: {{ method.input_type }},
+        {% if not (method.options.proto.kind == 'reader' and method.proto.client_streaming) and method.has_non_none_request %}
+        request: {{ state.proto.name }}.{{ method.proto.name }}Request,
         {% endif %}
     ) -> IMPORT_rebootdev.aio.auth.authorizers.Authorizer.Decision:
         return await (self._{{ method.proto.name | to_snake }} or self.__default).execute(
             context=context,
             {% if not method.options.proto.constructor %}
-            state=IMPORT_typing.cast({{ state.pb2_name }}.{{ state.proto.name }}, state),
+            state=state,
             {% else %}
             state=None,
             {% endif %}
-            {% if not (method.options.proto.kind == 'reader' and method.proto.client_streaming) %}
-            request=IMPORT_typing.cast({{ method.input_type }}, request),
+            {% if not (method.options.proto.kind == 'reader' and method.proto.client_streaming) and method.has_non_none_request %}
+            request=request,
             {% else %}
+            # TODO: Don't pass 'None' if user specified 'request=None'
+            # in the Pydantic API. We need to support dropping 'request'
+            # argument in the default 'AuthorizerRule's before.
             request=None,
             {% endif %}
         )
@@ -2889,13 +2945,15 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         {% else %}
         states: IMPORT_typing.AsyncIterable[{{ state.proto.name }}.State],
         {% endif %}
+        {% if method.has_non_none_request %}
         {% if not method.proto.client_streaming %}
-        request: {{ method.input_type }},
+        request: {{ state.proto.name }}.{{ method.proto.name }}Request,
         {% else %}
-        requests: IMPORT_typing.AsyncIterable[{{ method.input_type }}],
+        requests: IMPORT_typing.AsyncIterable[{{ state.proto.name }}.{{ method.proto.name }}Request],
+        {% endif %}
         {% endif %}
     {% if not method.proto.server_streaming %}
-    ) -> {{ method.output_type }}:
+    ) -> {{ state.proto.name }}.{{ method.proto.name }}Response:
     {% else %}
     ) -> IMPORT_typing.AsyncIterable[{{ method.output_type }}]:
     {% endif %}
@@ -2909,13 +2967,17 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         return await self.{{ method.proto.name | to_snake }}(
             context,
             state{% if method.options.proto.state_streaming %}s{% endif %},
+            {% if method.has_non_none_request %}
             request{% if method.proto.client_streaming %}s{% endif %},
+            {% endif %}
         )
         {% else %}
         async for response in self.{{ method.proto.name | to_snake }}(
             context,
             state{% if method.options.proto.state_streaming %}s{% endif %},
+            {% if method.has_non_none_request %}
             request{% if method.proto.client_streaming %}s{% endif %},
+            {% endif %}
         ):
             yield response
         {% endif %}
@@ -2928,17 +2990,19 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         self,
         context: IMPORT_reboot_aio_contexts.ReaderContext,
         {% if not method.options.proto.state_streaming %}
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        state: {{ state.proto.name }}.State,
         {% else %}
         states: IMPORT_typing.AsyncIterable[{{ state.pb2_name }}.{{ state.proto.name }}],
         {% endif %}
+        {% if method.has_non_none_request %}
         {% if not method.proto.client_streaming %}
-        request: {{ method.input_type }},
+        request: {{ state.proto.name }}.{{ method.proto.name }}Request,
         {% else %}
-        requests: IMPORT_typing.AsyncIterable[{{ method.input_type }}],
+        requests: IMPORT_typing.AsyncIterable[{{ state.proto.name }}.{{ method.proto.name }}Request],
+        {% endif %}
         {% endif %}
     {% if not method.proto.server_streaming %}
-    ) -> {{ method.output_type }}:
+    ) -> {{ state.proto.name }}.{{ method.proto.name }}Response:
     {% else %}
     ) -> IMPORT_typing.AsyncIterable[{{ method.output_type }}]:
     {% endif %}
@@ -2955,8 +3019,10 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         self,
         context: IMPORT_reboot_aio_contexts.WriterContext,
         state: {{ state.proto.name }}.State,
-        request: {{ method.input_type }},
-    ) -> {{ method.output_type }}:
+        {% if method.has_non_none_request %}
+        request: {{ state.proto.name}}.{{ method.proto.name }}Request,
+        {% endif %}
+    ) -> {{ state.proto.name }}.{{ method.proto.name }}Response:
         # During the migration from 'PascalCase' to 'snake_case' method
         # naming in Python servicers, we call the 'snake_case' version
         # by default, so new names will do the correct thing making the
@@ -2966,7 +3032,9 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         return await self.{{ method.proto.name | to_snake }}(
             context,
             state,
+            {% if method.has_non_none_request %}
             request,
+            {% endif %}
         )
 
     # To be backwards compatible during the renaming don't make this
@@ -2976,8 +3044,10 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         self,
         context: IMPORT_reboot_aio_contexts.WriterContext,
         state: {{ state.pb2_name }}.{{ state.proto.name }},
-        request: {{ method.input_type }},
-    ) -> {{ method.output_type }}:
+        {% if method.has_non_none_request %}
+        request: {{ state.proto.name}}.{{ method.proto.name }}Request,
+        {% endif %}
+    ) -> {{ state.proto.name }}.{{ method.proto.name }}Response:
         raise NotImplementedError
     {% elif method.options.proto.kind == 'transaction' %}
     # To be backwards compatible during the renaming don't make this
@@ -2988,8 +3058,10 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
         state: {{ state.proto.name }}.State,
-        request: {{ method.input_type }},
-    ) -> {{ method.output_type }}:
+        {% if method.has_non_none_request %}
+        request: {{ state.proto.name}}.{{ method.proto.name }}Request,
+        {% endif %}
+    ) -> {{ state.proto.name }}.{{ method.proto.name }}Response:
         # During the migration from 'PascalCase' to 'snake_case' method
         # naming in Python servicers, we call the 'snake_case' version
         # by default, so new names will do the correct thing making the
@@ -2999,7 +3071,9 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         return await self.{{ method.proto.name | to_snake }}(
             context,
             state,
+            {% if method.has_non_none_request %}
             request,
+            {% endif %}
         )
 
     # To be backwards compatible during the renaming don't make this
@@ -3008,9 +3082,11 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     async def {{ method.proto.name | to_snake }}(
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
-        request: {{ method.input_type }},
-    ) -> {{ method.output_type }}:
+        state: {{ state.proto.name }}.State,
+        {% if method.has_non_none_request %}
+        request: {{ state.proto.name}}.{{ method.proto.name }}Request,
+        {% endif %}
+    ) -> {{ state.proto.name }}.{{ method.proto.name }}Response:
         raise NotImplementedError
     {% elif method.options.proto.kind == 'workflow' %}
     # To be backwards compatible during the renaming don't make this
@@ -3020,8 +3096,10 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     async def {{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
-        request: {{ method.input_type }},
-    ) -> {{ method.output_type }}:
+        {% if method.has_non_none_request %}
+        request: {{ state.proto.name}}.{{ method.proto.name }}Request,
+        {% endif %}
+    ) -> {{ state.proto.name }}.{{ method.proto.name }}Response:
         # During the migration from 'PascalCase' to 'snake_case' method
         # naming in Python servicers, we call the 'snake_case' version
         # by default, so new names will do the correct thing making the
@@ -3030,7 +3108,9 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         # method and will just work.
         return await self.{{ method.proto.name | to_snake }}(
             context,
+            {% if method.has_non_none_request %}
             request,
+            {% endif %}
         )
 
     # To be backwards compatible during the renaming don't make this
@@ -3039,8 +3119,10 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     async def {{ method.proto.name | to_snake }}(
         self,
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
-        request: {{ method.input_type }},
-    ) -> {{ method.output_type }}:
+        {% if method.has_non_none_request %}
+        request: {{ state.proto.name}}.{{ method.proto.name }}Request,
+        {% endif %}
+    ) -> {{ state.proto.name }}.{{ method.proto.name }}Response:
         raise NotImplementedError
     {% endif %}
 
@@ -3077,16 +3159,20 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
                 level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 python_specific=True,
         ):
+            {% if method.has_non_none_request %}
             {% if method.proto.client_streaming %}
             typed_requests = requests
             {% else %}
             typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
             {% endif %}
+            {% endif %}
             response{% if method.proto.server_streaming %}s{% endif %} = (
                 self.{{ method.proto.name }}(
                     context,
                     state{% if method.options.proto.state_streaming %}s{% endif %},
+                    {% if method.has_non_none_request %}
                     typed_request{% if method.proto.client_streaming %}s{% endif %},
+                    {% endif %}
                 )
             )
             {% if not method.proto.server_streaming %}
@@ -3110,8 +3196,18 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
                 level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 python_specific=True,
         ):
+            {% if method.has_non_none_request %}
             typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
-            return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(await self.{{ method.proto.name }}(context, state, typed_request))
+            {% endif %}
+            return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(
+                await self.{{ method.proto.name }}(
+                    context,
+                    state,
+                    {% if method.has_non_none_request %}
+                    typed_request
+                    {% endif %}
+                )
+            )
 
     {% elif method.options.proto.kind == 'transaction' %}
     async def _{{ method.proto.name }}(
@@ -3128,8 +3224,18 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
                 level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 python_specific=True,
         ):
+            {% if method.has_non_none_request %}
             typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
-            return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(await self.{{ method.proto.name }}(context, state, typed_request))
+            {% endif %}
+            return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(
+                await self.{{ method.proto.name }}(
+                    context,
+                    state,
+                    {% if method.has_non_none_request %}
+                    typed_request
+                    {% endif %}
+                )
+            )
 
     {% elif method.options.proto.kind == 'workflow' %}
     async def _{{ method.proto.name }}(
@@ -3145,8 +3251,17 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
                 level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                 python_specific=True,
         ):
+            {% if method.has_non_none_request %}
             typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
-            return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(await self.{{ method.proto.name }}(context, typed_request))
+            {% endif %}
+            return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(
+                await self.{{ method.proto.name }}(
+                    context,
+                    {% if method.has_non_none_request %}
+                    typed_request,
+                    {% endif %}
+                )
+            )
 
     {% endif %}
 
@@ -3237,7 +3352,9 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         {% elif method.options.proto.kind == 'workflow' %}
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
         {% endif %}
+        {% if method.has_non_none_request %}
         request: {{ state.proto.name }}.{{ method.proto.name }}Request,
+        {% endif %}
     ) -> {{ state.proto.name }}.{{ method.proto.name }}Response:
         # During the migration from 'PascalCase' to 'snake_case' method
         # naming in Python servicers, we call the 'snake_case' version
@@ -3247,7 +3364,9 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         # method and will just work.
         return await self.{{ method.proto.name | to_snake }}(
             context,
+            {% if method.has_non_none_request %}
             request,
+            {% endif %}
         )
 
     # To be backwards compatible during the renaming don't make this
@@ -3264,7 +3383,9 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         {% elif method.options.proto.kind == 'workflow' %}
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
         {% endif %}
+        {% if method.has_non_none_request %}
         request: {{ state.proto.name }}.{{ method.proto.name }}Request,
+        {% endif %}
     ) -> {{ state.proto.name }}.{{ method.proto.name }}Response:
         raise NotImplementedError
 
@@ -3325,8 +3446,18 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                     python_specific=True,
             ):
+                {% if method.has_non_none_request %}
                 typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
-                return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(await instance.{{ method.proto.name }}(context, typed_request))
+                {% endif %}
+
+                return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(
+                    await instance.{{ method.proto.name }}(
+                        context,
+                        {% if method.has_non_none_request %}
+                        typed_request,
+                        {% endif %}
+                    )
+                )
         finally:
             {{ state.proto.name }}Servicer._state.set(None)
         {% endif %}
@@ -3352,8 +3483,18 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                     python_specific=True,
             ):
+                {% if method.has_non_none_request %}
                 typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
-                return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(await instance.{{ method.proto.name }}(context, typed_request))
+                {% endif %}
+
+                return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(
+                    await instance.{{ method.proto.name }}(
+                        context,
+                        {% if method.has_non_none_request %}
+                        typed_request,
+                        {% endif %}
+                    )
+                )
         finally:
             {{ state.proto.name }}Servicer._state.set(None)
     {% elif method.options.proto.kind == 'transaction' %}
@@ -3378,8 +3519,18 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                     python_specific=True,
             ):
+                {% if method.has_non_none_request %}
                 typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
-                return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(await instance.{{ method.proto.name }}(context, typed_request))
+                {% endif %}
+
+                return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(
+                    await instance.{{ method.proto.name }}(
+                        context,
+                        {% if method.has_non_none_request %}
+                        typed_request,
+                        {% endif %}
+                    )
+                )
         finally:
             {{ state.proto.name }}Servicer._state.set(None)
     {% elif method.options.proto.kind == 'workflow' %}
@@ -3399,8 +3550,18 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
                     level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
                     python_specific=True,
             ):
+                {% if method.has_non_none_request %}
                 typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
-                return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(await instance.{{ method.proto.name }}(context, typed_request))
+                {% endif %}
+
+                return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(
+                    await instance.{{ method.proto.name }}(
+                        context,
+                        {% if method.has_non_none_request %}
+                        typed_request,
+                        {% endif %}
+                    )
+                )
         finally:
             {{ state.proto.name }}Servicer._workflow.set(False)
     {% endif %}
@@ -3458,7 +3619,9 @@ class {{ client.proto.state_name }}:
     {% for service in client.services %}
     {% for method in service.methods %}
 
+    {% if method.has_non_none_request %}
     {{ method.proto.name }}Request: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}'].request{% else %}{{ method.input_type }}{% endif %}
+    {% endif %}
 
     {{ method.proto.name }}Response: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}'].response{% else %}{{ method.output_type }}{% endif %}
 
@@ -3841,6 +4004,9 @@ class {{ client.proto.state_name }}:
             {% for service in client.services %}
             {% for method in service.methods %}
             {% if method.options.proto.kind == 'reader' and not method.proto.client_streaming and not method.proto.server_streaming %}
+            {# NOTE: If there is 'None' request , we will have the same
+            function signature, so no overloads are needed. #}
+            {% if method.has_non_none_request %}
             @IMPORT_typing.overload
             async def {{ method.proto.name }}(
                 __this__,
@@ -3871,6 +4037,7 @@ class {{ client.proto.state_name }}:
                 {% endfor %}
             ) -> IMPORT_typing.AsyncIterator[{{ client.proto.state_name }}.{{ method.proto.name }}Response]:
                 ...
+            {% endif %}
 
             async def {{ method.proto.name }}( # type: ignore[misc]
                 # In methods which are dealing with user input, (i.e.,
@@ -3885,7 +4052,9 @@ class {{ client.proto.state_name }}:
                 # (A) an external client, or...
                 # (B) methods that may reasonably run for a long time, which in Reboot means: readers or workflows.
                 __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WorkflowContext,
+                {% if method.has_non_none_request %}
                 __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
+                {% endif %}
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 {% for name, type in method.input_type_fields.items() %}
                 {% if loop.first %}
@@ -3898,11 +4067,12 @@ class {{ client.proto.state_name }}:
                 {% endif %}
                 {% endfor %}
             ) -> IMPORT_typing.AsyncIterator[{{ client.proto.state_name }}.{{ method.proto.name }}Response]:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
+                {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
                 IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.ReaderContext, IMPORT_reboot_aio_contexts.WorkflowContext])
 
                 __request__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request] = None
 
@@ -3949,6 +4119,9 @@ class {{ client.proto.state_name }}:
                         {{ name }}={{ name }}, # type: ignore[arg-type]
                         {% endfor %}
                     )
+                {% else %}
+                assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
+                {% endif %}
 
                 __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
                 __bearer_token__: IMPORT_typing.Optional[str] = None
@@ -3985,6 +4158,10 @@ class {{ client.proto.state_name }}:
                         # It is safe to use app-internal auth given we know we're talking to
                         # the same application.
                         __app_internal_authorization__ = __context__._app_internal_api_key_secret
+                elif isinstance(__context__, IMPORT_reboot_aio_external.ExternalContext):
+                    # Extract `app_internal_authorization` from `ExternalContext`, similar to
+                    # how we extract `bearer_token` above.
+                    __app_internal_authorization__ = __context__.app_internal_authorization
 
                 __headers__ = IMPORT_reboot_aio_headers.Headers(
                     bearer_token=__bearer_token__,
@@ -4009,7 +4186,9 @@ class {{ client.proto.state_name }}:
                                 IMPORT_rbt_v1alpha1.react_pb2.QueryRequest(
                                     method='{{ method.proto.name }}',
                                     request={{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(
+                                        {% if method.has_non_none_request %}
                                         __request__
+                                        {% endif %}
                                     ).SerializeToString(),
                                 ),
                                 metadata=__metadata__,
@@ -4171,6 +4350,9 @@ class {{ client.proto.state_name }}:
             {% for method in service.methods %}
             {% if not method.options.proto.constructor and not method.proto.server_streaming %}
             {% if method.options.proto.kind in ['workflow'] %}
+            {# NOTE: If there is 'None' request , we will have the same
+            function signature, so no overloads are needed. #}
+            {% if method.has_non_none_request %}
             @IMPORT_typing.overload
             async def {{ method.proto.name }}(
                 __this__,
@@ -4201,6 +4383,7 @@ class {{ client.proto.state_name }}:
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
                 ...
+            {% endif %}
 
             async def {{ method.proto.name }}( # type: ignore[misc]
                 # In methods which are dealing with user input, (i.e.,
@@ -4212,7 +4395,9 @@ class {{ client.proto.state_name }}:
                 # '__this__' instead.
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                {% if method.has_non_none_request %}
                 __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
+                {% endif %}
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 {% for name, type in method.input_type_fields.items() %}
                 {% if loop.first %}
@@ -4225,11 +4410,6 @@ class {{ client.proto.state_name }}:
                 {% endif %}
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
-                # UX improvement: check that neither positional argument was accidentally
-                # given a gRPC request type.
-                IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
-                IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
-
                 def error_message_supplement():
                     if any([isinstance(__context__, t) for t in [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext]]):
                         return f"'{{ method.proto.name }}' is a workflow and must be scheduled from a '{type(__context__).__name__}' via `await [...].schedule([...]).{{ method.proto.name }}(context, [...])`"
@@ -4244,6 +4424,11 @@ class {{ client.proto.state_name }}:
                     ],
                     error_message_supplement=error_message_supplement(),
                 )
+                {% if method.has_non_none_request %}
+                # UX improvement: check that neither positional argument was accidentally
+                # given a gRPC request type.
+                IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
+                IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
 
                 if isinstance(__request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request):
                     assert __request_or_options__ is not None
@@ -4297,12 +4482,24 @@ class {{ client.proto.state_name }}:
                             {% endfor %}
                         )
                     )
+                {% else %}
+                    __options__ = __options__ or IMPORT_reboot_aio_call.Options()
+                    return await (
+                        await __this__.spawn().{{ method.proto.name }}(
+                            __context__,
+                            __options__,
+                        )
+                    )
+                {% endif %}
 
             # Keep the original functions on the client, so old code will
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             {{ method.proto.name | to_snake }} = {{ method.proto.name }}
             {% elif (method.options.proto.kind in ['writer', 'transaction']) or (method.options.proto.kind in ['reader'] and not method.proto.server_streaming and not method.proto.client_streaming) %}
+            {# NOTE: If there is 'None' request , we will have the same
+            function signature, so no overloads are needed. #}
+            {% if method.has_non_none_request %}
             @IMPORT_typing.overload
             async def {{ method.proto.name }}(
                 __this__,
@@ -4333,6 +4530,7 @@ class {{ client.proto.state_name }}:
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
                 ...
+            {% endif %}
 
             async def {{ method.proto.name }}( # type: ignore[misc]
                 # In methods which are dealing with user input, (i.e.,
@@ -4344,7 +4542,9 @@ class {{ client.proto.state_name }}:
                 # '__this__' instead.
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                {% if method.has_non_none_request %}
                 __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
+                {% endif %}
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 {% for name, type in method.input_type_fields.items() %}
                 {% if loop.first %}
@@ -4357,6 +4557,7 @@ class {{ client.proto.state_name }}:
                 {% endif %}
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
+                {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
@@ -4408,7 +4609,9 @@ class {{ client.proto.state_name }}:
                         {{ name }}={{ name }}, # type: ignore[arg-type]
                         {% endfor %}
                     )
-
+                {% else %}
+                __options__ = __options__ or IMPORT_reboot_aio_call.Options()
+                {% endif %}
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
                 if __options__.idempotency is not None:
                     raise RuntimeError(
@@ -4425,7 +4628,9 @@ class {{ client.proto.state_name }}:
 
                 return await __this__._weak_reference.{{ method.proto.name }}(
                     __context__,
+                    {% if method.has_non_none_request %}
                     __request__,
+                    {% endif %}
                     __options__,
                 )
 
@@ -4558,6 +4763,9 @@ class {{ client.proto.state_name }}:
             {% for method in service.methods %}
             {% if not method.proto.client_streaming and not method.proto.server_streaming %}
             {% if method.options.proto.kind == 'reader' %}
+            {# NOTE: If there is 'None' request , we will have the same
+            function signature, so no overloads are needed. #}
+            {% if method.has_non_none_request %}
             @IMPORT_typing.overload
             async def {{ method.proto.name }}(
                 __this__,
@@ -4588,6 +4796,7 @@ class {{ client.proto.state_name }}:
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.WeakReference._UntilChangesSatisfies[{{ client.proto.state_name }}.{{ method.proto.name }}Response]:
                 ...
+            {% endif %}
 
             def {{ method.proto.name }}( # type: ignore[misc]
                 # In methods which are dealing with user input, (i.e.,
@@ -4599,7 +4808,9 @@ class {{ client.proto.state_name }}:
                 # '__this__' instead.
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext,
+                {% if method.has_non_none_request %}
                 __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
+                {% endif %}
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 {% for name, type in method.input_type_fields.items() %}
                 {% if loop.first %}
@@ -4617,6 +4828,7 @@ class {{ client.proto.state_name }}:
                     [IMPORT_reboot_aio_contexts.WorkflowContext],
                 )
 
+                {% if method.has_non_none_request %}
                 __request__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request] = None
                 if isinstance(__request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request):
                     assert __request_or_options__ is not None
@@ -4663,11 +4875,16 @@ class {{ client.proto.state_name }}:
                         {{ name }}={{ name }}, # type: ignore[arg-type]
                         {% endfor %}
                     )
+                {% else %}
+                __options__ = __options__ or IMPORT_reboot_aio_call.Options()
+                {% endif %}
 
                 async def callable():
                     return await __this__._weak_reference.{{ method.proto.name }}(
                         __context__,
+                        {% if method.has_non_none_request %}
                         __request__,
+                        {% endif %}
                         __options__,
                     )
 
@@ -4720,6 +4937,9 @@ class {{ client.proto.state_name }}:
             {% for method in service.methods %}
             {# NOTE: We could in theory support scheduling constructors: see #3038. #}
             {% if not method.options.proto.constructor and not method.proto.server_streaming %}
+            {# NOTE: If there is 'None' request , we will have the same
+            function signature, so no overloads are needed. #}
+            {% if method.has_non_none_request %}
             @IMPORT_typing.overload
             async def {{ method.proto.name }}(
                 __this__,
@@ -4750,11 +4970,14 @@ class {{ client.proto.state_name }}:
                 {% endfor %}
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
+            {% endif %}
 
             async def {{ method.proto.name }}( # type: ignore[misc]
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                {% if method.has_non_none_request %}
                 __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
+                {% endif %}
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 {% for name, type in method.input_type_fields.items() %}
                 {% if loop.first %}
@@ -4767,11 +4990,12 @@ class {{ client.proto.state_name }}:
                 {% endif %}
                 {% endfor %}
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
                 IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
 
                 __request__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request] = None
                 if isinstance(__request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request):
@@ -4818,6 +5042,9 @@ class {{ client.proto.state_name }}:
                         {{ name }}={{ name }}, # type: ignore[arg-type]
                         {% endfor %}
                     )
+                {% else %}
+                assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
+                {% endif %}
 
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
@@ -4849,7 +5076,9 @@ class {{ client.proto.state_name }}:
                 __task_id__ = await __this__._tasks(
                     __context__
                 ).{{ method.proto.name }}(
+                    {% if method.has_non_none_request %}
                     __request__,
+                    {% endif %}
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -4891,6 +5120,9 @@ class {{ client.proto.state_name }}:
             {% for method in service.methods %}
             {# NOTE: We could in theory support scheduling constructors: see #3038. #}
             {% if not method.options.proto.constructor and not method.proto.server_streaming %}
+            {# NOTE: If there is 'None' request , we will have the same
+            function signature, so no overloads are needed. #}
+            {% if method.has_non_none_request %}
             @IMPORT_typing.overload
             async def {{ method.proto.name }}(
                 __this__,
@@ -4921,11 +5153,14 @@ class {{ client.proto.state_name }}:
                 {% endfor %}
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 ...
+            {% endif %}
 
             async def {{ method.proto.name }}( # type: ignore[misc]
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                {% if method.has_non_none_request %}
                 __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
+                {% endif %}
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 {% for name, type in method.input_type_fields.items() %}
                 {% if loop.first %}
@@ -4942,6 +5177,7 @@ class {{ client.proto.state_name }}:
                 # `workflow` should `spawn()`.
                 IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
 
+                {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
@@ -4992,13 +5228,18 @@ class {{ client.proto.state_name }}:
                         {{ name }}={{ name }}, # type: ignore[arg-type]
                         {% endfor %}
                     )
+                {% else %}
+                assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
+                {% endif %}
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
                     return (await {{ client.proto.state_name }}ServicerTasks(
                         context=__context__,
                         state_ref=__context__._state_ref,
                     ).{{ method.proto.name }}(
+                        {% if method.has_non_none_request %}
                         __request__,
+                        {% endif %}
                         schedule=__this__._when,
                     )).task_id
 
@@ -5032,7 +5273,9 @@ class {{ client.proto.state_name }}:
                 return await __this__._tasks(
                     __context__
                 ).{{ method.proto.name }}(
+                    {% if method.has_non_none_request %}
                     __request__,
+                    {% endif %}
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -5089,6 +5332,9 @@ class {{ client.proto.state_name }}:
             {% for method in service.methods %}
             {# NOTE: We could in theory support scheduling constructors: see #3038. #}
             {% if not method.options.proto.constructor and not method.proto.server_streaming %}
+            {# NOTE: If there is 'None' request , we will have the same
+            function signature, so no overloads are needed. #}
+            {% if method.has_non_none_request %}
             @IMPORT_typing.overload
             async def {{ method.proto.name }}(
                 __this__,
@@ -5119,11 +5365,14 @@ class {{ client.proto.state_name }}:
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Task:
                 ...
+            {% endif %}
 
             async def {{ method.proto.name }}( # type: ignore[misc]
                 __this__,
                 __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                {% if method.has_non_none_request %}
                 __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
+                {% endif %}
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 {% for name, type in method.input_type_fields.items() %}
                 {% if loop.first %}
@@ -5136,11 +5385,13 @@ class {{ client.proto.state_name }}:
                 {% endif %}
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Task:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
                 IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
                 IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+
 
                 __request__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request] = None
                 if isinstance(__request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request):
@@ -5187,7 +5438,9 @@ class {{ client.proto.state_name }}:
                         {{ name }}={{ name }}, # type: ignore[arg-type]
                         {% endfor %}
                     )
-
+                {% else %}
+                assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
+                {% endif %}
                 __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
                     __this__._when, IMPORT_datetime_timedelta
                 ) else __this__._when
@@ -5218,7 +5471,9 @@ class {{ client.proto.state_name }}:
                 __task_id__ = await __this__._tasks(
                     __context__
                 ).{{ method.proto.name }}(
+                    {% if method.has_non_none_request %}
                     __request__,
+                    {% endif %}
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -5296,6 +5551,9 @@ class {{ client.proto.state_name }}:
         {% for method in service.methods %}
         {% if not method.options.proto.constructor %}
         {%- if method.options.proto.kind in ['workflow'] %}
+        {# NOTE: If there is 'None' request , we will have the same
+        function signature, so no overloads are needed. #}
+        {% if method.has_non_none_request %}
         @IMPORT_typing.overload
         async def {{ method.proto.name }}(
             __this__,
@@ -5326,6 +5584,7 @@ class {{ client.proto.state_name }}:
             {% endfor %}
         ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
             ...
+        {% endif %}
 
         async def {{ method.proto.name }}( # type: ignore[misc]
             # In methods which are dealing with user input, (i.e.,
@@ -5337,7 +5596,9 @@ class {{ client.proto.state_name }}:
             # '__this__' instead.
             __this__,
             __context__: IMPORT_reboot_aio_external.ExternalContext | IMPORT_reboot_aio_contexts.WorkflowContext,
+            {% if method.has_non_none_request %}
             __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
+            {% endif %}
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             {% for name, type in method.input_type_fields.items() %}
             {% if loop.first %}
@@ -5350,11 +5611,6 @@ class {{ client.proto.state_name }}:
             {% endif %}
             {% endfor %}
         ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
-            # UX improvement: check that neither positional argument was accidentally
-            # given a gRPC request type.
-            IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
-            IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
-
             def error_message_supplement():
                 if any([isinstance(__context__, t) for t in [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext]]):
                     return f"'{{ method.proto.name }}' is a workflow and must be scheduled from a '{type(__context__).__name__}' via `await [...].schedule([...]).{{ method.proto.name }}(context, [...])`"
@@ -5366,6 +5622,12 @@ class {{ client.proto.state_name }}:
                 [IMPORT_reboot_aio_external.ExternalContext, IMPORT_reboot_aio_contexts.WorkflowContext],
                 error_message_supplement=error_message_supplement(),
             )
+
+            {% if method.has_non_none_request %}
+            # UX improvement: check that neither positional argument was accidentally
+            # given a gRPC request type.
+            IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
+            IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
 
             if isinstance(__request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request):
                 assert __request_or_options__ is not None
@@ -5419,12 +5681,24 @@ class {{ client.proto.state_name }}:
                         {% endfor %}
                     )
                 )
+            {% else %}
+            __options__ = __options__ or IMPORT_reboot_aio_call.Options()
+            return await (
+                await __this__.spawn().{{ method.proto.name }}(
+                    __context__,
+                    __options__,
+                )
+            )
+            {% endif %}
 
         # Keep the original functions on the client, so old code will
         # continue to work, but use the new 'snake_case' method in
         # the new code.
         {{ method.proto.name | to_snake }} = {{ method.proto.name }}
         {% elif method.options.proto.kind == 'reader' %}
+        {# NOTE: If there is 'None' request , we will have the same
+        function signature, so no overloads are needed. #}
+        {% if method.has_non_none_request %}
         @IMPORT_typing.overload
         {# To make mypy happy when we are returning 'AsyncIterable'
         we need to drop the `async`, so mypy will treat the result of
@@ -5484,11 +5758,14 @@ class {{ client.proto.state_name }}:
         ) -> IMPORT_typing.AsyncIterable[{{ client.proto.state_name }}.{{ method.proto.name }}Response]:
         {% endif %}
             ...
+        {% endif %}
 
         async def {{ method.proto.name }}( # type: ignore[misc]
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+            {% if method.has_non_none_request %}
             __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
+            {% endif %}
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             {% if not method.proto.client_streaming %}
             {% for name, type in method.input_type_fields.items() %}
@@ -5510,6 +5787,7 @@ class {{ client.proto.state_name }}:
         {% else %}
         ) -> IMPORT_typing.AsyncIterable[{{ client.proto.state_name }}.{{ method.proto.name }}Response]:
         {% endif %}
+            {% if method.has_non_none_request %}
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
             IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
@@ -5568,6 +5846,9 @@ class {{ client.proto.state_name }}:
                     {% endfor %}
                 )
             {% endif %}
+            {% else %}
+            assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
+            {% endif %}
 
             {% if not method.proto.server_streaming and not method.proto.client_streaming %}
             # Within a `workflow`, all "bare" calls are
@@ -5587,13 +5868,17 @@ class {{ client.proto.state_name }}:
                         )
                     ).{{ method.proto.name }}(
                         __context__,
+                        {% if method.has_non_none_request %}
                         __request__,
+                        {% endif %}
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
                 elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
                     return await __this__.idempotently().{{ method.proto.name }}(
                         __context__,
+                        {% if method.has_non_none_request %}
                         __request__,
+                        {% endif %}
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
             {% endif %}
@@ -5609,7 +5894,9 @@ class {{ client.proto.state_name }}:
             {% if not method.proto.server_streaming %}
             return {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(
                 await __this__._reader(__context__).{{ method.proto.name }}(
+                    {% if method.has_non_none_request %}
                     __request{% if method.proto.client_streaming %}s__{% else %}__{% endif %},
+                    {% endif %}
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
                     idempotency=__options__.idempotency if __options__ is not None else None,
@@ -5617,7 +5904,9 @@ class {{ client.proto.state_name }}:
             )
             {% else %}
             __call__ = __this__._reader(__context__).{{ method.proto.name }}(
+                {% if method.has_non_none_request %}
                 __request{% if method.proto.client_streaming %}s__{% else %}__{% endif %},
+                {% endif %}
                 metadata=__metadata__,
             )
             async for __response__ in __call__:
@@ -5628,6 +5917,9 @@ class {{ client.proto.state_name }}:
         # the new code.
         {{ method.proto.name | to_snake }} = {{ method.proto.name }}
         {% elif method.options.proto.kind in ['transaction', 'writer'] %}
+        {# NOTE: If there is 'None' request , we will have the same
+        function signature, so no overloads are needed. #}
+        {% if method.has_non_none_request %}
         @IMPORT_typing.overload
         async def {{ method.proto.name }}(
             __this__,
@@ -5658,11 +5950,14 @@ class {{ client.proto.state_name }}:
             {% endfor %}
         ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
             ...
+        {% endif %}
 
         async def {{ method.proto.name }}( # type: ignore[misc]
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+            {% if method.has_non_none_request %}
             __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
+            {% endif %}
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             {% for name, type in method.input_type_fields.items() %}
             {% if loop.first %}
@@ -5675,6 +5970,7 @@ class {{ client.proto.state_name }}:
             {% endif %}
             {% endfor %}
         ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
+            {% if method.has_non_none_request %}
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
             IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
@@ -5725,6 +6021,9 @@ class {{ client.proto.state_name }}:
                     {{ name }}={{ name }}, # type: ignore[arg-type]
                     {% endfor %}
                 )
+            {% else %}
+            assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
+            {% endif %}
 
             # Within a `workflow`, all "bare" calls are
             # `per_workflow()` calls, unless we're within a control
@@ -5737,13 +6036,17 @@ class {{ client.proto.state_name }}:
                         else __this__.per_workflow()
                     ).{{ method.proto.name }}(
                         __context__,
+                        {% if method.has_non_none_request %}
                         __request__,
+                        {% endif %}
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
                 elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
                     return await __this__.idempotently().{{ method.proto.name }}(
                         __context__,
+                        {% if method.has_non_none_request %}
                         __request__,
+                        {% endif %}
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
 
@@ -5762,7 +6065,9 @@ class {{ client.proto.state_name }}:
             {% if method.options.proto.kind == 'writer' %}
             return {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(
                 await __this__._writer(__context__).{{ method.proto.name }}(
+                    {% if method.has_non_none_request %}
                     __request__,
+                    {% endif %}
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -5771,7 +6076,9 @@ class {{ client.proto.state_name }}:
             {% elif method.options.proto.kind == 'transaction' %}
             return {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(
                 await __this__._workflow(__context__).{{ method.proto.name }}(
+                    {% if method.has_non_none_request %}
                     __request__,
+                    {% endif %}
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -5798,6 +6105,9 @@ class {{ client.proto.state_name }}:
         {% for service in client.services %}
         {% for method in service.methods %}
         {% if not method.proto.client_streaming and not method.proto.server_streaming and not method.options.proto.constructor and not method.options.proto.kind == 'workflow' %}
+        {# NOTE: If there is 'None' request , we will have the same
+        function signature, so no overloads are needed. #}
+        {% if method.has_non_none_request %}
         @IMPORT_typing.overload
         async def {{ method.proto.name }}(
             __this__,
@@ -5836,6 +6146,7 @@ class {{ client.proto.state_name }}:
             {% endfor %}
         ) -> list[{{ client.proto.state_name}}.{{ method.proto.name }}Response]:
             ...
+        {% endif %}
 
         async def {{ method.proto.name }}( # type: ignore[misc]
             # In methods which are dealing with user input, (i.e.,
@@ -5851,7 +6162,9 @@ class {{ client.proto.state_name }}:
             {% elif method.options.proto.kind in ['writer', 'transaction'] %}
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             {% endif %}
+            {% if method.has_non_none_request %}
             __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
+            {% endif %}
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             {% for name, type in method.input_type_fields.items() %}
             {% if loop.first %}
@@ -5864,6 +6177,7 @@ class {{ client.proto.state_name }}:
             {% endif %}
             {% endfor %}
         ) -> list[{{ client.proto.state_name}}.{{ method.proto.name }}Response]:
+            {% if method.has_non_none_request %}
             if isinstance(__request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request):
                 assert __request_or_options__ is not None
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
@@ -5924,6 +6238,19 @@ class {{ client.proto.state_name }}:
                         ) for id in __this__._ids
                     ]
                 )
+            {% else %}
+            __options__ = __options__ or IMPORT_reboot_aio_call.Options()
+            return await IMPORT_asyncio.gather(
+                *[
+                    {{ client.proto.state_name }}.ref(
+                        id
+                    ).{{ method.proto.name }}(
+                        __context__,
+                        __options__,
+                    ) for id in __this__._ids
+                ]
+            )
+            {% endif %}
 
         # Keep the original functions on the client, so old code will
         # continue to work, but use the new 'snake_case' method in
@@ -5960,7 +6287,8 @@ class {{ client.proto.state_name }}:
     {%- else %}
     {% if method.options.proto.constructor %}
     {# If there are no 'input_type_fields', we will have the same function signature,
-    so no overloads are needed. #}
+    so no overloads are needed. If there is 'None', 'input_type_fields' will be
+    already empty.#}
     {% if method.input_type_fields | length > 0 %}
     @IMPORT_typing.overload
     @classmethod
@@ -6004,6 +6332,7 @@ class {{ client.proto.state_name }}:
     async def {{ method.proto.name }}( # type: ignore[misc]
         __cls__,
         __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+        {% if method.has_non_none_request %}
         __state_id_or_request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId | {{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
         __request_or_options_or_idempotency__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options | IMPORT_reboot_aio_idempotency.Idempotency] = None,
         __options_or_idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options | IMPORT_reboot_aio_idempotency.Idempotency] = None,
@@ -6018,6 +6347,11 @@ class {{ client.proto.state_name }}:
         {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
         {% endif %}
         {% endfor %}
+        {% else %}
+        __state_id__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId] = None,
+        __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+        __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
+        {% endif %}
     ) -> tuple[{{ client.proto.state_name }}.WeakReference, {{ client.proto.state_name }}.{{ method.proto.name }}Response]:
         # Within a `workflow`, all "bare" calls are
         # `per_workflow()` calls, unless we're within a control
@@ -6025,8 +6359,9 @@ class {{ client.proto.state_name }}:
         # `per_iteration()`.
         #
         # Unless we are "within until" in which case all "bare"
-        # calls are `.always().
+        # calls are `.always()`.
 
+        {% if method.has_non_none_request %}
         __request__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request] = None
         __state_id__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId] = None
         __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None
@@ -6123,7 +6458,11 @@ class {{ client.proto.state_name }}:
                 {{ name }}={{ name }}, # type: ignore[arg-type]
                 {% endfor %}
             )
-
+        {% else %}
+        assert __state_id__ is None or isinstance(__state_id__, IMPORT_reboot_aio_types.StateId)
+        assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
+        assert __idempotency__ is None or isinstance(__idempotency__, IMPORT_reboot_aio_idempotency.Idempotency)
+        {% endif %}
 
         if __idempotency__ is None:
             if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
@@ -6136,14 +6475,18 @@ class {{ client.proto.state_name }}:
                 ).{{ method.proto.name }}(
                     __context__,
                     __state_id__,
+                    {% if method.has_non_none_request %}
                     __request__,
+                    {% endif %}
                     __options__,
                 )
             elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
                 return await __cls__.idempotently().{{ method.proto.name }}(
                     __context__,
                     __state_id__,
+                    {% if method.has_non_none_request %}
                     __request__,
+                    {% endif %}
                     __options__,
                 )
 
@@ -6186,7 +6529,9 @@ class {{ client.proto.state_name }}:
             __reference__,
             {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(
                 await __stub__.{{ method.proto.name }}(
+                    {% if method.has_non_none_request %}
                     __request__,
+                    {% endif %}
                     idempotency=__idempotency__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
@@ -6261,7 +6606,8 @@ class {{ client.proto.state_name }}:
         {%- else %}
         {% if method.options.proto.constructor %}
         {# If there are no 'input_type_fields', we will have the same function signature,
-        so no overloads are needed. #}
+        so no overloads are needed. If there is 'None', 'input_type_fields' will be
+        already empty.#}
         {% if method.input_type_fields | length > 0 %}
         @IMPORT_typing.overload
         async def {{ method.proto.name }}(
@@ -6300,6 +6646,7 @@ class {{ client.proto.state_name }}:
         async def {{ method.proto.name }}( # type: ignore[misc]
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+            {% if method.has_non_none_request %}
             __state_id_or_request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId | {{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
             __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
@@ -6313,7 +6660,12 @@ class {{ client.proto.state_name }}:
             {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
             {% endif %}
             {% endfor %}
+            {% else %}
+            __state_id__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId] = None,
+            __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            {% endif %}
         ) -> tuple[{{ client.proto.state_name }}.WeakReference, {{ client.proto.state_name }}.{{ method.proto.name }}Response]:
+            {% if method.has_non_none_request %}
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
             IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type={{ client.proto.state_name }}.{{ method.proto.name }}Request)
@@ -6401,21 +6753,28 @@ class {{ client.proto.state_name }}:
                     {{ name }}={{ name }}, # type: ignore[arg-type]
                     {% endfor %}
                 )
-
+            {% else %}
+            assert __state_id__ is None or isinstance(__state_id__, IMPORT_reboot_aio_types.StateId)
+            assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
+            {% endif %}
             __args__: tuple[IMPORT_typing.Any, ...]
 
             if __state_id__ is not None:
                 __args__ = (
                     __context__,
                     __state_id__,
+                    {% if method.has_non_none_request %}
                     __request__,
+                    {% endif %}
                     __options__,
                     __this__._idempotency,
                 )
             else:
                 __args__ = (
                     __context__,
+                    {% if method.has_non_none_request %}
                     __request__,
+                    {% endif %}
                     __options__,
                     __this__._idempotency,
                 )
