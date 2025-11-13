@@ -315,8 +315,14 @@ def proto_to_pydantic(
                 output[field_name] = None
 
         return output_type(**output)
-    elif issubclass(output_type_or_origin, (int, float, str, bool)):
+    elif issubclass(output_type_or_origin, (float, str, bool)):
+        assert isinstance(input, (float, str, bool))
         return input
+    elif issubclass(output_type_or_origin, int):
+        # We map Python 'int' to Protobuf 'double', so we need to
+        # truncate the float value back to int here.
+        assert isinstance(input, (int, float))
+        return int(input)
     else:
         raise ValueError(
             f"Unexpected output type in 'proto_to_pydantic'. "
