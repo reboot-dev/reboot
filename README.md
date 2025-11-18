@@ -16,27 +16,14 @@ databases, caches, queues...
 
 From zero to deployable app in just a few minutes!:
 
-- [In TypeScript](https://docs.reboot.dev/get_started/typescript_quickstart)
-- [In Python](https://docs.reboot.dev/get_started/python_quickstart)
+- [In TypeScript](https://docs.reboot.dev/get_started/typescript_backend)
+- [In Python](https://docs.reboot.dev/get_started/python_backend)
 
 ### Examples
 
 A variety of examples of Reboot in action:
 
 - [TypeScript, Python, and React Examples](https://docs.reboot.dev/get_started/examples)
-
-## Go deep with Reboot
-
-### Learn
-
-Reboot offers a remarkably simple programming model with just a
-handful of primitives that enable you to build robust distributed
-applications.
-
-- [Durability](https://docs.reboot.dev/learn/overview#durability)
-- [Reactivity](https://docs.reboot.dev/learn/overview#reactivity)
-- [Atomicity](https://docs.reboot.dev/learn/overview#atomicity)
-- [Idempotency](https://docs.reboot.dev/learn/overview#idempotency)
 
 ### More ...
 
