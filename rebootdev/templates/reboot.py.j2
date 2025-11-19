@@ -111,6 +111,14 @@ logger = IMPORT_log_log.get_logger(__name__)
 # We won't validate Pydantic state models while they are under construction.
 states_being_constructed: set[str] = set()
 
+{# Since Pydantic model fields might be 'Optional' or have defaults, we
+need a way to distinguish between 'None' and 'not set'. The same applies
+to Protobuf messages, where fields are always 'Optional'. #}
+class Unset:
+    pass
+
+UNSET = Unset()
+
 {% if options.proto.pydantic %}
 
 import pydantic as IMPORT_pydantic
@@ -123,10 +131,10 @@ import rebootdev.api as IMPORT_reboot_api
 {% if client.state is not none %}
 def {{ client.proto.state_name }}ToProto(state: {{ client.proto.state_name }}.State, protobuf_state: {{ pb2_name }}.{{ client.proto.state_name }}):
     {% if options.proto.pydantic %}
-    assert isinstance(state, IMPORT_pydantic.BaseModel)
+    assert isinstance(state, IMPORT_reboot_api.Model)
     proto = IMPORT_reboot_api.pydantic_to_proto(
         state,
-        IMPORT_pydantic.BaseModel,
+        {{ client.proto.state_name }}.State,
         {{ pb2_name }}.{{ client.proto.state_name }},
     )
     protobuf_state.CopyFrom(proto)
@@ -136,14 +144,24 @@ def {{ client.proto.state_name }}ToProto(state: {{ client.proto.state_name }}.St
 
 def {{ client.proto.state_name }}FromProto(
     state: {{ pb2_name }}.{{ client.proto.state_name }},
-    validate: bool = True,
+    is_initial_state: bool = False,
 ) -> {{ client.proto.state_name }}.State:
     {% if options.proto.pydantic %}
     assert isinstance(state, IMPORT_google_protobuf_message.Message)
+    if is_initial_state:
+        # Currently we have a special case when we are creating a state, so
+        # 'is_initial_state=True' is passed. In that case we skip any validation
+        # and create the Pydantic model using 'model_construct', which will
+        # apply all 'default' and 'default_factory' values defined in the
+        # Pydantic model, since we know the Protobuf 'state' will be always
+        # "empty" and later when the constructor is done, we will do
+        # the proper validation and convert that Pydantic model back to
+        # Protobuf.
+        return {{ client.proto.state_name }}.State.model_construct()
+
     return IMPORT_reboot_api.proto_to_pydantic(
         state,
         {{ client.proto.state_name }}.State,
-        validate,
     )
     {% else %}
     return state
@@ -156,10 +174,10 @@ def {{ client.proto.state_name }}{{ method.proto.name }}ResponseToProto(
 ) -> {{ method.output_type }}:
     {% if options.proto.pydantic %}
     if response is not None:
-        assert isinstance(response, IMPORT_pydantic.BaseModel)
+        assert isinstance(response, IMPORT_reboot_api.Model)
         return IMPORT_reboot_api.pydantic_to_proto(
             response,
-            IMPORT_pydantic.BaseModel,
+            {{ client.proto.state_name }}.{{ method.proto.name }}Response,
             {{ method.output_type }}
         )
     return {{ method.output_type }}()
@@ -187,10 +205,10 @@ def {{ client.proto.state_name }}{{ method.proto.name }}RequestToProto(
 ) -> {{ method.input_type }}:
     {% if options.proto.pydantic %}
     {% if method.has_non_none_request %}
-    assert isinstance(request, IMPORT_pydantic.BaseModel)
+    assert isinstance(request, IMPORT_reboot_api.Model)
     return IMPORT_reboot_api.pydantic_to_proto(
         request,
-        IMPORT_pydantic.BaseModel,
+        {{ client.proto.state_name }}.{{ method.proto.name }}Request,
         {{ method.input_type }},
     )
     {% else %}
@@ -215,6 +233,54 @@ def {{ client.proto.state_name }}{{ method.proto.name }}RequestFromProto(
     return request
     {% endif %}
 {% endif %}
+
+def {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
+    {% for name, type in method.input_type_fields.items() %}
+    {% if options.proto.pydantic %}
+    {{ name }}: {{ type }} | Unset,
+    {% else %}
+    {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset,
+    {% endif %}
+    {% endfor %}
+):
+    {# This method should be called only for non 'None' requests. #}
+    assert {{ client.proto.state_name }}.{{ method.proto.name }}Request is not None
+
+    {% if not options.proto.pydantic %}
+    {# Validate protobuf input fields only, since Pydantic will handle validation for us. #}
+    {% for name, type in method.input_type_fields.items() %}
+    if not isinstance({{ name }}, Unset) and {{ name }} is not None and not isinstance(
+        {{ name }},
+        {% if name == "bytes" %}
+        IMPORT_builtins.bytes
+        {% else %}
+        {# NOTE: split at '[' so we don't include generic type parameters. #}
+        {{ type.split('[')[0] }},
+        {% endif %}
+    ):
+        raise TypeError(
+            f"Can not construct protobuf message of type "
+            f"'{{ method.input_type }}': field '{{ name }}' is not "
+            {# This code calls many types `IMPORT_...`, but the customer doesn't use that prefix #}
+            f"of required type '{{ type.removeprefix('IMPORT_') }}'"
+        )
+    {% endfor %}
+
+    {% endif %}
+
+    __args__: dict[str, IMPORT_typing.Any] = {}
+
+    {% for name in method.input_type_fields %}
+    if not isinstance({{ name }}, Unset):
+        __args__['{{ name }}'] = {{ name }}
+    {% endfor %}
+
+    {# For Pydantic case we will call the 'BaseModel' constructor, which
+    will do the validation for us. #}
+    return {{ client.proto.state_name }}.{{ method.proto.name }}Request(
+        **__args__,
+    )
+
 
 {% endfor %}
 {% endfor %}
@@ -873,7 +939,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             states_being_constructed.add(context.state_id)
             {% endif %}
             {% if not method.options.proto.state_streaming and not method.options.proto.kind == 'workflow' %}
-            typed_state: {{ state.proto.name }}.State = {{ state.proto.name }}FromProto(state, validate=(context.state_id not in states_being_constructed))
+            typed_state: {{ state.proto.name }}.State = {{ state.proto.name }}FromProto(state, is_initial_state=(context.state_id in states_being_constructed))
             {% endif %}
             {% if not method.proto.server_streaming %}
             response = (
@@ -2218,7 +2284,7 @@ class {{ state.proto.name }}Authorizer(
                 context=context,
                 {% if not method.options.proto.constructor %}
                 {% if options.proto.pydantic %}
-                state={{ state.proto.name }}FromProto(state) if state is not None else state,
+                state={{ state.proto.name }}FromProto(state, is_initial_state=(context.state_id in states_being_constructed)) if state is not None else state,
                 {% else %}
                 state=IMPORT_typing.cast({{ state.pb2_name }}.{{ state.proto.name }}, state),
                 {% endif %}
@@ -4026,13 +4092,9 @@ class {{ client.proto.state_name }}:
                 *,
                 {% endif %}
                 {% if options.proto.pydantic %}
-                {% if type.startswith('IMPORT_typing.Optional') %}
-                {{ name }}: {{ type }} = None,
+                {{ name }}: {{ type }} | Unset = UNSET,
                 {% else %}
-                {{ name }}: {{ type }},
-                {% endif %}
-                {% else %}
-                {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+                {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
             ) -> IMPORT_typing.AsyncIterator[{{ client.proto.state_name }}.{{ method.proto.name }}Response]:
@@ -4060,10 +4122,10 @@ class {{ client.proto.state_name }}:
                 {% if loop.first %}
                 *,
                 {% endif %}
-                {% if type.startswith('IMPORT_typing.Optional') %}
-                {{ name }}: {{ type }} = None,
+                {% if options.proto.pydantic %}
+                {{ name }}: {{ type }} | Unset = UNSET,
                 {% else %}
-                {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+                {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
             ) -> IMPORT_typing.AsyncIterator[{{ client.proto.state_name }}.{{ method.proto.name }}Response]:
@@ -4090,33 +4152,9 @@ class {{ client.proto.state_name }}:
                     assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
                     __options__ = __request_or_options__
 
-                    {% if not options.proto.pydantic %}
-                    {# Validate protobuf input fields only, since Pydantic will handle validation for us. #}
-                    {% for name, type in method.input_type_fields.items() %}
-                    if {{ name }} is not None and not isinstance(
-                        {{ name }},
-                        {% if name == "bytes" %}
-                        IMPORT_builtins.bytes
-                        {% else %}
-                        {# NOTE: split at '[' so we don't include generic type parameters. #}
-                        {{ type.split('[')[0] }},
-                        {% endif %}
-                    ):
-                        raise TypeError(
-                            f"Can not construct protobuf message of type "
-                            f"'{{ method.input_type }}': field '{{ name }}' is not "
-                            {# This code calls many types `IMPORT_...`, but the customer doesn't use that prefix #}
-                            f"of required type '{{ type.removeprefix('IMPORT_') }}'"
-                        )
-                    {% endfor %}
-
-                    # TODO: mypy-protobuf declares that
-                    # `google.protobuf.message.Message` constructor arguments are
-                    # always non-None, when in reality they are optional.
-                    {% endif %}
-                    __request__ = {{ client.proto.state_name }}.{{ method.proto.name }}Request(
+                    __request__ = {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
                         {% for name in method.input_type_fields %}
-                        {{ name }}={{ name }}, # type: ignore[arg-type]
+                        {{ name }}={{ name }},
                         {% endfor %}
                     )
                 {% else %}
@@ -4372,13 +4410,9 @@ class {{ client.proto.state_name }}:
                 *,
                 {% endif %}
                 {% if options.proto.pydantic %}
-                {% if type.startswith('IMPORT_typing.Optional') %}
-                {{ name }}: {{ type }} = None,
+                {{ name }}: {{ type }} | Unset = UNSET,
                 {% else %}
-                {{ name }}: {{ type }},
-                {% endif %}
-                {% else %}
-                {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+                {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
@@ -4403,10 +4437,10 @@ class {{ client.proto.state_name }}:
                 {% if loop.first %}
                 *,
                 {% endif %}
-                {% if type.startswith('IMPORT_typing.Optional') %}
-                {{ name }}: {{ type }} = None,
+                {% if options.proto.pydantic %}
+                {{ name }}: {{ type }} | Unset = UNSET,
                 {% else %}
-                {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+                {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
@@ -4435,9 +4469,9 @@ class {{ client.proto.state_name }}:
                     assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                     __options__ = __options__ or IMPORT_reboot_aio_call.Options()
 
-                    {# When specifying __request__ directly, we need to ensure that all other input fields are None. #}
+                    {# When specifying __request__ directly, we need to ensure that all other input fields are 'UNSET'. #}
                     {% for name in method.input_type_fields %}
-                    assert {{ name }} is None
+                    assert {{ name }} is UNSET
                     {% endfor %}
 
                     return await (
@@ -4452,44 +4486,25 @@ class {{ client.proto.state_name }}:
                     assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
                     __options__ = __request_or_options__ or IMPORT_reboot_aio_call.Options()
 
-                    {% if not options.proto.pydantic %}
-                    {# Validate protobuf input fields only, since Pydantic will handle validation for us. #}
-                    {% for name, type in method.input_type_fields.items() %}
-                    if {{ name }} is not None and not isinstance(
-                        {{ name }},
-                        {% if name == "bytes" %}
-                        IMPORT_builtins.bytes
-                        {% else %}
-                        {# NOTE: split at '[' so we don't include generic type parameters. #}
-                        {{ type.split('[')[0] }},
-                        {% endif %}
-                    ):
-                        raise TypeError(
-                            f"Can not construct protobuf message of type "
-                            f"'{{ method.input_type }}': field '{{ name }}' is not "
-                            {# This code calls many types `IMPORT_...`, but the customer doesn't use that prefix #}
-                            f"of required type '{{ type.removeprefix('IMPORT_') }}'"
-                        )
-                    {% endfor %}
-                    {% endif %}
-
                     return await (
                         await __this__.spawn().{{ method.proto.name }}(
                             __context__,
+                            {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
+                                {% for name in method.input_type_fields %}
+                                {{ name }}={{ name }},
+                                {% endfor %}
+                            ),
                             __options__,
-                            {% for name in method.input_type_fields %}
-                            {{ name }}={{ name }},
-                            {% endfor %}
                         )
                     )
                 {% else %}
-                    __options__ = __options__ or IMPORT_reboot_aio_call.Options()
-                    return await (
-                        await __this__.spawn().{{ method.proto.name }}(
-                            __context__,
-                            __options__,
-                        )
+                __options__ = __options__ or IMPORT_reboot_aio_call.Options()
+                return await (
+                    await __this__.spawn().{{ method.proto.name }}(
+                        __context__,
+                        __options__,
                     )
+                )
                 {% endif %}
 
             # Keep the original functions on the client, so old code will
@@ -4519,13 +4534,9 @@ class {{ client.proto.state_name }}:
                 *,
                 {% endif %}
                 {% if options.proto.pydantic %}
-                {% if type.startswith('IMPORT_typing.Optional') %}
-                {{ name }}: {{ type }} = None,
+                {{ name }}: {{ type }} | Unset = UNSET,
                 {% else %}
-                {{ name }}: {{ type }},
-                {% endif %}
-                {% else %}
-                {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+                {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
@@ -4550,10 +4561,10 @@ class {{ client.proto.state_name }}:
                 {% if loop.first %}
                 *,
                 {% endif %}
-                {% if type.startswith('IMPORT_typing.Optional') %}
-                {{ name }}: {{ type }} = None,
+                {% if options.proto.pydantic %}
+                {{ name }}: {{ type }} | Unset = UNSET,
                 {% else %}
-                {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+                {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
@@ -4569,9 +4580,9 @@ class {{ client.proto.state_name }}:
                     assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                     __options__ = __options__ or IMPORT_reboot_aio_call.Options()
 
-                    {# When specifying __request__ directly, we need to ensure that all other input fields are None. #}
+                    {# When specifying __request__ directly, we need to ensure that all other input fields are 'UNSET'. #}
                     {% for name in method.input_type_fields %}
-                    assert {{ name }} is None
+                    assert {{ name }} is UNSET
                     {% endfor %}
 
                     __request__ = __request_or_options__
@@ -4580,33 +4591,9 @@ class {{ client.proto.state_name }}:
                     assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
                     __options__ = __request_or_options__ or IMPORT_reboot_aio_call.Options()
 
-                    {% if not options.proto.pydantic %}
-                    {# Validate protobuf input fields only, since Pydantic will handle validation for us. #}
-                    {% for name, type in method.input_type_fields.items() %}
-                    if {{ name }} is not None and not isinstance(
-                        {{ name }},
-                        {% if name == "bytes" %}
-                        IMPORT_builtins.bytes
-                        {% else %}
-                        {# NOTE: split at '[' so we don't include generic type parameters. #}
-                        {{ type.split('[')[0] }},
-                        {% endif %}
-                    ):
-                        raise TypeError(
-                            f"Can not construct protobuf message of type "
-                            f"'{{ method.input_type }}': field '{{ name }}' is not "
-                            {# This code calls many types `IMPORT_...`, but the customer doesn't use that prefix #}
-                            f"of required type '{{ type.removeprefix('IMPORT_') }}'"
-                        )
-                    {% endfor %}
-
-                    # TODO: mypy-protobuf declares that
-                    # `IMPORT_google_protobuf_message.Message` constructor arguments are
-                    # always non-None, when in reality they are optional.
-                    {% endif %}
-                    __request__ = {{ client.proto.state_name }}.{{ method.proto.name }}Request(
+                    __request__ = {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
                         {% for name in method.input_type_fields %}
-                        {{ name }}={{ name }}, # type: ignore[arg-type]
+                        {{ name }}={{ name }},
                         {% endfor %}
                     )
                 {% else %}
@@ -4785,13 +4772,9 @@ class {{ client.proto.state_name }}:
                 *,
                 {% endif %}
                 {% if options.proto.pydantic %}
-                {% if type.startswith('IMPORT_typing.Optional') %}
-                {{ name }}: {{ type }} = None,
+                {{ name }}: {{ type }} | Unset = UNSET,
                 {% else %}
-                {{ name }}: {{ type }},
-                {% endif %}
-                {% else %}
-                {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+                {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.WeakReference._UntilChangesSatisfies[{{ client.proto.state_name }}.{{ method.proto.name }}Response]:
@@ -4816,10 +4799,10 @@ class {{ client.proto.state_name }}:
                 {% if loop.first %}
                 *,
                 {% endif %}
-                {% if type.startswith('IMPORT_typing.Optional') %}
-                {{ name }}: {{ type }} = None,
+                {% if options.proto.pydantic %}
+                {{ name }}: {{ type }} | Unset = UNSET,
                 {% else %}
-                {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+                {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.WeakReference._UntilChangesSatisfies[{{ client.proto.state_name }}.{{ method.proto.name }}Response]:
@@ -4835,9 +4818,9 @@ class {{ client.proto.state_name }}:
                     assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                     __options__ = __options__ or IMPORT_reboot_aio_call.Options()
 
-                    {# When specifying __request__ directly, we need to ensure that all other input fields are None. #}
+                    {# When specifying __request__ directly, we need to ensure that all other input fields are 'UNSET'. #}
                     {% for name in method.input_type_fields %}
-                    assert {{ name }} is None
+                    assert {{ name }} is UNSET
                     {% endfor %}
 
                     __request__ = __request_or_options__
@@ -4846,33 +4829,9 @@ class {{ client.proto.state_name }}:
                     assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
                     __options__ = __request_or_options__ or IMPORT_reboot_aio_call.Options()
 
-                    {% if not options.proto.pydantic %}
-                    {# Validate protobuf input fields only, since Pydantic will handle validation for us. #}
-                    {% for name, type in method.input_type_fields.items() %}
-                    if {{ name }} is not None and not isinstance(
-                        {{ name }},
-                        {% if name == "bytes" %}
-                        IMPORT_builtins.bytes
-                        {% else %}
-                        {# NOTE: split at '[' so we don't include generic type parameters. #}
-                        {{ type.split('[')[0] }},
-                        {% endif %}
-                    ):
-                        raise TypeError(
-                            f"Can not construct protobuf message of type "
-                            f"'{{ method.input_type }}': field '{{ name }}' is not "
-                            {# This code calls many types `IMPORT_...`, but the customer doesn't use that prefix #}
-                            f"of required type '{{ type.removeprefix('IMPORT_') }}'"
-                        )
-                    {% endfor %}
-
-                    # TODO: mypy-protobuf declares that
-                    # `IMPORT_google_protobuf_message.Message` constructor arguments are
-                    # always non-None, when in reality they are optional.
-                    {% endif %}
-                    __request__ = {{ client.proto.state_name }}.{{ method.proto.name }}Request(
+                    __request__ = {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
                         {% for name in method.input_type_fields %}
-                        {{ name }}={{ name }}, # type: ignore[arg-type]
+                        {{ name }}={{ name }},
                         {% endfor %}
                     )
                 {% else %}
@@ -4959,13 +4918,9 @@ class {{ client.proto.state_name }}:
                 *,
                 {% endif %}
                 {% if options.proto.pydantic %}
-                {% if type.startswith('IMPORT_typing.Optional') %}
-                {{ name }}: {{ type }} = None,
+                {{ name }}: {{ type }} | Unset = UNSET,
                 {% else %}
-                {{ name }}: {{ type }},
-                {% endif %}
-                {% else %}
-                {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+                {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -4983,10 +4938,10 @@ class {{ client.proto.state_name }}:
                 {% if loop.first %}
                 *,
                 {% endif %}
-                {% if type.startswith('IMPORT_typing.Optional') %}
-                {{ name }}: {{ type }} = None,
+                {% if options.proto.pydantic %}
+                {{ name }}: {{ type }} | Unset = UNSET,
                 {% else %}
-                {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+                {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -5002,9 +4957,9 @@ class {{ client.proto.state_name }}:
                     assert __request_or_options__ is not None
                     assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
-                    {# When specifying __request__ directly, we need to ensure that all other input fields are None. #}
+                    {# When specifying __request__ directly, we need to ensure that all other input fields are 'UNSET'. #}
                     {% for name in method.input_type_fields %}
-                    assert {{ name }} is None
+                    assert {{ name }} is UNSET
                     {% endfor %}
 
                     __request__ = __request_or_options__
@@ -5013,33 +4968,9 @@ class {{ client.proto.state_name }}:
                     assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
                     __options__ = __request_or_options__
 
-                    {% if not options.proto.pydantic %}
-                    {# Validate protobuf input fields only, since Pydantic will handle validation for us. #}
-                    {% for name, type in method.input_type_fields.items() %}
-                    if {{ name }} is not None and not isinstance(
-                        {{ name }},
-                        {% if name == "bytes" %}
-                        IMPORT_builtins.bytes
-                        {% else %}
-                        {# NOTE: split at '[' so we don't include generic type parameters. #}
-                        {{ type.split('[')[0] }},
-                        {% endif %}
-                    ):
-                        raise TypeError(
-                            f"Can not construct protobuf message of type "
-                            f"'{{ method.input_type }}': field '{{ name }}' is not "
-                            {# This code calls many types `IMPORT_...`, but the customer doesn't use that prefix #}
-                            f"of required type '{{ type.removeprefix('IMPORT_') }}'"
-                        )
-                    {% endfor %}
-
-                    # TODO: mypy-protobuf declares that
-                    # `IMPORT_google_protobuf_message.Message` constructor arguments are
-                    # always non-None, when in reality they are optional.
-                    {% endif %}
-                    __request__ = {{ client.proto.state_name }}.{{ method.proto.name }}Request(
+                    __request__ = {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
                         {% for name in method.input_type_fields %}
-                        {{ name }}={{ name }}, # type: ignore[arg-type]
+                        {{ name }}={{ name }},
                         {% endfor %}
                     )
                 {% else %}
@@ -5142,13 +5073,9 @@ class {{ client.proto.state_name }}:
                 *,
                 {% endif %}
                 {% if options.proto.pydantic %}
-                {% if type.startswith('IMPORT_typing.Optional') %}
-                {{ name }}: {{ type }} = None,
+                {{ name }}: {{ type }} | Unset = UNSET,
                 {% else %}
-                {{ name }}: {{ type }},
-                {% endif %}
-                {% else %}
-                {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+                {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -5166,10 +5093,10 @@ class {{ client.proto.state_name }}:
                 {% if loop.first %}
                 *,
                 {% endif %}
-                {% if type.startswith('IMPORT_typing.Optional') %}
-                {{ name }}: {{ type }} = None,
+                {% if options.proto.pydantic %}
+                {{ name }}: {{ type }} | Unset = UNSET,
                 {% else %}
-                {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+                {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -5188,9 +5115,9 @@ class {{ client.proto.state_name }}:
                     assert __request_or_options__ is not None
                     assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
-                    {# When specifying __request__ directly, we need to ensure that all other input fields are None. #}
+                    {# When specifying __request__ directly, we need to ensure that all other input fields are 'UNSET'. #}
                     {% for name in method.input_type_fields %}
-                    assert {{ name }} is None
+                    assert {{ name }} is UNSET
                     {% endfor %}
 
                     __request__ = __request_or_options__
@@ -5199,33 +5126,9 @@ class {{ client.proto.state_name }}:
                     assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
                     __options__ = __request_or_options__
 
-                    {% if not options.proto.pydantic %}
-                    {# Validate protobuf input fields only, since Pydantic will handle validation for us. #}
-                    {% for name, type in method.input_type_fields.items() %}
-                    if {{ name }} is not None and not isinstance(
-                        {{ name }},
-                        {% if name == "bytes" %}
-                        IMPORT_builtins.bytes
-                        {% else %}
-                        {# NOTE: split at '[' so we don't include generic type parameters. #}
-                        {{ type.split('[')[0] }},
-                        {% endif %}
-                    ):
-                        raise TypeError(
-                            f"Can not construct protobuf message of type "
-                            f"'{{ method.input_type }}': field '{{ name }}' is not "
-                            {# This code calls many types `IMPORT_...`, but the customer doesn't use that prefix #}
-                            f"of required type '{{ type.removeprefix('IMPORT_') }}'"
-                        )
-                    {% endfor %}
-
-                    # TODO: mypy-protobuf declares that
-                    # `IMPORT_google_protobuf_message.Message` constructor arguments are
-                    # always non-None, when in reality they are optional.
-                    {% endif %}
-                    __request__ = {{ client.proto.state_name }}.{{ method.proto.name }}Request(
+                    __request__ = {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
                         {% for name in method.input_type_fields %}
-                        {{ name }}={{ name }}, # type: ignore[arg-type]
+                        {{ name }}={{ name }},
                         {% endfor %}
                     )
                 {% else %}
@@ -5354,13 +5257,9 @@ class {{ client.proto.state_name }}:
                 *,
                 {% endif %}
                 {% if options.proto.pydantic %}
-                {% if type.startswith('IMPORT_typing.Optional') %}
-                {{ name }}: {{ type }} = None,
+                {{ name }}: {{ type }} | Unset = UNSET,
                 {% else %}
-                {{ name }}: {{ type }},
-                {% endif %}
-                {% else %}
-                {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+                {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Task:
@@ -5378,10 +5277,10 @@ class {{ client.proto.state_name }}:
                 {% if loop.first %}
                 *,
                 {% endif %}
-                {% if type.startswith('IMPORT_typing.Optional') %}
-                {{ name }}: {{ type }} = None,
+                {% if options.proto.pydantic %}
+                {{ name }}: {{ type }} | Unset = UNSET,
                 {% else %}
-                {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+                {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
                 {% endif %}
                 {% endfor %}
             ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Task:
@@ -5398,9 +5297,9 @@ class {{ client.proto.state_name }}:
                     assert __request_or_options__ is not None
                     assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
-                    {# When specifying __request__ directly, we need to ensure that all other input fields are None. #}
+                    {# When specifying __request__ directly, we need to ensure that all other input fields are 'UNSET'. #}
                     {% for name in method.input_type_fields %}
-                    assert {{ name }} is None
+                    assert {{ name }} is UNSET
                     {% endfor %}
 
                     __request__ = __request_or_options__
@@ -5409,33 +5308,9 @@ class {{ client.proto.state_name }}:
                     assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
                     __options__ = __request_or_options__
 
-                    {% if not options.proto.pydantic %}
-                    {# Validate protobuf input fields only, since Pydantic will handle validation for us. #}
-                    {% for name, type in method.input_type_fields.items() %}
-                    if {{ name }} is not None and not isinstance(
-                        {{ name }},
-                        {% if name == "bytes" %}
-                        IMPORT_builtins.bytes
-                        {% else %}
-                        {# NOTE: split at '[' so we don't include generic type parameters. #}
-                        {{ type.split('[')[0] }},
-                        {% endif %}
-                    ):
-                        raise TypeError(
-                            f"Can not construct protobuf message of type "
-                            f"'{{ method.input_type }}': field '{{ name }}' is not "
-                            {# This code calls many types `IMPORT_...`, but the customer doesn't use that prefix #}
-                            f"of required type '{{ type.removeprefix('IMPORT_') }}'"
-                        )
-                    {% endfor %}
-
-                    # TODO: mypy-protobuf declares that
-                    # `IMPORT_google_protobuf_message.Message` constructor arguments are
-                    # always non-None, when in reality they are optional.
-                    {% endif %}
-                    __request__ = {{ client.proto.state_name }}.{{ method.proto.name }}Request(
+                    __request__ = {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
                         {% for name in method.input_type_fields %}
-                        {{ name }}={{ name }}, # type: ignore[arg-type]
+                        {{ name }}={{ name }},
                         {% endfor %}
                     )
                 {% else %}
@@ -5573,13 +5448,9 @@ class {{ client.proto.state_name }}:
             *,
             {% endif %}
             {% if options.proto.pydantic %}
-            {% if type.startswith('IMPORT_typing.Optional') %}
-            {{ name }}: {{ type }} = None,
+            {{ name }}: {{ type }} | Unset = UNSET,
             {% else %}
-            {{ name }}: {{ type }},
-            {% endif %}
-            {% else %}
-            {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+            {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
             {% endif %}
             {% endfor %}
         ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
@@ -5604,10 +5475,10 @@ class {{ client.proto.state_name }}:
             {% if loop.first %}
             *,
             {% endif %}
-            {% if type.startswith('IMPORT_typing.Optional') %}
-            {{ name }}: {{ type }} = None,
+            {% if options.proto.pydantic %}
+            {{ name }}: {{ type }} | Unset = UNSET,
             {% else %}
-            {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+            {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
             {% endif %}
             {% endfor %}
         ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
@@ -5634,9 +5505,9 @@ class {{ client.proto.state_name }}:
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                 __options__ = __options__ or IMPORT_reboot_aio_call.Options()
 
-                {# When specifying __request__ directly, we need to ensure that all other input fields are None. #}
+                {# When specifying __request__ directly, we need to ensure that all other input fields are 'UNSET'. #}
                 {% for name in method.input_type_fields %}
-                assert {{ name }} is None
+                assert {{ name }} is UNSET
                 {% endfor %}
 
                 return await (
@@ -5651,34 +5522,15 @@ class {{ client.proto.state_name }}:
                 assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
                 __options__ = __request_or_options__ or IMPORT_reboot_aio_call.Options()
 
-                {% if not options.proto.pydantic %}
-                {# Validate protobuf input fields only, since Pydantic will handle validation for us. #}
-                {% for name, type in method.input_type_fields.items() %}
-                if {{ name }} is not None and not isinstance(
-                    {{ name }},
-                    {% if name == "bytes" %}
-                    IMPORT_builtins.bytes
-                    {% else %}
-                    {# NOTE: split at '[' so we don't include generic type parameters. #}
-                    {{ type.split('[')[0] }},
-                    {% endif %}
-                ):
-                    raise TypeError(
-                        f"Can not construct protobuf message of type "
-                        f"'{{ method.input_type }}': field '{{ name }}' is not "
-                        {# This code calls many types `IMPORT_...`, but the customer doesn't use that prefix #}
-                        f"of required type '{{ type.removeprefix('IMPORT_') }}'"
-                    )
-                {% endfor %}
-                {% endif %}
-
                 return await (
                     await __this__.spawn().{{ method.proto.name }}(
                         __context__,
+                        {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
+                            {% for name in method.input_type_fields %}
+                            {{ name }}={{ name }},
+                            {% endfor %}
+                        ),
                         __options__,
-                        {% for name in method.input_type_fields %}
-                        {{ name }}={{ name }},
-                        {% endfor %}
                     )
                 )
             {% else %}
@@ -5739,13 +5591,9 @@ class {{ client.proto.state_name }}:
             *,
             {% endif %}
             {% if options.proto.pydantic %}
-            {% if type.startswith('IMPORT_typing.Optional') %}
-            {{ name }}: {{ type }} = None,
+            {{ name }}: {{ type }} | Unset = UNSET,
             {% else %}
-            {{ name }}: {{ type }},
-            {% endif %}
-            {% else %}
-            {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+            {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
             {% endif %}
             {% endfor %}
             {% else %}
@@ -5772,10 +5620,10 @@ class {{ client.proto.state_name }}:
             {% if loop.first %}
             *,
             {% endif %}
-            {% if type.startswith('IMPORT_typing.Optional') %}
-            {{ name }}: {{ type }} = None,
+            {% if options.proto.pydantic %}
+            {{ name }}: {{ type }} | Unset = UNSET,
             {% else %}
-            {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+            {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
             {% endif %}
             {% endfor %}
             {% else %}
@@ -5805,9 +5653,9 @@ class {{ client.proto.state_name }}:
                 assert __request_or_options__ is not None
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
-                {# When specifying __request__ directly, we need to ensure that all other input fields are None. #}
+                {# When specifying __request__ directly, we need to ensure that all other input fields are 'UNSET'. #}
                 {% for name in method.input_type_fields %}
-                assert {{ name }} is None
+                assert {{ name }} is UNSET
                 {% endfor %}
 
                 __request__ = __request_or_options__
@@ -5816,33 +5664,9 @@ class {{ client.proto.state_name }}:
                 assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
                 __options__ = __request_or_options__
 
-                {% if not options.proto.pydantic %}
-                {# Validate protobuf input fields only, since Pydantic will handle validation for us. #}
-                {% for name, type in method.input_type_fields.items() %}
-                if {{ name }} is not None and not isinstance(
-                    {{ name }},
-                    {% if name == "bytes" %}
-                    IMPORT_builtins.bytes
-                    {% else %}
-                    {# NOTE: split at '[' so we don't include generic type parameters. #}
-                    {{ type.split('[')[0] }},
-                    {% endif %}
-                ):
-                    raise TypeError(
-                        f"Can not construct protobuf message of type "
-                        f"'{{ method.input_type }}': field '{{ name }}' is not "
-                        {# This code calls many types `IMPORT_...`, but the customer doesn't use that prefix #}
-                        f"of required type '{{ type.removeprefix('IMPORT_') }}'"
-                    )
-                {% endfor %}
-
-                # TODO: mypy-protobuf declares that
-                # `IMPORT_google_protobuf_message.Message` constructor arguments are
-                # always non-None, when in reality they are optional.
-                {% endif %}
-                __request__ = {{ client.proto.state_name }}.{{ method.proto.name }}Request(
+                __request__ = {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
                     {% for name in method.input_type_fields %}
-                    {{ name }}={{ name }}, # type: ignore[arg-type]
+                    {{ name }}={{ name }},
                     {% endfor %}
                 )
             {% endif %}
@@ -5939,13 +5763,9 @@ class {{ client.proto.state_name }}:
             *,
             {% endif %}
             {% if options.proto.pydantic %}
-            {% if type.startswith('IMPORT_typing.Optional') %}
-            {{ name }}: {{ type }} = None,
+            {{ name }}: {{ type }} | Unset = UNSET,
             {% else %}
-            {{ name }}: {{ type }},
-            {% endif %}
-            {% else %}
-            {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+            {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
             {% endif %}
             {% endfor %}
         ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
@@ -5963,10 +5783,10 @@ class {{ client.proto.state_name }}:
             {% if loop.first %}
             *,
             {% endif %}
-            {% if type.startswith('IMPORT_typing.Optional') %}
-            {{ name }}: {{ type }} = None,
+            {% if options.proto.pydantic %}
+            {{ name }}: {{ type }} | Unset = UNSET,
             {% else %}
-            {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+            {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
             {% endif %}
             {% endfor %}
         ) -> {{ client.proto.state_name }}.{{ method.proto.name }}Response:
@@ -5981,9 +5801,9 @@ class {{ client.proto.state_name }}:
                 assert __request_or_options__ is not None
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
-                {# When specifying __request__ directly, we need to ensure that all other input fields are None. #}
+                {# When specifying __request__ directly, we need to ensure that all other input fields are 'UNSET'. #}
                 {% for name in method.input_type_fields %}
-                assert {{ name }} is None
+                assert {{ name }} is UNSET
                 {% endfor %}
 
                 __request__ = __request_or_options__
@@ -5992,33 +5812,9 @@ class {{ client.proto.state_name }}:
                 assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
                 __options__ = __request_or_options__
 
-                {% if not options.proto.pydantic %}
-                {# Validate protobuf input fields only, since Pydantic will handle validation for us. #}
-                {% for name, type in method.input_type_fields.items() %}
-                if {{ name }} is not None and not isinstance(
-                    {{ name }},
-                    {% if name == "bytes" %}
-                    IMPORT_builtins.bytes
-                    {% else %}
-                    {# NOTE: split at '[' so we don't include generic type parameters. #}
-                    {{ type.split('[')[0] }},
-                    {% endif %}
-                ):
-                    raise TypeError(
-                        f"Can not construct protobuf message of type "
-                        f"'{{ method.input_type }}': field '{{ name }}' is not "
-                        {# This code calls many types `IMPORT_...`, but the customer doesn't use that prefix #}
-                        f"of required type '{{ type.removeprefix('IMPORT_') }}'"
-                    )
-                {% endfor %}
-
-                # TODO: mypy-protobuf declares that
-                # `google.protobuf.message.Message` constructor arguments are
-                # always non-None, when in reality they are optional.
-                {% endif %}
-                __request__ = {{ client.proto.state_name }}.{{ method.proto.name }}Request(
+                __request__ = {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
                     {% for name in method.input_type_fields %}
-                    {{ name }}={{ name }}, # type: ignore[arg-type]
+                    {{ name }}={{ name }},
                     {% endfor %}
                 )
             {% else %}
@@ -6135,13 +5931,9 @@ class {{ client.proto.state_name }}:
             *,
             {% endif %}
             {% if options.proto.pydantic %}
-            {% if type.startswith('IMPORT_typing.Optional') %}
-            {{ name }}: {{ type }} = None,
+            {{ name }}: {{ type }} | Unset = UNSET,
             {% else %}
-            {{ name }}: {{ type }},
-            {% endif %}
-            {% else %}
-            {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+            {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
             {% endif %}
             {% endfor %}
         ) -> list[{{ client.proto.state_name}}.{{ method.proto.name }}Response]:
@@ -6170,10 +5962,10 @@ class {{ client.proto.state_name }}:
             {% if loop.first %}
             *,
             {% endif %}
-            {% if type.startswith('IMPORT_typing.Optional') %}
-            {{ name }}: {{ type }} = None,
+            {% if options.proto.pydantic %}
+            {{ name }}: {{ type }} | Unset = UNSET,
             {% else %}
-            {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+            {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
             {% endif %}
             {% endfor %}
         ) -> list[{{ client.proto.state_name}}.{{ method.proto.name }}Response]:
@@ -6183,9 +5975,9 @@ class {{ client.proto.state_name }}:
                 assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
                 __options__ = __options__ or IMPORT_reboot_aio_call.Options()
 
-                {# When specifying __request__ directly, we need to ensure that all other input fields are None. #}
+                {# When specifying __request__ directly, we need to ensure that all other input fields are 'UNSET'. #}
                 {% for name in method.input_type_fields %}
-                assert {{ name }} is None
+                assert {{ name }} is UNSET
                 {% endfor %}
 
                 return await IMPORT_asyncio.gather(
@@ -6204,37 +5996,18 @@ class {{ client.proto.state_name }}:
                 assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
                 __options__ = __request_or_options__ or IMPORT_reboot_aio_call.Options()
 
-                {% if not options.proto.pydantic %}
-                {# Validate protobuf input fields only, since Pydantic will handle validation for us. #}
-                {% for name, type in method.input_type_fields.items() %}
-                if {{ name }} is not None and not isinstance(
-                    {{ name }},
-                    {% if name == "bytes" %}
-                    IMPORT_builtins.bytes
-                    {% else %}
-                    {# NOTE: split at '[' so we don't include generic type parameters. #}
-                    {{ type.split('[')[0] }},
-                    {% endif %}
-                ):
-                    raise TypeError(
-                        f"Can not construct protobuf message of type "
-                        f"'{{ method.input_type }}': field '{{ name }}' is not "
-                        {# This code calls many types `IMPORT_...`, but the customer doesn't use that prefix #}
-                        f"of required type '{{ type.removeprefix('IMPORT_') }}'"
-                    )
-                {% endfor %}
-                {% endif %}
-
                 return await IMPORT_asyncio.gather(
                     *[
                         {{ client.proto.state_name }}.ref(
                             id
                         ).{{ method.proto.name }}(
                             __context__,
+                            {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
+                                {% for name in method.input_type_fields %}
+                                {{ name }}={{ name }},
+                                {% endfor %}
+                            ),
                             __options__,
-                            {% for name in method.input_type_fields %}
-                            {{ name }}={{ name }},
-                            {% endfor %}
                         ) for id in __this__._ids
                     ]
                 )
@@ -6315,13 +6088,9 @@ class {{ client.proto.state_name }}:
         *,
         {% endif %}
         {% if options.proto.pydantic %}
-        {% if type.startswith('IMPORT_typing.Optional') %}
-        {{ name }}: {{ type }} = None,
+        {{ name }}: {{ type }} | Unset = UNSET,
         {% else %}
-        {{ name }}: {{ type }},
-        {% endif %}
-        {% else %}
-        {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+        {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
         {% endif %}
         {% endfor %}
     ) -> tuple[{{ client.proto.state_name }}.WeakReference, {{ client.proto.state_name }}.{{ method.proto.name }}Response]:
@@ -6341,10 +6110,10 @@ class {{ client.proto.state_name }}:
         {% if loop.first %}
         *,
         {% endif %}
-        {% if type.startswith('IMPORT_typing.Optional') %}
-        {{ name }}: {{ type }} = None,
+        {% if options.proto.pydantic %}
+        {{ name }}: {{ type }} | Unset = UNSET,
         {% else %}
-        {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+        {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
         {% endif %}
         {% endfor %}
         {% else %}
@@ -6374,8 +6143,9 @@ class {{ client.proto.state_name }}:
                 __options__ = __options_or_idempotency__
                 assert __idempotency__ is None or isinstance(__idempotency__, IMPORT_reboot_aio_idempotency.Idempotency)
 
+                {# When specifying __request__ directly, we need to ensure that all other input fields are 'UNSET'. #}
                 {% for name in method.input_type_fields %}
-                assert {{ name }} is None
+                assert {{ name }} is UNSET
                 {% endfor %}
             else:
                 assert __request_or_options_or_idempotency__ is None or isinstance(__request_or_options_or_idempotency__, IMPORT_reboot_aio_call.Options)
@@ -6383,33 +6153,9 @@ class {{ client.proto.state_name }}:
                 assert __options_or_idempotency__ is None or isinstance(__options_or_idempotency__, IMPORT_reboot_aio_idempotency.Idempotency)
                 __idempotency__ = __options_or_idempotency__
 
-                {% if not options.proto.pydantic %}
-                {# Validate protobuf input fields only, since Pydantic will handle validation for us. #}
-                {% for name, type in method.input_type_fields.items() %}
-                if {{ name }} is not None and not isinstance(
-                    {{ name }},
-                    {% if name == "bytes" %}
-                    IMPORT_builtins.bytes
-                    {% else %}
-                    {# NOTE: split at '[' so we don't include generic type parameters. #}
-                    {{ type.split('[')[0] }},
-                    {% endif %}
-                ):
-                    raise TypeError(
-                        f"Can not construct protobuf message of type "
-                        f"'{{ method.input_type }}': field '{{ name }}' is not "
-                        {# This code calls many types `IMPORT_...`, but the customer doesn't use that prefix #}
-                        f"of required type '{{ type.removeprefix('IMPORT_') }}'"
-                    )
-                {% endfor %}
-
-                # TODO: mypy-protobuf declares that
-                # `google.protobuf.message.Message` constructor arguments are
-                # always non-None, when in reality they are optional.
-                {% endif %}
-                __request__ = {{ client.proto.state_name }}.{{ method.proto.name }}Request(
+                __request__ = {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
                     {% for name in method.input_type_fields %}
-                    {{ name }}={{ name }}, # type: ignore[arg-type]
+                    {{ name }}={{ name }},
                     {% endfor %}
                 )
         elif isinstance(__state_id_or_request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request):
@@ -6429,33 +6175,9 @@ class {{ client.proto.state_name }}:
             assert __request_or_options_or_idempotency__ is None or isinstance(__request_or_options_or_idempotency__, IMPORT_reboot_aio_idempotency.Idempotency)
             __idempotency__ = __request_or_options_or_idempotency__
 
-            {% if not options.proto.pydantic %}
-            {# Validate protobuf input fields only, since Pydantic will handle validation for us. #}
-            {% for name, type in method.input_type_fields.items() %}
-            if {{ name }} is not None and not isinstance(
-                {{ name }},
-                {% if name == "bytes" %}
-                IMPORT_builtins.bytes
-                {% else %}
-                {# NOTE: split at '[' so we don't include generic type parameters. #}
-                {{ type.split('[')[0] }},
-                {% endif %}
-            ):
-                raise TypeError(
-                    f"Can not construct protobuf message of type "
-                    f"'{{ method.input_type }}': field '{{ name }}' is not "
-                    {# This code calls many types `IMPORT_...`, but the customer doesn't use that prefix #}
-                    f"of required type '{{ type.removeprefix('IMPORT_') }}'"
-                )
-            {% endfor %}
-
-            # TODO: mypy-protobuf declares that
-            # `google.protobuf.message.Message` constructor arguments are
-            # always non-None, when in reality they are optional.
-            {% endif %}
-            __request__ = {{ client.proto.state_name }}.{{ method.proto.name }}Request(
+            __request__ = {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
                 {% for name in method.input_type_fields %}
-                {{ name }}={{ name }}, # type: ignore[arg-type]
+                {{ name }}={{ name }},
                 {% endfor %}
             )
         {% else %}
@@ -6630,13 +6352,9 @@ class {{ client.proto.state_name }}:
             *,
             {% endif %}
             {% if options.proto.pydantic %}
-            {% if type.startswith('IMPORT_typing.Optional') %}
-            {{ name }}: {{ type }} = None,
+            {{ name }}: {{ type }} | Unset = UNSET,
             {% else %}
-            {{ name }}: {{ type }},
-            {% endif %}
-            {% else %}
-            {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+            {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
             {% endif %}
             {% endfor %}
         ) -> tuple[{{ client.proto.state_name }}.WeakReference, {{ client.proto.state_name }}.{{ method.proto.name }}Response]:
@@ -6654,10 +6372,10 @@ class {{ client.proto.state_name }}:
             {% if loop.first %}
             *,
             {% endif %}
-            {% if type.startswith('IMPORT_typing.Optional') %}
-            {{ name }}: {{ type }} = None,
+            {% if options.proto.pydantic %}
+            {{ name }}: {{ type }} | Unset = UNSET,
             {% else %}
-            {{ name }}: IMPORT_typing.Optional[{{ type }}] = None,
+            {{ name }}: IMPORT_typing.Optional[{{ type }}] | Unset = UNSET,
             {% endif %}
             {% endfor %}
             {% else %}
@@ -6680,40 +6398,17 @@ class {{ client.proto.state_name }}:
                     __request__ = __request_or_options__
                     assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
 
+                    {# When specifying __request__ directly, we need to ensure that all other input fields are 'UNSET'. #}
                     {% for name in method.input_type_fields %}
-                    assert {{ name }} is None
+                    assert {{ name }} is UNSET
                     {% endfor %}
                 else:
                     assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
                     __options__ = __request_or_options__
 
-                    {% if not options.proto.pydantic %}
-                    {# Validate protobuf input fields only, since Pydantic will handle validation for us. #}
-                    {% for name, type in method.input_type_fields.items() %}
-                    if {{ name }} is not None and not isinstance(
-                        {{ name }},
-                        {% if name == "bytes" %}
-                        IMPORT_builtins.bytes
-                        {% else %}
-                        {# NOTE: split at '[' so we don't include generic type parameters. #}
-                        {{ type.split('[')[0] }},
-                        {% endif %}
-                    ):
-                        raise TypeError(
-                            f"Can not construct protobuf message of type "
-                            f"'{{ method.input_type }}': field '{{ name }}' is not "
-                            {# This code calls many types `IMPORT_...`, but the customer doesn't use that prefix #}
-                            f"of required type '{{ type.removeprefix('IMPORT_') }}'"
-                        )
-                    {% endfor %}
-
-                    # TODO: mypy-protobuf declares that
-                    # `google.protobuf.message.Message` constructor arguments are
-                    # always non-None, when in reality they are optional.
-                    {% endif %}
-                    __request__ = {{ client.proto.state_name }}.{{ method.proto.name }}Request(
+                    __request__ = {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
                         {% for name in method.input_type_fields %}
-                        {{ name }}={{ name }}, # type: ignore[arg-type]
+                        {{ name }}={{ name }},
                         {% endfor %}
                     )
             elif isinstance(__state_id_or_request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request):
@@ -6724,33 +6419,9 @@ class {{ client.proto.state_name }}:
                 assert __state_id_or_request_or_options__ is None or isinstance(__state_id_or_request_or_options__, IMPORT_reboot_aio_call.Options)
                 __options__ = __state_id_or_request_or_options__
 
-                {% if not options.proto.pydantic %}
-                {# Validate protobuf input fields only, since Pydantic will handle validation for us. #}
-                {% for name, type in method.input_type_fields.items() %}
-                if {{ name }} is not None and not isinstance(
-                    {{ name }},
-                    {% if name == "bytes" %}
-                    IMPORT_builtins.bytes
-                    {% else %}
-                    {# NOTE: split at '[' so we don't include generic type parameters. #}
-                    {{ type.split('[')[0] }},
-                    {% endif %}
-                ):
-                    raise TypeError(
-                        f"Can not construct protobuf message of type "
-                        f"'{{ method.input_type }}': field '{{ name }}' is not "
-                        {# This code calls many types `IMPORT_...`, but the customer doesn't use that prefix #}
-                        f"of required type '{{ type.removeprefix('IMPORT_') }}'"
-                    )
-                {% endfor %}
-
-                # TODO: mypy-protobuf declares that
-                # `google.protobuf.message.Message` constructor arguments are
-                # always non-None, when in reality they are optional.
-                {% endif %}
-                __request__ = {{ client.proto.state_name }}.{{ method.proto.name }}Request(
+                __request__ = {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
                     {% for name in method.input_type_fields %}
-                    {{ name }}={{ name }}, # type: ignore[arg-type]
+                    {{ name }}={{ name }},
                     {% endfor %}
                 )
             {% else %}

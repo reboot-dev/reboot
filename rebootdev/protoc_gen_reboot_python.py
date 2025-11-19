@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
+
 import importlib
 import os
-import pydantic  # type: ignore[import]
 import re
 import rebootdev.aio.tracing
 import sys
@@ -13,7 +13,7 @@ from google.protobuf.descriptor import (
     MethodDescriptor,
 )
 from google.protobuf.descriptor_pool import DescriptorPool
-from rebootdev.api import API, to_snake_case
+from rebootdev.api import API, Model, to_snake_case
 from rebootdev.options import get_method_options
 from rebootdev.protoc_gen_reboot_generic import (
     METHODS_SUFFIX,
@@ -363,7 +363,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
     @classmethod
     def _analyze_pydantic_fields(
         cls,
-        request: Optional[Type[pydantic.BaseModel]],
+        request: Optional[Type[Model]],
     ) -> dict[str, str]:
         if request is None:
             return {}
@@ -381,7 +381,7 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
 
             if origin is Union:
                 # Currently only supports 'Optional[T]' from the top-level
-                # 'BaseModel'.
+                # 'Model'.
                 non_none_args = [
                     arg for arg in get_args(field_type)
                     if arg is not type(None)
@@ -394,12 +394,12 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                 field_type_string = f'IMPORT_{field_type}'
             elif origin is None:
                 # It can happen if we have a primitive type or another
-                # BaseModel.
+                # 'Model'.
                 assert isinstance(field_type, type)
                 # Annotation at that point will be '<class 'int'>',
                 # '<class 'AnotherModel'>', etc., so we need to get the actual
                 # type string.
-                if issubclass(field_type, pydantic.BaseModel):
+                if issubclass(field_type, Model):
                     field_type_string = f'{field_type.__module__}.{field_type.__name__}'
                 else:
                     # Primitive type does not need module prefix.

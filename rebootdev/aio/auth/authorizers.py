@@ -5,8 +5,8 @@ import typing
 from abc import ABC, abstractmethod
 from google.protobuf.message import Message
 from log.log import get_logger, log_at_most_once_per
-from pydantic import BaseModel  # type: ignore[import]
 from rebootdev.aio.contexts import ReaderContext
+from rebootdev.api import Model
 from rebootdev.run_environments import (
     on_cloud,
     running_rbt_dev,
@@ -37,12 +37,12 @@ RequestTypes = TypeVar('RequestTypes', bound=Message)
 
 ContravariantStateType = TypeVar(
     'ContravariantStateType',
-    bound=Message | BaseModel,
+    bound=Message | Model,
     contravariant=True,
 )
 ContravariantRequestType = TypeVar(
     'ContravariantRequestType',
-    bound=Message | BaseModel | None,
+    bound=Message | Model | None,
     contravariant=True,
 )
 
@@ -136,8 +136,8 @@ def deny() -> AuthorizerRule[Message, Message]:
             self,
             *,
             context: ReaderContext,
-            state: Optional[Message | BaseModel],
-            request: Optional[Message | BaseModel],
+            state: Optional[Message | Model],
+            request: Optional[Message | Model],
             **kwargs,
         ) -> Authorizer.Decision:
             return rbt.v1alpha1.errors_pb2.PermissionDenied()
@@ -153,8 +153,8 @@ def allow() -> AuthorizerRule[Message, Message]:
             self,
             *,
             context: ReaderContext,
-            state: Optional[Message | BaseModel],
-            request: Optional[Message | BaseModel],
+            state: Optional[Message | Model],
+            request: Optional[Message | Model],
             **kwargs,
         ) -> Authorizer.Decision:
             return rbt.v1alpha1.errors_pb2.Ok()
@@ -316,8 +316,8 @@ class DefaultAuthorizer(Authorizer[Message, Message]):
         *,
         method_name: str,
         context: ReaderContext,
-        state: Optional[Message | BaseModel],
-        request: Optional[Message | BaseModel],
+        state: Optional[Message | Model],
+        request: Optional[Message | Model],
         **kwargs,
     ) -> Authorizer.Decision:
         # Allow if app internal.
