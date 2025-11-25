@@ -128,3 +128,17 @@ extend google.protobuf.FileOptions {
   //       For now we use the 50000-99999 range for "in-house" applications.
   FileOptions file = 50000;
 }
+
+message FieldOptions {
+  // The fully qualified Pydantic type for this field if the input schema
+  // is from Pydantic.
+  string pydantic_type = 1;
+}
+
+extend google.protobuf.FieldOptions {
+  // TODO: once these options are stable, register field numbers for them in the
+  //       official protobuf global extension registry:
+  //       https://github.com/protocolbuffers/protobuf/blob/main/docs/options.md
+  //       For now we use the 50000-99999 range for "in-house" applications.
+  FieldOptions field = 50000;
+}

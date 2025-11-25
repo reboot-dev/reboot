@@ -31,9 +31,8 @@ logger = get_logger(__name__)
 # in this file that we expect users to want to see.
 logger.setLevel(logging.WARNING)
 
-StateType = TypeVar('StateType', bound=Message)
-RequestType = TypeVar('RequestType', bound=Message)
-RequestTypes = TypeVar('RequestTypes', bound=Message)
+StateType = TypeVar('StateType', bound=Message | Model)
+RequestTypes = TypeVar('RequestTypes', bound=Message | Model | None)
 
 ContravariantStateType = TypeVar(
     'ContravariantStateType',
@@ -128,9 +127,11 @@ class AuthorizerRule(
         pass
 
 
-def deny() -> AuthorizerRule[Message, Message]:
+def deny() -> AuthorizerRule[Message | Model, Message | Model | None]:
 
-    class DenyAuthorizerRule(AuthorizerRule[Message, Message]):
+    class DenyAuthorizerRule(
+        AuthorizerRule[Message | Model, Message | Model | None]
+    ):
 
         async def execute(
             self,
@@ -145,9 +146,11 @@ def deny() -> AuthorizerRule[Message, Message]:
     return DenyAuthorizerRule()
 
 
-def allow() -> AuthorizerRule[Message, Message]:
+def allow() -> AuthorizerRule[Message | Model, Message | Model | None]:
 
-    class AllowAuthorizerRule(AuthorizerRule[Message, Message]):
+    class AllowAuthorizerRule(
+        AuthorizerRule[Message | Model, Message | Model | None]
+    ):
 
         async def execute(
             self,
@@ -306,7 +309,7 @@ def is_app_internal(*, context: ReaderContext, **kwargs):
     return rbt.v1alpha1.errors_pb2.PermissionDenied()
 
 
-class DefaultAuthorizer(Authorizer[Message, Message]):
+class DefaultAuthorizer(Authorizer[Message | Model, Message | Model | None]):
 
     def __init__(self, state_name: str):
         self._state_name = state_name

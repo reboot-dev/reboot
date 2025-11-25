@@ -1,5 +1,5 @@
-import pydantic  # type: ignore[import]
-import pydantic_core  # type: ignore[import]
+import pydantic
+import pydantic_core
 import re
 import typing
 from enum import Enum

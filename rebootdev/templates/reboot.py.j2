@@ -232,7 +232,6 @@ def {{ client.proto.state_name }}{{ method.proto.name }}RequestFromProto(
     {% else %}
     return request
     {% endif %}
-{% endif %}
 
 def {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
     {% for name, type in method.input_type_fields.items() %}
@@ -280,7 +279,7 @@ def {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
     return {{ client.proto.state_name }}.{{ method.proto.name }}Request(
         **__args__,
     )
-
+{% endif %}
 
 {% endfor %}
 {% endfor %}
@@ -2232,13 +2231,21 @@ class {{ state.proto.name }}Authorizer(
         {{ method.proto.name }}: IMPORT_typing.Optional[
             IMPORT_rebootdev.aio.auth.authorizers.AuthorizerRule[
               {{ state.proto.name }}.State,
+              {% if method.has_non_none_request %}
               {{ state.proto.name }}.{{ method.proto.name }}Request,
+              {% else %}
+              None
+              {% endif %}
             ]
         ] = None,
         {{ method.proto.name | to_snake }}: IMPORT_typing.Optional[
             IMPORT_rebootdev.aio.auth.authorizers.AuthorizerRule[
               {{ state.proto.name }}.State,
+              {% if method.has_non_none_request %}
               {{ state.proto.name }}.{{ method.proto.name }}Request,
+              {% else %}
+              None
+              {% endif %}
             ]
         ] = None,
         {% endfor %}
@@ -3686,10 +3693,16 @@ class {{ client.proto.state_name }}:
     {% for method in service.methods %}
 
     {% if method.has_non_none_request %}
-    {{ method.proto.name }}Request: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}'].request{% else %}{{ method.input_type }}{% endif %}
+    {# Since we do a dynamic dictionary lookup here, 'mypy' can't verify
+    that the result of the lookup is indeed a type, so we use 'cast' to
+    convince 'mypy' that it is indeed a type. #}
+    {{ method.proto.name }}Request: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_typing.cast(type, IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}'].request){% else %}{{ method.input_type }}{% endif %}
     {% endif %}
 
-    {{ method.proto.name }}Response: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}'].response{% else %}{{ method.output_type }}{% endif %}
+    {# Since we do a dynamic dictionary lookup here, 'mypy' can't verify
+    that the result of the lookup is indeed a type, so we use 'cast' to
+    convince 'mypy' that it is indeed a type. #}
+    {{ method.proto.name }}Response: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_typing.cast(type, IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}'].response){% else %}{{ method.output_type }}{% endif %}
 
     {% endfor %}
     {% endfor %}
@@ -6465,6 +6478,9 @@ class {{ client.proto.state_name }}:
 
 {% endfor %}
 
+{# We currently do not support implementing a TypeScript backend based on
+a Pydantic API, so there is no sense to generate `ServicerNodeAdaptor`. #}
+{% if not options.proto.pydantic %}
 ############################ Servicer Node adapters ############################
 # Used by Node.js servicer implementations to access Python code and vice-versa.
 # Relevant to servicers, irrelevant to clients.
@@ -6945,6 +6961,7 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
     {% endfor %}
 
 {% endfor %}
+{% endif %}
 
 ############################ Reference Node adapters ############################
 # Used by Node.js WeakReference implementations to access Python code and

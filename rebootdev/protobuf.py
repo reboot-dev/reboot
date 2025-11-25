@@ -3,7 +3,7 @@ from google.protobuf import any_pb2
 from google.protobuf.json_format import MessageToDict, MessageToJson, ParseDict
 from google.protobuf.message import Message
 from google.protobuf.struct_pb2 import Value
-from pydantic import BaseModel  # type: ignore[import]
+from pydantic import BaseModel
 from typing import TypeVar
 
 T = TypeVar('T')
