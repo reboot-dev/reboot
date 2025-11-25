@@ -42,7 +42,6 @@ from rebootdev.aio.contexts import (
     WorkflowContext,
     WriterContext,
 )
-from rebootdev.aio.exceptions import InputError
 from rebootdev.aio.headers import Headers
 from rebootdev.aio.internals.channel_manager import _ChannelManager
 from rebootdev.aio.internals.middleware import Middleware
@@ -68,8 +67,6 @@ from rebootdev.server.database import (
     SORTED_MAP_ENTRY_TYPE_NAME,
     SORTED_MAP_TYPE_NAME,
     DatabaseClient,
-    DatabaseServer,
-    DatabaseServerFailed,
 )
 from rebootdev.time import DateTimeWithTimeZone
 from typing import (
@@ -3644,56 +3641,3 @@ class SidecarStateManager(
             f"Missing middleware for state type '{state_type_name}' "
             f"{error_suffix}."
         )
-
-
-class LocalSidecarStateManager(SidecarStateManager):
-    """Implementation of state manager that also encapsulates a
-    'DatabaseServer' for local use.
-    """
-
-    def __init__(
-        self,
-        directory: str,
-        shards: list[database_pb2.ShardInfo],
-        serviceables: list[Serviceable],
-    ):
-        try:
-            self._sidecar = DatabaseServer(
-                directory,
-                database_pb2.ServerInfo(shard_infos=shards),
-            )
-        except DatabaseServerFailed as e:
-            if (
-                'Failed to instantiate service' in str(e) and
-                '/LOCK:' in str(e)
-            ):
-                raise InputError(
-                    reason=(
-                        "Failed to start sidecar server.\n"
-                        "Did you start another instance of `rbt dev run` "
-                        "in another terminal?"
-                    ), causing_exception=e
-                )
-            raise e
-
-        # Now call our super constructor with the sidecar address and the
-        # serviceables list.
-        super().__init__(
-            database_address=self._sidecar.address,
-            serviceables=serviceables,
-            shards=shards,
-        )
-
-    async def shutdown_and_wait(self):
-        """Shuts down the state manager and sidecar. This is a single method,
-        instead of a separate `shutdown` and `wait`, since the state manager
-        must be fully shut down (including `wait`ing for it) before it's safe to
-        shut down the sidecar.
-        """
-        # Stop the state manager that's using the sidecar server, then
-        # wait for it to be fully shut down, so that we're sure nobody
-        # needs the sidecar server anymore.
-        await super().shutdown_and_wait()
-
-        # Now it's safe to shut down the sidecar server.
-        await self._sidecar.shutdown_and_wait()
