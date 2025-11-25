@@ -4231,6 +4231,7 @@ class {{ client.proto.state_name }}:
 
                 __query_backoff__ = IMPORT_reboot_aio_backoff.Backoff()
                 while True:
+                    __call__ = None
                     try:
                         async with __context__.channel_manager.get_channel_to_state(
                             IMPORT_reboot_aio_types.StateTypeName('{{ client.proto.state_full_name }}'),
@@ -4270,19 +4271,30 @@ class {{ client.proto.state_name }}:
                                 __response__.ParseFromString(__query_response__.response)
                                 yield {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(__response__)
 
-                    except BaseException as exception:
+                    except IMPORT_grpc.aio.AioRpcError as error:
                         # We expect to get disconnected from the server
                         # from time to time, e.g., when it is being
                         # updated, but we don't want that error to
                         # propagate, we just want to retry.
-                        if IMPORT_rebootdev.aio.aborted.is_grpc_retryable_exception(exception):
+                        if IMPORT_rebootdev.aio.aborted.is_grpc_retryable_exception(error):
                             logger.debug(
                                 "Reactive read to '{{ method.proto.full_name }}' "
-                                f"failed with a retryable error: '{exception}'; "
+                                f"failed with a retryable error: '{error}'; "
                                 "will retry..."
                             )
                             await __query_backoff__()
                             continue
+                        if error.code() == IMPORT_grpc.StatusCode.ABORTED:
+                            # Reconstitute the error that the server threw, if it was a declared error.
+                            status = await IMPORT_rpc_status_async.from_call(__call__)
+                            if status is not None:
+                                raise {{ client.proto.state_name }}.{{ method.proto.name }}Aborted.from_status(
+                                    status
+                                ) from None
+                            raise {{ client.proto.state_name }}.{{ method.proto.name }}Aborted.from_grpc_aio_rpc_error(
+                                error
+                            ) from None
+
                         raise
 
             # Keep the original functions on the client, so old code will

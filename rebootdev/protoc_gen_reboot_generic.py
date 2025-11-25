@@ -1109,17 +1109,23 @@ class RebootProtocPlugin(ProtocPlugin):
         self,
         template_data: BaseFile,
     ) -> str:
+        template_filename = self.plugin_specific_data().template_filename
         template = load_template(
-            self.plugin_specific_data().template_filename,
+            template_filename,
             trim_blocks=True,
             lstrip_blocks=True,
             keep_trailing_newline=True,
             extensions=['jinja2_strcase.StrcaseExtension'],
         )
 
-        return template.render(
-            asdict_omit_private_fields(
-                name='template_data',
-                obj=template_data,
+        try:
+            return template.render(
+                asdict_omit_private_fields(
+                    name='template_data',
+                    obj=template_data,
+                )
             )
-        )
+        except Exception as e:
+            raise RuntimeError(
+                f"Error rendering template '{template_filename}'"
+            ) from e
