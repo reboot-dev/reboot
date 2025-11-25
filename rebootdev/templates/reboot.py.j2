@@ -2489,7 +2489,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
         async def read(
             self, context: IMPORT_reboot_aio_contexts.WorkflowContext
-        ) -> {{ state.pb2_name }}.{{ state.proto.name }}:
+        ) -> {{ state.proto.name }}.State:
             """Read the current state within a workflow."""
             return await (
                 self.always() if context.within_until()
@@ -2555,7 +2555,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
             async def read(
                 self, context: IMPORT_reboot_aio_contexts.WorkflowContext
-            ) -> {{ state.pb2_name }}.{{ state.proto.name }}:
+            ) -> {{ state.proto.name }}.State:
                 """Read the current state within a workflow."""
                 return await self._read(
                     self._servicer,
@@ -2574,7 +2574,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 servicer: {{ state.proto.name }}BaseServicer,
                 idempotency: IMPORT_reboot_aio_idempotency.Idempotency,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
-            ) -> {{ state.pb2_name }}.{{ state.proto.name }}:
+            ) -> {{ state.proto.name }}.State:
                 """Read the current state within a workflow."""
                 IMPORT_reboot_aio_types.assert_type(context, [IMPORT_reboot_aio_contexts.WorkflowContext])
 
@@ -2612,7 +2612,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                     aborted_type=None,
                 ) as idempotency_key:
                     assert idempotency_key is not None
-                    return await IMPORT_reboot_aio_workflows.at_least_once(
+                    protobuf_state = await IMPORT_reboot_aio_workflows.at_least_once(
                         (
                             # TODO: for easier debugging include the
                             # original alias (or generated alias in
@@ -2630,6 +2630,8 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                         read,
                         type={{ state.pb2_name }}.{{ state.proto.name }},
                     )
+
+                    return {{ state.proto.name }}FromProto(protobuf_state)
 
             @IMPORT_typing.overload
             async def write(
@@ -2819,13 +2821,17 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                                 # writers otherwise passing `None` here is fine.
                                 authorize=None,
                                 transaction=transaction,
-                            ) as (state, state_manager_writer):
+                            ) as (protobuf_state, state_manager_writer):
                                 # Serialize the state so we can see if it changed.
-                                serialized_state = state.SerializeToString(
+                                serialized_state = protobuf_state.SerializeToString(
                                     deterministic=True,
                                 )
 
-                                result = await writer(state=state)
+                                typed_state = {{ state.proto.name }}FromProto(protobuf_state)
+
+                                result = await writer(state=typed_state)
+
+                                {{ state.proto.name }}ToProto(typed_state, protobuf_state)
 
                                 if check_type and type(result) is not type_result:
                                     raise TypeError(
@@ -2864,7 +2870,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                                 effects = IMPORT_reboot_aio_state_managers.Effects(
                                     state=(
                                         # Pass `None` if the state hasn't changed!
-                                        state if serialized_state != state.SerializeToString(
+                                        protobuf_state if serialized_state != protobuf_state.SerializeToString(
                                             deterministic=True,
                                         )
                                         else None
@@ -2905,7 +2911,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
             async def read(
                 self, context: IMPORT_reboot_aio_contexts.WorkflowContext
-            ) -> {{ state.pb2_name }}.{{ state.proto.name }}:
+            ) -> {{ state.proto.name }}.State:
                 return await {{ state.proto.name }}BaseServicer.WorkflowState._Idempotently(
                     servicer=self._servicer,
                     alias=None,
