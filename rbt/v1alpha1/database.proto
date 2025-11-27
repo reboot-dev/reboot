@@ -92,6 +92,8 @@ message Task {
   // compatibility reasons.
   oneof response_or_error {
     google.protobuf.Any response = 6;
+    // `error` can be any proto historically, but as of Reboot >= 0.40.2
+    // it will always be a `google.rpc.Status` proto.
     google.protobuf.Any error = 9;
   }
 

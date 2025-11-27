@@ -746,7 +746,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         *,
         only_validate: bool = False,
         on_loop_iteration: IMPORT_reboot_aio_internals_tasks_dispatcher.OnLoopIterationCallable = (lambda iteration, next_iteration_schedule: None),
-    ) -> IMPORT_reboot_aio_internals_tasks_dispatcher.TaskResponseOrError:
+    ) -> IMPORT_reboot_aio_internals_tasks_dispatcher.TaskResponseOrStatus:
         """Dispatches the tasks to execute unless 'only_validate' is set to
         true, in which case just ensures that the task actually exists.
         Note that this function will be called *by* tasks_dispatcher; it will
@@ -763,7 +763,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         {% endif %}
             if only_validate:
                 # TODO(benh): validate 'task.request' is correct type.
-                return {{ method.output_type }}()
+                return ({{ method.output_type }}(), None)
 
             # Use an inline method to create a new scope, so that we can use
             # variable names like `context` and `effects` in multiple branches
@@ -806,11 +806,16 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                         await complete(task, (response, None))
                         return (response, None)
                     except IMPORT_asyncio.CancelledError:
-                        # Check if the task was cancelled by a TasksServicer.
+                        # Do not retry a task if it was cancelled by a caller.
                         if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
-                            # The running task was cancelled by a TasksServicer.
-                            await complete(task, (None, IMPORT_rbt_v1alpha1.tasks_pb2.TaskCancelledError()))
-                            return (None, IMPORT_rbt_v1alpha1.tasks_pb2.TaskCancelledError())
+                            result = (
+                                None,
+                                IMPORT_rebootdev.aio.aborted.SystemAborted(
+                                    IMPORT_rbt_v1alpha1.errors_pb2.Cancelled(),
+                                ).to_status(),
+                            )
+                            await complete(task, result)
+                            return result
                         else:
                             raise
                     except IMPORT_rebootdev.aio.aborted.Aborted as aborted:
@@ -818,8 +823,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                         # Do not retry a task if the error was specified in the
                         # proto file.
                         if error_type in self._specified_errors_by_service_method_name.get('{{ method.proto.full_name }}', []):
-                            await complete(task, (None, aborted.error))
-                            return (None, aborted.error)
+                            result = (None, aborted.to_status())
+                            await complete(task, result)
+                            return result
                         raise
 
             {% if method.options.proto.kind == 'workflow' %}
@@ -3815,8 +3821,21 @@ class {{ client.proto.state_name }}:
                         ) from None
 
                     if is_error:
-                        # Currently only cancelled error is supported.
-                        raise IMPORT_asyncio.CancelledError("Task was cancelled by a TasksServicer")
+                        aborted_type = {{ client.proto.state_name }}.{{ method.proto.name }}Aborted
+
+                        # In Reboot >= 0.40.2 we expect the error to be a `google.rpc.Status`.
+                        if response_or_error.Is(IMPORT_google_rpc_status_pb2.Status.DESCRIPTOR):
+                            status = IMPORT_google_rpc_status_pb2.Status()
+                            response_or_error.Unpack(status)
+                            raise aborted_type.from_status(status)
+
+                        # In Reboot < 0.40.2 workflows throwing declared errors behaved poorly;
+                        # we don't aim to emulate its behavior. Indicate that we don't know the
+                        # reason for the abort.
+                        raise IMPORT_rebootdev.aio.aborted.SystemAborted(
+                            IMPORT_rbt_v1alpha1.errors_pb2.Unknown(),
+                        )
+
                     else:
                         response_or_error.Unpack(response)
                         return {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProto(response)

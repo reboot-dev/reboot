@@ -48,7 +48,7 @@ from rebootdev.aio.internals.channel_manager import _ChannelManager
 from rebootdev.aio.internals.middleware import Middleware
 from rebootdev.aio.internals.tasks_dispatcher import (
     OnLoopIterationCallable,
-    TaskResponseOrError,
+    TaskResponseOrStatus,
     TasksDispatcher,
 )
 from rebootdev.aio.once import AsyncOnce
@@ -560,7 +560,7 @@ class StateManager(ABC):
     async def complete_task(
         self,
         task_effect: TaskEffect,
-        response_or_error: TaskResponseOrError,
+        response_or_status: TaskResponseOrStatus,
     ) -> None:
         raise NotImplementedError()
 
@@ -573,7 +573,7 @@ class StateManager(ABC):
         *,
         on_loop_iteration: OnLoopIterationCallable,
         validating_effects: bool,
-    ) -> AsyncIterator[Callable[[TaskEffect, TaskResponseOrError],
+    ) -> AsyncIterator[Callable[[TaskEffect, TaskResponseOrStatus],
                                 Awaitable[None]]]:
         """Helper that handles code generated task workflows.
         """
@@ -2140,11 +2140,11 @@ class SidecarStateManager(
     async def complete_task(
         self,
         task_effect: TaskEffect,
-        response_or_error: TaskResponseOrError,
+        response_or_status: TaskResponseOrStatus,
     ) -> None:
         state_type = StateTypeName(task_effect.task_id.state_type)
         state_ref = StateRef(task_effect.task_id.state_ref)
-        response, error = response_or_error
+        response, status = response_or_status
 
         async with self._mutator_locks[state_type][state_ref]:
             # Store response and mark this Task as completed in
@@ -2152,11 +2152,11 @@ class SidecarStateManager(
             # not writing the actor's state.
             task_response: Optional[any_pb2.Any] = None
             task_error: Optional[any_pb2.Any] = None
-            if error is not None:
+            if status is not None:
                 assert response is None
 
                 task_error = any_pb2.Any()
-                task_error.Pack(error)
+                task_error.Pack(status)
             else:
                 assert response is not None
 
@@ -2186,7 +2186,7 @@ class SidecarStateManager(
         *,
         on_loop_iteration: OnLoopIterationCallable,
         validating_effects: bool,
-    ) -> AsyncIterator[Callable[[TaskEffect, TaskResponseOrError],
+    ) -> AsyncIterator[Callable[[TaskEffect, TaskResponseOrStatus],
                                 Awaitable[None]]]:
         """Override of StateManager.task_workflow(...) for SidecarStateManager."""
 
