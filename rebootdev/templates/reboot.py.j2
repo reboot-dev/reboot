@@ -1501,8 +1501,14 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 status = IMPORT_rpc_status_sync.to_status(aborted.to_status())
                 # Need to add transaction participants here because
                 # calling `grpc_context.abort_with_status()` will
-                # ignore any other trailing metadata.
-                if context is not None and context.transaction_id is not None:
+                # ignore any other trailing metadata. Only propagate
+                # transaction participants metadata if the caller cares.
+                # Callers that care are those that are themselves transactions.
+                # It's important to not just send this information to everyone;
+                # some clients can't tolerate trailers, see:
+                #   https://github.com/reboot-dev/mono/issues/5081
+                if context is not None and headers.transaction_ids is not None:
+                    assert context.transaction_id is not None
                     status = status._replace(
                         trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
                     )
@@ -1530,8 +1536,13 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 # Node.js.
                 raise
             finally:
-                if context is not None and context.transaction_id is not None:
-                    # Propagate transaction participants.
+                # Propagate transaction participants, if the caller cares.
+                # Callers that care are those that are themselves transactions.
+                # It's important to not just send this information to everyone;
+                # some clients can't tolerate trailers, see:
+                #   https://github.com/reboot-dev/mono/issues/5081
+                if context is not None and headers.transaction_ids is not None:
+                    assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
                         context.participants.to_grpc_metadata()
