@@ -156,13 +156,13 @@ const {{ client.proto.state_name }}FromJsonString = (
     return reboot_api.validate(
       "{{ client.proto.state_name }}.state",
       api.{{ client.proto.state_name }}.state,
-      reboot_api.convertFromProtobuf(
+      reboot_api.protoToZod(
         api.{{ client.proto.state_name }}.state,
         {{ client.proto.state_name }}State.fromJsonString(jsonState)
       )
     );
   } else {
-    return reboot_api.convertFromProtobuf(
+    return reboot_api.protoToZod(
       api.{{ client.proto.state_name }}.state,
       {{ client.proto.state_name }}State.fromJsonString(jsonState)
     );
@@ -181,13 +181,13 @@ const {{ client.proto.state_name }}FromBinary = (
     return reboot_api.validate(
     "{{ client.proto.state_name }}.state",
     api.{{ client.proto.state_name }}.state,
-    reboot_api.convertFromProtobuf(
+    reboot_api.protoToZod(
       api.{{ client.proto.state_name }}.state,
       {{ client.proto.state_name }}State.fromBinary(bytesState)
     )
   );
   } else {
-    return reboot_api.convertFromProtobuf(
+    return reboot_api.protoToZod(
       api.{{ client.proto.state_name }}.state,
       {{ client.proto.state_name }}State.fromBinary(bytesState)
     );
@@ -205,7 +205,7 @@ const {{ client.proto.state_name }}ToProtobuf = (
     ? state
     : {{ client.proto.state_name }}State.fromJson(
       {% if options.proto.zod %}
-      reboot_api.convertToProtobufJson(
+      reboot_api.zodToProtoJson(
         api.{{ client.proto.state_name }}.state,
         options.validate
           ? reboot_api.validate(
@@ -229,7 +229,7 @@ const {{ client.proto.state_name }}ToProtobuf = (
 const {{ client.proto.state_name }}{{ method.proto.name }}RequestFromProtobufShape = (
   partialRequest: protobuf_es.PartialMessage<{{ method.input_type }}>
 ): {{ client.proto.state_name }}.{{ method.proto.name }}Request => {
-  // TOOD: update `convertFromProtobuf()` to actually work from
+  // TOOD: update `protoToZod()` to actually work from
   // any objects that match the shape, not just protobuf instances,
   // and then we won't need to first call `fromJson()` here.
   const request = partialRequest instanceof {{ method.input_type }}
@@ -240,7 +240,7 @@ const {{ client.proto.state_name }}{{ method.proto.name }}RequestFromProtobufSha
   return reboot_api.validate(
     "{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request",
     api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
-    reboot_api.convertFromProtobuf(
+    reboot_api.protoToZod(
       api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
       request
     )
@@ -279,7 +279,7 @@ const {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf = (
     ? partialRequest
     {% if options.proto.zod %}
     : new {{ method.input_type }}().fromJson(
-      reboot_api.convertToProtobufJson(
+      reboot_api.zodToProtoJson(
         api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
         reboot_api.validate(
           "{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request",
@@ -298,7 +298,7 @@ const {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf = (
 const {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape = (
   partialResponse: protobuf_es.PartialMessage<{{ method.output_type }}>
 ) => {
-  // TOOD: update `convertFromProtobuf()` to actually work from
+  // TOOD: update `protoToZod()` to actually work from
   // any objects that match the shape, not just protobuf instances,
   // and then we won't need to first call `fromJson()` here.
   const response = partialResponse instanceof {{ method.output_type }}
@@ -309,7 +309,7 @@ const {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufSh
   return reboot_api.validate(
     "{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response",
     api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
-    reboot_api.convertFromProtobuf(
+    reboot_api.protoToZod(
       api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
       response
     )
@@ -326,7 +326,7 @@ const {{ client.proto.state_name }}{{ method.proto.name }}ResponseToProtobuf = (
     ? partialResponse
     {% if options.proto.zod %}
     : new {{ method.output_type }}().fromJson(
-      reboot_api.convertToProtobufJson(
+      reboot_api.zodToProtoJson(
         api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
         reboot_api.validate(
           "{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response",
@@ -1427,7 +1427,7 @@ export class {{ client.proto.state_name }}{{ method.proto.name }}Aborted extends
     } else {
       {% if method.options.errors | length != 0 %}
       this.#error = {{ pb_name }}.{{ client.proto.state_name }}{{ method.proto.name }}Errors.fromJson(
-        reboot_api.convertToProtobufJson(
+        reboot_api.zodToProtoJson(
           {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
           reboot_api.validate(
             "api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors",
@@ -1469,7 +1469,7 @@ export class {{ client.proto.state_name }}{{ method.proto.name }}Aborted extends
     {% if options.proto.zod %}
     {% if method.options.errors | length != 0 %}
     if (this.#error instanceof {{ pb_name }}.{{ client.proto.state_name }}{{ method.proto.name }}Errors) {
-      return reboot_api.convertFromProtobuf(
+      return reboot_api.protoToZod(
         {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
         this.#error
       );

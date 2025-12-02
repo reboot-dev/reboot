@@ -982,29 +982,29 @@ export function validate<T>(
   return data;
 }
 
-export function convertToProtobufJson<T>(
+export function zodToProtoJson<T>(
   schema: z.ZodType | Record<string, z.ZodType>,
   input: T
 ): any {
   assert(schema instanceof z.ZodVoid || input !== undefined);
 
   if (!(schema instanceof z.ZodType)) {
-    return convertToProtobufJson(z.strictObject(schema), input);
+    return zodToProtoJson(z.strictObject(schema), input);
   } else if (schema instanceof z.ZodPipe) {
     const meta = schema.meta();
     assert(meta !== undefined && meta !== null);
     const schemaWithMeta = (schema.in as z.ZodType).meta(meta);
-    return convertToProtobufJson(schemaWithMeta, input);
+    return zodToProtoJson(schemaWithMeta, input);
   } else if (schema instanceof z.ZodOptional) {
     const meta = schema.meta();
     assert(meta !== undefined && meta !== null);
     const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
-    return convertToProtobufJson(schemaWithMeta, input);
+    return zodToProtoJson(schemaWithMeta, input);
   } else if (schema instanceof z.ZodDefault) {
     const meta = schema.meta();
     assert(meta !== undefined && meta !== null);
     const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
-    return convertToProtobufJson(schemaWithMeta, input);
+    return zodToProtoJson(schemaWithMeta, input);
   } else if (schema._zod.def.type === "string") {
     return input;
   } else if (schema instanceof z.ZodNumber) {
@@ -1027,7 +1027,7 @@ export function convertToProtobufJson<T>(
       if (input[property] === undefined) {
         continue;
       }
-      output.record[property] = convertToProtobufJson(
+      output.record[property] = zodToProtoJson(
         schema.valueType as z.ZodType,
         input[property]
       );
@@ -1037,7 +1037,7 @@ export function convertToProtobufJson<T>(
     assert(Array.isArray(input));
     return {
       elements: input.map((element) =>
-        convertToProtobufJson(schema.element as z.ZodType, element)
+        zodToProtoJson(schema.element as z.ZodType, element)
       ),
     };
   } else if (schema instanceof z.ZodObject) {
@@ -1051,10 +1051,7 @@ export function convertToProtobufJson<T>(
       if (input[property] === undefined) {
         continue;
       }
-      output[property] = convertToProtobufJson(
-        shape[property],
-        input[property]
-      );
+      output[property] = zodToProtoJson(shape[property], input[property]);
     }
     return output;
   } else if (schema instanceof z.ZodDiscriminatedUnion) {
@@ -1072,7 +1069,7 @@ export function convertToProtobufJson<T>(
         option.shape[discriminator]._zod.def.values[0] === input[discriminator]
       ) {
         const output: Record<string, any> = {};
-        const value = convertToProtobufJson(option, input);
+        const value = zodToProtoJson(option, input);
         delete value[discriminator];
 
         output[toCamelCase(input[discriminator])] = value;
@@ -1107,29 +1104,29 @@ export function convertToProtobufJson<T>(
   }
 }
 
-export function convertFromProtobuf<T>(
+export function protoToZod<T>(
   schema: z.ZodType | Record<string, z.ZodType>,
   input: T
 ): any {
   assert(input !== undefined);
 
   if (!(schema instanceof z.ZodType)) {
-    return convertFromProtobuf(z.strictObject(schema), input);
+    return protoToZod(z.strictObject(schema), input);
   } else if (schema instanceof z.ZodPipe) {
     const meta = schema.meta();
     assert(meta !== undefined && meta !== null);
     const schemaWithMeta = (schema.in as z.ZodType).meta(meta);
-    return convertFromProtobuf(schemaWithMeta, input);
+    return protoToZod(schemaWithMeta, input);
   } else if (schema instanceof z.ZodOptional) {
     const meta = schema.meta();
     assert(meta !== undefined && meta !== null);
     const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
-    return convertFromProtobuf(schemaWithMeta, input);
+    return protoToZod(schemaWithMeta, input);
   } else if (schema instanceof z.ZodDefault) {
     const meta = schema.meta();
     assert(meta !== undefined && meta !== null);
     const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
-    return convertFromProtobuf(schemaWithMeta, input);
+    return protoToZod(schemaWithMeta, input);
   } else if (schema._zod.def.type === "string") {
     return input;
   } else if (schema instanceof z.ZodNumber) {
@@ -1156,7 +1153,7 @@ export function convertFromProtobuf<T>(
       if (record[property] === undefined) {
         continue;
       }
-      output[property] = convertFromProtobuf(
+      output[property] = protoToZod(
         schema.valueType as z.ZodType,
         record[property]
       );
@@ -1175,7 +1172,7 @@ export function convertFromProtobuf<T>(
     );
 
     return input.elements.map((element: any) =>
-      convertFromProtobuf(schema.element as z.ZodType, element)
+      protoToZod(schema.element as z.ZodType, element)
     );
   } else if (schema instanceof z.ZodObject) {
     assert(
@@ -1194,7 +1191,7 @@ export function convertFromProtobuf<T>(
       if (input[property] === undefined) {
         continue;
       }
-      output[property] = convertFromProtobuf(shape[property], input[property]);
+      output[property] = protoToZod(shape[property], input[property]);
     }
     return output;
   } else if (schema instanceof z.ZodDiscriminatedUnion) {
@@ -1218,7 +1215,7 @@ export function convertFromProtobuf<T>(
         toCamelCase(option.shape[discriminator]._zod.def.values[0]) ===
         input[discriminator].case
       ) {
-        const output = convertFromProtobuf(option, input[discriminator].value);
+        const output = protoToZod(option, input[discriminator].value);
         output[discriminator] = option.shape[discriminator]._zod.def.values[0];
         return output;
       }
