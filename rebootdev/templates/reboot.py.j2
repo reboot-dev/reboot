@@ -110,6 +110,15 @@ logger = IMPORT_log_log.get_logger(__name__)
 
 # We won't validate Pydantic state models while they are under construction.
 states_being_constructed: set[str] = set()
+{% if options.proto.pydantic %}
+# To support writers seeing partial updates of transactions,
+# and transactions seeing updates from writers, we need to store
+# a reference to the latest state in an ongoing transaction.
+#
+# Moreover, we need to update that _reference_ after each writer
+# executes within a transaction.
+ongoing_transaction_states: dict[str, IMPORT_reboot_api.Model] = {}
+{% endif %}
 
 {# Since Pydantic model fields might be 'Optional' or have defaults, we
 need a way to distinguish between 'None' and 'not set'. The same applies
@@ -945,6 +954,19 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             {% endif %}
             {% if not method.options.proto.state_streaming and not method.options.proto.kind == 'workflow' %}
             typed_state: {{ state.proto.name }}.State = {{ state.proto.name }}FromProto(state, is_initial_state=(context.state_id in states_being_constructed))
+
+            {% if options.proto.pydantic %}
+            {% if method.options.proto.kind == 'writer' or method.options.proto.kind == 'reader' %}
+            if context.state_id in ongoing_transaction_states:
+                typed_state = ongoing_transaction_states[context.state_id].model_copy(deep=True)
+            {% elif method.options.proto.kind == 'transaction' %}
+            # TODO: assert that there are no ongoing transactions for this state.
+            #
+            # The `typed_state` should be already validated above, so we can
+            # just store it here.
+            ongoing_transaction_states[context.state_id] = typed_state
+            {% endif %}
+            {% endif %}
             {% endif %}
             {% if not method.proto.server_streaming %}
             response = (
@@ -956,6 +978,18 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     request{% if method.proto.client_streaming %}s{% endif %}=request{% if method.proto.client_streaming %}s{% endif +%}
                 )
             )
+
+            {% if options.proto.pydantic and method.options.proto.kind == 'writer' %}
+            # TODO: it's premature to overwrite the state now given that the
+            # writer might still "fail" and an error will get propagated back
+            # to the ongoing transaction which will still see the effects of
+            # this writer. What we should be doing instead is creating a
+            # callback API that we invoke only after a writer completes
+            # that lets us update the state _reference_ then.
+            if context.state_id in ongoing_transaction_states:
+                for field, value in typed_state.model_dump().items():
+                    setattr(ongoing_transaction_states[context.state_id], field, value)
+            {% endif %}
 
             {% if not method.options.proto.state_streaming and not method.options.proto.kind == 'workflow' %}
             {{ state.proto.name }}ToProto(typed_state, state)
@@ -1115,7 +1149,12 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         finally:
             {% if method.options.proto.constructor %}
             states_being_constructed.remove(context.state_id)
-            {% else %}
+            {% endif %}
+            {% if options.proto.pydantic and method.options.proto.kind == 'transaction' %}
+            if context.state_id in ongoing_transaction_states:
+                del ongoing_transaction_states[context.state_id]
+            {% endif %}
+            {% if not (method.options.proto.constructor or (options.proto.pydantic and method.options.proto.kind == 'transaction')) %}
             pass
             {% endif %}
 

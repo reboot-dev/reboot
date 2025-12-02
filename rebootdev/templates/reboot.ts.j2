@@ -532,25 +532,20 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
         { validate: !(statesBeingConstructed.has(context.stateId)) },
       );
       {% endif %}
-      {% if method.options.proto.kind == 'writer' %}
+      {% if method.options.proto.kind == 'writer' or method.options.proto.kind == 'reader' %}
       if (context.stateId in ongoingTransactionStates) {
         {% if options.proto.zod %}
-        state = reboot_api.convertFromProtobuf(
-          api.{{ state.proto.name }}.state,
-          ongoingTransactionStates[context.stateId].clone()
-        );
+        state = structuredClone(ongoingTransactionStates[context.stateId]);
         {% else %}
         state = ongoingTransactionStates[context.stateId].clone();
         {% endif %}
       }
       {% elif method.options.proto.kind == 'transaction' %}
       // TODO: assert that there are no ongoing transactions for this state.
-      ongoingTransactionStates[context.stateId] = {{ state.proto.name }}ToProtobuf(
-        state,
-        // Don't validate if we're constructing because non-optional
-        // fields that this method might be setting will be invalid.
-        { validate: !(statesBeingConstructed.has(context.stateId)) },
-      );
+      //
+      // The `state` should be already validated above, so we can
+      // just store it here.
+      ongoingTransactionStates[context.stateId] = state;
       {% endif %}
 
       const request = {{ state.proto.name }}{{ method.proto.name }}RequestFromBinary(bytesRequest);
@@ -567,16 +562,6 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
 
       const response = {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf(partialResponse);
 
-      {% if options.proto.zod and method.options.proto.kind != 'workflow' %}
-      // Validate and convert back to protobuf when using Zod.
-      state = {{ state.proto.name }}ToProtobuf(
-        state,
-        // Don't validate if we're constructing because non-optional
-        // fields that this method might be setting will be invalid.
-        { validate: !(statesBeingConstructed.has(context.stateId)) },
-      );
-      {% endif %}
-
       {% if method.options.proto.kind == 'writer' %}
       // TODO: it's premature to overwrite the state now given that the
       // writer might still "fail" and an error will get propagated back
@@ -585,8 +570,22 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       // callback API that we invoke only after a writer completes
       // that lets us update the state _reference_ then.
       if (context.stateId in ongoingTransactionStates) {
+        {% if options.proto.zod %}
+        Object.assign(ongoingTransactionStates[context.stateId], state);
+        {% else %}
         ongoingTransactionStates[context.stateId].copyFrom(state);
+        {% endif %}
       }
+      {% endif %}
+
+      {% if options.proto.zod and method.options.proto.kind != 'workflow' %}
+      // Validate and convert back to protobuf when using Zod.
+      state = {{ state.proto.name }}ToProtobuf(
+        state,
+        // Don't validate if we're constructing because non-optional
+        // fields that this method might be setting will be invalid.
+        { validate: !(statesBeingConstructed.has(context.stateId)) },
+      );
       {% endif %}
 
       const result = new reboot_api.nodejs_pb.TrampolineResult();

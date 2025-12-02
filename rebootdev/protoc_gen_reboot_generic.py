@@ -568,7 +568,7 @@ class RebootProtocPlugin(ProtocPlugin):
             base_file.options.proto.pydantic is None
         ):
             # The 'base_file.options.proto.zod' path is written by the
-            # 'rbt-schema-to-proto' script as an absolute path to the
+            # 'zod-to-proto' script as an absolute path to the
             # schema file, however we need to convert it to a relative
             # path so that the generated code can import it correctly.
             #
