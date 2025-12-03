@@ -132,6 +132,12 @@ build --incompatible_strict_action_env
 # creating symlinks in `/usr/local/bin`, which we always want to be loaded first.
 build --action_env=PATH=/usr/local/bin:/usr/bin:/bin
 
+# Allow `rules_oci` to (attempt to) pull images, even when it first
+# calls a credential helper that fails  (i.e. one with no credentials
+# set up). The images we pull tend to not need any auth, so a lack of
+# credentials isn't a problem.
+common --repo_env=OCI_GET_TOKEN_ALLOW_FAIL=1
+
 # Allow users to add local preferences that override the above.
 try-import %workspace%/user.bazelrc
 

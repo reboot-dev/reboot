@@ -6,7 +6,7 @@ load(
     web_test_go_internal_repos = "go_internal_repositories",
 )
 load("@rules_buf//buf:defs.bzl", "buf_dependencies")
-load("@rules_oci//oci:repositories.bzl", "LATEST_CRANE_VERSION", "oci_register_toolchains")
+load("@rules_oci//oci:repositories.bzl", "oci_register_toolchains")
 
 def extra_deps():
     grpc_extra_deps()
@@ -23,7 +23,6 @@ def extra_deps():
 
     oci_register_toolchains(
         name = "oci",
-        crane_version = LATEST_CRANE_VERSION,
     )
 
     web_test_go_internal_repos()
