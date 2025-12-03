@@ -45,6 +45,7 @@ class PythonMethod(BaseMethod):
     output_type_name: PythonType
     input_type_fields: dict[str, str]
     has_non_none_request: bool
+    has_non_none_response: bool
 
 
 @dataclass
@@ -123,8 +124,14 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
                         method.proto._descriptor.input_type,
                         from_pydantic,
                     ),
-                    has_non_none_request=self._analyze_has_non_none_request(
+                    has_non_none_request=self.
+                    _analyze_has_non_none_request_or_response(
                         method.proto._descriptor.input_type,
+                        from_pydantic,
+                    ),
+                    has_non_none_response=self.
+                    _analyze_has_non_none_request_or_response(
+                        method.proto._descriptor.output_type,
                         from_pydantic,
                     ),
                 ) for method in service.methods
@@ -289,14 +296,14 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
         return imports
 
     @classmethod
-    def _analyze_has_non_none_request(
+    def _analyze_has_non_none_request_or_response(
         cls,
         message: Descriptor,
         from_pydantic: bool,
     ) -> bool:
         if not from_pydantic:
-            # There is no way to have `None` request outside of Pydantic
-            # API.
+            # There is no way to have `None` request or response outside
+            # of Pydantic API.
             return True
 
         # We use `google.protobuf.Empty` to represent `None` request or
