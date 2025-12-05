@@ -500,8 +500,6 @@ export interface Use{{ client.proto.state_name }}Api {
   {% endif %}
   {% if method.options.proto.kind == "reader" %}
   {% if not method.proto.server_streaming and not method.proto.client_streaming %}
-  // Type signature overloads for variations of `suspense` in `options`,
-  // including `options` being optional.
   use{{ method.proto.name | to_camel }}(
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request
   ): {
@@ -515,7 +513,11 @@ export interface Use{{ client.proto.state_name }}Api {
   ): {
     response: {{ client.proto.state_name }}.{{ method.proto.name }}Response;
     isLoading: boolean;
-    aborted: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted | undefined;
+    aborted: undefined;
+  } | {
+    response: undefined;
+    isLoading: boolean;
+    aborted: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted;
   };
   use{{ method.proto.name | to_camel }}(
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
@@ -914,13 +916,8 @@ class {{ client.proto.state_name | to_camel }}Instance {
           if (e instanceof reboot_api.Status) {
             reader.setStatus(e);
           } else {
-            reader.setStatus(
-              new reboot_api.Status({
-                code: reboot_api.StatusCode.UNKNOWN,
-                message: e instanceof Error
-                  ? e.message
-                  : JSON.stringify(e),
-              })
+            console.warn(
+              `[Reboot] Caught unknown exception: ${e instanceof Error ? e.message : JSON.stringify(e)}`
             );
           }
 
@@ -1119,11 +1116,12 @@ class {{ client.proto.state_name | to_camel }}Instance {
         setStatuses: {},
 
         setResponse(response: {{ method.output_type }}) {
-          // Store the response.
+          // Store the response, delete the status.
           this.response = response;
+          delete this.status;
 
-          // Trigger response has been received event (if it wasn't
-          // triggered already).
+          // Trigger response or aborted has been received event (if
+          // it wasn't triggered already).
           this.event.set();
 
           // Dispatch to all listeners.
@@ -1151,6 +1149,14 @@ class {{ client.proto.state_name | to_camel }}Instance {
         },
 
         setStatus(status: reboot_api.Status) {
+          // Store the status, delete the response.
+          this.status = status;
+          delete this.response;
+
+          // Trigger response or aborted has been received event (if
+          // it wasn't triggered already).
+          this.event.set();
+
           for (const setStatus of Object.values(this.setStatuses)) {
             setStatus(status);
           }
@@ -1177,8 +1183,6 @@ class {{ client.proto.state_name | to_camel }}Instance {
       // will simply use the `reader.response` since it will no longer be
       // undefined.
       reader.promise.then(async () => {
-        reboot_api.assert(reader.response !== undefined);
-
         // Allow the call to `use{{ method.proto.name | to_camel }}(...)`
         // at least 5 seconds to indicate that the reader is being used,
         // afterwhich, once `reader.promise` gets garbage collected
@@ -1214,7 +1218,8 @@ class {{ client.proto.state_name | to_camel }}Instance {
               // try and cache (which we don't want to do).
               reader.response = {{ method.output_type }}.fromJsonString(cachedResponse);
 
-              // Also need to trigger response has been received event.
+              // Also need to trigger response or aborted has been
+              // received event (if it wasn't triggered already).
               reader.event.set();
             }
           }
@@ -1419,13 +1424,6 @@ export const use{{ client.proto.state_name | to_camel }} = (
       setRequest(newRequest);
     }
 
-    const [response, setResponse] = useState<{{ client.proto.state_name }}.{{ method.proto.name}}Response>();
-    const [isLoading, setIsLoading] = useState<boolean>(true);
-    const [aborted, setAborted] = useState<
-      undefined
-      | {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
-      >();
-
     const rebootClient = reboot_react.useRebootClient();
 
     const bearerToken = rebootClient.bearerToken;
@@ -1460,6 +1458,24 @@ export const use{{ client.proto.state_name | to_camel }} = (
       [stateRef, offlineCacheEnabled, requestHash]
     );
 
+    const reader = instance.start{{ method.proto.name | to_camel }}(
+      requestHash,
+      serializedRequest,
+      bearerToken,
+      offlineCacheEnabled,
+      cacheKey
+    );
+
+    const [response, setResponse] = useState<
+      {{ client.proto.state_name }}.{{ method.proto.name}}Response | undefined
+      >(reader.response && {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(reader.response));
+
+    const [isLoading, setIsLoading] = useState<boolean>(true);
+
+    const [aborted, setAborted] = useState<
+      {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted | undefined
+      >(reader.status && {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(reader.status));
+
     useEffect(() => {
       const id = uuidv4();
 
@@ -1483,6 +1499,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
           );
 
           setAborted(aborted);
+          setResponse(undefined);
         },
       );
 
@@ -1498,19 +1515,10 @@ export const use{{ client.proto.state_name | to_camel }} = (
       cacheKey,
     ]);
 
-    const reader = instance.start{{ method.proto.name | to_camel }}(
-      requestHash,
-      serializedRequest,
-      bearerToken,
-      offlineCacheEnabled,
-      cacheKey
-    );
-
     if (options.suspense) {
-      // Suspend until `reader.response` is not `undefined`. The
-      // invariant here is that `reader.response` will be defined once
-      // `reader.promise` has resolved.
-      if (reader.response === undefined) {
+      // Suspend until `reader.event` is set signifying that we have
+      // either a response or aborted.
+      if (!reader.event.isSet()) {
         // Raise if it doens't looke like we are using React>=19.
         if (!("use" in React)) {
           throw new Error(
@@ -1519,18 +1527,9 @@ export const use{{ client.proto.state_name | to_camel }} = (
         }
         React.use(reader.promise);
       }
-      reboot_api.assert(reader.response !== undefined);
     }
 
-    return {
-      response: options.suspense
-        ? (
-          response ?? {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(reader.response)
-        )
-        : response,
-      isLoading,
-      aborted,
-    };
+    return { response, isLoading, aborted };
   }
 
   async function {{ method.proto.name | to_lower_camel }}(
