@@ -250,8 +250,8 @@ export function typeIs<T>(t: any, predicate: (t: any) => t is T): t is T {
   return predicate(t);
 }
 
-export const sleep = (seconds: number): Promise<void> => {
-  return new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+export const sleep = ({ ms }: { ms: number }): Promise<void> => {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 };
 
 export const randomNumberBetween = (min: number, max: number): number => {
@@ -309,13 +309,14 @@ export class Backoff {
       )
     );
 
-    await sleep(backoffSeconds);
+    await sleep({ ms: backoffSeconds * 1000 });
 
     this.retryAttempts += 1;
   }
 }
 
 export class Event {
+  resolved: boolean;
   resolve: () => void;
   promise: Promise<void>;
 
@@ -325,6 +326,7 @@ export class Event {
       _resolve = resolve;
     });
     this.resolve = _resolve;
+    this.resolved = false;
   }
 
   async wait() {
@@ -332,7 +334,14 @@ export class Event {
   }
 
   set() {
-    this.resolve();
+    if (!this.resolved) {
+      this.resolved = true;
+      this.resolve();
+    }
+  }
+
+  isSet() {
+    return this.resolved;
   }
 }
 
