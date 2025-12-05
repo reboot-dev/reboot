@@ -1511,6 +1511,12 @@ export const use{{ client.proto.state_name | to_camel }} = (
       // invariant here is that `reader.response` will be defined once
       // `reader.promise` has resolved.
       if (reader.response === undefined) {
+        // Raise if it doens't looke like we are using React>=19.
+        if (!("use" in React)) {
+          throw new Error(
+            "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`"
+          );
+        }
         React.use(reader.promise);
       }
       reboot_api.assert(reader.response !== undefined);
