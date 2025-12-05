@@ -408,8 +408,6 @@ export type {{ state.proto.name }}ObjectLiteral = {
     {% endif %}
     {% if method.options.proto.kind != 'workflow' %}
     state: {{ state.proto.name }}.State,
-    {% else %}
-    state: {{ state.proto.name }}.WorkflowState,
     {% endif %}
     request: {{ state.proto.name }}.{{ method.proto.name }}Request,
   ) => Promise<
@@ -441,6 +439,47 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
   // External reference to the native `Servicer`.
   #external?: any | undefined;
 
+  // Async local storage provides access to servicer for each workflow call, i.e.,
+  // there may be multiple workflows executing concurrently but each
+  // might have a different `servicer`.
+  static __servicer__ = new AsyncLocalStorage<{
+    servicer?: {{ state.proto.name }}BaseServicer;
+  }>();
+
+  constructor() {
+    super();
+
+    {# TypeScript doesn't support `abstract static` methods, so we don't
+    generate them for `workflow` methods, but instead we do a runtime
+    check in the constructor to ensure that the derived class has
+    implemented the workflow method.
+    https://github.com/microsoft/TypeScript/issues/34516
+    #}
+    {% for service in state.services %}
+    {% for method in service.methods %}
+    {% if method.options.proto.kind == 'workflow' %}
+    const static{{ method.proto.name | to_camel }} = this.constructor.{{ method.proto.name | to_lower_camel }};
+    const instance{{ method.proto.name | to_camel }} = this.{{ method.proto.name | to_lower_camel }};
+
+    if (static{{ method.proto.name | to_camel }} === undefined && instance{{ method.proto.name | to_camel }} === undefined) {
+      throw new Error(
+        `\`{{ state.proto.name }}\` servicer is missing implementation of static \`{{ method.proto.name | to_lower_camel }}\` method.`
+      );
+    } else if (static{{ method.proto.name | to_camel }} !== undefined && instance{{ method.proto.name | to_camel }} !== undefined) {
+      throw new Error(
+        `\`{{ state.proto.name }}\` servicer has both static and instance implementations of \`{{ method.proto.name | to_lower_camel }}\` method.
+        \nPlease implement the static version only.`
+      );
+    } else if (instance{{ method.proto.name | to_camel }} !== undefined) {
+      console.warn(
+        `Using instance method for \`{{ state.proto.name }}.{{ method.proto.name | to_lower_camel }}\` is deprecated and will be removed in a future version. Please use a static method instead.`
+      );
+    }
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
+  }
+
   public ref(
     options?: { bearerToken?: string | null }
   ) {
@@ -463,7 +502,7 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
 
       {% for service in state.services %}
       {% for method in service.methods %}
-      async {{ method.proto.name | to_lower_camel }} (
+      {% if method.options.proto.kind == 'workflow' %}static {% endif %}async {{ method.proto.name | to_lower_camel }} (
         {% if method.options.proto.kind == 'reader' %}
         context: ReaderContext,
         {% elif method.options.proto.kind == 'writer' %}
@@ -499,10 +538,14 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
         Object.assign(state, updatedState);
         return response;
         {% else %}
-        return await literal.{{ method.proto.name | to_lower_camel }}(
-          context,
-          this.state,
-          request
+        return await {{ state.proto.name }}BaseServicer.__servicer__.run(
+          { servicer: this },
+          async () => {
+            return await literal.{{ method.proto.name | to_lower_camel }}(
+              context,
+              request
+            );
+          }
         );
         {% endif %}
       }
@@ -1077,6 +1120,13 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
 export abstract class {{ state.proto.name }}SingletonServicer extends {{ state.proto.name }}BaseServicer {
   {% for service in state.services %}
   {% for method in service.methods %}
+  {# TypeScript doesn't support `abstract static` methods, so we don't
+  generate them for `workflow` methods, but instead we do a runtime
+  check in the constructor to ensure that the derived class has
+  implemented the workflow method.
+  https://github.com/microsoft/TypeScript/issues/34516
+  #}
+  {% if method.options.proto.kind != 'workflow' %}
   abstract {{ method.proto.name | to_lower_camel }}(
     {% if method.options.proto.kind == 'reader' %}
     context: ReaderContext,
@@ -1098,6 +1148,7 @@ export abstract class {{ state.proto.name }}SingletonServicer extends {{ state.p
     void
     {% endif %}
   >;
+  {% endif %}
 
   async __{{ method.proto.name }}(
     {% if method.options.proto.kind == 'reader' %}
@@ -1120,13 +1171,32 @@ export abstract class {{ state.proto.name }}SingletonServicer extends {{ state.p
     void
     {% endif %}
   > {
+    {% if method.options.proto.kind != 'workflow' %}
     return await this.{{ method.proto.name | to_lower_camel }}(
       context,
-      {% if method.options.proto.kind != 'workflow' %}
       state,
-      {% endif %}
       request
     );
+    {% else %}
+    return await {{ state.proto.name }}BaseServicer.__servicer__.run(
+      { servicer: this },
+      async () => {
+        if (this.{{ method.proto.name | to_lower_camel }} !== undefined) {
+          // Call the instance method (deprecated).
+          return await this.{{ method.proto.name | to_lower_camel }}(
+            context,
+            request
+          );
+        } else {
+          // Call the static method.
+          return await this.constructor.{{ method.proto.name | to_lower_camel }}(
+            context,
+            request
+          );
+        }
+      }
+    );
+    {% endif %}
   }
 
   {% endfor %}
@@ -1147,7 +1217,17 @@ export abstract class {{ state.proto.name }}Servicer extends {{ state.proto.name
     workflow: boolean;
   }>();
 
-  // An instance of the derived class for each state.
+  // An instance of the derived class for each state. We need it to be
+  // able to keep some private data per state servicer class, but not
+  // making it be implicitly `static`. For example:
+  //
+  // class MyServicer extends {{ state.proto.name }}Servicer {
+  //  private: myData = ...;
+  // }
+  //
+  // Then each `stateId` will have its own instance of `MyServicer`
+  // stored here.
+
   static #instances = new Map<string, {{ state.proto.name }}Servicer>();
 
   get state(): {{ state.proto.name }}.State {
@@ -1186,6 +1266,13 @@ export abstract class {{ state.proto.name }}Servicer extends {{ state.proto.name
 
   {% for service in state.services %}
   {% for method in service.methods %}
+  {# TypeScript doesn't support `abstract static` methods, so we don't
+  generate them for `workflow` methods, but instead we do a runtime
+  check in the constructor to ensure that the derived class has
+  implemented the workflow method.
+  https://github.com/microsoft/TypeScript/issues/34516
+  #}
+  {% if method.options.proto.kind != 'workflow' %}
   abstract {{ method.proto.name | to_lower_camel }}(
     {% if method.options.proto.kind == 'reader' %}
     context: ReaderContext,
@@ -1204,6 +1291,7 @@ export abstract class {{ state.proto.name }}Servicer extends {{ state.proto.name
     void
     {% endif %}
   >;
+  {% endif %}
 
   async __{{ method.proto.name }}(
     {% if method.options.proto.kind == 'reader' %}
@@ -1240,10 +1328,31 @@ export abstract class {{ state.proto.name }}Servicer extends {{ state.proto.name
       { workflow: true },
       {% endif %}
       async () => {
+        {% if method.options.proto.kind != 'workflow' %}
         return await instance.{{ method.proto.name | to_lower_camel }}(
-          context,
-          request
+            context,
+            request
+          );
+        {% else %}
+        return await {{ state.proto.name }}BaseServicer.__servicer__.run(
+          { servicer: instance },
+          async () => {
+            if (instance.{{ method.proto.name | to_lower_camel }} !== undefined) {
+              // Call the instance method (deprecated).
+              return await instance.{{ method.proto.name | to_lower_camel }}(
+                context,
+                request
+              );
+            } else {
+              // Call the static method.
+              return await instance.constructor.{{ method.proto.name | to_lower_camel }}(
+                context,
+                request
+              );
+            }
+          }
         );
+        {% endif %}
       }
     );
   }
@@ -2100,6 +2209,25 @@ export class {{ client.proto.state_name }} {
   ) {
     if (idOrOptions === undefined || typeof idOrOptions === "object") {
       const context = reboot.getContext();
+      if (context instanceof WorkflowContext) {
+        // We support calling `{{ client.proto.state_name }}.ref()` with
+        // no `id` __only__ inside a workflow to be able to call an
+        // inline writer, inline reader or other method call, since
+        // workflow is a `static` and therefor we can't get a
+        // reference to outselves as `this.ref()`.
+        const servicer = {{ client.proto.state_name }}BaseServicer.__servicer__.getStore()?.servicer;
+
+        {# We temporary don't assert that servicer is not undefined
+        because we still support old style workflow methods, when we
+        complete the migration we should remove this check. #}
+        if (servicer !== undefined) {
+          return new {{ client.proto.state_name }}.WeakReference(
+            context.stateId,
+            idOrOptions?.bearerToken,
+            servicer,
+          );
+        }
+      }
       return new {{ client.proto.state_name }}.WeakReference(context.stateId, idOrOptions?.bearerToken);
     }
     if (typeof idOrOptions !== "string") {

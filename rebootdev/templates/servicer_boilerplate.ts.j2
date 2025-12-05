@@ -101,7 +101,7 @@ class {{ state.proto.name }}Servicer extends {{ state.proto.name }}.singleton.Se
   }
     {% elif method.options.proto.kind == 'workflow' %}
 
-  async {{ method.proto.name | to_lower_camel }}(
+  static async {{ method.proto.name | to_lower_camel }}(
     context: WorkflowContext,
     request: {{ method.input_type }}
   ): Promise<{{ method.output_type }} | PartialMessage<{{ method.output_type }}>> {
