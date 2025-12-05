@@ -134,8 +134,9 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}.singleton.Servicer):
         raise NotImplementedError
     {% elif method.options.proto.kind == 'workflow' %}
 
+    @classmethod
     async def {{ method.proto.name | to_snake }}(
-        self,
+        cls,
         context: WorkflowContext,
         request: {{ method.input_type_name }},
     ) -> {{ method.output_type_name }}:
