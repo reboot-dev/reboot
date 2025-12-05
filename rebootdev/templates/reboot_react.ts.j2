@@ -814,9 +814,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
             await this.flushMutations();
           }
 
-          for (const setIsLoading of Object.values(reader.setIsLoadings)) {
-            setIsLoading(true);
-          }
+          reader.setIsLoading(true);
 
           const queryResponses = reboot_web.reactiveReader({
             endpoint: `${this.url}/__/reboot/rpc/${this.stateRef}`,
@@ -832,9 +830,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
               loaded = true;
             }
 
-            for (const setIsLoading of Object.values(reader.setIsLoadings)) {
-              setIsLoading(false);
-            }
+            reader.setIsLoading(false);
 
             const response = queryResponse.responseOrStatus.case === "response"
               ? responseType.fromBinary(queryResponse.responseOrStatus.value)
@@ -862,11 +858,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
               }
               await orphans[orphans.length - 1].observed(() => {
                 if (response !== undefined) {
-                  reader.response = response;
-                  reader.event.set();
-                  for (const setResponse of Object.values(reader.setResponses)) {
-                    setResponse(response);
-                  }
+                  reader.setResponse(response);
                 }
               });
 
@@ -886,11 +878,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
             ) {
               await expecteds[0].observed(() => {
                 if (response !== undefined) {
-                  reader.response = response;
-                  reader.event.set();
-                  for (const setResponse of Object.values(reader.setResponses)) {
-                    setResponse(response);
-                  }
+                  reader.setResponse(response);
                 }
                 expecteds.shift();
               });
@@ -900,11 +888,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
 	          // pass on the response because it might contain new data that should get shown to the
 	          // user (e.g., in a chat app this could be a new chat message from a different user).
             else if (response !== undefined && !haveOrphans) {
-              reader.response = response;
-              reader.event.set();
-              for (const setResponse of Object.values(reader.setResponses)) {
-                setResponse(response);
-              }
+              reader.setResponse(response);
             }
           }
 
@@ -925,22 +909,19 @@ class {{ client.proto.state_name | to_camel }}Instance {
             return;
           }
 
-          for (const setIsLoading of Object.values(reader.setIsLoadings)) {
-            setIsLoading(false);
-          }
-          for (const setStatus of Object.values(reader.setStatuses)) {
-            if (e instanceof reboot_api.Status) {
-              setStatus(e);
-            } else {
-              setStatus(
-                new reboot_api.Status({
-                  code: reboot_api.StatusCode.UNKNOWN,
-                  message: e instanceof Error
-                    ? e.message
-                    : JSON.stringify(e),
-                })
-              );
-            }
+          reader.setIsLoading(false);
+
+          if (e instanceof reboot_api.Status) {
+            reader.setStatus(e);
+          } else {
+            reader.setStatus(
+              new reboot_api.Status({
+                code: reboot_api.StatusCode.UNKNOWN,
+                message: e instanceof Error
+                  ? e.message
+                  : JSON.stringify(e),
+              })
+            );
           }
 
           throw e; // This just retries!
@@ -1118,6 +1099,8 @@ class {{ client.proto.state_name | to_camel }}Instance {
     requestHash: string,
     serializedRequest: Uint8Array,
     bearerToken: string | undefined,
+    offlineCacheEnabled: boolean,
+    cacheKey: string | null
   ) {
     let reader = this.use{{ method.proto.name | to_camel }}Readers[requestHash];
 
@@ -1134,6 +1117,44 @@ class {{ client.proto.state_name | to_camel }}Instance {
         setResponses: {},
         setIsLoadings: {},
         setStatuses: {},
+
+        setResponse(response: {{ method.output_type }}) {
+          // Store the response.
+          this.response = response;
+
+          // Trigger response has been received event (if it wasn't
+          // triggered already).
+          this.event.set();
+
+          // Dispatch to all listeners.
+          for (const setResponse of Object.values(this.setResponses)) {
+            setResponse(response);
+          }
+
+          // Cache response if applicable.
+          if (offlineCacheEnabled) {
+            reboot_api.assert(cacheKey !== null);
+            const cachedResponse = response.toJsonString();
+            reboot_web.offlineCache.set(cacheKey, cachedResponse)
+              .catch((error) => {
+                console.warn(
+                  `[Reboot] Setting of offline reader cache entry for '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' errored with ${error}`
+                );
+              });
+          }
+        },
+
+        setIsLoading(isLoading: boolean) {
+          for (const setIsLoading of Object.values(this.setIsLoadings)) {
+            setIsLoading(isLoading);
+          }
+        },
+
+        setStatus(status: reboot_api.Status) {
+          for (const setStatus of Object.values(this.setStatuses)) {
+            setStatus(status);
+          }
+        },
       };
 
       this.{{ method.proto.name | to_lower_camel }}FinalizationRegistry.register(
@@ -1170,6 +1191,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
 
       this.use{{ method.proto.name | to_camel }}Readers[requestHash] = reader;
 
+      // Start fetching from the server.
       this.read(
         "{{ method.proto.name }}",
         serializedRequest,
@@ -1177,6 +1199,31 @@ class {{ client.proto.state_name | to_camel }}Instance {
         {{ method.output_type }},
         reader
       );
+
+      // Check if there is a cached result if applicable.
+      if (offlineCacheEnabled) {
+        reboot_api.assert(cacheKey !== null);
+
+        reboot_web.offlineCache.get(cacheKey).then((cachedResponse) => {
+          if (cachedResponse !== null) {
+            // We only want to set the response if we haven't already
+            // gotten a response from the server as it is the authority
+            // and should take precedence.
+            if (reader.response === undefined) {
+              // NOTE: we're not calling `reader.setResponse()` as that will
+              // try and cache (which we don't want to do).
+              reader.response = {{ method.output_type }}.fromJsonString(cachedResponse);
+
+              // Also need to trigger response has been received event.
+              reader.event.set();
+            }
+          }
+        }).catch((error) => {
+          console.warn(
+            `[Reboot] Retrieval of offline reader cache entry for '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' errored with ${error}`
+          );
+        });
+      }
     }
 
     reboot_api.assert(reader !== undefined);
@@ -1189,6 +1236,8 @@ class {{ client.proto.state_name | to_camel }}Instance {
     requestHash: string,
     serializedRequest: Uint8Array,
     bearerToken: string | undefined,
+    offlineCacheEnabled: boolean,
+    cacheKey: string | null,
     setResponse: (response: {{ method.output_type }}) => void,
     setIsLoading: (isLoading: boolean) => void,
     setStatus: (status: reboot_api.Status) => void
@@ -1196,7 +1245,9 @@ class {{ client.proto.state_name | to_camel }}Instance {
     const reader = this.start{{ method.proto.name | to_camel }}(
       requestHash,
       serializedRequest,
-      bearerToken
+      bearerToken,
+      offlineCacheEnabled,
+      cacheKey
     );
 
     reboot_api.assert(reader !== undefined);
@@ -1410,31 +1461,6 @@ export const use{{ client.proto.state_name | to_camel }} = (
     );
 
     useEffect(() => {
-      if (offlineCacheEnabled) {
-        reboot_api.assert(cacheKey !== null);
-
-        reboot_web.offlineCache.get(cacheKey).then((cachedResponse) => {
-          if (cachedResponse == null) {
-            return;
-          }
-
-          if (cachedResponse !== JSON.stringify(response)) {
-            const shapedCachedResponse =
-              {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(
-                JSON.parse(cachedResponse)
-              );
-            setResponse(shapedCachedResponse);
-            setIsLoading(false);
-          }
-        }).catch((error) => {
-          console.warn(
-            `[Reboot] Retrieval of offline reader cache entry for '{{
-            client.proto.state_name | to_camel }}.{{ method.proto.name |
-            to_camel }}' errored with ${error}`
-          );
-        });
-      }
-
       const id = uuidv4();
 
       instance.use{{ method.proto.name | to_camel }}(
@@ -1442,25 +1468,11 @@ export const use{{ client.proto.state_name | to_camel }} = (
         requestHash,
         serializedRequest,
         bearerToken,
+        offlineCacheEnabled,
+        cacheKey,
         (response: {{ method.output_type }}) => {
           setAborted(undefined);
-          const shapedResponse = {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(response);
-
-          // Always override with the response from the server as it is the source of truth.
-          setResponse(shapedResponse);
-
-          if (offlineCacheEnabled) {
-            reboot_api.assert(cacheKey !== null);
-            const cachedResponse = JSON.stringify(response);
-            reboot_web.offlineCache.set(cacheKey, cachedResponse)
-              .catch((error) => {
-                console.warn(
-                  `[Reboot] Setting of offline reader cache entry for '{{
-                  client.proto.state_name | to_camel }}.{{ method.proto.name |
-                  to_camel }}' errored with ${error}`
-                );
-              });
-          }
+          setResponse({{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(response));
         },
         setIsLoading,
         (status: reboot_api.Status) => {
@@ -1489,7 +1501,9 @@ export const use{{ client.proto.state_name | to_camel }} = (
     const reader = instance.start{{ method.proto.name | to_camel }}(
       requestHash,
       serializedRequest,
-      bearerToken
+      bearerToken,
+      offlineCacheEnabled,
+      cacheKey
     );
 
     if (options.suspense) {
@@ -1503,7 +1517,11 @@ export const use{{ client.proto.state_name | to_camel }} = (
     }
 
     return {
-      response: options.suspense ? (response ?? reader.response) : response,
+      response: options.suspense
+        ? (
+          response ?? {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(reader.response)
+        )
+        : response,
       isLoading,
       aborted,
     };
