@@ -1115,7 +1115,10 @@ class {{ client.proto.state_name | to_camel }}Instance {
         setIsLoadings: {},
         setStatuses: {},
 
-        setResponse(response: {{ method.output_type }}) {
+        setResponse(
+          response: {{ method.output_type }},
+          { cache }: { cache: boolean } = { cache: true }
+        ) {
           // Store the response, delete the status.
           this.response = response;
           delete this.status;
@@ -1130,7 +1133,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
           }
 
           // Cache response if applicable.
-          if (offlineCacheEnabled) {
+          if (cache && offlineCacheEnabled) {
             reboot_api.assert(cacheKey !== null);
             const cachedResponse = response.toJsonString();
             reboot_web.offlineCache.set(cacheKey, cachedResponse)
@@ -1214,13 +1217,10 @@ class {{ client.proto.state_name | to_camel }}Instance {
             // gotten a response from the server as it is the authority
             // and should take precedence.
             if (reader.response === undefined) {
-              // NOTE: we're not calling `reader.setResponse()` as that will
-              // try and cache (which we don't want to do).
-              reader.response = {{ method.output_type }}.fromJsonString(cachedResponse);
-
-              // Also need to trigger response or aborted has been
-              // received event (if it wasn't triggered already).
-              reader.event.set();
+              reader.setResponse(
+                {{ method.output_type }}.fromJsonString(cachedResponse),
+                { cache: false } // Don't re-cache the value!
+              );
             }
           }
         }).catch((error) => {
