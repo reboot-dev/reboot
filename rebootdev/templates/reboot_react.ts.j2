@@ -1247,6 +1247,10 @@ class {{ client.proto.state_name | to_camel }}Instance {
     setIsLoading: (isLoading: boolean) => void,
     setStatus: (status: reboot_api.Status) => void
   ) {
+    // We need to call start here because with strict mode the
+    // `useEffect` that calls this method will also call "unuse"
+    // which will mean the next time the `useEffect` calls here
+    // we'll create a new reader in start.
     const reader = this.start{{ method.proto.name | to_camel }}(
       requestHash,
       serializedRequest,
@@ -1458,6 +1462,12 @@ export const use{{ client.proto.state_name | to_camel }} = (
       [stateRef, offlineCacheEnabled, requestHash]
     );
 
+    // We start reading here, or if another component already started
+    // the reading then we just get back the reader. We need to do this
+    // before setting up our `useState`s because when using suspense
+    // we need to use the `reader.response` or `reader.status` during
+    // render where one of them will be defined, i.e., after we've
+    // waited for `reader.promise` via `React.use()`.
     const reader = instance.start{{ method.proto.name | to_camel }}(
       requestHash,
       serializedRequest,
@@ -1525,6 +1535,13 @@ export const use{{ client.proto.state_name | to_camel }} = (
             "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`"
           );
         }
+        // NOTE: this will throw _at least once_, because React will have
+        // to do `.then()`, which is asynchronous, so they'll throw.
+        //
+        // This invariant is what ensures that we'll have either
+        // `response` or `aborted` set via the `useState` calls above
+        // so that we keep our type promise which is that one of them
+        // will be set if passed `suspense: true` before returning.
         React.use(reader.promise);
       }
     }
