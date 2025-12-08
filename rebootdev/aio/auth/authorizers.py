@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from google.protobuf.message import Message
 from log.log import get_logger, log_at_most_once_per
 from rebootdev.aio.contexts import ReaderContext
+from rebootdev.api import Model
 from rebootdev.run_environments import (
     on_cloud,
     running_rbt_dev,
@@ -30,15 +31,18 @@ logger = get_logger(__name__)
 # in this file that we expect users to want to see.
 logger.setLevel(logging.WARNING)
 
-StateType = TypeVar('StateType', bound=Message)
-RequestType = TypeVar('RequestType', bound=Message)
-RequestTypes = TypeVar('RequestTypes', bound=Message)
+StateType = TypeVar('StateType', bound=Message | Model)
+RequestTypes = TypeVar('RequestTypes', bound=Message | Model | None)
 
 ContravariantStateType = TypeVar(
-    'ContravariantStateType', bound=Message, contravariant=True
+    'ContravariantStateType',
+    bound=Message | Model,
+    contravariant=True,
 )
 ContravariantRequestType = TypeVar(
-    'ContravariantRequestType', bound=Message, contravariant=True
+    'ContravariantRequestType',
+    bound=Message | Model | None,
+    contravariant=True,
 )
 
 
@@ -123,16 +127,18 @@ class AuthorizerRule(
         pass
 
 
-def deny() -> AuthorizerRule[Message, Message]:
+def deny() -> AuthorizerRule[Message | Model, Message | Model | None]:
 
-    class DenyAuthorizerRule(AuthorizerRule[Message, Message]):
+    class DenyAuthorizerRule(
+        AuthorizerRule[Message | Model, Message | Model | None]
+    ):
 
         async def execute(
             self,
             *,
             context: ReaderContext,
-            state: Optional[Message],
-            request: Optional[Message],
+            state: Optional[Message | Model],
+            request: Optional[Message | Model],
             **kwargs,
         ) -> Authorizer.Decision:
             return rbt.v1alpha1.errors_pb2.PermissionDenied()
@@ -140,16 +146,18 @@ def deny() -> AuthorizerRule[Message, Message]:
     return DenyAuthorizerRule()
 
 
-def allow() -> AuthorizerRule[Message, Message]:
+def allow() -> AuthorizerRule[Message | Model, Message | Model | None]:
 
-    class AllowAuthorizerRule(AuthorizerRule[Message, Message]):
+    class AllowAuthorizerRule(
+        AuthorizerRule[Message | Model, Message | Model | None]
+    ):
 
         async def execute(
             self,
             *,
             context: ReaderContext,
-            state: Optional[Message],
-            request: Optional[Message],
+            state: Optional[Message | Model],
+            request: Optional[Message | Model],
             **kwargs,
         ) -> Authorizer.Decision:
             return rbt.v1alpha1.errors_pb2.Ok()
@@ -301,7 +309,7 @@ def is_app_internal(*, context: ReaderContext, **kwargs):
     return rbt.v1alpha1.errors_pb2.PermissionDenied()
 
 
-class DefaultAuthorizer(Authorizer[Message, Message]):
+class DefaultAuthorizer(Authorizer[Message | Model, Message | Model | None]):
 
     def __init__(self, state_name: str):
         self._state_name = state_name
@@ -311,8 +319,8 @@ class DefaultAuthorizer(Authorizer[Message, Message]):
         *,
         method_name: str,
         context: ReaderContext,
-        state: Optional[Message],
-        request: Optional[Message],
+        state: Optional[Message | Model],
+        request: Optional[Message | Model],
         **kwargs,
     ) -> Authorizer.Decision:
         # Allow if app internal.

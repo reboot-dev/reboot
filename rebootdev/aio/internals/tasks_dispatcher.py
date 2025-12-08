@@ -6,8 +6,10 @@ from functools import partial
 from google.protobuf import any_pb2
 from google.protobuf.message import Message
 from google.protobuf.timestamp_pb2 import Timestamp
-from rbt.v1alpha1 import tasks_pb2
+from google.rpc import status_pb2
+from rbt.v1alpha1 import errors_pb2, tasks_pb2
 from rebootdev.aio import tracing
+from rebootdev.aio.aborted import SystemAborted
 from rebootdev.aio.backoff import Backoff
 from rebootdev.aio.internals.contextvars import use_application_id
 from rebootdev.aio.internals.tasks_cache import TasksCache
@@ -30,7 +32,7 @@ DISPATCHED_TASKS_LIMIT = 1024
 
 _TASK_INITIAL_BACKOFF_SECONDS = 1
 
-TaskResponseOrError = Tuple[Optional[Message], Optional[Message]]
+TaskResponseOrStatus = Tuple[Optional[Message], Optional[status_pb2.Status]]
 
 OnLoopIterationCallable = Callable[[int, Optional[DateTimeWithTimeZone]], None]
 
@@ -49,11 +51,11 @@ class DispatchCallable(Protocol):
         on_loop_iteration: OnLoopIterationCallable = (
             lambda iteration, next_iteration_schedule: None
         ),
-    ) -> Awaitable[TaskResponseOrError]:
+    ) -> Awaitable[TaskResponseOrStatus]:
         pass
 
 
-CompleteTaskCallable = Callable[[TaskEffect, TaskResponseOrError],
+CompleteTaskCallable = Callable[[TaskEffect, TaskResponseOrStatus],
                                 Awaitable[None]]
 
 IsCancelled = bool
@@ -249,6 +251,7 @@ class TasksDispatcher:
                             break
                         else:
                             assert error is not None
+                            assert isinstance(error, status_pb2.Status)
 
                             any_error = any_pb2.Any()
                             any_error.Pack(error)
@@ -266,7 +269,7 @@ class TasksDispatcher:
                             )
                             self._tasks_cache.update_task_info(
                                 task.task_id,
-                                status=tasks_pb2.TaskInfo.Status.COMPLETED,
+                                status=tasks_pb2.TaskInfo.Status.ABORTED,
                                 occurred_at=occurred_at,
                             )
                             break
@@ -330,7 +333,15 @@ class TasksDispatcher:
                 assert self._complete_task is not None
                 if self.is_task_cancelled(task.task_id.task_uuid):
                     await self._complete_task(
-                        task, (None, tasks_pb2.TaskCancelledError())
+                        task,
+                        (
+                            None,
+                            SystemAborted(
+                                errors_pb2.Cancelled(),
+                                message=
+                                f"the task running '{task.method_name}' was cancelled",
+                            ).to_status(),
+                        ),
                     )
 
             # It's possible that the task will never even start
@@ -342,7 +353,13 @@ class TasksDispatcher:
                 if self.is_task_cancelled(task.task_id.task_uuid):
                     self._tasks_cache.resolve_future(
                         task.task_id,
-                        error=tasks_pb2.TaskCancelledError(),
+                        status=(
+                            SystemAborted(
+                                errors_pb2.Cancelled(),
+                                message=
+                                f"the task running '{task.method_name}' was cancelled",
+                            ).to_status()
+                        ),
                     )
                 del self._dispatched_tasks[task.task_id.task_uuid]
 

@@ -22,7 +22,7 @@ from rebootdev.aio.idempotency import Checkpoint, IdempotencyManager
 from rebootdev.aio.internals.channel_manager import _ChannelManager
 from rebootdev.aio.internals.contextvars import Servicing, _servicing
 from rebootdev.aio.internals.tasks_dispatcher import (
-    TaskResponseOrError,
+    TaskResponseOrStatus,
     TasksDispatcher,
 )
 from rebootdev.aio.placement import PlacementClient
@@ -267,7 +267,7 @@ class Middleware(ABC):
         task: TaskEffect,
         *,
         only_validate: bool = False,
-    ) -> TaskResponseOrError:
+    ) -> TaskResponseOrStatus:
         """Abstract dispatch method; implemented by code generation for each
         of the service's task methods."""
         raise NotImplementedError

@@ -2,6 +2,7 @@ import asyncio
 from collections import OrderedDict
 from google.protobuf.message import Message
 from google.protobuf.timestamp_pb2 import Timestamp
+from google.rpc import code_pb2, status_pb2
 from rbt.v1alpha1 import database_pb2, tasks_pb2
 from rebootdev.time import DateTimeWithTimeZone
 from typing import Iterable, Optional
@@ -196,7 +197,7 @@ class TasksCache:
         self,
         task_id: tasks_pb2.TaskId,
         response: Optional[Message] = None,
-        error: Optional[Message] = None,
+        status: Optional[status_pb2.Status] = None,
     ) -> None:
         """Resolve the future for the given task with the given response."""
         uuid = task_id.task_uuid
@@ -205,27 +206,33 @@ class TasksCache:
             if not future.done():
                 result = tasks_pb2.TaskResponseOrError()
 
-                assert response is not None or error is not None
+                assert response is not None or status is not None
 
                 if response is not None:
-                    assert error is None
+                    assert status is None
                     result.response.Pack(response)
                     task_info.status = tasks_pb2.TaskInfo.Status.COMPLETED
                 else:
-                    assert response is None
-                    result.error.Pack(error)
-
-                    task_info.status = tasks_pb2.TaskInfo.Status.CANCELLED
+                    assert status is not None
+                    assert status.code != 0
+                    result.error.Pack(status)
+                    # Tasks can only permanently fail with declared
+                    # errors, and for cancellation. Therefore, if the
+                    # task isn't cancelled, it was aborted.
+                    if status.code == code_pb2.CANCELLED:
+                        task_info.status = tasks_pb2.TaskInfo.Status.CANCELLED
+                    else:
+                        task_info.status = tasks_pb2.TaskInfo.Status.ABORTED
 
                 future.set_result(result.SerializeToString())
                 task_info.occurred_at.FromDatetime(DateTimeWithTimeZone.now())
                 self._cache.move_to_end(uuid)
                 self._trim_cache()
 
-    def put_with_response(
+    def put_with_response_or_error(
         self,
         task_id: tasks_pb2.TaskId,
-        response: bytes,
+        response_or_error: tasks_pb2.TaskResponseOrError,
         timestamp: Timestamp,
         status: database_pb2.Task.Status.ValueType,
         method: str,
@@ -233,8 +240,8 @@ class TasksCache:
     ) -> None:
         """Cache the specified response for the task."""
 
-        # When we have a response for a task, we know that the task
-        # must have completed.
+        # When we have a response or error for a task, we know that the
+        # task must have completed.
         assert status == database_pb2.Task.Status.COMPLETED
 
         uuid = task_id.task_uuid
@@ -248,7 +255,8 @@ class TasksCache:
             # '_trim_cache()' do its thing rather than optimize that
             # case here.
             future: asyncio.Future[bytes] = asyncio.Future()
-            future.set_result(response)
+            future.set_result(response_or_error.SerializeToString())
+            completed_by_aborting = response_or_error.HasField("error")
 
             occurred_at = Timestamp()
             occurred_at.CopyFrom(timestamp)
@@ -258,7 +266,11 @@ class TasksCache:
                 tasks_pb2.TaskInfo(
                     task_id=task_id,
                     occurred_at=occurred_at,
-                    status=tasks_pb2.TaskInfo.Status.COMPLETED,
+                    status=(
+                        tasks_pb2.TaskInfo.Status.ABORTED
+                        if completed_by_aborting else
+                        tasks_pb2.TaskInfo.Status.COMPLETED
+                    ),
                     method=method,
                     iterations=iteration,
                     num_runs_failed_recently=0,
@@ -279,12 +291,12 @@ class TasksCache:
 
         # Default iteration order of a OrderedDict is from the least
         # to most recently inserted (used).
-        for uuid, (future, _) in self._cache.items():
+        for task_uuid, (future, _) in self._cache.items():
             entries = len(self._cache) - len(uuids_to_remove)
             if entries <= TASKS_RESPONSES_CACHE_TARGET_CAPACITY:
                 break
             if future.done():
-                uuids_to_remove.append(uuid)
+                uuids_to_remove.append(task_uuid)
 
-        for uuid in uuids_to_remove:
-            _ = self._cache.pop(uuid)
+        for task_uuid in uuids_to_remove:
+            _ = self._cache.pop(task_uuid)

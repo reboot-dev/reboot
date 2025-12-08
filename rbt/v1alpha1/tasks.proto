@@ -28,9 +28,12 @@ message TaskInfo {
     // started, but is now waiting for the next iteration of its loop to
     // begin.
     SCHEDULED_ITERATION = 6;
-    // If task is CANCELLED, it means that it was cancelled before it
-    // was completed.
+    // If task is CANCELLED, it means that it was cancelled by a caller
+    // before it was completed.
     CANCELLED = 4;
+    // If task is ABORTED, it means that it began executing but
+    // returned a declared error (i.e. one that will not be retried).
+    ABORTED = 7;
     // If task is COMPLETED, it means that it was executed and completed
     // successfully.
     COMPLETED = 5;
@@ -93,9 +96,6 @@ message CancelTaskResponse {
     CANCELLING = 2;
   }
   Status status = 1;
-}
-
-message TaskCancelledError {
 }
 
 ////////////////////////////////////////////////////////////////////////

@@ -562,11 +562,20 @@ class RebootProtocPlugin(ProtocPlugin):
         # Then ask the language-specific logic to add any further information
         # that this specific language needs.
 
-        if base_file.options.proto.zod is not None and not generating_python_from_nodejs:
+        if (
+            base_file.options.proto.zod is not None and
+            not generating_python_from_nodejs and
+            base_file.options.proto.pydantic is None
+        ):
             # The 'base_file.options.proto.zod' path is written by the
-            # 'rbt-schema-to-proto' script as an absolute path to the
+            # 'zod-to-proto' script as an absolute path to the
             # schema file, however we need to convert it to a relative
             # path so that the generated code can import it correctly.
+            #
+            # If 'base_file.options.proto.pydantic' is set, that means
+            # we're generating a Pydantic-based proto file, which already
+            # has a correct import path for the Zod schema, so we
+            # don't need to convert it to a relative path here.
             assert output_directory is not None
             relative_schema_import_path = self.compute_relative_import_path(
                 output_directory=output_directory,
@@ -1100,17 +1109,23 @@ class RebootProtocPlugin(ProtocPlugin):
         self,
         template_data: BaseFile,
     ) -> str:
+        template_filename = self.plugin_specific_data().template_filename
         template = load_template(
-            self.plugin_specific_data().template_filename,
+            template_filename,
             trim_blocks=True,
             lstrip_blocks=True,
             keep_trailing_newline=True,
             extensions=['jinja2_strcase.StrcaseExtension'],
         )
 
-        return template.render(
-            asdict_omit_private_fields(
-                name='template_data',
-                obj=template_data,
+        try:
+            return template.render(
+                asdict_omit_private_fields(
+                    name='template_data',
+                    obj=template_data,
+                )
             )
-        )
+        except Exception as e:
+            raise RuntimeError(
+                f"Error rendering template '{template_filename}'"
+            ) from e

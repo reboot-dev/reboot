@@ -336,11 +336,32 @@ def _js_proto_files(
             NODE_PATH="$$(dirname $$(dirname $$(dirname $$(dirname $$(dirname $$protobuf_pkg_dir)))))"
             export NODE_PATH
 
-            $(execpath @com_google_protobuf//:protoc) \
-              --plugin=protoc-gen-es=$(execpath @com_github_reboot_dev_reboot//rebootdev:protoc-gen-es_with_deps) \
-              --es_out=. \
-              {descriptor_set_in} \
-              $$proto_path
+            # We need to handle two cases:
+            # 1. The proto file is a source file; we can pass it
+            #    directly to `protoc`.
+            # 2. The proto file is a generated file; it lives in
+            #    `bazel-out/...` and we need to adjust the
+            #    `--proto_path` accordingly to output to the correct
+            #    directory.
+            if [[ "$$proto_path" == bazel-out/* ]]; then
+              # For generated files, extract the `bazel-out`
+              # configuration folder, e.g. `bazel-out/k8-fastbuild/bin`.
+              # This makes `protoc` output to the package directory.
+              config_dir=$$(echo $$proto_path | cut -d'/' -f1-3)
+              relative_proto=$$(echo $$proto_path | cut -d'/' -f4-)
+              $(execpath @com_google_protobuf//:protoc) \\
+                --plugin=protoc-gen-es=$(execpath @com_github_reboot_dev_reboot//rebootdev:protoc-gen-es_with_deps) \\
+                --proto_path=$$config_dir \\
+                --es_out=. \\
+                {descriptor_set_in} \\
+                $$relative_proto
+            else
+              $(execpath @com_google_protobuf//:protoc) \\
+                --plugin=protoc-gen-es=$(execpath @com_github_reboot_dev_reboot//rebootdev:protoc-gen-es_with_deps) \\
+                --es_out=. \\
+                {descriptor_set_in} \\
+                $$proto_path
+            fi
             # Not every `.proto` file contains `message`s, so not every `.proto`
             # file produces an output from the `es` protoc plugin. Bazel still
             # expects to see a file though, so the fallback is to create an

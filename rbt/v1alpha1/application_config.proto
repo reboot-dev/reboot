@@ -54,11 +54,11 @@ message ApplicationConfig {
 
   message Spec {
     message State {
-      // Fully-qualified state type name; e.g. "hello.v1.Hello".
+      // Fully-qualified state type name; e.g. "chat_room.v1.ChatRoom".
       string state_type_full_name = 1;
 
       // Fully-qualified names of services hosted by this state type; e.g.
-      // "hello.v1.HelloMethods".
+      // "chat_room.v1.ChatRoomMethods".
       repeated string service_full_names = 2;
     }
 

@@ -70,9 +70,9 @@ def repos():
     maybe(
         http_archive,
         name = "rules_oci",
-        sha256 = "46ce9edcff4d3d7b3a550774b82396c0fa619cc9ce9da00c1b09a08b45ea5a14",
-        strip_prefix = "rules_oci-1.8.0",
-        url = "https://github.com/bazel-contrib/rules_oci/releases/download/v1.8.0/rules_oci-v1.8.0.tar.gz",
+        sha256 = "5994ec0e8df92c319ef5da5e1f9b514628ceb8fc5824b4234f2fe635abb8cc2e",
+        strip_prefix = "rules_oci-2.2.6",
+        url = "https://github.com/bazel-contrib/rules_oci/releases/download/v2.2.6/rules_oci-v2.2.6.tar.gz",
     )
 
     # We don't use rules_license, but one of our transitive dependencies does
@@ -184,9 +184,9 @@ def repos():
     maybe(
         http_archive,
         name = "aspect_bazel_lib",
-        sha256 = "6e729e4900695623efa5e9c73b10b0509eb1606b73cafc374a359aed4c9e6958",
-        strip_prefix = "bazel-lib-1.42.0",
-        url = "https://github.com/aspect-build/bazel-lib/releases/download/v1.42.0/bazel-lib-v1.42.0.tar.gz",
+        sha256 = "53cadea9109e646a93ed4dc90c9bbcaa8073c7c3df745b92f6a5000daf7aa3da",
+        strip_prefix = "bazel-lib-2.21.2",
+        url = "https://github.com/aspect-build/bazel-lib/releases/download/v2.21.2/bazel-lib-v2.21.2.tar.gz",
     )
 
     maybe(

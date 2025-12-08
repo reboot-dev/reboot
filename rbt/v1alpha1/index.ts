@@ -88,30 +88,65 @@ export const methodsSchema = z.record(
   ])
 );
 
-export type Methods = z.infer<typeof methodsSchema>;
-
-export type Reader = z.infer<typeof notConstructibleMethodSchema> & {
+export type Reader<
+  RequestType extends Request,
+  ResponseType extends Response,
+  ErrorsType extends Errors | undefined
+> = {
   kind: "reader";
-};
-export type Writer = z.infer<typeof constructibleMethodSchema> & {
-  kind: "writer";
-};
-export type Transaction = z.infer<typeof constructibleMethodSchema> & {
-  kind: "transaction";
-};
-export type Workflow = z.infer<typeof notConstructibleMethodSchema> & {
-  kind: "workflow";
+  request: RequestType;
+  response: ResponseType;
+  errors?: ErrorsType;
 };
 
-export function reader({
+export type Writer<
+  RequestType extends Request,
+  ResponseType extends Response,
+  ErrorsType extends Errors | undefined
+> = {
+  kind: "writer";
+  request: RequestType;
+  response: ResponseType;
+  errors?: ErrorsType;
+  factory?: {};
+};
+
+export type Transaction<
+  RequestType extends Request,
+  ResponseType extends Response,
+  ErrorsType extends Errors | undefined
+> = {
+  kind: "transaction";
+  request: RequestType;
+  response: ResponseType;
+  errors?: ErrorsType;
+  factory?: {};
+};
+
+export type Workflow<
+  RequestType extends Request,
+  ResponseType extends Response,
+  ErrorsType extends Errors | undefined
+> = {
+  kind: "workflow";
+  request: RequestType;
+  response: ResponseType;
+  errors?: ErrorsType;
+};
+
+export function reader<
+  RequestType extends Request,
+  ResponseType extends Response,
+  ErrorsType extends Errors | undefined
+>({
   request,
   response,
   errors,
 }: {
-  request: Request;
-  response: Response;
-  errors?: Errors;
-}): Reader {
+  request: RequestType;
+  response: ResponseType;
+  errors?: ErrorsType;
+}): Reader<RequestType, ResponseType, ErrorsType> {
   return {
     kind: "reader" as const,
     request,
@@ -120,17 +155,21 @@ export function reader({
   };
 }
 
-export function writer({
+export function writer<
+  RequestType extends Request,
+  ResponseType extends Response,
+  ErrorsType extends Errors | undefined
+>({
   request,
   response,
   errors,
   factory,
 }: {
-  request: Request;
-  response: Response;
-  errors?: Errors;
+  request: RequestType;
+  response: ResponseType;
+  errors?: ErrorsType;
   factory?: {};
-}): Writer {
+}): Writer<RequestType, ResponseType, ErrorsType> {
   return {
     kind: "writer" as const,
     request,
@@ -140,17 +179,21 @@ export function writer({
   };
 }
 
-export function transaction({
+export function transaction<
+  RequestType extends Request,
+  ResponseType extends Response,
+  ErrorsType extends Errors | undefined
+>({
   request,
   response,
   errors,
   factory,
 }: {
-  request: Request;
-  response: Response;
-  errors?: Errors;
+  request: RequestType;
+  response: ResponseType;
+  errors?: ErrorsType;
   factory?: {};
-}): Transaction {
+}): Transaction<RequestType, ResponseType, ErrorsType> {
   return {
     kind: "transaction" as const,
     request,
@@ -160,15 +203,19 @@ export function transaction({
   };
 }
 
-export function workflow({
+export function workflow<
+  RequestType extends Request,
+  ResponseType extends Response,
+  ErrorsType extends Errors | undefined
+>({
   request,
   response,
   errors,
 }: {
-  request: Request;
-  response: Response;
-  errors?: Errors;
-}): Workflow {
+  request: RequestType;
+  response: ResponseType;
+  errors?: ErrorsType;
+}): Workflow<RequestType, ResponseType, ErrorsType> {
   return {
     kind: "workflow" as const,
     request,
@@ -182,24 +229,10 @@ export const stateSchema = z.union([
   z.record(z.string(), z.instanceof(z.ZodType)),
 ]);
 
-export type State = z.infer<typeof stateSchema>;
-
 export const typeSchema = z.object({
   state: stateSchema,
   methods: methodsSchema,
 });
-
-export type Type = z.infer<typeof typeSchema>;
-
-export const apiSchema = z.record(
-  z.string(),
-  z.object({
-    state: stateSchema,
-    methods: methodsSchema,
-  })
-);
-
-export type API = z.infer<typeof apiSchema>;
 
 // We are using this helper function to raise an exception if the assertion
 // fails because console.assert does not do this and we can't use
@@ -217,8 +250,8 @@ export function typeIs<T>(t: any, predicate: (t: any) => t is T): t is T {
   return predicate(t);
 }
 
-export const sleep = (seconds: number): Promise<void> => {
-  return new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+export const sleep = ({ ms }: { ms: number }): Promise<void> => {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 };
 
 export const randomNumberBetween = (min: number, max: number): number => {
@@ -276,13 +309,14 @@ export class Backoff {
       )
     );
 
-    await sleep(backoffSeconds);
+    await sleep({ ms: backoffSeconds * 1000 });
 
     this.retryAttempts += 1;
   }
 }
 
 export class Event {
+  resolved: boolean;
   resolve: () => void;
   promise: Promise<void>;
 
@@ -292,6 +326,7 @@ export class Event {
       _resolve = resolve;
     });
     this.resolve = _resolve;
+    this.resolved = false;
   }
 
   async wait() {
@@ -299,7 +334,14 @@ export class Event {
   }
 
   set() {
-    this.resolve();
+    if (!this.resolved) {
+      this.resolved = true;
+      this.resolve();
+    }
+  }
+
+  isSet() {
+    return this.resolved;
   }
 }
 
@@ -949,29 +991,29 @@ export function validate<T>(
   return data;
 }
 
-export function convertToProtobufJson<T>(
+export function zodToProtoJson<T>(
   schema: z.ZodType | Record<string, z.ZodType>,
   input: T
 ): any {
   assert(schema instanceof z.ZodVoid || input !== undefined);
 
   if (!(schema instanceof z.ZodType)) {
-    return convertToProtobufJson(z.strictObject(schema), input);
+    return zodToProtoJson(z.strictObject(schema), input);
   } else if (schema instanceof z.ZodPipe) {
     const meta = schema.meta();
     assert(meta !== undefined && meta !== null);
     const schemaWithMeta = (schema.in as z.ZodType).meta(meta);
-    return convertToProtobufJson(schemaWithMeta, input);
+    return zodToProtoJson(schemaWithMeta, input);
   } else if (schema instanceof z.ZodOptional) {
     const meta = schema.meta();
     assert(meta !== undefined && meta !== null);
     const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
-    return convertToProtobufJson(schemaWithMeta, input);
+    return zodToProtoJson(schemaWithMeta, input);
   } else if (schema instanceof z.ZodDefault) {
     const meta = schema.meta();
     assert(meta !== undefined && meta !== null);
     const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
-    return convertToProtobufJson(schemaWithMeta, input);
+    return zodToProtoJson(schemaWithMeta, input);
   } else if (schema._zod.def.type === "string") {
     return input;
   } else if (schema instanceof z.ZodNumber) {
@@ -994,7 +1036,7 @@ export function convertToProtobufJson<T>(
       if (input[property] === undefined) {
         continue;
       }
-      output.record[property] = convertToProtobufJson(
+      output.record[property] = zodToProtoJson(
         schema.valueType as z.ZodType,
         input[property]
       );
@@ -1004,7 +1046,7 @@ export function convertToProtobufJson<T>(
     assert(Array.isArray(input));
     return {
       elements: input.map((element) =>
-        convertToProtobufJson(schema.element as z.ZodType, element)
+        zodToProtoJson(schema.element as z.ZodType, element)
       ),
     };
   } else if (schema instanceof z.ZodObject) {
@@ -1018,10 +1060,7 @@ export function convertToProtobufJson<T>(
       if (input[property] === undefined) {
         continue;
       }
-      output[property] = convertToProtobufJson(
-        shape[property],
-        input[property]
-      );
+      output[property] = zodToProtoJson(shape[property], input[property]);
     }
     return output;
   } else if (schema instanceof z.ZodDiscriminatedUnion) {
@@ -1039,7 +1078,7 @@ export function convertToProtobufJson<T>(
         option.shape[discriminator]._zod.def.values[0] === input[discriminator]
       ) {
         const output: Record<string, any> = {};
-        const value = convertToProtobufJson(option, input);
+        const value = zodToProtoJson(option, input);
         delete value[discriminator];
 
         output[toCamelCase(input[discriminator])] = value;
@@ -1074,29 +1113,29 @@ export function convertToProtobufJson<T>(
   }
 }
 
-export function convertFromProtobuf<T>(
+export function protoToZod<T>(
   schema: z.ZodType | Record<string, z.ZodType>,
   input: T
 ): any {
   assert(input !== undefined);
 
   if (!(schema instanceof z.ZodType)) {
-    return convertFromProtobuf(z.strictObject(schema), input);
+    return protoToZod(z.strictObject(schema), input);
   } else if (schema instanceof z.ZodPipe) {
     const meta = schema.meta();
     assert(meta !== undefined && meta !== null);
     const schemaWithMeta = (schema.in as z.ZodType).meta(meta);
-    return convertFromProtobuf(schemaWithMeta, input);
+    return protoToZod(schemaWithMeta, input);
   } else if (schema instanceof z.ZodOptional) {
     const meta = schema.meta();
     assert(meta !== undefined && meta !== null);
     const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
-    return convertFromProtobuf(schemaWithMeta, input);
+    return protoToZod(schemaWithMeta, input);
   } else if (schema instanceof z.ZodDefault) {
     const meta = schema.meta();
     assert(meta !== undefined && meta !== null);
     const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
-    return convertFromProtobuf(schemaWithMeta, input);
+    return protoToZod(schemaWithMeta, input);
   } else if (schema._zod.def.type === "string") {
     return input;
   } else if (schema instanceof z.ZodNumber) {
@@ -1123,7 +1162,7 @@ export function convertFromProtobuf<T>(
       if (record[property] === undefined) {
         continue;
       }
-      output[property] = convertFromProtobuf(
+      output[property] = protoToZod(
         schema.valueType as z.ZodType,
         record[property]
       );
@@ -1142,7 +1181,7 @@ export function convertFromProtobuf<T>(
     );
 
     return input.elements.map((element: any) =>
-      convertFromProtobuf(schema.element as z.ZodType, element)
+      protoToZod(schema.element as z.ZodType, element)
     );
   } else if (schema instanceof z.ZodObject) {
     assert(
@@ -1161,7 +1200,7 @@ export function convertFromProtobuf<T>(
       if (input[property] === undefined) {
         continue;
       }
-      output[property] = convertFromProtobuf(shape[property], input[property]);
+      output[property] = protoToZod(shape[property], input[property]);
     }
     return output;
   } else if (schema instanceof z.ZodDiscriminatedUnion) {
@@ -1185,7 +1224,7 @@ export function convertFromProtobuf<T>(
         toCamelCase(option.shape[discriminator]._zod.def.values[0]) ===
         input[discriminator].case
       ) {
-        const output = convertFromProtobuf(option, input[discriminator].value);
+        const output = protoToZod(option, input[discriminator].value);
         output[discriminator] = option.shape[discriminator]._zod.def.values[0];
         return output;
       }

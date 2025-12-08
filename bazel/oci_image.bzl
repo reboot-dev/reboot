@@ -1,6 +1,6 @@
 """Replacement for py3_image from rules_docker."""
 
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_tarball")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary")
 
@@ -74,20 +74,27 @@ def py_oci_image(name, main, srcs, deps, base, env = None, entrypoint = False, *
     )
 
 def _oci_image_tar(name, oci_image, visibility):
-    oci_tarball(
+    oci_load(
         name = name + "_tarball",
         image = oci_image,
         repo_tags = [name + ":latest"],
+        format = "docker",
+    )
+
+    # Use the tarball output group from oci_load to get the actual tar file.
+    # By default, oci_load produces an mtree spec (not a tar file), but the
+    # tarball output group provides the actual tar file.
+    native.filegroup(
+        name = name + "_tarball_tar",
+        srcs = [":" + name + "_tarball"],
+        output_group = "tarball",
     )
 
     # Copy the tar file to the location where other rules expect to find it.
-    #
-    # TODO: symlinking would be more efficient but it fails for unclear reasons
-    # ("dangling symlink").
     native.genrule(
         name = name + "_tarball_copy",
-        srcs = [":" + name + "_tarball"],
+        srcs = [":" + name + "_tarball_tar"],
         outs = [name + ".tar"],
-        cmd = "cp $(location {}_tarball) $(OUTS)".format(name),
+        cmd = "cp $(SRCS) $(OUTS)",
         visibility = visibility,
     )
