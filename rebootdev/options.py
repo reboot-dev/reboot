@@ -1,10 +1,12 @@
 from google.protobuf.descriptor import (
     Descriptor,
+    FieldDescriptor,
     FileDescriptor,
     MethodDescriptor,
     ServiceDescriptor,
 )
 from google.protobuf.descriptor_pb2 import (
+    FieldOptions,
     FileOptions,
     MessageOptions,
     MethodOptions,
@@ -90,3 +92,12 @@ def get_file_options(file: FileDescriptor) -> options_pb2.FileOptions:
 def has_file_options(file: FileDescriptor) -> bool:
     options: FileOptions = file.GetOptions()
     return options_pb2.file in options.Extensions
+
+
+def get_field_options(field: FieldDescriptor) -> options_pb2.FieldOptions:
+    """
+    Takes a proto field descriptor and extracts the reboot.FieldOptions,
+    if such an option is set.
+    """
+    options: FieldOptions = field.GetOptions()
+    return options.Extensions[options_pb2.field]

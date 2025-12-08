@@ -53,7 +53,7 @@ class {{ state.proto.name }}Servicer extends {{ state.proto.name }}.singleton.Se
     // }
     //
     // Read more about the reader methods in the Reboot documentation:
-    // https://docs.reboot.dev/develop/servicers#reader
+    // https://docs.reboot.dev/develop/implement/readers
     throw new Error("Not implemented");
   }
     {% elif method.options.proto.kind == 'writer' %}
@@ -74,7 +74,7 @@ class {{ state.proto.name }}Servicer extends {{ state.proto.name }}.singleton.Se
     // }
     //
     // Read more about the writer methods in the Reboot documentation:
-    // https://docs.reboot.dev/develop/servicers/#writer
+    // https://docs.reboot.dev/develop/implement/writers
 
     throw new Error("Not implemented");
   }
@@ -96,7 +96,7 @@ class {{ state.proto.name }}Servicer extends {{ state.proto.name }}.singleton.Se
     // }
     //
     // Read more about the transaction methods in the Reboot documentation:
-    // https://docs.reboot.dev/develop/servicers/#transaction
+    // https://docs.reboot.dev/develop/implement/transactions
     throw new Error("Not implemented");
   }
     {% elif method.options.proto.kind == 'workflow' %}
@@ -118,7 +118,7 @@ class {{ state.proto.name }}Servicer extends {{ state.proto.name }}.singleton.Se
     // }
     //
     // Read more about the workflow methods in the Reboot documentation:
-    // https://docs.reboot.dev/develop/servicers/#workflow
+    // https://docs.reboot.dev/develop/implement/workflows
     throw new Error("Not implemented");
   }
     {% endif %}

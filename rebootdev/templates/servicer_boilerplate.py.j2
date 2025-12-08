@@ -69,7 +69,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}.singleton.Servicer):
         # TODO: implement your own business logic here!
         #
         # Read more about the reader methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/servicers#reader
+        # https://docs.reboot.dev/develop/implement/readers
         raise NotImplementedError
         {% if method.options.proto.state_streaming %}
 
@@ -111,7 +111,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}.singleton.Servicer):
         # return {{ method.output_type_name }}()
         #
         # Read more about the writer methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/servicers/#writer
+        # https://docs.reboot.dev/develop/implement/writers
         raise NotImplementedError
     {% elif method.options.proto.kind == 'transaction' %}
 
@@ -130,7 +130,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}.singleton.Servicer):
         # return {{ method.output_type_name }}()
         #
         # Read more about the transaction methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/servicers/#transaction
+        # https://docs.reboot.dev/develop/implement/transactions
         raise NotImplementedError
     {% elif method.options.proto.kind == 'workflow' %}
 
@@ -141,7 +141,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}.singleton.Servicer):
     ) -> {{ method.output_type_name }}:
         # TODO: implement your own business logic here!
         # Read more about the workflow methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/servicers/#workflow
+        # https://docs.reboot.dev/develop/implement/workflows
         raise NotImplementedError
 
         # Here is how to create a control loop:

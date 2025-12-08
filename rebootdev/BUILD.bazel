@@ -121,8 +121,6 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
-        requirement("pydantic"),
-        ":api_py",
         ":protoc_gen_reboot_generic_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio:tracing_py",
         "@googleapis//google/api:annotations_py_proto",

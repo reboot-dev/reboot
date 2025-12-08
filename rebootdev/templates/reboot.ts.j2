@@ -156,13 +156,13 @@ const {{ client.proto.state_name }}FromJsonString = (
     return reboot_api.validate(
       "{{ client.proto.state_name }}.state",
       api.{{ client.proto.state_name }}.state,
-      reboot_api.convertFromProtobuf(
+      reboot_api.protoToZod(
         api.{{ client.proto.state_name }}.state,
         {{ client.proto.state_name }}State.fromJsonString(jsonState)
       )
     );
   } else {
-    return reboot_api.convertFromProtobuf(
+    return reboot_api.protoToZod(
       api.{{ client.proto.state_name }}.state,
       {{ client.proto.state_name }}State.fromJsonString(jsonState)
     );
@@ -181,13 +181,13 @@ const {{ client.proto.state_name }}FromBinary = (
     return reboot_api.validate(
     "{{ client.proto.state_name }}.state",
     api.{{ client.proto.state_name }}.state,
-    reboot_api.convertFromProtobuf(
+    reboot_api.protoToZod(
       api.{{ client.proto.state_name }}.state,
       {{ client.proto.state_name }}State.fromBinary(bytesState)
     )
   );
   } else {
-    return reboot_api.convertFromProtobuf(
+    return reboot_api.protoToZod(
       api.{{ client.proto.state_name }}.state,
       {{ client.proto.state_name }}State.fromBinary(bytesState)
     );
@@ -205,7 +205,7 @@ const {{ client.proto.state_name }}ToProtobuf = (
     ? state
     : {{ client.proto.state_name }}State.fromJson(
       {% if options.proto.zod %}
-      reboot_api.convertToProtobufJson(
+      reboot_api.zodToProtoJson(
         api.{{ client.proto.state_name }}.state,
         options.validate
           ? reboot_api.validate(
@@ -229,7 +229,7 @@ const {{ client.proto.state_name }}ToProtobuf = (
 const {{ client.proto.state_name }}{{ method.proto.name }}RequestFromProtobufShape = (
   partialRequest: protobuf_es.PartialMessage<{{ method.input_type }}>
 ): {{ client.proto.state_name }}.{{ method.proto.name }}Request => {
-  // TOOD: update `convertFromProtobuf()` to actually work from
+  // TOOD: update `protoToZod()` to actually work from
   // any objects that match the shape, not just protobuf instances,
   // and then we won't need to first call `fromJson()` here.
   const request = partialRequest instanceof {{ method.input_type }}
@@ -240,7 +240,7 @@ const {{ client.proto.state_name }}{{ method.proto.name }}RequestFromProtobufSha
   return reboot_api.validate(
     "{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request",
     api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
-    reboot_api.convertFromProtobuf(
+    reboot_api.protoToZod(
       api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
       request
     )
@@ -279,7 +279,7 @@ const {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf = (
     ? partialRequest
     {% if options.proto.zod %}
     : new {{ method.input_type }}().fromJson(
-      reboot_api.convertToProtobufJson(
+      reboot_api.zodToProtoJson(
         api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
         reboot_api.validate(
           "{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request",
@@ -298,7 +298,8 @@ const {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf = (
 const {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape = (
   partialResponse: protobuf_es.PartialMessage<{{ method.output_type }}>
 ) => {
-  // TOOD: update `convertFromProtobuf()` to actually work from
+  {% if method.has_non_none_response %}
+  // TOOD: update `protoToZod()` to actually work from
   // any objects that match the shape, not just protobuf instances,
   // and then we won't need to first call `fromJson()` here.
   const response = partialResponse instanceof {{ method.output_type }}
@@ -309,7 +310,7 @@ const {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufSh
   return reboot_api.validate(
     "{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response",
     api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
-    reboot_api.convertFromProtobuf(
+    reboot_api.protoToZod(
       api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
       response
     )
@@ -317,16 +318,26 @@ const {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufSh
   {% else %}
   return response;
   {% endif %}
+  {% else %}
+  return undefined;
+  {% endif %}
 };
 
 const {{ client.proto.state_name }}{{ method.proto.name }}ResponseToProtobuf = (
+  {# To have less if-else branching in the code which calls that
+  function below we will still accept `undefined` here. #}
+  {% if method.has_non_none_response %}
   partialResponse?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Response
+  {% else %}
+  partialResponse: undefined
+  {% endif %}
 ): {{ method.output_type }} => {
+  {% if method.has_non_none_response %}
   return partialResponse instanceof {{ method.output_type }}
     ? partialResponse
     {% if options.proto.zod %}
     : new {{ method.output_type }}().fromJson(
-      reboot_api.convertToProtobufJson(
+      reboot_api.zodToProtoJson(
         api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
         reboot_api.validate(
           "{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response",
@@ -340,6 +351,11 @@ const {{ client.proto.state_name }}{{ method.proto.name }}ResponseToProtobuf = (
       partialResponse
     );
     {% endif %}
+  {% else %}
+  {# The `method.output_type` is `google.protobuf.Empty` when there is
+  no response. #}
+  return new {{ method.output_type }}();
+  {% endif %}
 };
 
 {% endfor %}
@@ -398,14 +414,20 @@ export type {{ state.proto.name }}ObjectLiteral = {
     request: {{ state.proto.name }}.{{ method.proto.name }}Request,
   ) => Promise<
     {% if method.options.proto.kind in ['reader', 'workflow'] %}
+    {% if method.has_non_none_response %}
     {{ state.proto.name }}.Partial{{ method.proto.name }}Response
     {% else %}
-    {{ state.proto.name }}.{{ method.proto.name }}Response extends void
-      ? [{{ state.proto.name }}.State]
-      : [
+    void
+    {% endif %}
+    {% else %}
+    {% if method.has_non_none_response %}
+      [
         {{ state.proto.name }}.State,
         {{ state.proto.name }}.Partial{{ method.proto.name }}Response,
       ]
+    {% else %}
+    [{{ state.proto.name }}.State]
+    {% endif %}
     {% endif %}
   >;
   {% endfor %}
@@ -456,7 +478,11 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
         {% endif %}
         request: {{ state.proto.name }}.{{ method.proto.name }}Request,
       ): Promise<
+        {% if method.has_non_none_response %}
         {{ state.proto.name }}.Partial{{ method.proto.name }}Response
+        {% else %}
+        void
+        {% endif %}
       > {
         {% if method.options.proto.kind == 'reader' %}
         return await literal.{{ method.proto.name | to_lower_camel }}(
@@ -503,7 +529,11 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
     {% endif %}
     request: {{ state.proto.name }}.{{ method.proto.name }}Request,
   ): Promise<
+    {% if method.has_non_none_response %}
     {{ state.proto.name }}.Partial{{ method.proto.name }}Response
+    {% else %}
+    void
+    {% endif %}
   >;
 
   async _{{ method.proto.name }}(
@@ -532,25 +562,20 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
         { validate: !(statesBeingConstructed.has(context.stateId)) },
       );
       {% endif %}
-      {% if method.options.proto.kind == 'writer' %}
+      {% if method.options.proto.kind == 'writer' or method.options.proto.kind == 'reader' %}
       if (context.stateId in ongoingTransactionStates) {
         {% if options.proto.zod %}
-        state = reboot_api.convertFromProtobuf(
-          api.{{ state.proto.name }}.state,
-          ongoingTransactionStates[context.stateId].clone()
-        );
+        state = structuredClone(ongoingTransactionStates[context.stateId]);
         {% else %}
         state = ongoingTransactionStates[context.stateId].clone();
         {% endif %}
       }
       {% elif method.options.proto.kind == 'transaction' %}
       // TODO: assert that there are no ongoing transactions for this state.
-      ongoingTransactionStates[context.stateId] = {{ state.proto.name }}ToProtobuf(
-        state,
-        // Don't validate if we're constructing because non-optional
-        // fields that this method might be setting will be invalid.
-        { validate: !(statesBeingConstructed.has(context.stateId)) },
-      );
+      //
+      // The `state` should be already validated above, so we can
+      // just store it here.
+      ongoingTransactionStates[context.stateId] = state;
       {% endif %}
 
       const request = {{ state.proto.name }}{{ method.proto.name }}RequestFromBinary(bytesRequest);
@@ -567,16 +592,6 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
 
       const response = {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf(partialResponse);
 
-      {% if options.proto.zod and method.options.proto.kind != 'workflow' %}
-      // Validate and convert back to protobuf when using Zod.
-      state = {{ state.proto.name }}ToProtobuf(
-        state,
-        // Don't validate if we're constructing because non-optional
-        // fields that this method might be setting will be invalid.
-        { validate: !(statesBeingConstructed.has(context.stateId)) },
-      );
-      {% endif %}
-
       {% if method.options.proto.kind == 'writer' %}
       // TODO: it's premature to overwrite the state now given that the
       // writer might still "fail" and an error will get propagated back
@@ -585,8 +600,22 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       // callback API that we invoke only after a writer completes
       // that lets us update the state _reference_ then.
       if (context.stateId in ongoingTransactionStates) {
+        {% if options.proto.zod %}
+        Object.assign(ongoingTransactionStates[context.stateId], state);
+        {% else %}
         ongoingTransactionStates[context.stateId].copyFrom(state);
+        {% endif %}
       }
+      {% endif %}
+
+      {% if options.proto.zod and method.options.proto.kind != 'workflow' %}
+      // Validate and convert back to protobuf when using Zod.
+      state = {{ state.proto.name }}ToProtobuf(
+        state,
+        // Don't validate if we're constructing because non-optional
+        // fields that this method might be setting will be invalid.
+        { validate: !(statesBeingConstructed.has(context.stateId)) },
+      );
       {% endif %}
 
       const result = new reboot_api.nodejs_pb.TrampolineResult();
@@ -1063,7 +1092,11 @@ export abstract class {{ state.proto.name }}SingletonServicer extends {{ state.p
     {% endif %}
     request: {{ state.proto.name }}.{{ method.proto.name }}Request,
   ): Promise<
+    {% if method.has_non_none_response %}
     {{ state.proto.name }}.Partial{{ method.proto.name }}Response
+    {% else %}
+    void
+    {% endif %}
   >;
 
   async __{{ method.proto.name }}(
@@ -1081,7 +1114,11 @@ export abstract class {{ state.proto.name }}SingletonServicer extends {{ state.p
     {% endif %}
     request: {{ state.proto.name }}.{{ method.proto.name }}Request,
   ): Promise<
+    {% if method.has_non_none_response %}
     {{ state.proto.name }}.Partial{{ method.proto.name }}Response
+    {% else %}
+    void
+    {% endif %}
   > {
     return await this.{{ method.proto.name | to_lower_camel }}(
       context,
@@ -1161,7 +1198,11 @@ export abstract class {{ state.proto.name }}Servicer extends {{ state.proto.name
     {% endif %}
     request: {{ state.proto.name }}.{{ method.proto.name }}Request,
   ): Promise<
+    {% if method.has_non_none_response %}
     {{ state.proto.name }}.Partial{{ method.proto.name }}Response
+    {% else %}
+    void
+    {% endif %}
   >;
 
   async __{{ method.proto.name }}(
@@ -1179,7 +1220,11 @@ export abstract class {{ state.proto.name }}Servicer extends {{ state.proto.name
     {% endif %}
     request: {{ state.proto.name }}.{{ method.proto.name }}Request,
   ): Promise<
+    {% if method.has_non_none_response %}
     {{ state.proto.name }}.Partial{{ method.proto.name }}Response
+    {% else %}
+    void
+    {% endif %}
   > {
     const instances = {{ state.proto.name }}Servicer.#instances;
     let instance = instances.get(context.stateId);
@@ -1428,7 +1473,7 @@ export class {{ client.proto.state_name }}{{ method.proto.name }}Aborted extends
     } else {
       {% if method.options.errors | length != 0 %}
       this.#error = {{ pb_name }}.{{ client.proto.state_name }}{{ method.proto.name }}Errors.fromJson(
-        reboot_api.convertToProtobufJson(
+        reboot_api.zodToProtoJson(
           {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
           reboot_api.validate(
             "api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors",
@@ -1470,7 +1515,7 @@ export class {{ client.proto.state_name }}{{ method.proto.name }}Aborted extends
     {% if options.proto.zod %}
     {% if method.options.errors | length != 0 %}
     if (this.#error instanceof {{ pb_name }}.{{ client.proto.state_name }}{{ method.proto.name }}Errors) {
-      return reboot_api.convertFromProtobuf(
+      return reboot_api.protoToZod(
         {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
         this.#error
       );
@@ -1493,7 +1538,13 @@ export class {{ client.proto.state_name }}{{ method.proto.name }}Task {
   readonly taskId: reboot_api.tasks_pb.TaskId;
 
   #context: reboot.WorkflowContext | reboot.ExternalContext;
-  #promise?: Promise<{{ client.proto.state_name }}.{{ method.proto.name }}Response>;
+  #promise?: Promise<
+    {% if method.has_non_none_response %}
+    {{ client.proto.state_name }}.{{ method.proto.name }}Response
+    {% else %}
+    void
+    {% endif %}
+  >;
 
   private constructor(
     context: reboot.WorkflowContext | reboot.ExternalContext,
@@ -1512,7 +1563,7 @@ export class {{ client.proto.state_name }}{{ method.proto.name }}Task {
     );
   }
 
-  then(...args: Parameters<Promise<{{ client.proto.state_name }}.{{ method.proto.name }}Response>["then"]>) {
+  then(...args: Parameters<Promise<{% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}void{% endif %}>["then"]>) {
     if (this.#promise === undefined) {
       // NOTE: we lazily create the promise because it eagerly awaits
       // the task and if the task is not meant to complete, e.g., it
@@ -1670,7 +1721,13 @@ export class {{ client.proto.state_name }}WeakReference {
   async {{ method.proto.name | to_lower_camel }}(
     context: ExternalContext | WorkflowContext,
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-  ): Promise<{{ client.proto.state_name }}.{{ method.proto.name }}Response> {
+  ): Promise<
+    {% if method.has_non_none_response %}
+    {{ client.proto.state_name }}.{{ method.proto.name }}Response
+    {% else %}
+    void
+    {% endif %}
+  > {
     const { task } = await (
       context instanceof WorkflowContext
         ? (reboot.isWithinLoop() ? this.perIteration() : this.perWorkflow())
@@ -1686,7 +1743,13 @@ export class {{ client.proto.state_name }}WeakReference {
     context: TransactionContext | WorkflowContext | ExternalContext,
     {% endif %}
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-  ): Promise<{{ client.proto.state_name }}.{{ method.proto.name }}Response> {
+  ): Promise<
+    {% if method.has_non_none_response %}
+    {{ client.proto.state_name }}.{{ method.proto.name }}Response
+    {% else %}
+    void
+    {% endif %}
+  > {
     if (context instanceof WorkflowContext) {
       {% if method.options.proto.kind == 'reader' %}
       if (reboot.isWithinUntil()) {
@@ -1841,7 +1904,13 @@ export class {{ client.proto.state_name }}WeakReference {
     async {{ method.proto.name | to_lower_camel }}(
       context: reboot.WorkflowContext | reboot.ExternalContext,
       partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-    ): Promise<{{ client.proto.state_name }}.{{ method.proto.name }}Response> {
+    ): Promise<
+      {% if method.has_non_none_response %}
+      {{ client.proto.state_name }}.{{ method.proto.name }}Response
+      {% else %}
+      void
+      {% endif %}
+    > {
       const { task } = await this.spawn()
         .{{ method.proto.name | to_lower_camel }}(context, partialRequest);
       return await task;
@@ -1850,7 +1919,13 @@ export class {{ client.proto.state_name }}WeakReference {
     async {{ method.proto.name | to_lower_camel }}(
       context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
       partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-    ): Promise<{{ client.proto.state_name }}.{{ method.proto.name }}Response> {
+    ): Promise<
+      {% if method.has_non_none_response %}
+      {{ client.proto.state_name }}.{{ method.proto.name }}Response
+      {% else %}
+      void
+      {% endif %}
+    > {
       return await this.#weakReference.__externalServiceCall{{ method.proto.name }}(
         context,
         partialRequest,
@@ -2048,7 +2123,11 @@ export class {{ client.proto.state_name }} {
     options?: { bearerToken?: string | null }
   ): Promise<[
     {{ client.proto.state_name }}.WeakReference,
+    {% if method.has_non_none_response %}
     {{ client.proto.state_name }}.{{ method.proto.name }}Response,
+    {% else %}
+    void,
+    {% endif %}
   ]>;
 
   public async {{ method.proto.name | to_lower_camel }}(
@@ -2058,7 +2137,11 @@ export class {{ client.proto.state_name }} {
     options?: { bearerToken?: string | null }
   ): Promise<[
     {{ client.proto.state_name }}.WeakReference,
+    {% if method.has_non_none_response %}
     {{ client.proto.state_name }}.{{ method.proto.name }}Response,
+    {% else %}
+    void,
+    {% endif %}
   ]>;
 
   public static async {{ method.proto.name | to_lower_camel }}(
@@ -2068,7 +2151,11 @@ export class {{ client.proto.state_name }} {
     optionsOrUndefined?: { bearerToken?: string | null }
   ): Promise<[
     {{ client.proto.state_name }}.WeakReference,
+    {% if method.has_non_none_response %}
     {{ client.proto.state_name }}.{{ method.proto.name }}Response,
+    {% else %}
+    void,
+    {% endif %}
   ]> {
     let id: string | undefined = undefined;
     let partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | undefined = undefined;
@@ -2154,7 +2241,13 @@ export class {{ client.proto.state_name }} {
       {% endif %}
       partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
       options?: { bearerToken?: string | null }
-    ): Promise<{{ client.proto.state_name }}.Partial{{ method.proto.name }}Response[]> {
+    ): Promise<
+      {% if method.has_non_none_response %}
+      {{ client.proto.state_name }}.Partial{{ method.proto.name }}Response[]
+      {% else %}
+      void[]
+      {% endif %}
+    > {
       return Promise.all(this.#ids.map((id: string) =>
         {{ client.proto.state_name }}.ref(id, options).{{ method.proto.name | to_lower_camel }}(
           context,
@@ -2210,7 +2303,11 @@ export class {{ client.proto.state_name }} {
       options?: { bearerToken?: string | null }
     ): Promise<[
       {{ client.proto.state_name }}.WeakReference,
+      {% if method.has_non_none_response %}
       {{ client.proto.state_name }}.{{ method.proto.name }}Response,
+      {% else %}
+      void,
+      {% endif %}
     ]>;
 
     public async {{ method.proto.name | to_lower_camel }}(
@@ -2220,7 +2317,11 @@ export class {{ client.proto.state_name }} {
       options?: { bearerToken?: string | null }
     ): Promise<[
       {{ client.proto.state_name }}.WeakReference,
+      {% if method.has_non_none_response %}
       {{ client.proto.state_name }}.{{ method.proto.name }}Response,
+      {% else %}
+      void,
+      {% endif %}
     ]>;
 
     public async {{ method.proto.name | to_lower_camel }}(
@@ -2230,7 +2331,11 @@ export class {{ client.proto.state_name }} {
       optionsOrUndefined?: { bearerToken?: string | null }
     ): Promise<[
       {{ client.proto.state_name }}.WeakReference,
+      {% if method.has_non_none_response %}
       {{ client.proto.state_name }}.{{ method.proto.name }}Response,
+      {% else %}
+      void,
+      {% endif %}
     ]> {
       let id: string | undefined = undefined;
       let partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | undefined = undefined;
@@ -2300,6 +2405,7 @@ export namespace {{ client.proto.state_name }} {
     protobuf_es.PartialMessage<{{ method.input_type }}>;
     {% endif %}
 
+  {% if method.has_non_none_response %}
   export type {{ method.proto.name }}Response =
     {% if options.proto.zod %}
     z.infer<
@@ -2317,6 +2423,7 @@ export namespace {{ client.proto.state_name }} {
     {% else %}
     protobuf_es.PartialMessage<{{ method.output_type }}>;
     {% endif %}
+  {% endif %}
 }
 {% endfor %}
 {% endfor %}

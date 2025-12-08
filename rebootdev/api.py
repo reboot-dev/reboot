@@ -1,4 +1,5 @@
-import pydantic  # type: ignore[import]
+import pydantic
+import pydantic_core
 import re
 import typing
 from enum import Enum
@@ -18,8 +19,22 @@ COLLECTION_TYPE = Union[
 ]
 
 
-def pydantic_to_proto(
-    input: pydantic.BaseModel | PRIMITIVE_TYPE | COLLECTION_TYPE | None,
+class Model(pydantic.BaseModel):
+    """
+    Base class for Pydantic request/response/error in Reboot API definitions.
+    """
+    # We want to ensure that 'validate_assignment=True' for all
+    # Model subclasses, so that field types are always validated
+    # when they are assigned new values, it is important since we use
+    # the Pydantic model type annotation to generate Protobuf messages and
+    # if the field value is not of the correct type, the conversion
+    # will fail.
+    model_config = pydantic.ConfigDict(validate_assignment=True)
+    pass
+
+
+def _pydantic_to_proto(
+    input: Model | PRIMITIVE_TYPE | COLLECTION_TYPE | None,
     input_type: Optional[typing.Type],
     # We always will return lists, dicts and BaseModels as proto messages.
     output_type: typing.Type[Message] | PRIMITIVE_TYPE,
@@ -40,25 +55,30 @@ def pydantic_to_proto(
 
     The only place where 'Optional[T]' is supported is for fields
     directly in Pydantic BaseModels.
+
+    # NOTE: Do not call that function directly, use 'pydantic_to_proto'
+    # instead. If you have to call it directly, make sure that the 'input'
+    # Model has the same structure as expected by the 'output_type' and
+    # if 'input' is 'Model' it should be validated.
     """
 
     input_type_or_origin = get_origin(input_type)
     if input_type_or_origin is None:
         # If the type has no origin, it is either a primitive type
-        # or a pydantic 'BaseModel'. Otherwise it will be a collection
+        # or a 'Model'. Otherwise it will be a collection
         # type like 'list' or 'dict'.
         input_type_or_origin = input_type
 
     if input_type_or_origin is Union:
         # Currently only supports 'Optional[T]' from the top-level
-        # 'BaseModel'. We will get there only if the 'Optional[T]' field has
+        # 'Model'. We will get there only if the 'Optional[T]' field has
         # a value and to process it we have to extract the actual type 'T'.
         non_none_args = [
             arg for arg in get_args(input_type) if arg is not type(None)
         ]
         assert len(non_none_args) == 1
         input_type = non_none_args[0]
-        return pydantic_to_proto(
+        return _pydantic_to_proto(
             input,
             input_type,
             output_type,
@@ -91,7 +111,7 @@ def pydantic_to_proto(
             # so we need to handle primitive type containers separately.
             if list_element_type not in (int, float, str, bool):
                 output_element = output.elements.add()
-                nested_output = pydantic_to_proto(
+                nested_output = _pydantic_to_proto(
                     list_element,
                     list_element_type,
                     type(output_element),
@@ -126,7 +146,7 @@ def pydantic_to_proto(
             # assignment while message map values should use 'CopyFrom()'.
             if dict_value_type not in (int, float, str, bool):
                 output_value = output.record[key]
-                nested_output = pydantic_to_proto(
+                nested_output = _pydantic_to_proto(
                     value,
                     dict_value_type,
                     type(output_value),
@@ -137,28 +157,55 @@ def pydantic_to_proto(
                 # Primitive type, we can assign directly.
                 output.record[key] = value
         return output
-    elif issubclass(input_type_or_origin, pydantic.BaseModel):
+    elif issubclass(input_type_or_origin, Model):
         # Ensure 'output_type' is a class (not a Union of primitive
         # types), so we can safely call 'output_type' as a class inside
         # 'issubclass', so mypy can properly check types.
         assert isinstance(output_type,
                           type) and issubclass(output_type, Message)
-        assert isinstance(input, pydantic.BaseModel)
+        assert isinstance(input, Model)
 
         output = output_type()
 
         for field_name, field_info in type(input).model_fields.items():
-            input_field = getattr(input, field_name)
+            try:
+                # If we were constructing the Pydantic model for initial
+                # state, that model will not have any fields, since we
+                # create it with 'model_construct' and then user should
+                # set the required fields manually. If a required field is
+                # missing, we will get an AttributeError here and we can
+                # raise a proper ValidationError.
+                input_field = getattr(input, field_name)
+            except AttributeError:
+                raise pydantic_core.ValidationError.from_exception_data(
+                    title=
+                    f"Missing required field {field_name} in {type(input).__name__}",
+                    line_errors=[
+                        {
+                            'type': 'missing',
+                            'loc': (field_name,),
+                            # The 'input' field is required by the
+                            # ValidationError but we don't have
+                            # the actual input value here, so we will
+                            # show an empty value, e.g.:
+                            #
+                            # 'field_name'
+                            # Field required [type=missing, input_value='input_type()', input_type='input_type']
+                            #    For further information visit https://errors.pydantic.dev/2.12/v/missing
+                            'input': input,
+                        }
+                    ]
+                )
             if input_field is None:
                 # If the Pydantic field is 'None', we skip setting it
-                # in the Protobuf message, so later we can check
-                # 'HasField' on the Protobuf side.
+                # in the Protobuf message, because Protobuf fields are
+                # 'optional' by default.
                 continue
 
             input_field_type = field_info.annotation
 
             output_field = getattr(output, field_name)
-            nested_output = pydantic_to_proto(
+            nested_output = _pydantic_to_proto(
                 input_field,
                 input_field_type,
                 type(output_field),
@@ -184,20 +231,39 @@ def pydantic_to_proto(
         return input
     else:
         raise ValueError(
-            f"Unexpected input type in 'pydantic_to_proto'. "
-            f"Expected BaseModel, list, dict or primitive type for output '{output_type}' "
+            f"Unexpected input type in '_pydantic_to_proto'. "
+            f"Expected 'Model', 'list', 'dict' or primitive type for output '{output_type}' "
             f"but got '{input}' of type '{input_type}'."
         )
 
 
-def proto_to_pydantic(
+def pydantic_to_proto(
+    input: Model,
+    input_type: typing.Type[Model],
+    output_type: typing.Type[Message],
+):
+    """Converts a Pydantic 'input' of type 'input_type' to the
+    'output_type' Protobuf message. The function expects 'input' to be
+    a value of type 'Model', which ensures 'validate_assignment=True',
+    so the input is already validated except the case when the input is created
+    using 'model_construct' (e.g. for initial state creation), for that case
+    we check that required fields are set and if not we raise a proper
+    ValidationError in '_pydantic_to_proto'. The field type will still
+    be checked by Pydantic, since we ensure 'validate_assignment=True'.
+    """
+    return _pydantic_to_proto(
+        input,
+        input_type,
+        output_type,
+    )
+
+
+def _proto_to_pydantic(
     input: Message | PRIMITIVE_TYPE,
-    output_type: typing.Type[pydantic.BaseModel] | PRIMITIVE_TYPE |
-    COLLECTION_TYPE | None,
-    validate: bool = True,
-) -> pydantic.BaseModel | PRIMITIVE_TYPE | COLLECTION_TYPE | None:
+    output_type: typing.Type[Model] | PRIMITIVE_TYPE | COLLECTION_TYPE | None,
+) -> Model | PRIMITIVE_TYPE | COLLECTION_TYPE | None:
     """Converts a Protobuf 'input' message or primitive type to the
-    'output_type' Pydantic BaseModel, list, dict or primitive type.
+    'output_type' Model, list, dict or primitive type.
 
     We use that function to convert Reboot generated Protobuf messages
     to user defined Pydantic values.
@@ -212,10 +278,10 @@ def proto_to_pydantic(
     The only place where 'Optional[T]' is supported is for fields
     directly in Pydantic BaseModels.
 
-    When 'validate' is 'True', we use Pydantic's validation
-    capabilities when creating BaseModel instances. Otherwise we will
-    create default values for missing fields. That is a case when
-    we are converting Protobuf state, which is under construction.
+    NOTE: Do not call that function directly, use 'proto_to_pydantic'
+    instead. If you have to call it directly, make sure that the 'input'
+    Message has the same structure as expected by the 'output_type' and
+    has all required fields set.
     """
 
     if output_type is None:
@@ -228,20 +294,20 @@ def proto_to_pydantic(
 
     if output_type_or_origin is None:
         # If the type has no origin, it is either a primitive type
-        # or a pydantic BaseModel. Otherwise it will be a collection
+        # or a 'Model'. Otherwise it will be a collection
         # type like 'list' or 'dict'.
         output_type_or_origin = output_type
 
     if output_type_or_origin is Union:
         # Currently only supports 'Optional[T]' from the top-level
-        # 'BaseModel'. We will get there only if the 'Optional[T]' field has
+        # 'Model'. We will get there only if the 'Optional[T]' field has
         # a value and to process it we have to extract the actual type 'T'.
         non_none_args = [
             arg for arg in get_args(output_type) if arg is not type(None)
         ]
         assert len(non_none_args) == 1
         output_type = non_none_args[0]
-        return proto_to_pydantic(
+        return _proto_to_pydantic(
             input,
             output_type,
         )
@@ -262,7 +328,12 @@ def proto_to_pydantic(
         list_element_type = list_args[0]
         output = []
         for list_element in input.elements:
-            output.append(proto_to_pydantic(list_element, list_element_type))
+            output.append(
+                _proto_to_pydantic(
+                    list_element,
+                    list_element_type,
+                )
+            )
         return output
     elif output_type_or_origin is dict:
         assert isinstance(input, Message)
@@ -273,14 +344,16 @@ def proto_to_pydantic(
         dict_value_type = dict_args[1]
         output = {}
         for key, value in input.record.items():
-            output[key] = proto_to_pydantic(value, dict_value_type)
+            output[key] = _proto_to_pydantic(
+                value,
+                dict_value_type,
+            )
         return output
-    elif issubclass(output_type_or_origin, pydantic.BaseModel):
+    elif issubclass(output_type_or_origin, Model):
         # Ensure 'output_type' is a class (not a Union of primitive
         # types), so we can safely call 'output_type' as a class inside
         # 'issubclass', so mypy can properly check types.
-        assert isinstance(output_type, type
-                         ) and issubclass(output_type, pydantic.BaseModel)
+        assert isinstance(output_type, type) and issubclass(output_type, Model)
         assert isinstance(input, Message)
 
         output = {}
@@ -289,48 +362,52 @@ def proto_to_pydantic(
             input_field = getattr(input, field_name)
             output_field_type = field_info.annotation
 
-            # To properly set 'None' for 'Optional[T]' fields in Pydantic
-            # we need to check if the field is set in the Protobuf message.
             if input.HasField(field_name):
-                output[field_name] = proto_to_pydantic(
-                    input_field, output_field_type
+                # Always set the field if it is present in the
+                # Protobuf message.
+                output[field_name] = _proto_to_pydantic(
+                    input_field,
+                    output_field_type,
                 )
-            elif not validate:
-                # If 'validate' is 'False', we are converting state
-                # that is under construction, so we create default
-                # values for missing fields.
-                output_field_origin = get_origin(output_field_type)
-                if output_field_origin is Union:
-                    # We can't create a default value for 'Optional[T]'
-                    # by 'output_field_type()', since it is not a "real"
-                    # type, so just set it to 'None' explicitly.
-                    output[field_name] = None
-                else:
-                    output[field_name] = output_field_type()
             else:
-                # We have 'validate' enabled and the field is not set
-                # in the Protobuf message, so we set it to 'None' and
-                # let Pydantic handle the validation (i.e. raise error
-                # for non-optional fields).
+                # We should be converting a Protobuf message which was
+                # created from a Pydantic model so if a field is not set
+                # in the Protobuf message, it means that the field was
+                # 'Optional' and set to 'None' in Pydantic.
                 output[field_name] = None
 
         return output_type(**output)
-    elif issubclass(output_type_or_origin, (int, float, str, bool)):
+
+    elif issubclass(output_type_or_origin, (float, str, bool)):
+        assert isinstance(input, (float, str, bool))
         return input
+    elif issubclass(output_type_or_origin, int):
+        # We map Python 'int' to Protobuf 'double', so we need to
+        # truncate the float value back to int here.
+        assert isinstance(input, (int, float))
+        return int(input)
     else:
         raise ValueError(
-            f"Unexpected output type in 'proto_to_pydantic'. "
-            f"Expected BaseModel, list, dict or primitive type for input '{input}' "
+            f"Unexpected output type in '_proto_to_pydantic'. "
+            f"Expected 'Model', 'list', 'dict' or primitive type for input '{input}' "
             f"but got '{output_type}'."
         )
 
 
-class StateModel(pydantic.BaseModel):
+def proto_to_pydantic(
+    input: Message,
+    output_type: typing.Type[Model],
+):
+    """Converts a Protobuf 'input' message to the
+    'output_type' Model. Since the 'output_type' is a Pydantic
+    model, we are sure that Pydantic validation will be done during
+    the 'output_type' object creation.
     """
-    Base class for state models in Reboot API definitions.
-    All state models should inherit from this class.
-    """
-    pass
+
+    return _proto_to_pydantic(
+        input,
+        output_type,
+    )
 
 
 def Field(*, tag: int, **kwargs) -> Any:
@@ -355,9 +432,9 @@ class MethodModel(pydantic.BaseModel):
     Base class for method type definitions in Reboot API.
     Contains common fields for all method types (Reader, Writer, Transaction, Workflow).
     """
-    request: typing.Type[pydantic.BaseModel]
-    response: Optional[typing.Type[pydantic.BaseModel]]
-    errors: list[typing.Type[pydantic.BaseModel]] = []
+    request: Optional[typing.Type[Model]]
+    response: Optional[typing.Type[Model]]
+    errors: list[typing.Type[Model]] = []
     factory: bool = False
     kind: MethodKind
 
@@ -395,23 +472,141 @@ def to_pascal_case(input: str) -> str:
     return ''.join(word.capitalize() for word in input.split('_'))
 
 
-Methods = dict[str, MethodType]
+def snake_to_camel(snake_str: str) -> str:
+    """Convert snake_case to camelCase."""
+    components = snake_str.split('_')
+    return components[0] + ''.join(
+        word.capitalize() for word in components[1:]
+    )
+
+
+def get_field_tag(field_info) -> Optional[int]:
+    """Get the tag from a Pydantic field's json_schema_extra."""
+    json_schema_extra = getattr(field_info, 'json_schema_extra', {})
+    if isinstance(json_schema_extra, dict) and 'tag' in json_schema_extra:
+        return json_schema_extra['tag']
+    return None
+
+
+# We need to define 'Methods' as a class, so Python typing can
+# properly identify it as a type for 'Type.methods' field.
+# Otherwise we will see error like:
+# Argument "methods" to "Type" has incompatible type
+# "dict[str, MethodModel]"; expected "dict[str, Writer | Reader
+# | Transaction | Workflow]".
+class Methods(dict[str, MethodType]):
+
+    def __init__(self, **methods: MethodType):
+        super().__init__(**methods)
 
 
 class Type(pydantic.BaseModel):
     """Represents a Reboot data type with state and methods."""
 
-    state: typing.Type[pydantic.BaseModel]
+    # 'Methods' is a dict, so we need to allow arbitrary types
+    # to avoid Pydantic validation errors.
+    model_config = pydantic.ConfigDict(
+        arbitrary_types_allowed=True,
+    )
+
+    state: typing.Type[Model]
     methods: Methods
 
     def __init__(
         self,
         *,
-        state: typing.Type[StateModel],
+        state: typing.Type[Model],
         methods: Methods,
     ):
-        if not issubclass(state, StateModel):
-            raise ValueError("'state' must be a subclass of 'StateModel'.")
+
+        def validate_all_fields_are_reboot_base_classes(
+            field_type,
+            method_name,
+        ):
+            field_type_origin = get_origin(field_type)
+            if field_type_origin is Union:
+                # Get the inner type from 'Optional[T]'.
+                non_none_args = [
+                    arg for arg in get_args(field_type)
+                    if arg is not type(None)
+                ]
+                assert len(non_none_args) == 1
+                return validate_all_fields_are_reboot_base_classes(
+                    non_none_args[0],
+                    method_name,
+                )
+            elif field_type_origin is list:
+                list_args = get_args(field_type)
+                # We should always have exactly one argument for lists.
+                assert len(list_args) == 1
+                return validate_all_fields_are_reboot_base_classes(
+                    list_args[0],
+                    method_name,
+                )
+            elif field_type_origin is dict:
+                dict_args = get_args(field_type)
+                # We should always have exactly two arguments for dicts.
+                assert len(dict_args) == 2
+                return validate_all_fields_are_reboot_base_classes(
+                    dict_args[1],
+                    method_name,
+                )
+            elif issubclass(field_type, pydantic.BaseModel):
+                if not issubclass(field_type, Model):
+                    state_or_method = ""
+                    if method_name is None:
+                        state_or_method = "'state'"
+                    else:
+                        state_or_method = f"method '{method_name}'"
+                    raise ValueError(
+                        f"{state_or_method} has field type "
+                        f"'{field_type}' which is not a subclass of "
+                        "Reboot 'Model'. All 'state', "
+                        "'request', 'response', and 'error' "
+                        "types must inherit from 'Model'."
+                    )
+                for field_info in field_type.model_fields.values():
+                    validate_all_fields_are_reboot_base_classes(
+                        field_info.annotation,
+                        method_name,
+                    )
+            else:
+                assert field_type in (int, float, str, bool)
+
+        if not issubclass(state, Model):
+            raise ValueError("'state' must be a subclass of 'Model'.")
+
+        # Validate all fields there rather then in the constructor of
+        # 'Model', so that we won't have that validation
+        # overhead in the runtime on the server, but only during
+        # API definition time.
+        validate_all_fields_are_reboot_base_classes(
+            state,
+            None,
+        )
+
+        for method_name, method in methods.items():
+            if not isinstance(method, MethodModel):
+                raise ValueError(
+                    f"Method '{method_name}' must be an instance of "
+                    f"'Writer', 'Reader', 'Transaction', 'Workflow'."
+                )
+
+            if method.request is not None:
+                validate_all_fields_are_reboot_base_classes(
+                    method.request,
+                    method_name,
+                )
+            if method.response is not None:
+                validate_all_fields_are_reboot_base_classes(
+                    method.response,
+                    method_name,
+                )
+            for error in method.errors:
+                validate_all_fields_are_reboot_base_classes(
+                    error,
+                    method_name,
+                )
 
         super().__init__(
             state=state,

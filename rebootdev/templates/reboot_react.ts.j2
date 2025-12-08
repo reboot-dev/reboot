@@ -12,7 +12,7 @@ import {
 import * as reboot_react from "@reboot-dev/reboot-react";
 import * as reboot_web from "@reboot-dev/reboot-web";
 import * as reboot_api from "@reboot-dev/reboot-api";
-import {
+import React, {
   useEffect,
   useMemo,
   useState,
@@ -57,6 +57,9 @@ export {
 } from "./{{ pb_name }}{% if react_extensions %}.js{% endif %}";
 {% endif %}
 {% endif %}
+
+export const offlineCacheStorageType: reboot_web.OfflineCacheStorageType =
+  reboot_web.offlineCache.offlineCacheStorageType;
 
 reboot_api.check_bufbuild_protobuf_library(protobuf_es.Message);
 
@@ -119,7 +122,7 @@ const ERROR_TYPES = [
 const {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape = (
   partialRequest: protobuf_es.PartialMessage<{{ method.input_type }}>
 ): {{ state.proto.name }}.{{ method.proto.name }}Request => {
-  // TOOD: update `convertFromProtobuf()` to actually work from
+  // TOOD: update `protoToZod()` to actually work from
   // any objects that match the shape, not just protobuf instances,
   // and then we won't need to first call `fromJson()` here.
   const request = partialRequest instanceof {{ method.input_type }}
@@ -130,7 +133,7 @@ const {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape = (
   return reboot_api.validate(
     "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request",
     api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
-    reboot_api.convertFromProtobuf(
+    reboot_api.protoToZod(
       api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
       request
     )
@@ -159,7 +162,7 @@ const {{ state.proto.name }}{{ method.proto.name }}RequestToProtobuf = (
     ? partialRequest
     {% if options.proto.zod %}
     : new {{ method.input_type }}().fromJson(
-      reboot_api.convertToProtobufJson(
+      reboot_api.zodToProtoJson(
         api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
         reboot_api.validate(
           "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request",
@@ -178,7 +181,7 @@ const {{ state.proto.name }}{{ method.proto.name }}RequestToProtobuf = (
 const {{ state.proto.name }}{{ method.proto.name }}ResponseFromProtobufShape = (
   partialResponse: protobuf_es.PartialMessage<{{ method.output_type }}>
 ) => {
-  // TOOD: update `convertFromProtobuf()` to actually work from
+  // TOOD: update `protoToZod()` to actually work from
   // any objects that match the shape, not just protobuf instances,
   // and then we won't need to first call `fromJson()` here.
   const response = partialResponse instanceof {{ method.output_type }}
@@ -189,7 +192,7 @@ const {{ state.proto.name }}{{ method.proto.name }}ResponseFromProtobufShape = (
   return reboot_api.validate(
     "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response",
     api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
-    reboot_api.convertFromProtobuf(
+    reboot_api.protoToZod(
       api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
       response
     )
@@ -206,7 +209,7 @@ const {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf = (
     ? partialResponse
     {% if options.proto.zod %}
     : new {{ method.output_type }}().fromJson(
-      reboot_api.convertToProtobufJson(
+      reboot_api.zodToProtoJson(
         api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
         reboot_api.validate(
           "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response",
@@ -413,7 +416,7 @@ export class {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_c
     } else {
       {% if method.options.errors | length != 0 %}
       this.#error = {{ pb_name }}.{{ client.proto.state_name }}{{ method.proto.name }}Errors.fromJson(
-        reboot_api.convertToProtobufJson(
+        reboot_api.zodToProtoJson(
           {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
           reboot_api.validate(
             "api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors",
@@ -455,7 +458,7 @@ export class {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_c
     {% if options.proto.zod %}
     {% if method.options.errors | length != 0 %}
     if (this.#error instanceof {{ pb_name }}.{{ client.proto.state_name }}{{ method.proto.name }}Errors) {
-      return reboot_api.convertFromProtobuf(
+      return reboot_api.protoToZod(
         {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
         this.#error
       );
@@ -497,12 +500,32 @@ export interface Use{{ client.proto.state_name }}Api {
   {% endif %}
   {% if method.options.proto.kind == "reader" %}
   {% if not method.proto.server_streaming and not method.proto.client_streaming %}
-  use{{ method.proto.name | to_camel }}: (
-    partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-  ) => {
+  use{{ method.proto.name | to_camel }}(
+    partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request
+  ): {
     response: {{ client.proto.state_name }}.{{ method.proto.name }}Response | undefined;
     isLoading: boolean;
-    aborted: undefined | {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted;
+    aborted: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted | undefined;
+  };
+  use{{ method.proto.name | to_camel }}(
+    partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
+    options?: { suspense: true }
+  ): {
+    response: {{ client.proto.state_name }}.{{ method.proto.name }}Response;
+    isLoading: boolean;
+    aborted: undefined;
+  } | {
+    response: undefined;
+    isLoading: boolean;
+    aborted: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted;
+  };
+  use{{ method.proto.name | to_camel }}(
+    partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
+    options?: { suspense: false }
+  ): {
+    response: {{ client.proto.state_name }}.{{ method.proto.name }}Response | undefined;
+    isLoading: boolean;
+    aborted: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted | undefined;
   };
   {{ method.proto.name | to_lower_camel }}: (
     partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
@@ -707,14 +730,14 @@ class {{ client.proto.state_name | to_camel }}Instance {
     ResponseType extends protobuf_es.Message<ResponseType>,
     >(
     method: string,
-    request: RequestType,
+    serializedRequest: Uint8Array,
     bearerToken: string | undefined,
     responseType: protobuf_es.MessageType<ResponseType>,
     reader: reboot_react.Reader<ResponseType>
   ) {
     const queryRequest = new reboot_api.react_pb.QueryRequest({
       method,
-      request: request.toBinary(),
+      request: serializedRequest,
       ...(bearerToken !== undefined && { bearerToken } || {}),
     });
 
@@ -793,9 +816,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
             await this.flushMutations();
           }
 
-          for (const setIsLoading of Object.values(reader.setIsLoadings)) {
-            setIsLoading(true);
-          }
+          reader.setIsLoading(true);
 
           const queryResponses = reboot_web.reactiveReader({
             endpoint: `${this.url}/__/reboot/rpc/${this.stateRef}`,
@@ -811,9 +832,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
               loaded = true;
             }
 
-            for (const setIsLoading of Object.values(reader.setIsLoadings)) {
-              setIsLoading(false);
-            }
+            reader.setIsLoading(false);
 
             const response = queryResponse.responseOrStatus.case === "response"
               ? responseType.fromBinary(queryResponse.responseOrStatus.value)
@@ -841,10 +860,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
               }
               await orphans[orphans.length - 1].observed(() => {
                 if (response !== undefined) {
-                  reader.response = response;
-                  for (const setResponse of Object.values(reader.setResponses)) {
-                    setResponse(response);
-                  }
+                  reader.setResponse(response);
                 }
               });
 
@@ -864,10 +880,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
             ) {
               await expecteds[0].observed(() => {
                 if (response !== undefined) {
-                  reader.response = response;
-                  for (const setResponse of Object.values(reader.setResponses)) {
-                    setResponse(response);
-                  }
+                  reader.setResponse(response);
                 }
                 expecteds.shift();
               });
@@ -877,10 +890,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
 	          // pass on the response because it might contain new data that should get shown to the
 	          // user (e.g., in a chat app this could be a new chat message from a different user).
             else if (response !== undefined && !haveOrphans) {
-              reader.response = response;
-              for (const setResponse of Object.values(reader.setResponses)) {
-                setResponse(response);
-              }
+              reader.setResponse(response);
             }
           }
 
@@ -901,22 +911,14 @@ class {{ client.proto.state_name | to_camel }}Instance {
             return;
           }
 
-          for (const setIsLoading of Object.values(reader.setIsLoadings)) {
-            setIsLoading(false);
-          }
-          for (const setStatus of Object.values(reader.setStatuses)) {
-            if (e instanceof reboot_api.Status) {
-              setStatus(e);
-            } else {
-              setStatus(
-                new reboot_api.Status({
-                  code: reboot_api.StatusCode.UNKNOWN,
-                  message: e instanceof Error
-                    ? e.message
-                    : JSON.stringify(e),
-                })
-              );
-            }
+          reader.setIsLoading(false);
+
+          if (e instanceof reboot_api.Status) {
+            reader.setStatus(e);
+          } else {
+            console.warn(
+              `[Reboot] Caught unknown exception: ${e instanceof Error ? e.message : JSON.stringify(e)}`
+            );
           }
 
           throw e; // This just retries!
@@ -1084,74 +1086,204 @@ class {{ client.proto.state_name | to_camel }}Instance {
   {% elif method.options.proto.kind == 'reader' %}
 
   private use{{ method.proto.name | to_camel }}Readers: {
-    [id: string]: reboot_react.Reader<{{ method.output_type }}>
+    [requestHash: string]: reboot_react.Reader<{{ method.output_type }}>
   } = {};
 
-  use{{ method.proto.name | to_camel }}(
-    id: string,
-    request: {{ method.input_type }},
+  private {{ method.proto.name | to_lower_camel }}FinalizationRegistry =
+    new FinalizationRegistry((finalize) => finalize());
+
+  start{{ method.proto.name | to_camel }}(
+    requestHash: string,
+    serializedRequest: Uint8Array,
     bearerToken: string | undefined,
-    setResponse: (response: {{ method.output_type }}) => void,
-    setIsLoading: (isLoading: boolean) => void,
-    setStatus: (status: reboot_api.Status) => void
+    offlineCacheEnabled: boolean,
+    cacheKey: string | null
   ) {
-    let read = false;
+    let reader = this.use{{ method.proto.name | to_camel }}Readers[requestHash];
 
-    // NOTE: need to concatenate `request.toJsonString()` with `bearerToken`
-    // because it uniquely identifies the request, i.e., a second call
-    // that has the same `request` but a different bearerToken should be a
-    // different call.
-    const key = request.toJsonString() + bearerToken;
+    if (reader === undefined) {
+      const event = new reboot_api.Event();
 
-    if (!(key in this.use{{ method.proto.name | to_camel }}Readers)) {
-      this.use{{ method.proto.name | to_camel }}Readers[key] = {
+      const promise = event.wait();
+
+      reader = {
         abortController: new AbortController(),
+        event,
+        promise,
+        used: false,
         setResponses: {},
         setIsLoadings: {},
         setStatuses: {},
+
+        setResponse(
+          response: {{ method.output_type }},
+          { cache }: { cache: boolean } = { cache: true }
+        ) {
+          // Store the response, delete the status.
+          this.response = response;
+          delete this.status;
+
+          // Trigger response or aborted has been received event (if
+          // it wasn't triggered already).
+          this.event.set();
+
+          // Dispatch to all listeners.
+          for (const setResponse of Object.values(this.setResponses)) {
+            setResponse(response);
+          }
+
+          // Cache response if applicable.
+          if (cache && offlineCacheEnabled) {
+            reboot_api.assert(cacheKey !== null);
+            const cachedResponse = response.toJsonString();
+            reboot_web.offlineCache.set(cacheKey, cachedResponse)
+              .catch((error) => {
+                console.warn(
+                  `[Reboot] Setting of offline reader cache entry for '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' errored with ${error}`
+                );
+              });
+          }
+        },
+
+        setIsLoading(isLoading: boolean) {
+          for (const setIsLoading of Object.values(this.setIsLoadings)) {
+            setIsLoading(isLoading);
+          }
+        },
+
+        setStatus(status: reboot_api.Status) {
+          // Store the status, delete the response.
+          this.status = status;
+          delete this.response;
+
+          // Trigger response or aborted has been received event (if
+          // it wasn't triggered already).
+          this.event.set();
+
+          for (const setStatus of Object.values(this.setStatuses)) {
+            setStatus(status);
+          }
+        },
       };
 
-      read = true;
-    }
+      this.{{ method.proto.name | to_lower_camel }}FinalizationRegistry.register(
+        promise,
+        () => {
+          if (!reader.used) {
+            delete this.use{{ method.proto.name | to_camel }}Readers[requestHash];
+            reader.abortController.abort();
+          }
+        }
+      );
 
-    let reader = this.use{{ method.proto.name | to_camel }}Readers[key];
+      // We want to remove the promise so that it can be garbage collected
+      // which is our indication that React is no longer using it. But this
+      // races with calls to `use{{ method.proto.name | to_camel }}(...)`
+      // that might be adding their `setResponse`, `setIsLoading`, etc, so
+      // we delay deleting the promise for at least a second.
+      //
+      // Note that deleting the promise is okay because all subsequent calls
+      // will simply use the `reader.response` since it will no longer be
+      // undefined.
+      reader.promise.then(async () => {
+        // Allow the call to `use{{ method.proto.name | to_camel }}(...)`
+        // at least 5 seconds to indicate that the reader is being used,
+        // afterwhich, once `reader.promise` gets garbage collected
+        // we'll know that it must have been abandoned by React, e.g.,
+        // because the component was suspended and never committed.
+        await reboot_api.sleep({ ms: 5000 });
 
-    reader.setResponses[id] = setResponse;
-    reader.setIsLoadings[id] = setIsLoading;
-    reader.setStatuses[id] = setStatus;
+        delete reader.promise;
+      });
 
-    if (reader.response !== undefined) {
-      setResponse(reader.response);
-    }
+      this.use{{ method.proto.name | to_camel }}Readers[requestHash] = reader;
 
-    if (read) {
+      // Start fetching from the server.
       this.read(
         "{{ method.proto.name }}",
-        request,
+        serializedRequest,
         bearerToken,
         {{ method.output_type }},
         reader
       );
+
+      // Check if there is a cached result if applicable.
+      if (offlineCacheEnabled) {
+        reboot_api.assert(cacheKey !== null);
+
+        reboot_web.offlineCache.get(cacheKey).then((cachedResponse) => {
+          if (cachedResponse !== null) {
+            // We only want to set the response if we haven't already
+            // gotten a response from the server as it is the authority
+            // and should take precedence.
+            if (reader.response === undefined) {
+              reader.setResponse(
+                {{ method.output_type }}.fromJsonString(cachedResponse),
+                { cache: false } // Don't re-cache the value!
+              );
+            }
+          }
+        }).catch((error) => {
+          console.warn(
+            `[Reboot] Retrieval of offline reader cache entry for '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' errored with ${error}`
+          );
+        });
+      }
     }
+
+    reboot_api.assert(reader !== undefined);
+
+    return reader;
+  }
+
+  use{{ method.proto.name | to_camel }}(
+    id: string,
+    requestHash: string,
+    serializedRequest: Uint8Array,
+    bearerToken: string | undefined,
+    offlineCacheEnabled: boolean,
+    cacheKey: string | null,
+    setResponse: (response: {{ method.output_type }}) => void,
+    setIsLoading: (isLoading: boolean) => void,
+    setStatus: (status: reboot_api.Status) => void
+  ) {
+    // We need to call start here because with strict mode the
+    // `useEffect` that calls this method will also call "unuse"
+    // which will mean the next time the `useEffect` calls here
+    // we'll create a new reader in start.
+    const reader = this.start{{ method.proto.name | to_camel }}(
+      requestHash,
+      serializedRequest,
+      bearerToken,
+      offlineCacheEnabled,
+      cacheKey
+    );
+
+    reboot_api.assert(reader !== undefined);
+
+    // Indicate that the reader has properly been used so that we don't
+    // clean it up prematurely.
+    reader.used = true;
+
+    reader.setResponses[id] = setResponse;
+    reader.setIsLoadings[id] = setIsLoading;
+    reader.setStatuses[id] = setStatus;
   }
 
   unuse{{ method.proto.name | to_camel }}(
     id: string,
-    request: {{ method.input_type }},
-    bearerToken: string | undefined
+    requestHash: string,
   ) {
-    // See comment above in `use{{ method.proto.name | to_camel }}` for why
-    // we concatenate `request.toJsonString()` with `bearerToken`.
-    const key = request.toJsonString() + bearerToken;
+    const reader = this.use{{ method.proto.name | to_camel }}Readers[requestHash];
 
-    const reader = this.use{{ method.proto.name | to_camel }}Readers[key];
+    reboot_api.assert(reader !== undefined);
 
     delete reader.setResponses[id];
     delete reader.setIsLoadings[id];
     delete reader.setStatuses[id];
 
     if (Object.values(reader.setResponses).length === 0) {
-      delete this.use{{ method.proto.name | to_camel }}Readers[key];
+      delete this.use{{ method.proto.name | to_camel }}Readers[requestHash];
       reader.abortController.abort();
     }
   }
@@ -1285,7 +1417,8 @@ export const use{{ client.proto.state_name | to_camel }} = (
   {% if not method.proto.server_streaming and not method.proto.client_streaming %}
 
   function use{{ method.proto.name | to_camel }}(
-    partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name}}Request = {}
+    partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name}}Request = {},
+    options: { suspense: boolean } = { suspense: false }
   ) {
     const newRequest = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
 
@@ -1295,23 +1428,74 @@ export const use{{ client.proto.state_name | to_camel }} = (
       setRequest(newRequest);
     }
 
-    const [response, setResponse] = useState<{{ client.proto.state_name }}.{{ method.proto.name}}Response>();
-    const [isLoading, setIsLoading] = useState<boolean>(true);
-    const [aborted, setAborted] = useState<
-      undefined
-      | {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
-      >();
-
     const rebootClient = reboot_react.useRebootClient();
 
     const bearerToken = rebootClient.bearerToken;
 
+    const serializedRequest = useMemo(() => request.toBinary(), [request]);
+
+    // To distinguish this call from others we compute a
+    // "request hash" using SHA256 from the `request` and
+    // `bearerToken` if it exists. We memoize this so we
+    // don't do it everytime.
+    const requestHash: string = useMemo(
+      () => {
+        const hash = reboot_web.calcSha256();
+        hash.add(serializedRequest);
+        if (bearerToken) {
+          hash.add(bearerToken);
+        }
+        return hash.digest().hex();
+      },
+      [serializedRequest, bearerToken]
+    );
+
+    const offlineCacheEnabled = rebootClient.offlineCacheEnabled;
+
+    const cacheKey: string | null = useMemo(
+      () => {
+        if (offlineCacheEnabled) {
+          return `${stateRef}:{{ method.proto.name | to_camel }}:${requestHash}`;
+        }
+        return null;
+      },
+      [stateRef, offlineCacheEnabled, requestHash]
+    );
+
+    // We start reading here, or if another component already started
+    // the reading then we just get back the reader. We need to do this
+    // before setting up our `useState`s because when using suspense
+    // we need to use the `reader.response` or `reader.status` during
+    // render where one of them will be defined, i.e., after we've
+    // waited for `reader.promise` via `React.use()`.
+    const reader = instance.start{{ method.proto.name | to_camel }}(
+      requestHash,
+      serializedRequest,
+      bearerToken,
+      offlineCacheEnabled,
+      cacheKey
+    );
+
+    const [response, setResponse] = useState<
+      {{ client.proto.state_name }}.{{ method.proto.name}}Response | undefined
+      >(reader.response && {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(reader.response));
+
+    const [isLoading, setIsLoading] = useState<boolean>(true);
+
+    const [aborted, setAborted] = useState<
+      {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted | undefined
+      >(reader.status && {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(reader.status));
+
     useEffect(() => {
       const id = uuidv4();
+
       instance.use{{ method.proto.name | to_camel }}(
         id,
-        request,
+        requestHash,
+        serializedRequest,
         bearerToken,
+        offlineCacheEnabled,
+        cacheKey,
         (response: {{ method.output_type }}) => {
           setAborted(undefined);
           setResponse({{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(response));
@@ -1325,12 +1509,42 @@ export const use{{ client.proto.state_name | to_camel }} = (
           );
 
           setAborted(aborted);
+          setResponse(undefined);
         },
       );
+
       return () => {
-        instance.unuse{{ method.proto.name | to_camel }}(id, request, bearerToken);
+        instance.unuse{{ method.proto.name | to_camel }}(id, requestHash);
       };
-    }, [instance, request, bearerToken]);
+    }, [
+      instance,
+      serializedRequest,
+      requestHash,
+      bearerToken,
+      offlineCacheEnabled,
+      cacheKey,
+    ]);
+
+    if (options.suspense) {
+      // Suspend until `reader.event` is set signifying that we have
+      // either a response or aborted.
+      if (!reader.event.isSet()) {
+        // Raise if it doens't looke like we are using React>=19.
+        if (!("use" in React)) {
+          throw new Error(
+            "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`"
+          );
+        }
+        // NOTE: this will throw _at least once_, because React will have
+        // to do `.then()`, which is asynchronous, so they'll throw.
+        //
+        // This invariant is what ensures that we'll have either
+        // `response` or `aborted` set via the `useState` calls above
+        // so that we keep our type promise which is that one of them
+        // will be set if passed `suspense: true` before returning.
+        React.use(reader.promise);
+      }
+    }
 
     return { response, isLoading, aborted };
   }

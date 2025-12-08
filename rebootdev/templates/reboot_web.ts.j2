@@ -103,7 +103,7 @@ const ERROR_TYPES = [
 const {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape = (
   partialRequest: protobuf_es.PartialMessage<{{ method.input_type }}>
 ): {{ state.proto.name }}.{{ method.proto.name }}Request => {
-  // TOOD: update `convertFromProtobuf()` to actually work from
+  // TOOD: update `protoToZod()` to actually work from
   // any objects that match the shape, not just protobuf instances,
   // and then we won't need to first call `fromJson()` here.
   const request = partialRequest instanceof {{ method.input_type }}
@@ -114,7 +114,7 @@ const {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape = (
   return reboot_api.validate(
     "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request",
     api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
-    reboot_api.convertFromProtobuf(
+    reboot_api.protoToZod(
       api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
       request
     )
@@ -143,7 +143,7 @@ const {{ state.proto.name }}{{ method.proto.name }}RequestToProtobuf = (
     ? partialRequest
     {% if options.proto.zod %}
     : new {{ method.input_type }}().fromJson(
-      reboot_api.convertToProtobufJson(
+      reboot_api.zodToProtoJson(
         api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
         reboot_api.validate(
           "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request",
@@ -162,7 +162,7 @@ const {{ state.proto.name }}{{ method.proto.name }}RequestToProtobuf = (
 const {{ state.proto.name }}{{ method.proto.name }}ResponseFromProtobufShape = (
   partialResponse: protobuf_es.PartialMessage<{{ method.output_type }}>
 ) => {
-  // TOOD: update `convertFromProtobuf()` to actually work from
+  // TOOD: update `protoToZod()` to actually work from
   // any objects that match the shape, not just protobuf instances,
   // and then we won't need to first call `fromJson()` here.
   const response = partialResponse instanceof {{ method.output_type }}
@@ -173,7 +173,7 @@ const {{ state.proto.name }}{{ method.proto.name }}ResponseFromProtobufShape = (
   return reboot_api.validate(
     "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response",
     api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
-    reboot_api.convertFromProtobuf(
+    reboot_api.protoToZod(
       api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
       response
     )
@@ -190,7 +190,7 @@ const {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf = (
     ? partialResponse
     {% if options.proto.zod %}
     : new {{ method.output_type }}().fromJson(
-      reboot_api.convertToProtobufJson(
+      reboot_api.zodToProtoJson(
         api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
         reboot_api.validate(
           "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response",
@@ -355,7 +355,7 @@ export class {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_c
     } else {
       {% if method.options.errors | length != 0 %}
       this.#error = {{ pb_name }}.{{ client.proto.state_name }}{{ method.proto.name }}Errors.fromJson(
-        reboot_api.convertToProtobufJson(
+        reboot_api.zodToProtoJson(
           {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
           reboot_api.validate(
             "api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors",
@@ -397,7 +397,7 @@ export class {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_c
     {% if options.proto.zod %}
     {% if method.options.errors | length != 0 %}
     if (this.#error instanceof {{ pb_name }}.{{ client.proto.state_name }}{{ method.proto.name }}Errors) {
-      return reboot_api.convertFromProtobuf(
+      return reboot_api.protoToZod(
         {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
         this.#error
       );
