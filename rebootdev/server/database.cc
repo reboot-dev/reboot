@@ -2924,65 +2924,12 @@ std::set<std::string> DatabaseService::RecoverIdempotentMutations(
       response,
       batch_size);
 
+  std::cout << "total_idempotent_mutations: " << total_idempotent_mutations << std::endl;
+
   return committed_idempotency_keys;
 }
 
 ////////////////////////////////////////////////////////////////////////
-
-std::string MigrateStateRef(
-    const std::string& state_tag,
-    std::string state_ref) {
-  if (state_ref.find(state_tag) != std::string::npos) {
-    // The state_ref already contains the state tag, and so has already
-    // been migrated.
-    return state_ref;
-  }
-  std::replace(state_ref.begin(), state_ref.end(), '/', '\\');
-  return fmt::format("{}:{}", state_tag, state_ref);
-}
-
-expected<const std::string*> GetStateTag(
-    const google::protobuf::Map<std::string, std::string>&
-        state_tags_by_state_type,
-    const std::string& state_type,
-    const std::string& position) {
-  auto it = state_tags_by_state_type.find(state_type);
-  if (it != state_tags_by_state_type.end()) {
-    return &it->second;
-  }
-
-  if (state_type.rfind("Methods") == state_type.length() - 7) {
-    it = state_tags_by_state_type.find(
-        state_type.substr(0, state_type.size() - 7));
-    if (it != state_tags_by_state_type.end()) {
-      return &it->second;
-    }
-  }
-
-  return make_unexpected(fmt::format(
-      "Unknown state type in position {}: {}",
-      position,
-      state_type));
-}
-
-expected<void> MaybeMigrateTaskId(
-    const google::protobuf::Map<std::string, std::string>&
-        state_tags_by_state_type,
-    TaskId* task_id) {
-  auto state_tag = GetStateTag(
-      state_tags_by_state_type,
-      task_id->state_type(),
-      "task_id");
-  if (!state_tag.has_value()) {
-    return make_unexpected(fmt::format(
-        "Unknown state type for task: {}",
-        state_tag.error()));
-  }
-  task_id->set_state_ref(
-      MigrateStateRef(*state_tag.value(), task_id->state_ref()));
-  return {};
-}
-
 
 // This migration deletes Tasks which did not have `Any` response values
 // (i.e. from before #2580).
