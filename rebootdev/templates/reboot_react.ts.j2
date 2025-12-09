@@ -1111,6 +1111,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
         event,
         promise,
         used: false,
+		scheduledUnuseTimeouts: 0,
         setResponses: {},
         setIsLoadings: {},
         setStatuses: {},
@@ -1282,10 +1283,20 @@ class {{ client.proto.state_name | to_camel }}Instance {
     delete reader.setIsLoadings[id];
     delete reader.setStatuses[id];
 
+    // Schedule a timeout to delete and abort this reader if we're the last user.
+	// We need a timeout because with strict mode turned on we can't remove
+	// the reader right away otherwise we won't have a stable event and promise.
+	// We use 3 seconds but may need to make that configurable depending on
+	// the application.
     if (Object.values(reader.setResponses).length === 0) {
-      delete this.use{{ method.proto.name | to_camel }}Readers[requestHash];
-      reader.abortController.abort();
-    }
+	  reader.scheduledUnuseTimeouts += 1;
+	  setTimeout(() => {
+	    reader.scheduledUnuseTimeouts -= 1;
+	    if (reader.scheduledUnuseTimeouts === 0 && Object.values(reader.setResponses).length === 0) {
+          delete this.use{{ method.proto.name | to_camel }}Readers[requestHash];
+          reader.abortController.abort();
+        }
+	  }, 3000);
   }
 
   {% endif %}
