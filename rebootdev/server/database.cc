@@ -240,6 +240,7 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   // if necessary.
   expected<void> MaybeMigratePersistence(const RecoverRequest& request);
   expected<void> MigratePersistence2To3(const RecoverRequest& request);
+  expected<void> MigratePersistence3To4(const RecoverRequest& request);
 
   // Lookup a rocksdb column family handle for the specified state type,
   // or fail if no such column family exists for the state type.
@@ -458,18 +459,22 @@ std::string_view GetStateRefFromActorStateKey(
 
 ////////////////////////////////////////////////////////////////////////
 
-#define TASK_KEY_PREFIX "task"
+// To ensure that we can handle failures during a migration we need to
+// differentiate the key prefix.
+#define TASK_KEY_PREFIX_V3 "task"
+#define TASK_KEY_PREFIX "task-v4"
 
-std::string MakeTaskKey(const TaskId& task_id) {
+std::string MakeTaskKey(const Task::Status& status, const TaskId& task_id) {
   return fmt::format(
-      TASK_KEY_PREFIX ":{}:{}",
+      TASK_KEY_PREFIX ":{}:{}:{}",
+      Task::Status_Name(status),
       task_id.state_ref(),
       task_id.task_uuid());
 }
 
 ////////////////////////////////////////////////////////////////////////
 
-#define CURRENT_PERSISTENCE_VERSION 3
+#define CURRENT_PERSISTENCE_VERSION 4
 
 constexpr std::string_view kPersistenceVersionKey = "persistence_version";
 constexpr std::string_view kServerInfoKey = "server_info";
@@ -738,15 +743,21 @@ std::string MakeLegacyTransactionPreparedKey(const UUID& transaction_id) {
 
 ////////////////////////////////////////////////////////////////////////
 
-#define IDEMPOTENT_MUTATION_KEY_PREFIX "idempotent-mutation"
+// To ensure that we can handle failures during a migration we need to
+// differentiate the key prefix.
+#define IDEMPOTENT_MUTATION_KEY_PREFIX_V3 "idempotent-mutation"
+#define IDEMPOTENT_MUTATION_KEY_PREFIX "idempotent-mutation-v4"
 
 // Returns a key for storing in rocksdb that represents an idempotent
 // mutation. We use the stringified UUID to make debugging easier.
 // TODO: Skip deserializing/reserializing the UUID in the sidecar, and
 // send it string encoded from the client.
-std::string MakeIdempotentMutationKey(const UUID& idempotency_key) {
+std::string MakeIdempotentMutationKey(
+    const std::string& state_ref,
+    const UUID& idempotency_key) {
   return fmt::format(
-      IDEMPOTENT_MUTATION_KEY_PREFIX ":{}",
+      IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}",
+      state_ref,
       idempotency_key.toString());
 }
 
@@ -1520,7 +1531,12 @@ grpc::Status DatabaseService::Load(
     }
 
     column_families.push_back(*column_family_handle);
-    keys.push_back(MakeTaskKey(task_id));
+
+    // We don't know the status of this task, so we'll try and fetch
+    // it in all possible statuses.
+    keys.push_back(MakeTaskKey(Task::UNKNOWN, task_id));
+    keys.push_back(MakeTaskKey(Task::PENDING, task_id));
+    keys.push_back(MakeTaskKey(Task::COMPLETED, task_id));
   }
 
   // We should add a column family for every key. Just to be sure:
@@ -1724,7 +1740,10 @@ grpc::Status DatabaseService::Store(
         return make_unexpected(column_family_handle.error());
       }
 
-      const std::string& task_key = MakeTaskKey(task.task_id());
+      CHECK(task.status() == Task::PENDING || task.status() == Task::COMPLETED);
+
+      const std::string& task_key = MakeTaskKey(task.status(), task.task_id());
+
       std::string serialized_task;
       if (!task.SerializeToString(&serialized_task)) {
         return make_unexpected(fmt::format(
@@ -1741,6 +1760,20 @@ grpc::Status DatabaseService::Store(
         // Since the goal is to make all these updates
         // atomically we must fail if we run into any errors.
         return status;
+      }
+
+      // Also need to delete the pending task if it was already stored
+      // in the database.
+      if (task.status() == Task::COMPLETED) {
+        status = batch.Delete(
+            *column_family_handle,
+            rocksdb::Slice(MakeTaskKey(Task::PENDING, task.task_id())));
+
+        if (!status.ok()) {
+          // Since the goal is to make all these updates
+          // atomically we must fail if we run into any errors.
+          return status;
+        }
       }
     }
 
@@ -1782,7 +1815,9 @@ grpc::Status DatabaseService::Store(
               request->idempotent_mutation().state_type());
 
       const std::string& idempotent_mutation_key =
-          MakeIdempotentMutationKey(*idempotency_key);
+          MakeIdempotentMutationKey(
+              request->idempotent_mutation().state_ref(),
+              *idempotency_key);
 
       std::string idempotent_mutation_bytes;
       if (!request->idempotent_mutation().SerializeToString(
@@ -2450,18 +2485,20 @@ std::set<std::string> DatabaseService::RecoverTasks(
 
     // TODO: investigate using "prefix seek" for better performance, see:
     // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
-    iterator->Seek(rocksdb::Slice(TASK_KEY_PREFIX));
+    iterator->Seek(rocksdb::Slice(TASK_KEY_PREFIX ":PENDING"));
 
     while (iterator->Valid()
-           && iterator->key().ToStringView().find(TASK_KEY_PREFIX) == 0) {
+           && iterator->key().ToStringView().find(TASK_KEY_PREFIX ":PENDING")
+               == 0) {
       Task task;
       CHECK(
           task.ParseFromArray(
               iterator->value().data(),
               iterator->value().size()));
 
-      if (task.status() == Task::PENDING
-          && BelongsToShard(
+      CHECK_EQ(task.status(), Task::PENDING);
+
+      if (BelongsToShard(
               task.task_id().state_type(),
               task.task_id().state_ref(),
               shard_ids)) {
@@ -2924,8 +2961,6 @@ std::set<std::string> DatabaseService::RecoverIdempotentMutations(
       response,
       batch_size);
 
-  std::cout << "total_idempotent_mutations: " << total_idempotent_mutations << std::endl;
-
   return committed_idempotency_keys;
 }
 
@@ -2975,6 +3010,182 @@ expected<void> DatabaseService::MigratePersistence2To3(
   return WritePersistenceVersion(db_.get(), 3);
 }
 
+// This migration:
+//
+// 1. Renames the idempotent mutation keys so that they
+//    are easier to recover per state ref.
+//
+// 2. Renames task keys so we can just recover pending tasks.
+expected<void> DatabaseService::MigratePersistence3To4(
+    const RecoverRequest& request) {
+  for (rocksdb::ColumnFamilyHandle* column_family_handle :
+       column_family_handles_) {
+    if (column_family_handle->GetName() == "default") {
+      continue;
+    }
+
+    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
+        db_->NewIterator(
+            NonPrefixIteratorReadOptions(),
+            column_family_handle)));
+
+    // To do the rename atomically we need to use a write batch. We
+    // also want to batch writes together because for large enough
+    // databases doing a write for every single idempotent mutation or
+    // task is prohibitively expensive
+    rocksdb::WriteBatch batch;
+
+    size_t entries = 0;
+
+    REBOOT_DATABASE_LOG(1)
+        << "Migrating idempotent mutations for '"
+        << column_family_handle->GetName() << "'";
+
+    // TODO: investigate using "prefix seek" for better performance, see:
+    // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
+    iterator->Seek(rocksdb::Slice(IDEMPOTENT_MUTATION_KEY_PREFIX_V3 ":"));
+
+    // Helper to determine if the iterator is still valid.
+    std::function<bool()> valid = [&]() {
+      return iterator->Valid()
+          && iterator->key()
+                 .ToStringView()
+                 .find(IDEMPOTENT_MUTATION_KEY_PREFIX_V3 ":")
+          == 0;
+    };
+
+    while (valid()) {
+      IdempotentMutation idempotent_mutation;
+
+      CHECK(idempotent_mutation.ParseFromArray(
+          iterator->value().data(),
+          iterator->value().size()));
+
+      Try<UUID> idempotency_key = UUID::fromBytes(
+          idempotent_mutation.key());
+      if (idempotency_key.isError()) {
+        return make_unexpected(idempotency_key.error());
+      }
+
+      const std::string& idempotent_mutation_key =
+          MakeIdempotentMutationKey(
+              idempotent_mutation.state_ref(),
+              *idempotency_key);
+
+      rocksdb::Status status = batch.Put(
+          column_family_handle,
+          rocksdb::Slice(idempotent_mutation_key),
+          iterator->value());
+
+      if (!status.ok()) {
+        return make_unexpected(fmt::format(
+            "Failed to rename idempotent mutation: {}",
+            status.ToString()));
+      }
+
+      status = batch.Delete(
+          column_family_handle,
+          iterator->key());
+
+      if (!status.ok()) {
+        return make_unexpected(fmt::format(
+            "Failed to rename idempotent mutation key: {}",
+            status.ToString()));
+      }
+
+      entries += 1;
+
+      iterator->Next();
+
+      // Check if we don't have any more to migrate or if we've hit
+      // our batch size and should do a write.
+      if (!valid() || batch.GetDataSize() == (32 * 1024 * 1024)) { // 32 MB
+        // Write the batch then instantiate a new one.
+        status = db_->Write(DefaultWriteOptions(), &batch);
+
+        if (!status.ok()) {
+          return make_unexpected(fmt::format(
+              "Failed to rename idempotent mutation key(s): {}",
+              status.ToString()));
+        }
+
+        batch = rocksdb::WriteBatch();
+
+        REBOOT_DATABASE_LOG(1)
+            << "Migrated " << entries << " idempotent mutation(s)";
+      }
+    }
+
+    CHECK_EQ(batch.Count(), 0) << "Should have a new batch";
+
+    entries = 0;
+
+    REBOOT_DATABASE_LOG(1)
+        << "Migrating tasks for '"
+        << column_family_handle->GetName() << "'";
+
+    // TODO: investigate using "prefix seek" for better performance, see:
+    // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
+    iterator->Seek(rocksdb::Slice(TASK_KEY_PREFIX_V3 ":"));
+
+    valid = [&]() {
+      return iterator->Valid()
+          && iterator->key().ToStringView().find(TASK_KEY_PREFIX_V3 ":") == 0;
+    };
+
+    while (valid()) {
+      Task task;
+      CHECK(
+          task.ParseFromArray(
+              iterator->value().data(),
+              iterator->value().size()));
+
+      rocksdb::Status status = batch.Put(
+          column_family_handle,
+          rocksdb::Slice(MakeTaskKey(task.status(), task.task_id())),
+          iterator->value());
+
+      if (!status.ok()) {
+        return make_unexpected(fmt::format(
+            "Failed to rename task key: {}",
+            status.ToString()));
+      }
+
+      status = batch.Delete(
+          column_family_handle,
+          iterator->key());
+
+      if (!status.ok()) {
+        return make_unexpected(fmt::format(
+            "Failed to rename task key: {}",
+            status.ToString()));
+      }
+
+      entries += 1;
+
+      iterator->Next();
+
+      if (!valid() || batch.GetDataSize() == (32 * 1024 * 1024)) { // 32 MB
+        // Write the batch then instantiate a new one.
+        status = db_->Write(DefaultWriteOptions(), &batch);
+
+        if (!status.ok()) {
+          return make_unexpected(fmt::format(
+              "Failed to rename task key(s): {}",
+              status.ToString()));
+        }
+
+        batch = rocksdb::WriteBatch();
+
+        REBOOT_DATABASE_LOG(1) << "Migrated " << entries << " task(s)";
+      }
+    }
+  }
+
+  // Finally, update the persistence version.
+  return WritePersistenceVersion(db_.get(), 4);
+}
+
 expected<void> DatabaseService::MaybeMigratePersistence(
     const RecoverRequest& request) {
   // Read the persistence version from the default column family.
@@ -3017,12 +3228,17 @@ expected<void> DatabaseService::MaybeMigratePersistence(
       << "Persistence version " << version << " is no longer supported";
 
   for (; version < CURRENT_PERSISTENCE_VERSION; version++) {
-    REBOOT_DATABASE_LOG(0)
-        << "Migrating persistence from version { " << version << " }";
+    REBOOT_DATABASE_LOG(1)
+        << "Migrating persistence from version " << version;
     expected<void> migrate;
     switch (version) {
       case 2:
         migrate = MigratePersistence2To3(request);
+        REBOOT_DATABASE_LOG(1)
+            << "Migrated persistence to version " << version;
+        break;
+      case 3:
+        migrate = MigratePersistence3To4(request);
         break;
       default:
         LOG(FATAL) << "Unreachable";
@@ -3156,6 +3372,8 @@ grpc::Status DatabaseService::Recover(
   // (1) Recover tasks _before_ recovering transactions because
   // transactions need to know the recovered committed tasks to
   // recover uncommitted tasks.
+  REBOOT_DATABASE_LOG(1) << "Recovering tasks";
+
   std::set<std::string> committed_task_uuids = RecoverTasks(
       *responses,
       shard_ids);
@@ -3164,10 +3382,14 @@ grpc::Status DatabaseService::Recover(
   // transactions because transactions need to know the
   // recovered committed idempotent mutations to recover
   // uncommitted idempotent mutations.
+  REBOOT_DATABASE_LOG(1) << "Recovering idempotent mutations";
+
   std::set<std::string> committed_idempotent_mutations =
       RecoverIdempotentMutations(*responses, shard_ids);
 
   // (3) Recover transactions.
+  REBOOT_DATABASE_LOG(1) << "Recovering transactions";
+
   expected<void> recover_transactions = RecoverTransactions(
       *responses,
       committed_task_uuids,
