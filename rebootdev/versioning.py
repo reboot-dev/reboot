@@ -1,13 +1,48 @@
 """
-Tooling to help detect versioning issues with Reboot generated code.
+Tooling to help detect versioning issues with Reboot code.
 
-NOTE: this module's exported interface MUST STAY BACKWARDS COMPATIBLE between
-      releases; it is used by old generated Reboot code to detect versioning
-      issues relative to newer Reboot libraries.
+NOTE: this module's exported interface MUST STAY BACKWARDS COMPATIBLE
+      between releases; it is used by old generated Reboot code to
+      detect versioning issues relative to newer Reboot libraries.
 """
 
 from rebootdev.aio.exceptions import InputError
 from rebootdev.version import REBOOT_VERSION
+
+
+def version_less_than(version_a: str, version_b: str) -> bool:
+    """
+    Returns True if `version_a` is less than `version_b`.
+
+    Compares semantic version strings numerically by their components
+    (major.minor.patch).
+
+    An empty `version_a` is treated as the lowest possible version
+    (always less than any non-empty version). This provides backwards
+    compatibility for configurations that don't specify a version.
+
+    Raises:
+        ValueError: If either version doesn't have exactly 3 parts
+        (except empty `version_a`, which is allowed for backwards
+        compatibility).
+    """
+    # Treat empty version_a as the lowest possible version.
+    if not version_a:
+        return bool(version_b)
+
+    parts_a = [int(x) for x in version_a.split('.')]
+    parts_b = [int(x) for x in version_b.split('.')]
+
+    if len(parts_a) != 3:
+        raise ValueError(
+            f"Version '{version_a}' must have exactly 3 parts (major.minor.patch)"
+        )
+    if len(parts_b) != 3:
+        raise ValueError(
+            f"Version '{version_b}' must have exactly 3 parts (major.minor.patch)"
+        )
+
+    return parts_a < parts_b
 
 
 class IncompatibleVersionError(InputError):
