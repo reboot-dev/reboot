@@ -6,6 +6,7 @@ import opentelemetry.propagate
 import uuid
 from dataclasses import dataclass
 from rebootdev.aio.call import validate_ascii
+from rebootdev.aio.caller_id import CallerID
 from rebootdev.aio.internals.contextvars import get_application_id
 from rebootdev.aio.types import (
     ApplicationId,
@@ -119,11 +120,11 @@ class Headers:
 
     cookie: Optional[str] = None
 
-    # Contains a "caller ID" string that encodes the identity of the
-    # calling application. Note this identifies the _application_
-    # that called, but it doesn't identify the user on whose behalf
-    # the call was made - that information would be in the bearer token.
-    caller_id: Optional[str] = None
+    # Contains a "caller ID" that encodes the identity of the calling
+    # application. Note this identifies the _application_ that called,
+    # but it doesn't identify the user on whose behalf the call was
+    # made - that information would be in the bearer token.
+    caller_id: Optional[CallerID] = None
 
     # OpenTelemetry W3C Trace Context headers for manual span context
     # propagation when not using opentelemetry's automatic gRPC interceptors.
@@ -284,7 +285,10 @@ class Headers:
 
         cookie: Optional[str] = extract_maybe(COOKIE_HEADER)
 
-        caller_id: Optional[str] = extract_maybe(CALLER_ID_HEADER)
+        caller_id: Optional[CallerID] = extract_maybe(
+            CALLER_ID_HEADER,
+            convert=CallerID.parse,
+        )
 
         traceparent: Optional[str] = extract_maybe(TRACEPARENT_HEADER)
         tracestate: Optional[str] = extract_maybe(TRACESTATE_HEADER)
@@ -383,7 +387,7 @@ class Headers:
 
         def maybe_add_caller_id_header() -> GrpcMetadata | tuple[()]:
             if self.caller_id is not None:
-                return ((CALLER_ID_HEADER, self.caller_id),)
+                return ((CALLER_ID_HEADER, str(self.caller_id)),)
             return ()
 
         return (

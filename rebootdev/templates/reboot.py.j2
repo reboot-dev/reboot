@@ -1770,15 +1770,14 @@ class _{{ client.proto.state_name }}Stub(IMPORT_reboot_aio_stubs.Stub):
         #
         # In the case of `ExternalContext`, however, its `bearer_token` was set specifically
         # by the developer for the purpose of making these calls.
-        caller_id: IMPORT_typing.Optional[str] = None
+        caller_id: IMPORT_typing.Optional[IMPORT_reboot_aio_caller_id.CallerID] = None
         if isinstance(context, IMPORT_reboot_aio_external.ExternalContext):
             # Note that only `ExternalContext` even has a `bearer_token` field.
             bearer_token = context.bearer_token
             # If the creator of the `ExternalContext` set an explicit caller ID, obey it.
             caller_id = context.caller_id
         else:
-            caller_id = IMPORT_reboot_aio_caller_id.make_caller_id(
-                space_id=None,
+            caller_id = IMPORT_reboot_aio_caller_id.CallerID(
                 application_id=context.application_id,
             )
 
@@ -2846,10 +2845,9 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 headers = IMPORT_reboot_aio_headers.Headers(
                     application_id=context.application_id,
                     state_ref=context._state_ref,
-                    caller_id = IMPORT_reboot_aio_caller_id.make_caller_id(
-                        space_id=None,
+                    caller_id=IMPORT_reboot_aio_caller_id.CallerID(
                         application_id=context.application_id,
-                    )
+                    ),
                 )
 
                 metadata += headers.to_grpc_metadata()
@@ -4297,7 +4295,7 @@ class {{ client.proto.state_name }}:
 
                 __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
                 __bearer_token__: IMPORT_typing.Optional[str] = None
-                __caller_id__: IMPORT_typing.Optional[str] = None
+                __caller_id__: IMPORT_typing.Optional[IMPORT_reboot_aio_caller_id.CallerID] = None
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
@@ -4323,8 +4321,7 @@ class {{ client.proto.state_name }}:
                     __metadata__ = ()
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.Context):
-                    __caller_id__ = IMPORT_reboot_aio_caller_id.make_caller_id(
-                        space_id=None,
+                    __caller_id__ = IMPORT_reboot_aio_caller_id.CallerID(
                         application_id=__context__.application_id,
                     )
                     if __this__._application_id is None:

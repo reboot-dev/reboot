@@ -17,7 +17,6 @@ from rbt.v1alpha1 import database_pb2, errors_pb2, react_pb2, react_pb2_grpc
 from rebootdev.aio.aborted import SystemAborted, is_grpc_retryable_exception
 from rebootdev.aio.auth import Auth
 from rebootdev.aio.backoff import Backoff
-from rebootdev.aio.caller_id import parse_caller_id
 from rebootdev.aio.headers import (
     TRANSACTION_PARTICIPANTS_HEADER,
     TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER,
@@ -875,8 +874,7 @@ class Context(ABC, IdempotencyManager):
         """
         if self._headers.caller_id is None:
             return False
-        _, caller_application_id = parse_caller_id(self._headers.caller_id)
-        return caller_application_id == self.application_id
+        return self._headers.caller_id.application_id == self.application_id
 
     @property
     def transaction_ids(self) -> Optional[list[uuid.UUID]]:

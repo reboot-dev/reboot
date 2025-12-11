@@ -1,6 +1,7 @@
 import grpc.aio
 import uuid
 from google.protobuf.message import Message
+from rebootdev.aio.caller_id import CallerID
 from rebootdev.aio.idempotency import IdempotencyManager
 from rebootdev.aio.internals.channel_manager import (
     LegacyGrpcChannel,
@@ -31,7 +32,7 @@ class ExternalContext(IdempotencyManager):
         idempotency_seed: Optional[uuid.UUID] = None,
         idempotency_required: bool = False,
         idempotency_required_reason: Optional[str] = None,
-        caller_id: Optional[str] = None,
+        caller_id: Optional[CallerID] = None,
     ):
         if gateway is not None or secure_channel is not None:
             raise ValueError(
@@ -126,7 +127,7 @@ class ExternalContext(IdempotencyManager):
         return self._bearer_token
 
     @property
-    def caller_id(self) -> Optional[str]:
+    def caller_id(self) -> Optional[CallerID]:
         return self._caller_id
 
     def legacy_grpc_channel(self) -> grpc.aio.Channel:

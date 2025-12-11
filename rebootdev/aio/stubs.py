@@ -8,7 +8,7 @@ from grpc.aio import AioRpcError
 from log.log import get_logger
 from rebootdev.aio.aborted import Aborted
 from rebootdev.aio.backoff import Backoff
-from rebootdev.aio.caller_id import make_caller_id
+from rebootdev.aio.caller_id import CallerID
 from rebootdev.aio.contexts import Context, Participants, ReaderContext
 from rebootdev.aio.headers import IDEMPOTENCY_KEY_HEADER, Headers
 from rebootdev.aio.idempotency import IdempotencyManager
@@ -163,7 +163,7 @@ class Stub:
         state_ref: StateRef,
         context: Optional[Context],
         bearer_token: Optional[str],
-        caller_id: Optional[str],
+        caller_id: Optional[CallerID],
     ):
         self._channel_manager = channel_manager
         self._idempotency_manager = idempotency_manager
@@ -177,10 +177,7 @@ class Stub:
         transaction_coordinator_state_ref: Optional[StateRef] = None
 
         if context is not None:
-            caller_id = make_caller_id(
-                space_id=None,
-                application_id=context.application_id,
-            )
+            caller_id = CallerID(application_id=context.application_id)
 
             # For the time being, all traffic is intra-application. The
             # target application is therefore the same as the calling

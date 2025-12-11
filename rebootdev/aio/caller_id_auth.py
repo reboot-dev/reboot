@@ -2,11 +2,7 @@ import rbt.v1alpha1.errors_pb2
 from log.log import get_logger
 from rebootdev.aio.auth import Auth, token_verifiers
 from rebootdev.aio.auth.authorizers import Authorizer
-from rebootdev.aio.caller_id import (
-    APPLICATION_ID_KEY,
-    SPACE_ID_KEY,
-    parse_caller_id,
-)
+from rebootdev.aio.caller_id import APPLICATION_ID_KEY, SPACE_ID_KEY
 from rebootdev.aio.contexts import ReaderContext
 from rebootdev.aio.types import ApplicationId, SpaceId
 from typing import Optional
@@ -26,22 +22,13 @@ class TokenVerifier(token_verifiers.TokenVerifier):
         if caller_id is None:
             return None
 
-        try:
-            space_id, application_id = parse_caller_id(caller_id)
-        except ValueError as e:
-            logger.warning(
-                f"Invalid caller ID in `x-reboot-caller-id` header: "
-                f"'{caller_id}': {e}"
-            )
-            return None
-
         return Auth(
             # No user ID; the caller isn't authenticated as a human but
             # as a service.
             user_id=None,
             properties={
-                SPACE_ID_KEY: space_id,
-                APPLICATION_ID_KEY: application_id,
+                SPACE_ID_KEY: caller_id.space_id,
+                APPLICATION_ID_KEY: caller_id.application_id,
             },
         )
 

@@ -62,6 +62,7 @@ py_library(
         requirement("grpcio"),
         requirement("opentelemetry-api"),
         ":call_py",
+        ":caller_id_py",
         ":types_py",
         "@com_github_reboot_dev_reboot//rebootdev:time_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio/internals:contextvars_py",
@@ -150,6 +151,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":aborted_py",
+        ":caller_id_py",
         ":contexts_py",
         ":headers_py",
         ":idempotency_py",
@@ -194,6 +196,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("grpcio"),
+        ":caller_id_py",
         ":contexts_py",
         ":idempotency_py",
         ":resolvers_py",
