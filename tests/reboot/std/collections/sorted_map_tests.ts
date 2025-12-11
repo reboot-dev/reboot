@@ -1,6 +1,7 @@
 import { Application, Reboot } from "@reboot-dev/reboot";
-import sortedMap, {
+import {
   SortedMap,
+  sortedMapLibrary,
 } from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
@@ -15,9 +16,9 @@ test("use std servicer", async (t) => {
     await rbt.stop();
   });
 
-  await t.test("use std servicer", async (t) => {
+  await t.test("use std library", async (t) => {
     const config = await rbt.up(
-      new Application({ servicers: sortedMap.servicers() })
+      new Application({ libraries: [sortedMapLibrary()] })
     );
 
     const context = rbt.createExternalContext("test", {

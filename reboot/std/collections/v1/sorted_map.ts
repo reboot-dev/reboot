@@ -9,10 +9,13 @@ export default {
       },
     ];
   },
-  sortedMapLibrary: (): NativeLibrary => {
-    return {
-      nativeLibraryModule: "reboot.std.collections.v1.sorted_map",
-      nativeLibraryFunction: "sorted_map_library",
-    };
-  },
 };
+
+export const SORTED_MAP_LIBRARY_NAME = "reboot.std.collections.v1.sorted_map";
+
+export function sortedMapLibrary(): NativeLibrary {
+  return {
+    nativeLibraryModule: "reboot.std.collections.v1.sorted_map",
+    nativeLibraryFunction: "sorted_map_library",
+  };
+}
