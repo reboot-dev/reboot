@@ -222,21 +222,7 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       std::shared_ptr<rocksdb::Statistics> statistics,
       std::vector<rocksdb::ColumnFamilyHandle*>&& column_family_handles,
       std::unique_ptr<rocksdb::TransactionDB>&& db,
-      const ServerInfo& server_info)
-    : state_directory_(state_directory),
-      // The application metadata is serialized proto bytes stored in a file,
-      // not in RocksDB. This is for backwards compatibility with previous
-      // Reboot versions.
-      metadata_path_(state_directory / "__metadata"),
-      statistics_(statistics),
-      column_family_handles_(std::move(column_family_handles)),
-      db_(std::move(db)),
-      server_info_(server_info),
-      shard_for_state_ref_(SHARD_FOR_STATE_REF_CAPACITY) {
-    CHECK(server_info_.shard_infos_size() > 0)
-        << "Server info must contain at least one shard.";
-  }
-
+      const ServerInfo& server_info);
 
   // Migrate from previous persistence versions to the current version,
   // if necessary.
@@ -396,6 +382,58 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
 
 ////////////////////////////////////////////////////////////////////////
 
+// Gets the actor id from a 'rocksdb::Transaction' based on the
+// naming schema used in 'MakeTransactionName'.
+std::string GetStateRefFromTransaction(const rocksdb::Transaction& txn) {
+  const std::string& name = txn.GetName();
+  return name.substr(0, name.rfind(':'));
+}
+
+// Overload of 'GetStateRef' when we have a borrowable.
+std::string GetStateRefFromTransaction(
+    const stout::borrowed_ref<rocksdb::Transaction>& txn) {
+  return GetStateRefFromTransaction(*txn);
+}
+
+////////////////////////////////////////////////////////////////////////
+
+DatabaseService::DatabaseService(
+    const std::filesystem::path& state_directory,
+    std::shared_ptr<rocksdb::Statistics> statistics,
+    std::vector<rocksdb::ColumnFamilyHandle*>&& column_family_handles,
+    std::unique_ptr<rocksdb::TransactionDB>&& db,
+    const ServerInfo& server_info)
+  : state_directory_(state_directory),
+    // The application metadata is serialized proto bytes stored in a file,
+    // not in RocksDB. This is for backwards compatibility with previous
+    // Reboot versions.
+    metadata_path_(state_directory / "__metadata"),
+    statistics_(statistics),
+    column_family_handles_(std::move(column_family_handles)),
+    db_(std::move(db)),
+    server_info_(server_info),
+    shard_for_state_ref_(SHARD_FOR_STATE_REF_CAPACITY) {
+  CHECK(server_info_.shard_infos_size() > 0)
+      << "Server info must contain at least one shard.";
+
+  // We recover all prepared transactions here since every server
+  // will call `Recover()` on every startup and we only want to do
+  // it once. Also, while in production there won't be any other
+  // kinds of calls _before_ `Recover()`, there were tests
+  // introduced into 'tests/reboot/server/database_tests.cc' at some
+  // point that break that invariant, and thus the constructor is
+  // the only place we can do this before any other possible calls
+  // are made.
+  std::vector<rocksdb::Transaction*> txns;
+  db_->GetAllPreparedTransactions(&txns);
+  for (rocksdb::Transaction* txn : txns) {
+    std::string state_ref = GetStateRefFromTransaction(*txn);
+    txns_.emplace(state_ref, std::unique_ptr<rocksdb::Transaction>(txn));
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
 DatabaseService::~DatabaseService() {
   for (auto* column_family_handle : column_family_handles_) {
     rocksdb::Status status =
@@ -463,7 +501,10 @@ std::string_view GetStateRefFromActorStateKey(
 ////////////////////////////////////////////////////////////////////////
 
 // To ensure that we can handle failures during a migration we need to
-// differentiate the key prefix.
+// differentiate the key prefix. We only use a version suffix, i.e.,
+// `_V3` on the old one so that the code doesn't have a mix of
+// versions in it, it's only the migration code that uses the
+// suffixes.
 #define TASK_KEY_PREFIX_V3 "task"
 #define TASK_KEY_PREFIX "task-v4"
 
@@ -686,22 +727,6 @@ std::string GetTransactionId(
 
 ////////////////////////////////////////////////////////////////////////
 
-// Gets the actor id from a 'rocksdb::Transaction' based on the
-// naming schema used in 'MakeTransactionName'.
-std::string GetStateRef(
-    const stout::borrowed_ref<rocksdb::Transaction>& txn) {
-  const std::string& name = txn->GetName();
-  return name.substr(0, name.rfind(':'));
-}
-
-// Overload of 'GetStateRef' when we don't have a borrowable.
-std::string GetStateRef(const rocksdb::Transaction& txn) {
-  const std::string& name = txn.GetName();
-  return name.substr(0, name.rfind(':'));
-}
-
-////////////////////////////////////////////////////////////////////////
-
 #define TRANSACTION_PARTICIPANT_KEY_PREFIX "transaction-participant"
 
 // Returns a RocksDB key that represents a transaction participant.
@@ -747,7 +772,10 @@ std::string MakeLegacyTransactionPreparedKey(const UUID& transaction_id) {
 ////////////////////////////////////////////////////////////////////////
 
 // To ensure that we can handle failures during a migration we need to
-// differentiate the key prefix.
+// differentiate the key prefix. We only use a version suffix, i.e.,
+// `_V3` on the old one so that the code doesn't have a mix of
+// versions in it, it's only the migration code that uses the
+// suffixes.
 #define IDEMPOTENT_MUTATION_KEY_PREFIX_V3 "idempotent-mutation"
 #define IDEMPOTENT_MUTATION_KEY_PREFIX "idempotent-mutation-v4"
 
@@ -941,7 +969,7 @@ void DatabaseService::DeleteTransaction(
     expected<stout::borrowed_ref<rocksdb::Transaction>>&& txn) {
   // TODO: ensure `mutex_` is currently held by this thread.
 
-  auto iterator = txns_.find(GetStateRef(*txn));
+  auto iterator = txns_.find(GetStateRefFromTransaction(*txn));
   CHECK(iterator != std::end(txns_));
 
   // Before we erase we need to release the borrow so that it can be
@@ -1533,12 +1561,14 @@ grpc::Status DatabaseService::Load(
       continue;
     }
 
-    column_families.push_back(*column_family_handle);
-
     // We don't know the status of this task, so we'll try and fetch
-    // it in all possible statuses.
-    keys.push_back(MakeTaskKey(Task::UNKNOWN, task_id));
+    // it in all possible statuses we expect.
+    CHECK_EQ(Task::Status_descriptor()->value_count(), 3);
+
+    column_families.push_back(*column_family_handle);
     keys.push_back(MakeTaskKey(Task::PENDING, task_id));
+
+    column_families.push_back(*column_family_handle);
     keys.push_back(MakeTaskKey(Task::COMPLETED, task_id));
   }
 
@@ -2486,12 +2516,16 @@ std::set<std::string> DatabaseService::RecoverTasks(
             NonPrefixIteratorReadOptions(),
             column_family_handle)));
 
+    // Only want to recover pending tasks!
+    static const std::string& TASK_PENDING_KEY_PREFIX =
+        TASK_KEY_PREFIX ":" + Task::Status_Name(Task::PENDING);
+
     // TODO: investigate using "prefix seek" for better performance, see:
     // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
-    iterator->Seek(rocksdb::Slice(TASK_KEY_PREFIX ":PENDING"));
+    iterator->Seek(rocksdb::Slice(TASK_PENDING_KEY_PREFIX));
 
     while (iterator->Valid()
-           && iterator->key().ToStringView().find(TASK_KEY_PREFIX ":PENDING")
+           && iterator->key().ToStringView().find(TASK_PENDING_KEY_PREFIX)
                == 0) {
       Task task;
       CHECK(
@@ -2620,27 +2654,11 @@ void DatabaseService::RecoverTransactionIdempotentMutations(
 
 ////////////////////////////////////////////////////////////////////////
 
-std::once_flag db_get_all_prepared_transactions;
-
 expected<void> DatabaseService::RecoverTransactions(
     grpc::ServerWriter<RecoverResponse>& responses,
     const std::set<std::string>& committed_task_uuids,
     const std::set<std::string>& committed_idempotency_keys,
     const std::unordered_set<std::string>& shard_ids) {
-  // Since every server will call `Recover()` on every startup, this
-  // method may run many times but we only want to get all of the
-  // prepared transactions from the database once.
-  std::call_once(
-      db_get_all_prepared_transactions,
-      [this]() {
-        std::vector<rocksdb::Transaction*> txns;
-        db_->GetAllPreparedTransactions(&txns);
-        for (rocksdb::Transaction* txn : txns) {
-          std::string state_ref = GetStateRef(*txn);
-          txns_.emplace(state_ref, std::unique_ptr<rocksdb::Transaction>(txn));
-        }
-      });
-
   std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
       db_->NewIterator(NonPrefixIteratorReadOptions())));
 
@@ -2679,50 +2697,40 @@ expected<void> DatabaseService::RecoverTransactions(
       continue;
     }
 
-    Transaction& added_transaction = *response.add_participant_transactions();
-    added_transaction = transaction;
-
+    // We either have a previously prepared transaction that was
+    // restored when we called `GetAllPreparedTransactions()` in
+    // rocksdb or we crashed before the transaction was prepared and
+    // we need to begin a transaction that will later be aborted
+    // because any recovered transactions that are not prepared get
+    // aborted.
     expected<stout::borrowed_ref<rocksdb::Transaction>> txn =
-        LookupTransaction(
-            added_transaction.state_type(),
-            added_transaction.state_ref());
+        LookupOrBeginTransaction(transaction, /* store_participant = */ false);
 
-    if (txn.has_value()) {
-      // On multiple Recover() calls, transactions may no longer be prepared
-      // if they were committed/aborted since the previous recovery.
-      if ((*txn)->GetState() == rocksdb::Transaction::PREPARED) {
-        added_transaction.set_prepared(true);
+    CHECK(txn.has_value());
 
-        // Now recover any tasks for our actor that we'll need to dispatch if
-        // the transaction gets committed.
-        RecoverTransactionTasks(
-            committed_task_uuids,
-            added_transaction,
-            *txn);
+    if ((*txn)->GetState() == rocksdb::Transaction::PREPARED) {
+      transaction.set_prepared(true);
 
-        // Now recover any idempotent mutations for our actor that are part of
-        // the transaction.
-        RecoverTransactionIdempotentMutations(
-            committed_idempotency_keys,
-            added_transaction,
-            *txn);
-      } else {
-        // Transaction exists but is not prepared - skip it.
-        response.mutable_participant_transactions()->RemoveLast();
-        iterator->Next();
-        continue;
-      }
+      // Now recover any tasks for our actor that we'll need to dispatch if
+      // the transaction gets committed.
+      RecoverTransactionTasks(
+          committed_task_uuids,
+          transaction,
+          *txn);
+
+      // Now recover any idempotent mutations for our actor that are part of
+      // the transaction.
+      RecoverTransactionIdempotentMutations(
+          committed_idempotency_keys,
+          transaction,
+          *txn);
     } else {
-      txn = LookupOrBeginTransaction(
-          added_transaction,
-          /* store_participant = */ false);
-
-      if (!txn.has_value()) {
-        return make_unexpected(txn.error());
-      }
-
+      // Transaction just started when we called
+      // `LookupOrBeginTransaction()`!
       CHECK_EQ((*txn)->GetState(), rocksdb::Transaction::STARTED);
     }
+
+    response.add_participant_transactions()->CopyFrom(transaction);
 
     MaybeWriteAndClearResponse(
         responses,
