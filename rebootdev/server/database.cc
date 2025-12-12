@@ -24,6 +24,7 @@
 #include "rocksdb/table.h"
 #include "rocksdb/utilities/transaction_db.h"
 #include "stout/borrowable.h"
+#include "stout/cache.h"
 #include "stout/uuid.h"
 #include "tl/expected.hpp"
 
@@ -230,7 +231,8 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       statistics_(statistics),
       column_family_handles_(std::move(column_family_handles)),
       db_(std::move(db)),
-      server_info_(server_info) {
+      server_info_(server_info),
+      shard_for_state_ref_(SHARD_FOR_STATE_REF_CAPACITY) {
     CHECK(server_info_.shard_infos_size() > 0)
         << "Server info must contain at least one shard.";
   }
@@ -373,9 +375,10 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   // Cache of shard IDs for state refs, necessary because computing
   // the shard ID when you have 2^14 of them over and over again
   // really adds up!
-  //
-  // TODO: make this an actual least recently used cache!
-  std::unordered_map<std::string, std::string> shard_for_state_ref_;
+  Cache<std::string, std::string> shard_for_state_ref_;
+  // Cache capacity large enough to be helpful but not so large that
+  // it's more than O(10s of MB).
+  static const size_t SHARD_FOR_STATE_REF_CAPACITY = 8192;
 
   // We track ongoing transactions indexed by 'state_ref' because there should
   // only ever be a single transaction per actor and we want to be able to
@@ -3308,17 +3311,17 @@ std::string DatabaseService::GetShardForStateRef(
     std::string_view state_ref) {
   // Check if we have this cached.
   //
-  // TODO: use C++20 "heterogeneous lookup" to avoid making this
-  // string copy here.
+  // TODO: improve stout to support C++20 "heterogeneous lookup" to
+  // avoid needing to make a string copy here.
   std::string state_ref_copy(state_ref);
-  auto iterator = shard_for_state_ref_.find(state_ref_copy);
-  if (iterator != std::end(shard_for_state_ref_)) {
-    return iterator->second;
+  Option<std::string> cached_shard = shard_for_state_ref_.get(state_ref_copy);
+  if (cached_shard.isSome()) {
+    return cached_shard.get();
   }
 
   std::string shard = GetShardForHash(ComputeStateRefHash(state_ref));
 
-  shard_for_state_ref_[state_ref_copy] = shard;
+  shard_for_state_ref_.put(state_ref_copy, shard);
 
   return shard;
 }
