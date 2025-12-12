@@ -2,15 +2,12 @@
   "private": true,
   "dependencies": {
     "@reboot-dev/reboot-api": "workspace:*",
-    "react-dom": "^19.2.1",
     "@bufbuild/protobuf": "1.10.1",
     "@bufbuild/protoc-gen-es": "1.10.1",
     "@bufbuild/protoplugin": "1.10.1",
-    "@types/react": "^19.2.1",
     "@types/uuid": "^9.0.4",
     "@types/node": "20.11.5",
     "js-sha1": "0.7.0",
-    "react": "^19.2.1",
     "typescript": "5.4.5",
     "tslib": "^2.6.2",
     "uuid": "9.0.1",
@@ -18,5 +15,10 @@
     "chalk": "^4.1.2",
     "vitest": "^2.1.9",
     "zod": "^3.25.51"
+  },
+  "peerDependencies": {
+    "react": ">=18.2.0",
+    "react-dom": ">=18.2.0",
+    "@types/react": ">=18.2.22"
   }
 }

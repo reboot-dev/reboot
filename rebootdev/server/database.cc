@@ -314,7 +314,7 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   bool BelongsToShard(
       std::string_view state_type,
       std::string_view state_ref,
-      const std::unordered_set<std::string>& shard_ids) const;
+      const std::unordered_set<std::string>& shard_ids);
 
   // Helper function to compute SHA1 hash of the first component of a state_ref.
   std::string ComputeStateRefHash(std::string_view state_ref) const;
@@ -323,7 +323,7 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   std::string GetShardForHash(const std::string& hash_str) const;
 
   // Helper function to determine which shard owns a given state_ref.
-  std::string GetShardForStateRef(std::string_view state_ref) const;
+  std::string GetShardForStateRef(std::string_view state_ref);
 
   // Helper for sending a response to the client and clearing the batch.
   template <typename T>
@@ -368,6 +368,13 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
 
   // Server info containing shard information.
   ServerInfo server_info_;
+
+  // Cache of shard IDs for state refs, necessary because computing
+  // the shard ID when you have 2^14 of them over and over again
+  // really adds up!
+  //
+  // TODO: make this an actual least recently used cache!
+  std::unordered_map<std::string, std::string> shard_for_state_ref_;
 
   // We track ongoing transactions indexed by 'state_ref' because there should
   // only ever be a single transaction per actor and we want to be able to
@@ -3135,9 +3142,22 @@ std::string DatabaseService::GetShardForHash(
 
 // Helper function to determine which shard owns a given state_ref.
 std::string DatabaseService::GetShardForStateRef(
-    std::string_view state_ref) const {
-  std::string hash_str = ComputeStateRefHash(state_ref);
-  return GetShardForHash(hash_str);
+    std::string_view state_ref) {
+  // Check if we have this cached.
+  //
+  // TODO: use C++20 "heterogeneous lookup" to avoid making this
+  // string copy here.
+  std::string state_ref_copy(state_ref);
+  auto iterator = shard_for_state_ref_.find(state_ref_copy);
+  if (iterator != std::end(shard_for_state_ref_)) {
+    return iterator->second;
+  }
+
+  std::string shard = GetShardForHash(ComputeStateRefHash(state_ref));
+
+  shard_for_state_ref_[state_ref_copy] = shard;
+
+  return shard;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -3145,7 +3165,7 @@ std::string DatabaseService::GetShardForStateRef(
 bool DatabaseService::BelongsToShard(
     std::string_view state_type,
     std::string_view state_ref,
-    const std::unordered_set<std::string>& shard_ids) const {
+    const std::unordered_set<std::string>& shard_ids) {
   // We should always have shards configured.
   CHECK(!server_info_.shard_infos().empty())
       << "No shards configured - this should not happen";

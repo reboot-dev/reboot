@@ -992,6 +992,13 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             {% endif %}
             {% endif %}
             {% if not method.proto.server_streaming %}
+            {% if method.options.proto.kind == 'workflow' %}
+            # We should have an asyncio task and thus context per request,
+            # let's confirm this assumption by making sure that
+            # `__servicer__ is None`.
+            assert self._servicer.__servicer__.get() is None
+            self._servicer.__servicer__.set(self._servicer)
+            {% endif %}
             response = (
                 await self._servicer._{{ method.proto.name }}(
                     context=context,
@@ -1177,7 +1184,10 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             if context.state_id in ongoing_transaction_states:
                 del ongoing_transaction_states[context.state_id]
             {% endif %}
-            {% if not (method.options.proto.constructor or (options.proto.pydantic and method.options.proto.kind == 'transaction')) %}
+            {% if method.options.proto.kind == 'workflow' %}
+            self._servicer.__servicer__.set(None)
+            {% endif %}
+            {% if not (method.options.proto.constructor or (options.proto.pydantic and method.options.proto.kind in ['transaction', 'workflow'])) %}
             pass
             {% endif %}
 
@@ -2433,6 +2443,13 @@ class {{ state.proto.name }}Authorizer(
 class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
     Authorizer: IMPORT_typing.TypeAlias = {{ state.proto.name }}Authorizer
 
+    __servicer__: IMPORT_contextvars.ContextVar[IMPORT_typing.Optional[{{ state.proto.name }}BaseServicer]] = IMPORT_contextvars.ContextVar(
+        'Provides access to a servicer in the current asyncio context. '
+        'We need that to be able to do inline writes and reads inside '
+        'a workflow',
+        default=None,
+    )
+
     __service_names__ = [
         {% for service in state.services %}
         IMPORT_reboot_aio_types.ServiceName('{{ service.proto.full_name }}'),
@@ -3251,8 +3268,9 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     # method to be 'abstractmethod', so that new code that
     # doesn't implement it continues to work.
     # TODO: make it abstractmethod when renaming is done.
+    @classmethod
     async def {{ method.proto.name }}(
-        self,
+        cls,
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
         {% if method.has_non_none_request %}
         request: {{ state.proto.name}}.{{ method.proto.name }}Request,
@@ -3264,7 +3282,7 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         # code to be backwards compatible for some time and if a servicer
         # overrides the 'PascalCase' version - it will override that
         # method and will just work.
-        return await self.{{ method.proto.name | to_snake }}(
+        return await cls.{{ method.proto.name | to_snake }}(
             context,
             {% if method.has_non_none_request %}
             request,
@@ -3274,8 +3292,9 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     # To be backwards compatible during the renaming don't make this
     # method to be 'abstractmethod', so that existing code that
     # doesn't implement it continues to work.
+    @classmethod
     async def {{ method.proto.name | to_snake }}(
-        self,
+        cls,
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
         {% if method.has_non_none_request %}
         request: {{ state.proto.name}}.{{ method.proto.name }}Request,
@@ -3438,11 +3457,6 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         default=None,
     )
 
-    _workflow: IMPORT_contextvars.ContextVar[bool] = IMPORT_contextvars.ContextVar(
-        'Whether or not current context is executing a workflow',
-        default=False,
-    )
-
     # An instance of the derived class for each state.
     _instances: dict[str, {{ state.proto.name }}Servicer] = {}
 
@@ -3462,13 +3476,6 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
             raise RuntimeError(
                 "`state` property is only relevant within a `Servicer` method"
             )
-        workflow = {{ state.proto.name }}Servicer._workflow.get()
-        if workflow:
-            raise RuntimeError(
-                "`self.state` is not valid within a `workflow` because a "
-                "`workflow ` is not _atomic_; use "
-                "`await self.ref().read(context)` instead"
-            )
         return state
 
     @state.setter
@@ -3477,13 +3484,6 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         if state is None:
             raise RuntimeError(
                 "`state` property is only relevant within a `Servicer` method"
-            )
-        workflow = {{ state.proto.name }}Servicer._workflow.get()
-        if workflow:
-            raise RuntimeError(
-                "`self.state` is not valid within a `workflow` because a "
-                "`workflow ` is not _atomic_; use "
-                "`await self.ref().write(...)` instead"
             )
         {% if options.proto.pydantic %}
         for field_name, field_value in new_state.model_dump().items():
@@ -3499,8 +3499,15 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
     # method to be 'abstractmethod', so that new code that
     # doesn't implement it continues to work.
     # TODO: make it abstractmethod when renaming is done.
+    {% if method.options.proto.kind == 'workflow' %}
+    @classmethod
+    {% endif %}
     async def {{ method.proto.name }}(
+        {% if method.options.proto.kind == 'workflow' %}
+        cls,
+        {% else %}
         self,
+        {% endif %}
         {% if method.options.proto.kind == 'reader' %}
         context: IMPORT_reboot_aio_contexts.ReaderContext,
         {% elif method.options.proto.kind == 'writer' %}
@@ -3520,7 +3527,11 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         # code to be backwards compatible for some time and if a servicer
         # overrides the 'PascalCase' version - it will override that
         # method and will just work.
+        {% if method.options.proto.kind == 'workflow' %}
+        return await cls.{{ method.proto.name | to_snake }}(
+        {% else %}
         return await self.{{ method.proto.name | to_snake }}(
+        {% endif %}
             context,
             {% if method.has_non_none_request %}
             request,
@@ -3530,8 +3541,15 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
     # To be backwards compatible during the renaming don't make this
     # method to be 'abstractmethod', so that existing code that
     # doesn't implement it continues to work.
+    {% if method.options.proto.kind == 'workflow' %}
+    @classmethod
+    {% endif %}
     async def {{ method.proto.name | to_snake }}(
+        {% if method.options.proto.kind == 'workflow' %}
+        cls,
+        {% else %}
         self,
+        {% endif %}
         {% if method.options.proto.kind == 'reader' %}
         context: IMPORT_reboot_aio_contexts.ReaderContext,
         {% elif method.options.proto.kind == 'writer' %}
@@ -3697,31 +3715,27 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
-        {{ state.proto.name }}Servicer._workflow.set(True)
-        try:
-            # Wrap the call to the developer's method in a `span` so that it
-            # is traced using its fully-qualified Python name.
-            instance = self._instance(context.state_id)
-            with IMPORT_reboot_aio_tracing.span(
-                    state_name=f"{{ state.proto.full_name }}('{context.state_id}')",
-                    span_name=f"{IMPORT_reboot_aio_tracing.qualified_type_name(instance)}.{{ method.proto.name }}()",
-                    level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
-                    python_specific=True,
-            ):
-                {% if method.has_non_none_request %}
-                typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
-                {% endif %}
+        # Wrap the call to the developer's method in a `span` so that it
+        # is traced using its fully-qualified Python name.
+        instance = self._instance(context.state_id)
+        with IMPORT_reboot_aio_tracing.span(
+                state_name=f"{{ state.proto.full_name }}('{context.state_id}')",
+                span_name=f"{IMPORT_reboot_aio_tracing.qualified_type_name(instance)}.{{ method.proto.name }}()",
+                level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                python_specific=True,
+        ):
+            {% if method.has_non_none_request %}
+            typed_request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProto(request)
+            {% endif %}
 
-                return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(
-                    await instance.{{ method.proto.name }}(
-                        context,
-                        {% if method.has_non_none_request %}
-                        typed_request,
-                        {% endif %}
-                    )
+            return {{ state.proto.name }}{{ method.proto.name }}ResponseToProto(
+                await instance.{{ method.proto.name }}(
+                    context,
+                    {% if method.has_non_none_request %}
+                    typed_request,
+                    {% endif %}
                 )
-        finally:
-            {{ state.proto.name }}Servicer._workflow.set(False)
+            )
     {% endif %}
 
     {% endfor %}
@@ -6165,10 +6179,60 @@ class {{ client.proto.state_name }}:
     @classmethod
     def ref(
         cls,
+        {% if client.state is not none %}
+        state_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId] = None,
+        {% else %}
         state_id: IMPORT_reboot_aio_types.StateId,
+        {% endif %}
         *,
         bearer_token: IMPORT_typing.Optional[str] = None,
-    ) -> {{ client.proto.state_name }}.WeakReference[{{ client.proto.state_name }}.WeakReference._Schedule]:
+    ) -> {{ client.proto.state_name }}.WeakReference[{{ client.proto.state_name }}.WeakReference._Schedule] | {{ client.proto.state_name }}.WeakReference[{{ client.proto.state_name }}.WeakReference._WriterSchedule]:
+        # We support calling `{{ client.proto.state_name }}.ref()` with
+        # no `state_id` __only__ inside a workflow to be able to call an
+        # inline writer, inline reader or other method call, since
+        # workflow is a `classmethod` and therefor we can't get a
+        # reference to outselves as `self.ref()`.
+        if state_id is None:
+            context = IMPORT_reboot_aio_contexts.Context.get()
+
+            if context is None:
+                raise RuntimeError(
+                    'Missing asyncio context variable `context`; '
+                    'are you using this class without Reboot?'
+                )
+
+            {% if client.state is not none %}
+            if not isinstance(context, IMPORT_reboot_aio_contexts.WorkflowContext):
+                raise RuntimeError(
+                    '`ref()` called without a `state_id` can only be used within a Workflow.'
+                )
+
+            {# We use that asyncio context variable to be able to access
+            the servicer while we are inside a workflow which is
+            `classmethod`. #}
+            servicer = {{ client.proto.state_name }}BaseServicer.__servicer__.get()
+
+            if servicer is None:
+                raise RuntimeError(
+                    'Missing asyncio context variable `servicer`; '
+                    'are you using this class without Reboot?'
+                )
+            {% endif %}
+
+            return {{ client.proto.state_name }}.WeakReference(
+                # TODO(https://github.com/reboot-dev/mono/issues/3226): add support for calling other applications.
+                # For now this always stays within the application that creates the context.
+                application_id=None,
+                state_id=context._state_ref.id,
+                schedule_type={{ client.proto.state_name }}.WeakReference._WriterSchedule,
+                # If the user didn't specify a bearer token we may still end up using the app-internal bearer token,
+                # but that's decided at the time of the call.
+                bearer_token=bearer_token,
+                {% if client.state is not none %}
+                servicer=servicer,
+                {% endif %}
+            )
+
         return {{ client.proto.state_name }}.WeakReference(
             # TODO(https://github.com/reboot-dev/mono/issues/3226): add support for calling other applications.
             # For now this always stays within the application that creates the context.
@@ -6600,8 +6664,9 @@ a Pydantic API, so there is no sense to generate `ServicerNodeAdaptor`. #}
 {% for state in states %}
 class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton.Servicer):
 
+    @classmethod
     async def _wait_for_cancelled(
-        self,
+        cls,
         future: IMPORT_asyncio.Future,
         method: str,
     ):
@@ -6977,8 +7042,9 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
                 ):
                     return {{ method.output_type }}.FromString(result.response)
     {% elif method.options.proto.kind == 'workflow' %}
+    @classmethod
     async def {{ method.proto.name }}(
-        self,
+        cls,
         context: IMPORT_reboot_aio_contexts.WorkflowContext,
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
@@ -7008,9 +7074,12 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
 
         bytes_result_future: IMPORT_typing.Optional[IMPORT_asyncio.Future[str]] = None
 
+        servicer = cls.__servicer__.get()
+        assert servicer is not None
+
         try:
-            bytes_result_future = self._trampoline(  # type: ignore[attr-defined]
-                self._js_servicer_reference,
+            bytes_result_future = servicer._trampoline(  # type: ignore[attr-defined]
+                servicer._js_servicer_reference,
                 context,
                 cancelled,
                 bytes_call,
@@ -7031,7 +7100,7 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
             # is no harm waiting because other writers can still be
             # called.
             if bytes_result_future is not None:
-                await self._wait_for_cancelled(
+                await cls._wait_for_cancelled(
                     bytes_result_future,
                     '{{ state.proto.name }}.{{ method.proto.name }}',
                 )
