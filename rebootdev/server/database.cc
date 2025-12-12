@@ -2620,30 +2620,26 @@ void DatabaseService::RecoverTransactionIdempotentMutations(
 
 ////////////////////////////////////////////////////////////////////////
 
+std::once_flag db_get_all_prepared_transactions;
+
 expected<void> DatabaseService::RecoverTransactions(
     grpc::ServerWriter<RecoverResponse>& responses,
     const std::set<std::string>& committed_task_uuids,
     const std::set<std::string>& committed_idempotency_keys,
     const std::unordered_set<std::string>& shard_ids) {
-  // Since every server will call `Recover()` on every startup, this method
-  // may run many times. If this is the first time, then we must recover the
-  // transactions from the database. Otherwise, they should already be in
-  // 'txns_', in which case it's NOT safe to recover them again (we may have
-  // changed them) and we should simply do nothing.
-  //
-  // Edge case: if there are no transactions, then we're not sure whether this
-  // is the first time we're recovering or not, so we recover from the database
-  // every time just in case. This is safe, because recovery is a NOOP if indeed
-  // it turns out that there are no transactions.
-  if (txns_.empty()) {
-    // Recover all of the transactions that were previously prepared.
-    std::vector<rocksdb::Transaction*> txns;
-    db_->GetAllPreparedTransactions(&txns);
-    for (rocksdb::Transaction* txn : txns) {
-      std::string state_ref = GetStateRef(*txn);
-      txns_.emplace(state_ref, std::unique_ptr<rocksdb::Transaction>(txn));
-    }
-  }
+  // Since every server will call `Recover()` on every startup, this
+  // method may run many times but we only want to get all of the
+  // prepared transactions from the database once.
+  std::call_once(
+      db_get_all_prepared_transactions,
+      [this]() {
+        std::vector<rocksdb::Transaction*> txns;
+        db_->GetAllPreparedTransactions(&txns);
+        for (rocksdb::Transaction* txn : txns) {
+          std::string state_ref = GetStateRef(*txn);
+          txns_.emplace(state_ref, std::unique_ptr<rocksdb::Transaction>(txn));
+        }
+      });
 
   std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
       db_->NewIterator(NonPrefixIteratorReadOptions())));
