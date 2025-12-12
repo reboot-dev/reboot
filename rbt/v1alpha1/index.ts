@@ -1045,8 +1045,8 @@ export function zodToProtoJson<T>(
   } else if (schema instanceof z.ZodArray) {
     assert(Array.isArray(input));
     return {
-      elements: input.map((element) =>
-        zodToProtoJson(schema.element as z.ZodType, element)
+      items: input.map((item) =>
+        zodToProtoJson(schema.element as z.ZodType, item)
       ),
     };
   } else if (schema instanceof z.ZodObject) {
@@ -1170,18 +1170,18 @@ export function protoToZod<T>(
     return output;
   } else if (schema instanceof z.ZodArray) {
     assert(
-      typeIs(input, (input): input is T & { elements: any[] } => {
+      typeIs(input, (input): input is T & { items: any[] } => {
         return (
           input instanceof protobuf_es.Message &&
-          "elements" in input &&
-          Array.isArray(input.elements)
+          "items" in input &&
+          Array.isArray(input.items)
         );
       }),
       "schema is ZodArray, but input is not a protobuf message"
     );
 
-    return input.elements.map((element: any) =>
-      protoToZod(schema.element as z.ZodType, element)
+    return input.items.map((item: any) =>
+      protoToZod(schema.element as z.ZodType, item)
     );
   } else if (schema instanceof z.ZodObject) {
     assert(

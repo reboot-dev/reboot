@@ -99,28 +99,28 @@ def _pydantic_to_proto(
 
         output = output_type()
 
-        assert hasattr(output, 'elements')
+        assert hasattr(output, 'items')
         assert isinstance(input, list)
         list_args = get_args(input_type)
         # We should always have exactly one argument for lists.
         assert len(list_args) == 1
-        list_element_type = list_args[0]
+        list_item_type = list_args[0]
 
-        for list_element in input:
+        for list_item in input:
             # For 'RepeatedScalarContainer' there is not 'add' method,
             # so we need to handle primitive type containers separately.
-            if list_element_type not in (int, float, str, bool):
-                output_element = output.elements.add()
+            if list_item_type not in (int, float, str, bool):
+                output_item = output.items.add()
                 nested_output = _pydantic_to_proto(
-                    list_element,
-                    list_element_type,
-                    type(output_element),
+                    list_item,
+                    list_item_type,
+                    type(output_item),
                 )
                 assert isinstance(nested_output, Message)
-                output_element.CopyFrom(nested_output)
+                output_item.CopyFrom(nested_output)
             else:
                 # Primitive type, we can append directly.
-                output.elements.append(list_element)
+                output.items.append(list_item)
         return output
     elif input_type_or_origin is dict:
         # Ensure 'output_type' is a class (not a Union of primitive
@@ -321,19 +321,17 @@ def _proto_to_pydantic(
 
     if output_type_or_origin is list:
         assert isinstance(input, Message)
-        assert hasattr(input, 'elements')
+        assert hasattr(input, 'items')
         list_args = get_args(output_type)
         # We should always have exactly one argument for lists.
         assert len(list_args) == 1
-        list_element_type = list_args[0]
+        list_item_type = list_args[0]
         output = []
-        for list_element in input.elements:
-            output.append(
-                _proto_to_pydantic(
-                    list_element,
-                    list_element_type,
-                )
-            )
+        for list_item in input.items:
+            output.append(_proto_to_pydantic(
+                list_item,
+                list_item_type,
+            ))
         return output
     elif output_type_or_origin is dict:
         assert isinstance(input, Message)
