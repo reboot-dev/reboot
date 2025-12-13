@@ -849,8 +849,9 @@ class SidecarStateManager(
             StateRef,
             asyncio.Lock]] = defaultdict(lambda: defaultdict(asyncio.Lock))
 
-        self._loads: defaultdict[StateTypeName, dict[
-            StateRef, asyncio.Event]] = defaultdict(lambda: {})
+        self._loads: defaultdict[StateTypeName,
+                                 dict[StateRef,
+                                      asyncio.Event]] = defaultdict(dict)
 
         # Any streaming readers. We're explicitly using a 'dict' as
         # the value instead of a 'defaultdict' because we don't want
@@ -860,12 +861,13 @@ class SidecarStateManager(
         # write!
         self._streaming_readers: defaultdict[StateTypeName, dict[
             StateRef,
-            list[asyncio.
-                 Queue[_StreamingReaderItem]]]] = defaultdict(lambda: {})
+            list[asyncio.Queue[_StreamingReaderItem]]]] = defaultdict(dict)
 
-        # Idempotent mutations keyed by the idempotency key.
-        self._idempotent_mutations: dict[uuid.UUID,
-                                         database_pb2.IdempotentMutation] = {}
+        # Idempotent mutations per state type, state ref, idempotency key.
+        self._idempotent_mutations: defaultdict[StateTypeName, dict[
+            StateRef,
+            dict[uuid.UUID,
+                 database_pb2.IdempotentMutation]]] = defaultdict(dict)
 
     async def shutdown(self) -> None:
         """Shuts down this state manager, which includes cancellation of
@@ -1528,7 +1530,10 @@ class SidecarStateManager(
         # Now we update state related to idempotency (if any).
         if idempotent_mutation is not None:
             idempotent_mutations = (
-                self._idempotent_mutations
+                # Invariant here that we've already loaded the
+                # idempotent mutations for this state ref, if that
+                # invariant is broken we'll get a `KeyError`.
+                self._idempotent_mutations[state_type][state_ref]
                 if transaction is None else transaction.idempotent_mutations
             )
             if idempotency_key is None:
@@ -2570,7 +2575,9 @@ class SidecarStateManager(
         state_type_name = context.state_type_name
         state_ref = context._state_ref
 
-        idempotent_mutations = self._idempotent_mutations
+        idempotent_mutations = self._idempotent_mutations[state_type_name][
+            state_ref]
+
         transaction: Optional[StateManager.Transaction] = None
 
         if context.transaction_ids is not None:
@@ -3175,7 +3182,7 @@ class SidecarStateManager(
                     # performance (or possibly make it configurable so
                     # users can tradeoff performance for better error
                     # detection of their own code).
-                    self._idempotent_mutations.update(
+                    self._idempotent_mutations[state_type][state_ref].update(
                         transaction.idempotent_mutations
                     )
 
@@ -3516,9 +3523,16 @@ class SidecarStateManager(
             )
 
         for idempotent_mutation in recover_response.idempotent_mutations:
+
+            state_type = idempotent_mutation.state_type
+            state_ref = idempotent_mutation.state_ref
             idempotency_key = uuid.UUID(bytes=idempotent_mutation.key)
-            assert idempotency_key not in self._idempotent_mutations
-            self._idempotent_mutations[idempotency_key] = idempotent_mutation
+
+            idempotent_mutations = self._idempotent_mutations[
+                state_type].setdefault(state_ref, {})
+
+            assert idempotency_key not in idempotent_mutations
+            idempotent_mutations[idempotency_key] = idempotent_mutation
 
     def _get_task_effect_from_sidecar_task(
         self,
