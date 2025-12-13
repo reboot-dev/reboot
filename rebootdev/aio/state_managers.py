@@ -749,6 +749,37 @@ except RuntimeError:
     asyncio.run(validate_semaphore_semantics_once())
 
 
+class IdempotentMutations:
+    """
+    Tracks idempotent mutations for a specific state.
+    """
+
+    def __init__(self):
+        self._idempotent_mutations: dict[uuid.UUID,
+                                         database_pb2.IdempotentMutation] = {}
+
+    def __getitem__(self, key: uuid.UUID):
+        return self._idempotent_mutations[key]
+
+    def get(self, key: uuid.UUID):
+        return self._idempotent_mutations.get(key)
+
+    def __setitem__(
+        self,
+        key: uuid.UUID,
+        value: database_pb2.IdempotentMutation,
+    ):
+        self._idempotent_mutations[key] = value
+
+    def __contains__(self, key: uuid.UUID):
+        return key in self._idempotent_mutations
+
+    def update(
+        self,
+        idempotent_mutations: dict[uuid.UUID, database_pb2.IdempotentMutation],
+    ):
+        self._idempotent_mutations.update(idempotent_mutations)
+
 class SidecarStateManager(
     StateManager,
     transactions_pb2_grpc.CoordinatorServicer,
@@ -865,9 +896,7 @@ class SidecarStateManager(
 
         # Idempotent mutations per state type, state ref, idempotency key.
         self._idempotent_mutations: defaultdict[StateTypeName, dict[
-            StateRef,
-            dict[uuid.UUID,
-                 database_pb2.IdempotentMutation]]] = defaultdict(dict)
+            StateRef, IdempotentMutations]] = defaultdict(dict)
 
     async def shutdown(self) -> None:
         """Shuts down this state manager, which includes cancellation of
@@ -2575,8 +2604,9 @@ class SidecarStateManager(
         state_type_name = context.state_type_name
         state_ref = context._state_ref
 
-        idempotent_mutations = self._idempotent_mutations[state_type_name][
-            state_ref]
+        idempotent_mutations: IdempotentMutations | dict[
+            uuid.UUID, database_pb2.IdempotentMutation
+        ] = self._idempotent_mutations[state_type_name][state_ref]
 
         transaction: Optional[StateManager.Transaction] = None
 
@@ -3529,7 +3559,7 @@ class SidecarStateManager(
             idempotency_key = uuid.UUID(bytes=idempotent_mutation.key)
 
             idempotent_mutations = self._idempotent_mutations[
-                state_type].setdefault(state_ref, {})
+                state_type].setdefault(state_ref, IdempotentMutations())
 
             assert idempotency_key not in idempotent_mutations
             idempotent_mutations[idempotency_key] = idempotent_mutation
