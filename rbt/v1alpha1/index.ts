@@ -285,6 +285,11 @@ export class Backoff {
   private maxBackoffSeconds: number;
   private backoffMultiplier: number;
 
+  private hasLoggedWait = false;
+  // It is safe to initialize to 0 because the first log will always happen
+  // and then we will set the proper timestamp.
+  private lastWaitLogMs: number = 0;
+
   constructor(options?: BackoffOptions) {
     const {
       initialBackoffSeconds = 1,
@@ -297,7 +302,27 @@ export class Backoff {
     this.backoffMultiplier = backoffMultiplier;
   }
 
-  async wait() {
+  async wait({
+    log,
+    logIntervalMs = 60 /* seconds */ * 1000,
+  }: {
+    log?: string;
+    logIntervalMs?: number;
+  } = {}) {
+    if (log !== undefined) {
+      const now = Date.now();
+      if (!this.hasLoggedWait) {
+        this.hasLoggedWait = true;
+        this.lastWaitLogMs = now;
+
+        console.warn(log);
+      } else if (now - this.lastWaitLogMs >= logIntervalMs) {
+        this.lastWaitLogMs = now;
+
+        console.warn(log);
+      }
+    }
+
     // Implementation of backoff borrowed from
     // https://github.com/grpc/proposal/blob/master/A6-client-retries.md#exponential-backoff.
     const backoffSeconds = randomNumberBetween(
@@ -312,6 +337,19 @@ export class Backoff {
     await sleep({ ms: backoffSeconds * 1000 });
 
     this.retryAttempts += 1;
+  }
+
+  // There is no need to have an interval between `reset` logs
+  // because `reset` should be called when there are no more retries
+  // happening and it shouldn't be spammy.
+  reset({ log }: { log?: string } = {}) {
+    if (log !== undefined && this.hasLoggedWait) {
+      console.info(log);
+    }
+
+    this.retryAttempts = 0;
+    this.hasLoggedWait = false;
+    this.lastWaitLogMs = 0;
   }
 }
 
