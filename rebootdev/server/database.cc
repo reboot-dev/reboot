@@ -53,6 +53,8 @@ using rbt::v1alpha1::LoadResponse;
 using rbt::v1alpha1::Participants;
 using rbt::v1alpha1::PersistenceVersion;
 using rbt::v1alpha1::PreparedTransactionCoordinator;
+using rbt::v1alpha1::RecoverIdempotentMutationsRequest;
+using rbt::v1alpha1::RecoverIdempotentMutationsResponse;
 using rbt::v1alpha1::RecoverRequest;
 using rbt::v1alpha1::RecoverResponse;
 using rbt::v1alpha1::ServerInfo;
@@ -184,6 +186,11 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       grpc::ServerContext* context,
       const RecoverRequest* request,
       grpc::ServerWriter<RecoverResponse>* responses) override;
+  grpc::Status RecoverIdempotentMutations(
+      grpc::ServerContext* context,
+      const RecoverIdempotentMutationsRequest* request,
+      grpc::ServerWriter<RecoverIdempotentMutationsResponse>* responses)
+      override;
   grpc::Status TransactionParticipantPrepare(
       grpc::ServerContext* context,
       const TransactionParticipantPrepareRequest* request,
@@ -289,8 +296,8 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       Transaction& transaction,
       stout::borrowed_ref<rocksdb::Transaction>& txn);
 
-  // Helper for recovering idempotent mutations.
-  void RecoverIdempotentMutations(
+  // Helper for recovering idempotent mutations within some shards.
+  void RecoverShardsIdempotentMutations(
       grpc::ServerWriter<RecoverResponse>& responses,
       const std::unordered_set<std::string>& shard_ids);
 
@@ -2807,7 +2814,7 @@ expected<void> DatabaseService::RecoverTransactions(
 
 ////////////////////////////////////////////////////////////////////////
 
-void DatabaseService::RecoverIdempotentMutations(
+void DatabaseService::RecoverShardsIdempotentMutations(
     grpc::ServerWriter<RecoverResponse>& responses,
     const std::unordered_set<std::string>& shard_ids) {
   RecoverResponse response;
@@ -3262,11 +3269,14 @@ grpc::Status DatabaseService::Recover(
 
   RecoverTasks(*responses, shard_ids);
 
-  // (2) Recover idempotent mutations.
+  // (2) Recover idempotent mutations. Newer versions of Reboot will
+  // recover idempotent mutations on demand, but for backwards
+  // compatibility we still support recovering them here.
+  if (!request->skip_idempotent_mutations()) {
+    REBOOT_DATABASE_LOG(1) << "Recovering idempotent mutations";
 
-  REBOOT_DATABASE_LOG(1) << "Recovering idempotent mutations";
-
-  RecoverIdempotentMutations(*responses, shard_ids);
+    RecoverShardsIdempotentMutations(*responses, shard_ids);
+  }
 
   // (3) Recover transactions.
   REBOOT_DATABASE_LOG(1) << "Recovering transactions";
@@ -3278,6 +3288,81 @@ grpc::Status DatabaseService::Recover(
   if (!recover_transactions.has_value()) {
     return grpc::Status(grpc::UNKNOWN, recover_transactions.error());
   }
+
+  return grpc::Status::OK;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+grpc::Status DatabaseService::RecoverIdempotentMutations(
+    grpc::ServerContext* context,
+    const RecoverIdempotentMutationsRequest* request,
+    grpc::ServerWriter<RecoverIdempotentMutationsResponse>* responses) {
+  std::unique_lock lock(mutex_);
+
+  REBOOT_DATABASE_LOG(1)
+      << "RecoverIdempotentMutations { " << request->ShortDebugString() << " }";
+
+  expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
+      LookupColumnFamilyHandle(request->state_type());
+
+  // There might not be any instances of the state type yet, so just
+  // return without any idempotent mutations.
+  if (!column_family_handle.has_value()) {
+    return grpc::Status::OK;
+  }
+
+  std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
+      db_->NewIterator(
+          NonPrefixIteratorReadOptions(),
+          *column_family_handle)));
+
+  const std::string& idempotent_mutation_key_prefix = fmt::format(
+      IDEMPOTENT_MUTATION_KEY_PREFIX ":{}",
+      request->state_ref());
+
+  // TODO: investigate using "prefix seek" for better performance, see:
+  // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
+  iterator->Seek(rocksdb::Slice(idempotent_mutation_key_prefix));
+
+  RecoverIdempotentMutationsResponse response;
+
+  // We don't know what is the best batch size for this, so we
+  // just use a number that is small enough to not cause
+  // performance issues, but large enough to not cause too many
+  // round trips.
+  // TODO: This should be configurable and pick the better value for default.
+  static size_t RECOVER_IDEMPOTENT_MUTATIONS_BATCH_SIZE = 256;
+
+  size_t batch_size = 0;
+
+  while (iterator->Valid()
+         && iterator->key()
+                 .ToStringView()
+                 .find(idempotent_mutation_key_prefix)
+             == 0) {
+    IdempotentMutation idempotent_mutation;
+
+    CHECK(idempotent_mutation.ParseFromArray(
+        iterator->value().data(),
+        iterator->value().size()));
+
+    *response.add_idempotent_mutations() = std::move(idempotent_mutation);
+
+    MaybeWriteAndClearResponse(
+        *responses,
+        response,
+        batch_size,
+        RECOVER_IDEMPOTENT_MUTATIONS_BATCH_SIZE);
+
+    iterator->Next();
+  }
+
+  // Flush any remaining idempotent mutations.
+  WriteAndClearResponse(
+      *responses,
+      response,
+      batch_size);
 
   return grpc::Status::OK;
 }

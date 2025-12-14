@@ -598,7 +598,7 @@ class StateManager(ABC):
         yield  # Necessary for type checking.
 
     @abstractmethod
-    def check_for_idempotent_mutation(
+    async def check_for_idempotent_mutation(
         self,
         context: WriterContext | WorkflowContext | TransactionContext,
     ) -> Optional[database_pb2.IdempotentMutation]:
@@ -754,9 +754,29 @@ class IdempotentMutations:
     Tracks idempotent mutations for a specific state.
     """
 
-    def __init__(self):
-        self._idempotent_mutations: dict[uuid.UUID,
-                                         database_pb2.IdempotentMutation] = {}
+    def __init__(
+        self,
+        *,
+        idempotent_mutations: list[database_pb2.IdempotentMutation],
+    ):
+        self._idempotent_mutations: dict[
+            uuid.UUID, database_pb2.IdempotentMutation] = {
+                uuid.UUID(bytes=idempotent_mutation.key): idempotent_mutation
+                for idempotent_mutation in idempotent_mutations
+            }
+
+    @classmethod
+    async def recover(
+        cls,
+        state_type_name: StateTypeName,
+        state_ref: StateRef,
+        database_client: DatabaseClient,
+    ) -> IdempotentMutations:
+        response = await database_client.recover_idempotent_mutations(
+            state_type_name,
+            state_ref,
+        )
+        return cls(idempotent_mutations=response.idempotent_mutations)
 
     def __getitem__(self, key: uuid.UUID):
         return self._idempotent_mutations[key]
@@ -779,6 +799,7 @@ class IdempotentMutations:
         idempotent_mutations: dict[uuid.UUID, database_pb2.IdempotentMutation],
     ):
         self._idempotent_mutations.update(idempotent_mutations)
+
 
 class SidecarStateManager(
     StateManager,
@@ -1071,6 +1092,18 @@ class SidecarStateManager(
         idempotent_mutation: database_pb2.IdempotentMutation,
     ) -> None:
         async with self._mutator_locks[state_type][state_ref]:
+            # Recover idempotent mutations before trying to import any
+            # since there is an invariant that we won't do a store on
+            # a state before recovering its idempotent mutations.
+            if state_ref not in self._idempotent_mutations[state_type]:
+                self._idempotent_mutations[state_type][state_ref] = (
+                    await IdempotentMutations.recover(
+                        state_type,
+                        state_ref,
+                        self._database_client,
+                    )
+                )
+
             await self._store(
                 state_type=state_type,
                 state_ref=state_ref,
@@ -1559,9 +1592,11 @@ class SidecarStateManager(
         # Now we update state related to idempotency (if any).
         if idempotent_mutation is not None:
             idempotent_mutations = (
-                # Invariant here that we've already loaded the
-                # idempotent mutations for this state ref, if that
-                # invariant is broken we'll get a `KeyError`.
+                # Invariant here that we've already recovered the
+                # idempotent mutations for this state ref because we
+                # must have checked an idempotent mutation before
+                # executing it (if that invariant is broken we'll get
+                # a `KeyError`).
                 self._idempotent_mutations[state_type][state_ref]
                 if transaction is None else transaction.idempotent_mutations
             )
@@ -2591,7 +2626,7 @@ class SidecarStateManager(
                 self._coordinator_commit_control_loop_tasks[transaction.root_id
                                                            ].cancel()
 
-    def check_for_idempotent_mutation(
+    async def check_for_idempotent_mutation(
         self,
         context: WriterContext | WorkflowContext | TransactionContext,
     ) -> Optional[database_pb2.IdempotentMutation]:
@@ -2603,6 +2638,30 @@ class SidecarStateManager(
 
         state_type_name = context.state_type_name
         state_ref = context._state_ref
+
+        # Recover idempotent mutations on demand if necessary.
+        #
+        # NOTE: we do this even if we are within a transaction because
+        # once this transaction completes we need to have already
+        # recovered the idempotent mutations.
+        #
+        # Likewise, we do this even if the state has not yet been
+        # constructed because we might be about to construct the
+        # state.
+        #
+        # TODO: in the event we do recover idempotent mutations for a
+        # state that doesn't get constructed, we'll need/want to
+        # remove this entry, but we should do that generically across
+        # all data structures that are storing state via some LRU like
+        # mechanism.
+        if state_ref not in self._idempotent_mutations[state_type_name]:
+            self._idempotent_mutations[state_type_name][state_ref] = (
+                await IdempotentMutations.recover(
+                    state_type_name,
+                    state_ref,
+                    self._database_client,
+                )
+            )
 
         idempotent_mutations: IdempotentMutations | dict[
             uuid.UUID, database_pb2.IdempotentMutation
@@ -3212,9 +3271,16 @@ class SidecarStateManager(
                     # performance (or possibly make it configurable so
                     # users can tradeoff performance for better error
                     # detection of their own code).
-                    self._idempotent_mutations[state_type][state_ref].update(
-                        transaction.idempotent_mutations
-                    )
+                    if len(transaction.idempotent_mutations) > 0:
+                        # Invariant here is that if this transaction
+                        # includes idempotent mutations then we should
+                        # have already recovered them from the
+                        # database (we'll get a `KeyError` here if
+                        # this invariant is broken).
+                        self._idempotent_mutations[state_type][
+                            state_ref].update(
+                                transaction.idempotent_mutations
+                            )
 
                     transaction.commit()
 
@@ -3551,18 +3617,6 @@ class SidecarStateManager(
                 name=
                 f'self._transaction_coordinator_commit_control_loop(...) in {__name__}',
             )
-
-        for idempotent_mutation in recover_response.idempotent_mutations:
-
-            state_type = idempotent_mutation.state_type
-            state_ref = idempotent_mutation.state_ref
-            idempotency_key = uuid.UUID(bytes=idempotent_mutation.key)
-
-            idempotent_mutations = self._idempotent_mutations[
-                state_type].setdefault(state_ref, IdempotentMutations())
-
-            assert idempotency_key not in idempotent_mutations
-            idempotent_mutations[idempotency_key] = idempotent_mutation
 
     def _get_task_effect_from_sidecar_task(
         self,

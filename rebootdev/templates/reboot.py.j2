@@ -1242,7 +1242,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         # already performed the transaction then we don't want to
         # become a transaction participant (again) we just want to
         # return the transaction's response.
-        idempotent_mutation = self._state_manager.check_for_idempotent_mutation(
+        idempotent_mutation = await self._state_manager.check_for_idempotent_mutation(
             context
         )
 
@@ -1380,15 +1380,16 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         )
         response = {{ method.output_type }}()
 
-        {% if method.options.proto.kind in ['writer', 'transaction', 'workflow'] %}
-        # Check if we already have performed this mutation!
+        # Check if we already have performed this schedule! Note that
+        # we need to do this for all kinds of methods because this is
+        # effectively a mutation (actually a `writer`, see below).
         #
         # We do this _before_ calling 'transactionally()' because
         # if this call is for a transaction method _and_ we've
         # already performed the transaction then we don't want to
         # become a transaction participant (again) we just want to
         # return the transaction's response.
-        idempotent_mutation = self._state_manager.check_for_idempotent_mutation(
+        idempotent_mutation = await self._state_manager.check_for_idempotent_mutation(
             context
         )
 
@@ -1409,7 +1410,6 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             )
 
             return context, response
-        {% endif %}
 
         async with self._state_manager.transactionally(
             context,
@@ -2900,7 +2900,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                         # become a transaction participant (again) we just want to
                         # return the transaction's response.
                         idempotent_mutation = (
-                            servicer._middleware._state_manager.check_for_idempotent_mutation(
+                            await servicer._middleware._state_manager.check_for_idempotent_mutation(
                                 writer_context
                             )
                         )
