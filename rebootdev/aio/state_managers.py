@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import bitarray
 import grpc
+import hashlib
 import log.log
 import logging
+import math
 import sys
 import traceback
 import uuid
@@ -69,6 +72,7 @@ from rebootdev.server.database import (
     DatabaseClient,
 )
 from rebootdev.time import DateTimeWithTimeZone
+from struct import pack, unpack
 from typing import (
     Any,
     AsyncGenerator,
@@ -749,6 +753,216 @@ except RuntimeError:
     asyncio.run(validate_semaphore_semantics_once())
 
 
+class BloomFilter:
+    """
+    Copied from https://github.com/richard-rogers/pybloom3.
+
+    TODO: move this into a generic place if/when we determine that it
+    is not overly specific to our use for idempotent mutations.
+    """
+
+    def __init__(self, capacity: int, error_rate: float):
+        if not capacity > 0:
+            raise ValueError("`capacity` must be > 0")
+        self._capacity = capacity
+
+        if not (0 < error_rate < 1):
+            raise ValueError("`error_rate` must be between 0 and 1")
+        self._error_rate = error_rate
+
+        # Given:
+        #
+        # M = num_bits
+        # k = num_slices
+        # P = error_rate
+        # n = capacity
+        # k = log2(1/P)
+        #
+        # Solving for m = bits_per_slice:
+        #
+        # n ~= M * ((ln(2) ** 2) / abs(ln(P)))
+        # n ~= (k * m) * ((ln(2) ** 2) / abs(ln(P)))
+        # m ~= n * abs(ln(P)) / (k * (ln(2) ** 2))
+        num_slices = int(math.ceil(math.log(1.0 / error_rate, 2)))
+        bits_per_slice = int(
+            math.ceil(
+                (capacity * abs(math.log(error_rate))) /
+                (num_slices * (math.log(2)**2))
+            )
+        )
+
+        self._num_slices = num_slices
+        self._bits_per_slice = bits_per_slice
+        self._num_bits = num_slices * bits_per_slice
+
+        self._count = 0
+
+        self._make_hashes = BloomFilter.make_hashfuncs(
+            self._num_slices,
+            self._bits_per_slice,
+        )
+
+        self._bitarray = bitarray.bitarray(self._num_bits, endian="little")
+        self._bitarray.setall(0)
+
+    @classmethod
+    def make_hashfuncs(cls, num_slices: int, num_bits: int):
+        if num_bits >= (1 << 31):
+            fmt_code, chunk_size = 'Q', 8
+        elif num_bits >= (1 << 15):
+            fmt_code, chunk_size = 'I', 4
+        else:
+            fmt_code, chunk_size = 'H', 2
+        total_hash_bits = 8 * num_slices * chunk_size
+        if total_hash_bits > 384:
+            hashfn = hashlib.sha512
+        elif total_hash_bits > 256:
+            hashfn = hashlib.sha384
+        elif total_hash_bits > 160:
+            hashfn = hashlib.sha256
+        elif total_hash_bits > 128:
+            hashfn = hashlib.sha1
+        else:
+            hashfn = hashlib.md5
+        fmt = fmt_code * (hashfn().digest_size // chunk_size)
+        num_salts, extra = divmod(num_slices, len(fmt))
+        if extra:
+            num_salts += 1
+        salts = tuple(
+            hashfn(hashfn(pack('I', i)).digest()) for i in range(num_salts)
+        )
+
+        def _make_hashfuncs(key: bytes):
+            assert isinstance(key, bytes)
+            i = 0
+            for salt in salts:
+                h = salt.copy()
+                h.update(key)
+                for uint in unpack(fmt, h.digest()):
+                    yield uint % num_bits
+                    i += 1
+                    if i >= num_slices:
+                        return
+
+        return _make_hashfuncs
+
+    def __contains__(self, key: bytes):
+        """Tests a key's membership in this bloom filter."""
+        hashes = self._make_hashes(key)
+        offset = 0
+        for k in hashes:
+            if not self._bitarray[offset + k]:
+                return False
+            offset += self._bits_per_slice
+        return True
+
+    def __len__(self):
+        """Return the number of keys stored by this bloom filter."""
+        return self._count
+
+    @property
+    def capacity(self):
+        """Return the capacity of this bloom filter."""
+        return self._capacity
+
+    @property
+    def error_rate(self):
+        """Return the error rate of this bloom filter."""
+        return self._error_rate
+
+    def add(self, key: bytes, *, skip_check: bool = False):
+        """
+        Adds a key to this bloom filter. If the key already exists in this
+        filter it will return True. Otherwise False.
+        """
+        # If we're not checking for presence while adding then we need
+        # to prematurely fail if we're at capacity, even if the item
+        # we're adding may already be present. If we are checking for
+        # presence, then we can defer failing until we determine that
+        # we are indeed adding to the filter.
+        if skip_check and self._count == self._capacity:
+            raise IndexError("`BloomFilter` is at capacity")
+
+        hashes = self._make_hashes(key)
+        found_all_bits = True
+        offset = 0
+
+        for k in hashes:
+            if (
+                not skip_check and found_all_bits and
+                not self._bitarray[offset + k]
+            ):
+                found_all_bits = False
+                if self._count == self._capacity:
+                    raise IndexError("`BloomFilter` is at capacity")
+            self._bitarray[offset + k] = True
+            offset += self._bits_per_slice
+
+        if skip_check or not found_all_bits:
+            self._count += 1
+            return False
+        else:
+            return True
+
+
+class ScalableBloomFilter:
+
+    # We'll scale up the bloom filters to maximum 1,000,000 entries
+    # with an error rate of 0.0000001 (which will provide a
+    # probability of 1 in 9,994,083) since that is ~4MB which is a
+    # good size for reading/writing rocksdb values.
+    MAX_CAPACITY = 1_000_000
+    INITIAL_CAPACITY = 100
+    INITIAL_ERROR_RATE = 0.001
+
+    def __init__(self):
+        self._filters = [
+            BloomFilter(
+                capacity=self.INITIAL_CAPACITY,
+                error_rate=self.INITIAL_ERROR_RATE,
+            )
+        ]
+
+    def __contains__(self, key: bytes):
+        for filter in reversed(self._filters):
+            if key in filter:
+                return True
+        return False
+
+    def add(self, key: bytes):
+        if key in self:
+            return True
+
+        filter = self._filters[-1]
+
+        # Add another filter if we've run out of capacity.
+        if len(filter) == filter.capacity:
+            filter = BloomFilter(
+                # Increase the capacity by 10, unless we're already at
+                # 1,000,000 entries, in which case keep it that size.
+                capacity=(
+                    filter.capacity if filter.capacity == self.MAX_CAPACITY
+                    else filter.capacity * 10
+                ),
+                # Increase the capacity by 10, unless we're already at
+                # 1,000,000 entries, in which case keep it that size.
+                error_rate=(
+                    filter.error_rate if filter.capacity == self.MAX_CAPACITY
+                    else filter.error_rate / 10
+                ),
+            )
+            self._filters.append(filter)
+
+        filter.add(
+            key,
+            # We skip the check because we know that the key is not in
+            # the filter (or this is a brand new _empty_ filter).
+            skip_check=True,
+        )
+
+        return False
+
+
 class IdempotentMutations:
     """
     Tracks idempotent mutations for a specific state.
@@ -759,11 +973,15 @@ class IdempotentMutations:
         *,
         idempotent_mutations: list[database_pb2.IdempotentMutation],
     ):
-        self._idempotent_mutations: dict[
-            uuid.UUID, database_pb2.IdempotentMutation] = {
-                uuid.UUID(bytes=idempotent_mutation.key): idempotent_mutation
-                for idempotent_mutation in idempotent_mutations
-            }
+        self._bloom_filter = ScalableBloomFilter()
+
+        self._idempotent_mutations: dict[bytes,
+                                         database_pb2.IdempotentMutation] = {}
+
+        for idempotent_mutation in idempotent_mutations:
+            self._bloom_filter.add(idempotent_mutation.key)
+            self._idempotent_mutations[idempotent_mutation.key
+                                      ] = idempotent_mutation
 
     @classmethod
     async def recover(
@@ -778,27 +996,29 @@ class IdempotentMutations:
         )
         return cls(idempotent_mutations=response.idempotent_mutations)
 
-    def __getitem__(self, key: uuid.UUID):
-        return self._idempotent_mutations[key]
-
     def get(self, key: uuid.UUID):
-        return self._idempotent_mutations.get(key)
+        if key.bytes in self._bloom_filter:
+            return self._idempotent_mutations.get(key)
+        return None
 
     def __setitem__(
         self,
         key: uuid.UUID,
         value: database_pb2.IdempotentMutation,
     ):
+        self._bloom_filter.add(key.bytes)
         self._idempotent_mutations[key] = value
 
     def __contains__(self, key: uuid.UUID):
-        return key in self._idempotent_mutations
+        return self.get(key) is not None
 
     def update(
         self,
         idempotent_mutations: dict[uuid.UUID, database_pb2.IdempotentMutation],
     ):
-        self._idempotent_mutations.update(idempotent_mutations)
+        for key, idempotent_mutation in idempotent_mutations.items():
+            self._bloom_filter.add(key.bytes)
+            self._idempotent_mutations[key] = idempotent_mutation
 
 
 class SidecarStateManager(
