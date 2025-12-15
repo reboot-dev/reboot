@@ -531,6 +531,8 @@ class DatabaseClient:
         self,
         state_type_name: StateTypeName,
         state_ref: StateRef,
+        *,
+        idempotency_key: Optional[uuid.UUID] = None,
     ) -> database_pb2.RecoverIdempotentMutationsResponse:
         """Attempt to recover idempotent mutations for a specific state ref
         after a restart.
@@ -546,6 +548,9 @@ class DatabaseClient:
         request = database_pb2.RecoverIdempotentMutationsRequest(
             state_type=state_type_name,
             state_ref=state_ref.to_str(),
+            idempotency_key=(
+                None if idempotency_key is None else idempotency_key.bytes
+            ),
         )
         response = database_pb2.RecoverIdempotentMutationsResponse()
         async for partial in stub.RecoverIdempotentMutations(request):

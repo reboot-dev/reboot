@@ -347,6 +347,9 @@ message RecoverIdempotentMutationsRequest {
   // State ref to recover idempotent mutations for.
   string state_type = 1;
   string state_ref = 2;
+
+  // Recover an idempotent mutation for the specific key.
+  optional bytes idempotency_key = 3;
 }
 
 message RecoverIdempotentMutationsResponse {

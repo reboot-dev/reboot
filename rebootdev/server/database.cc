@@ -3310,12 +3310,27 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
   std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
       db_->NewIterator(NonPrefixIteratorReadOptions(), *column_family_handle)));
 
-  const std::string& idempotent_mutation_key_prefix =
-      fmt::format(IDEMPOTENT_MUTATION_KEY_PREFIX ":{}", request->state_ref());
+  auto idempotent_mutation_key_prefix = [&]() -> expected<std::string> {
+    if (request->has_idempotency_key()) {
+      Try<UUID> idempotency_key = UUID::fromBytes(request->idempotency_key());
+      if (idempotency_key.isError()) {
+        return make_unexpected(idempotency_key.error());
+      }
+      return MakeIdempotentMutationKey(request->state_ref(), *idempotency_key);
+    } else {
+      return fmt::format(
+          IDEMPOTENT_MUTATION_KEY_PREFIX ":{}",
+          request->state_ref());
+    }
+  }();
+
+  if (!idempotent_mutation_key_prefix.has_value()) {
+    return grpc::Status(grpc::UNKNOWN, idempotent_mutation_key_prefix.error());
+  }
 
   // TODO: investigate using "prefix seek" for better performance, see:
   // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
-  iterator->Seek(rocksdb::Slice(idempotent_mutation_key_prefix));
+  iterator->Seek(rocksdb::Slice(*idempotent_mutation_key_prefix));
 
   RecoverIdempotentMutationsResponse response;
 
@@ -3329,7 +3344,7 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
   size_t batch_size = 0;
 
   while (iterator->Valid()
-         && iterator->key().ToStringView().find(idempotent_mutation_key_prefix)
+         && iterator->key().ToStringView().find(*idempotent_mutation_key_prefix)
              == 0) {
     IdempotentMutation idempotent_mutation;
 
@@ -3344,6 +3359,10 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
         response,
         batch_size,
         RECOVER_IDEMPOTENT_MUTATIONS_BATCH_SIZE);
+
+    if (request->has_idempotency_key()) {
+      break;
+    }
 
     iterator->Next();
   }

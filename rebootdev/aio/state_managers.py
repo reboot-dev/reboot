@@ -971,17 +971,19 @@ class IdempotentMutations:
     def __init__(
         self,
         *,
+        state_type_name: StateTypeName,
+        state_ref: StateRef,
+        database_client: DatabaseClient,
         idempotent_mutations: list[database_pb2.IdempotentMutation],
     ):
-        self._bloom_filter = ScalableBloomFilter()
+        self._state_type_name = state_type_name
+        self._state_ref = state_ref
+        self._database_client = database_client
 
-        self._idempotent_mutations: dict[bytes,
-                                         database_pb2.IdempotentMutation] = {}
+        self._bloom_filter = ScalableBloomFilter()
 
         for idempotent_mutation in idempotent_mutations:
             self._bloom_filter.add(idempotent_mutation.key)
-            self._idempotent_mutations[idempotent_mutation.key
-                                      ] = idempotent_mutation
 
     @classmethod
     async def recover(
@@ -994,31 +996,44 @@ class IdempotentMutations:
             state_type_name,
             state_ref,
         )
-        return cls(idempotent_mutations=response.idempotent_mutations)
+        return cls(
+            state_type_name=state_type_name,
+            state_ref=state_ref,
+            database_client=database_client,
+            idempotent_mutations=response.idempotent_mutations,
+        )
 
-    def get(self, key: uuid.UUID):
-        if key.bytes in self._bloom_filter:
-            return self._idempotent_mutations.get(key)
+    async def get(self, idempotency_key: uuid.UUID):
+        if idempotency_key.bytes in self._bloom_filter:
+            response = await self._database_client.recover_idempotent_mutations(
+                self._state_type_name,
+                self._state_ref,
+                idempotency_key=idempotency_key,
+            )
+
+            if len(response.idempotent_mutations) == 0:
+                return None
+
+            # TODO: cache the idempotent mutation.
+            return response.idempotent_mutations[0]
+
         return None
 
     def __setitem__(
         self,
-        key: uuid.UUID,
-        value: database_pb2.IdempotentMutation,
+        idempotency_key: uuid.UUID,
+        idempotent_mutation: database_pb2.IdempotentMutation,
     ):
-        self._bloom_filter.add(key.bytes)
-        self._idempotent_mutations[key] = value
-
-    def __contains__(self, key: uuid.UUID):
-        return self.get(key) is not None
+        self._bloom_filter.add(idempotency_key.bytes)
+        # TODO: cache the idempotent mutation.
 
     def update(
         self,
         idempotent_mutations: dict[uuid.UUID, database_pb2.IdempotentMutation],
     ):
-        for key, idempotent_mutation in idempotent_mutations.items():
-            self._bloom_filter.add(key.bytes)
-            self._idempotent_mutations[key] = idempotent_mutation
+        for idempotency_key in idempotent_mutations.keys():
+            self._bloom_filter.add(idempotency_key.bytes)
+            # TODO: cache the idempotent mutations.
 
 
 class SidecarStateManager(
@@ -1824,9 +1839,11 @@ class SidecarStateManager(
                 # We're importing an existing `idempotent_mutation`.
                 idempotency_key = uuid.UUID(bytes=idempotent_mutation.key)
             else:
-                # We're creating a new `idempotent_mutation`: it must not
-                # already exist.
-                assert idempotency_key not in idempotent_mutations
+                # We're creating a new `idempotent_mutation`: the
+                # invariant is that it shouldn't already exist but
+                # it's expensive to assert as much because it may
+                # require going to the database.
+                pass
             idempotent_mutations[idempotency_key] = idempotent_mutation
 
     def validate_transaction_participant(
@@ -2883,30 +2900,26 @@ class SidecarStateManager(
                 )
             )
 
-        idempotent_mutations: IdempotentMutations | dict[
-            uuid.UUID, database_pb2.IdempotentMutation
-        ] = self._idempotent_mutations[state_type_name][state_ref]
+        idempotent_mutation: Optional[database_pb2.IdempotentMutation] = (
+            await self._idempotent_mutations[state_type_name][state_ref].get(
+                context.idempotency_key,
+            )
+        )
 
-        transaction: Optional[StateManager.Transaction] = None
-
-        if context.transaction_ids is not None:
-            transaction = self._participant_transactions[state_type_name].get(
-                state_ref
+        # If we haven't found an idempotent mutation and we're within
+        # a transaction, check and see if the transaction includes it.
+        if idempotent_mutation is None and context.transaction_ids is not None:
+            transaction: Optional[StateManager.Transaction] = (
+                self._participant_transactions[state_type_name].get(state_ref)
             )
 
             if (
                 transaction is not None and
                 context.transaction_root_id == transaction.root_id
             ):
-                # TODO(benh): check if the idempotency key exists in
-                # self._idempotent_mutations and if it does raise an
-                # error that the user is incorrectly reusing an
-                # idempotency key (within a transaction). While we
-                # can't check for all incorrect uses, any that we can
-                # check for will help the user sort out bugs.
-                idempotent_mutations = transaction.idempotent_mutations
-
-        idempotent_mutation = idempotent_mutations.get(context.idempotency_key)
+                idempotent_mutation = transaction.idempotent_mutations.get(
+                    context.idempotency_key
+                )
 
         # Trigger reactive readers in the React generated code to
         # observe the idempotent mutation.  While they might have
