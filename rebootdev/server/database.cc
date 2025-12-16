@@ -777,17 +777,41 @@ std::string MakeLegacyTransactionPreparedKey(const UUID& transaction_id) {
 #define IDEMPOTENT_MUTATION_KEY_PREFIX_V3 "idempotent-mutation"
 #define IDEMPOTENT_MUTATION_KEY_PREFIX "idempotent-mutation-v4"
 
+// Idempotent mutations that expire use UUIDv7.
+#define EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX "expiring-idempotent-mutation"
+
 // Returns a key for storing in rocksdb that represents an idempotent
-// mutation. We use the stringified UUID to make debugging easier.
-// TODO: Skip deserializing/reserializing the UUID in the sidecar, and
-// send it string encoded from the client.
-std::string MakeIdempotentMutationKey(
+// mutation. Originally we used the stringified UUID to make debugging
+// easier, but in practice that hasn't been valuable so for newer,
+// expiring idempotency keys we simply store their bytes directly
+expected<std::string> MakeIdempotentMutationKey(
     const std::string& state_ref,
-    const UUID& idempotency_key) {
+    const std::string& idempotency_key) {
+  CHECK_EQ(idempotency_key.size(), 16) << "Expecting `idempotency_key` bytes";
+
+  int version =
+      static_cast<int>((static_cast<uint8_t>(idempotency_key[6]) >> 4) & 0x0F);
+
+  // We interpret UUIDv7 as an expiring idempotency key and use the
+  // bytes directly as they are lexicographically ordered and are
+  // roughly half the number of bytes as the stringified version.
+  if (version == 7) {
+    return fmt::format(
+        EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}",
+        state_ref,
+        idempotency_key);
+  }
+
+  Try<UUID> uuid = UUID::fromBytes(idempotency_key);
+
+  if (uuid.isError()) {
+    return make_unexpected(uuid.error());
+  }
+
   return fmt::format(
       IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}",
       state_ref,
-      idempotency_key.toString());
+      uuid->toString());
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -1813,19 +1837,17 @@ grpc::Status DatabaseService::Store(
 
     // Also store response if this is an idempotent mutation.
     if (request->has_idempotent_mutation()) {
-      // Get out the idempotency key.
-      Try<UUID> idempotency_key =
-          UUID::fromBytes(request->idempotent_mutation().key());
-      if (idempotency_key.isError()) {
-        return make_unexpected(idempotency_key.error());
-      }
       expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
           LookupOrCreateColumnFamilyHandle(
               request->idempotent_mutation().state_type());
 
-      const std::string& idempotent_mutation_key = MakeIdempotentMutationKey(
+      expected<std::string> idempotent_mutation_key = MakeIdempotentMutationKey(
           request->idempotent_mutation().state_ref(),
-          *idempotency_key);
+          request->idempotent_mutation().key());
+
+      if (!idempotent_mutation_key.has_value()) {
+        return make_unexpected(idempotent_mutation_key.error());
+      }
 
       std::string idempotent_mutation_bytes;
       if (!request->idempotent_mutation().SerializeToString(
@@ -1835,7 +1857,7 @@ grpc::Status DatabaseService::Store(
 
       rocksdb::Status status = batch.Put(
           *column_family_handle,
-          rocksdb::Slice(idempotent_mutation_key),
+          rocksdb::Slice(*idempotent_mutation_key),
           rocksdb::Slice(idempotent_mutation_bytes));
 
       if (!status.ok()) {
@@ -2281,7 +2303,9 @@ grpc::Status DatabaseService::Export(
       auto* task = item.mutable_task();
       CHECK(task->ParseFromArray(it->value().data(), it->value().size()));
       state_ref = task->task_id().state_ref();
-    } else if (key_type_prefix == IDEMPOTENT_MUTATION_KEY_PREFIX) {
+    } else if (
+        key_type_prefix == IDEMPOTENT_MUTATION_KEY_PREFIX
+        || key_type_prefix == EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX) {
       auto* mutation = item.mutable_idempotent_mutation();
       CHECK(mutation->ParseFromArray(it->value().data(), it->value().size()));
       state_ref = mutation->state_ref();
@@ -2964,18 +2988,17 @@ expected<void> DatabaseService::MigratePersistence3To4(
           iterator->value().data(),
           iterator->value().size()));
 
-      Try<UUID> idempotency_key = UUID::fromBytes(idempotent_mutation.key());
-      if (idempotency_key.isError()) {
-        return make_unexpected(idempotency_key.error());
-      }
-
-      const std::string& idempotent_mutation_key = MakeIdempotentMutationKey(
+      expected<std::string> idempotent_mutation_key = MakeIdempotentMutationKey(
           idempotent_mutation.state_ref(),
-          *idempotency_key);
+          idempotent_mutation.key());
+
+      if (!idempotent_mutation_key.has_value()) {
+        return make_unexpected(idempotent_mutation_key.error());
+      }
 
       rocksdb::Status status = batch.Put(
           column_family_handle,
-          rocksdb::Slice(idempotent_mutation_key),
+          rocksdb::Slice(*idempotent_mutation_key),
           iterator->value());
 
       if (!status.ok()) {
@@ -3310,28 +3333,6 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
   std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
       db_->NewIterator(NonPrefixIteratorReadOptions(), *column_family_handle)));
 
-  auto idempotent_mutation_key_prefix = [&]() -> expected<std::string> {
-    if (request->has_idempotency_key()) {
-      Try<UUID> idempotency_key = UUID::fromBytes(request->idempotency_key());
-      if (idempotency_key.isError()) {
-        return make_unexpected(idempotency_key.error());
-      }
-      return MakeIdempotentMutationKey(request->state_ref(), *idempotency_key);
-    } else {
-      return fmt::format(
-          IDEMPOTENT_MUTATION_KEY_PREFIX ":{}",
-          request->state_ref());
-    }
-  }();
-
-  if (!idempotent_mutation_key_prefix.has_value()) {
-    return grpc::Status(grpc::UNKNOWN, idempotent_mutation_key_prefix.error());
-  }
-
-  // TODO: investigate using "prefix seek" for better performance, see:
-  // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
-  iterator->Seek(rocksdb::Slice(*idempotent_mutation_key_prefix));
-
   RecoverIdempotentMutationsResponse response;
 
   // We don't know what is the best batch size for this, so we
@@ -3343,28 +3344,86 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
 
   size_t batch_size = 0;
 
-  while (iterator->Valid()
-         && iterator->key().ToStringView().find(*idempotent_mutation_key_prefix)
-             == 0) {
-    IdempotentMutation idempotent_mutation;
-
-    CHECK(idempotent_mutation.ParseFromArray(
-        iterator->value().data(),
-        iterator->value().size()));
-
-    *response.add_idempotent_mutations() = std::move(idempotent_mutation);
-
-    MaybeWriteAndClearResponse(
-        *responses,
-        response,
-        batch_size,
-        RECOVER_IDEMPOTENT_MUTATIONS_BATCH_SIZE);
-
-    if (request->has_idempotency_key()) {
-      break;
+  // Helper for recovering idempotency keys given a prefix.
+  auto recover = [&](const std::string& start_prefix,
+                     std::optional<std::string> end_prefix = std::nullopt) {
+    if (!end_prefix.has_value()) {
+      end_prefix = start_prefix;
     }
 
-    iterator->Next();
+    // TODO: investigate using "prefix seek" for better performance, see:
+    // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
+    iterator->Seek(rocksdb::Slice(start_prefix));
+
+    while (iterator->Valid()
+           && iterator->key().ToStringView().find(*end_prefix) == 0) {
+      IdempotentMutation idempotent_mutation;
+
+      CHECK(idempotent_mutation.ParseFromArray(
+          iterator->value().data(),
+          iterator->value().size()));
+
+      *response.add_idempotent_mutations() = std::move(idempotent_mutation);
+
+      MaybeWriteAndClearResponse(
+          *responses,
+          response,
+          batch_size,
+          RECOVER_IDEMPOTENT_MUTATIONS_BATCH_SIZE);
+
+      iterator->Next();
+    }
+  };
+
+  if (request->has_idempotency_key()) {
+    expected<std::string> idempotent_mutation_key_prefix =
+        MakeIdempotentMutationKey(
+            request->state_ref(),
+            request->idempotency_key());
+
+    if (!idempotent_mutation_key_prefix.has_value()) {
+      return grpc::Status(
+          grpc::UNKNOWN,
+          idempotent_mutation_key_prefix.error());
+    }
+
+    recover(*idempotent_mutation_key_prefix);
+
+    CHECK_EQ(batch_size, 1) << "Only expecting a single idempotency key";
+  } else {
+    // Recover non-expiring idempotent mutations.
+    recover(
+        fmt::format(
+            IDEMPOTENT_MUTATION_KEY_PREFIX ":{}",
+            request->state_ref()));
+
+    // Recover expiring idempotent mutations that have an expiration
+    // timestamp _after_ the current time (in milliseconds since Unix
+    // epoch).
+    uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+
+    // UUIDv7 timestamp is 48 bits (6 bytes), big-endian.
+    std::string timestamp(6, '\0');
+    timestamp[0] = static_cast<char>((now_ms >> 40) & 0xFF);
+    timestamp[1] = static_cast<char>((now_ms >> 32) & 0xFF);
+    timestamp[2] = static_cast<char>((now_ms >> 24) & 0xFF);
+    timestamp[3] = static_cast<char>((now_ms >> 16) & 0xFF);
+    timestamp[4] = static_cast<char>((now_ms >> 8) & 0xFF);
+    timestamp[5] = static_cast<char>(now_ms & 0xFF);
+
+    recover(
+        fmt::format(
+            EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}",
+            request->state_ref(),
+            timestamp),
+        // Don't recover past this state refs expiring idempotent
+        // mutations, which may have timestamps that are larger than
+        // `timestamp`.
+        fmt::format(
+            EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}",
+            request->state_ref()));
   }
 
   // Flush any remaining idempotent mutations.
