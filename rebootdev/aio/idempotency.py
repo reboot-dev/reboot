@@ -1,6 +1,7 @@
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from google.protobuf.message import Message
 from rebootdev.aio.aborted import Aborted
 from rebootdev.aio.exceptions import InputError
@@ -15,6 +16,17 @@ from rebootdev.aio.types import (
 )
 from rebootdev.settings import DOCS_BASE_URL, MAX_IDEMPOTENCY_KEY_LENGTH
 from typing import Iterator, Optional
+from uuid7 import create as uuid7
+
+
+def make_expiring_idempotency_key(
+    when: timedelta = timedelta(days=7),
+) -> uuid.UUID:
+    """
+    Helper that makes an expiring idempotency key, which by default
+    expires after 7 days.
+    """
+    return uuid7(datetime.now() + when)
 
 
 class IdempotencyRequiredError(InputError):
@@ -513,7 +525,26 @@ class IdempotencyManager:
 
         if key not in self._aliases:
             if self._seed is None:
-                self._aliases[key] = uuid.uuid4()
+                # If we don't have a seed then we expect that this
+                # idempotency key is only used for retries as part of
+                # the current code that is running _right now_, and
+                # thus the idempotency key should expire. This may
+                # happen, for example, in a transaction where a
+                # developer is explicitly trying to make a call
+                # `.idempotently()`, or from an external context for
+                # similar reasons. While we never expect a transaction
+                # to run for longer than 7 days, it's not totally out
+                # of the question that an external context might not
+                # run for so long, but in that case we should tell
+                # developers to use a seed. In fact, we might want to
+                # consider dropping support for `.idempotently()` with
+                # an `ExternalContext` unless using a seed. We'll
+                # still retry each mutation with an idempotency key
+                # that we generated just before making the call (see
+                # 'stubs.py'), but then we won't give people the false
+                # believe that because they called `.idempotently()`
+                # it'll be safe "forever".
+                self._aliases[key] = make_expiring_idempotency_key()
             else:
                 # A version 5 UUID is a deterministic hash from a
                 # "seed" UUID and some data (bytes or string, in our

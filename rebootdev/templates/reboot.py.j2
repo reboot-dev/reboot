@@ -2669,7 +2669,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 return await self._read(
                     self._servicer,
                     context.idempotency(
-                        key=IMPORT_uuid.uuid4(),
+                        key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
                         generated=True,
                     ) if self._how == IMPORT_reboot_aio_workflows.ALWAYS else context.idempotency(
                         alias=self._alias,
@@ -2795,7 +2795,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 unidempotently = self._how == IMPORT_reboot_aio_workflows.ALWAYS
                 idempotency = (
                     context.idempotency(
-                        key=IMPORT_uuid.uuid4(),
+                        key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
                         generated=True,
                     ) if unidempotently else context.idempotency(
                         alias=self._alias,
@@ -4948,7 +4948,10 @@ class {{ client.proto.state_name }}:
             return self.idempotently(alias, each_iteration=True)
 
         def always(self):
-            return self.idempotently(key=IMPORT_uuid.uuid4(), generated=True)
+            return self.idempotently(
+                key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
+                generated=True,
+            )
 
         class _UntilChangesSatisfies(IMPORT_typing.Generic[{{ client.proto.state_name }}_UntilCallableType]):
 
@@ -6649,7 +6652,10 @@ class {{ client.proto.state_name }}:
 
     @classmethod
     def always(cls):
-        return cls.idempotently(key=IMPORT_uuid.uuid4(), generated=True)
+        return cls.idempotently(
+            key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
+            generated=True,
+        )
 
     @IMPORT_dataclasses.dataclass(frozen=True)
     class _ConstructIdempotently:

@@ -154,6 +154,7 @@ py_library(
         ":aborted_py",
         ":caller_id_py",
         ":contexts_py",
+        ":external_py",
         ":headers_py",
         ":idempotency_py",
         ":servicers_py",
@@ -265,6 +266,7 @@ py_library(
     deps = [
         ":aborted_py",
         ":types_py",
+        requirement("uuid7-standard"),
         "@com_github_reboot_dev_reboot//rebootdev:settings_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio:exceptions_py",
         requirement("protobuf"),

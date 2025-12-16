@@ -9,9 +9,13 @@ from log.log import get_logger
 from rebootdev.aio.aborted import Aborted
 from rebootdev.aio.backoff import Backoff
 from rebootdev.aio.caller_id import CallerID
-from rebootdev.aio.contexts import Context, Participants, ReaderContext
+from rebootdev.aio.contexts import Context, Participants, WorkflowContext
+from rebootdev.aio.external import ExternalContext
 from rebootdev.aio.headers import IDEMPOTENCY_KEY_HEADER, Headers
-from rebootdev.aio.idempotency import IdempotencyManager
+from rebootdev.aio.idempotency import (
+    IdempotencyManager,
+    make_expiring_idempotency_key,
+)
 from rebootdev.aio.internals.channel_manager import _ChannelManager
 from rebootdev.aio.internals.contextvars import get_application_id
 from rebootdev.aio.types import (
@@ -284,20 +288,28 @@ class Stub:
                 f"Do not set '{IDEMPOTENCY_KEY_HEADER}' metadata yourself"
             )
 
-        if (
-            idempotency_key is None and
-            not isinstance(self._context, ReaderContext)
-        ):
-            # There isn't a user-provided idempotency key, and the
-            # method is not inherently idempotent (i.e., a reader).
-            #
+        # If this call is not to a reader, is coming from an
+        # `ExternalContext` (which is when `self._context is None`),
+        # and there isn't a user-provided idempotency key, add one so
+        # that we can retry safely.
+        if not reader and self._context is None and idempotency_key is None:
+            assert isinstance(self._idempotency_manager, ExternalContext)
+
             # We may perform transparent retries on this call. That
             # means it needs to be idempotent, and for non-readers that
             # means we need an idempotency key. So even if the user or
             # idempotency manager didn't provide an idempotency key, we
             # generate one now. Keys generated here don't need to be
-            # reproducible, they just need to be unique.
-            idempotency_key = uuid.uuid4()
+            # reproducible, they just need to be unique, and it should
+            # expire after 7 days.
+            idempotency_key = make_expiring_idempotency_key()
+
+        # If we're a `WorkflowContext` all non-readers should have an
+        # idempotency key already.
+        assert (
+            not isinstance(self._context, WorkflowContext) or
+            (reader or idempotency_key is not None)
+        )
 
         if idempotency_key is not None:
             metadata += ((IDEMPOTENCY_KEY_HEADER, str(idempotency_key)),)
