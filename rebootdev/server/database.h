@@ -36,7 +36,7 @@ inline bool RebootDatabaseLogLevelEnabled(int verbosity) {
   return chosen_verbosity >= verbosity;
 }
 
-#define REBOOT_DATABASE_LOG(level) \
+#define REBOOT_DATABASE_LOG(level)                                             \
   LOG_IF(INFO, RebootDatabaseLogLevelEnabled(level))
 
 ////////////////////////////////////////////////////////////////////////
@@ -121,6 +121,6 @@ void TestOnly_EnableLegacyCoordinatorPrepared(grpc::Service* service);
 
 ////////////////////////////////////////////////////////////////////////
 
-} // namespace rbt::server
+}  // namespace rbt::server
 
 ////////////////////////////////////////////////////////////////////////

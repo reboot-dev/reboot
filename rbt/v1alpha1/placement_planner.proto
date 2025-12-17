@@ -8,8 +8,8 @@ package rbt.v1alpha1;
 import "google/protobuf/descriptor.proto";
 
 service PlacementPlanner {
-  rpc ListenForPlan(ListenForPlanRequest) returns (
-      stream ListenForPlanResponse);
+  rpc ListenForPlan(ListenForPlanRequest)
+      returns (stream ListenForPlanResponse);
 }
 
 message ListenForPlanRequest {}
