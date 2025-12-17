@@ -516,8 +516,9 @@ class DatabaseClient:
                 Mapping[str, str], state_tags_by_state_type
             ),
             shard_ids=shard_ids,
-            # Idempotent mutations are now recovered on demand and per
-            # state to significantly speed up recovery.
+            # Idempotent mutations are now recovered on demand, and
+            # per state, via `RecoverIdempotentMutations()` to
+            # significantly speed up recovery.
             skip_idempotent_mutations=True,
         )
         response = database_pb2.RecoverResponse()

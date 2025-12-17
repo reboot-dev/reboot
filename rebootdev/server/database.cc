@@ -3253,24 +3253,27 @@ grpc::Status DatabaseService::Recover(
         "shard_ids are required for Recover request");
   }
 
-  // (0) Migrate to the current persistence version, if necessary.
+  // Migrate to the current persistence version, if necessary.
   expected<void> maybe_migrate = MaybeMigratePersistence(*request);
   if (!maybe_migrate.has_value()) {
     return grpc::Status(grpc::UNKNOWN, maybe_migrate.error());
   }
+
+  // TODO: recover tasks, idempotent mutations (as long as we continue
+  // to do so for backwards compatibility), and transactions in
+  // parallel!
 
   // Handle the `shard_ids` as a hash set for efficiency.
   std::unordered_set<std::string> shard_ids(
       request->shard_ids().begin(),
       request->shard_ids().end());
 
-  // (1) Recover tasks _before_ recovering transactions.
   REBOOT_DATABASE_LOG(1) << "Recovering tasks";
 
   RecoverTasks(*responses, shard_ids);
 
-  // (2) Recover idempotent mutations. Newer versions of Reboot will
-  // recover idempotent mutations on demand, but for backwards
+  // NOTE: newer versions of Reboot recover idempotent mutations on
+  // demand via `RecoverIdempotentMutations()`, but for backwards
   // compatibility we still support recovering them here.
   if (!request->skip_idempotent_mutations()) {
     REBOOT_DATABASE_LOG(1) << "Recovering idempotent mutations";
@@ -3278,7 +3281,6 @@ grpc::Status DatabaseService::Recover(
     RecoverShardsIdempotentMutations(*responses, shard_ids);
   }
 
-  // (3) Recover transactions.
   REBOOT_DATABASE_LOG(1) << "Recovering transactions";
 
   expected<void> recover_transactions = RecoverTransactions(

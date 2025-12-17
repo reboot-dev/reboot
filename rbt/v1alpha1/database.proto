@@ -315,8 +315,9 @@ message RecoverRequest {
   // will be returned. At least one shard ID must be specified.
   repeated string shard_ids = 2;
 
-  // Idempotent mutations are now recovered on demand but for
-  // backwards compatibility they are supported unless explicitly
+  // Idempotent mutations are now recovered on demand via
+  // `RecoverIdempotentMutations`, but for backwards compatibility
+  // they are still recovered in `Recover` also unless explicitly
   // toggled off with this flag.
   bool skip_idempotent_mutations = 3;
 }
