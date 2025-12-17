@@ -31,8 +31,7 @@ message ImportResponse {}
 ////////////////////////////////////////////////////////////////////////
 
 service ExportImport {
-  rpc ListServers(ListServersRequest)
-      returns (ListServersResponse);
+  rpc ListServers(ListServersRequest) returns (ListServersResponse);
   rpc Export(ExportRequest) returns (stream ExportImportItem);
   rpc Import(stream ExportImportItem) returns (ImportResponse);
 }

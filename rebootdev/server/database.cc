@@ -24,6 +24,7 @@
 #include "rocksdb/table.h"
 #include "rocksdb/utilities/transaction_db.h"
 #include "stout/borrowable.h"
+#include "stout/cache.h"
 #include "stout/uuid.h"
 #include "tl/expected.hpp"
 
@@ -221,25 +222,13 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       std::shared_ptr<rocksdb::Statistics> statistics,
       std::vector<rocksdb::ColumnFamilyHandle*>&& column_family_handles,
       std::unique_ptr<rocksdb::TransactionDB>&& db,
-      const ServerInfo& server_info)
-    : state_directory_(state_directory),
-      // The application metadata is serialized proto bytes stored in a file,
-      // not in RocksDB. This is for backwards compatibility with previous
-      // Reboot versions.
-      metadata_path_(state_directory / "__metadata"),
-      statistics_(statistics),
-      column_family_handles_(std::move(column_family_handles)),
-      db_(std::move(db)),
-      server_info_(server_info) {
-    CHECK(server_info_.shard_infos_size() > 0)
-        << "Server info must contain at least one shard.";
-  }
-
+      const ServerInfo& server_info);
 
   // Migrate from previous persistence versions to the current version,
   // if necessary.
   expected<void> MaybeMigratePersistence(const RecoverRequest& request);
   expected<void> MigratePersistence2To3(const RecoverRequest& request);
+  expected<void> MigratePersistence3To4(const RecoverRequest& request);
 
   // Lookup a rocksdb column family handle for the specified state type,
   // or fail if no such column family exists for the state type.
@@ -273,12 +262,10 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       expected<stout::borrowed_ref<rocksdb::Transaction>>&& txn);
 
   // Helper to check if an actor has an ongoing transaction.
-  bool HasTransaction(
-      const std::string& state_ref);
+  bool HasTransaction(const std::string& state_ref);
 
   // Helper to validate a non-transactional store request.
-  expected<void> ValidateNonTransactionalStore(
-      const StoreRequest& request);
+  expected<void> ValidateNonTransactionalStore(const StoreRequest& request);
 
   // Helper for recovering tasks.
   std::set<std::string> RecoverTasks(
@@ -372,15 +359,16 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   // Cache of shard IDs for state refs, necessary because computing
   // the shard ID when you have 2^14 of them over and over again
   // really adds up!
-  //
-  // TODO: make this an actual least recently used cache!
-  std::unordered_map<std::string, std::string> shard_for_state_ref_;
+  Cache<std::string, std::string> shard_for_state_ref_;
+  // Cache capacity large enough to be helpful but not so large that
+  // it's more than O(10s of MB).
+  static const size_t SHARD_FOR_STATE_REF_CAPACITY = 8192;
 
   // We track ongoing transactions indexed by 'state_ref' because there should
   // only ever be a single transaction per actor and we want to be able to
   // look up whether or not a actor is currently in a transaction.
   std::map<
-      std::string, // An actor id.
+      std::string,  // An actor id.
       stout::Borrowable<std::unique_ptr<rocksdb::Transaction>>>
       txns_;
 
@@ -392,13 +380,64 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
 
 ////////////////////////////////////////////////////////////////////////
 
+// Gets the actor id from a 'rocksdb::Transaction' based on the
+// naming schema used in 'MakeTransactionName'.
+std::string GetStateRefFromTransaction(const rocksdb::Transaction& txn) {
+  const std::string& name = txn.GetName();
+  return name.substr(0, name.rfind(':'));
+}
+
+// Overload of 'GetStateRef' when we have a borrowable.
+std::string GetStateRefFromTransaction(
+    const stout::borrowed_ref<rocksdb::Transaction>& txn) {
+  return GetStateRefFromTransaction(*txn);
+}
+
+////////////////////////////////////////////////////////////////////////
+
+DatabaseService::DatabaseService(
+    const std::filesystem::path& state_directory,
+    std::shared_ptr<rocksdb::Statistics> statistics,
+    std::vector<rocksdb::ColumnFamilyHandle*>&& column_family_handles,
+    std::unique_ptr<rocksdb::TransactionDB>&& db,
+    const ServerInfo& server_info)
+  : state_directory_(state_directory),
+    // The application metadata is serialized proto bytes stored in a file,
+    // not in RocksDB. This is for backwards compatibility with previous
+    // Reboot versions.
+    metadata_path_(state_directory / "__metadata"),
+    statistics_(statistics),
+    column_family_handles_(std::move(column_family_handles)),
+    db_(std::move(db)),
+    server_info_(server_info),
+    shard_for_state_ref_(SHARD_FOR_STATE_REF_CAPACITY) {
+  CHECK(server_info_.shard_infos_size() > 0)
+      << "Server info must contain at least one shard.";
+
+  // We recover all prepared transactions here since every server
+  // will call `Recover()` on every startup and we only want to do
+  // it once. Also, while in production there won't be any other
+  // kinds of calls _before_ `Recover()`, there were tests
+  // introduced into 'tests/reboot/server/database_tests.cc' at some
+  // point that break that invariant, and thus the constructor is
+  // the only place we can do this before any other possible calls
+  // are made.
+  std::vector<rocksdb::Transaction*> txns;
+  db_->GetAllPreparedTransactions(&txns);
+  for (rocksdb::Transaction* txn : txns) {
+    std::string state_ref = GetStateRefFromTransaction(*txn);
+    txns_.emplace(state_ref, std::unique_ptr<rocksdb::Transaction>(txn));
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
 DatabaseService::~DatabaseService() {
   for (auto* column_family_handle : column_family_handles_) {
     rocksdb::Status status =
         db_->DestroyColumnFamilyHandle(column_family_handle);
-    CHECK(status.ok())
-        << "Failed to destroy column family handle: "
-        << status.ToString();
+    CHECK(status.ok()) << "Failed to destroy column family handle: "
+                       << status.ToString();
   }
 }
 
@@ -409,15 +448,12 @@ DatabaseService::~DatabaseService() {
 // statistic. See: (check_line_length skip)
 // https://github.com/facebook/rocksdb/wiki/Prefix-Seek/6f8f534058979f799ef90d2d8c7e699d94894b6e#why-prefix-seek
 rocksdb::ColumnFamilyOptions CreateColumnFamilyOptions() {
-  rocksdb::ColumnFamilyOptions cf_options =
-      rocksdb::ColumnFamilyOptions();
+  rocksdb::ColumnFamilyOptions cf_options = rocksdb::ColumnFamilyOptions();
   rocksdb::BlockBasedTableOptions table_options;
-  table_options.filter_policy.reset(
-      rocksdb::NewBloomFilterPolicy(10, false));
+  table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
   cf_options.table_factory.reset(
       rocksdb::NewBlockBasedTableFactory(table_options));
-  cf_options.prefix_extractor.reset(
-      new PrefixToLastFSlashExtractor());
+  cf_options.prefix_extractor.reset(new PrefixToLastFSlashExtractor());
   return cf_options;
 }
 
@@ -458,18 +494,25 @@ std::string_view GetStateRefFromActorStateKey(
 
 ////////////////////////////////////////////////////////////////////////
 
-#define TASK_KEY_PREFIX "task"
+// To ensure that we can handle failures during a migration we need to
+// differentiate the key prefix. We only use a version suffix, i.e.,
+// `_V3` on the old one so that the code doesn't have a mix of
+// versions in it, it's only the migration code that uses the
+// suffixes.
+#define TASK_KEY_PREFIX_V3 "task"
+#define TASK_KEY_PREFIX "task-v4"
 
-std::string MakeTaskKey(const TaskId& task_id) {
+std::string MakeTaskKey(const Task::Status& status, const TaskId& task_id) {
   return fmt::format(
-      TASK_KEY_PREFIX ":{}:{}",
+      TASK_KEY_PREFIX ":{}:{}:{}",
+      Task::Status_Name(status),
       task_id.state_ref(),
       task_id.task_uuid());
 }
 
 ////////////////////////////////////////////////////////////////////////
 
-#define CURRENT_PERSISTENCE_VERSION 3
+#define CURRENT_PERSISTENCE_VERSION 4
 
 constexpr std::string_view kPersistenceVersionKey = "persistence_version";
 constexpr std::string_view kServerInfoKey = "server_info";
@@ -480,40 +523,40 @@ expected<void> WritePersistenceVersion(rocksdb::DB* db, int version) {
 
   std::string serialized_version_put;
   if (!pv.SerializeToString(&serialized_version_put)) {
-    return make_unexpected(fmt::format(
-        "Failed to serialize persistence version: {}",
-        pv.ShortDebugString()));
+    return make_unexpected(
+        fmt::format(
+            "Failed to serialize persistence version: {}",
+            pv.ShortDebugString()));
   }
   rocksdb::Status status = db->Put(
       DefaultWriteOptions(),
       rocksdb::Slice(kPersistenceVersionKey),
       rocksdb::Slice(serialized_version_put));
   if (!status.ok()) {
-    return make_unexpected(fmt::format(
-        "Failed to write persistence version: {}",
-        status.ToString()));
+    return make_unexpected(
+        fmt::format(
+            "Failed to write persistence version: {}",
+            status.ToString()));
   }
 
   return {};
 }
 
-expected<void> WriteServerInfo(
-    rocksdb::DB* db,
-    const ServerInfo& server_info) {
+expected<void> WriteServerInfo(rocksdb::DB* db, const ServerInfo& server_info) {
   std::string serialized_server_info;
   if (!server_info.SerializeToString(&serialized_server_info)) {
-    return make_unexpected(fmt::format(
-        "Failed to serialize server info: {}",
-        server_info.ShortDebugString()));
+    return make_unexpected(
+        fmt::format(
+            "Failed to serialize server info: {}",
+            server_info.ShortDebugString()));
   }
   rocksdb::Status status = db->Put(
       DefaultWriteOptions(),
       rocksdb::Slice(kServerInfoKey),
       rocksdb::Slice(serialized_server_info));
   if (!status.ok()) {
-    return make_unexpected(fmt::format(
-        "Failed to write server info: {}",
-        status.ToString()));
+    return make_unexpected(
+        fmt::format("Failed to write server info: {}", status.ToString()));
   }
 
   return {};
@@ -523,14 +566,12 @@ expected<void> ValidateServerInfo(
     rocksdb::DB* db,
     const ServerInfo& expected_server_info) {
   std::string serialized_server_info;
-  rocksdb::Status status = db->Get(
-      rocksdb::ReadOptions(),
-      kServerInfoKey,
-      &serialized_server_info);
+  rocksdb::Status status =
+      db->Get(rocksdb::ReadOptions(), kServerInfoKey, &serialized_server_info);
   if (status.ok()) {
     ServerInfo actual_server_info;
-    CHECK(actual_server_info.ParseFromString(
-        std::move(serialized_server_info)));
+    CHECK(
+        actual_server_info.ParseFromString(std::move(serialized_server_info)));
 
     if (actual_server_info.shard_infos_size() == 1
         && actual_server_info.shard_infos(0).shard_id() == "cloud-shard-0"
@@ -550,10 +591,11 @@ expected<void> ValidateServerInfo(
       // ServerManager (which will tell a user how their shard count
       // changed). A user should not see this check unless there is an issue in
       // that check.
-      return make_unexpected(fmt::format(
-          "Server information mismatched:\nactual: {}\nvs\nexpected: {}\n",
-          actual_server_info.ShortDebugString(),
-          expected_server_info.ShortDebugString()));
+      return make_unexpected(
+          fmt::format(
+              "Server information mismatched:\nactual: {}\nvs\nexpected: {}\n",
+              actual_server_info.ShortDebugString(),
+              expected_server_info.ShortDebugString()));
     }
   } else if (status.IsNotFound()) {
     // TODO: For backwards compatibility for #2910, we currently write the
@@ -561,9 +603,8 @@ expected<void> ValidateServerInfo(
     // for a while, we should error for this case instead.
     return WriteServerInfo(db, expected_server_info);
   } else {
-    return make_unexpected(fmt::format(
-        "Failed to read server info: {}",
-        status.ToString()));
+    return make_unexpected(
+        fmt::format("Failed to read server info: {}", status.ToString()));
   }
 
   return {};
@@ -577,10 +618,9 @@ std::string DatabaseService::ListDatabaseKeys() {
   for (rocksdb::ColumnFamilyHandle* column_family_handle :
        column_family_handles_) {
     stream << "\n  " << column_family_handle->GetName() << ": [";
-    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
-        db_->NewIterator(
-            NonPrefixIteratorReadOptions(),
-            column_family_handle)));
+    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(db_->NewIterator(
+        NonPrefixIteratorReadOptions(),
+        column_family_handle)));
 
     iterator->SeekToFirst();
     while (iterator->Valid()) {
@@ -596,8 +636,7 @@ std::string DatabaseService::ListDatabaseKeys() {
 ////////////////////////////////////////////////////////////////////////
 
 expected<rocksdb::ColumnFamilyHandle*>
-DatabaseService::LookupColumnFamilyHandle(
-    const std::string& state_type) {
+DatabaseService::LookupColumnFamilyHandle(const std::string& state_type) {
   // TODO: ensure `mutex_` is currently held by this thread.
 
   // TODO(benh): make 'column_family_handles_' be a map?
@@ -609,9 +648,10 @@ DatabaseService::LookupColumnFamilyHandle(
       });
 
   if (iterator == std::end(column_family_handles_)) {
-    return make_unexpected(fmt::format(
-        "Failed to find column family for state type '{}'",
-        state_type));
+    return make_unexpected(
+        fmt::format(
+            "Failed to find column family for state type '{}'",
+            state_type));
   }
 
   return *iterator;
@@ -641,10 +681,11 @@ DatabaseService::LookupOrCreateColumnFamilyHandle(
         &column_family_handle);
 
     if (!status.ok()) {
-      return make_unexpected(fmt::format(
-          "Failed to create column family for state type '{}': {}",
-          state_type,
-          status.ToString()));
+      return make_unexpected(
+          fmt::format(
+              "Failed to create column family for state type '{}': {}",
+              state_type,
+              status.ToString()));
     } else {
       // Save column family handle for future look ups and destruction!
       column_family_handles_.push_back(column_family_handle);
@@ -678,22 +719,6 @@ std::string GetTransactionId(
 
 ////////////////////////////////////////////////////////////////////////
 
-// Gets the actor id from a 'rocksdb::Transaction' based on the
-// naming schema used in 'MakeTransactionName'.
-std::string GetStateRef(
-    const stout::borrowed_ref<rocksdb::Transaction>& txn) {
-  const std::string& name = txn->GetName();
-  return name.substr(0, name.rfind(':'));
-}
-
-// Overload of 'GetStateRef' when we don't have a borrowable.
-std::string GetStateRef(const rocksdb::Transaction& txn) {
-  const std::string& name = txn.GetName();
-  return name.substr(0, name.rfind(':'));
-}
-
-////////////////////////////////////////////////////////////////////////
-
 #define TRANSACTION_PARTICIPANT_KEY_PREFIX "transaction-participant"
 
 // Returns a RocksDB key that represents a transaction participant.
@@ -711,11 +736,13 @@ std::string MakeTransactionParticipantKey(
 // Legacy prefix for coordinator transactions without shard information.
 // Used for backward compatibility.
 // (check_line_length skip)
-#define LEGACY_PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX "transaction-prepared"
+#define LEGACY_PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX                     \
+  "transaction-prepared"
 
 // Prefix for shard-aware coordinator transactions.
 // (check_line_length skip)
-#define PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX "prepared-transaction-coordinator"
+#define PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX                            \
+  "prepared-transaction-coordinator"
 
 // Returns a RocksDB key that represents a prepared transaction from the
 // coordinator's perspective, including shard information.
@@ -738,15 +765,24 @@ std::string MakeLegacyTransactionPreparedKey(const UUID& transaction_id) {
 
 ////////////////////////////////////////////////////////////////////////
 
-#define IDEMPOTENT_MUTATION_KEY_PREFIX "idempotent-mutation"
+// To ensure that we can handle failures during a migration we need to
+// differentiate the key prefix. We only use a version suffix, i.e.,
+// `_V3` on the old one so that the code doesn't have a mix of
+// versions in it, it's only the migration code that uses the
+// suffixes.
+#define IDEMPOTENT_MUTATION_KEY_PREFIX_V3 "idempotent-mutation"
+#define IDEMPOTENT_MUTATION_KEY_PREFIX "idempotent-mutation-v4"
 
 // Returns a key for storing in rocksdb that represents an idempotent
 // mutation. We use the stringified UUID to make debugging easier.
 // TODO: Skip deserializing/reserializing the UUID in the sidecar, and
 // send it string encoded from the client.
-std::string MakeIdempotentMutationKey(const UUID& idempotency_key) {
+std::string MakeIdempotentMutationKey(
+    const std::string& state_ref,
+    const UUID& idempotency_key) {
   return fmt::format(
-      IDEMPOTENT_MUTATION_KEY_PREFIX ":{}",
+      IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}",
+      state_ref,
       idempotency_key.toString());
 }
 
@@ -763,10 +799,11 @@ DatabaseService::LookupTransaction(
   if (iterator != std::end(txns_)) {
     return iterator->second.Borrow();
   } else {
-    return make_unexpected(fmt::format(
-        "Missing transaction for state type '{}' actor '{}'",
-        state_type,
-        state_ref));
+    return make_unexpected(
+        fmt::format(
+            "Missing transaction for state type '{}' actor '{}'",
+            state_type,
+            state_ref));
   }
 }
 
@@ -782,17 +819,17 @@ DatabaseService::LookupOrBeginTransaction(
   // that any nested transaction ultimately belongs.
   Try<UUID> transaction_id = UUID::fromBytes(transaction.transaction_ids(0));
   if (transaction_id.isError()) {
-    return make_unexpected(fmt::format(
-        "Failed to lookup or begin transaction for "
-        "state type '{}' actor '{}': {}",
-        transaction.state_type(),
-        transaction.state_ref(),
-        transaction_id.error()));
+    return make_unexpected(
+        fmt::format(
+            "Failed to lookup or begin transaction for "
+            "state type '{}' actor '{}': {}",
+            transaction.state_type(),
+            transaction.state_ref(),
+            transaction_id.error()));
   }
 
-  expected<stout::borrowed_ref<rocksdb::Transaction>> txn = LookupTransaction(
-      transaction.state_type(),
-      transaction.state_ref());
+  expected<stout::borrowed_ref<rocksdb::Transaction>> txn =
+      LookupTransaction(transaction.state_type(), transaction.state_ref());
 
   if (txn.has_value()) {
     // We already have a transaction for this actor. Presumably this
@@ -807,13 +844,14 @@ DatabaseService::LookupOrBeginTransaction(
     if ((*txn)->GetName() == name) {
       return txn;
     } else {
-      return make_unexpected(fmt::format(
-          "Failed to begin transaction '{}' for state type '{}' actor '{}' "
-          "as transaction '{}' has already begun",
-          transaction_id->toString(),
-          transaction.state_type(),
-          transaction.state_ref(),
-          GetTransactionId(*txn)));
+      return make_unexpected(
+          fmt::format(
+              "Failed to begin transaction '{}' for state type '{}' actor '{}' "
+              "as transaction '{}' has already begun",
+              transaction_id->toString(),
+              transaction.state_type(),
+              transaction.state_ref(),
+              GetTransactionId(*txn)));
     }
   } else {
     // There is no stored transaction for this actor yet. Begin the
@@ -848,9 +886,10 @@ DatabaseService::LookupOrBeginTransaction(
     if (store_participant) {
       std::string data;
       if (!transaction.SerializeToString(&data)) {
-        return make_unexpected(fmt::format(
-            "Failed to begin transaction '{}': Failed to serialize",
-            transaction_id->toString()));
+        return make_unexpected(
+            fmt::format(
+                "Failed to begin transaction '{}': Failed to serialize",
+                transaction_id->toString()));
       }
 
       const std::string& key = MakeTransactionParticipantKey(
@@ -864,17 +903,18 @@ DatabaseService::LookupOrBeginTransaction(
           rocksdb::Slice(data));
 
       if (!status.ok()) {
-        return make_unexpected(fmt::format(
-            "Failed to begin transaction '{}': {}",
-            transaction_id->toString(),
-            status.ToString()));
+        return make_unexpected(
+            fmt::format(
+                "Failed to begin transaction '{}': {}",
+                transaction_id->toString(),
+                status.ToString()));
       }
     }
 
-    REBOOT_DATABASE_LOG(1)
-        << "Beginning transaction '" << transaction_id->toString()
-        << "' for state type '" << transaction.state_type()
-        << "' actor '" << transaction.state_ref() << "'";
+    REBOOT_DATABASE_LOG(1) << "Beginning transaction '"
+                           << transaction_id->toString() << "' for state type '"
+                           << transaction.state_type() << "' actor '"
+                           << transaction.state_ref() << "'";
 
     rocksdb::TransactionOptions txn_options;
 
@@ -891,19 +931,19 @@ DatabaseService::LookupOrBeginTransaction(
         txn_options);
 
     if (txn == nullptr) {
-      return make_unexpected(fmt::format(
-          "Failed to begin transaction '{}': Unknown rocksdb failure",
-          transaction_id->toString()));
+      return make_unexpected(
+          fmt::format(
+              "Failed to begin transaction '{}': Unknown rocksdb failure",
+              transaction_id->toString()));
     }
 
     // We must name the transaction in order for rocksdb to persist
     // it when we prepare. We also use the name to be able to
     // determine whether or not we're in the same ongoing
     // transaction for future calls to 'LookupOrBeginTransaction'.
-    rocksdb::Status status = txn->SetName(
-        MakeTransactionName(
-            transaction.state_ref(),
-            transaction_id->toString()));
+    rocksdb::Status status = txn->SetName(MakeTransactionName(
+        transaction.state_ref(),
+        transaction_id->toString()));
 
     if (status.ok()) {
       auto [iterator, inserted] = txns_.try_emplace(
@@ -913,10 +953,11 @@ DatabaseService::LookupOrBeginTransaction(
       return iterator->second.Borrow();
     } else {
       delete txn;
-      return make_unexpected(fmt::format(
-          "Failed to begin transaction '{}': {}",
-          transaction_id->toString(),
-          status.ToString()));
+      return make_unexpected(
+          fmt::format(
+              "Failed to begin transaction '{}': {}",
+              transaction_id->toString(),
+              status.ToString()));
     }
   }
 }
@@ -927,7 +968,7 @@ void DatabaseService::DeleteTransaction(
     expected<stout::borrowed_ref<rocksdb::Transaction>>&& txn) {
   // TODO: ensure `mutex_` is currently held by this thread.
 
-  auto iterator = txns_.find(GetStateRef(*txn));
+  auto iterator = txns_.find(GetStateRefFromTransaction(*txn));
   CHECK(iterator != std::end(txns_));
 
   // Before we erase we need to release the borrow so that it can be
@@ -950,8 +991,8 @@ bool DatabaseService::HasTransaction(const std::string& state_ref) {
 expected<std::unique_ptr<grpc::Service>> DatabaseService::Instantiate(
     const std::filesystem::path& state_directory,
     const ServerInfo& server_info) {
-  REBOOT_DATABASE_LOG(1)
-      << "Attempting to open rocksdb at '" << state_directory.string() << "'";
+  REBOOT_DATABASE_LOG(1) << "Attempting to open rocksdb at '"
+                         << state_directory.string() << "'";
 
   // First get out all of the column families that we have in the
   // database so we can open the database with column family handles.
@@ -974,20 +1015,17 @@ expected<std::unique_ptr<grpc::Service>> DatabaseService::Instantiate(
 
     rocksdb::DB* db = nullptr;
 
-    REBOOT_DATABASE_LOG(1)
-        << "Trying to open _new_ rocksdb at '"
-        << state_directory.string() << "'";
+    REBOOT_DATABASE_LOG(1) << "Trying to open _new_ rocksdb at '"
+                           << state_directory.string() << "'";
 
-    status = rocksdb::DB::Open(
-        options,
-        state_directory.string(),
-        &db);
+    status = rocksdb::DB::Open(options, state_directory.string(), &db);
 
     if (!status.ok()) {
-      return make_unexpected(fmt::format(
-          "Failed to open _new_ rocksdb at '{}': {}",
-          state_directory.string(),
-          status.ToString()));
+      return make_unexpected(
+          fmt::format(
+              "Failed to open _new_ rocksdb at '{}': {}",
+              state_directory.string(),
+              status.ToString()));
     }
 
     // We've created a new database. Write the current persistence version and
@@ -995,27 +1033,30 @@ expected<std::unique_ptr<grpc::Service>> DatabaseService::Instantiate(
     expected<void> write_persistence_version =
         WritePersistenceVersion(db, CURRENT_PERSISTENCE_VERSION);
     if (!write_persistence_version.has_value()) {
-      return make_unexpected(fmt::format(
-          "Failed to write persistence version in _new_ rocksdb at '{}': {}",
-          state_directory.string(),
-          write_persistence_version.error()));
+      return make_unexpected(
+          fmt::format(
+              "Failed to write persistence version in _new_ rocksdb at '{}': "
+              "{}",
+              state_directory.string(),
+              write_persistence_version.error()));
     }
-    expected<void> write_server_info =
-        WriteServerInfo(db, server_info);
+    expected<void> write_server_info = WriteServerInfo(db, server_info);
     if (!write_server_info.has_value()) {
-      return make_unexpected(fmt::format(
-          "Failed to write server info in _new_ rocksdb at '{}': {}",
-          state_directory.string(),
-          write_server_info.error()));
+      return make_unexpected(
+          fmt::format(
+              "Failed to write server info in _new_ rocksdb at '{}': {}",
+              state_directory.string(),
+              write_server_info.error()));
     }
 
     // NOTE: If we do not flush, then immediately closing the database after
     // the above writes can cause corruption.
     status = db->Flush(rocksdb::FlushOptions());
     if (!status.ok()) {
-      return make_unexpected(fmt::format(
-          "Failed to flush metadata in new database: {}",
-          status.ToString()));
+      return make_unexpected(
+          fmt::format(
+              "Failed to flush metadata in new database: {}",
+              status.ToString()));
     }
 
     // Then re-open it.
@@ -1027,18 +1068,20 @@ expected<std::unique_ptr<grpc::Service>> DatabaseService::Instantiate(
         &column_families);
 
     if (!status.ok()) {
-      return make_unexpected(fmt::format(
-          "Failed to get column families in rocksdb: {}",
-          status.ToString()));
+      return make_unexpected(
+          fmt::format(
+              "Failed to get column families in rocksdb: {}",
+              status.ToString()));
     }
   }
 
   // Add all column families.
   std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
   for (const std::string& column_family : column_families) {
-    column_family_descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
-        column_family,
-        CreateColumnFamilyOptions()));
+    column_family_descriptors.push_back(
+        rocksdb::ColumnFamilyDescriptor(
+            column_family,
+            CreateColumnFamilyOptions()));
   }
 
   rocksdb::TransactionDBOptions txn_options;
@@ -1081,20 +1124,21 @@ expected<std::unique_ptr<grpc::Service>> DatabaseService::Instantiate(
       &txn_db);
 
   if (!status.ok()) {
-    return make_unexpected(fmt::format(
-        "Failed to open rocksdb at '{}': {}",
-        state_directory.string(),
-        status.ToString()));
+    return make_unexpected(
+        fmt::format(
+            "Failed to open rocksdb at '{}': {}",
+            state_directory.string(),
+            status.ToString()));
   }
 
   // Validate that we are opening a store with the expected server info.
-  expected<void> validate_server_info =
-      ValidateServerInfo(txn_db, server_info);
+  expected<void> validate_server_info = ValidateServerInfo(txn_db, server_info);
   if (!validate_server_info.has_value()) {
-    return make_unexpected(fmt::format(
-        "Could not validate server information for '{}': {}",
-        state_directory.string(),
-        validate_server_info.error()));
+    return make_unexpected(
+        fmt::format(
+            "Could not validate server information for '{}': {}",
+            state_directory.string(),
+            validate_server_info.error()));
   }
 
   REBOOT_DATABASE_LOG(1)
@@ -1107,13 +1151,12 @@ expected<std::unique_ptr<grpc::Service>> DatabaseService::Instantiate(
   // debugging when starting a sidecar, i.e., it will give a sense of
   // what is stored.
 
-  return std::unique_ptr<grpc::Service>(
-      new DatabaseService(
-          state_directory,
-          statistics,
-          std::move(column_family_handles),
-          std::unique_ptr<rocksdb::TransactionDB>(txn_db),
-          server_info));
+  return std::unique_ptr<grpc::Service>(new DatabaseService(
+      state_directory,
+      statistics,
+      std::move(column_family_handles),
+      std::unique_ptr<rocksdb::TransactionDB>(txn_db),
+      server_info));
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -1124,17 +1167,15 @@ grpc::Status DatabaseService::ColocatedRange(
     ColocatedRangeResponse* response) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_DATABASE_LOG(1)
-      << "ColocatedRange { " << request->ShortDebugString() << " }";
+  REBOOT_DATABASE_LOG(1) << "ColocatedRange { " << request->ShortDebugString()
+                         << " }";
 
   expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
       LookupColumnFamilyHandle(request->state_type());
   if (!column_family_handle.has_value()) {
     return grpc::Status(
         grpc::UNKNOWN,
-        fmt::format(
-            "Unknown state_type: {}",
-            column_family_handle.error()));
+        fmt::format("Unknown state_type: {}", column_family_handle.error()));
   }
 
   // Set the end of the range to scan.
@@ -1148,10 +1189,8 @@ grpc::Status DatabaseService::ColocatedRange(
         request->end());
   } else {
     // If uncapped, append '0', which sorts one higher than our separator ('/').
-    end_key_str = fmt::format(
-        STATE_KEY_PREFIX ":{}{}",
-        request->parent_state_ref(),
-        '0');
+    end_key_str =
+        fmt::format(STATE_KEY_PREFIX ":{}{}", request->parent_state_ref(), '0');
   }
   rocksdb::Slice end_key = rocksdb::Slice(end_key_str);
   rocksdb::ReadOptions read_options = rocksdb::ReadOptions();
@@ -1173,28 +1212,26 @@ grpc::Status DatabaseService::ColocatedRange(
               request->transaction().state_type(),
               request->transaction().state_ref()));
     }
-    it = txn.value()->GetIterator(
-        read_options,
-        *column_family_handle);
+    it = txn.value()->GetIterator(read_options, *column_family_handle);
   } else {
-    it = db_->NewIterator(
-        read_options,
-        *column_family_handle);
+    it = db_->NewIterator(read_options, *column_family_handle);
   }
 
   // Seek to the start of the range to scan.
   if (request->has_start()) {
-    it->Seek(fmt::format(
-        STATE_KEY_PREFIX ":{}{}{}",
-        request->parent_state_ref(),
-        '/',
-        request->start()));
+    it->Seek(
+        fmt::format(
+            STATE_KEY_PREFIX ":{}{}{}",
+            request->parent_state_ref(),
+            '/',
+            request->start()));
   } else {
     // If uncapped, append only a trailing forward slash.
-    it->Seek(fmt::format(
-        STATE_KEY_PREFIX ":{}{}",
-        request->parent_state_ref(),
-        '/'));
+    it->Seek(
+        fmt::format(
+            STATE_KEY_PREFIX ":{}{}",
+            request->parent_state_ref(),
+            '/'));
   }
 
   for (int i = 0; i < request->limit() && it->Valid(); it->Next(), i++) {
@@ -1224,17 +1261,15 @@ grpc::Status DatabaseService::ColocatedReverseRange(
     ColocatedReverseRangeResponse* response) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_DATABASE_LOG(1)
-      << "ColocatedReverseRange { " << request->ShortDebugString() << " }";
+  REBOOT_DATABASE_LOG(1) << "ColocatedReverseRange { "
+                         << request->ShortDebugString() << " }";
 
   expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
       LookupColumnFamilyHandle(request->state_type());
   if (!column_family_handle.has_value()) {
     return grpc::Status(
         grpc::UNKNOWN,
-        fmt::format(
-            "Unknown state_type: {}",
-            column_family_handle.error()));
+        fmt::format("Unknown state_type: {}", column_family_handle.error()));
   }
 
   // Set the end of the range to scan.
@@ -1252,10 +1287,8 @@ grpc::Status DatabaseService::ColocatedReverseRange(
   } else {
     // If uncapped, append only a trailing forward slash. This is safe because
     // we don't allow the empty string to be a valid key.
-    end_key_str = fmt::format(
-        STATE_KEY_PREFIX ":{}{}",
-        request->parent_state_ref(),
-        '/');
+    end_key_str =
+        fmt::format(STATE_KEY_PREFIX ":{}{}", request->parent_state_ref(), '/');
   }
 
   // Disable the prefix seek optimization, for two reasons:
@@ -1287,30 +1320,28 @@ grpc::Status DatabaseService::ColocatedReverseRange(
               request->transaction().state_type(),
               request->transaction().state_ref()));
     }
-    it = txn.value()->GetIterator(
-        read_options,
-        *column_family_handle);
+    it = txn.value()->GetIterator(read_options, *column_family_handle);
   } else {
-    it = db_->NewIterator(
-        read_options,
-        *column_family_handle);
+    it = db_->NewIterator(read_options, *column_family_handle);
   }
 
   // Seek to the start of the range to scan.
   if (request->has_start()) {
-    it->SeekForPrev(fmt::format(
-        STATE_KEY_PREFIX ":{}{}{}",
-        request->parent_state_ref(),
-        '/',
-        request->start()));
+    it->SeekForPrev(
+        fmt::format(
+            STATE_KEY_PREFIX ":{}{}{}",
+            request->parent_state_ref(),
+            '/',
+            request->start()));
   } else {
     // If uncapped, append '0', which sorts one higher than our separator ('/').
     // As noted above, this is incompatible with the prefix seek optimization in
     // RocksDB.
-    it->SeekForPrev(fmt::format(
-        STATE_KEY_PREFIX ":{}{}",
-        request->parent_state_ref(),
-        '0'));
+    it->SeekForPrev(
+        fmt::format(
+            STATE_KEY_PREFIX ":{}{}",
+            request->parent_state_ref(),
+            '0'));
   }
 
   for (int i = 0; i < request->limit() && it->Valid(); it->Prev(), i++) {
@@ -1339,8 +1370,7 @@ grpc::Status DatabaseService::Find(
     const FindRequest* request,
     FindResponse* response) {
   std::unique_lock lock(mutex_);
-  REBOOT_DATABASE_LOG(1)
-      << "Find { " << request->ShortDebugString() << " }";
+  REBOOT_DATABASE_LOG(1) << "Find { " << request->ShortDebugString() << " }";
 
   // Validate that shard_ids are provided.
   if (request->shard_ids().empty()) {
@@ -1382,8 +1412,7 @@ grpc::Status DatabaseService::Find(
     // Start at the specified key (inclusive).
     it->Seek(start_key_ref);
 
-    if (start_key.exclusive()
-        && it->Valid()
+    if (start_key.exclusive() && it->Valid()
         && it->key().ToString() == start_key_ref) {
       // Start after the specified key.
       it->Next();
@@ -1401,10 +1430,7 @@ grpc::Status DatabaseService::Find(
       }
       std::string_view state_ref = GetStateRefFromActorStateKey(key_view);
       // Only include state refs that belong to the requested shards.
-      if (BelongsToShard(
-              request->state_type(),
-              state_ref,
-              shard_ids)) {
+      if (BelongsToShard(request->state_type(), state_ref, shard_ids)) {
         response->add_state_refs(std::string(state_ref));
         ++added_count;
       }
@@ -1418,8 +1444,7 @@ grpc::Status DatabaseService::Find(
     // End at the specified key (inclusive).
     it->SeekForPrev(until_key_ref);
 
-    if (until_key.exclusive()
-        && it->Valid()
+    if (until_key.exclusive() && it->Valid()
         && it->key().ToString() == until_key_ref) {
       // End before the specified key.
       it->Prev();
@@ -1439,10 +1464,7 @@ grpc::Status DatabaseService::Find(
       }
       std::string_view state_ref = GetStateRefFromActorStateKey(key_view);
       // Only include state refs that belong to the requested shards.
-      if (BelongsToShard(
-              request->state_type(),
-              state_ref,
-              shard_ids)) {
+      if (BelongsToShard(request->state_type(), state_ref, shard_ids)) {
         state_refs.push_back(std::string(state_ref));
         ++added_count;
       }
@@ -1461,9 +1483,7 @@ grpc::Status DatabaseService::Find(
   if (!it->status().ok()) {
     return grpc::Status(
         grpc::UNKNOWN,
-        fmt::format(
-            "Failed to iterate: {}",
-            it->status().ToString()));
+        fmt::format("Failed to iterate: {}", it->status().ToString()));
   }
 
   return grpc::Status::OK;
@@ -1477,8 +1497,7 @@ grpc::Status DatabaseService::Load(
     LoadResponse* response) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_DATABASE_LOG(1)
-      << "Load { " << request->ShortDebugString() << " }";
+  REBOOT_DATABASE_LOG(1) << "Load { " << request->ShortDebugString() << " }";
 
   std::vector<rocksdb::ColumnFamilyHandle*> column_families;
   std::vector<std::string> keys;
@@ -1519,8 +1538,15 @@ grpc::Status DatabaseService::Load(
       continue;
     }
 
+    // We don't know the status of this task, so we'll try and fetch
+    // it in all possible statuses we expect.
+    CHECK_EQ(Task::Status_descriptor()->value_count(), 3);
+
     column_families.push_back(*column_family_handle);
-    keys.push_back(MakeTaskKey(task_id));
+    keys.push_back(MakeTaskKey(Task::PENDING, task_id));
+
+    column_families.push_back(*column_family_handle);
+    keys.push_back(MakeTaskKey(Task::COMPLETED, task_id));
   }
 
   // We should add a column family for every key. Just to be sure:
@@ -1533,12 +1559,11 @@ grpc::Status DatabaseService::Load(
 
   std::vector<std::string> values;
   values.resize(keys.size());
-  std::vector<rocksdb::Status> statuses =
-      db_->MultiGet(
-          rocksdb::ReadOptions(),
-          column_families,
-          slice_keys,
-          &values);
+  std::vector<rocksdb::Status> statuses = db_->MultiGet(
+      rocksdb::ReadOptions(),
+      column_families,
+      slice_keys,
+      &values);
 
   for (int i = 0; i < statuses.size(); i++) {
     const rocksdb::Status& status = statuses[i];
@@ -1564,9 +1589,7 @@ grpc::Status DatabaseService::Load(
     } else {
       return grpc::Status(
           grpc::UNKNOWN,
-          fmt::format(
-              "Failed to load: {}",
-              status.ToString()));
+          fmt::format("Failed to load: {}", status.ToString()));
     }
   }
 
@@ -1600,9 +1623,7 @@ expected<void> ValidateTransactionalStore(const StoreRequest& request) {
 
   // Ensure that all actor upserts are for the same actor.
   for (const Actor& actor : request.actor_upserts()) {
-    if (!CheckAllUpsertsForSameActor(
-            actor.state_type(),
-            actor.state_ref())) {
+    if (!CheckAllUpsertsForSameActor(actor.state_type(), actor.state_ref())) {
       return make_unexpected(
           "All actor upserts within a transaction "
           "must be for the same actor");
@@ -1657,8 +1678,7 @@ grpc::Status DatabaseService::Store(
     StoreResponse* response) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_DATABASE_LOG(1)
-      << "Store { " << request->ShortDebugString() << " }";
+  REBOOT_DATABASE_LOG(1) << "Store { " << request->ShortDebugString() << " }";
 
   // Helper for either adding all of the state updates to a
   // 'rocksdb::WriteBatch' or a 'rocksdb::Transaction',
@@ -1668,9 +1688,10 @@ grpc::Status DatabaseService::Store(
     // First add the actor upserts.
     for (const Actor& actor : request->actor_upserts()) {
       if (!actor.has_state()) {
-        return make_unexpected(fmt::format(
-            "Actor '{}' missing state to store",
-            actor.state_ref()));
+        return make_unexpected(
+            fmt::format(
+                "Actor '{}' missing state to store",
+                actor.state_ref()));
       }
 
       // NOTE: it's possible if we're within a transaction that
@@ -1690,8 +1711,7 @@ grpc::Status DatabaseService::Store(
         return make_unexpected(column_family_handle.error());
       }
 
-      const std::string& actor_state_key = MakeActorStateKey(
-          actor.state_ref());
+      const std::string& actor_state_key = MakeActorStateKey(actor.state_ref());
 
       rocksdb::Status status = batch.Put(
           *column_family_handle,
@@ -1724,12 +1744,16 @@ grpc::Status DatabaseService::Store(
         return make_unexpected(column_family_handle.error());
       }
 
-      const std::string& task_key = MakeTaskKey(task.task_id());
+      CHECK(task.status() == Task::PENDING || task.status() == Task::COMPLETED);
+
+      const std::string& task_key = MakeTaskKey(task.status(), task.task_id());
+
       std::string serialized_task;
       if (!task.SerializeToString(&serialized_task)) {
-        return make_unexpected(fmt::format(
-            "Failed to serialize task: {}",
-            task.ShortDebugString()));
+        return make_unexpected(
+            fmt::format(
+                "Failed to serialize task: {}",
+                task.ShortDebugString()));
       }
 
       rocksdb::Status status = batch.Put(
@@ -1741,6 +1765,20 @@ grpc::Status DatabaseService::Store(
         // Since the goal is to make all these updates
         // atomically we must fail if we run into any errors.
         return status;
+      }
+
+      // Also need to delete the pending task if it was already stored
+      // in the database.
+      if (task.status() == Task::COMPLETED) {
+        status = batch.Delete(
+            *column_family_handle,
+            rocksdb::Slice(MakeTaskKey(Task::PENDING, task.task_id())));
+
+        if (!status.ok()) {
+          // Since the goal is to make all these updates
+          // atomically we must fail if we run into any errors.
+          return status;
+        }
       }
     }
 
@@ -1757,9 +1795,7 @@ grpc::Status DatabaseService::Store(
             rocksdb::Slice(key),
             rocksdb::Slice(cup.value()));
       } else {
-        status = batch.Delete(
-            *column_family_handle,
-            rocksdb::Slice(key));
+        status = batch.Delete(*column_family_handle, rocksdb::Slice(key));
       }
 
       if (!status.ok()) {
@@ -1772,8 +1808,8 @@ grpc::Status DatabaseService::Store(
     // Also store response if this is an idempotent mutation.
     if (request->has_idempotent_mutation()) {
       // Get out the idempotency key.
-      Try<UUID> idempotency_key = UUID::fromBytes(
-          request->idempotent_mutation().key());
+      Try<UUID> idempotency_key =
+          UUID::fromBytes(request->idempotent_mutation().key());
       if (idempotency_key.isError()) {
         return make_unexpected(idempotency_key.error());
       }
@@ -1781,14 +1817,14 @@ grpc::Status DatabaseService::Store(
           LookupOrCreateColumnFamilyHandle(
               request->idempotent_mutation().state_type());
 
-      const std::string& idempotent_mutation_key =
-          MakeIdempotentMutationKey(*idempotency_key);
+      const std::string& idempotent_mutation_key = MakeIdempotentMutationKey(
+          request->idempotent_mutation().state_ref(),
+          *idempotency_key);
 
       std::string idempotent_mutation_bytes;
       if (!request->idempotent_mutation().SerializeToString(
               &idempotent_mutation_bytes)) {
-        return make_unexpected(
-            "Failed to serialize 'IdempotentMutation'");
+        return make_unexpected("Failed to serialize 'IdempotentMutation'");
       }
 
       rocksdb::Status status = batch.Put(
@@ -1826,9 +1862,7 @@ grpc::Status DatabaseService::Store(
     if (!validate.has_value()) {
       return grpc::Status(
           grpc::UNKNOWN,
-          fmt::format(
-              "Failed to store: {}",
-              validate.error()));
+          fmt::format("Failed to store: {}", validate.error()));
     }
 
     expected<stout::borrowed_ref<rocksdb::Transaction>> txn =
@@ -1837,9 +1871,7 @@ grpc::Status DatabaseService::Store(
     if (!txn.has_value()) {
       return grpc::Status(
           grpc::UNKNOWN,
-          fmt::format(
-              "Failed to store: {}",
-              txn.error()));
+          fmt::format("Failed to store: {}", txn.error()));
     }
 
     // Add all the updates from this request into the
@@ -1850,15 +1882,11 @@ grpc::Status DatabaseService::Store(
     if (!status.has_value()) {
       return grpc::Status(
           grpc::UNKNOWN,
-          fmt::format(
-              "Failed to update batch: {}",
-              status.error()));
+          fmt::format("Failed to update batch: {}", status.error()));
     } else if (!status->ok()) {
       return grpc::Status(
           grpc::UNKNOWN,
-          fmt::format(
-              "Failed to update batch: {}",
-              status->ToString()));
+          fmt::format("Failed to update batch: {}", status->ToString()));
     }
 
     return grpc::Status::OK;
@@ -1870,9 +1898,7 @@ grpc::Status DatabaseService::Store(
     if (!validate.has_value()) {
       return grpc::Status(
           grpc::UNKNOWN,
-          fmt::format(
-              "Failed to store: {}",
-              validate.error()));
+          fmt::format("Failed to store: {}", validate.error()));
     }
 
     // Add all the updates from this request into a single
@@ -1884,15 +1910,11 @@ grpc::Status DatabaseService::Store(
     if (!status.has_value()) {
       return grpc::Status(
           grpc::UNKNOWN,
-          fmt::format(
-              "Failed to update batch: {}",
-              status.error()));
+          fmt::format("Failed to update batch: {}", status.error()));
     } else if (!status->ok()) {
       return grpc::Status(
           grpc::UNKNOWN,
-          fmt::format(
-              "Failed to update batch: {}",
-              status->ToString()));
+          fmt::format("Failed to update batch: {}", status->ToString()));
     }
 
     status = db_->Write(DefaultWriteOptions(request->sync()), &batch);
@@ -1904,9 +1926,7 @@ grpc::Status DatabaseService::Store(
     } else {
       return grpc::Status(
           grpc::UNKNOWN,
-          fmt::format(
-              "Failed to store: {}",
-              status->ToString()));
+          fmt::format("Failed to store: {}", status->ToString()));
     }
   }
 }
@@ -1923,16 +1943,12 @@ grpc::Status DatabaseService::TransactionParticipantPrepare(
                          << request->ShortDebugString() << " }";
 
   expected<stout::borrowed_ref<rocksdb::Transaction>> txn =
-      LookupTransaction(
-          request->state_type(),
-          request->state_ref());
+      LookupTransaction(request->state_type(), request->state_ref());
 
   if (!txn.has_value()) {
     return grpc::Status(
         grpc::UNKNOWN,
-        fmt::format(
-            "Failed to prepare transaction: {}",
-            txn.error()));
+        fmt::format("Failed to prepare transaction: {}", txn.error()));
   }
 
   // NOTE: we add the deletion of the transaction participant
@@ -1961,9 +1977,7 @@ grpc::Status DatabaseService::TransactionParticipantPrepare(
   } else {
     return grpc::Status(
         grpc::UNKNOWN,
-        fmt::format(
-            "Failed to prepare transaction: {}",
-            status.ToString()));
+        fmt::format("Failed to prepare transaction: {}", status.ToString()));
   }
 }
 
@@ -1979,16 +1993,12 @@ grpc::Status DatabaseService::TransactionParticipantCommit(
                          << request->ShortDebugString() << " }";
 
   expected<stout::borrowed_ref<rocksdb::Transaction>> txn =
-      LookupTransaction(
-          request->state_type(),
-          request->state_ref());
+      LookupTransaction(request->state_type(), request->state_ref());
 
   if (!txn.has_value()) {
     return grpc::Status(
         grpc::UNKNOWN,
-        fmt::format(
-            "Failed to commit transaction: {}",
-            txn.error()));
+        fmt::format("Failed to commit transaction: {}", txn.error()));
   }
 
   rocksdb::Status status = (*txn)->Commit();
@@ -2007,9 +2017,7 @@ grpc::Status DatabaseService::TransactionParticipantCommit(
     // committed.
     return grpc::Status(
         grpc::UNKNOWN,
-        fmt::format(
-            "Failed to commit transaction: {}",
-            status.ToString()));
+        fmt::format("Failed to commit transaction: {}", status.ToString()));
   }
 }
 
@@ -2025,16 +2033,12 @@ grpc::Status DatabaseService::TransactionParticipantAbort(
                          << request->ShortDebugString() << " }";
 
   expected<stout::borrowed_ref<rocksdb::Transaction>> txn =
-      LookupTransaction(
-          request->state_type(),
-          request->state_ref());
+      LookupTransaction(request->state_type(), request->state_ref());
 
   if (!txn.has_value()) {
     return grpc::Status(
         grpc::UNKNOWN,
-        fmt::format(
-            "Failed to abort transaction: {}",
-            txn.error()));
+        fmt::format("Failed to abort transaction: {}", txn.error()));
   }
 
   rocksdb::Status status = (*txn)->Rollback();
@@ -2042,9 +2046,7 @@ grpc::Status DatabaseService::TransactionParticipantAbort(
   if (!status.ok()) {
     return grpc::Status(
         grpc::UNKNOWN,
-        fmt::format(
-            "Failed to abort transaction: {}",
-            status.ToString()));
+        fmt::format("Failed to abort transaction: {}", status.ToString()));
   }
 
   // NOTE: we need to delete the transaction participant
@@ -2157,9 +2159,7 @@ grpc::Status DatabaseService::TransactionCoordinatorPrepared(
   } else {
     return grpc::Status(
         grpc::UNKNOWN,
-        fmt::format(
-            "Failed to store: {}",
-            status.ToString()));
+        fmt::format("Failed to store: {}", status.ToString()));
   }
 }
 
@@ -2188,29 +2188,22 @@ grpc::Status DatabaseService::TransactionCoordinatorCleanup(
   rocksdb::Status status;
   if (request->coordinator_state_ref().empty()) {
     // This means legacy format - delete from a legacy key.
-    const std::string& legacy_key = MakeLegacyTransactionPreparedKey(
-        *transaction_id);
-    status = db_->Delete(
-        DefaultWriteOptions(),
-        rocksdb::Slice(legacy_key));
+    const std::string& legacy_key =
+        MakeLegacyTransactionPreparedKey(*transaction_id);
+    status = db_->Delete(DefaultWriteOptions(), rocksdb::Slice(legacy_key));
   } else {
     // This means modern (sharded) format - compute shard and delete.
-    std::string shard_id = GetShardForStateRef(
-        request->coordinator_state_ref());
-    const std::string& shard_key = MakePreparedTransactionCoordinatorKey(
-        shard_id,
-        *transaction_id);
-    status = db_->Delete(
-        DefaultWriteOptions(),
-        rocksdb::Slice(shard_key));
+    std::string shard_id =
+        GetShardForStateRef(request->coordinator_state_ref());
+    const std::string& shard_key =
+        MakePreparedTransactionCoordinatorKey(shard_id, *transaction_id);
+    status = db_->Delete(DefaultWriteOptions(), rocksdb::Slice(shard_key));
   }
 
   if (!status.ok()) {
     return grpc::Status(
         grpc::UNKNOWN,
-        fmt::format(
-            "Failed to cleanup transaction: {}",
-            status.ToString()));
+        fmt::format("Failed to cleanup transaction: {}", status.ToString()));
   }
 
   return grpc::Status::OK;
@@ -2224,8 +2217,7 @@ grpc::Status DatabaseService::Export(
     ExportResponse* response) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_DATABASE_LOG(1) << "Export { "
-                         << request->ShortDebugString() << " }";
+  REBOOT_DATABASE_LOG(1) << "Export { " << request->ShortDebugString() << " }";
 
   // Validate that shard_ids are provided.
   if (request->shard_ids().empty()) {
@@ -2273,23 +2265,19 @@ grpc::Status DatabaseService::Export(
     ExportItem item;
     std::string state_ref;
     if (key_type_prefix == STATE_KEY_PREFIX) {
-      state_ref = std::string(GetStateRefFromActorStateKey(
-          it->key().ToStringView()));
+      state_ref =
+          std::string(GetStateRefFromActorStateKey(it->key().ToStringView()));
       auto* actor = item.mutable_actor();
       actor->set_state_type(request->state_type());
       actor->set_state_ref(state_ref);
       actor->set_state(it->value().ToString());
     } else if (key_type_prefix == TASK_KEY_PREFIX) {
       auto* task = item.mutable_task();
-      CHECK(task->ParseFromArray(
-          it->value().data(),
-          it->value().size()));
+      CHECK(task->ParseFromArray(it->value().data(), it->value().size()));
       state_ref = task->task_id().state_ref();
     } else if (key_type_prefix == IDEMPOTENT_MUTATION_KEY_PREFIX) {
       auto* mutation = item.mutable_idempotent_mutation();
-      CHECK(mutation->ParseFromArray(
-          it->value().data(),
-          it->value().size()));
+      CHECK(mutation->ParseFromArray(it->value().data(), it->value().size()));
       state_ref = mutation->state_ref();
     } else {
       return grpc::Status(
@@ -2301,10 +2289,7 @@ grpc::Status DatabaseService::Export(
     }
 
     // If this item doesn't belong to one of the requested shards, skip it.
-    if (!BelongsToShard(
-            request->state_type(),
-            state_ref,
-            shard_ids)) {
+    if (!BelongsToShard(request->state_type(), state_ref, shard_ids)) {
       continue;
     }
 
@@ -2361,9 +2346,7 @@ grpc::Status DatabaseService::GetApplicationMetadata(
   // It's possible that the file is empty (i.e. `StoreApplicationMetadata` could
   // have set an empty metadata), but it should never contain invalid data.
   if (!response->mutable_metadata()->ParseFromString(serialized_metadata)) {
-    return grpc::Status(
-        grpc::INTERNAL,
-        "Failed to parse metadata from file");
+    return grpc::Status(grpc::INTERNAL, "Failed to parse metadata from file");
   }
 
   return grpc::Status::OK;
@@ -2408,9 +2391,7 @@ grpc::Status DatabaseService::StoreApplicationMetadata(
   file.flush();
 
   if (file.fail()) {
-    return grpc::Status(
-        grpc::INTERNAL,
-        "Failed to write metadata to file");
+    return grpc::Status(grpc::INTERNAL, "Failed to write metadata to file");
   }
 
   file.close();
@@ -2443,25 +2424,29 @@ std::set<std::string> DatabaseService::RecoverTasks(
 
   for (rocksdb::ColumnFamilyHandle* column_family_handle :
        column_family_handles_) {
-    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
-        db_->NewIterator(
-            NonPrefixIteratorReadOptions(),
-            column_family_handle)));
+    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(db_->NewIterator(
+        NonPrefixIteratorReadOptions(),
+        column_family_handle)));
+
+    // Only want to recover pending tasks!
+    static const std::string& TASK_PENDING_KEY_PREFIX =
+        TASK_KEY_PREFIX ":" + Task::Status_Name(Task::PENDING);
 
     // TODO: investigate using "prefix seek" for better performance, see:
     // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
-    iterator->Seek(rocksdb::Slice(TASK_KEY_PREFIX));
+    iterator->Seek(rocksdb::Slice(TASK_PENDING_KEY_PREFIX));
 
     while (iterator->Valid()
-           && iterator->key().ToStringView().find(TASK_KEY_PREFIX) == 0) {
+           && iterator->key().ToStringView().find(TASK_PENDING_KEY_PREFIX)
+               == 0) {
       Task task;
-      CHECK(
-          task.ParseFromArray(
-              iterator->value().data(),
-              iterator->value().size()));
+      CHECK(task.ParseFromArray(
+          iterator->value().data(),
+          iterator->value().size()));
 
-      if (task.status() == Task::PENDING
-          && BelongsToShard(
+      CHECK_EQ(task.status(), Task::PENDING);
+
+      if (BelongsToShard(
               task.task_id().state_type(),
               task.task_id().state_ref(),
               shard_ids)) {
@@ -2480,10 +2465,7 @@ std::set<std::string> DatabaseService::RecoverTasks(
   }
 
   // Flush any remaining tasks.
-  WriteAndClearResponse(
-      responses,
-      response,
-      batch_size);
+  WriteAndClearResponse(responses, response, batch_size);
 
   return committed_task_uuids;
 }
@@ -2504,9 +2486,7 @@ void DatabaseService::RecoverTransactionTasks(
   CHECK(column_family_handle.has_value());
 
   std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
-      txn->GetIterator(
-          NonPrefixIteratorReadOptions(),
-          *column_family_handle)));
+      txn->GetIterator(NonPrefixIteratorReadOptions(), *column_family_handle)));
 
   // TODO: investigate using "prefix seek" for better performance, see:
   // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
@@ -2515,10 +2495,9 @@ void DatabaseService::RecoverTransactionTasks(
   while (iterator->Valid()
          && iterator->key().ToStringView().find(TASK_KEY_PREFIX) == 0) {
     Task task;
-    CHECK(
-        task.ParseFromArray(
-            iterator->value().data(),
-            iterator->value().size()));
+    CHECK(task.ParseFromArray(
+        iterator->value().data(),
+        iterator->value().size()));
 
     if (task.task_id().state_ref() == transaction.state_ref()
         && task.status() == Task::PENDING
@@ -2550,18 +2529,14 @@ void DatabaseService::RecoverTransactionIdempotentMutations(
   CHECK(column_family_handle.has_value());
 
   std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
-      txn->GetIterator(
-          NonPrefixIteratorReadOptions(),
-          *column_family_handle)));
+      txn->GetIterator(NonPrefixIteratorReadOptions(), *column_family_handle)));
 
   // TODO: investigate using "prefix seek" for better performance, see:
   // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
   iterator->Seek(rocksdb::Slice(IDEMPOTENT_MUTATION_KEY_PREFIX));
 
   while (iterator->Valid()
-         && iterator->key()
-                 .ToStringView()
-                 .find(IDEMPOTENT_MUTATION_KEY_PREFIX)
+         && iterator->key().ToStringView().find(IDEMPOTENT_MUTATION_KEY_PREFIX)
              == 0) {
     IdempotentMutation idempotent_mutation;
 
@@ -2585,28 +2560,8 @@ expected<void> DatabaseService::RecoverTransactions(
     const std::set<std::string>& committed_task_uuids,
     const std::set<std::string>& committed_idempotency_keys,
     const std::unordered_set<std::string>& shard_ids) {
-  // Since every server will call `Recover()` on every startup, this method
-  // may run many times. If this is the first time, then we must recover the
-  // transactions from the database. Otherwise, they should already be in
-  // 'txns_', in which case it's NOT safe to recover them again (we may have
-  // changed them) and we should simply do nothing.
-  //
-  // Edge case: if there are no transactions, then we're not sure whether this
-  // is the first time we're recovering or not, so we recover from the database
-  // every time just in case. This is safe, because recovery is a NOOP if indeed
-  // it turns out that there are no transactions.
-  if (txns_.empty()) {
-    // Recover all of the transactions that were previously prepared.
-    std::vector<rocksdb::Transaction*> txns;
-    db_->GetAllPreparedTransactions(&txns);
-    for (rocksdb::Transaction* txn : txns) {
-      std::string state_ref = GetStateRef(*txn);
-      txns_.emplace(state_ref, std::unique_ptr<rocksdb::Transaction>(txn));
-    }
-  }
-
-  std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
-      db_->NewIterator(NonPrefixIteratorReadOptions())));
+  std::unique_ptr<rocksdb::Iterator> iterator(
+      CHECK_NOTNULL(db_->NewIterator(NonPrefixIteratorReadOptions())));
 
   // TODO: investigate using "prefix seek" for better performance, see:
   // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
@@ -2623,11 +2578,10 @@ expected<void> DatabaseService::RecoverTransactions(
 
   size_t batch_size = 0;
 
-  while (iterator->Valid()
-         && iterator->key()
-                 .ToStringView()
-                 .find(TRANSACTION_PARTICIPANT_KEY_PREFIX)
-             == 0) {
+  while (
+      iterator->Valid()
+      && iterator->key().ToStringView().find(TRANSACTION_PARTICIPANT_KEY_PREFIX)
+          == 0) {
     Transaction transaction;
 
     CHECK(transaction.ParseFromArray(
@@ -2643,50 +2597,37 @@ expected<void> DatabaseService::RecoverTransactions(
       continue;
     }
 
-    Transaction& added_transaction = *response.add_participant_transactions();
-    added_transaction = transaction;
-
+    // We either have a previously prepared transaction that was
+    // restored when we called `GetAllPreparedTransactions()` in
+    // rocksdb or we crashed before the transaction was prepared and
+    // we need to begin a transaction that will later be aborted
+    // because any recovered transactions that are not prepared get
+    // aborted.
     expected<stout::borrowed_ref<rocksdb::Transaction>> txn =
-        LookupTransaction(
-            added_transaction.state_type(),
-            added_transaction.state_ref());
+        LookupOrBeginTransaction(transaction, /* store_participant = */ false);
 
-    if (txn.has_value()) {
-      // On multiple Recover() calls, transactions may no longer be prepared
-      // if they were committed/aborted since the previous recovery.
-      if ((*txn)->GetState() == rocksdb::Transaction::PREPARED) {
-        added_transaction.set_prepared(true);
+    CHECK(txn.has_value());
 
-        // Now recover any tasks for our actor that we'll need to dispatch if
-        // the transaction gets committed.
-        RecoverTransactionTasks(
-            committed_task_uuids,
-            added_transaction,
-            *txn);
+    if ((*txn)->GetState() == rocksdb::Transaction::PREPARED) {
+      transaction.set_prepared(true);
 
-        // Now recover any idempotent mutations for our actor that are part of
-        // the transaction.
-        RecoverTransactionIdempotentMutations(
-            committed_idempotency_keys,
-            added_transaction,
-            *txn);
-      } else {
-        // Transaction exists but is not prepared - skip it.
-        response.mutable_participant_transactions()->RemoveLast();
-        iterator->Next();
-        continue;
-      }
+      // Now recover any tasks for our actor that we'll need to dispatch if
+      // the transaction gets committed.
+      RecoverTransactionTasks(committed_task_uuids, transaction, *txn);
+
+      // Now recover any idempotent mutations for our actor that are part of
+      // the transaction.
+      RecoverTransactionIdempotentMutations(
+          committed_idempotency_keys,
+          transaction,
+          *txn);
     } else {
-      txn = LookupOrBeginTransaction(
-          added_transaction,
-          /* store_participant = */ false);
-
-      if (!txn.has_value()) {
-        return make_unexpected(txn.error());
-      }
-
+      // Transaction just started when we called
+      // `LookupOrBeginTransaction()`!
       CHECK_EQ((*txn)->GetState(), rocksdb::Transaction::STARTED);
     }
+
+    response.add_participant_transactions()->CopyFrom(transaction);
 
     MaybeWriteAndClearResponse(
         responses,
@@ -2698,10 +2639,7 @@ expected<void> DatabaseService::RecoverTransactions(
   }
 
   // Flush any remaining participant transactions.
-  WriteAndClearResponse(
-      responses,
-      response,
-      batch_size);
+  WriteAndClearResponse(responses, response, batch_size);
 
   // Now recover any prepared coordinator transactions.
   //
@@ -2734,13 +2672,12 @@ expected<void> DatabaseService::RecoverTransactions(
         << "Recovering legacy prepared transactions into shard '"
         << first_shard_id << "'";
 
-    iterator->Seek(rocksdb::Slice(
-        LEGACY_PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX));
+    iterator->Seek(
+        rocksdb::Slice(LEGACY_PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX));
 
     while (iterator->Valid()
-           && iterator->key()
-                   .ToStringView()
-                   .find(LEGACY_PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX)
+           && iterator->key().ToStringView().find(
+                  LEGACY_PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX)
                == 0) {
       // NOTE: we use the stringified form of the UUID as the index
       // because a protobuf 'map' can not have a bytes key. We also
@@ -2748,17 +2685,16 @@ expected<void> DatabaseService::RecoverTransactions(
       // suffix of the rocksdb key for easier debugging so all we need
       // to do here is extract it.
       const std::string_view transaction_id =
-          iterator->key()
-              .ToStringView()
-              .substr(
-                  strlen(LEGACY_PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX)
-                  + 1);
+          iterator->key().ToStringView().substr(
+              strlen(LEGACY_PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX) + 1);
 
 
       // There's no way to convince `clang-format` to format the following line
       // in a way that doesn't violate our 80-character line length limit.
       // (check_line_length skip)
-      PreparedTransactionCoordinator& coordinator_entry = (*response.mutable_prepared_transaction_coordinators())[transaction_id];
+      PreparedTransactionCoordinator& coordinator_entry =
+          (*response
+                .mutable_prepared_transaction_coordinators())[transaction_id];
 
       // For legacy transactions we don't have a coordinator state reference,
       // so we leave `state_ref` empty and only populate `participants`.
@@ -2780,8 +2716,7 @@ expected<void> DatabaseService::RecoverTransactions(
   } else {
     REBOOT_DATABASE_LOG(1)
         << "Skipping recovery of legacy prepared transactions because "
-        << "we're not recovering the first shard '" << first_shard_id
-        << "'";
+        << "we're not recovering the first shard '" << first_shard_id << "'";
   }
 
   // Now recover shard-aware coordinator transactions. We expect the number of
@@ -2793,10 +2728,7 @@ expected<void> DatabaseService::RecoverTransactions(
   iterator->Seek(rocksdb::Slice(prefix));
 
   while (iterator->Valid()
-         && iterator->key()
-                 .ToStringView()
-                 .find(prefix)
-             == 0) {
+         && iterator->key().ToStringView().find(prefix) == 0) {
     // Parse the key format: `prefix:shard_id:transaction_id`.
     std::string_view key_view = iterator->key().ToStringView();
 
@@ -2806,7 +2738,7 @@ expected<void> DatabaseService::RecoverTransactions(
       iterator->Next();
       continue;
     }
-    key_view = key_view.substr(prefix_len + 1); // Skip "prefix:"
+    key_view = key_view.substr(prefix_len + 1);  // Skip "prefix:"
 
     // Extract shard ID and transaction ID.
     size_t colon_pos = key_view.find(':');
@@ -2827,8 +2759,8 @@ expected<void> DatabaseService::RecoverTransactions(
     // Parse the stored `PreparedTransactionCoordinator`; it can go straight
     // into the response.
     PreparedTransactionCoordinator& coordinator_entry =
-        (*response.mutable_prepared_transaction_coordinators())
-            [std::string(transaction_id)];
+        (*response.mutable_prepared_transaction_coordinators())[std::string(
+            transaction_id)];
 
     CHECK(coordinator_entry.ParseFromArray(
         iterator->value().data(),
@@ -2844,10 +2776,7 @@ expected<void> DatabaseService::RecoverTransactions(
   }
 
   // Flush any remaining coordinator transactions.
-  WriteAndClearResponse(
-      responses,
-      response,
-      batch_size);
+  WriteAndClearResponse(responses, response, batch_size);
 
   return {};
 }
@@ -2878,20 +2807,18 @@ std::set<std::string> DatabaseService::RecoverIdempotentMutations(
       continue;
     }
 
-    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
-        db_->NewIterator(
-            NonPrefixIteratorReadOptions(),
-            column_family_handle)));
+    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(db_->NewIterator(
+        NonPrefixIteratorReadOptions(),
+        column_family_handle)));
 
     // TODO: investigate using "prefix seek" for better performance, see:
     // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
     iterator->Seek(rocksdb::Slice(IDEMPOTENT_MUTATION_KEY_PREFIX));
 
-    while (iterator->Valid()
-           && iterator->key()
-                   .ToStringView()
-                   .find(IDEMPOTENT_MUTATION_KEY_PREFIX)
-               == 0) {
+    while (
+        iterator->Valid()
+        && iterator->key().ToStringView().find(IDEMPOTENT_MUTATION_KEY_PREFIX)
+            == 0) {
       IdempotentMutation idempotent_mutation;
 
       CHECK(idempotent_mutation.ParseFromArray(
@@ -2919,70 +2846,12 @@ std::set<std::string> DatabaseService::RecoverIdempotentMutations(
   }
 
   // Flush any remaining idempotent mutations.
-  WriteAndClearResponse(
-      responses,
-      response,
-      batch_size);
+  WriteAndClearResponse(responses, response, batch_size);
 
   return committed_idempotency_keys;
 }
 
 ////////////////////////////////////////////////////////////////////////
-
-std::string MigrateStateRef(
-    const std::string& state_tag,
-    std::string state_ref) {
-  if (state_ref.find(state_tag) != std::string::npos) {
-    // The state_ref already contains the state tag, and so has already
-    // been migrated.
-    return state_ref;
-  }
-  std::replace(state_ref.begin(), state_ref.end(), '/', '\\');
-  return fmt::format("{}:{}", state_tag, state_ref);
-}
-
-expected<const std::string*> GetStateTag(
-    const google::protobuf::Map<std::string, std::string>&
-        state_tags_by_state_type,
-    const std::string& state_type,
-    const std::string& position) {
-  auto it = state_tags_by_state_type.find(state_type);
-  if (it != state_tags_by_state_type.end()) {
-    return &it->second;
-  }
-
-  if (state_type.rfind("Methods") == state_type.length() - 7) {
-    it = state_tags_by_state_type.find(
-        state_type.substr(0, state_type.size() - 7));
-    if (it != state_tags_by_state_type.end()) {
-      return &it->second;
-    }
-  }
-
-  return make_unexpected(fmt::format(
-      "Unknown state type in position {}: {}",
-      position,
-      state_type));
-}
-
-expected<void> MaybeMigrateTaskId(
-    const google::protobuf::Map<std::string, std::string>&
-        state_tags_by_state_type,
-    TaskId* task_id) {
-  auto state_tag = GetStateTag(
-      state_tags_by_state_type,
-      task_id->state_type(),
-      "task_id");
-  if (!state_tag.has_value()) {
-    return make_unexpected(fmt::format(
-        "Unknown state type for task: {}",
-        state_tag.error()));
-  }
-  task_id->set_state_ref(
-      MigrateStateRef(*state_tag.value(), task_id->state_ref()));
-  return {};
-}
-
 
 // This migration deletes Tasks which did not have `Any` response values
 // (i.e. from before #2580).
@@ -2990,10 +2859,9 @@ expected<void> DatabaseService::MigratePersistence2To3(
     const RecoverRequest& request) {
   for (rocksdb::ColumnFamilyHandle* column_family_handle :
        column_family_handles_) {
-    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
-        db_->NewIterator(
-            NonPrefixIteratorReadOptions(),
-            column_family_handle)));
+    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(db_->NewIterator(
+        NonPrefixIteratorReadOptions(),
+        column_family_handle)));
 
     // TODO: investigate using "prefix seek" for better performance, see:
     // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
@@ -3002,21 +2870,20 @@ expected<void> DatabaseService::MigratePersistence2To3(
     while (iterator->Valid()
            && iterator->key().ToStringView().find(TASK_KEY_PREFIX) == 0) {
       Task task;
-      CHECK(
-          task.ParseFromArray(
-              iterator->value().data(),
-              iterator->value().size()));
+      CHECK(task.ParseFromArray(
+          iterator->value().data(),
+          iterator->value().size()));
       if (task.has_response()
           && task.response().type_url().find("type.googleapis.com") != 0) {
-        rocksdb::Status status =
-            db_->Delete(
-                DefaultWriteOptions(),
-                column_family_handle,
-                iterator->key());
+        rocksdb::Status status = db_->Delete(
+            DefaultWriteOptions(),
+            column_family_handle,
+            iterator->key());
         if (!status.ok()) {
-          return make_unexpected(fmt::format(
-              "Failed to delete stale task: {}",
-              status.ToString()));
+          return make_unexpected(
+              fmt::format(
+                  "Failed to delete stale task: {}",
+                  status.ToString()));
         }
       }
 
@@ -3026,6 +2893,173 @@ expected<void> DatabaseService::MigratePersistence2To3(
 
   // Finally, update the persistence version.
   return WritePersistenceVersion(db_.get(), 3);
+}
+
+// This migration:
+//
+// 1. Renames the idempotent mutation keys so that they
+//    are easier to recover per state ref.
+//
+// 2. Renames task keys so we can just recover pending tasks.
+expected<void> DatabaseService::MigratePersistence3To4(
+    const RecoverRequest& request) {
+  for (rocksdb::ColumnFamilyHandle* column_family_handle :
+       column_family_handles_) {
+    if (column_family_handle->GetName() == "default") {
+      continue;
+    }
+
+    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(db_->NewIterator(
+        NonPrefixIteratorReadOptions(),
+        column_family_handle)));
+
+    // To do the rename atomically we need to use a write batch. We
+    // also want to batch writes together because for large enough
+    // databases doing a write for every single idempotent mutation or
+    // task is prohibitively expensive
+    rocksdb::WriteBatch batch;
+
+    size_t entries = 0;
+
+    REBOOT_DATABASE_LOG(1) << "Migrating idempotent mutations for '"
+                           << column_family_handle->GetName() << "'";
+
+    // TODO: investigate using "prefix seek" for better performance, see:
+    // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
+    iterator->Seek(rocksdb::Slice(IDEMPOTENT_MUTATION_KEY_PREFIX_V3 ":"));
+
+    // Helper to determine if the iterator is still valid.
+    std::function<bool()> valid = [&]() {
+      return iterator->Valid()
+          && iterator->key().ToStringView().find(
+                 IDEMPOTENT_MUTATION_KEY_PREFIX_V3 ":")
+          == 0;
+    };
+
+    while (valid()) {
+      IdempotentMutation idempotent_mutation;
+
+      CHECK(idempotent_mutation.ParseFromArray(
+          iterator->value().data(),
+          iterator->value().size()));
+
+      Try<UUID> idempotency_key = UUID::fromBytes(idempotent_mutation.key());
+      if (idempotency_key.isError()) {
+        return make_unexpected(idempotency_key.error());
+      }
+
+      const std::string& idempotent_mutation_key = MakeIdempotentMutationKey(
+          idempotent_mutation.state_ref(),
+          *idempotency_key);
+
+      rocksdb::Status status = batch.Put(
+          column_family_handle,
+          rocksdb::Slice(idempotent_mutation_key),
+          iterator->value());
+
+      if (!status.ok()) {
+        return make_unexpected(
+            fmt::format(
+                "Failed to rename idempotent mutation: {}",
+                status.ToString()));
+      }
+
+      status = batch.Delete(column_family_handle, iterator->key());
+
+      if (!status.ok()) {
+        return make_unexpected(
+            fmt::format(
+                "Failed to rename idempotent mutation key: {}",
+                status.ToString()));
+      }
+
+      entries += 1;
+
+      iterator->Next();
+
+      // Check if we don't have any more to migrate or if we've hit
+      // our batch size and should do a write.
+      if (!valid() || batch.GetDataSize() == (32 * 1024 * 1024)) {  // 32 MB
+        // Write the batch then instantiate a new one.
+        status = db_->Write(DefaultWriteOptions(), &batch);
+
+        if (!status.ok()) {
+          return make_unexpected(
+              fmt::format(
+                  "Failed to rename idempotent mutation key(s): {}",
+                  status.ToString()));
+        }
+
+        batch = rocksdb::WriteBatch();
+
+        REBOOT_DATABASE_LOG(1)
+            << "Migrated " << entries << " idempotent mutation(s)";
+      }
+    }
+
+    CHECK_EQ(batch.Count(), 0) << "Should have a new batch";
+
+    entries = 0;
+
+    REBOOT_DATABASE_LOG(1) << "Migrating tasks for '"
+                           << column_family_handle->GetName() << "'";
+
+    // TODO: investigate using "prefix seek" for better performance, see:
+    // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
+    iterator->Seek(rocksdb::Slice(TASK_KEY_PREFIX_V3 ":"));
+
+    valid = [&]() {
+      return iterator->Valid()
+          && iterator->key().ToStringView().find(TASK_KEY_PREFIX_V3 ":") == 0;
+    };
+
+    while (valid()) {
+      Task task;
+      CHECK(task.ParseFromArray(
+          iterator->value().data(),
+          iterator->value().size()));
+
+      rocksdb::Status status = batch.Put(
+          column_family_handle,
+          rocksdb::Slice(MakeTaskKey(task.status(), task.task_id())),
+          iterator->value());
+
+      if (!status.ok()) {
+        return make_unexpected(
+            fmt::format("Failed to rename task key: {}", status.ToString()));
+      }
+
+      status = batch.Delete(column_family_handle, iterator->key());
+
+      if (!status.ok()) {
+        return make_unexpected(
+            fmt::format("Failed to rename task key: {}", status.ToString()));
+      }
+
+      entries += 1;
+
+      iterator->Next();
+
+      if (!valid() || batch.GetDataSize() == (32 * 1024 * 1024)) {  // 32 MB
+        // Write the batch then instantiate a new one.
+        status = db_->Write(DefaultWriteOptions(), &batch);
+
+        if (!status.ok()) {
+          return make_unexpected(
+              fmt::format(
+                  "Failed to rename task key(s): {}",
+                  status.ToString()));
+        }
+
+        batch = rocksdb::WriteBatch();
+
+        REBOOT_DATABASE_LOG(1) << "Migrated " << entries << " task(s)";
+      }
+    }
+  }
+
+  // Finally, update the persistence version.
+  return WritePersistenceVersion(db_.get(), 4);
 }
 
 expected<void> DatabaseService::MaybeMigratePersistence(
@@ -3045,13 +3079,11 @@ expected<void> DatabaseService::MaybeMigratePersistence(
       return {};
     } else if (pv.version() < 1) {
       // Version 0 did not support a version tag, so this is unexpected.
-      return make_unexpected(fmt::format(
-          "Corrupted persistence version: {}",
-          pv.version()));
+      return make_unexpected(
+          fmt::format("Corrupted persistence version: {}", pv.version()));
     } else if (pv.version() > CURRENT_PERSISTENCE_VERSION) {
-      return make_unexpected(fmt::format(
-          "Unsupported persistence version: {}",
-          pv.version()));
+      return make_unexpected(
+          fmt::format("Unsupported persistence version: {}", pv.version()));
     } else {
       // Is a previous version which needs updating.
       version = pv.version();
@@ -3060,9 +3092,10 @@ expected<void> DatabaseService::MaybeMigratePersistence(
     // Version 0 will not have a persisted version yet.
     version = 0;
   } else {
-    return make_unexpected(fmt::format(
-        "Failed to read persistence version: {}",
-        status.ToString()));
+    return make_unexpected(
+        fmt::format(
+            "Failed to read persistence version: {}",
+            status.ToString()));
   }
 
   // Expecting at least persistence version >= 2.
@@ -3070,15 +3103,15 @@ expected<void> DatabaseService::MaybeMigratePersistence(
       << "Persistence version " << version << " is no longer supported";
 
   for (; version < CURRENT_PERSISTENCE_VERSION; version++) {
-    REBOOT_DATABASE_LOG(0)
-        << "Migrating persistence from version { " << version << " }";
+    REBOOT_DATABASE_LOG(1) << "Migrating persistence from version " << version;
     expected<void> migrate;
     switch (version) {
       case 2:
         migrate = MigratePersistence2To3(request);
+        REBOOT_DATABASE_LOG(1) << "Migrated persistence to version " << version;
         break;
-      default:
-        LOG(FATAL) << "Unreachable";
+      case 3: migrate = MigratePersistence3To4(request); break;
+      default: LOG(FATAL) << "Unreachable";
     }
     if (!migrate.has_value()) {
       return migrate;
@@ -3141,21 +3174,20 @@ std::string DatabaseService::GetShardForHash(
 }
 
 // Helper function to determine which shard owns a given state_ref.
-std::string DatabaseService::GetShardForStateRef(
-    std::string_view state_ref) {
+std::string DatabaseService::GetShardForStateRef(std::string_view state_ref) {
   // Check if we have this cached.
   //
-  // TODO: use C++20 "heterogeneous lookup" to avoid making this
-  // string copy here.
+  // TODO: improve stout to support C++20 "heterogeneous lookup" to
+  // avoid needing to make a string copy here.
   std::string state_ref_copy(state_ref);
-  auto iterator = shard_for_state_ref_.find(state_ref_copy);
-  if (iterator != std::end(shard_for_state_ref_)) {
-    return iterator->second;
+  Option<std::string> cached_shard = shard_for_state_ref_.get(state_ref_copy);
+  if (cached_shard.isSome()) {
+    return cached_shard.get();
   }
 
   std::string shard = GetShardForHash(ComputeStateRefHash(state_ref));
 
-  shard_for_state_ref_[state_ref_copy] = shard;
+  shard_for_state_ref_.put(state_ref_copy, shard);
 
   return shard;
 }
@@ -3185,8 +3217,7 @@ grpc::Status DatabaseService::Recover(
     grpc::ServerWriter<RecoverResponse>* responses) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_DATABASE_LOG(1)
-      << "Recover { " << request->ShortDebugString() << " }";
+  REBOOT_DATABASE_LOG(1) << "Recover { " << request->ShortDebugString() << " }";
 
   // Validate that shard_ids are provided.
   if (request->shard_ids().empty()) {
@@ -3209,18 +3240,23 @@ grpc::Status DatabaseService::Recover(
   // (1) Recover tasks _before_ recovering transactions because
   // transactions need to know the recovered committed tasks to
   // recover uncommitted tasks.
-  std::set<std::string> committed_task_uuids = RecoverTasks(
-      *responses,
-      shard_ids);
+  REBOOT_DATABASE_LOG(1) << "Recovering tasks";
+
+  std::set<std::string> committed_task_uuids =
+      RecoverTasks(*responses, shard_ids);
 
   // (2) Recover idempotent mutations _before_ recovering
   // transactions because transactions need to know the
   // recovered committed idempotent mutations to recover
   // uncommitted idempotent mutations.
+  REBOOT_DATABASE_LOG(1) << "Recovering idempotent mutations";
+
   std::set<std::string> committed_idempotent_mutations =
       RecoverIdempotentMutations(*responses, shard_ids);
 
   // (3) Recover transactions.
+  REBOOT_DATABASE_LOG(1) << "Recovering transactions";
+
   expected<void> recover_transactions = RecoverTransactions(
       *responses,
       committed_task_uuids,
@@ -3236,8 +3272,7 @@ grpc::Status DatabaseService::Recover(
 
 ////////////////////////////////////////////////////////////////////////
 
-expected<std::unique_ptr<DatabaseServer>>
-DatabaseServer::Instantiate(
+expected<std::unique_ptr<DatabaseServer>> DatabaseServer::Instantiate(
     const std::filesystem::path& state_directory,
     const ServerInfo& server_info,
     std::string address) {
@@ -3262,9 +3297,8 @@ DatabaseServer::Instantiate(
       DatabaseService::Instantiate(state_directory, server_info);
 
   if (!service.has_value()) {
-    throw std::runtime_error(fmt::format(
-        "Failed to instantiate service: {}",
-        service.error()));
+    throw std::runtime_error(
+        fmt::format("Failed to instantiate service: {}", service.error()));
   }
 
   builder.RegisterService(service->get());
@@ -3279,11 +3313,10 @@ DatabaseServer::Instantiate(
 
   REBOOT_DATABASE_LOG(1) << "sidecar gRPC server listening on " << address;
 
-  return std::unique_ptr<DatabaseServer>(
-      new DatabaseServer(
-          std::move(service.value()),
-          std::move(server),
-          address));
+  return std::unique_ptr<DatabaseServer>(new DatabaseServer(
+      std::move(service.value()),
+      std::move(server),
+      address));
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -3297,6 +3330,6 @@ void TestOnly_EnableLegacyCoordinatorPrepared(grpc::Service* service) {
 
 ////////////////////////////////////////////////////////////////////////
 
-} // namespace rbt::server
+}  // namespace rbt::server
 
 ////////////////////////////////////////////////////////////////////////
