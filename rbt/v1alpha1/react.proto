@@ -113,8 +113,8 @@ service React {
   //
   // For example usage, see corresponding code in the generated
   // TypeScript for React.
-  rpc WebSocketsConnection(WebSocketsConnectionRequest) returns (
-      WebSocketsConnectionResponse) {
+  rpc WebSocketsConnection(WebSocketsConnectionRequest)
+      returns (WebSocketsConnectionResponse) {
     option (google.api.http) = {
       post: "/rbt.v1alpha1.React/WebSocketsConnection"
     };

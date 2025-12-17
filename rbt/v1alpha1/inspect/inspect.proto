@@ -61,8 +61,8 @@ service Inspect {
   // mean that a new version of the app may have been deployed, and the
   // state types may have changed, and the retry will ensure that the
   // client gets the latest list.
-  rpc GetStateTypes(GetStateTypesRequest) returns (
-      stream GetStateTypesResponse) {}
+  rpc GetStateTypes(GetStateTypesRequest)
+      returns (stream GetStateTypesResponse) {}
 
   // Get state IDs for a given state type.
   rpc GetStateIds(GetStateIdsRequest) returns (stream GetStateIdsResponse) {}

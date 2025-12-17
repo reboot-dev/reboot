@@ -28,22 +28,18 @@ DatabaseServer* database_server_create(
   // serialization can contain null bytes (\0), so we cannot treat it as a
   // null-terminated C string. Using std::string(data, length) ensures all bytes
   // are preserved, including embedded nulls.
-  std::string server_info_proto_str(
-      server_info_proto,
-      server_info_length);
+  std::string server_info_proto_str(server_info_proto, server_info_length);
 
   ServerInfo server_info;
   CHECK(server_info.ParseFromString(server_info_proto_str));
   static std::once_flag* initialize = new std::once_flag();
-  std::call_once(
-      *initialize,
-      []() {
-        // Initialize Google's logging library.
-        //
-        // NOTE: we output to stderr by default!
-        FLAGS_logtostderr = 1;
-        google::InitGoogleLogging("reboot-database");
-      });
+  std::call_once(*initialize, []() {
+    // Initialize Google's logging library.
+    //
+    // NOTE: we output to stderr by default!
+    FLAGS_logtostderr = 1;
+    google::InitGoogleLogging("reboot-database");
+  });
 
   CHECK(server_info.shard_infos_size() > 0)
       << "Server info must contain at least one shard.";
@@ -110,8 +106,8 @@ int main(int argc, char* argv[]) {
   // `public/rebootdev/server/sidecar.py` for local servers.
   std::ifstream file(server_info_path, std::ios::binary);
   if (!file) {
-    std::cerr << "Error: Could not open server info file: "
-              << server_info_path << std::endl;
+    std::cerr << "Error: Could not open server info file: " << server_info_path
+              << std::endl;
     return 1;
   }
 
@@ -132,8 +128,8 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  std::cout << "Database server started at: "
-            << database_server_address(server) << std::endl;
+  std::cout << "Database server started at: " << database_server_address(server)
+            << std::endl;
 
   // Set up signal handling for graceful shutdown.
   std::signal(SIGINT, handle_shutdown_signal);

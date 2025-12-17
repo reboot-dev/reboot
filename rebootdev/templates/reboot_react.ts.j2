@@ -1615,9 +1615,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
           }
         }
 
-        console.warn(`[Reboot] Retrying call to {{ proto.package_name }}.{{ service.proto.name }}.{{ method.proto.name }} after backoff ...`);
-
-        await backoff.wait();
+        await backoff.wait(`[Reboot] Retrying call to \`{{ proto.package_name }}.{{ service.proto.name }}.{{ method.proto.name }}\` with backoff...`);
       }
     })();
 

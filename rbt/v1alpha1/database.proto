@@ -436,8 +436,7 @@ message ExportResponse {
 // `FileDescriptorSet`s).
 service Database {
   // Returns one page of interleaved state machines from the datastore.
-  rpc ColocatedRange(ColocatedRangeRequest)
-      returns (ColocatedRangeResponse);
+  rpc ColocatedRange(ColocatedRangeRequest) returns (ColocatedRangeResponse);
 
   // Returns one page of interleaved state machines from the datastore.
   rpc ColocatedReverseRange(ColocatedReverseRangeRequest)
@@ -472,8 +471,7 @@ service Database {
       returns (TransactionCoordinatorCleanupResponse);
 
   // TODO: This should be streaming: see #3329.
-  rpc Export(ExportRequest)
-      returns (ExportResponse);
+  rpc Export(ExportRequest) returns (ExportResponse);
 
   // Gets application metadata from persistent storage.
   rpc GetApplicationMetadata(GetApplicationMetadataRequest)

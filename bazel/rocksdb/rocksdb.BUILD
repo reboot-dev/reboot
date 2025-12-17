@@ -23,12 +23,20 @@ cmake(
     ],
     cache_entries = {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_CXX_FLAGS": "-fPIC",
         # We need to use position independent code in order to support
         # linking this library into a shared library/object which is
         # necessary, for example, when using 'pybind_extension' (to
         # embed a C++ library/module into Python).
-        "CMAKE_C_FLAGS": "-fPIC",
+        #
+        # The `-include cstdint` flag forces inclusion of <cstdint> to
+        # fix builds with strict clang 20+ which don't implicitly
+        # include standard integer types.
+        "CMAKE_CXX_FLAGS": "-fPIC -include cstdint",
+        "CMAKE_C_FLAGS": "-fPIC -include stdint.h",
+        # Force install to lib/ instead of lib64/ for compatibility
+        # with both Debian/Ubuntu (which use lib/) and RedHat-based
+        # systems like AlmaLinux (which use lib64/).
+        "CMAKE_INSTALL_LIBDIR": "lib",
         # We turn off failing on warnings by default because newer
         # versions of clang require using '--ld-path=' instead of
         # '-fuse-ld=' which it looks like 'rules_foreign_cc' and or
