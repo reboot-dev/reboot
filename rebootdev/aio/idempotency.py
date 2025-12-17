@@ -16,7 +16,7 @@ from rebootdev.aio.types import (
 )
 from rebootdev.settings import DOCS_BASE_URL, MAX_IDEMPOTENCY_KEY_LENGTH
 from typing import Iterator, Optional
-from uuid7 import create as uuid7
+from uuid7 import create as uuid7  # type: ignore[import]
 
 
 def make_expiring_idempotency_key(

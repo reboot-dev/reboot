@@ -566,7 +566,7 @@ export class {{ client.proto.state_name }}WeakReference {
       "{{ client.proto.state_full_name }}",
       this.#id,
     );
-    const idempotencyKey = uuidv4();
+    const idempotencyKey = reboot_web.makeExpiringIdempotencyKey();
 
     const protobufResponse = await reboot_web.httpCall(
       {

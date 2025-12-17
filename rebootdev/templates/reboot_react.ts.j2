@@ -1412,7 +1412,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
       ) => {
         const request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
 
-        const idempotencyKey = options?.idempotencyKey ?? options?.key ?? uuidv4();
+        const idempotencyKey = options?.idempotencyKey ?? options?.key ?? reboot_web.makeExpiringIdempotencyKey();
 
         const mutation = {
           request,
