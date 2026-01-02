@@ -3,13 +3,17 @@ import unittest
 from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot
 from reboot.protobuf import as_int, as_str, from_int, from_str, pack, unpack
+
+# Import used in Queue documentation.
+# isort: off
+from reboot.std.collections.queue.v1.queue import Queue
+from reboot.std.item.v1.item import Item
+# isort: on
 from reboot.std.collections.queue.v1.queue import (
     DEFAULT_BULK_COUNT,
     DequeueResponse,
-    Queue,
     servicers,
 )
-from reboot.std.item.v1.item import Item
 from tests.reboot.greeter_rbt import CreateRequest
 
 
@@ -279,6 +283,55 @@ class TestQueue(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             has_dequeued, "Should have dequeued after items were enqueued."
         )
+
+    async def test_example_code_for_documentation(self) -> None:
+        """
+        Examples used in documentation.
+        """
+        await self.rbt.up(Application(
+            servicers=servicers(),
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        first_queue = Queue.ref("my-first-queue")
+        second_queue = Queue.ref("my-second-queue")
+        third_queue = Queue.ref("my-third-queue")
+
+        # `message` needs to be defined for documentation. It won't actually be
+        # shown. Any proto will do.
+        message = CreateRequest(
+            title="king",
+            name="nemo",
+            adjective="fishy",
+        )
+
+        # Import used for documentation.
+        from reboot.protobuf import from_dict, pack
+
+        await first_queue.enqueue(
+            context,
+            value=from_dict({"details": "details-go-here"}),
+        )
+
+        await second_queue.enqueue(context, bytes=b"my-bytes")
+
+        await third_queue.enqueue(context, any=pack(message))
+
+        # Import used for documentation
+        from reboot.protobuf import as_dict
+
+        item = await first_queue.dequeue(context)
+        print(as_dict(item.value)["details"])
+
+        item = await second_queue.dequeue(context)
+        print(item.bytes)
+
+        item = await third_queue.dequeue(context)
+        print(item.any)
 
 
 if __name__ == '__main__':

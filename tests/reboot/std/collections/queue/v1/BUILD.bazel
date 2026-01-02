@@ -36,6 +36,8 @@ ts_project(
         "//:node_modules/@reboot-dev/reboot",
         "//:node_modules/@reboot-dev/reboot-std",
         "//:node_modules/@types/node",
+        "//tests/reboot:greeter_js_proto",
+        "//tests/reboot:greeter_js_reboot",
     ],
 )
 

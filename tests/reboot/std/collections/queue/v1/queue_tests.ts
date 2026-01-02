@@ -1,8 +1,9 @@
-import { Value } from "@bufbuild/protobuf";
+import { Any, Value } from "@bufbuild/protobuf";
 import { Application, Reboot } from "@reboot-dev/reboot";
 import queue, { Queue } from "@reboot-dev/reboot-std/collections/queue/v1";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
+import { CreateRequest } from "../../../../greeter_rbt.js";
 
 test("Use queue servicers", async (t) => {
   // These tests simply verify that we are properly exporting the Queue
@@ -13,13 +14,14 @@ test("Use queue servicers", async (t) => {
   t.beforeEach(async () => {
     rbt = new Reboot();
     await rbt.start();
-    await rbt.up(new Application({ servicers: queue.servicers() }));
   });
   t.afterEach(async () => {
     await rbt.stop();
   });
 
   await t.test("Interact with the Queue", async (t) => {
+    await rbt.up(new Application({ servicers: queue.servicers() }));
+
     const context = rbt.createExternalContext("test", {
       appInternal: true,
     });
@@ -51,5 +53,46 @@ test("Use queue servicers", async (t) => {
       lastItem.value?.toJson() === 303,
       `Expected last dequeued item to be 303, but it was not.`
     );
+  });
+
+  await t.test("Examples for documentation.", async (t) => {
+    await rbt.up(new Application({ servicers: queue.servicers() }));
+
+    const context = rbt.createExternalContext("test", {
+      appInternal: true,
+    });
+
+    const firstQueue = Queue.ref("my-first-queue");
+    const secondQueue = Queue.ref("my-second-queue");
+    const thirdQueue = Queue.ref("my-third-queue");
+
+    // `message` needs to be defined for documentation. It won't actually be
+    // shown. Any proto will do.
+    let message = new CreateRequest({
+      title: "king",
+      name: "nemo",
+      adjective: "fishy",
+    });
+
+    await firstQueue.enqueue(context, {
+      value: Value.fromJson({ details: "details-go-here" }),
+    });
+
+    await secondQueue.enqueue(context, {
+      bytes: new TextEncoder().encode("my-bytes"),
+    });
+
+    await thirdQueue.enqueue(context, {
+      any: Any.pack(message),
+    });
+
+    const { value } = await firstQueue.dequeue(context);
+    console.log(value?.toJson()["details"]);
+
+    const { bytes } = await secondQueue.dequeue(context);
+    console.log(bytes);
+
+    const { any } = await thirdQueue.dequeue(context);
+    console.log(any);
   });
 });
