@@ -4,7 +4,16 @@ import re
 import typing
 from enum import Enum
 from google.protobuf.message import Message
-from typing import Any, Dict, List, Optional, Union, get_args, get_origin
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Union,
+    get_args,
+    get_origin,
+)
 
 PRIMITIVE_TYPE = Union[
     int,
@@ -84,8 +93,13 @@ def _pydantic_to_proto(
             output_type,
         )
 
-    # Assert that we have a valid type after we check for 'Union',
-    # since 'Union' is a special typing construct and not a "real" type.
+    if input_type_or_origin is Literal:
+        literal_args = get_args(input_type)
+        assert input in literal_args, f"Value `{input}` not in `Literal{literal_args}`"
+        return literal_args.index(input)
+
+    # Assert that we have a valid type after we check for `Union` and `Literal`,
+    # since those are special typing constructs and not "real" types.
     assert isinstance(input_type_or_origin, type)
 
     if input_type_or_origin is list:
@@ -312,8 +326,20 @@ def _proto_to_pydantic(
             output_type,
         )
 
-    # Assert that we have a valid type after we check for 'Union',
-    # since 'Union' is a special typing construct and not a "real" type.
+    if output_type_or_origin is Literal:
+        # TODO: In the PR for support defaults, make sure we support the
+        # first `Literal` option as the default value.
+        literal_args = get_args(output_type)
+        assert isinstance(
+            input, int
+        ), f"Expected `int` for `Literal`, got `{type(input)}`"
+        assert 0 <= input < len(
+            literal_args
+        ), f"Enum value `{input}` out of range for `Literal{literal_args}`"
+        return literal_args[input]
+
+    # Assert that we have a valid type after we check for `Union` and `Literal`,
+    # since those are special typing constructs and not "real" types.
     assert isinstance(output_type_or_origin, type)
 
     # Declare a type here to help with mypy type checking.
@@ -549,6 +575,17 @@ class Type(pydantic.BaseModel):
                     dict_args[1],
                     method_name,
                 )
+            elif field_type_origin is Literal:
+                # We support only string literals for now.
+                literal_args = get_args(field_type)
+                for arg in literal_args:
+                    if not isinstance(arg, str):
+                        state_or_method = "'state'" if method_name is None else f"method '{method_name}'"
+                        raise ValueError(
+                            f"{state_or_method} has `Literal` field with "
+                            f"non-string value `{arg}`. Only string "
+                            "literals are supported."
+                        )
             elif issubclass(field_type, pydantic.BaseModel):
                 if not issubclass(field_type, Model):
                     state_or_method = ""

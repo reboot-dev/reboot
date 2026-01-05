@@ -1062,7 +1062,10 @@ export function zodToProtoJson<T>(
     return input;
   } else if (schema instanceof z.ZodLiteral) {
     assert(typeof input === "string");
-    return input;
+    // Since we need to prepend the field name to the actual `enum`
+    // value name in Protobuf schema, we need to return the index
+    // of the value here instead of the value itself.
+    return schema._zod.def.values.indexOf(input);
   } else if (schema instanceof z.ZodRecord) {
     assert(typeof input === "object");
     // Need to _add_ the extra level of indirection we use to encode a
