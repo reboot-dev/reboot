@@ -58,8 +58,11 @@ export {
 {% endif %}
 {% endif %}
 
-export const offlineCacheStorageType: reboot_web.OfflineCacheStorageType =
-  reboot_web.offlineCache.offlineCacheStorageType;
+// It is important that the following is a function, so we can lazily
+// initialize the cache, so users who do not use offline cache do not
+// see any logs about its initialization.
+export const offlineCacheStorageType = (): reboot_web.OfflineCacheStorageType =>
+  reboot_web.offlineCache().offlineCacheStorageType;
 
 reboot_api.check_bufbuild_protobuf_library(protobuf_es.Message);
 
@@ -1137,7 +1140,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
           if (cache && offlineCacheEnabled) {
             reboot_api.assert(cacheKey !== null);
             const cachedResponse = response.toJsonString();
-            reboot_web.offlineCache.set(cacheKey, cachedResponse)
+            reboot_web.offlineCache().set(cacheKey, cachedResponse)
               .catch((error) => {
                 console.warn(
                   `[Reboot] Setting of offline reader cache entry for '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' errored with ${error}`
@@ -1212,7 +1215,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
       if (offlineCacheEnabled) {
         reboot_api.assert(cacheKey !== null);
 
-        reboot_web.offlineCache.get(cacheKey).then((cachedResponse) => {
+        reboot_web.offlineCache().get(cacheKey).then((cachedResponse) => {
           if (cachedResponse !== null) {
             // We only want to set the response if we haven't already
             // gotten a response from the server as it is the authority
