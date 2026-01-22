@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import bitarray
+import bitarray  # type: ignore[import]
 import grpc
 import hashlib
 import log.log
@@ -755,7 +755,10 @@ except RuntimeError:
 
 class BloomFilter:
     """
-    Copied from https://github.com/richard-rogers/pybloom3.
+    Copied from https://github.com/richard-rogers/pybloom3. We're not
+    using pybloom3 (or one of its forks) because they are scantly
+    maintained and we need to modify it sufficiently enough that
+    extending it is not trivial.
 
     TODO: move this into a generic place if/when we determine that it
     is not overly specific to our use for idempotent mutations.
@@ -913,13 +916,19 @@ class ScalableBloomFilter:
     # good size for reading/writing rocksdb values.
     MAX_CAPACITY = 1_000_000
     INITIAL_CAPACITY = 100
-    INITIAL_ERROR_RATE = 0.001
+    ERROR_RATE = 0.0000001
+    # In order to have an error rate of 0.0000001 even as we add bloom
+    # filters we need to adjust the error rate of each added bloom
+    # filter so that the sum of the error rates converge to
+    # 0.0000001. We do that with a gentle tightening ratio of 0.9
+    # because we're not sure how many filters we may need to add.
+    TIGHTENING_RATIO = 0.9
 
     def __init__(self):
         self._filters = [
             BloomFilter(
                 capacity=self.INITIAL_CAPACITY,
-                error_rate=self.INITIAL_ERROR_RATE,
+                error_rate=self.ERROR_RATE,
             )
         ]
 
@@ -938,18 +947,15 @@ class ScalableBloomFilter:
         # Add another filter if we've run out of capacity.
         if len(filter) == filter.capacity:
             filter = BloomFilter(
-                # Increase the capacity by 10, unless we're already at
+                # Increase the capacity 10x, unless we're already at
                 # 1,000,000 entries, in which case keep it that size.
                 capacity=(
                     filter.capacity if filter.capacity == self.MAX_CAPACITY
                     else filter.capacity * 10
                 ),
-                # Increase the capacity by 10, unless we're already at
-                # 1,000,000 entries, in which case keep it that size.
-                error_rate=(
-                    filter.error_rate if filter.capacity == self.MAX_CAPACITY
-                    else filter.error_rate / 10
-                ),
+                # Adjust the error rate with a tightening ratio so we
+                # converge on our desired overall error rate.
+                error_rate=filter.error_rate * self.TIGHTENING_RATIO,
             )
             self._filters.append(filter)
 
@@ -1003,7 +1009,10 @@ class IdempotentMutations:
             idempotent_mutations=response.idempotent_mutations,
         )
 
-    async def get(self, idempotency_key: uuid.UUID):
+    async def get(
+        self,
+        idempotency_key: uuid.UUID,
+    ) -> Optional[database_pb2.IdempotentMutation]:
         if idempotency_key.bytes in self._bloom_filter:
             response = await self._database_client.recover_idempotent_mutations(
                 self._state_type_name,
