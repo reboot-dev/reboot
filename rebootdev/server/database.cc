@@ -2463,10 +2463,7 @@ void DatabaseService::RecoverTasks(
   }
 
   // Flush any remaining tasks.
-  WriteAndClearResponse(
-      responses,
-      response,
-      batch_size);
+  WriteAndClearResponse(responses, response, batch_size);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -2485,8 +2482,8 @@ void DatabaseService::RecoverTransactionTasks(
 
   rocksdb::WriteBatchWithIndex* batch = txn->GetWriteBatch();
 
-  std::unique_ptr<rocksdb::WBWIIterator> iterator(CHECK_NOTNULL(
-      batch->NewIterator(*column_family_handle)));
+  std::unique_ptr<rocksdb::WBWIIterator> iterator(
+      CHECK_NOTNULL(batch->NewIterator(*column_family_handle)));
 
   iterator->Seek(rocksdb::Slice(TASK_KEY_PREFIX));
 
@@ -2544,8 +2541,8 @@ void DatabaseService::RecoverTransactionIdempotentMutations(
 
   rocksdb::WriteBatchWithIndex* batch = txn->GetWriteBatch();
 
-  std::unique_ptr<rocksdb::WBWIIterator> iterator(CHECK_NOTNULL(
-      batch->NewIterator(*column_family_handle)));
+  std::unique_ptr<rocksdb::WBWIIterator> iterator(
+      CHECK_NOTNULL(batch->NewIterator(*column_family_handle)));
 
   iterator->Seek(rocksdb::Slice(IDEMPOTENT_MUTATION_KEY_PREFIX));
 
@@ -2872,10 +2869,7 @@ void DatabaseService::RecoverShardsIdempotentMutations(
   }
 
   // Flush any remaining idempotent mutations.
-  WriteAndClearResponse(
-      responses,
-      response,
-      batch_size);
+  WriteAndClearResponse(responses, response, batch_size);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -3283,9 +3277,8 @@ grpc::Status DatabaseService::Recover(
 
   REBOOT_DATABASE_LOG(1) << "Recovering transactions";
 
-  expected<void> recover_transactions = RecoverTransactions(
-      *responses,
-      shard_ids);
+  expected<void> recover_transactions =
+      RecoverTransactions(*responses, shard_ids);
 
   if (!recover_transactions.has_value()) {
     return grpc::Status(grpc::UNKNOWN, recover_transactions.error());
@@ -3302,8 +3295,8 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
     grpc::ServerWriter<RecoverIdempotentMutationsResponse>* responses) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_DATABASE_LOG(1)
-      << "RecoverIdempotentMutations { " << request->ShortDebugString() << " }";
+  REBOOT_DATABASE_LOG(1) << "RecoverIdempotentMutations { "
+                         << request->ShortDebugString() << " }";
 
   expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
       LookupColumnFamilyHandle(request->state_type());
@@ -3315,13 +3308,10 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
   }
 
   std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
-      db_->NewIterator(
-          NonPrefixIteratorReadOptions(),
-          *column_family_handle)));
+      db_->NewIterator(NonPrefixIteratorReadOptions(), *column_family_handle)));
 
-  const std::string& idempotent_mutation_key_prefix = fmt::format(
-      IDEMPOTENT_MUTATION_KEY_PREFIX ":{}",
-      request->state_ref());
+  const std::string& idempotent_mutation_key_prefix =
+      fmt::format(IDEMPOTENT_MUTATION_KEY_PREFIX ":{}", request->state_ref());
 
   // TODO: investigate using "prefix seek" for better performance, see:
   // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
@@ -3339,9 +3329,7 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
   size_t batch_size = 0;
 
   while (iterator->Valid()
-         && iterator->key()
-                 .ToStringView()
-                 .find(idempotent_mutation_key_prefix)
+         && iterator->key().ToStringView().find(idempotent_mutation_key_prefix)
              == 0) {
     IdempotentMutation idempotent_mutation;
 
@@ -3361,10 +3349,7 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
   }
 
   // Flush any remaining idempotent mutations.
-  WriteAndClearResponse(
-      *responses,
-      response,
-      batch_size);
+  WriteAndClearResponse(*responses, response, batch_size);
 
   return grpc::Status::OK;
 }
