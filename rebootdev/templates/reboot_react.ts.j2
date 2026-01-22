@@ -1272,6 +1272,14 @@ class {{ client.proto.state_name | to_camel }}Instance {
     reader.setResponses[id] = setResponse;
     reader.setIsLoadings[id] = setIsLoading;
     reader.setStatuses[id] = setStatus;
+
+    // If we already have a `response` or `status` need to set it.
+    if (reader.response) {
+      setResponse(reader.response);
+      setIsLoading(false);
+    } else if (reader.status) {
+      setStatus(reader.status);
+    }
   }
 
   unuse{{ method.proto.name | to_camel }}(
@@ -1442,9 +1450,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
     const [request, setRequest] = useState(newRequest);
 
-    if (!request.equals(newRequest)) {
-      setRequest(newRequest);
-    }
+    const [isLoading, setIsLoading] = useState<boolean>(true);
 
     const rebootClient = reboot_react.useRebootClient();
 
@@ -1511,8 +1517,6 @@ export const use{{ client.proto.state_name | to_camel }} = (
       {{ client.proto.state_name }}.{{ method.proto.name}}Response | undefined
       >(reader.response && {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(reader.response));
 
-    const [isLoading, setIsLoading] = useState<boolean>(true);
-
     const [aborted, setAborted] = useState<
       {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted | undefined
       >(reader.status && {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(reader.status));
@@ -1575,6 +1579,13 @@ export const use{{ client.proto.state_name | to_camel }} = (
         // will be set if passed `suspense: true` before returning.
         React.use(reader.promise);
       }
+    }
+
+    if (!request.equals(newRequest)) {
+      setRequest(newRequest);
+      setIsLoading(true);
+
+      return { response, isLoading: true, aborted };
     }
 
     return { response, isLoading, aborted };
