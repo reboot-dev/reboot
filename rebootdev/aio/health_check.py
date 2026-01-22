@@ -1,7 +1,10 @@
+import asyncio
 import grpc.aio
 import time
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 from rebootdev.aio.backoff import Backoff
+from rebootdev.aio.headers import STATE_REF_HEADER
+from rebootdev.aio.types import StateRef
 from rebootdev.ssl.localhost import LOCALHOST_CRT_DATA
 from typing import Callable, Optional
 
@@ -15,6 +18,7 @@ async def do_health_check(
     log_function: Callable[[str], None] = print,
     max_backoff_seconds: int = MAX_HEALTH_CHECK_BACKOFF_SECONDS,
     timeout_seconds: int = HEALTH_CHECK_TIMEOUT_SECONDS,
+    state_refs: Optional[list[StateRef]] = None,
 ):
     """Perform health check with exponential backoff."""
     backoff = Backoff(max_backoff_seconds=max_backoff_seconds)
@@ -26,16 +30,10 @@ async def do_health_check(
     else:
         app_identifier = f"application at {application_url}"
 
-    while True:
-        # Starting with a little backoff doesn't hurt (we don't expect the
-        # app to be ready immediately), and simplifies the retry logic.
-        await backoff()
-
-        if time.time() - start_time > timeout_seconds:
-            raise TimeoutError(
-                f"Timed out waiting for {app_identifier} to become healthy."
-            )
-
+    async def single_health_check(
+        state_ref: Optional[StateRef] = None,
+    ) -> bool:
+        """Perform a single health check RPC. Returns True if healthy."""
         if application_url.startswith("https://"):
             # We always use a dev certificate for TLS integration tests.
             assert 'dev.localhost.direct' in application_url
@@ -53,14 +51,48 @@ async def do_health_check(
 
         stub = health_pb2_grpc.HealthStub(channel)
         request = health_pb2.HealthCheckRequest()
+
+        # Build metadata if `state_ref` is provided to target a specific
+        # replica.
+        metadata = None
+        if state_ref is not None:
+            metadata = ((STATE_REF_HEADER, state_ref.to_str()),)
+
         try:
-            response = await stub.Check(request)
-            if response.status != health_pb2.HealthCheckResponse.SERVING:
-                continue
-            log_function(f"{app_identifier.capitalize()} is ready!")
-            break
+            response = await stub.Check(request, metadata=metadata)
+            return response.status == health_pb2.HealthCheckResponse.SERVING
         except grpc.aio.AioRpcError:
-            log_function(f"{app_identifier.capitalize()} is not ready yet...")
-            continue
+            return False
         finally:
             await channel.close()
+
+    while True:
+        # Starting with a little backoff doesn't hurt (we don't expect
+        # the app to be ready immediately), and simplifies the retry
+        # logic.
+        await backoff()
+
+        if time.time() - start_time > timeout_seconds:
+            raise TimeoutError(
+                f"Timed out waiting for {app_identifier} to become healthy."
+            )
+
+        if not await single_health_check():
+            log_function(f"{app_identifier.capitalize()} is not ready yet...")
+            continue
+
+        # First check passed. If `state_refs` are provided, send one health
+        # check per state ref to target specific replicas.
+        if state_refs is not None and len(state_refs) > 0:
+            results = await asyncio.gather(
+                *[single_health_check(state_ref) for state_ref in state_refs]
+            )
+            if not all(results):
+                log_function(
+                    f"{app_identifier.capitalize()} is not ready for relevant "
+                    "states yet..."
+                )
+                continue
+
+        log_function(f"{app_identifier.capitalize()} is ready!")
+        break

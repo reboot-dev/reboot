@@ -316,6 +316,8 @@ py_library(
     deps = [
         requirement("grpcio"),
         requirement("grpcio-health-checking"),
+        ":headers_py",
+        ":types_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio/backoff:python",
         "@com_github_reboot_dev_reboot//rebootdev/ssl:localhost_py",
     ],

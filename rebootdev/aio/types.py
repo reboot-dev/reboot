@@ -5,7 +5,7 @@ import hashlib
 import uuid
 from dataclasses import dataclass
 from rebootdev.settings import MAX_ACTOR_ID_LENGTH, MIN_ACTOR_ID_LENGTH
-from typing import Any, NewType, Optional, Sequence, TypeAlias
+from typing import Any, NewType, Optional, Protocol, Sequence, TypeAlias
 
 # Collection of types used throughout our code with more meaningful names than
 # the underlying python types.
@@ -28,6 +28,19 @@ KubernetesNamespace = str
 # pod ID without tying ourselves to such config runs always happening in a
 # Kubernetes pod.
 ConfigRunId = NewType("ConfigRunId", str)
+
+
+class TypedReference(Protocol):
+    """
+    Protocol for typed references (e.g., `WeakReference`).
+
+    These match the `StateRef`-relevant parts of
+    `[TypeName]WeakReference` types found in generated code
+    """
+
+    @property
+    def _state_ref(self) -> StateRef:
+        ...
 
 
 @dataclass(frozen=True)
@@ -140,6 +153,15 @@ class StateRef:
         return StateRef(
             f"{state_type_tag_for_name(state_type)}:{_state_id_encode(state_id)}"
         )
+
+    @classmethod
+    def from_typed_reference(cls, typed_reference: TypedReference) -> StateRef:
+        """Create a StateRef from a typed reference (e.g., WeakReference).
+
+        The typed reference must have a `_state_ref` attribute containing
+        a StateRef (as WeakReference instances do).
+        """
+        return typed_reference._state_ref
 
     def components(self) -> list[StateRef]:
         """Returns the component StateRefs in an StateRef.

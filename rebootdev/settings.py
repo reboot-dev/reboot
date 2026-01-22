@@ -229,7 +229,6 @@ ENVVAR_NODEJS_SERVER_BASE64_ARGS = 'REBOOT_NODEJS_SERVER_BASE64_ARGS'
 # Cloud.
 ENVVAR_REBOOT_CLOUD_VERSION = 'REBOOT_CLOUD_VERSION'
 ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS = 'REBOOT_CLOUD_DATABASE_ADDRESS'
-ENVVAR_REBOOT_CLOUD_REPLICA_INDEX = 'REBOOT_CLOUD_REPLICA_INDEX'
 
 # Environment variable that indicates that we are running `bazel test`, which
 # should be set by the test runner. We rely on this to determine whether or not

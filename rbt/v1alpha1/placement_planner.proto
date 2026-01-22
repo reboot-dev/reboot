@@ -45,6 +45,7 @@ message Plan {
       string id = 1;
       KeyRange range = 2;
       string server_id = 3;
+      uint32 replica_index = 4;
 
       message KeyRange {
         bytes first_key = 1;  // Inclusive.
@@ -84,4 +85,14 @@ message Server {
   // by the controller to determine what features are supported by the
   // application.
   string reboot_version = 8;
+}
+
+message ReplicaConfig {
+  message Replica {
+    // The routable address (i.e. including a port) of the replica.
+    Server.Address address = 1;
+  }
+  // The list of replicas hosting this application. The replica's index
+  // in the list is its `replica_index`.
+  repeated Replica replicas = 1;
 }
