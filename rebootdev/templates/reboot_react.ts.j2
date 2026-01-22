@@ -1564,11 +1564,11 @@ export const use{{ client.proto.state_name | to_camel }} = (
       // Suspend until `reader.event` is set signifying that we have
       // either a response or aborted.
       if (!reader.event.isSet()) {
-        // Raise if it doens't looke like we are using React>=19.
+        // Raise if it doesn't look like we are using React>=19.
         if (!("use" in React)) {
-          throw new Error(
-            "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`"
-          );
+          const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
+          console.error(error);
+          throw new Error(error);
         }
         // NOTE: this will throw _at least once_, because React will have
         // to do `.then()`, which is asynchronous, so they'll throw.
