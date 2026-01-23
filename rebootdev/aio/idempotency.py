@@ -534,7 +534,7 @@ class IdempotencyManager:
                 # `.idempotently()`, or from an external context for
                 # similar reasons. While we never expect a transaction
                 # to run for longer than 7 days, it's not totally out
-                # of the question that an external context might not
+                # of the question that an external context might
                 # run for so long, but in that case we should tell
                 # developers to use a seed. In fact, we might want to
                 # consider dropping support for `.idempotently()` with

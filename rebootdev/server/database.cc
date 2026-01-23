@@ -787,7 +787,9 @@ std::string MakeLegacyTransactionPreparedKey(const UUID& transaction_id) {
 expected<std::string> MakeIdempotentMutationKey(
     const std::string& state_ref,
     const std::string& idempotency_key) {
-  CHECK_EQ(idempotency_key.size(), 16) << "Expecting `idempotency_key` bytes";
+  CHECK_EQ(idempotency_key.size(), 16)
+      << "Expecting idempotency key to be the raw 16-byte format, "
+      << "not the 36-character hex string representation";
 
   int version =
       static_cast<int>((static_cast<uint8_t>(idempotency_key[6]) >> 4) & 0x0F);
