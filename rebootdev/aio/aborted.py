@@ -6,6 +6,7 @@ from google.protobuf import any_pb2, text_format
 from google.protobuf.message import Message
 from google.rpc import code_pb2, status_pb2
 from rebootdev.aio.types import assert_type
+from rebootdev.api import Model
 from typing import Optional, Sequence, TypeAlias, TypeVar, Union
 
 
@@ -119,11 +120,11 @@ class Aborted(Exception):
             raise NotImplementedError
 
     def __str__(self):
-        result = f"aborted with '{self.error.DESCRIPTOR.name}"
+        result = f"aborted with '{self._protobuf_error.DESCRIPTOR.name}"
 
         # NOTE: we use `text_format` to ensure `as_one_line=True`.
         body = text_format.MessageToString(
-            self.error,
+            self._protobuf_error,
             as_one_line=True,
         ).strip()
 
@@ -138,7 +139,11 @@ class Aborted(Exception):
         return result
 
     @property
-    def error(self) -> Message:
+    def error(self) -> Message | Model:
+        raise NotImplementedError
+
+    @property
+    def _protobuf_error(self) -> Message:
         raise NotImplementedError
 
     @property
@@ -164,12 +169,12 @@ class Aborted(Exception):
         raise NotImplementedError
 
     @classmethod
-    def is_declared_error(cls: type[AbortedT], message: Message) -> bool:
+    def is_declared_error(cls: type[AbortedT], error: Message | Model) -> bool:
         raise NotImplementedError
 
     def to_status(self) -> status_pb2.Status:
         detail = any_pb2.Any()
-        detail.Pack(self.error)
+        detail.Pack(self._protobuf_error)
 
         return status_pb2.Status(
             # A `grpc.StatusCode` is a `tuple[int, str]` where the
@@ -430,6 +435,10 @@ class SystemAborted(Aborted):
 
     @property
     def error(self) -> Error:
+        return self._error
+
+    @property
+    def _protobuf_error(self) -> Error:
         return self._error
 
     @property

@@ -895,13 +895,6 @@ class API(pydantic.BaseModel):
                     f"Data type '{type_name}' must be a 'Type' instance, "
                     f"got '{__builtins__.type(data_type)}'"
                 )
-            for name, method in data_type.methods.items():
-                if len(method.errors) != 0:
-                    raise ValueError(
-                        f"Method '{name}' of data type '{type_name}' "
-                        f"cannot define 'errors' yet. "
-                        f"The feature is coming soon."
-                    )
 
         super().__init__(**types)
 

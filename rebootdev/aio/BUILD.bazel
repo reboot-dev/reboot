@@ -177,6 +177,7 @@ py_library(
         requirement("protobuf"),
         requirement("grpcio-status"),
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "@com_github_reboot_dev_reboot//rebootdev:api_py",
     ],
 )
 

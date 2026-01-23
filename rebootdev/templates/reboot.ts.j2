@@ -1638,9 +1638,9 @@ export class {{ client.proto.state_name }}{{ method.proto.name }}Aborted extends
         this.#error
       );
     }
-    {% else %}
-    return reboot_api.zodErrorFromError(this.#error);
     {% endif %}
+    // Non-declared errors (e.g., gRPC errors).
+    return reboot_api.zodErrorFromError(this.#error);
     {% else %}
     return this.#error;
     {% endif %}

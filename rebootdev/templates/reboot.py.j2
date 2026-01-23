@@ -861,7 +861,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                         else:
                             raise
                     except IMPORT_rebootdev.aio.aborted.Aborted as aborted:
-                        error_type = f'{aborted.error.__class__.__module__}.{aborted.error.__class__.__qualname__}'
+                        error_type = f'{aborted._protobuf_error.__class__.__module__}.{aborted._protobuf_error.__class__.__qualname__}'
                         # Do not retry a task if the error was specified in the
                         # proto file.
                         if error_type in self._specified_errors_by_service_method_name.get('{{ method.proto.full_name }}', []):
@@ -3955,9 +3955,15 @@ class {{ client.proto.state_name }}:
 
         {% if method.options.errors|length > 0 %}
         MethodError = IMPORT_typing.Union[
-            {% for error, type in method.options.errors.items() %}
-            {{ type }}{% if not loop.last %}, {% endif %}
+            {% if options.proto.pydantic %}
+            {% for type in method.options.pydantic_error_types %}
+            {{ type }},
             {% endfor %}
+            {% else %}
+            {% for error, type in method.options.errors.items() %}
+            {{ type }},
+            {% endfor %}
+            {% endif %}
         ]
         {% endif %}
 
@@ -3969,19 +3975,29 @@ class {{ client.proto.state_name }}:
             IMPORT_rebootdev.aio.aborted.RebootError,
         ]
 
-        METHOD_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
             {% for error, type in method.options.errors.items() %}
             {{ type }}{% if not loop.last %}, {% endif %}
             {% endfor %}
         ]
 
-        ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
-            METHOD_ERROR_TYPES +
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message{% if options.proto.pydantic %} | IMPORT_reboot_api.Model{% endif %}]] = (
+            METHOD_PROTOBUF_ERROR_TYPES +
             IMPORT_rebootdev.aio.aborted.GRPC_ERROR_TYPES +
             IMPORT_rebootdev.aio.aborted.REBOOT_ERROR_TYPES
         )
 
         _error: Error
+
+        MethodProtobufError = IMPORT_typing.Union[
+            {% for error, type in method.options.errors.items() %}
+            {{ type }},
+            {% endfor %}
+            IMPORT_rebootdev.aio.aborted.GrpcError,
+            IMPORT_rebootdev.aio.aborted.RebootError,
+        ]
+        _method_protobuf_error: MethodProtobufError
+
         _code: IMPORT_grpc.StatusCode
         _message: IMPORT_typing.Optional[str]
 
@@ -3993,17 +4009,123 @@ class {{ client.proto.state_name }}:
             # Do not set this value when constructing in order to
             # raise. This is only used internally when constructing
             # from aborted calls.
-            error_types: IMPORT_typing.Sequence[type[Error]] = (
-                METHOD_ERROR_TYPES + IMPORT_rebootdev.aio.aborted.GRPC_ERROR_TYPES
+            error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
+                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_rebootdev.aio.aborted.GRPC_ERROR_TYPES
             ),
         ):
             super().__init__()
 
-            IMPORT_reboot_aio_types.assert_type(error, error_types)
+            self._message = None
 
+            {% if options.proto.pydantic %}
+            if self.is_declared_error(error):
+                # If the error is a declared error, we should always
+                # store both formats for Pydantic and Protobuf for that
+                # error, so users can access the Pydantic version via
+                # `aborted.error` and the Protobuf version will be used
+                # to send the error over the wire.
+                if isinstance(error, IMPORT_rebootdev.api.Model):
+                    # Happens when somebody raises an aborted with a Pydantic
+                    # error format, usually in the backend method
+                    # implementation.
+
+                    self._error = error
+
+                    {% for field_option, (top_level_grpc_error, nested_grpc_error, nested_pydantic_error) in method.options.pydantic_error_field_details.items() %}
+                    {% if loop.first %}
+                    if isinstance(error, {{ nested_pydantic_error }}):
+                    {% else %}
+                    elif isinstance(error, {{ nested_pydantic_error }}):
+                    {% endif %}
+                        protobuf_error_option = IMPORT_reboot_api.pydantic_to_proto(
+                            error,
+                            {{ nested_pydantic_error }},
+                            {{ nested_grpc_error }},
+                        )
+                        self._method_protobuf_error = {{ top_level_grpc_error }}()
+                        self._method_protobuf_error.{{ field_option }}.CopyFrom(protobuf_error_option)
+                    {% if loop.last %}
+                    else:
+                        {# This should be unreachable since the error is a declared error. #}
+                        raise RuntimeError(
+                            f"Unhandled declared error type for Pydantic to Protobuf conversion: {type(error)}. "
+                            "This may indicate a version mismatch between generated and API files. "
+                            "Try regenerating all code"
+                        )
+                    {% endif %}
+                    {% endfor %}
+                else:
+                    # Usually happens on the client side when we are
+                    # constructing an aborted from the `AioRpcError`, so
+                    # the error will be in Protobuf shape, and we want
+                    # to convert it back to Pydantic if possible.
+                    self._method_protobuf_error = error
+
+                    {# It should be only one `error_type` in the list! #}
+                    {% for error_type in  method.options.errors.values() %}
+                    if isinstance(error, {{ error_type }}):
+                        field_option = error.WhichOneof('type')
+                        {% for field_option, (_, _, nested_pydantic_error) in method.options.pydantic_error_field_details.items() %}
+                        {% if loop.first %}
+                        if field_option == '{{ field_option }}':
+                        {% else %}
+                        elif field_option == '{{ field_option }}':
+                        {% endif %}
+                            self._error = IMPORT_reboot_api.proto_to_pydantic(
+                                error.{{ field_option }},
+                                {{ nested_pydantic_error }},
+                            )
+                        {% if loop.last %}
+                        else:
+                            {# This should be unreachable since the error is a declared error. #}
+                            raise RuntimeError(
+                                f"Unhandled declared error type for Protobuf to Pydantic conversion: {field_option}. "
+                                "This may indicate a version mismatch between generated and API files. "
+                                "Try regenerating all code"
+                            )
+                        {% endif %}
+                        {% endfor %}
+                    {% endfor %}
+            else:
+                # Non declared error should be well known Reboot or gRPC
+                # error, which always comes in the Protobuf format, however
+                # it might be a case when the server is using new API and
+                # client is old, so server might send a declared error from
+                # the server perspective, but client doesn't know that it
+                # is a declared error now, so we need to gracefully
+                # cover that case.
+                if isinstance(error, IMPORT_rebootdev.api.Model):
+                    # Store both formats so users can access the Pydantic
+                    # version via `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = IMPORT_rbt_v1alpha1.errors_pb2.Unknown()
+                    self._method_protobuf_error = IMPORT_rbt_v1alpha1.errors_pb2.Unknown()
+
+                    self._message = (
+                        "Received a declared error from the server, "
+                        "but the client doesn't know about it; "
+                        "please update the client to the latest version\n"
+                    ) + (
+                        f"Original error: {error.model_dump_json()}\n"
+                    ) + message if message is not None else ""
+
+                # Store both formats so users can access the error via
+                # `aborted.error` and the Protobuf version
+                # will be used to send the error over the wire.
+                self._error = error
+                self._method_protobuf_error = error
+            {% else %}
+            {# Preemptively store the error for Protobuf schema, so we
+            can have the same type validation code below and users can access the Pydantic
+            version via `aborted.error` and the Protobuf version
+            will be used to send the error over the wire. #}
             self._error = error
+            self._method_protobuf_error = error
+            {% endif %}
 
-            code = self.grpc_status_code_from_error(self._error)
+            IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
+
+            code = self.grpc_status_code_from_error(self._protobuf_error)
 
             if code is None:
                 # Must be a Reboot specific or declared method error.
@@ -4011,11 +4133,17 @@ class {{ client.proto.state_name }}:
 
             self._code = code
 
-            self._message = message
+            self._message = self._message if self._message is not None else message
+
+        {# For Pydantic schema case we can still have `self._error` be
+        in a Protobuf format if it is not a declared error. #}
+        @property
+        def error(self) -> Error {% if options.proto.pydantic %}| MethodProtobufError{% endif %}:
+            return self._error
 
         @property
-        def error(self) -> Error:
-            return self._error
+        def _protobuf_error(self) -> MethodProtobufError:
+            return self._method_protobuf_error
 
         @property
         def code(self) -> IMPORT_grpc.StatusCode:
@@ -4029,13 +4157,13 @@ class {{ client.proto.state_name }}:
         def from_status(cls, status: IMPORT_google_rpc_status_pb2.Status):
             error = cls.error_from_google_rpc_status_details(
                 status,
-                cls.ERROR_TYPES,
+                cls.PROTOBUF_ERROR_TYPES,
             )
 
             message = status.message if len(status.message) > 0 else None
 
             if error is not None:
-                return cls(error, message=message, error_types=cls.ERROR_TYPES)
+                return cls(error, message=message, error_types=cls.PROTOBUF_ERROR_TYPES)
 
             error = cls.error_from_google_rpc_status_code(status)
 
@@ -4055,12 +4183,16 @@ class {{ client.proto.state_name }}:
             )
 
         @classmethod
-        def is_declared_error(cls, message: IMPORT_google_protobuf_message.Message) -> bool:
+        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message{% if options.proto.pydantic %} | IMPORT_rebootdev.api.Model{% endif %}) -> bool:
+            {% if options.proto.pydantic %}
+            if isinstance(error, IMPORT_rebootdev.api.Model):
+                return type(error) in IMPORT_api.{{ client.proto.state_name }}.methods['{{ method.proto.name | to_snake }}'].errors
+            {% endif %}
             {% for name in method.options.errors.keys() %}
             {% if loop.first %}
-            if message.DESCRIPTOR.full_name == '{{ name }}':
+            if error.DESCRIPTOR.full_name == '{{ name }}':
             {% else %}
-            elif message.DESCRIPTOR.full_name == '{{ name }}':
+            elif error.DESCRIPTOR.full_name == '{{ name }}':
             {% endif %}
                 return True
             {% endfor %}

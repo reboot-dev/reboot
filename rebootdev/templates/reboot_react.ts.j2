@@ -466,9 +466,9 @@ export class {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_c
         this.#error
       );
     }
-    {% else %}
-    return reboot_api.zodErrorFromError(this.#error);
     {% endif %}
+    // Non-declared errors (e.g., gRPC errors).
+    return reboot_api.zodErrorFromError(this.#error);
     {% else %}
     return this.#error;
     {% endif %}

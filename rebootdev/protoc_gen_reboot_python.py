@@ -22,6 +22,7 @@ from rebootdev.protoc_gen_reboot_generic import (
     BaseService,
     BaseState,
     PluginSpecificData,
+    ProtoMethodOptions,
     ProtoType,
     RebootProtocPlugin,
     UserProtoError,
@@ -34,6 +35,30 @@ PythonType = str
 @dataclass
 class PythonMethodOptions(BaseMethodOptions):
     errors: dict[ProtoType, PythonType]
+    # When we generate errors from Pydantic API, we will generate a top-level
+    # error message with a 'oneof' field for each Pydantic model error.
+    # We need to keep track of the Pydantic model types for proper type
+    # checking in the generated code.
+    # The `pydantic_error_types` list contains the proper Pydantic model
+    # type names.
+    # Set only when generating from Pydantic APIs.
+    pydantic_error_types: list[PythonType]
+    # During the code generation we need to know each 'oneof' field details
+    # which will contain:
+    #   1) A top-level gRPC generated error type;
+    #   2) A gRPC generated error type for a corresponding 'oneof' field.
+    #   3) A Pydantic type for a corresponding 'oneof' field;
+    # This will allow us to properly create a top-level Protobuf error
+    # message which will contain the specified field and we can convert
+    # that field back and forth between Pydantic and Protobuf formats.
+    pydantic_error_field_details: dict[
+        str,
+        tuple[
+            PythonType,
+            PythonType,
+            PythonType,
+        ],
+    ]
 
 
 @dataclass
@@ -104,9 +129,10 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
             methods=[
                 PythonMethod(
                     proto=method.proto,
-                    options=PythonMethodOptions(
-                        proto=method.options.proto,
-                        errors=self._analyze_errors(method.proto._descriptor),
+                    options=self._analyze_options(
+                        method.options.proto,
+                        method.proto._descriptor,
+                        from_pydantic,
                     ),
                     input_type=self._python_type_from_proto_type(
                         method.proto._descriptor.input_type
@@ -260,7 +286,130 @@ class PythonRebootProtocPlugin(RebootProtocPlugin):
 
         return f'dict[{key_name}, {value_name}]'
 
-    def _analyze_errors(
+    def _analyze_options(
+        self,
+        proto_method_options: ProtoMethodOptions,
+        method: MethodDescriptor,
+        from_pydantic: bool,
+    ) -> PythonMethodOptions:
+        pydantic_error_types: list[PythonType] = []
+        pydantic_error_field_details: dict[
+            str,
+            tuple[
+                PythonType,
+                PythonType,
+                PythonType,
+            ],
+        ] = {}
+        if from_pydantic:
+            pydantic_error_types = self._analyze_pydantic_error_types(method)
+            pydantic_error_field_details = self._analyze_pydantic_error_field_details(
+                method
+            )
+
+        errors = self._analyze_python_errors(method)
+
+        assert len(errors) <= 1 or not from_pydantic, (
+            "Pydantic APIs with multiple errors should generate a single "
+            "Protobuf error type containing a oneof of all error options. "
+            "Please report this bug to the maintainers!"
+        )
+        return PythonMethodOptions(
+            proto=proto_method_options,
+            errors=errors,
+            pydantic_error_types=pydantic_error_types,
+            pydantic_error_field_details=pydantic_error_field_details,
+        )
+
+    def _analyze_pydantic_error_field_details(
+        self,
+        method: MethodDescriptor,
+    ) -> dict[str, tuple[PythonType, PythonType, PythonType]]:
+        """Analyze and return a mapping of Pydantic error field details for the given method.
+
+        The Protobuf error schema for Pydantic APIs contains a
+        top-level error message with a 'oneof' field which contains
+        each Pydantic model error. This function collects the necessary
+        details for each 'oneof' field to allow proper conversion
+        between Pydantic and Protobuf formats.
+        """
+        method_options = get_method_options(method)
+        pydantic_error_field_details: dict[
+            str,
+            tuple[
+                PythonType,
+                PythonType,
+                PythonType,
+            ],
+        ] = {}
+
+        for error_name in method_options.errors:
+            assert (len(method_options.errors) == 1), (
+                "Pydantic APIs with multiple errors should generate a single "
+                "Protobuf error type containing a oneof of all error options. "
+                "Please report this bug to the maintainers!"
+            )
+
+            # When generating from Pydantic APIs, each error message
+            # corresponds to a 'oneof' field and we have only one top-level
+            # error message.
+            top_level_error_message = self.find_error_message(
+                error_name, method
+            )
+
+            assert (len(top_level_error_message.oneofs) == 1), (
+                "Pydantic APIs with multiple errors should generate a single "
+                "Protobuf error type containing a oneof of all error options. "
+                "Please report this bug to the maintainers!"
+            )
+
+            for oneof in top_level_error_message.oneofs:
+                for field in oneof.fields:
+                    field_options = get_field_options(field)
+                    assert field_options.pydantic_type is not None
+
+                    field_proto_message_type = field.message_type
+
+                    pydantic_error_field_details[field.name] = (
+                        self._python_type_from_proto_type(
+                            top_level_error_message,
+                        ),
+                        self._python_type_from_proto_type(
+                            field_proto_message_type,
+                        ),
+                        field_options.pydantic_type,
+                    )
+
+        return pydantic_error_field_details
+
+    def _analyze_pydantic_error_types(
+        self,
+        method: MethodDescriptor,
+    ) -> list[PythonType]:
+        """Analyze and return a list of Pydantic error types for the given method.
+
+        The Protobuf error schema for Pydantic APIs generates a top-level error
+        message with a 'oneof' field for each Pydantic model error. This function
+        collects the Pydantic model types for proper type checking in the
+        generated code.
+
+        Used only when generating from Pydantic APIs.
+        """
+
+        method_options = get_method_options(method)
+        pydantic_error_types: list[PythonType] = []
+
+        for error_name in method_options.errors:
+            error_message = self.find_error_message(error_name, method)
+
+            for field in error_message.fields:
+                field_options = get_field_options(field)
+                assert field_options.pydantic_type is not None
+                pydantic_error_types.append(field_options.pydantic_type)
+
+        return pydantic_error_types
+
+    def _analyze_python_errors(
         self, method: MethodDescriptor
     ) -> dict[ProtoType, PythonType]:
         method_options = get_method_options(method)
