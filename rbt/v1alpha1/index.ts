@@ -1033,23 +1033,35 @@ export function zodToProtoJson<T>(
   schema: z.ZodType | Record<string, z.ZodType>,
   input: T
 ): any {
-  assert(schema instanceof z.ZodVoid || input !== undefined);
+  assert(
+    schema instanceof z.ZodVoid || input !== undefined,
+    "zodToProtoJson: `input` must be defined unless `schema` is ZodVoid"
+  );
 
   if (!(schema instanceof z.ZodType)) {
     return zodToProtoJson(z.strictObject(schema), input);
   } else if (schema instanceof z.ZodPipe) {
     const meta = schema.meta();
-    assert(meta !== undefined && meta !== null);
+    assert(
+      meta !== undefined && meta !== null,
+      "zodToProtoJson: ZodPipe `schema` must have `meta`"
+    );
     const schemaWithMeta = (schema.in as z.ZodType).meta(meta);
     return zodToProtoJson(schemaWithMeta, input);
   } else if (schema instanceof z.ZodOptional) {
     const meta = schema.meta();
-    assert(meta !== undefined && meta !== null);
+    assert(
+      meta !== undefined && meta !== null,
+      "zodToProtoJson: ZodOptional `schema` must have `meta`"
+    );
     const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
     return zodToProtoJson(schemaWithMeta, input);
   } else if (schema instanceof z.ZodDefault) {
     const meta = schema.meta();
-    assert(meta !== undefined && meta !== null);
+    assert(
+      meta !== undefined && meta !== null,
+      "zodToProtoJson: ZodDefault `schema` must have `meta`"
+    );
     const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
     return zodToProtoJson(schemaWithMeta, input);
   } else if (schema._zod.def.type === "string") {
@@ -1061,10 +1073,19 @@ export function zodToProtoJson<T>(
   } else if (schema instanceof z.ZodBoolean) {
     return input;
   } else if (schema instanceof z.ZodLiteral) {
-    assert(typeof input === "string");
-    return input;
+    assert(
+      typeof input === "string",
+      "zodToProtoJson: ZodLiteral `input` must be a string"
+    );
+    // Since we need to prepend the field name to the actual `enum`
+    // value name in Protobuf schema, we need to return the index
+    // of the value here instead of the value itself.
+    return schema._zod.def.values.indexOf(input);
   } else if (schema instanceof z.ZodRecord) {
-    assert(typeof input === "object");
+    assert(
+      typeof input === "object",
+      "zodToProtoJson: ZodRecord `input` must be an object"
+    );
     // Need to _add_ the extra level of indirection we use to encode a
     // record.
     const output: { record: Record<string, any> } = { record: {} };
@@ -1081,18 +1102,27 @@ export function zodToProtoJson<T>(
     }
     return output;
   } else if (schema instanceof z.ZodArray) {
-    assert(Array.isArray(input));
+    assert(
+      Array.isArray(input),
+      "zodToProtoJson: ZodArray `input` must be an array"
+    );
     return {
       items: input.map((item) =>
         zodToProtoJson(schema.element as z.ZodType, item)
       ),
     };
   } else if (schema instanceof z.ZodObject) {
-    assert(typeof input === "object" && input !== null);
+    assert(
+      typeof input === "object" && input !== null,
+      "zodToProtoJson: ZodObject `input` must be a non-null object"
+    );
     const shape = schema.shape;
     const output: Record<string, any> = {};
     for (const property in input) {
-      assert(property in schema.shape);
+      assert(
+        property in schema.shape,
+        `zodToProtoJson: \`property\` '${property}' not found in ZodObject \`shape\``
+      );
       // Drop all `undefined` properties as they are technically not
       // valid JSON and can't be encoded/decoded via protobuf.
       if (input[property] === undefined) {
@@ -1103,15 +1133,22 @@ export function zodToProtoJson<T>(
     return output;
   } else if (schema instanceof z.ZodDiscriminatedUnion) {
     const discriminator = schema._zod.def.discriminator;
-    assert(typeof discriminator === "string");
+    assert(
+      typeof discriminator === "string",
+      "zodToProtoJson: ZodDiscriminatedUnion `discriminator` must be a string"
+    );
     assert(
       typeIs(input, (input): input is T & { [key: string]: any } => {
         return typeof input === "object" && discriminator in input;
-      })
+      }),
+      "zodToProtoJson: ZodDiscriminatedUnion `input` must be an object with `discriminator` property"
     );
 
     for (const option of schema.options as z.ZodObject[]) {
-      assert(discriminator in option.shape);
+      assert(
+        discriminator in option.shape,
+        "zodToProtoJson: `discriminator` must be present in ZodDiscriminatedUnion option `shape`"
+      );
       if (
         option.shape[discriminator]._zod.def.values[0] === input[discriminator]
       ) {
@@ -1126,7 +1163,10 @@ export function zodToProtoJson<T>(
     }
     throw new Error(`Invalid discriminated union`);
   } else if (schema instanceof z.ZodVoid) {
-    assert(input === undefined);
+    assert(
+      input === undefined,
+      "zodToProtoJson: ZodVoid `input` must be undefined"
+    );
     // Need this to be `google.protobuf.Empty`.
     return {};
   } else if (schema instanceof z.ZodCustom) {
@@ -1134,7 +1174,10 @@ export function zodToProtoJson<T>(
     // protobuf type that is otherwise well defined and does not
     // require any conversion.
     const meta = schema.meta();
-    assert(meta !== undefined && meta !== null && "protobuf" in meta);
+    assert(
+      meta !== undefined && meta !== null && "protobuf" in meta,
+      "zodToProtoJson: ZodCustom `schema` must have `meta` with 'protobuf' property"
+    );
     return input;
   } else if (
     schema instanceof z.ZodLazy &&
@@ -1155,23 +1198,32 @@ export function protoToZod<T>(
   schema: z.ZodType | Record<string, z.ZodType>,
   input: T
 ): any {
-  assert(input !== undefined);
+  assert(input !== undefined, "protoToZod: `input` must be defined");
 
   if (!(schema instanceof z.ZodType)) {
     return protoToZod(z.strictObject(schema), input);
   } else if (schema instanceof z.ZodPipe) {
     const meta = schema.meta();
-    assert(meta !== undefined && meta !== null);
+    assert(
+      meta !== undefined && meta !== null,
+      "protoToZod: ZodPipe `schema` must have `meta`"
+    );
     const schemaWithMeta = (schema.in as z.ZodType).meta(meta);
     return protoToZod(schemaWithMeta, input);
   } else if (schema instanceof z.ZodOptional) {
     const meta = schema.meta();
-    assert(meta !== undefined && meta !== null);
+    assert(
+      meta !== undefined && meta !== null,
+      "protoToZod: ZodOptional `schema` must have `meta`"
+    );
     const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
     return protoToZod(schemaWithMeta, input);
   } else if (schema instanceof z.ZodDefault) {
     const meta = schema.meta();
-    assert(meta !== undefined && meta !== null);
+    assert(
+      meta !== undefined && meta !== null,
+      "protoToZod: ZodDefault `schema` must have `meta`"
+    );
     const schemaWithMeta = (schema._zod.def.innerType as z.ZodType).meta(meta);
     return protoToZod(schemaWithMeta, input);
   } else if (schema._zod.def.type === "string") {
@@ -1183,15 +1235,24 @@ export function protoToZod<T>(
   } else if (schema instanceof z.ZodBoolean) {
     return input;
   } else if (schema instanceof z.ZodLiteral) {
-    assert(typeof input === "number");
+    assert(
+      typeof input === "number",
+      "protoToZod: ZodLiteral `input` must be a number (enum index)"
+    );
     // We're relying on the fact that `schema._zod.def.values` is ordered
     // based on what was originally passed in.
     return schema._zod.def.values[input];
   } else if (schema instanceof z.ZodRecord) {
-    assert(input instanceof protobuf_es.Message);
+    assert(
+      input instanceof protobuf_es.Message,
+      "protoToZod: ZodRecord `input` must be a protobuf Message"
+    );
     // Need to _remove_ the extra level of indirection we use to
     // encode a record.
-    assert(input !== null && input !== undefined && "record" in input);
+    assert(
+      input !== null && input !== undefined && "record" in input,
+      "protoToZod: ZodRecord `input` must have a `record` property"
+    );
     const record = (input as { record: Record<string, any> }).record;
     const output: Record<string, any> = {};
     for (const property in record as any) {
@@ -1215,7 +1276,7 @@ export function protoToZod<T>(
           Array.isArray(input.items)
         );
       }),
-      "schema is ZodArray, but input is not a protobuf message"
+      "protoToZod: ZodArray `input` must be a protobuf Message with `items` array"
     );
 
     return input.items.map((item: any) =>
@@ -1226,13 +1287,16 @@ export function protoToZod<T>(
       typeIs(input, (input): input is T & { [key: string]: any } => {
         return input instanceof protobuf_es.Message && input !== null;
       }),
-      "schema is ZodObject, but input is not a protobuf message"
+      "protoToZod: ZodObject `input` must be a protobuf Message"
     );
 
     const shape = schema.shape;
     const output: Record<string, any> = {};
     for (const property in input) {
-      assert(property in shape);
+      assert(
+        property in shape,
+        `protoToZod: \`property\` '${property}' not found in ZodObject \`shape\``
+      );
       // Drop all `undefined` properties as they are technically not
       // valid JSON and can't be encoded/decoded via protobuf.
       if (input[property] === undefined) {
@@ -1243,7 +1307,10 @@ export function protoToZod<T>(
     return output;
   } else if (schema instanceof z.ZodDiscriminatedUnion) {
     const discriminator = schema._zod.def.discriminator;
-    assert(typeof discriminator === "string");
+    assert(
+      typeof discriminator === "string",
+      "protoToZod: ZodDiscriminatedUnion `discriminator` must be a string"
+    );
 
     assert(
       typeIs(input, (input): input is T & { [key: string]: any } => {
@@ -1253,11 +1320,14 @@ export function protoToZod<T>(
           discriminator in input
         );
       }),
-      "schema is ZodDiscriminatedUnion, but input is not a protobuf message"
+      "protoToZod: ZodDiscriminatedUnion `input` must be a protobuf Message with `discriminator` property"
     );
 
     for (const option of schema.options as z.ZodObject[]) {
-      assert(discriminator in option.shape);
+      assert(
+        discriminator in option.shape,
+        "protoToZod: `discriminator` must be present in ZodDiscriminatedUnion option `shape`"
+      );
       if (
         toCamelCase(option.shape[discriminator]._zod.def.values[0]) ===
         input[discriminator].case
@@ -1277,17 +1347,23 @@ export function protoToZod<T>(
     // require any conversion.
     assert(
       input instanceof protobuf_es.Message,
-      "schema is ZodCustom, but input is not a protobuf message"
+      "protoToZod: ZodCustom `input` must be a protobuf Message"
     );
     const meta = (schema as z.ZodCustom).meta();
-    assert(meta !== undefined && "protobuf" in meta);
+    assert(
+      meta !== undefined && "protobuf" in meta,
+      "protoToZod: ZodCustom `schema` must have `meta` with 'protobuf' property"
+    );
     return input;
   } else if (
     schema instanceof z.ZodLazy &&
     schema._zod.def.getter?.toString() ===
       (z.json() as z.ZodType as z.ZodLazy)._zod.def.getter.toString()
   ) {
-    assert(input instanceof protobuf_es.Value);
+    assert(
+      input instanceof protobuf_es.Value,
+      "protoToZod: ZodLazy (json) `input` must be a protobuf Value"
+    );
     return input.toJson();
   } else {
     throw new Error(`Unexpected schema type '${schema._zod.def.type}'`);

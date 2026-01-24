@@ -109,6 +109,15 @@ import { api } from "{{ options.proto.zod }}{% if nodejs_extensions %}.js{% endi
 // code, see below.
 const ongoingTransactionStates: { [id: string] : any; } = {};
 
+// Helper to get the `ongoingTransactionStates` dictionary key.
+// The key should contain both the state ID and the state type name
+// to avoid conflicts when multiple states share the same ID.
+const ongoingTransactionStateKey = (
+  context: Context
+): string => {
+  return `${context.stateTypeName}/${context.stateId}`;
+};
+
 // Track state IDs that are being _constructed_ in a transaction
 // so that when using Zod we don't validate the initial state which
 // will fail validation if there are required fields.
@@ -606,11 +615,11 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       );
       {% endif %}
       {% if method.options.proto.kind == 'writer' or method.options.proto.kind == 'reader' %}
-      if (context.stateId in ongoingTransactionStates) {
+      if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
         {% if options.proto.zod %}
-        state = structuredClone(ongoingTransactionStates[context.stateId]);
+        state = structuredClone(ongoingTransactionStates[ongoingTransactionStateKey(context)]);
         {% else %}
-        state = ongoingTransactionStates[context.stateId].clone();
+        state = ongoingTransactionStates[ongoingTransactionStateKey(context)].clone();
         {% endif %}
       }
       {% elif method.options.proto.kind == 'transaction' %}
@@ -618,7 +627,7 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       //
       // The `state` should be already validated above, so we can
       // just store it here.
-      ongoingTransactionStates[context.stateId] = state;
+      ongoingTransactionStates[ongoingTransactionStateKey(context)] = state;
       {% endif %}
 
       const request = {{ state.proto.name }}{{ method.proto.name }}RequestFromBinary(bytesRequest);
@@ -642,11 +651,11 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       // this writer. What we should be doing instead is creating a
       // callback API that we invoke only after a writer completes
       // that lets us update the state _reference_ then.
-      if (context.stateId in ongoingTransactionStates) {
+      if (ongoingTransactionStateKey(context) in ongoingTransactionStates) {
         {% if options.proto.zod %}
-        Object.assign(ongoingTransactionStates[context.stateId], state);
+        Object.assign(ongoingTransactionStates[ongoingTransactionStateKey(context)], state);
         {% else %}
-        ongoingTransactionStates[context.stateId].copyFrom(state);
+        ongoingTransactionStates[ongoingTransactionStateKey(context)].copyFrom(state);
         {% endif %}
       }
       {% endif %}
@@ -695,7 +704,7 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       throw error;
     } finally {
       {% if method.options.proto.kind == 'transaction' %}
-      delete ongoingTransactionStates[context.stateId];
+      delete ongoingTransactionStates[ongoingTransactionStateKey(context)];
       {% endif %}
 
       {% if method.options.proto.constructor %}

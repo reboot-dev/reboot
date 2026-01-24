@@ -101,9 +101,15 @@ message ApplicationConfig {
     //            it's confusing.
     uint32 revision_number = 10;
 
-    // The number of servers to run for this application.
-    // NOTE: Must be a power of 2.
-    // Unset means: use default.
+    // The number of replicas to run for this application. Must be a
+    // power of 2. This must be set for any Reboot application new
+    // enough to support horizontal scaling; for backwards compatibility
+    // however, an unset value will be interpreted as 1.
+    optional uint32 replicas = 12;
+
+    // The number of servers to run for _each replica_ of this
+    // application. Must be a power of 2. Unset means: use an arbitrary
+    // default.
     optional uint32 servers = 7;
 
     // The version of Reboot running in this application. This is used

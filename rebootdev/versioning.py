@@ -45,6 +45,13 @@ def version_less_than(version_a: str, version_b: str) -> bool:
     return parts_a < parts_b
 
 
+def version_at_least(version: str, threshold_version: str) -> bool:
+    """
+    Returns True if `version` is at least `threshold_version`.
+    """
+    return not version_less_than(version, threshold_version)
+
+
 class IncompatibleVersionError(InputError):
     """
     Raised when generated code is incompatible with the current Reboot library

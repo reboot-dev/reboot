@@ -314,6 +314,12 @@ message RecoverRequest {
   // Shard IDs to recover data for. Only data belonging to these shards
   // will be returned. At least one shard ID must be specified.
   repeated string shard_ids = 2;
+
+  // Idempotent mutations are now recovered on demand via
+  // `RecoverIdempotentMutations`, but for backwards compatibility
+  // they are still recovered in `Recover` also unless explicitly
+  // toggled off with this flag.
+  bool skip_idempotent_mutations = 3;
 }
 
 message RecoverResponse {
@@ -333,6 +339,21 @@ message RecoverResponse {
       prepared_transaction_coordinators = 3;
 
   repeated IdempotentMutation idempotent_mutations = 4;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message RecoverIdempotentMutationsRequest {
+  // State ref to recover idempotent mutations for.
+  string state_type = 1;
+  string state_ref = 2;
+
+  // Recover an idempotent mutation for the specific key.
+  optional bytes idempotency_key = 3;
+}
+
+message RecoverIdempotentMutationsResponse {
+  repeated IdempotentMutation idempotent_mutations = 1;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -454,6 +475,11 @@ service Database {
 
   // Returns state needed to recover the server after a potential restart.
   rpc Recover(RecoverRequest) returns (stream RecoverResponse);
+
+  // Returns the idempotent mutations so a server that has restarted
+  // can determine if a mutation has already occured.
+  rpc RecoverIdempotentMutations(RecoverIdempotentMutationsRequest)
+      returns (stream RecoverIdempotentMutationsResponse);
 
   rpc TransactionParticipantPrepare(TransactionParticipantPrepareRequest)
       returns (TransactionParticipantPrepareResponse);

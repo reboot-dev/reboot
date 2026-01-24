@@ -1,5 +1,5 @@
 aiofiles==23.2.1 # Latest as 2023/08/09.
-aiohttp==3.10.5 # Latest as of 2024/09/16, matching `respect/requirements.in`.
+aiohttp==3.13.2 # Latest as of 2025/11/10, matching `respect/requirements.in`.
 colorama==0.4.6 # Latest as of 2023/06/02, matching `tests/requirements.in`.
 cryptography==44.0.0 # Latest as of 2025/01/27.
 cffi==1.17.1 # Aligns with `cryptography`.
@@ -37,3 +37,4 @@ opentelemetry-instrumentation-grpc==0.49b1 # Latest as of 2024/11/14.
 fastapi==0.115.12 # Latest as of 2025/03/30.
 uvicorn==0.34.0 # Latest as of 2025/03/30.
 pydantic>=2.7.4 # To be version compatibable with projects like `langchain`.
+bitarray==3.8.0 # Lastest as of 2025/12/14.

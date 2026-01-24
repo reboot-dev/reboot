@@ -74,6 +74,7 @@ import rebootdev.aio.tracing as IMPORT_reboot_aio_tracing
 from google.rpc import status_pb2 as IMPORT_google_rpc_status_pb2
 from tzlocal import get_localzone as IMPORT_tzlocal_get_localzone
 import rebootdev.aio.call as IMPORT_reboot_aio_call
+import rebootdev.aio.caller_id as IMPORT_reboot_aio_caller_id
 import rebootdev.aio.contexts as IMPORT_reboot_aio_contexts
 import rebootdev.aio.headers as IMPORT_reboot_aio_headers
 import rebootdev.aio.idempotency as IMPORT_reboot_aio_idempotency
@@ -125,6 +126,17 @@ states_being_constructed: set[str] = set()
 # Moreover, we need to update that _reference_ after each writer
 # executes within a transaction.
 ongoing_transaction_states: dict[str, IMPORT_reboot_api.Model] = {}
+
+
+# Helper to get the `ongoing_transaction_states` dictionary key.
+# The key should contain both the state ID and the state type name
+# to avoid conflicts when multiple states share the same ID.
+def ongoing_transaction_state_key(
+    context: IMPORT_reboot_aio_contexts.ReaderContext
+    | IMPORT_reboot_aio_contexts.WriterContext
+    | IMPORT_reboot_aio_contexts.TransactionContext,
+) -> str:
+    return f"{context.state_type_name}/{context.state_id}"
 {% endif %}
 
 {# Since Pydantic model fields might be 'Optional' or have defaults, we
@@ -390,7 +402,6 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         tasks_cache: IMPORT_reboot_aio_internals_tasks_cache.TasksCache,
         token_verifier: IMPORT_typing.Optional[IMPORT_rebootdev.aio.auth.token_verifiers.TokenVerifier],
         effect_validation: IMPORT_reboot_aio_contexts.EffectValidation,
-        app_internal_api_key_secret: str,
         ready: IMPORT_asyncio.Event,
     ):
         super().__init__(
@@ -405,7 +416,6 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             placement_client=placement_client,
             channel_manager=channel_manager,
             effect_validation=effect_validation,
-            app_internal_api_key_secret=app_internal_api_key_secret,
         )
 
         self._servicer = servicer
@@ -980,14 +990,14 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
 
             {% if options.proto.pydantic %}
             {% if method.options.proto.kind == 'writer' or method.options.proto.kind == 'reader' %}
-            if context.state_id in ongoing_transaction_states:
-                typed_state = ongoing_transaction_states[context.state_id].model_copy(deep=True)
+            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
+                typed_state = ongoing_transaction_states[ongoing_transaction_state_key(context)].model_copy(deep=True)
             {% elif method.options.proto.kind == 'transaction' %}
             # TODO: assert that there are no ongoing transactions for this state.
             #
             # The `typed_state` should be already validated above, so we can
             # just store it here.
-            ongoing_transaction_states[context.state_id] = typed_state
+            ongoing_transaction_states[ongoing_transaction_state_key(context)] = typed_state
             {% endif %}
             {% endif %}
             {% endif %}
@@ -1016,9 +1026,9 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             # this writer. What we should be doing instead is creating a
             # callback API that we invoke only after a writer completes
             # that lets us update the state _reference_ then.
-            if context.state_id in ongoing_transaction_states:
+            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
                 for field, value in typed_state.model_dump().items():
-                    setattr(ongoing_transaction_states[context.state_id], field, value)
+                    setattr(ongoing_transaction_states[ongoing_transaction_state_key(context)], field, value)
             {% endif %}
 
             {% if not method.options.proto.state_streaming and not method.options.proto.kind == 'workflow' %}
@@ -1181,8 +1191,8 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             states_being_constructed.remove(context.state_id)
             {% endif %}
             {% if options.proto.pydantic and method.options.proto.kind == 'transaction' %}
-            if context.state_id in ongoing_transaction_states:
-                del ongoing_transaction_states[context.state_id]
+            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
+                del ongoing_transaction_states[ongoing_transaction_state_key(context)]
             {% endif %}
             {% if method.options.proto.kind == 'workflow' %}
             self._servicer.__servicer__.set(None)
@@ -1232,7 +1242,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         # already performed the transaction then we don't want to
         # become a transaction participant (again) we just want to
         # return the transaction's response.
-        idempotent_mutation = self._state_manager.check_for_idempotent_mutation(
+        idempotent_mutation = await self._state_manager.check_for_idempotent_mutation(
             context
         )
 
@@ -1370,15 +1380,16 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         )
         response = {{ method.output_type }}()
 
-        {% if method.options.proto.kind in ['writer', 'transaction', 'workflow'] %}
-        # Check if we already have performed this mutation!
+        # Check if we already have performed this schedule! Note that
+        # we need to do this for all kinds of methods because this is
+        # effectively a mutation (actually a `writer`, see below).
         #
         # We do this _before_ calling 'transactionally()' because
         # if this call is for a transaction method _and_ we've
         # already performed the transaction then we don't want to
         # become a transaction participant (again) we just want to
         # return the transaction's response.
-        idempotent_mutation = self._state_manager.check_for_idempotent_mutation(
+        idempotent_mutation = await self._state_manager.check_for_idempotent_mutation(
             context
         )
 
@@ -1399,7 +1410,6 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             )
 
             return context, response
-        {% endif %}
 
         async with self._state_manager.transactionally(
             context,
@@ -1771,11 +1781,16 @@ class _{{ client.proto.state_name }}Stub(IMPORT_reboot_aio_stubs.Stub):
         #
         # In the case of `ExternalContext`, however, its `bearer_token` was set specifically
         # by the developer for the purpose of making these calls.
-        app_internal_authorization: IMPORT_typing.Optional[str] = None
+        caller_id: IMPORT_typing.Optional[IMPORT_reboot_aio_caller_id.CallerID] = None
         if isinstance(context, IMPORT_reboot_aio_external.ExternalContext):
             # Note that only `ExternalContext` even has a `bearer_token` field.
             bearer_token = context.bearer_token
-            app_internal_authorization = context.app_internal_authorization
+            # If the creator of the `ExternalContext` set an explicit caller ID, obey it.
+            caller_id = context.caller_id
+        else:
+            caller_id = IMPORT_reboot_aio_caller_id.CallerID(
+                application_id=context.application_id,
+            )
 
         super().__init__(
             channel_manager=context.channel_manager,
@@ -1783,7 +1798,7 @@ class _{{ client.proto.state_name }}Stub(IMPORT_reboot_aio_stubs.Stub):
             state_ref=state_ref,
             context=context if isinstance(context, IMPORT_reboot_aio_contexts.Context) else None,
             bearer_token=bearer_token,
-            app_internal_authorization=app_internal_authorization,
+            caller_id=caller_id,
         )
 
         # All the channels for all services of this state will go to the same
@@ -2481,7 +2496,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         tasks_cache: IMPORT_reboot_aio_internals_tasks_cache.TasksCache,
         token_verifier: IMPORT_typing.Optional[IMPORT_rebootdev.aio.auth.token_verifiers.TokenVerifier],
         effect_validation: IMPORT_reboot_aio_contexts.EffectValidation,
-        app_internal_api_key_secret: str,
         ready: IMPORT_asyncio.Event,
     ) -> {{ state.proto.name }}ServicerMiddleware:
         self._middleware = {{ state.proto.name }}ServicerMiddleware(
@@ -2494,7 +2508,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             tasks_cache=tasks_cache,
             token_verifier=token_verifier,
             effect_validation=effect_validation,
-            app_internal_api_key_secret=app_internal_api_key_secret,
             ready=ready,
         )
         return self._middleware
@@ -2843,6 +2856,9 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 headers = IMPORT_reboot_aio_headers.Headers(
                     application_id=context.application_id,
                     state_ref=context._state_ref,
+                    caller_id=IMPORT_reboot_aio_caller_id.CallerID(
+                        application_id=context.application_id,
+                    ),
                 )
 
                 metadata += headers.to_grpc_metadata()
@@ -2884,7 +2900,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                         # become a transaction participant (again) we just want to
                         # return the transaction's response.
                         idempotent_mutation = (
-                            servicer._middleware._state_manager.check_for_idempotent_mutation(
+                            await servicer._middleware._state_manager.check_for_idempotent_mutation(
                                 writer_context
                             )
                         )
@@ -4290,7 +4306,7 @@ class {{ client.proto.state_name }}:
 
                 __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
                 __bearer_token__: IMPORT_typing.Optional[str] = None
-                __app_internal_authorization__: IMPORT_typing.Optional[str] = None
+                __caller_id__: IMPORT_typing.Optional[IMPORT_reboot_aio_caller_id.CallerID] = None
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
@@ -4316,23 +4332,21 @@ class {{ client.proto.state_name }}:
                     __metadata__ = ()
 
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.Context):
+                    __caller_id__ = IMPORT_reboot_aio_caller_id.CallerID(
+                        application_id=__context__.application_id,
+                    )
                     if __this__._application_id is None:
                         # Given our context type (inside a Reboot application) we can default to
                         # making the application send traffic to itself.
                         __this__._application_id = __context__.application_id
-                        # It is safe to use app-internal auth given we know we're talking to
-                        # the same application.
-                        __app_internal_authorization__ = __context__._app_internal_api_key_secret
                 elif isinstance(__context__, IMPORT_reboot_aio_external.ExternalContext):
-                    # Extract `app_internal_authorization` from `ExternalContext`, similar to
-                    # how we extract `bearer_token` above.
-                    __app_internal_authorization__ = __context__.app_internal_authorization
+                    __caller_id__ = __context__.caller_id
 
                 __headers__ = IMPORT_reboot_aio_headers.Headers(
                     bearer_token=__bearer_token__,
                     state_ref=__this__._state_ref,
                     application_id=__this__._application_id,
-                    app_internal_authorization=__app_internal_authorization__
+                    caller_id=__caller_id__,
                 )
 
                 __metadata__ += __headers__.to_grpc_metadata()

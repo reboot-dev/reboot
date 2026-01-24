@@ -2,6 +2,34 @@ load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
+    name = "caller_id_py",
+    srcs = ["caller_id.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":types_py",
+        "@com_github_reboot_dev_reboot//rebootdev:naming_py",
+    ],
+)
+
+py_library(
+    name = "caller_id_auth_py",
+    srcs = ["caller_id_auth.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":caller_id_py",
+        ":contexts_py",
+        ":types_py",
+        "@com_github_reboot_dev_reboot//log:log_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "@com_github_reboot_dev_reboot//rebootdev/aio/auth:__init___py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio/auth:authorizers_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio/auth:token_verifiers_py",
+    ],
+)
+
+py_library(
     name = "contexts_py",
     srcs = ["contexts.py"],
     srcs_version = "PY3",
@@ -9,6 +37,7 @@ py_library(
     deps = [
         requirement("grpcio"),
         ":aborted_py",
+        ":caller_id_py",
         ":headers_py",
         ":idempotency_py",
         ":tasks_py",
@@ -33,6 +62,7 @@ py_library(
         requirement("grpcio"),
         requirement("opentelemetry-api"),
         ":call_py",
+        ":caller_id_py",
         ":types_py",
         "@com_github_reboot_dev_reboot//rebootdev:time_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio/internals:contextvars_py",
@@ -96,8 +126,10 @@ py_library(
     deps = [
         ":contexts_py",
         ":once_py",
+        ":placement_py",
         ":servicers_py",
         ":tasks_py",
+        requirement("bitarray"),
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:transactions_py_grpc",
@@ -120,6 +152,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":aborted_py",
+        ":caller_id_py",
         ":contexts_py",
         ":headers_py",
         ":idempotency_py",
@@ -164,6 +197,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("grpcio"),
+        ":caller_id_py",
         ":contexts_py",
         ":idempotency_py",
         ":resolvers_py",
@@ -282,6 +316,8 @@ py_library(
     deps = [
         requirement("grpcio"),
         requirement("grpcio-health-checking"),
+        ":headers_py",
+        ":types_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio/backoff:python",
         "@com_github_reboot_dev_reboot//rebootdev/ssl:localhost_py",
     ],
