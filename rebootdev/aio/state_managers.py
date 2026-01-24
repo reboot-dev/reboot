@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import bitarray  # type: ignore[import]
 import grpc
+import hashlib
 import log.log
 import logging
+import math
 import sys
 import traceback
 import uuid
@@ -42,7 +45,6 @@ from rebootdev.aio.contexts import (
     WorkflowContext,
     WriterContext,
 )
-from rebootdev.aio.exceptions import InputError
 from rebootdev.aio.headers import Headers
 from rebootdev.aio.internals.channel_manager import _ChannelManager
 from rebootdev.aio.internals.middleware import Middleware
@@ -52,6 +54,7 @@ from rebootdev.aio.internals.tasks_dispatcher import (
     TasksDispatcher,
 )
 from rebootdev.aio.once import AsyncOnce
+from rebootdev.aio.placement import PlacementClient
 from rebootdev.aio.servicers import RebootServiceable, Serviceable
 from rebootdev.aio.tasks import TaskEffect
 from rebootdev.aio.tracing import asynccontextmanager_span, function_span, span
@@ -67,10 +70,9 @@ from rebootdev.server.database import (
     SORTED_MAP_ENTRY_TYPE_NAME,
     SORTED_MAP_TYPE_NAME,
     DatabaseClient,
-    DatabaseServer,
-    DatabaseServerFailed,
 )
 from rebootdev.time import DateTimeWithTimeZone
+from struct import pack, unpack
 from typing import (
     Any,
     AsyncGenerator,
@@ -600,7 +602,7 @@ class StateManager(ABC):
         yield  # Necessary for type checking.
 
     @abstractmethod
-    def check_for_idempotent_mutation(
+    async def check_for_idempotent_mutation(
         self,
         context: WriterContext | WorkflowContext | TransactionContext,
     ) -> Optional[database_pb2.IdempotentMutation]:
@@ -751,6 +753,298 @@ except RuntimeError:
     asyncio.run(validate_semaphore_semantics_once())
 
 
+class BloomFilter:
+    """
+    Copied from https://github.com/richard-rogers/pybloom3. We're not
+    using pybloom3 (or one of its forks) because they are scantly
+    maintained and we need to modify it sufficiently enough that
+    extending it is not trivial.
+
+    TODO: move this into a generic place if/when we determine that it
+    is not overly specific to our use for idempotent mutations.
+    """
+
+    def __init__(self, capacity: int, error_rate: float):
+        if not capacity > 0:
+            raise ValueError("`capacity` must be > 0")
+        self._capacity = capacity
+
+        if not (0 < error_rate < 1):
+            raise ValueError("`error_rate` must be between 0 and 1")
+        self._error_rate = error_rate
+
+        # Given:
+        #
+        # M = num_bits
+        # k = num_slices
+        # P = error_rate
+        # n = capacity
+        # k = log2(1/P)
+        #
+        # Solving for m = bits_per_slice:
+        #
+        # n ~= M * ((ln(2) ** 2) / abs(ln(P)))
+        # n ~= (k * m) * ((ln(2) ** 2) / abs(ln(P)))
+        # m ~= n * abs(ln(P)) / (k * (ln(2) ** 2))
+        num_slices = int(math.ceil(math.log(1.0 / error_rate, 2)))
+        bits_per_slice = int(
+            math.ceil(
+                (capacity * abs(math.log(error_rate))) /
+                (num_slices * (math.log(2)**2))
+            )
+        )
+
+        self._num_slices = num_slices
+        self._bits_per_slice = bits_per_slice
+        self._num_bits = num_slices * bits_per_slice
+
+        self._count = 0
+
+        self._make_hashes = BloomFilter.make_hashfuncs(
+            self._num_slices,
+            self._bits_per_slice,
+        )
+
+        self._bitarray = bitarray.bitarray(self._num_bits, endian="little")
+        self._bitarray.setall(0)
+
+    @classmethod
+    def make_hashfuncs(cls, num_slices: int, num_bits: int):
+        if num_bits >= (1 << 31):
+            fmt_code, chunk_size = 'Q', 8
+        elif num_bits >= (1 << 15):
+            fmt_code, chunk_size = 'I', 4
+        else:
+            fmt_code, chunk_size = 'H', 2
+        total_hash_bits = 8 * num_slices * chunk_size
+        if total_hash_bits > 384:
+            hashfn = hashlib.sha512
+        elif total_hash_bits > 256:
+            hashfn = hashlib.sha384
+        elif total_hash_bits > 160:
+            hashfn = hashlib.sha256
+        elif total_hash_bits > 128:
+            hashfn = hashlib.sha1
+        else:
+            hashfn = hashlib.md5
+        fmt = fmt_code * (hashfn().digest_size // chunk_size)
+        num_salts, extra = divmod(num_slices, len(fmt))
+        if extra:
+            num_salts += 1
+        salts = tuple(
+            hashfn(hashfn(pack('I', i)).digest()) for i in range(num_salts)
+        )
+
+        def _make_hashfuncs(key: bytes):
+            assert isinstance(key, bytes)
+            i = 0
+            for salt in salts:
+                h = salt.copy()
+                h.update(key)
+                for uint in unpack(fmt, h.digest()):
+                    yield uint % num_bits
+                    i += 1
+                    if i >= num_slices:
+                        return
+
+        return _make_hashfuncs
+
+    def __contains__(self, key: bytes):
+        """Tests a key's membership in this bloom filter."""
+        hashes = self._make_hashes(key)
+        offset = 0
+        for k in hashes:
+            if not self._bitarray[offset + k]:
+                return False
+            offset += self._bits_per_slice
+        return True
+
+    def __len__(self):
+        """Return the number of keys stored by this bloom filter."""
+        return self._count
+
+    @property
+    def capacity(self):
+        """Return the capacity of this bloom filter."""
+        return self._capacity
+
+    @property
+    def error_rate(self):
+        """Return the error rate of this bloom filter."""
+        return self._error_rate
+
+    def add(self, key: bytes, *, skip_check: bool = False):
+        """
+        Adds a key to this bloom filter. If the key already exists in this
+        filter it will return True. Otherwise False.
+        """
+        # If we're not checking for presence while adding then we need
+        # to prematurely fail if we're at capacity, even if the item
+        # we're adding may already be present. If we are checking for
+        # presence, then we can defer failing until we determine that
+        # we are indeed adding to the filter.
+        if skip_check and self._count == self._capacity:
+            raise IndexError("`BloomFilter` is at capacity")
+
+        hashes = self._make_hashes(key)
+        found_all_bits = True
+        offset = 0
+
+        for k in hashes:
+            if (
+                not skip_check and found_all_bits and
+                not self._bitarray[offset + k]
+            ):
+                found_all_bits = False
+                if self._count == self._capacity:
+                    raise IndexError("`BloomFilter` is at capacity")
+            self._bitarray[offset + k] = True
+            offset += self._bits_per_slice
+
+        if skip_check or not found_all_bits:
+            self._count += 1
+            return False
+        else:
+            return True
+
+
+class ScalableBloomFilter:
+
+    # We'll scale up the bloom filters to maximum 1,000,000 entries
+    # with an error rate of 0.0000001 (which will provide a
+    # probability of 1 in 9,994,083) since that is ~4MB which is a
+    # good size for reading/writing rocksdb values.
+    MAX_CAPACITY = 1_000_000
+    INITIAL_CAPACITY = 100
+    ERROR_RATE = 0.0000001
+    # In order to have an error rate of 0.0000001 even as we add bloom
+    # filters we need to adjust the error rate of each added bloom
+    # filter so that the sum of the error rates converge to
+    # 0.0000001. We do that with a gentle tightening ratio of 0.9
+    # because we're not sure how many filters we may need to add.
+    TIGHTENING_RATIO = 0.9
+
+    def __init__(self):
+        self._filters = [
+            BloomFilter(
+                capacity=self.INITIAL_CAPACITY,
+                error_rate=self.ERROR_RATE,
+            )
+        ]
+
+    def __contains__(self, key: bytes):
+        for filter in reversed(self._filters):
+            if key in filter:
+                return True
+        return False
+
+    def add(self, key: bytes):
+        if key in self:
+            return True
+
+        filter = self._filters[-1]
+
+        # Add another filter if we've run out of capacity.
+        if len(filter) == filter.capacity:
+            filter = BloomFilter(
+                # Increase the capacity 10x, unless we're already at
+                # 1,000,000 entries, in which case keep it that size.
+                capacity=(
+                    filter.capacity if filter.capacity == self.MAX_CAPACITY
+                    else filter.capacity * 10
+                ),
+                # Adjust the error rate with a tightening ratio so we
+                # converge on our desired overall error rate.
+                error_rate=filter.error_rate * self.TIGHTENING_RATIO,
+            )
+            self._filters.append(filter)
+
+        filter.add(
+            key,
+            # We skip the check because we know that the key is not in
+            # the filter (or this is a brand new _empty_ filter).
+            skip_check=True,
+        )
+
+        return False
+
+
+class IdempotentMutations:
+    """
+    Tracks idempotent mutations for a specific state.
+    """
+
+    def __init__(
+        self,
+        *,
+        state_type_name: StateTypeName,
+        state_ref: StateRef,
+        database_client: DatabaseClient,
+        idempotent_mutations: list[database_pb2.IdempotentMutation],
+    ):
+        self._state_type_name = state_type_name
+        self._state_ref = state_ref
+        self._database_client = database_client
+
+        self._bloom_filter = ScalableBloomFilter()
+
+        for idempotent_mutation in idempotent_mutations:
+            self._bloom_filter.add(idempotent_mutation.key)
+
+    @classmethod
+    async def recover(
+        cls,
+        state_type_name: StateTypeName,
+        state_ref: StateRef,
+        database_client: DatabaseClient,
+    ) -> IdempotentMutations:
+        response = await database_client.recover_idempotent_mutations(
+            state_type_name,
+            state_ref,
+        )
+        return cls(
+            state_type_name=state_type_name,
+            state_ref=state_ref,
+            database_client=database_client,
+            idempotent_mutations=response.idempotent_mutations,
+        )
+
+    async def get(
+        self,
+        idempotency_key: uuid.UUID,
+    ) -> Optional[database_pb2.IdempotentMutation]:
+        if idempotency_key.bytes in self._bloom_filter:
+            response = await self._database_client.recover_idempotent_mutations(
+                self._state_type_name,
+                self._state_ref,
+                idempotency_key=idempotency_key,
+            )
+
+            if len(response.idempotent_mutations) == 0:
+                return None
+
+            # TODO: cache the idempotent mutation.
+            return response.idempotent_mutations[0]
+
+        return None
+
+    def __setitem__(
+        self,
+        idempotency_key: uuid.UUID,
+        idempotent_mutation: database_pb2.IdempotentMutation,
+    ):
+        self._bloom_filter.add(idempotency_key.bytes)
+        # TODO: cache the idempotent mutation.
+
+    def update(
+        self,
+        idempotent_mutations: dict[uuid.UUID, database_pb2.IdempotentMutation],
+    ):
+        for idempotency_key in idempotent_mutations.keys():
+            self._bloom_filter.add(idempotency_key.bytes)
+            # TODO: cache the idempotent mutations.
+
+
 class SidecarStateManager(
     StateManager,
     transactions_pb2_grpc.CoordinatorServicer,
@@ -768,9 +1062,13 @@ class SidecarStateManager(
         database_address: str,
         serviceables: list[Serviceable],
         shards: list[database_pb2.ShardInfo],
+        placement_client: PlacementClient,
+        application_id: ApplicationId,
     ) -> None:
         self._database_client = DatabaseClient(database_address)
         self._shards = shards
+        self._placement_client = placement_client
+        self._application_id = application_id
 
         self._state_type_by_state_tag: dict[str, StateTypeName] = {}
 
@@ -847,8 +1145,9 @@ class SidecarStateManager(
             StateRef,
             asyncio.Lock]] = defaultdict(lambda: defaultdict(asyncio.Lock))
 
-        self._loads: defaultdict[StateTypeName, dict[
-            StateRef, asyncio.Event]] = defaultdict(lambda: {})
+        self._loads: defaultdict[StateTypeName,
+                                 dict[StateRef,
+                                      asyncio.Event]] = defaultdict(dict)
 
         # Any streaming readers. We're explicitly using a 'dict' as
         # the value instead of a 'defaultdict' because we don't want
@@ -858,12 +1157,11 @@ class SidecarStateManager(
         # write!
         self._streaming_readers: defaultdict[StateTypeName, dict[
             StateRef,
-            list[asyncio.
-                 Queue[_StreamingReaderItem]]]] = defaultdict(lambda: {})
+            list[asyncio.Queue[_StreamingReaderItem]]]] = defaultdict(dict)
 
-        # Idempotent mutations keyed by the idempotency key.
-        self._idempotent_mutations: dict[uuid.UUID,
-                                         database_pb2.IdempotentMutation] = {}
+        # Idempotent mutations per state type, state ref, idempotency key.
+        self._idempotent_mutations: defaultdict[StateTypeName, dict[
+            StateRef, IdempotentMutations]] = defaultdict(dict)
 
     async def shutdown(self) -> None:
         """Shuts down this state manager, which includes cancellation of
@@ -877,6 +1175,12 @@ class SidecarStateManager(
         for task in self._coordinator_commit_control_loop_tasks.values():
             task.cancel()
 
+        # Cancel all participant watch tasks.
+        for state_type_transactions in self._participant_transactions.values():
+            for transaction in state_type_transactions.values():
+                if transaction.watch_task is not None:
+                    transaction.watch_task.cancel()
+
     async def wait(self) -> None:
         """Waits for this state manager to be fully shut down."""
         for task in self._coordinator_commit_control_loop_tasks.values():
@@ -884,6 +1188,15 @@ class SidecarStateManager(
                 await task
             except asyncio.CancelledError:
                 pass
+
+        # Wait for all participant watch tasks to complete.
+        for state_type_transactions in self._participant_transactions.values():
+            for transaction in state_type_transactions.values():
+                if transaction.watch_task is not None:
+                    try:
+                        await transaction.watch_task
+                    except asyncio.CancelledError:
+                        pass
 
     async def shutdown_and_wait(self):
         await self.shutdown()
@@ -1023,6 +1336,18 @@ class SidecarStateManager(
         idempotent_mutation: database_pb2.IdempotentMutation,
     ) -> None:
         async with self._mutator_locks[state_type][state_ref]:
+            # Recover idempotent mutations before trying to import any
+            # since there is an invariant that we won't do a store on
+            # a state before recovering its idempotent mutations.
+            if state_ref not in self._idempotent_mutations[state_type]:
+                self._idempotent_mutations[state_type][state_ref] = (
+                    await IdempotentMutations.recover(
+                        state_type,
+                        state_ref,
+                        self._database_client,
+                    )
+                )
+
             await self._store(
                 state_type=state_type,
                 state_ref=state_ref,
@@ -1511,16 +1836,23 @@ class SidecarStateManager(
         # Now we update state related to idempotency (if any).
         if idempotent_mutation is not None:
             idempotent_mutations = (
-                self._idempotent_mutations
+                # Invariant here that we've already recovered the
+                # idempotent mutations for this state ref because we
+                # must have checked an idempotent mutation before
+                # executing it (if that invariant is broken we'll get
+                # a `KeyError`).
+                self._idempotent_mutations[state_type][state_ref]
                 if transaction is None else transaction.idempotent_mutations
             )
             if idempotency_key is None:
                 # We're importing an existing `idempotent_mutation`.
                 idempotency_key = uuid.UUID(bytes=idempotent_mutation.key)
             else:
-                # We're creating a new `idempotent_mutation`: it must not
-                # already exist.
-                assert idempotency_key not in idempotent_mutations
+                # We're creating a new `idempotent_mutation`: the
+                # invariant is that it shouldn't already exist but
+                # it's expensive to assert as much because it may
+                # require going to the database.
+                pass
             idempotent_mutations[idempotency_key] = idempotent_mutation
 
     def validate_transaction_participant(
@@ -1765,7 +2097,9 @@ class SidecarStateManager(
             if transaction.watch_task is None and not transaction.finished():
                 transaction.watch_task = asyncio.create_task(
                     self._transaction_participant_watch(
-                        context.channel_manager, transaction
+                        context.application_id,
+                        context.channel_manager,
+                        transaction,
                     ),
                     name=
                     f'self._transaction_participant_watch(...) in {__name__}',
@@ -2538,7 +2872,7 @@ class SidecarStateManager(
                 self._coordinator_commit_control_loop_tasks[transaction.root_id
                                                            ].cancel()
 
-    def check_for_idempotent_mutation(
+    async def check_for_idempotent_mutation(
         self,
         context: WriterContext | WorkflowContext | TransactionContext,
     ) -> Optional[database_pb2.IdempotentMutation]:
@@ -2551,27 +2885,50 @@ class SidecarStateManager(
         state_type_name = context.state_type_name
         state_ref = context._state_ref
 
-        idempotent_mutations = self._idempotent_mutations
-        transaction: Optional[StateManager.Transaction] = None
+        # Recover idempotent mutations on demand if necessary.
+        #
+        # NOTE: we do this even if we are within a transaction because
+        # once this transaction completes we need to have already
+        # recovered the idempotent mutations.
+        #
+        # Likewise, we do this even if the state has not yet been
+        # constructed because we might be about to construct the
+        # state.
+        #
+        # TODO: in the event we do recover idempotent mutations for a
+        # state that doesn't get constructed, we'll need/want to
+        # remove this entry, but we should do that generically across
+        # all data structures that are storing state via some LRU like
+        # mechanism.
+        if state_ref not in self._idempotent_mutations[state_type_name]:
+            self._idempotent_mutations[state_type_name][state_ref] = (
+                await IdempotentMutations.recover(
+                    state_type_name,
+                    state_ref,
+                    self._database_client,
+                )
+            )
 
-        if context.transaction_ids is not None:
-            transaction = self._participant_transactions[state_type_name].get(
-                state_ref
+        idempotent_mutation: Optional[database_pb2.IdempotentMutation] = (
+            await self._idempotent_mutations[state_type_name][state_ref].get(
+                context.idempotency_key,
+            )
+        )
+
+        # If we haven't found an idempotent mutation and we're within
+        # a transaction, check and see if the transaction includes it.
+        if idempotent_mutation is None and context.transaction_ids is not None:
+            transaction: Optional[StateManager.Transaction] = (
+                self._participant_transactions[state_type_name].get(state_ref)
             )
 
             if (
                 transaction is not None and
                 context.transaction_root_id == transaction.root_id
             ):
-                # TODO(benh): check if the idempotency key exists in
-                # self._idempotent_mutations and if it does raise an
-                # error that the user is incorrectly reusing an
-                # idempotency key (within a transaction). While we
-                # can't check for all incorrect uses, any that we can
-                # check for will help the user sort out bugs.
-                idempotent_mutations = transaction.idempotent_mutations
-
-        idempotent_mutation = idempotent_mutations.get(context.idempotency_key)
+                idempotent_mutation = transaction.idempotent_mutations.get(
+                    context.idempotency_key
+                )
 
         # Trigger reactive readers in the React generated code to
         # observe the idempotent mutation.  While they might have
@@ -2766,12 +3123,6 @@ class SidecarStateManager(
                 # can happen after the coordinator restarts if it tries to abort
                 # before it has (re)discovered the location of the participant.
                 # That's OK; see the comment in the `except` block.
-                #
-                # TODO(rjh, benh): post-restart aborts are common, since all
-                # uncommitted in-flight transactions must abort on coordinator
-                # restart. Such aborts are likely to not go through in
-                # `DirectResolver` environments, due to the above race. Consider
-                # ways of avoiding this inefficiency.
                 channel = channel_manager.get_channel_to_state(
                     state_type,
                     state_ref,
@@ -2801,6 +3152,7 @@ class SidecarStateManager(
 
     async def _transaction_participant_watch(
         self,
+        application_id: ApplicationId,
         channel_manager: _ChannelManager,
         transaction: StateManager.Transaction,
     ):
@@ -2834,7 +3186,11 @@ class SidecarStateManager(
                         transaction_id=transaction.root_id.bytes,
                         state_type=transaction.state_type,
                         state_ref=transaction.state_ref.to_str(),
-                    )
+                    ),
+                    metadata=Headers(
+                        application_id=application_id,
+                        state_ref=transaction.coordinator_state_ref,
+                    ).to_grpc_metadata(),
                 )
 
                 if not watch_response.aborted:
@@ -2863,6 +3219,23 @@ class SidecarStateManager(
         grpc_context: grpc.aio.ServicerContext,
     ) -> transactions_pb2.WatchResponse:
         transaction_id = uuid.UUID(bytes=request.transaction_id)
+
+        # Extract metadata from grpc_context and assert that the coordinator
+        # state_ref was set (which is crucial for routing).
+        headers = Headers.from_grpc_context(grpc_context)
+        coordinator_state_ref = headers.state_ref
+
+        # Assert that this StateManager is authoritative for the coordinator_state_ref.
+        shard_for_coordinator = self._placement_client.shard_for_actor(
+            self._application_id,
+            coordinator_state_ref,
+        )
+        authoritative_shards = [shard.shard_id for shard in self._shards]
+        assert shard_for_coordinator in authoritative_shards, (
+            f"Watch RPC for txn_id={transaction_id} routed to wrong StateManager! "
+            f"Coordinator {coordinator_state_ref.id} should be on shard {shard_for_coordinator}, "
+            f"but this StateManager is authoritative for shards {authoritative_shards}"
+        )
 
         # If we don't know about the transaction than treat is as
         # aborted. This is possible, e.g., after a server where a
@@ -2922,7 +3295,7 @@ class SidecarStateManager(
                 f"No pending transaction for state type '{state_type}' "
                 f"state '{state_ref.id}'"
             )
-        elif transaction.root_id != transaction_id:
+        if transaction.root_id != transaction_id:
             raise RuntimeError('Pending transaction id differs')
         else:
             # All RPCs that are part of this transaction should
@@ -3140,9 +3513,16 @@ class SidecarStateManager(
                     # performance (or possibly make it configurable so
                     # users can tradeoff performance for better error
                     # detection of their own code).
-                    self._idempotent_mutations.update(
-                        transaction.idempotent_mutations
-                    )
+                    if len(transaction.idempotent_mutations) > 0:
+                        # Invariant here is that if this transaction
+                        # includes idempotent mutations then we should
+                        # have already recovered them from the
+                        # database (we'll get a `KeyError` here if
+                        # this invariant is broken).
+                        self._idempotent_mutations[state_type][
+                            state_ref].update(
+                                transaction.idempotent_mutations
+                            )
 
                     transaction.commit()
 
@@ -3444,7 +3824,9 @@ class SidecarStateManager(
 
             transaction.watch_task = asyncio.create_task(
                 self._transaction_participant_watch(
-                    channel_manager, transaction
+                    application_id,
+                    channel_manager,
+                    transaction,
                 ),
                 name=f'self._transaction_participant_watch(...) in {__name__}',
             )
@@ -3477,11 +3859,6 @@ class SidecarStateManager(
                 name=
                 f'self._transaction_coordinator_commit_control_loop(...) in {__name__}',
             )
-
-        for idempotent_mutation in recover_response.idempotent_mutations:
-            idempotency_key = uuid.UUID(bytes=idempotent_mutation.key)
-            assert idempotency_key not in self._idempotent_mutations
-            self._idempotent_mutations[idempotency_key] = idempotent_mutation
 
     def _get_task_effect_from_sidecar_task(
         self,
@@ -3598,56 +3975,3 @@ class SidecarStateManager(
             f"Missing middleware for state type '{state_type_name}' "
             f"{error_suffix}."
         )
-
-
-class LocalSidecarStateManager(SidecarStateManager):
-    """Implementation of state manager that also encapsulates a
-    'DatabaseServer' for local use.
-    """
-
-    def __init__(
-        self,
-        directory: str,
-        shards: list[database_pb2.ShardInfo],
-        serviceables: list[Serviceable],
-    ):
-        try:
-            self._sidecar = DatabaseServer(
-                directory,
-                database_pb2.ServerInfo(shard_infos=shards),
-            )
-        except DatabaseServerFailed as e:
-            if (
-                'Failed to instantiate service' in str(e) and
-                '/LOCK:' in str(e)
-            ):
-                raise InputError(
-                    reason=(
-                        "Failed to start sidecar server.\n"
-                        "Did you start another instance of `rbt dev run` "
-                        "in another terminal?"
-                    ), causing_exception=e
-                )
-            raise e
-
-        # Now call our super constructor with the sidecar address and the
-        # serviceables list.
-        super().__init__(
-            database_address=self._sidecar.address,
-            serviceables=serviceables,
-            shards=shards,
-        )
-
-    async def shutdown_and_wait(self):
-        """Shuts down the state manager and sidecar. This is a single method,
-        instead of a separate `shutdown` and `wait`, since the state manager
-        must be fully shut down (including `wait`ing for it) before it's safe to
-        shut down the sidecar.
-        """
-        # Stop the state manager that's using the sidecar server, then
-        # wait for it to be fully shut down, so that we're sure nobody
-        # needs the sidecar server anymore.
-        await super().shutdown_and_wait()
-
-        # Now it's safe to shut down the sidecar server.
-        await self._sidecar.shutdown_and_wait()

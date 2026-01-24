@@ -58,8 +58,11 @@ export {
 {% endif %}
 {% endif %}
 
-export const offlineCacheStorageType: reboot_web.OfflineCacheStorageType =
-  reboot_web.offlineCache.offlineCacheStorageType;
+// It is important that the following is a function, so we can lazily
+// initialize the cache, so users who do not use offline cache do not
+// see any logs about its initialization.
+export const offlineCacheStorageType = (): reboot_web.OfflineCacheStorageType =>
+  reboot_web.offlineCache().offlineCacheStorageType;
 
 reboot_api.check_bufbuild_protobuf_library(protobuf_es.Message);
 
@@ -1086,20 +1089,20 @@ class {{ client.proto.state_name | to_camel }}Instance {
   {% elif method.options.proto.kind == 'reader' %}
 
   private use{{ method.proto.name | to_camel }}Readers: {
-    [requestHash: string]: reboot_react.Reader<{{ method.output_type }}>
+    [requestBearerTokenHash: string]: reboot_react.Reader<{{ method.output_type }}>
   } = {};
 
   private {{ method.proto.name | to_lower_camel }}FinalizationRegistry =
     new FinalizationRegistry((finalize) => finalize());
 
   start{{ method.proto.name | to_camel }}(
-    requestHash: string,
+    requestBearerTokenHash: string,
     serializedRequest: Uint8Array,
     bearerToken: string | undefined,
     offlineCacheEnabled: boolean,
     cacheKey: string | null
   ) {
-    let reader = this.use{{ method.proto.name | to_camel }}Readers[requestHash];
+    let reader = this.use{{ method.proto.name | to_camel }}Readers[requestBearerTokenHash];
 
     if (reader === undefined) {
       const event = new reboot_api.Event();
@@ -1137,7 +1140,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
           if (cache && offlineCacheEnabled) {
             reboot_api.assert(cacheKey !== null);
             const cachedResponse = response.toJsonString();
-            reboot_web.offlineCache.set(cacheKey, cachedResponse)
+            reboot_web.offlineCache().set(cacheKey, cachedResponse)
               .catch((error) => {
                 console.warn(
                   `[Reboot] Setting of offline reader cache entry for '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' errored with ${error}`
@@ -1171,7 +1174,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
         promise,
         () => {
           if (!reader.used) {
-            delete this.use{{ method.proto.name | to_camel }}Readers[requestHash];
+            delete this.use{{ method.proto.name | to_camel }}Readers[requestBearerTokenHash];
             reader.abortController.abort();
           }
         }
@@ -1197,7 +1200,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
         delete reader.promise;
       });
 
-      this.use{{ method.proto.name | to_camel }}Readers[requestHash] = reader;
+      this.use{{ method.proto.name | to_camel }}Readers[requestBearerTokenHash] = reader;
 
       // Start fetching from the server.
       this.read(
@@ -1212,7 +1215,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
       if (offlineCacheEnabled) {
         reboot_api.assert(cacheKey !== null);
 
-        reboot_web.offlineCache.get(cacheKey).then((cachedResponse) => {
+        reboot_web.offlineCache().get(cacheKey).then((cachedResponse) => {
           if (cachedResponse !== null) {
             // We only want to set the response if we haven't already
             // gotten a response from the server as it is the authority
@@ -1239,7 +1242,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
 
   use{{ method.proto.name | to_camel }}(
     id: string,
-    requestHash: string,
+    requestBearerTokenHash: string,
     serializedRequest: Uint8Array,
     bearerToken: string | undefined,
     offlineCacheEnabled: boolean,
@@ -1253,7 +1256,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
     // which will mean the next time the `useEffect` calls here
     // we'll create a new reader in start.
     const reader = this.start{{ method.proto.name | to_camel }}(
-      requestHash,
+      requestBearerTokenHash,
       serializedRequest,
       bearerToken,
       offlineCacheEnabled,
@@ -1269,13 +1272,21 @@ class {{ client.proto.state_name | to_camel }}Instance {
     reader.setResponses[id] = setResponse;
     reader.setIsLoadings[id] = setIsLoading;
     reader.setStatuses[id] = setStatus;
+
+    // If we already have a `response` or `status` need to set it.
+    if (reader.response) {
+      setResponse(reader.response);
+      setIsLoading(false);
+    } else if (reader.status) {
+      setStatus(reader.status);
+    }
   }
 
   unuse{{ method.proto.name | to_camel }}(
     id: string,
-    requestHash: string,
+    requestBearerTokenHash: string,
   ) {
-    const reader = this.use{{ method.proto.name | to_camel }}Readers[requestHash];
+    const reader = this.use{{ method.proto.name | to_camel }}Readers[requestBearerTokenHash];
 
     reboot_api.assert(reader !== undefined);
 
@@ -1296,7 +1307,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
           reader.scheduledUnusedTimeoutsCount === 0 &&
           Object.values(reader.setResponses).length === 0
         ) {
-          delete this.use{{ method.proto.name | to_camel }}Readers[requestHash];
+          delete this.use{{ method.proto.name | to_camel }}Readers[requestBearerTokenHash];
           reader.abortController.abort();
         }
       }, 3000);
@@ -1439,9 +1450,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
     const [request, setRequest] = useState(newRequest);
 
-    if (!request.equals(newRequest)) {
-      setRequest(newRequest);
-    }
+    const [isLoading, setIsLoading] = useState<boolean>(true);
 
     const rebootClient = reboot_react.useRebootClient();
 
@@ -1449,11 +1458,24 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
     const serializedRequest = useMemo(() => request.toBinary(), [request]);
 
-    // To distinguish this call from others we compute a
-    // "request hash" using SHA256 from the `request` and
-    // `bearerToken` if it exists. We memoize this so we
-    // don't do it everytime.
+    // To distinguish this call from others when caching responses on
+    // the client we compute a "request hash" using SHA256 from the
+    // `request`.
+    // We memoize this so we don't do it every time.
     const requestHash: string = useMemo(
+      () => {
+        const hash = reboot_web.calcSha256();
+        hash.add(serializedRequest);
+        return hash.digest().hex();
+      },
+      [serializedRequest]
+    );
+
+    // To create a map of unused readers globally on the client, we
+    // compute a "request hash" using SHA256 from the `request`
+    // including the bearerToken.
+    // We memoize this so we don't do it every time.
+    const requestBearerTokenHash: string = useMemo(
       () => {
         const hash = reboot_web.calcSha256();
         hash.add(serializedRequest);
@@ -1484,7 +1506,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
     // render where one of them will be defined, i.e., after we've
     // waited for `reader.promise` via `React.use()`.
     const reader = instance.start{{ method.proto.name | to_camel }}(
-      requestHash,
+      requestBearerTokenHash,
       serializedRequest,
       bearerToken,
       offlineCacheEnabled,
@@ -1495,8 +1517,6 @@ export const use{{ client.proto.state_name | to_camel }} = (
       {{ client.proto.state_name }}.{{ method.proto.name}}Response | undefined
       >(reader.response && {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(reader.response));
 
-    const [isLoading, setIsLoading] = useState<boolean>(true);
-
     const [aborted, setAborted] = useState<
       {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted | undefined
       >(reader.status && {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(reader.status));
@@ -1506,7 +1526,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
       instance.use{{ method.proto.name | to_camel }}(
         id,
-        requestHash,
+        requestBearerTokenHash,
         serializedRequest,
         bearerToken,
         offlineCacheEnabled,
@@ -1529,12 +1549,12 @@ export const use{{ client.proto.state_name | to_camel }} = (
       );
 
       return () => {
-        instance.unuse{{ method.proto.name | to_camel }}(id, requestHash);
+        instance.unuse{{ method.proto.name | to_camel }}(id, requestBearerTokenHash);
       };
     }, [
       instance,
       serializedRequest,
-      requestHash,
+      requestBearerTokenHash,
       bearerToken,
       offlineCacheEnabled,
       cacheKey,
@@ -1544,11 +1564,11 @@ export const use{{ client.proto.state_name | to_camel }} = (
       // Suspend until `reader.event` is set signifying that we have
       // either a response or aborted.
       if (!reader.event.isSet()) {
-        // Raise if it doens't looke like we are using React>=19.
+        // Raise if it doesn't look like we are using React>=19.
         if (!("use" in React)) {
-          throw new Error(
-            "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`"
-          );
+          const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
+          console.error(error);
+          throw new Error(error);
         }
         // NOTE: this will throw _at least once_, because React will have
         // to do `.then()`, which is asynchronous, so they'll throw.
@@ -1559,6 +1579,13 @@ export const use{{ client.proto.state_name | to_camel }} = (
         // will be set if passed `suspense: true` before returning.
         React.use(reader.promise);
       }
+    }
+
+    if (!request.equals(newRequest)) {
+      setRequest(newRequest);
+      setIsLoading(true);
+
+      return { response, isLoading: true, aborted };
     }
 
     return { response, isLoading, aborted };

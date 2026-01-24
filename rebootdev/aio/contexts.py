@@ -764,10 +764,6 @@ class Context(ABC, IdempotencyManager):
     # constructed.
     _constructor: bool
 
-    # A secret specific to this application, for use only in intra-application
-    # calls.
-    _app_internal_api_key_secret: str
-
     # Configured effect validation.
     _effect_validation: EffectValidation
 
@@ -786,7 +782,6 @@ class Context(ABC, IdempotencyManager):
         headers: Headers,
         state_type_name: StateTypeName,
         method: str,
-        app_internal_api_key_secret: str,
         effect_validation: EffectValidation,
         task: Optional[TaskEffect] = None,
     ):
@@ -823,8 +818,6 @@ class Context(ABC, IdempotencyManager):
         self._constructor = False
 
         self._effect_validation = effect_validation
-
-        self._app_internal_api_key_secret = app_internal_api_key_secret
 
         self._tasks = []
 
@@ -879,7 +872,9 @@ class Context(ABC, IdempotencyManager):
         """Returns true if this context is for an application internal call,
         otherwise false.
         """
-        return self._headers.app_internal_authorization == self._app_internal_api_key_secret
+        if self._headers.caller_id is None:
+            return False
+        return self._headers.caller_id.application_id == self.application_id
 
     @property
     def transaction_ids(self) -> Optional[list[uuid.UUID]]:
@@ -1051,7 +1046,6 @@ class WriterContext(Context):
         headers: Headers,
         state_type_name: StateTypeName,
         method: str,
-        app_internal_api_key_secret: str,
         effect_validation: EffectValidation,
         task: Optional[TaskEffect] = None,
     ):
@@ -1060,7 +1054,6 @@ class WriterContext(Context):
             headers=headers,
             state_type_name=state_type_name,
             method=method,
-            app_internal_api_key_secret=app_internal_api_key_secret,
             task=task,
             effect_validation=effect_validation,
         )
@@ -1078,7 +1071,6 @@ class TransactionContext(Context):
         headers: Headers,
         state_type_name: StateTypeName,
         method: str,
-        app_internal_api_key_secret: str,
         effect_validation: EffectValidation,
         task: Optional[TaskEffect] = None,
     ):
@@ -1112,7 +1104,6 @@ class TransactionContext(Context):
             headers=headers,
             state_type_name=state_type_name,
             method=method,
-            app_internal_api_key_secret=app_internal_api_key_secret,
             task=task,
             effect_validation=effect_validation,
         )
@@ -1210,7 +1201,6 @@ class WorkflowContext(Context):
         headers: Headers,
         state_type_name: StateTypeName,
         method: str,
-        app_internal_api_key_secret: str,
         effect_validation: EffectValidation,
         task: Optional[TaskEffect] = None,
     ):
@@ -1219,7 +1209,6 @@ class WorkflowContext(Context):
             headers=headers,
             state_type_name=state_type_name,
             method=method,
-            app_internal_api_key_secret=app_internal_api_key_secret,
             effect_validation=effect_validation,
             task=task,
         )

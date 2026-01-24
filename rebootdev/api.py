@@ -1,10 +1,22 @@
 import pydantic
 import pydantic_core
 import re
+import types
 import typing
 from enum import Enum
 from google.protobuf.message import Message
-from typing import Any, Dict, List, Optional, Union, get_args, get_origin
+from pydantic.fields import FieldInfo
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    Union,
+    get_args,
+    get_origin,
+)
 
 PRIMITIVE_TYPE = Union[
     int,
@@ -33,11 +45,46 @@ class Model(pydantic.BaseModel):
     pass
 
 
+def _get_discriminated_union_info(
+    field_type: type,
+    field_info: Optional[FieldInfo] = None,
+) -> Optional[Tuple[str, list[Model]]]:
+    """
+    Check if a field type is a discriminated union and return info about it.
+
+    Returns:
+        A tuple of (discriminator_field_name, list_of_type_args) if
+        it's a discriminated union, None otherwise.
+    """
+    origin = get_origin(field_type)
+    if origin is not Union and origin is not types.UnionType:
+        return None
+
+    # Get the discriminator from field_info if available.
+    discriminator = None
+    if field_info is not None:
+        discriminator = field_info.discriminator
+
+    if discriminator is None:
+        return None
+
+    # Get all non-None args, since it might be an optional discriminated union.
+    non_none_args = [
+        arg for arg in get_args(field_type) if arg is not type(None)
+    ]
+
+    # A discriminated union must have at least 2 options.
+    assert len(non_none_args) >= 2
+
+    return (discriminator, non_none_args)
+
+
 def _pydantic_to_proto(
     input: Model | PRIMITIVE_TYPE | COLLECTION_TYPE | None,
     input_type: Optional[typing.Type],
     # We always will return lists, dicts and BaseModels as proto messages.
     output_type: typing.Type[Message] | PRIMITIVE_TYPE,
+    field_info: Optional[FieldInfo] = None,
 ) -> Message | PRIMITIVE_TYPE:
     """Converts a Pydantic 'input' of type 'input_type' to the
     'output_type' Protobuf message or primitive type.
@@ -69,23 +116,109 @@ def _pydantic_to_proto(
         # type like 'list' or 'dict'.
         input_type_or_origin = input_type
 
-    if input_type_or_origin is Union:
-        # Currently only supports 'Optional[T]' from the top-level
-        # 'Model'. We will get there only if the 'Optional[T]' field has
-        # a value and to process it we have to extract the actual type 'T'.
-        non_none_args = [
-            arg for arg in get_args(input_type) if arg is not type(None)
-        ]
-        assert len(non_none_args) == 1
-        input_type = non_none_args[0]
-        return _pydantic_to_proto(
-            input,
-            input_type,
-            output_type,
+    if input_type_or_origin is Union or input_type_or_origin is types.UnionType:
+        # It might be a discriminated union or an `Optional[T]`.
+        assert input_type is not None
+        discriminated_union_info = _get_discriminated_union_info(
+            input_type,  # type: ignore[arg-type]
+            field_info,
         )
 
-    # Assert that we have a valid type after we check for 'Union',
-    # since 'Union' is a special typing construct and not a "real" type.
+        if discriminated_union_info is None:
+            # This is an `Optional[T]`.
+            non_none_args = [
+                arg for arg in get_args(input_type) if arg is not type(None)
+            ]
+            assert len(non_none_args) == 1
+            input_type = non_none_args[0]
+            return _pydantic_to_proto(
+                input,
+                input_type,
+                output_type,
+            )
+
+        discriminator, type_args = discriminated_union_info
+        assert isinstance(input, Model)
+
+        # The `output_type` must be a Protobuf message with a oneof.
+        assert isinstance(output_type, type) and issubclass(
+            output_type,
+            Message,
+        )
+
+        # Get the discriminator value from the input.
+        discriminator_value = getattr(input, discriminator)
+
+        # Find the matching option type.
+        for type_arg in type_args:
+            literal_field = type_arg.model_fields.get(discriminator)
+            assert literal_field is not None
+            literal_args = get_args(literal_field.annotation)
+            assert len(literal_args) == 1
+
+            if literal_args[0] != discriminator_value:
+                # It is not the matching option, skip it.
+                continue
+
+            # Found matching option, convert it.
+            output = output_type()
+
+            # The oneof field name is the lower-cased discriminator value.
+            oneof_field_name = to_snake_case(discriminator_value)
+
+            # Get the nested message for this option.
+            output_message = getattr(output, oneof_field_name)
+
+            # Convert the option excluding the discriminator field,
+            # we do it as a separate loop since the discriminator field
+            # exists only in the Pydantic model, not in the Protobuf message.
+            for (
+                field_name,
+                option_field_info,
+            ) in type_arg.model_fields.items():
+                # Skip the discriminator field.
+                if field_name == discriminator:
+                    continue
+
+                input_field = getattr(input, field_name)
+                if input_field is None:
+                    continue
+
+                input_field_type = option_field_info.annotation
+                output_message_field = getattr(
+                    output_message,
+                    field_name,
+                )
+                nested_output = _pydantic_to_proto(
+                    input_field,
+                    input_field_type,
+                    type(output_message_field),
+                    option_field_info,
+                )
+
+                if isinstance(nested_output, Message):
+                    output_message_field.CopyFrom(nested_output)
+                else:
+                    setattr(
+                        output_message,
+                        field_name,
+                        nested_output,
+                    )
+
+            return output
+
+        raise ValueError(
+            f"No matching option found for discriminator value "
+            f"`{discriminator_value}` in discriminated union."
+        )
+
+    if input_type_or_origin is Literal:
+        literal_args = get_args(input_type)
+        assert input in literal_args, f"Value `{input}` not in `Literal{literal_args}`"
+        return literal_args.index(input)
+
+    # Assert that we have a valid type after we check for `Union` and `Literal`,
+    # since those are special typing constructs and not "real" types.
     assert isinstance(input_type_or_origin, type)
 
     if input_type_or_origin is list:
@@ -209,6 +342,7 @@ def _pydantic_to_proto(
                 input_field,
                 input_field_type,
                 type(output_field),
+                field_info,
             )
 
             # We can't call 'setattr' on the message types in Protobuf.
@@ -261,6 +395,7 @@ def pydantic_to_proto(
 def _proto_to_pydantic(
     input: Message | PRIMITIVE_TYPE,
     output_type: typing.Type[Model] | PRIMITIVE_TYPE | COLLECTION_TYPE | None,
+    field_info: Optional[FieldInfo] = None,
 ) -> Model | PRIMITIVE_TYPE | COLLECTION_TYPE | None:
     """Converts a Protobuf 'input' message or primitive type to the
     'output_type' Model, list, dict or primitive type.
@@ -298,26 +433,110 @@ def _proto_to_pydantic(
         # type like 'list' or 'dict'.
         output_type_or_origin = output_type
 
-    if output_type_or_origin is Union:
-        # Currently only supports 'Optional[T]' from the top-level
-        # 'Model'. We will get there only if the 'Optional[T]' field has
-        # a value and to process it we have to extract the actual type 'T'.
-        non_none_args = [
-            arg for arg in get_args(output_type) if arg is not type(None)
-        ]
-        assert len(non_none_args) == 1
-        output_type = non_none_args[0]
-        return _proto_to_pydantic(
-            input,
-            output_type,
+    # `mypy` complains that 'output' is possibly redefined across different
+    # branches, so we define it here once.
+    output: Union[list[Any], dict[str, Any]]
+
+    if output_type_or_origin is Union or output_type_or_origin is types.UnionType:
+        # Check if this is a discriminated union.
+        discriminated_union_info = _get_discriminated_union_info(
+            output_type,  # type: ignore[arg-type]
+            field_info,
         )
 
-    # Assert that we have a valid type after we check for 'Union',
-    # since 'Union' is a special typing construct and not a "real" type.
-    assert isinstance(output_type_or_origin, type)
+        if discriminated_union_info is None:
+            # This is an `Optional[T]`.
+            non_none_args = [
+                arg for arg in get_args(output_type) if arg is not type(None)
+            ]
+            assert len(non_none_args) == 1
+            output_type = non_none_args[0]
+            return _proto_to_pydantic(
+                input,
+                output_type,
+            )
 
-    # Declare a type here to help with mypy type checking.
-    output: Union[list[Any], dict[str, Any]]
+        discriminator, type_args = discriminated_union_info
+        assert isinstance(input, Message)
+
+        # Find which oneof case is set by checking the DESCRIPTOR.
+        # The oneof field name should match the discriminator.
+        oneof = input.DESCRIPTOR.oneofs_by_name.get(discriminator)
+        assert oneof is not None, (
+            f"Expected oneof '{discriminator}' in proto message"
+        )
+
+        # Get the currently set field in the oneof.
+        current_field = input.WhichOneof(discriminator)
+        if current_field is None:
+            return None
+
+        # The oneof field name corresponds to the snake_case of
+        # the discriminator value.
+        # Find the matching option type.
+        for type_arg in type_args:
+            literal_field = type_arg.model_fields.get(discriminator)
+            assert literal_field is not None
+            literal_args = get_args(literal_field.annotation)
+            assert len(literal_args) == 1
+
+            expected_oneof_name = to_snake_case(literal_args[0])
+            if expected_oneof_name != current_field:
+                # It is not the matching option, skip it.
+                continue
+
+            # Found matching option, convert it.
+            proto_field = getattr(input, current_field)
+            output = {}
+
+            # Set the discriminator value.
+            output[discriminator] = literal_args[0]
+
+            # Convert the option excluding the discriminator field,
+            # we do it as a separate loop since the discriminator field
+            # exists only in the Pydantic model, not in the Protobuf message.
+            for (
+                field_name,
+                option_field_info,
+            ) in type_arg.model_fields.items():
+                if field_name == discriminator:
+                    continue
+
+                if proto_field.HasField(field_name):
+                    option_input_field = getattr(
+                        proto_field,
+                        field_name,
+                    )
+                    output[field_name] = _proto_to_pydantic(
+                        option_input_field,
+                        option_field_info.annotation,
+                        option_field_info,
+                    )
+                else:
+                    output[field_name] = None
+
+            return type_arg(**output)
+
+        raise ValueError(
+            f"No matching option found for oneof case `{current_field}` "
+            f"in discriminated union with discriminator `{discriminator}`."
+        )
+
+    if output_type_or_origin is Literal:
+        # TODO: In the PR for support defaults, make sure we support the
+        # first `Literal` option as the default value.
+        literal_args = get_args(output_type)
+        assert isinstance(
+            input, int
+        ), f"Expected `int` for `Literal`, got `{type(input)}`"
+        assert 0 <= input < len(
+            literal_args
+        ), f"Enum value `{input}` out of range for `Literal{literal_args}`"
+        return literal_args[input]
+
+    # Assert that we have a valid type after we check for `Union` and `Literal`,
+    # since those are special typing constructs and not "real" types.
+    assert isinstance(output_type_or_origin, type)
 
     if output_type_or_origin is list:
         assert isinstance(input, Message)
@@ -366,6 +585,7 @@ def _proto_to_pydantic(
                 output[field_name] = _proto_to_pydantic(
                     input_field,
                     output_field_type,
+                    field_info,
                 )
             else:
                 # We should be converting a Protobuf message which was
@@ -520,19 +740,52 @@ class Type(pydantic.BaseModel):
         def validate_all_fields_are_reboot_base_classes(
             field_type,
             method_name,
+            field_info: Optional[FieldInfo] = None,
         ):
             field_type_origin = get_origin(field_type)
-            if field_type_origin is Union:
-                # Get the inner type from 'Optional[T]'.
-                non_none_args = [
-                    arg for arg in get_args(field_type)
-                    if arg is not type(None)
-                ]
-                assert len(non_none_args) == 1
-                return validate_all_fields_are_reboot_base_classes(
-                    non_none_args[0],
-                    method_name,
+            if field_type_origin is Union or field_type_origin is types.UnionType:
+                discriminated_union_info = _get_discriminated_union_info(
+                    field_type,  # type: ignore[arg-type]
+                    field_info,
                 )
+                if discriminated_union_info is not None:
+                    # Check if this is a discriminated union and
+                    # validate all option types.
+                    discriminator, type_args = discriminated_union_info
+                    for type_arg in type_args:
+                        if discriminator not in type_arg.__annotations__:
+                            raise ValueError(
+                                f"Discriminated union option type "
+                                f"`{type_arg}` is missing "
+                                f"discriminator field `{discriminator}`."
+                            )
+                        literal_field = type_arg.model_fields.get(
+                            discriminator
+                        )
+                        assert literal_field is not None
+                        literal_args = get_args(literal_field.annotation)
+                        if len(literal_args) != 1:
+                            raise ValueError(
+                                f"Discriminator field `{discriminator}` "
+                                f"in option type `{type_arg}` must be "
+                                f"a `Literal` with exactly one value."
+                            )
+
+                        validate_all_fields_are_reboot_base_classes(
+                            type_arg,
+                            method_name,
+                        )
+                else:
+                    # Get the inner type from 'Optional[T]'.
+                    non_none_args = [
+                        arg for arg in get_args(field_type)
+                        if arg is not type(None)
+                    ]
+                    assert len(non_none_args) == 1
+                    return validate_all_fields_are_reboot_base_classes(
+                        non_none_args[0],
+                        method_name,
+                    )
             elif field_type_origin is list:
                 list_args = get_args(field_type)
                 # We should always have exactly one argument for lists.
@@ -549,6 +802,17 @@ class Type(pydantic.BaseModel):
                     dict_args[1],
                     method_name,
                 )
+            elif field_type_origin is Literal:
+                # We support only string literals for now.
+                literal_args = get_args(field_type)
+                for arg in literal_args:
+                    if not isinstance(arg, str):
+                        state_or_method = "'state'" if method_name is None else f"method '{method_name}'"
+                        raise ValueError(
+                            f"{state_or_method} has `Literal` field with "
+                            f"non-string value `{arg}`. Only string "
+                            "literals are supported."
+                        )
             elif issubclass(field_type, pydantic.BaseModel):
                 if not issubclass(field_type, Model):
                     state_or_method = ""
@@ -567,6 +831,7 @@ class Type(pydantic.BaseModel):
                     validate_all_fields_are_reboot_base_classes(
                         field_info.annotation,
                         method_name,
+                        field_info,
                     )
             else:
                 assert field_type in (int, float, str, bool)

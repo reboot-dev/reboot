@@ -8,6 +8,7 @@ from grpc.aio import AioRpcError
 from log.log import get_logger
 from rebootdev.aio.aborted import Aborted
 from rebootdev.aio.backoff import Backoff
+from rebootdev.aio.caller_id import CallerID
 from rebootdev.aio.contexts import Context, Participants, ReaderContext
 from rebootdev.aio.headers import IDEMPOTENCY_KEY_HEADER, Headers
 from rebootdev.aio.idempotency import IdempotencyManager
@@ -146,7 +147,6 @@ class UnaryRetriedCall(Generic[ResponseT]):
 class Stub:
     """Common base class for generated reboot stubs.
     """
-    # TODO: Do we add injection for channels and/or interceptors for M1?
     _channel_manager: _ChannelManager
     _headers: Headers
 
@@ -163,7 +163,7 @@ class Stub:
         state_ref: StateRef,
         context: Optional[Context],
         bearer_token: Optional[str],
-        app_internal_authorization: Optional[str],
+        caller_id: Optional[CallerID],
     ):
         self._channel_manager = channel_manager
         self._idempotency_manager = idempotency_manager
@@ -177,13 +177,12 @@ class Stub:
         transaction_coordinator_state_ref: Optional[StateRef] = None
 
         if context is not None:
-            # This assert is trivially true - for now. It's here to remind us
-            # that we need to be careful: we shouldn't blindly hand the internal
-            # API key secret out in headers when we start sending traffic
-            # outside our own application.
-            assert application_id is None
+            caller_id = CallerID(application_id=context.application_id)
+
+            # For the time being, all traffic is intra-application. The
+            # target application is therefore the same as the calling
+            # application.
             application_id = context.application_id
-            app_internal_authorization = context._app_internal_api_key_secret
 
             workflow_id = context.workflow_id
             transaction_ids = context.transaction_ids
@@ -207,7 +206,7 @@ class Stub:
             transaction_coordinator_state_type,
             transaction_coordinator_state_ref=transaction_coordinator_state_ref,
             bearer_token=bearer_token,
-            app_internal_authorization=app_internal_authorization,
+            caller_id=caller_id,
         )
 
     def _should_call_retry_unavailable(

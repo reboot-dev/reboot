@@ -138,6 +138,21 @@ build --action_env=PATH=/usr/local/bin:/usr/bin:/bin
 # credentials isn't a problem.
 common --repo_env=OCI_GET_TOKEN_ALLOW_FAIL=1
 
+# Normally, on restart, Bazel will check that its `bazel-bin` and
+# `bazel-out` directories are untouched. As part of this for every file
+# in those directories it will check the modification time, possibly
+# compute a checksum, and write metadata to disk. Our directories are so
+# large that on a GitHub Codespace (which can have pretty poor I/O
+# performance) this "Checking Cached Actions" process can take 15
+# minutes or more - almost as much as a full rebuild. :-(
+#
+# Given that we don't modify our `bazel-bin` and `bazel-out` directories
+# manually, we opt out of this costly check with the following flag. The
+# drawback is that if we do ever accidentally modify the `bazel-bin` or
+# `bazel-out` directories, we must run `bazel clean` to get back into a
+# sane state.
+common --noexperimental_check_output_files
+
 # Allow users to add local preferences that override the above.
 try-import %workspace%/user.bazelrc
 

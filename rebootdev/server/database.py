@@ -516,9 +516,44 @@ class DatabaseClient:
                 Mapping[str, str], state_tags_by_state_type
             ),
             shard_ids=shard_ids,
+            # Idempotent mutations are now recovered on demand, and
+            # per state, via `RecoverIdempotentMutations()` to
+            # significantly speed up recovery.
+            skip_idempotent_mutations=True,
         )
         response = database_pb2.RecoverResponse()
         async for partial in stub.Recover(request):
+            response.MergeFrom(partial)
+
+        return response
+
+    async def recover_idempotent_mutations(
+        self,
+        state_type_name: StateTypeName,
+        state_ref: StateRef,
+        *,
+        idempotency_key: Optional[uuid.UUID] = None,
+    ) -> database_pb2.RecoverIdempotentMutationsResponse:
+        """Attempt to recover idempotent mutations for a specific state ref
+        after a restart.
+        """
+        # To deal with network transfer limits we need to stream the
+        # data from the database which we then aggregate into a single
+        # response.
+        #
+        # TODO: propagate the stream of responses and require the
+        # caller to process each batch to reduce memory consumption.
+        stub = await self._get_database_stub()
+
+        request = database_pb2.RecoverIdempotentMutationsRequest(
+            state_type=state_type_name,
+            state_ref=state_ref.to_str(),
+            idempotency_key=(
+                None if idempotency_key is None else idempotency_key.bytes
+            ),
+        )
+        response = database_pb2.RecoverIdempotentMutationsResponse()
+        async for partial in stub.RecoverIdempotentMutations(request):
             response.MergeFrom(partial)
 
         return response

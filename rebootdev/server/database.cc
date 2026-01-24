@@ -23,6 +23,7 @@
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/table.h"
 #include "rocksdb/utilities/transaction_db.h"
+#include "rocksdb/utilities/write_batch_with_index.h"
 #include "stout/borrowable.h"
 #include "stout/cache.h"
 #include "stout/uuid.h"
@@ -52,6 +53,8 @@ using rbt::v1alpha1::LoadResponse;
 using rbt::v1alpha1::Participants;
 using rbt::v1alpha1::PersistenceVersion;
 using rbt::v1alpha1::PreparedTransactionCoordinator;
+using rbt::v1alpha1::RecoverIdempotentMutationsRequest;
+using rbt::v1alpha1::RecoverIdempotentMutationsResponse;
 using rbt::v1alpha1::RecoverRequest;
 using rbt::v1alpha1::RecoverResponse;
 using rbt::v1alpha1::ServerInfo;
@@ -183,6 +186,11 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       grpc::ServerContext* context,
       const RecoverRequest* request,
       grpc::ServerWriter<RecoverResponse>* responses) override;
+  grpc::Status RecoverIdempotentMutations(
+      grpc::ServerContext* context,
+      const RecoverIdempotentMutationsRequest* request,
+      grpc::ServerWriter<RecoverIdempotentMutationsResponse>* responses)
+      override;
   grpc::Status TransactionParticipantPrepare(
       grpc::ServerContext* context,
       const TransactionParticipantPrepareRequest* request,
@@ -268,32 +276,28 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   expected<void> ValidateNonTransactionalStore(const StoreRequest& request);
 
   // Helper for recovering tasks.
-  std::set<std::string> RecoverTasks(
+  void RecoverTasks(
       grpc::ServerWriter<RecoverResponse>& responses,
       const std::unordered_set<std::string>& shard_ids);
 
   // Helper for recovering transactions.
   expected<void> RecoverTransactions(
       grpc::ServerWriter<RecoverResponse>& responses,
-      const std::set<std::string>& committed_task_uuids,
-      const std::set<std::string>& committed_idempotency_keys,
       const std::unordered_set<std::string>& shard_ids);
 
   // Helper for recovering uncommitted tasks within a transaction.
   void RecoverTransactionTasks(
-      const std::set<std::string>& committed_task_uuids,
       Transaction& transaction,
       stout::borrowed_ref<rocksdb::Transaction>& txn);
 
   // Helper for recovering uncommitted idempotent mutations within a
   // transaction.
   void RecoverTransactionIdempotentMutations(
-      const std::set<std::string>& committed_idempotency_keys,
       Transaction& transaction,
       stout::borrowed_ref<rocksdb::Transaction>& txn);
 
-  // Helper for recovering idempotent mutations.
-  std::set<std::string> RecoverIdempotentMutations(
+  // Helper for recovering idempotent mutations within some shards.
+  void RecoverShardsIdempotentMutations(
       grpc::ServerWriter<RecoverResponse>& responses,
       const std::unordered_set<std::string>& shard_ids);
 
@@ -1744,6 +1748,8 @@ grpc::Status DatabaseService::Store(
         return make_unexpected(column_family_handle.error());
       }
 
+      // Never expecting a task to be updated or inserted that isn't
+      // either pending or completed.
       CHECK(task.status() == Task::PENDING || task.status() == Task::COMPLETED);
 
       const std::string& task_key = MakeTaskKey(task.status(), task.task_id());
@@ -2401,16 +2407,9 @@ grpc::Status DatabaseService::StoreApplicationMetadata(
 
 ////////////////////////////////////////////////////////////////////////
 
-std::set<std::string> DatabaseService::RecoverTasks(
+void DatabaseService::RecoverTasks(
     grpc::ServerWriter<RecoverResponse>& responses,
     const std::unordered_set<std::string>& shard_ids) {
-  // Scan through all column families' set of tasks to find the
-  // pending ones.
-  //
-  // Return the pending task UUIDs that we find so we differentiate
-  // _committed_ vs _uncommitted_ ones that are part of transactions.
-  std::set<std::string> committed_task_uuids;
-
   RecoverResponse response;
 
   // We don't know what is the best batch size for this, so we
@@ -2450,7 +2449,6 @@ std::set<std::string> DatabaseService::RecoverTasks(
               task.task_id().state_type(),
               task.task_id().state_ref(),
               shard_ids)) {
-        committed_task_uuids.insert(task.task_id().task_uuid());
         *response.add_pending_tasks() = std::move(task);
 
         MaybeWriteAndClearResponse(
@@ -2466,47 +2464,62 @@ std::set<std::string> DatabaseService::RecoverTasks(
 
   // Flush any remaining tasks.
   WriteAndClearResponse(responses, response, batch_size);
-
-  return committed_task_uuids;
 }
 
 ////////////////////////////////////////////////////////////////////////
 
 void DatabaseService::RecoverTransactionTasks(
-    const std::set<std::string>& committed_task_uuids,
     Transaction& transaction,
     stout::borrowed_ref<rocksdb::Transaction>& txn) {
   CHECK_EQ(transaction.uncommitted_tasks_size(), 0);
 
-  // We are recovering only the tasks for this transaction participant, and
-  // participation is scoped to an actor. Therefore, the only place we need
-  // to look for mutations is in the actor's own state.
+  // We are recovering only the tasks for _this_ transaction, so we
+  // only look through the updates that are in the transaction itself,
+  // not the entire database.
   expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
       LookupColumnFamilyHandle(transaction.state_type());
   CHECK(column_family_handle.has_value());
 
-  std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
-      txn->GetIterator(NonPrefixIteratorReadOptions(), *column_family_handle)));
+  rocksdb::WriteBatchWithIndex* batch = txn->GetWriteBatch();
 
-  // TODO: investigate using "prefix seek" for better performance, see:
-  // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
+  std::unique_ptr<rocksdb::WBWIIterator> iterator(
+      CHECK_NOTNULL(batch->NewIterator(*column_family_handle)));
+
   iterator->Seek(rocksdb::Slice(TASK_KEY_PREFIX));
 
-  while (iterator->Valid()
-         && iterator->key().ToStringView().find(TASK_KEY_PREFIX) == 0) {
-    Task task;
-    CHECK(task.ParseFromArray(
-        iterator->value().data(),
-        iterator->value().size()));
+  // When iterating via the transaction's write batch directly we get
+  // `rocksdb::WriteEntry`s which may exist for the same key multiple
+  // times. In the case of a task, we never expect it to be added more
+  // than once, so to assert that invariant we track each task we find
+  // in a set.
+  std::set<std::string> task_ids;
 
-    if (task.task_id().state_ref() == transaction.state_ref()
-        && task.status() == Task::PENDING
-        && committed_task_uuids.count(task.task_id().task_uuid()) == 0) {
-      // Ok, this must be a task that is not yet committed so it's
-      // part of this transaction since only one actor can have an
-      // ongoing transaction at a time.
-      *transaction.add_uncommitted_tasks() = std::move(task);
+  while (iterator->Valid()) {
+    rocksdb::WriteEntry entry = iterator->Entry();
+
+    // Make sure this is still a key we care about.
+    if (entry.key.ToStringView().find(TASK_KEY_PREFIX) != 0) {
+      break;
     }
+
+    // We are only expecting tasks to be inserted into the database
+    // during a transaction.
+    CHECK_EQ(entry.type, rocksdb::kPutRecord);
+
+    Task task;
+    CHECK(task.ParseFromArray(entry.value.data(), entry.value.size()));
+
+    // Task should be for this transaction's state ref!
+    CHECK_EQ(task.task_id().state_ref(), transaction.state_ref());
+
+    // All tasks added in a transaction should be pending.
+    CHECK_EQ(task.status(), Task::PENDING);
+
+    CHECK(task_ids.count(task.task_id().task_uuid()) == 0);
+
+    task_ids.insert(task.task_id().task_uuid());
+
+    *transaction.add_uncommitted_tasks() = std::move(task);
 
     iterator->Next();
   }
@@ -2515,39 +2528,59 @@ void DatabaseService::RecoverTransactionTasks(
 ////////////////////////////////////////////////////////////////////////
 
 void DatabaseService::RecoverTransactionIdempotentMutations(
-    const std::set<std::string>& committed_idempotency_keys,
     Transaction& transaction,
     stout::borrowed_ref<rocksdb::Transaction>& txn) {
   CHECK_EQ(transaction.uncommitted_idempotent_mutations_size(), 0);
 
-  // We are recovering only the idempotent mutations for this transaction
-  // participant, and participation is scoped to an actor. Therefore, the
-  // only place we need to look for mutations is in the actor's own
-  // state.
+  // We are recovering only the idempotent mutations for _this_
+  // transaction, so we only look through the updates that are in the
+  // transaction itself, not the entire database.
   expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
       LookupColumnFamilyHandle(transaction.state_type());
   CHECK(column_family_handle.has_value());
 
-  std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
-      txn->GetIterator(NonPrefixIteratorReadOptions(), *column_family_handle)));
+  rocksdb::WriteBatchWithIndex* batch = txn->GetWriteBatch();
 
-  // TODO: investigate using "prefix seek" for better performance, see:
-  // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
+  std::unique_ptr<rocksdb::WBWIIterator> iterator(
+      CHECK_NOTNULL(batch->NewIterator(*column_family_handle)));
+
   iterator->Seek(rocksdb::Slice(IDEMPOTENT_MUTATION_KEY_PREFIX));
 
-  while (iterator->Valid()
-         && iterator->key().ToStringView().find(IDEMPOTENT_MUTATION_KEY_PREFIX)
-             == 0) {
+  // When iterating via the transaction's write batch directly we get
+  // `rocksdb::WriteEntry`s which may exist for the same key multiple
+  // times. In the case of an idempotent mutation, we never expect it
+  // to be added more than once, so to assert that invariant we track
+  // each idempotency key we find in a set.
+  std::set<std::string> idempotency_keys;
+
+  while (iterator->Valid()) {
+    rocksdb::WriteEntry entry = iterator->Entry();
+
+    // Make sure this is still a key we care about.
+    if (entry.key.ToStringView().find(IDEMPOTENT_MUTATION_KEY_PREFIX) != 0) {
+      break;
+    }
+
+    // We are only expecting idempotent mutations to be inserted into
+    // the database during a transaction.
+    CHECK_EQ(entry.type, rocksdb::kPutRecord);
+
     IdempotentMutation idempotent_mutation;
 
     CHECK(idempotent_mutation.ParseFromArray(
-        iterator->value().data(),
-        iterator->value().size()));
+        entry.value.data(),
+        entry.value.size()));
 
-    if (committed_idempotency_keys.count(idempotent_mutation.key()) == 0) {
-      *transaction.add_uncommitted_idempotent_mutations() =
-          std::move(idempotent_mutation);
-    }
+    // Idempotent mutation should be for this transaction's state ref!
+    CHECK_EQ(idempotent_mutation.state_type(), transaction.state_type());
+    CHECK_EQ(idempotent_mutation.state_ref(), transaction.state_ref());
+
+    CHECK(idempotency_keys.count(idempotent_mutation.key()) == 0);
+
+    idempotency_keys.insert(idempotent_mutation.key());
+
+    *transaction.add_uncommitted_idempotent_mutations() =
+        std::move(idempotent_mutation);
 
     iterator->Next();
   }
@@ -2557,8 +2590,6 @@ void DatabaseService::RecoverTransactionIdempotentMutations(
 
 expected<void> DatabaseService::RecoverTransactions(
     grpc::ServerWriter<RecoverResponse>& responses,
-    const std::set<std::string>& committed_task_uuids,
-    const std::set<std::string>& committed_idempotency_keys,
     const std::unordered_set<std::string>& shard_ids) {
   std::unique_ptr<rocksdb::Iterator> iterator(
       CHECK_NOTNULL(db_->NewIterator(NonPrefixIteratorReadOptions())));
@@ -2613,21 +2644,18 @@ expected<void> DatabaseService::RecoverTransactions(
 
       // Now recover any tasks for our actor that we'll need to dispatch if
       // the transaction gets committed.
-      RecoverTransactionTasks(committed_task_uuids, transaction, *txn);
+      RecoverTransactionTasks(transaction, *txn);
 
       // Now recover any idempotent mutations for our actor that are part of
       // the transaction.
-      RecoverTransactionIdempotentMutations(
-          committed_idempotency_keys,
-          transaction,
-          *txn);
+      RecoverTransactionIdempotentMutations(transaction, *txn);
     } else {
       // Transaction just started when we called
       // `LookupOrBeginTransaction()`!
       CHECK_EQ((*txn)->GetState(), rocksdb::Transaction::STARTED);
     }
 
-    response.add_participant_transactions()->CopyFrom(transaction);
+    *response.add_participant_transactions() = std::move(transaction);
 
     MaybeWriteAndClearResponse(
         responses,
@@ -2783,13 +2811,9 @@ expected<void> DatabaseService::RecoverTransactions(
 
 ////////////////////////////////////////////////////////////////////////
 
-std::set<std::string> DatabaseService::RecoverIdempotentMutations(
+void DatabaseService::RecoverShardsIdempotentMutations(
     grpc::ServerWriter<RecoverResponse>& responses,
     const std::unordered_set<std::string>& shard_ids) {
-  // Return the committed idempotency keys so we can differentiate
-  // _committed_ vs _uncommitted_ ones that are part of transactions.
-  std::set<std::string> committed_idempotency_keys;
-
   RecoverResponse response;
 
   // We don't know what is the best batch size for this, so we
@@ -2831,7 +2855,6 @@ std::set<std::string> DatabaseService::RecoverIdempotentMutations(
               idempotent_mutation.state_type(),
               idempotent_mutation.state_ref(),
               shard_ids)) {
-        committed_idempotency_keys.insert(idempotent_mutation.key());
         *response.add_idempotent_mutations() = std::move(idempotent_mutation);
 
         MaybeWriteAndClearResponse(
@@ -2847,8 +2870,6 @@ std::set<std::string> DatabaseService::RecoverIdempotentMutations(
 
   // Flush any remaining idempotent mutations.
   WriteAndClearResponse(responses, response, batch_size);
-
-  return committed_idempotency_keys;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -3226,46 +3247,128 @@ grpc::Status DatabaseService::Recover(
         "shard_ids are required for Recover request");
   }
 
-  // (0) Migrate to the current persistence version, if necessary.
+  // Migrate to the current persistence version, if necessary.
   expected<void> maybe_migrate = MaybeMigratePersistence(*request);
   if (!maybe_migrate.has_value()) {
     return grpc::Status(grpc::UNKNOWN, maybe_migrate.error());
   }
+
+  // TODO: recover tasks, idempotent mutations (as long as we continue
+  // to do so for backwards compatibility), and transactions in
+  // parallel!
 
   // Handle the `shard_ids` as a hash set for efficiency.
   std::unordered_set<std::string> shard_ids(
       request->shard_ids().begin(),
       request->shard_ids().end());
 
-  // (1) Recover tasks _before_ recovering transactions because
-  // transactions need to know the recovered committed tasks to
-  // recover uncommitted tasks.
   REBOOT_DATABASE_LOG(1) << "Recovering tasks";
 
-  std::set<std::string> committed_task_uuids =
-      RecoverTasks(*responses, shard_ids);
+  RecoverTasks(*responses, shard_ids);
 
-  // (2) Recover idempotent mutations _before_ recovering
-  // transactions because transactions need to know the
-  // recovered committed idempotent mutations to recover
-  // uncommitted idempotent mutations.
-  REBOOT_DATABASE_LOG(1) << "Recovering idempotent mutations";
+  // NOTE: newer versions of Reboot recover idempotent mutations on
+  // demand via `RecoverIdempotentMutations()`, but for backwards
+  // compatibility we still support recovering them here.
+  if (!request->skip_idempotent_mutations()) {
+    REBOOT_DATABASE_LOG(1) << "Recovering idempotent mutations";
 
-  std::set<std::string> committed_idempotent_mutations =
-      RecoverIdempotentMutations(*responses, shard_ids);
+    RecoverShardsIdempotentMutations(*responses, shard_ids);
+  }
 
-  // (3) Recover transactions.
   REBOOT_DATABASE_LOG(1) << "Recovering transactions";
 
-  expected<void> recover_transactions = RecoverTransactions(
-      *responses,
-      committed_task_uuids,
-      committed_idempotent_mutations,
-      shard_ids);
+  expected<void> recover_transactions =
+      RecoverTransactions(*responses, shard_ids);
 
   if (!recover_transactions.has_value()) {
     return grpc::Status(grpc::UNKNOWN, recover_transactions.error());
   }
+
+  return grpc::Status::OK;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+grpc::Status DatabaseService::RecoverIdempotentMutations(
+    grpc::ServerContext* context,
+    const RecoverIdempotentMutationsRequest* request,
+    grpc::ServerWriter<RecoverIdempotentMutationsResponse>* responses) {
+  std::unique_lock lock(mutex_);
+
+  REBOOT_DATABASE_LOG(1) << "RecoverIdempotentMutations { "
+                         << request->ShortDebugString() << " }";
+
+  expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
+      LookupColumnFamilyHandle(request->state_type());
+
+  // There might not be any instances of the state type yet, so just
+  // return without any idempotent mutations.
+  if (!column_family_handle.has_value()) {
+    return grpc::Status::OK;
+  }
+
+  std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(
+      db_->NewIterator(NonPrefixIteratorReadOptions(), *column_family_handle)));
+
+  auto idempotent_mutation_key_prefix = [&]() -> expected<std::string> {
+    if (request->has_idempotency_key()) {
+      Try<UUID> idempotency_key = UUID::fromBytes(request->idempotency_key());
+      if (idempotency_key.isError()) {
+        return make_unexpected(idempotency_key.error());
+      }
+      return MakeIdempotentMutationKey(request->state_ref(), *idempotency_key);
+    } else {
+      return fmt::format(
+          IDEMPOTENT_MUTATION_KEY_PREFIX ":{}",
+          request->state_ref());
+    }
+  }();
+
+  if (!idempotent_mutation_key_prefix.has_value()) {
+    return grpc::Status(grpc::UNKNOWN, idempotent_mutation_key_prefix.error());
+  }
+
+  // TODO: investigate using "prefix seek" for better performance, see:
+  // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
+  iterator->Seek(rocksdb::Slice(*idempotent_mutation_key_prefix));
+
+  RecoverIdempotentMutationsResponse response;
+
+  // We don't know what is the best batch size for this, so we
+  // just use a number that is small enough to not cause
+  // performance issues, but large enough to not cause too many
+  // round trips.
+  // TODO: This should be configurable and pick the better value for default.
+  static size_t RECOVER_IDEMPOTENT_MUTATIONS_BATCH_SIZE = 256;
+
+  size_t batch_size = 0;
+
+  while (iterator->Valid()
+         && iterator->key().ToStringView().find(*idempotent_mutation_key_prefix)
+             == 0) {
+    IdempotentMutation idempotent_mutation;
+
+    CHECK(idempotent_mutation.ParseFromArray(
+        iterator->value().data(),
+        iterator->value().size()));
+
+    *response.add_idempotent_mutations() = std::move(idempotent_mutation);
+
+    MaybeWriteAndClearResponse(
+        *responses,
+        response,
+        batch_size,
+        RECOVER_IDEMPOTENT_MUTATIONS_BATCH_SIZE);
+
+    if (request->has_idempotency_key()) {
+      break;
+    }
+
+    iterator->Next();
+  }
+
+  // Flush any remaining idempotent mutations.
+  WriteAndClearResponse(*responses, response, batch_size);
 
   return grpc::Status::OK;
 }

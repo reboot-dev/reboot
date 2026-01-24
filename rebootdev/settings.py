@@ -169,9 +169,11 @@ ONLY_LOCALHOST_NETWORK_ADDRESS = '127.0.0.1'
 # Furthermore, many environments may only have one of these ports exposed.
 #
 # The insecure port serves unencrypted traffic. The secure port serves traffic
-# that uses TLS.
+# that uses TLS. The trusted port serves unencrypted traffic that we
+# implicitly trust because of where it comes from (e.g., localhost).
 DEFAULT_INSECURE_PORT = 9990
 DEFAULT_SECURE_PORT = 9991
+DEFAULT_TRUSTED_PORT = 9992
 
 # Normally, application IDs are not very human-readable - they're hashes derived
 # from a human-readable name. However, we choose a hardcoded human-readable ID
@@ -227,7 +229,6 @@ ENVVAR_NODEJS_SERVER_BASE64_ARGS = 'REBOOT_NODEJS_SERVER_BASE64_ARGS'
 # Cloud.
 ENVVAR_REBOOT_CLOUD_VERSION = 'REBOOT_CLOUD_VERSION'
 ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS = 'REBOOT_CLOUD_DATABASE_ADDRESS'
-ENVVAR_REBOOT_CLOUD_REPLICA_INDEX = 'REBOOT_CLOUD_REPLICA_INDEX'
 
 # Environment variable that indicates that we are running `bazel test`, which
 # should be set by the test runner. We rely on this to determine whether or not

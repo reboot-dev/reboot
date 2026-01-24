@@ -96,7 +96,6 @@ class Middleware(ABC):
         placement_client: PlacementClient,
         channel_manager: _ChannelManager,
         effect_validation: EffectValidation,
-        app_internal_api_key_secret: str,
     ):
         self._application_id = application_id
         self._server_id = server_id
@@ -104,7 +103,6 @@ class Middleware(ABC):
         assert len(service_names) > 0
         self._service_names = service_names
         self._effect_validation = effect_validation
-        self._app_internal_api_key_secret = app_internal_api_key_secret
 
         self.placement_client = placement_client
         self.channel_manager = channel_manager
@@ -152,7 +150,6 @@ class Middleware(ABC):
             headers=headers,
             state_type_name=state_type_name,
             method=method,
-            app_internal_api_key_secret=self._app_internal_api_key_secret,
             task=task,
             effect_validation=self._effect_validation,
         )

@@ -6,6 +6,7 @@ import opentelemetry.propagate
 import uuid
 from dataclasses import dataclass
 from rebootdev.aio.call import validate_ascii
+from rebootdev.aio.caller_id import CallerID
 from rebootdev.aio.internals.contextvars import get_application_id
 from rebootdev.aio.types import (
     ApplicationId,
@@ -64,8 +65,10 @@ TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER = 'x-reboot-transaction-participants-to
 # https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header
 IDEMPOTENCY_KEY_HEADER = 'x-reboot-idempotency-key'
 
-# Used to transport a secret that identifies app-internal calls.
-APP_INTERNAL_AUTHORIZATION_HEADER = 'x-reboot-app-internal'
+# Used to identify the caller application. Trusted by the time it is
+# received by an application (i.e. it is the infrastructure's job to
+# ensure that this header is set to the true identity of the caller).
+CALLER_ID_HEADER = 'x-reboot-caller-id'
 
 AUTHORIZATION_HEADER = 'authorization'
 
@@ -78,8 +81,6 @@ TASK_SCHEDULE = 'x-reboot-task-schedule'
 # a request and thus we don't try and extract it).
 TASK_ID_UUID = 'x-reboot-task-id-uuid'
 
-FORWARDED_CLIENT_CERT_HEADER = 'x-forwarded-client-cert'
-
 # OpenTelemetry W3C Trace Context header
 # See: https://www.w3.org/TR/trace-context/
 TRACEPARENT_HEADER = 'traceparent'
@@ -90,11 +91,15 @@ TRACESTATE_HEADER = 'tracestate'
 class Headers:
     """Dataclass for working with reboot metadata headers.
     """
-    # NOTE: in tests when using a `ExternalContext` we might not know our
-    # application ID and thus this is optional. That being said, when
-    # we receive an RPC we always fill in the application ID based on
-    # the asyncio context variable that has been set, and thus we know
-    # that we always have an application ID when we have a `Context`.
+    # The _target_ (callee) application's ID. May or may not be the same
+    # as the caller's application ID, if they even have one.
+    #
+    # NOTE: in tests when using a `ExternalContext` we might not know
+    # our target application's ID and thus this is optional. That being
+    # said, when we receive an RPC we always fill in the application ID
+    # based on the asyncio context variable that has been set, and thus
+    # we know that we always have an application ID when we have a
+    # `Context`.
     application_id: Optional[ApplicationId]
     state_ref: StateRef
     workflow_id: Optional[uuid.UUID] = None
@@ -115,12 +120,11 @@ class Headers:
 
     cookie: Optional[str] = None
 
-    # TODO(rjh,stuhood): once the new authorization model is in place we want to
-    #                    use a standard `TokenVerifier`/`Authorizer` combination
-    #                    in places that need to read this header, instead of
-    #                    making this an official Reboot header.
-    forwarded_client_cert: Optional[str] = None
-    app_internal_authorization: Optional[str] = None
+    # Contains a "caller ID" that encodes the identity of the calling
+    # application. Note this identifies the _application_ that called,
+    # but it doesn't identify the user on whose behalf the call was
+    # made - that information would be in the bearer token.
+    caller_id: Optional[CallerID] = None
 
     # OpenTelemetry W3C Trace Context headers for manual span context
     # propagation when not using opentelemetry's automatic gRPC interceptors.
@@ -170,8 +174,7 @@ class Headers:
             server_id=self.server_id,
             state_ref=self.state_ref,
             cookie=self.cookie,
-            forwarded_client_cert=self.forwarded_client_cert,
-            app_internal_authorization=self.app_internal_authorization,
+            caller_id=self.caller_id,
             bearer_token=self.bearer_token,
             traceparent=self.traceparent,
             tracestate=self.tracestate,
@@ -282,12 +285,9 @@ class Headers:
 
         cookie: Optional[str] = extract_maybe(COOKIE_HEADER)
 
-        forwarded_client_cert: Optional[str] = extract_maybe(
-            FORWARDED_CLIENT_CERT_HEADER
-        )
-
-        app_internal_authorization: Optional[str] = extract_maybe(
-            APP_INTERNAL_AUTHORIZATION_HEADER
+        caller_id: Optional[CallerID] = extract_maybe(
+            CALLER_ID_HEADER,
+            convert=CallerID.parse,
         )
 
         traceparent: Optional[str] = extract_maybe(TRACEPARENT_HEADER)
@@ -306,8 +306,7 @@ class Headers:
             bearer_token=bearer_token,
             task_schedule=task_schedule,
             cookie=cookie,
-            forwarded_client_cert=forwarded_client_cert,
-            app_internal_authorization=app_internal_authorization,
+            caller_id=caller_id,
             traceparent=traceparent,
             tracestate=tracestate,
         )
@@ -340,17 +339,6 @@ class Headers:
         def maybe_add_cookie_header() -> GrpcMetadata | tuple[()]:
             if self.cookie is not None:
                 return ((COOKIE_HEADER, self.cookie),)
-            return ()
-
-        def maybe_add_app_internal_authorization_header(
-        ) -> GrpcMetadata | tuple[()]:
-            if self.app_internal_authorization is not None:
-                return (
-                    (
-                        APP_INTERNAL_AUTHORIZATION_HEADER,
-                        self.app_internal_authorization
-                    ),
-                )
             return ()
 
         def maybe_add_workflow_headers() -> GrpcMetadata | tuple[()]:
@@ -397,12 +385,16 @@ class Headers:
                 headers += ((TRACESTATE_HEADER, self.tracestate),)
             return headers
 
+        def maybe_add_caller_id_header() -> GrpcMetadata | tuple[()]:
+            if self.caller_id is not None:
+                return ((CALLER_ID_HEADER, str(self.caller_id)),)
+            return ()
+
         return (
             ((STATE_REF_HEADER, self.state_ref.to_str()),) +
             maybe_add_application_id_header() + maybe_add_server_id_header() +
             maybe_add_authorization_header() + maybe_add_cookie_header() +
-            maybe_add_app_internal_authorization_header() +
             maybe_add_transaction_headers() + maybe_add_workflow_headers() +
             maybe_add_idempotency_key_header() +
-            maybe_add_opentelemetry_headers()
+            maybe_add_opentelemetry_headers() + maybe_add_caller_id_header()
         )
