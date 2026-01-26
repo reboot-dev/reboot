@@ -1,4 +1,8 @@
-import { Any, Value } from "@bufbuild/protobuf";
+// `eslint` disabled to preserve separation of imports for documentation.
+// eslint-disable-next-line
+import { Value } from "@bufbuild/protobuf";
+// eslint-disable-next-line
+import { Any } from "@bufbuild/protobuf";
 import { Application, Reboot } from "@reboot-dev/reboot";
 import queue, { Queue } from "@reboot-dev/reboot-std/collections/queue/v1";
 import { strict as assert } from "node:assert";
@@ -92,7 +96,10 @@ test("Use queue servicers", async (t) => {
     const { bytes } = await secondQueue.dequeue(context);
     console.log(bytes);
 
-    const { any } = await thirdQueue.dequeue(context);
-    console.log(any);
+    // `Any` not supported by TypeScript because conversion from TS to Python is
+    // passed via JSON, which bufbuilder needs a registry for. Converting into
+    // bytes instead would fix this.
+    // const { any } = await thirdQueue.dequeue(context);
+    // console.log(any);
   });
 });

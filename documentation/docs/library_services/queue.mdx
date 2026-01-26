@@ -33,7 +33,7 @@ from reboot.std.item.v1.item import Item
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=3-3) -->
+(CODE:src=../../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=7-7) -->
 <!-- The below code snippet is automatically added from ../../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
 ```ts
 import queue, { Queue } from "@reboot-dev/reboot-std/collections/queue/v1";
@@ -88,7 +88,7 @@ second_queue = Queue.ref("my-second-queue")
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=65-66) -->
+(CODE:src=../../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=69-70) -->
 <!-- The below code snippet is automatically added from ../../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
 ```ts
 const firstQueue = Queue.ref("my-first-queue");
@@ -104,6 +104,8 @@ const secondQueue = Queue.ref("my-second-queue");
 ### Enqueue
 
 Enqueues a single [`Item`](/library_services/item) directly from a `Value`, `bytes`, or `Any`.
+
+NOTE: `Any` is only supported in Python, not TypeScript.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
@@ -126,14 +128,14 @@ await third_queue.enqueue(context, any=pack(message))
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=1-1) -->
+(CODE:src=../../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=3-3) -->
 <!-- The below code snippet is automatically added from ../../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
 ```ts
-import { Any, Value } from "@bufbuild/protobuf";
+import { Value } from "@bufbuild/protobuf";
 ```
 <!-- MARKDOWN-AUTO-DOCS:END -->
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=77-87) -->
+(CODE:src=../../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=81-87) -->
 <!-- The below code snippet is automatically added from ../../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
 ```ts
 await firstQueue.enqueue(context, {
@@ -143,10 +145,6 @@ await firstQueue.enqueue(context, {
 await secondQueue.enqueue(context, {
   bytes: new TextEncoder().encode("my-bytes"),
 });
-
-await thirdQueue.enqueue(context, {
-  any: Any.pack(message),
-});
 ```
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
@@ -155,6 +153,8 @@ await thirdQueue.enqueue(context, {
 ### Dequeue
 
 Dequeues a single [`Item`](/library_services/item).
+
+NOTE: `Any` is only supported in Python, not TypeScript.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
@@ -177,7 +177,7 @@ print(item.any)
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=89-96) -->
+(CODE:src=../../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=93-97) -->
 <!-- The below code snippet is automatically added from ../../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
 ```ts
 const { value } = await firstQueue.dequeue(context);
@@ -185,9 +185,6 @@ console.log(value?.toJson()["details"]);
 
 const { bytes } = await secondQueue.dequeue(context);
 console.log(bytes);
-
-const { any } = await thirdQueue.dequeue(context);
-console.log(any);
 ```
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
@@ -196,6 +193,8 @@ console.log(any);
 ### Bulk Enqueue
 
 Enqueues a list of [`Item`](/library_services/item)s.
+
+NOTE: `Any` is only supported in Python, not TypeScript.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
@@ -261,6 +260,8 @@ await thirdQueue.enqueue(context, { items: [
 ### Bulk Dequeue
 
 By specifying `bulk` and `at_most`/`atMost`, you can also dequeue [`Item`](/library_services/item)s in bulk.
+
+NOTE: `Any` is only supported in Python, not TypeScript.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
