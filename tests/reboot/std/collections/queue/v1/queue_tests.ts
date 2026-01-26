@@ -59,47 +59,102 @@ test("Use queue servicers", async (t) => {
     );
   });
 
-  await t.test("Examples for documentation.", async (t) => {
-    await rbt.up(new Application({ servicers: queue.servicers() }));
+  await t.test(
+    "Examples for documentation for single enqueue/dequeue.",
+    async (t) => {
+      await rbt.up(new Application({ servicers: queue.servicers() }));
 
-    const context = rbt.createExternalContext("test", {
-      appInternal: true,
-    });
+      const context = rbt.createExternalContext("test", {
+        appInternal: true,
+      });
 
-    const firstQueue = Queue.ref("my-first-queue");
-    const secondQueue = Queue.ref("my-second-queue");
-    const thirdQueue = Queue.ref("my-third-queue");
+      const firstQueue = Queue.ref("my-first-queue");
+      const secondQueue = Queue.ref("my-second-queue");
+      const thirdQueue = Queue.ref("my-third-queue");
 
-    // `message` needs to be defined for documentation. It won't actually be
-    // shown. Any proto will do.
-    let message = new CreateRequest({
-      title: "king",
-      name: "nemo",
-      adjective: "fishy",
-    });
+      // `any` needs to be defined for documentation. It won't actually be
+      // shown. Any proto will do.
+      let any = new CreateRequest({
+        title: "king",
+        name: "nemo",
+        adjective: "fishy",
+      });
 
-    await firstQueue.enqueue(context, {
-      value: Value.fromJson({ details: "details-go-here" }),
-    });
+      await firstQueue.enqueue(context, {
+        value: Value.fromJson({ details: "details-go-here" }),
+      });
 
-    await secondQueue.enqueue(context, {
-      bytes: new TextEncoder().encode("my-bytes"),
-    });
+      await secondQueue.enqueue(context, {
+        bytes: new TextEncoder().encode("my-bytes"),
+      });
 
-    await thirdQueue.enqueue(context, {
-      any: Any.pack(message),
-    });
+      await thirdQueue.enqueue(context, {
+        any: Any.pack(any),
+      });
 
-    const { value } = await firstQueue.dequeue(context);
-    console.log(value?.toJson()["details"]);
+      const { value } = await firstQueue.dequeue(context);
+      console.log(value?.toJson()["details"]);
 
-    const { bytes } = await secondQueue.dequeue(context);
-    console.log(bytes);
+      const { bytes } = await secondQueue.dequeue(context);
+      console.log(bytes);
 
-    // `Any` not supported by TypeScript because conversion from TS to Python is
-    // passed via JSON, which bufbuilder needs a registry for. Converting into
-    // bytes instead would fix this.
-    // const { any } = await thirdQueue.dequeue(context);
-    // console.log(any);
-  });
+      // `Any` not supported by TypeScript because conversion from TS to Python is
+      // passed via JSON, which bufbuilder needs a registry for. Converting into
+      // bytes instead would fix this.
+      // const { any } = await thirdQueue.dequeue(context);
+      // console.log(any);
+    }
+  );
+
+  await t.test(
+    "Examples for documentation for bulk enqueue/dequeue.",
+    async (t) => {
+      await rbt.up(new Application({ servicers: queue.servicers() }));
+
+      const context = rbt.createExternalContext("test", {
+        appInternal: true,
+      });
+
+      const firstQueue = Queue.ref("my-first-queue");
+      const secondQueue = Queue.ref("my-second-queue");
+      const thirdQueue = Queue.ref("my-third-queue");
+
+      // `any` needs to be defined for documentation. It won't actually be
+      // shown. Any proto will do.
+      let any = new CreateRequest({
+        title: "king",
+        name: "nemo",
+        adjective: "fishy",
+      });
+
+      await firstQueue.enqueue(context, {
+        items: [
+          { value: Value.fromJson(null) },
+          { value: Value.fromJson(true) },
+          { value: Value.fromJson(3) },
+          { value: Value.fromJson("apple") },
+          { value: Value.fromJson(["a", "b", "c"]) },
+          { value: Value.fromJson({ details: "details-go-here" }) },
+        ],
+      });
+
+      await secondQueue.enqueue(context, {
+        items: [
+          { bytes: new TextEncoder().encode("some-bytes") },
+          { bytes: new TextEncoder().encode("some-more-bytes") },
+        ],
+      });
+
+      // `Any` not supported by TypeScript because conversion from TS to Python is
+      // passed via JSON, which bufbuilder needs a registry for. Converting into
+      // bytes instead would fix this.
+      // await thirdQueue.enqueue(context, { items: [{ any }, { any }] });
+
+      const { items } = await firstQueue.dequeue(context, {
+        bulk: true,
+        atMost: 5,
+      });
+      // `items` is a list of Items
+    }
+  );
 });
