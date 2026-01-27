@@ -30,6 +30,26 @@ COLLECTION_TYPE = Union[
     Dict[str, Any],
 ]
 
+# We don't allow passing arbitrary default values, only these empty
+# defaults, which also matches with Protobuf semantics.
+ALLOWED_DEFAULT_BY_FIELD_TYPE = {
+    str: "",
+    int: 0,
+    float: 0.0,
+    bool: False,
+    # `None` is allowed for `Optional` fields, but we check that separately.
+}
+
+ALLOWED_DEFAULT_FACTORY_BY_FIELD_TYPE = {
+    list: list,
+    dict: dict,
+}
+
+
+class UserPydanticError(Exception):
+    """Exception raised in case of a malformed user-provided Pydantic schema."""
+    pass
+
 
 class Model(pydantic.BaseModel):
     """
@@ -42,7 +62,162 @@ class Model(pydantic.BaseModel):
     # if the field value is not of the correct type, the conversion
     # will fail.
     model_config = pydantic.ConfigDict(validate_assignment=True)
-    pass
+
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        super().__pydantic_init_subclass__(**kwargs)
+
+        for field_name, field_info in cls.model_fields.items():
+            field_type_origin = get_origin(field_info.annotation)
+
+            if field_type_origin is None:
+                # If the type has no origin, it is either a primitive type
+                # or a `Model`. Otherwise it will be a collection
+                # type like `list` or `dict`.
+                field_type_origin = field_info.annotation
+
+            if field_info.default_factory is not None:
+                allowed_default_factory = ALLOWED_DEFAULT_FACTORY_BY_FIELD_TYPE.get(
+                    field_type_origin,
+                    None,
+                )
+
+                if allowed_default_factory is None:
+                    allowed_types = ', '.join(
+                        f'`{allowed_type.__name__}`' for allowed_type in
+                        ALLOWED_DEFAULT_FACTORY_BY_FIELD_TYPE.keys()
+                    )
+                    raise UserPydanticError(
+                        f'Field `{field_name}` in model `{cls.__name__}` '
+                        'uses `default_factory` which is not supported for type '
+                        f'`{field_type_origin.__name__}`. Only '
+                        f'{allowed_types} '
+                        'types can have a `default_factory` currently.'
+                    )
+
+                if field_type_origin is allowed_default_factory and field_info.default_factory is not allowed_default_factory:
+                    raise UserPydanticError(
+                        f'Field `{field_name}` in model `{cls.__name__}` '
+                        f'uses `default_factory` with an unsupported value. '
+                        f'Supported default factory value for `{allowed_default_factory.__name__}` is `{allowed_default_factory.__name__}`.'
+                    )
+
+            is_optional = False
+            is_model = False
+            is_discriminated_union = False
+
+            if field_type_origin is Union or field_type_origin is types.UnionType:
+                args = get_args(field_info.annotation)
+                non_none_args = [arg for arg in args if arg is not type(None)]
+                if len(non_none_args) != len(args):
+                    # When the number of non-None args is different
+                    # from the total number of args, this is an
+                    # `Optional[T]`, where `T` can be a discriminated union,
+                    # but for the purpose of default value checking,
+                    # we just need to know that it is `Optional`.
+                    is_optional = True
+                    nested_optional_type = get_origin(non_none_args[0]
+                                                     ) or non_none_args[0]
+                    is_model = isinstance(
+                        nested_optional_type, type
+                    ) and issubclass(nested_optional_type, Model)
+                else:
+                    is_discriminated_union = True
+            else:
+                is_model = isinstance(field_type_origin, type) and issubclass(
+                    field_type_origin,
+                    Model,
+                )
+
+            has_default = field_info.default is not pydantic_core.PydanticUndefined
+
+            if has_default:
+                # TODO: Write the document about why it is challenging
+                # to have default values in the distributed systems
+                # and attach the link to the error message.
+                if is_discriminated_union:
+                    # Discriminated unions cannot have default values,
+                    # because its options will be always different
+                    # `Model` types and we don't support that currently.
+                    raise UserPydanticError(
+                        f'Field `{field_name}` in model `{cls.__name__}` '
+                        'is a discriminated union and cannot have a '
+                        '`default` value.'
+                    )
+                elif is_model and not is_optional:
+                    raise UserPydanticError(
+                        f'Field `{field_name}` in model `{cls.__name__}` '
+                        'is a non-optional `Model` type and cannot have a '
+                        '`default` value. Use `Optional` for `Model` types '
+                        'with empty default.'
+                    )
+                elif field_info.default is None and not is_optional:
+                    raise UserPydanticError(
+                        f'Field `{field_name}` in model `{cls.__name__}` '
+                        'is a non-optional type and cannot have `default` '
+                        'set to `None`. Change the `default` or make the '
+                        'field `Optional`.'
+                    )
+                elif field_info.default is not None and is_optional:
+                    raise UserPydanticError(
+                        f'Field `{field_name}` in model `{cls.__name__}` '
+                        'is `Optional` and uses `default` with a non-None '
+                        'value. Reboot supports only `None` default value '
+                        'for `Optional` fields.'
+                    )
+                elif is_optional:
+                    # If the field is `Optional` and uses `default=None`,
+                    # it is valid, we don't need to check further.
+                    continue
+
+                allowed_default = ALLOWED_DEFAULT_BY_FIELD_TYPE.get(
+                    field_type_origin,
+                    None,
+                )
+
+                # The allowed default for `Literal` is the first literal
+                # value (according to how Protobuf `enum`s work).
+                if field_type_origin is Literal:
+                    literal_args = get_args(field_info.annotation)
+                    if len(literal_args) == 0:
+                        raise UserPydanticError(
+                            f'Field `{field_name}` in model `{cls.__name__}` '
+                            f'is a `Literal` with no values.'
+                        )
+                    first_literal = literal_args[0]
+                    if field_info.default != first_literal:
+                        raise UserPydanticError(
+                            f'Field `{field_name}` in model `{cls.__name__}` '
+                            f'uses `default` with an unsupported value. '
+                            f'Supported default value for `Literal` is the '
+                            f'first literal value `{first_literal}`.'
+                        )
+                    continue
+                elif field_type_origin is list or field_type_origin is dict:
+                    raise UserPydanticError(
+                        f'Field `{field_name}` in model `{cls.__name__}` '
+                        f'is a `{field_type_origin.__name__}` type and cannot '
+                        'have a `default` value. Use `default_factory` '
+                        'instead.'
+                    )
+                elif allowed_default is None:
+                    allowed_types = ', '.join(
+                        f'`{allowed_type.__name__}`' for allowed_type in
+                        ALLOWED_DEFAULT_BY_FIELD_TYPE.keys()
+                    )
+                    raise UserPydanticError(
+                        f'Field `{field_name}` in model `{cls.__name__}` '
+                        'uses `default` which is not supported for type '
+                        f'`{field_type_origin.__name__}`. Only '
+                        f'{allowed_types}, `Optional` and `Literal` '
+                        'types can have a `default` currently.'
+                    )
+                elif field_info.default != allowed_default:
+                    raise UserPydanticError(
+                        f'Field `{field_name}` in model `{cls.__name__}` '
+                        f'uses `default` with an unsupported value. '
+                        f'Supported default value for `{field_type_origin.__name__}` is `{allowed_default}`.'
+                    )
 
 
 def _get_discriminated_union_info(
@@ -60,7 +235,7 @@ def _get_discriminated_union_info(
     if origin is not Union and origin is not types.UnionType:
         return None
 
-    # Get the discriminator from field_info if available.
+    # Get the discriminator from `field_info` if available.
     discriminator = None
     if field_info is not None:
         discriminator = field_info.discriminator
@@ -108,7 +283,6 @@ def _pydantic_to_proto(
     # Model has the same structure as expected by the 'output_type' and
     # if 'input' is 'Model' it should be validated.
     """
-
     input_type_or_origin = get_origin(input_type)
     if input_type_or_origin is None:
         # If the type has no origin, it is either a primitive type
@@ -125,7 +299,9 @@ def _pydantic_to_proto(
         )
 
         if discriminated_union_info is None:
-            # This is an `Optional[T]`.
+            # If `discriminated_union_info` is `None`, that means that
+            # the corresponding `FieldInfo` does not have a `discriminator`
+            # and we can treat this as an `Optional[T]`.
             non_none_args = [
                 arg for arg in get_args(input_type) if arg is not type(None)
             ]
@@ -418,7 +594,6 @@ def _proto_to_pydantic(
     Message has the same structure as expected by the 'output_type' and
     has all required fields set.
     """
-
     if output_type is None:
         # If a user specifies 'response=None' in the method definition,
         # we don't want to create an arbitrary data structure, but return
@@ -445,7 +620,9 @@ def _proto_to_pydantic(
         )
 
         if discriminated_union_info is None:
-            # This is an `Optional[T]`.
+            # If `discriminated_union_info` is `None`, that means that
+            # the corresponding `FieldInfo` does not have a `discriminator`
+            # and we can treat this as an `Optional[T]`.
             non_none_args = [
                 arg for arg in get_args(output_type) if arg is not type(None)
             ]
@@ -591,8 +768,18 @@ def _proto_to_pydantic(
                 # We should be converting a Protobuf message which was
                 # created from a Pydantic model so if a field is not set
                 # in the Protobuf message, it means that the field was
-                # 'Optional' and set to 'None' in Pydantic.
-                output[field_name] = None
+                # 'Optional' and set to 'None' in Pydantic or if it was
+                # a required field, it was missing we allow Pydantic to
+                # either set a default value or raise a validation error
+                # on the calling side.
+                output_field_type_origin = get_origin(output_field_type)
+                if output_field_type_origin is Union or output_field_type_origin is types.UnionType:
+                    if type(None) in get_args(output_field_type):
+                        # Union which has `NoneType` as one of the args
+                        # is treated as an `Optional[T]` and we set
+                        # the field to `None` explicitly.
+                        output[field_name] = None
+                        continue
 
         return output_type(**output)
 
@@ -754,7 +941,7 @@ class Type(pydantic.BaseModel):
                     discriminator, type_args = discriminated_union_info
                     for type_arg in type_args:
                         if discriminator not in type_arg.__annotations__:
-                            raise ValueError(
+                            raise UserPydanticError(
                                 f"Discriminated union option type "
                                 f"`{type_arg}` is missing "
                                 f"discriminator field `{discriminator}`."
@@ -765,7 +952,7 @@ class Type(pydantic.BaseModel):
                         assert literal_field is not None
                         literal_args = get_args(literal_field.annotation)
                         if len(literal_args) != 1:
-                            raise ValueError(
+                            raise UserPydanticError(
                                 f"Discriminator field `{discriminator}` "
                                 f"in option type `{type_arg}` must be "
                                 f"a `Literal` with exactly one value."
@@ -776,7 +963,9 @@ class Type(pydantic.BaseModel):
                             method_name,
                         )
                 else:
-                    # Get the inner type from 'Optional[T]'.
+                    # If `discriminated_union_info` is `None`, that means that
+                    # the corresponding `FieldInfo` does not have a `discriminator`
+                    # and we can treat this as an `Optional[T]`.
                     non_none_args = [
                         arg for arg in get_args(field_type)
                         if arg is not type(None)
@@ -808,7 +997,7 @@ class Type(pydantic.BaseModel):
                 for arg in literal_args:
                     if not isinstance(arg, str):
                         state_or_method = "'state'" if method_name is None else f"method '{method_name}'"
-                        raise ValueError(
+                        raise UserPydanticError(
                             f"{state_or_method} has `Literal` field with "
                             f"non-string value `{arg}`. Only string "
                             "literals are supported."
@@ -820,7 +1009,7 @@ class Type(pydantic.BaseModel):
                         state_or_method = "'state'"
                     else:
                         state_or_method = f"method '{method_name}'"
-                    raise ValueError(
+                    raise UserPydanticError(
                         f"{state_or_method} has field type "
                         f"'{field_type}' which is not a subclass of "
                         "Reboot 'Model'. All 'state', "
@@ -837,7 +1026,7 @@ class Type(pydantic.BaseModel):
                 assert field_type in (int, float, str, bool)
 
         if not issubclass(state, Model):
-            raise ValueError("'state' must be a subclass of 'Model'.")
+            raise UserPydanticError("'state' must be a subclass of 'Model'.")
 
         # Validate all fields there rather then in the constructor of
         # 'Model', so that we won't have that validation
@@ -850,7 +1039,7 @@ class Type(pydantic.BaseModel):
 
         for method_name, method in methods.items():
             if not isinstance(method, MethodModel):
-                raise ValueError(
+                raise UserPydanticError(
                     f"Method '{method_name}' must be an instance of "
                     f"'Writer', 'Reader', 'Transaction', 'Workflow'."
                 )
@@ -891,9 +1080,9 @@ class API(pydantic.BaseModel):
     def __init__(self, **types: Type):
         for type_name, data_type in types.items():
             if not isinstance(data_type, Type):
-                raise ValueError(
+                raise UserPydanticError(
                     f"Data type '{type_name}' must be a 'Type' instance, "
-                    f"got '{__builtins__.type(data_type)}'"
+                    f"got '{data_type.__class__.__name__}'"
                 )
 
         super().__init__(**types)

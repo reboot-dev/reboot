@@ -11,6 +11,21 @@ export * as tasks_pb from "./tasks_pb.js";
 
 let protobufVersionChecked = false;
 
+export const EMPTY_ARRAY = () => [];
+export const EMPTY_RECORD = () => ({});
+
+// We don't allow passing arbitrary default values, only these
+// predefined empty defaults to match Protobuf semantics.
+export const ALLOWED_DEFAULT_BY_CONSTRUCTOR_NAME: { [key: string]: any } = {
+  ZodString: "",
+  ZodNumber: 0,
+  ZodBoolean: false,
+  // We check `optional` case separately, so do not include `undefined` here.
+  // We also do not include either `[]` or `{}` here because we can't
+  // compare arrays or objects directly, because the callable should
+  // return a new instance each time.
+};
+
 function ensureProtobufVersionChecked() {
   if (protobufVersionChecked) {
     return;
