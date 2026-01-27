@@ -8,6 +8,7 @@ import log.log
 import logging
 import math
 import sys
+import time
 import traceback
 import uuid
 from abc import ABC, abstractmethod
@@ -15,7 +16,7 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from google.protobuf import any_pb2
 from google.protobuf.message import Message
 from grpc.aio import AioRpcError
@@ -27,6 +28,7 @@ from rbt.v1alpha1 import (
     transactions_pb2_grpc,
 )
 from rbt.v1alpha1.errors_pb2 import (
+    FailedPrecondition,
     StateAlreadyConstructed,
     StateNotConstructed,
     TransactionParticipantFailedToCommit,
@@ -91,6 +93,40 @@ logger = log.log.get_logger(__name__)
 # level per-module or globally. For now, default to `WARNING`: we have warnings
 # in this file that we expect users to want to see.
 logger.setLevel(logging.WARNING)
+
+
+def check_idempotency_key_not_expired(idempotency_key: uuid.UUID) -> None:
+    """Check if the idempotency key is an expired UUIDv7.
+
+    UUIDv7 keys encode a timestamp in their first 48 bits. If that timestamp
+    is in the past, the idempotency key is considered expired and the mutation
+    cannot be performed.
+
+    Raises:
+        SystemAborted: If the idempotency key is a UUIDv7 with a timestamp in
+            the past.
+    """
+    if idempotency_key.version != 7:
+        return
+
+    # Extract the 48-bit timestamp from the first 6 bytes of the UUID.
+    # UUIDv7 stores the Unix timestamp in milliseconds in big-endian format.
+    uuid_bytes = idempotency_key.bytes
+    timestamp_ms = int.from_bytes(uuid_bytes[:6], byteorder='big')
+
+    now_ms = int(time.time() * 1000)
+
+    if timestamp_ms < now_ms:
+        raise SystemAborted(
+            FailedPrecondition(),
+            message=(
+                "UUIDv7 idempotency key has expired: timestamp "
+                f"{datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)} "
+                "is in the past (current time is "
+                f"{datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc)})"
+            ),
+        )
+
 
 StateT = TypeVar('StateT', bound=Message)
 
@@ -2881,6 +2917,9 @@ class SidecarStateManager(
         """
         if context.idempotency_key is None:
             return None
+
+        # Check if the idempotency key is an expired UUIDv7.
+        check_idempotency_key_not_expired(context.idempotency_key)
 
         state_type_name = context.state_type_name
         state_ref = context._state_ref
