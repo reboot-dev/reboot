@@ -2362,9 +2362,9 @@ export class {{ client.proto.state_name }} {
     #ids: string[];
 
     constructor(
-      ids: string[],
+      ids: Iterable<string>,
     ) {
-      this.#ids = ids || [];
+      this.#ids = [...ids];
     }
 
     {% for service in client.services %}
@@ -2397,7 +2397,7 @@ export class {{ client.proto.state_name }} {
     {% endfor %}
   }
 
-  public static forall(ids: string[]) {
+  public static forall(ids: Iterable<string>) {
     return new {{ client.proto.state_name }}._Forall(ids);
   }
 

@@ -6181,9 +6181,9 @@ class {{ client.proto.state_name }}:
 
     class _Forall:
 
-        _ids: list[str]
+        _ids: IMPORT_typing.Iterable[str]
 
-        def __init__(self, ids: list[str]):
+        def __init__(self, ids: IMPORT_typing.Iterable[str]):
             self._ids = ids
 
         {% for service in client.services %}
@@ -6322,7 +6322,7 @@ class {{ client.proto.state_name }}:
         {% endfor %}
 
     @classmethod
-    def forall(cls, ids: list[str]) -> {{ client.proto.state_name }}._Forall:
+    def forall(cls, ids: IMPORT_typing.Iterable[str]) -> {{ client.proto.state_name }}._Forall:
         return {{ client.proto.state_name }}._Forall(ids)
 
     @classmethod
