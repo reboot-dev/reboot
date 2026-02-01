@@ -24,11 +24,22 @@ SPACE_ID_SUFFIX_LENGTH = 10
 # Ditto for application IDs.
 APPLICATION_ID_SUFFIX_LENGTH = 10
 
-QualifiedSpaceName = str  # "[user_id]/[space_name]".
-QualifiedApplicationName = str  # "[qualified_space_name]/[application_name]".
+# ID for `Organizations` singleton.
+ORGANIZATIONS_ID = "cloud/organizations"
+
+OrganizationName = str
+OrganizationId = str
+# Before adding support for organizations a qualified space name was
+# based on the `UserId`. For backwards compatibility we may have
+# either a `UserId` or an `OrganizationId`, and thus we can not assume
+# which one we have unless we explicitly try and check if there is an
+# organization or user with that ID.
 UserId = str
+OwnerId = OrganizationId | UserId
 SpaceName = str
 ApplicationName = str
+QualifiedSpaceName = str  # "[owner_id]/[space_name]".
+QualifiedApplicationName = str  # "[qualified_space_name]/[application_name]".
 SecretName = str
 
 # A space ID starts with "s" (for recognizability), followed by 32 alphanumeric
@@ -200,35 +211,32 @@ def parse_qualified_application_name(
 ) -> tuple[QualifiedSpaceName, ApplicationName]:
     """Parses a qualified application name into its constituent parts."""
     # A qualified application name has the following form:
-    #   `[user_id]/[space_name]/[application_name]`
+    #   `[owner_id]/[space_name]/[application_name]`
     parts = qualified_application_name.split("/")
     if len(parts) != 3:
         raise UnparsableQualifiedName(
             f"Expected a qualified application name, but got '{qualified_application_name}'"
         )
-    user_id, space_name, application_name = parts
-    return (f"{user_id}/{space_name}", application_name)
+    owner_id, space_name, application_name = parts
+    return (f"{owner_id}/{space_name}", application_name)
 
 
 def make_qualified_application_name(
-    user_id: UserId,
+    owner_id: OwnerId,
     space_name: SpaceName,
     application_name: ApplicationName,
 ) -> QualifiedApplicationName:
-    # TODO(rjh): for Alpha, the qualified application name always contains a
-    #            user ID. Once we introduce the concept of an organization the
-    #            qualified application name may also contain organization IDs.
-    return f"{user_id}/{space_name}/{application_name}"
+    return f"{owner_id}/{space_name}/{application_name}"
 
 
-def make_qualified_application_name_from_user_id_and_application_name(
-    user_id: UserId,
+def make_qualified_application_name_from_owner_id_and_application_name(
+    owner_id: OwnerId,
     application_name: ApplicationName,
 ):
     # If no space name has been provided, the space name is the same as the
     # application name (i.e. the application gets its own space).
     return make_qualified_application_name(
-        user_id=user_id,
+        owner_id=owner_id,
         space_name=application_name,
         application_name=application_name,
     )
@@ -236,10 +244,10 @@ def make_qualified_application_name_from_user_id_and_application_name(
 
 def parse_qualified_space_name(
     qualified_space_name: QualifiedSpaceName,
-) -> tuple[UserId, SpaceName]:
+) -> tuple[OwnerId, SpaceName]:
     """Parses a qualified space name into its constituent parts."""
     # A qualified space name has the following form:
-    #   `[user_id]/[space_name]`
+    #   `[owner_id]/[space_name]`
     parts = qualified_space_name.split("/")
     if len(parts) != 2:
         raise UnparsableQualifiedName(
