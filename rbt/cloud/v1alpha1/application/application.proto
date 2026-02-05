@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package rbt.cloud.v1alpha1.application;
 
+import "google/protobuf/timestamp.proto";
 import "rbt/v1alpha1/options.proto";
 import "rbt/cloud/v1alpha1/logs/logs.proto";
 
@@ -51,6 +52,12 @@ message Revision {
   // than horizontal scaling; in that case, for backwards
   // compatibility, the value may be absent.
   optional ApplicationSize size = 6;
+
+  // When this revision was deployed.
+  google.protobuf.Timestamp deployed_at = 7;
+
+  // The user ID of who deployed this revision.
+  string deployer_user_id = 8;
 }
 
 //////////////////////////////////////////////////////////////////////
