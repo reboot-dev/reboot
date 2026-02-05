@@ -127,42 +127,138 @@ class AuthorizerRule(
         pass
 
 
+class DenyAuthorizerRule(
+    AuthorizerRule[Message | Model, Message | Model | None]
+):
+
+    async def execute(
+        self,
+        *,
+        context: ReaderContext,
+        state: Optional[Message | Model],
+        request: Optional[Message | Model],
+        **kwargs,
+    ) -> Authorizer.Decision:
+        return rbt.v1alpha1.errors_pb2.PermissionDenied()
+
+
 def deny() -> AuthorizerRule[Message | Model, Message | Model | None]:
-
-    class DenyAuthorizerRule(
-        AuthorizerRule[Message | Model, Message | Model | None]
-    ):
-
-        async def execute(
-            self,
-            *,
-            context: ReaderContext,
-            state: Optional[Message | Model],
-            request: Optional[Message | Model],
-            **kwargs,
-        ) -> Authorizer.Decision:
-            return rbt.v1alpha1.errors_pb2.PermissionDenied()
-
     return DenyAuthorizerRule()
 
 
+class AllowAuthorizerRule(
+    AuthorizerRule[Message | Model, Message | Model | None]
+):
+
+    async def execute(
+        self,
+        *,
+        context: ReaderContext,
+        state: Optional[Message | Model],
+        request: Optional[Message | Model],
+        **kwargs,
+    ) -> Authorizer.Decision:
+        return rbt.v1alpha1.errors_pb2.Ok()
+
+
 def allow() -> AuthorizerRule[Message | Model, Message | Model | None]:
+    return AllowAuthorizerRule()
 
-    class AllowAuthorizerRule(
-        AuthorizerRule[Message | Model, Message | Model | None]
+
+class AllowIfAuthorizerRule(
+    AuthorizerRule[ContravariantStateType, ContravariantRequestType]
+):
+
+    def __init__(
+        self,
+        callables: Sequence[AuthorizerCallable[ContravariantStateType,
+                                               ContravariantRequestType]],
+        requires_all: bool,
     ):
+        self.callables = callables
+        self.requires_all = requires_all
 
-        async def execute(
-            self,
-            *,
-            context: ReaderContext,
-            state: Optional[Message | Model],
-            request: Optional[Message | Model],
-            **kwargs,
-        ) -> Authorizer.Decision:
+    async def invoke(
+        self,
+        callable: AuthorizerCallable[ContravariantStateType,
+                                     ContravariantRequestType],
+        context: ReaderContext,
+        state: Optional[ContravariantStateType],
+        request: Optional[ContravariantRequestType],
+    ):
+        decision = callable(context=context, state=state, request=request)
+        if inspect.isawaitable(decision):
+            return await decision
+        return decision
+
+    async def execute(
+        self,
+        *,
+        context: ReaderContext,
+        state: Optional[ContravariantStateType],
+        request: Optional[ContravariantRequestType],
+        **kwargs,
+    ) -> Authorizer.Decision:
+
+        # NOTE: we invoke each authorizer callable **one at a time**
+        # instead of concurrently so that:
+        #
+        # (1) We support dependency semantics for `all`, i.e.,
+        #     later callable can assume earlier callables did not
+        #     return `Unauthenticated` or `PermissionDenied`.
+        #
+        # (2) We support short-circuiting`, i.e., cheaper authorizer
+        #     callables can be listed first so more expensive ones
+        #     aren't executed unless necessary.
+        #
+        # PLEASE KEEP SEMANTICS IN SYNC WITH TYPESCRIPT.
+
+        # Remember if we had any `PermissionDenied` for `any` so
+        # that we return that instead of `Unauthenticated`.
+        denied = False
+
+        for callable in self.callables:
+            decision = await self.invoke(callable, context, state, request)
+
+            if isinstance(decision, rbt.v1alpha1.errors_pb2.Ok):
+                if self.requires_all:
+                    # All callables must return `Ok`, keep checking.
+                    continue
+                else:
+                    # Only needed one `Ok` and we got it, short-circuit.
+                    return decision
+            elif isinstance(decision, rbt.v1alpha1.errors_pb2.Unauthenticated):
+                if self.requires_all:
+                    # All callables must return `Ok`, short-circuit.
+                    return decision
+                else:
+                    # Just need one `Ok`, keep checking.
+                    continue
+            elif isinstance(
+                decision, rbt.v1alpha1.errors_pb2.PermissionDenied
+            ):
+                if self.requires_all:
+                    # All callables must return `Ok`, short-circuit.
+                    return decision
+                else:
+                    # Remember that we got at least one
+                    # `PermissionDenied` so we can return it
+                    # later.
+                    denied = True
+                    # Only need one `Ok`, keep checking.
+                    continue
+
+        # If this was `all`, then they must have all been `Ok`!
+        if self.requires_all:
+            assert not denied
             return rbt.v1alpha1.errors_pb2.Ok()
 
-    return AllowAuthorizerRule()
+        # Must be `any`, check if we got at least one
+        # `PermissionDenied` otherwise return `Unauthenticated`.
+        if denied:
+            return rbt.v1alpha1.errors_pb2.PermissionDenied()
+        else:
+            return rbt.v1alpha1.errors_pb2.Unauthenticated()
 
 
 @overload
@@ -202,93 +298,9 @@ def allow_if(
     ), ("Exactly one of `all` or `any` must be passed")
 
     callables = all or any
+    assert (callables is not None)
 
-    class AllowIfAuthorizerRule(
-        AuthorizerRule[ContravariantStateType, ContravariantRequestType]
-    ):
-
-        async def execute(
-            self,
-            *,
-            context: ReaderContext,
-            state: Optional[ContravariantStateType],
-            request: Optional[ContravariantRequestType],
-            **kwargs,
-        ) -> Authorizer.Decision:
-
-            # NOTE: we invoke each authorizer callable **one at a time**
-            # instead of concurrently so that:
-            #
-            # (1) We support dependency semantics for `all`, i.e.,
-            #     later callable can assume earlier callables did not
-            #     return `Unauthenticated` or `PermissionDenied`.
-            #
-            # (2) We support short-circuiting`, i.e., cheaper authorizer
-            #     callables can be listed first so more expensive ones
-            #     aren't executed unless necessary.
-            #
-            # PLEASE KEEP SEMANTICS IN SYNC WITH TYPESCRIPT.
-
-            async def invoke(callable):
-                decision = callable(
-                    context=context, state=state, request=request
-                )
-                if inspect.isawaitable(decision):
-                    return await decision
-                return decision
-
-            # Remember if we had any `PermissionDenied` for `any` so
-            # that we return that instead of `Unauthenticated`.
-            denied = False
-
-            assert callables is not None
-
-            for callable in callables:
-                decision = await invoke(callable)
-
-                if isinstance(decision, rbt.v1alpha1.errors_pb2.Ok):
-                    if all is not None:
-                        # All callables must return `Ok`, keep checking.
-                        continue
-                    else:
-                        # Only needed one `Ok` and we got it, short-circuit.
-                        return decision
-                elif isinstance(
-                    decision, rbt.v1alpha1.errors_pb2.Unauthenticated
-                ):
-                    if all is not None:
-                        # All callables must return `Ok`, short-circuit.
-                        return decision
-                    else:
-                        # Just need one `Ok`, keep checking.
-                        continue
-                elif isinstance(
-                    decision, rbt.v1alpha1.errors_pb2.PermissionDenied
-                ):
-                    if all is not None:
-                        # All callables must return `Ok`, short-circuit.
-                        return decision
-                    else:
-                        # Remember that we got at least one
-                        # `PermissionDenied` so we can return it
-                        # later.
-                        denied = True
-                        # Only need one `Ok`, keep checking.
-                        continue
-
-            # If this was `all`, then they must have all been `Ok`!
-            if all is not None:
-                assert not denied
-                return rbt.v1alpha1.errors_pb2.Ok()
-
-            # Must be `any`, check if we got at least one
-            # `PermissionDenied` otherwise return `Unauthenticated`.
-            if denied:
-                return rbt.v1alpha1.errors_pb2.PermissionDenied()
-            else:
-                return rbt.v1alpha1.errors_pb2.Unauthenticated()
-
-    return AllowIfAuthorizerRule()
+    return AllowIfAuthorizerRule(callables, all is not None)
 
 
 # NOTE: we're not calling this `is_authenticated` to account for
