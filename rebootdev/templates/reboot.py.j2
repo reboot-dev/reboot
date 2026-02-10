@@ -6737,14 +6737,17 @@ class {{ client.proto.state_name }}:
                 __state_id__ = __state_id_or_request_or_options__
                 if isinstance(__request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request):
                     __request__ = __request_or_options__
-                    assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
+                    if __options__ is not None and not isinstance(__options__, IMPORT_reboot_aio_call.Options):
+                        raise TypeError(f"Expecting fourth positional argument to be of type 'reboot.aio.call.Options', got '{type(__request_or_options__).__name__}'")
 
                     {# When specifying __request__ directly, we need to ensure that all other input fields are 'UNSET'. #}
                     {% for name in method.input_type_fields %}
                     assert {{ name }} is UNSET
                     {% endfor %}
                 else:
-                    assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
+                    if __request_or_options__ is not None and not isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options):
+                        raise TypeError(f"Expecting third positional argument to be of type 'reboot.aio.call.Options', got '{type(__request_or_options__).__name__}'")
+
                     __options__ = __request_or_options__
 
                     __request__ = {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
@@ -6754,10 +6757,14 @@ class {{ client.proto.state_name }}:
                     )
             elif isinstance(__state_id_or_request_or_options__, {{ client.proto.state_name }}.{{ method.proto.name }}Request):
                 __request__ = __state_id_or_request_or_options__
-                assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
+                if __request_or_options__ is not None and not isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options):
+                    raise TypeError(f"Expecting third positional argument to be of type 'reboot.aio.call.Options', got '{type(__request_or_options__).__name__}'")
+
                 __options__ = __request_or_options__
             else:
-                assert __state_id_or_request_or_options__ is None or isinstance(__state_id_or_request_or_options__, IMPORT_reboot_aio_call.Options)
+                if __state_id_or_request_or_options__ is not None and not isinstance(__state_id_or_request_or_options__, IMPORT_reboot_aio_call.Options):
+                    raise TypeError(f"Expecting second positional argument to either be of type 'str' or 'reboot.aio.call.Options', got '{type(__state_id_or_request_or_options__).__name__}'")
+
                 __options__ = __state_id_or_request_or_options__
 
                 __request__ = {{ client.proto.state_name }}{{ method.proto.name }}RequestFromInputFields(
@@ -6766,8 +6773,10 @@ class {{ client.proto.state_name }}:
                     {% endfor %}
                 )
             {% else %}
-            assert __state_id__ is None or isinstance(__state_id__, IMPORT_reboot_aio_types.StateId)
-            assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
+            if __state_id__ is not None and not isinstance(__state_id__, IMPORT_reboot_aio_types.StateId):
+                raise TypeError(f"Expecting second positional argument to be of type 'str', got '{type(__state_id__).__name__}'")
+            if __options__ is not None and not isinstance(__options__, IMPORT_reboot_aio_call.Options):
+                raise TypeError(f"Expecting third positional argument to be of type 'reboot.aio.call.Options', got '{type(__options__).__name__}'")
             {% endif %}
             __args__: tuple[IMPORT_typing.Any, ...]
 
