@@ -122,12 +122,60 @@ def legal_diff_task_to_message(
     return any(uf.field_number == 6 for uf in UnknownFieldSet(old))
 
 
+def legal_diff_method_type_change(
+    diff: PathDiff,
+    old: options_pb2.MethodOptions,
+    new: options_pb2.MethodOptions,
+) -> bool:
+    """Changing a method from `Writer` to `Transaction` or vice versa
+    shouldn't be considered a backwards-incompatible change since it
+    is safe to change them. Specifically, (1) since a `transaction` can
+    call either a `writer` or a `transaction`, we can safely change any
+    method being called from a `transaction` and (2) if we change a
+    `transaction` to a `writer` we'll get either type errors or a
+    runtime error if we try to do more than what a `writer` is allowed
+    to do (whereas changing a `writer` to a `transaction` will just work
+    since a `writer` won't already be making any other calls to other
+    `writers` or `transactions`).
+    """
+
+    # Only applies when the method kind changed between `writer`
+    # and `transaction`.
+    old_kind = old.WhichOneof('kind')
+    new_kind = new.WhichOneof('kind')
+
+    # Creating a set there, so in case the method kind is the same
+    # (e.g. both `writer`) we don't accidentally allow it through this
+    # predicate.
+    diff_kind_set = {old_kind, new_kind}
+    expected_kind_set = {'writer', 'transaction'}
+
+    if diff_kind_set != expected_kind_set:
+        return False
+
+    path, _, _ = diff
+
+    if path not in ('writer', 'transaction'):
+        return False
+
+    # Ensure the sub-options (e.g., `constructor`) are preserved
+    # across the type change.
+    old_opts = MessageToDict(
+        old.writer if old_kind == 'writer' else old.transaction
+    )
+    new_opts = MessageToDict(
+        new.writer if new_kind == 'writer' else new.transaction
+    )
+    return old_opts == new_opts
+
+
 LegalMethodOptionDiffPredicate = Callable[
     [PathDiff, options_pb2.MethodOptions, options_pb2.MethodOptions], bool]
 
 _LEGAL_REBOOT_METHOD_OPTION_DIFFS: list[LegalMethodOptionDiffPredicate] = [
     legal_diff_constructor_to_message,
     legal_diff_task_to_message,
+    legal_diff_method_type_change,
 ]
 
 ProtoValidationErrorMessage = str
