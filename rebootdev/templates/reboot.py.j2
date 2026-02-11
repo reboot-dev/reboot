@@ -1498,10 +1498,25 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
 
         # Confirm whether this is the right server to be serving this
         # request.
-        authoritative_server = self.placement_client.server_for_actor(
-            headers.application_id,
-            headers.state_ref,
-        )
+        try:
+            authoritative_server = self.placement_client.server_for_actor(
+                headers.application_id,
+                headers.state_ref,
+            )
+        except IMPORT_reboot_aio_placement.UnknownApplicationError:
+            # It's possible that the user did indeed type an application ID
+            # that doesn't exist, but it's also quite possible that this
+            # request reached us before the placement planner had gossipped
+            # out the information about which applications exist (we see
+            # this e.g. after `rbt dev`'s chaos monkey restarts). For that
+            # reason, abort with a retryable error.
+            await grpc_context.abort(
+                IMPORT_grpc.StatusCode.UNAVAILABLE,
+                f"Application '{headers.application_id}' not found. If you "
+                "are confident the application exists, this may be because "
+                "the system is still starting.",
+            )
+            raise  # Unreachable but necessary for mypy.
         if authoritative_server != self.server_id:
             # This is NOT the correct server. Fail.
             await grpc_context.abort(
