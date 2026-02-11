@@ -236,6 +236,57 @@ py_library(
     ],
 )
 
+py_library(
+    name = "fail_py",
+    srcs = ["fail.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "pydantic_schema_to_proto_py",
+    srcs = ["pydantic_schema_to_proto.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":api_py",
+        ":fail_py",
+        requirement("pydantic"),
+        requirement("aiofiles"),
+    ],
+)
+
+py_library(
+    name = "pydantic_schema_to_zod_py",
+    srcs = ["pydantic_schema_to_zod.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":api_py",
+        ":fail_py",
+        requirement("pydantic"),
+        requirement("aiofiles"),
+    ],
+)
+
+py_binary(
+    name = "pydantic_to_proto",
+    srcs = ["pydantic_to_proto.py"],
+    main = "pydantic_to_proto.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pydantic_schema_to_proto_py",
+    ],
+)
+
+py_binary(
+    name = "pydantic_to_zod",
+    srcs = ["pydantic_to_zod.py"],
+    main = "pydantic_to_zod.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pydantic_schema_to_zod_py",
+    ],
+)
+
 generate_version_py(name = "version_source")
 
 py_library(

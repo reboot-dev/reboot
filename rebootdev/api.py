@@ -18,16 +18,21 @@ from typing import (
     get_origin,
 )
 
+PRIMITIVE = Union[int, float, str, bool]
 PRIMITIVE_TYPE = Union[
-    int,
-    float,
-    str,
-    bool,
+    typing.Type[int],
+    typing.Type[float],
+    typing.Type[str],
+    typing.Type[bool],
 ]
 
-COLLECTION_TYPE = Union[
+COLLECTION = Union[
     List[Any],
     Dict[str, Any],
+]
+COLLECTION_TYPE = Union[
+    typing.Type[List[Any]],
+    typing.Type[Dict[str, Any]],
 ]
 
 # We don't allow passing arbitrary default values, only these empty
@@ -255,12 +260,12 @@ def _get_discriminated_union_info(
 
 
 def _pydantic_to_proto(
-    input: Model | PRIMITIVE_TYPE | COLLECTION_TYPE | None,
+    input: Model | PRIMITIVE | COLLECTION | None,
     input_type: Optional[typing.Type],
     # We always will return lists, dicts and BaseModels as proto messages.
     output_type: typing.Type[Message] | PRIMITIVE_TYPE,
     field_info: Optional[FieldInfo] = None,
-) -> Message | PRIMITIVE_TYPE:
+) -> Message | PRIMITIVE:
     """Converts a Pydantic 'input' of type 'input_type' to the
     'output_type' Protobuf message or primitive type.
 
@@ -467,11 +472,7 @@ def _pydantic_to_proto(
                 output.record[key] = value
         return output
     elif issubclass(input_type_or_origin, Model):
-        # Ensure 'output_type' is a class (not a Union of primitive
-        # types), so we can safely call 'output_type' as a class inside
-        # 'issubclass', so mypy can properly check types.
-        assert isinstance(output_type,
-                          type) and issubclass(output_type, Message)
+        assert isinstance(output_type, type(Message))
         assert isinstance(input, Model)
 
         output = output_type()
@@ -569,10 +570,10 @@ def pydantic_to_proto(
 
 
 def _proto_to_pydantic(
-    input: Message | PRIMITIVE_TYPE,
+    input: Message | PRIMITIVE,
     output_type: typing.Type[Model] | PRIMITIVE_TYPE | COLLECTION_TYPE | None,
     field_info: Optional[FieldInfo] = None,
-) -> Model | PRIMITIVE_TYPE | COLLECTION_TYPE | None:
+) -> Model | PRIMITIVE | COLLECTION | None:
     """Converts a Protobuf 'input' message or primitive type to the
     'output_type' Model, list, dict or primitive type.
 
