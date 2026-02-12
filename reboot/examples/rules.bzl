@@ -50,6 +50,15 @@ def write_templated_source_file(name, dest, src, input_yaml, diff_test = True):
     )
 
     # And write out its outputs.
+    #
+    # When this package is consumed via a cross-repo label (i.e. using
+    # `@com_github_reboot_dev_reboot`), we must export the destination file
+    # to keep the source-file visibility check from failing in that context.
+    native.exports_files(
+        [dest],
+        visibility = ["//visibility:public"],
+    )
+
     write_source_files(
         name = name,
         files = {
