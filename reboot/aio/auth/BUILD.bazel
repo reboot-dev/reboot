@@ -7,6 +7,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//reboot/aio:secrets_py",
+        "//reboot/controller:settings_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:auth_py_reboot",
         "@com_github_reboot_dev_reboot//rebootdev:run_environments_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio:aborted_py",

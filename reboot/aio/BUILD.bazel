@@ -224,6 +224,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":http_py",
+        ":libraries_py",
         ":monitoring_py",
         "//reboot/aio:servers_py",
         "//reboot/aio/auth:authorizers_py",

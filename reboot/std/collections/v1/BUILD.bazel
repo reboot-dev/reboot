@@ -10,6 +10,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("aiohttp"),
+        "//reboot/aio:applications_py",
         "//reboot/aio:contexts_py",
         "//reboot/aio:secrets_py",
         "//reboot/aio/auth:authorizers_py",

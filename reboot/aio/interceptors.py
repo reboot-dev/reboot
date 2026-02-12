@@ -23,7 +23,7 @@ class LegacyGrpcContext(grpc.aio.ServicerContext):
         self,
         grpc_context: grpc.aio.ServicerContext,
         channel_manager: _ChannelManager,
-        application_id: str,
+        application_id: ApplicationId,
     ):
         self._grpc_context = grpc_context
         self._channel_manager = channel_manager

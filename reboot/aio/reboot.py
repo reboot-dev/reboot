@@ -33,7 +33,7 @@ from rebootdev.aio.placement import PlanOnlyPlacementClient
 from rebootdev.aio.resolvers import StaticResolver
 from rebootdev.aio.servicers import Serviceable, Servicer
 from rebootdev.aio.tracing import function_span
-from rebootdev.aio.types import ServerId, ServiceName, StateRef
+from rebootdev.aio.types import ApplicationId, ServerId, ServiceName, StateRef
 from rebootdev.naming import get_local_application_id
 from rebootdev.run_environments import on_cloud
 from rebootdev.server.database import DatabaseServer, DatabaseServerFailed
@@ -95,12 +95,13 @@ class Reboot:
         self._channel_manager: Optional[_ChannelManager] = None
 
         self._application_name = application_name or DEFAULT_APPLICATION_NAME
-        self._application_id = os.environ.get(ENVVAR_REBOOT_APPLICATION_ID)
-        if self._application_id is None:
+        application_id = os.environ.get(ENVVAR_REBOOT_APPLICATION_ID)
+        if application_id is None:
             self._application_id = get_local_application_id(
                 self._application_name
             )
-        assert self._application_id is not None
+        else:
+            self._application_id = ApplicationId(application_id)
 
         if initialize_tracing:
             rebootdev.aio.tracing.start(process_name=self._application_name)
@@ -252,7 +253,7 @@ class Reboot:
         name: str,
         bearer_token: Optional[str] = None,
         idempotency_seed: Optional[uuid.UUID] = None,
-    ) -> ExternalContext:
+    ) -> InitializeContext:
         """ Create an `ExternalContext` for use in tests.
 
         app_internal: When true, the context is being used to
@@ -297,7 +298,7 @@ class Reboot:
         libraries: Sequence[AbstractLibrary] = [],
         web_framework: WebFramework,
         token_verifier: Optional[TokenVerifier] = None,
-        initialize: Optional[Callable[[ExternalContext],
+        initialize: Optional[Callable[[InitializeContext],
                                       Awaitable[None]]] = None,
         initialize_bearer_token: Optional[str] = None,
         local_envoy: Optional[bool] = None,
@@ -320,7 +321,7 @@ class Reboot:
         libraries: Sequence[AbstractLibrary] = [],
         web_framework: Optional[WebFramework] = None,
         token_verifier: Optional[TokenVerifier] = None,
-        initialize: Optional[Callable[[ExternalContext],
+        initialize: Optional[Callable[[InitializeContext],
                                       Awaitable[None]]] = None,
         initialize_bearer_token: Optional[str] = None,
         local_envoy: Optional[bool] = None,

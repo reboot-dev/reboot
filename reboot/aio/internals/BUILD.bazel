@@ -8,6 +8,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("aiofiles"),
+        "//reboot/controller:application_config_py",
+        "@com_github_reboot_dev_reboot//log:log_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:application_metadata_py_proto",
         "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
         "@com_github_reboot_dev_reboot//rebootdev/server:database_py",

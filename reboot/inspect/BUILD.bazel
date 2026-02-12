@@ -27,11 +27,12 @@ ts_project(
         ":node_modules/react",
         ":node_modules/react-dom",
         ":node_modules/react-json-view",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@reboot-dev/reboot-api",
         "//:node_modules/@reboot-dev/reboot-react",
         "//:node_modules/@reboot-dev/reboot-web",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_js_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1/inspect:inspect_js_proto",
+        "//rbt/v1alpha1:tasks_js_proto",
+        "//rbt/v1alpha1/inspect:inspect_js_proto",
     ],
 )
 
@@ -58,10 +59,10 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        "//rbt/v1alpha1/inspect:inspect_py_grpc",
+        "//rbt/v1alpha1/inspect:inspect_py_proto",
         "//reboot/aio/auth:admin_auth_py",
         "//reboot/templates:tools_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1/inspect:inspect_py_grpc",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1/inspect:inspect_py_proto",
         "@com_github_reboot_dev_reboot//rebootdev/aio:aborted_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio:state_managers_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio:stubs_py",

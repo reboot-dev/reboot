@@ -105,7 +105,7 @@ class ServerManager:
                 application_id=server.application_id,
                 revision_number=server.revision_number,
                 address=server_address,
-                namespace=server.namespace,
+                namespace=server.namespace or "",
                 file_descriptor_set=server.file_descriptor_set,
                 reboot_version=server.reboot_version,
             )

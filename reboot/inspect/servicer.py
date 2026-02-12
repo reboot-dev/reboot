@@ -220,8 +220,9 @@ class InspectServicer(
     ) -> AsyncIterator[ListStatesResponse]:
         await self.ensure_admin_auth_or_fail(grpc_context)
 
+        state_type_name = StateTypeName(request.state_type)
         middleware: Optional[Middleware] = (
-            self._middleware_by_state_type_name.get(request.state_type)
+            self._middleware_by_state_type_name.get(state_type_name)
         )
         if middleware is None:
             await grpc_context.abort(
@@ -252,7 +253,7 @@ class InspectServicer(
         # local view of the states.
         try:
             async for actors in self._state_manager.actors(
-                state_type=request.state_type
+                state_type=state_type_name
             ):
                 response = ListStatesResponse(
                     state_infos=[

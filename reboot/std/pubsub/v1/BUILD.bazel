@@ -9,7 +9,9 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//reboot/aio:contexts_py",
+        "//reboot/std/collections/queue/v1:queue_py",
         "//reboot/std/item/v1:item_py",
+        "@com_github_reboot_dev_reboot//rbt/std/collections/queue/v1:queue_py_reboot",
         "@com_github_reboot_dev_reboot//rbt/std/pubsub/v1:pubsub_py_reboot",
     ],
 )

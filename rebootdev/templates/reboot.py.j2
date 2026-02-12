@@ -2472,6 +2472,10 @@ class {{ state.proto.name }}Authorizer(
 {# TODO(rjh): support >1 service per state #}
 class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
     Authorizer: IMPORT_typing.TypeAlias = {{ state.proto.name }}Authorizer
+    # Node-backed servicers attach a JS bridge object at runtime. We declare it
+    # on the base class so mypy accepts accesses when a servicer is typed as
+    # `{{ state.proto.name }}BaseServicer` (e.g. in classmethod workflows).
+    _js_servicer_reference: IMPORT_typing.Any
 
     __servicer__: IMPORT_contextvars.ContextVar[IMPORT_typing.Optional[{{ state.proto.name }}BaseServicer]] = IMPORT_contextvars.ContextVar(
         'Provides access to a servicer in the current asyncio context. '

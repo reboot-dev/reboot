@@ -55,7 +55,7 @@ class NodeServicer(Node.singleton.Servicer):
 
     def _create(
         self,
-        context: WriterContext,
+        context: WriterContext | TransactionContext,
         state: Node.State,
         request: NodeCreateRequest,
     ) -> None:

@@ -7,7 +7,7 @@ from reboot.aio.libraries import AbstractLibrary
 from reboot.aio.reboot import ApplicationRevision
 from rebootdev.aio.auth.token_verifiers import TokenVerifier
 from rebootdev.aio.contexts import EffectValidation
-from rebootdev.aio.external import ExternalContext
+from rebootdev.aio.external import InitializeContext
 from rebootdev.aio.servicers import Servicer
 from rebootdev.run_environments import in_nodejs
 from rebootdev.settings import ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG
@@ -77,7 +77,7 @@ class Reboot(reboot.aio.reboot.Reboot):
         libraries: Sequence[AbstractLibrary] = [],
         web_framework: WebFramework,
         token_verifier: Optional[TokenVerifier] = None,
-        initialize: Optional[Callable[[ExternalContext],
+        initialize: Optional[Callable[[InitializeContext],
                                       Awaitable[None]]] = None,
         initialize_bearer_token: Optional[str] = None,
         local_envoy: Optional[bool] = None,
@@ -101,7 +101,7 @@ class Reboot(reboot.aio.reboot.Reboot):
         libraries: Sequence[AbstractLibrary] = [],
         web_framework: Optional[WebFramework] = None,
         token_verifier: Optional[TokenVerifier] = None,
-        initialize: Optional[Callable[[ExternalContext],
+        initialize: Optional[Callable[[InitializeContext],
                                       Awaitable[None]]] = None,
         initialize_bearer_token: Optional[str] = None,
         local_envoy: Optional[bool] = None,

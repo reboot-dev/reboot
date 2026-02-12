@@ -102,6 +102,7 @@ class TasksServicer(
                 )
         except NonexistentTaskId:
             await grpc_context.abort(code=grpc.StatusCode.NOT_FOUND)
+            raise RuntimeError('This code is unreachable')  # For mypy.
         else:
             # Invariant: 'response' must not be 'None'.
             #

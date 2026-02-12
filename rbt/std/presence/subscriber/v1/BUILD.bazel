@@ -60,6 +60,11 @@ js_reboot_react_library(
     proto = "subscriber.proto",
     proto_deps = [
         ":subscriber_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
     ],
     visibility = ["//visibility:public"],
 )

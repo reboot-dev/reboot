@@ -19,7 +19,8 @@ class ApplicationConfig(Protocol):
     protobuf class, and also has the extra methods we want. 
     """
 
-    Spec: type = application_config_pb2.ApplicationConfig.Spec
+    Spec: type[application_config_pb2.ApplicationConfig.Spec
+              ] = (application_config_pb2.ApplicationConfig.Spec)
 
     spec: application_config_pb2.ApplicationConfig.Spec
 

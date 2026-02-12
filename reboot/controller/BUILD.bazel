@@ -29,6 +29,7 @@ py_library(
     deps = [
         ":application_config_py",
         ":settings_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
         "@com_github_reboot_dev_reboot//rebootdev/aio:servicers_py",
         "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
     ],
