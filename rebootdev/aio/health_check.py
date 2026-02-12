@@ -9,7 +9,7 @@ from rebootdev.ssl.localhost import LOCALHOST_CRT_DATA
 from typing import Callable, Optional
 
 MAX_HEALTH_CHECK_BACKOFF_SECONDS = 5
-HEALTH_CHECK_TIMEOUT_SECONDS = 180
+HEALTH_CHECK_TIMEOUT_SECONDS = 360
 
 
 async def do_health_check(
