@@ -1,0 +1,55 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "application_metadata_py",
+    srcs = ["application_metadata.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("aiofiles"),
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:application_metadata_py_proto",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
+        "@com_github_reboot_dev_reboot//rebootdev/server:database_py",
+        "@com_github_reboot_dev_reboot//rebootdev/server:service_descriptor_validator_py",
+    ],
+)
+
+py_library(
+    name = "health_servicer_py",
+    srcs = ["health_servicer.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio-health-checking"),
+        requirement("websockets"),
+    ],
+)
+
+py_library(
+    name = "tasks_servicer_py",
+    srcs = ["tasks_servicer.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot/aio/auth:admin_auth_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:state_managers_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio:tasks_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio/internals:tasks_cache_py",
+    ],
+)
+
+py_library(
+    name = "python",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":health_servicer_py",
+        ":tasks_servicer_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio/internals:channel_manager_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio/internals:contextvars_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio/internals:middleware_py",
+        "@com_github_reboot_dev_reboot//rebootdev/aio/internals:tasks_dispatcher_py",
+    ],
+)

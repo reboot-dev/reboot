@@ -1,0 +1,5 @@
+/.rbt/
+/.next/
+api/**/*.ts
+node_modules/
+web/lib/api/**/*.ts

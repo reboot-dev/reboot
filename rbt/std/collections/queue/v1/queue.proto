@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package rbt.std.collections.queue.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+import "rbt/std/item/v1/item.proto";
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service QueueMethods {
+  rpc Enqueue(EnqueueRequest) returns (EnqueueResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+    };
+  }
+
+  rpc Dequeue(DequeueRequest) returns (DequeueResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  rpc TryDequeue(DequeueRequest) returns (DequeueResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+    };
+  }
+
+  rpc Empty(EmptyRequest) returns (EmptyResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Queue {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  repeated rbt.std.item.v1.Item items = 1;
+  string sorted_map_id = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message EnqueueRequest {
+  // Non-bulk request.
+  optional google.protobuf.Value value = 1;
+  optional bytes bytes = 2;
+  optional google.protobuf.Any any = 3;
+
+  // Bulk request.
+  repeated rbt.std.item.v1.Item items = 4;
+}
+
+message EnqueueResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message DequeueRequest {
+  bool bulk = 1;
+
+  // Only dequeue `at_most` items.
+  optional uint32 at_most = 2;
+}
+
+message DequeueResponse {
+  // Non-bulk response.
+  optional google.protobuf.Value value = 1;
+  optional bytes bytes = 2;
+  optional google.protobuf.Any any = 3;
+
+  // Bulk response.
+  repeated rbt.std.item.v1.Item items = 4;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message EmptyRequest {}
+
+message EmptyResponse {
+  bool empty = 1;
+}
+
+////////////////////////////////////////////////////////////////////////

@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "declaration": true,
+    "moduleResolution": "node",
+    "target": "es2020",
+    "rootDir": ".",
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "incremental": true,
+    "noEmit": true
+  },
+  "exclude": ["node_modules", "web"]
+}

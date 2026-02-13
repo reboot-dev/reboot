@@ -1,0 +1,64 @@
+load("@pip_package_rule_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_python//python:pip.bzl", "compile_pip_requirements")
+
+# Run 'bazel run bazel/pip_package_rule:requirements.update' to update the lock file.
+compile_pip_requirements(
+    name = "requirements",
+    src = ":requirements.in",
+    requirements_txt = ":requirements_lock.txt",
+)
+
+# The following template files are used to generate metadata files for pip
+# packages. They should not be used directly by users, but implicitly via the
+# `pip_package` Bazel rule.
+exports_files(
+    [
+        "setup.py.template",
+        "pyproject.toml.template",
+    ],
+)
+
+# A trampoline for the `pip_package` Bazel rule to invoke Python's `build` tool.
+# Should only be used via the `pip_package` Bazel rule.
+py_binary(
+    name = "build_trampoline",
+    srcs = ["build_trampoline.py"],
+    main = "build_trampoline.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("build"),
+    ],
+)
+
+# A trampoline for the `pip_package` Bazel rule to invoke Python's `auditwheel`
+# tool. Should only be used via the `pip_package` Bazel rule.
+py_binary(
+    name = "auditwheel_trampoline",
+    srcs = ["auditwheel_trampoline.py"],
+    main = "auditwheel_trampoline.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("auditwheel"),
+    ] + select({
+        "@platforms//os:osx": [],
+        # `patchelf` is Linux specific only.
+        "//conditions:default": [requirement("patchelf")],
+    }),
+)
+
+# A trampoline for the `pip_package` Bazel rule to invoke Python's `twine`
+# tool. Should only be used via the `pip_package` Bazel rule.
+#
+# TODO(rjh): replace this with a `py_console_script_binary` once our
+#            `rules_python` has been updated to a version that includes it.
+#           https://github.com/bazelbuild/rules_python/blob/main/docs/py_console_script_binary.md
+py_binary(
+    name = "twine_trampoline",
+    srcs = ["twine_trampoline.py"],
+    main = "twine_trampoline.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("twine"),
+    ],
+)

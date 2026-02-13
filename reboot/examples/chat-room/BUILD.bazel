@@ -1,0 +1,33 @@
+# This `BUILD.bazel` file allows a `bazel` system (configured outside of this
+# repository) to use code in this directory and its subdirectories.
+
+load("//reboot/examples:rules.bzl", "write_templated_source_file")
+
+filegroup(
+    name = "everything",
+    srcs = glob(
+        ["**/*"],
+        exclude = [
+            # Files that may be created by activity in this directory, such
+            # as manually following the steps of the `README.md` file, but which
+            # are not part of the "source code" of this repository.
+            ".venv/**/*",
+            ".reboot-chat-room-venv/**/*",
+            ".pytest_cache/**/*",
+            "api/gen/**/*.js",
+            "web/node_modules/**/*",
+            "web/dist/**/*",
+            "web/src/gen/**/*.js",
+            "web/src/gen/**/*.ts",
+            "web/package-lock.json",
+        ],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+write_templated_source_file(
+    name = "README_md",
+    src = "//reboot/examples:README.j2.md",
+    dest = "README.md",
+    input_yaml = "//reboot/examples:chat_room_README.md.yaml",
+)

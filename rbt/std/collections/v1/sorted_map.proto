@@ -1,0 +1,180 @@
+syntax = "proto3";
+
+package rbt.std.collections.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+/// PRIVATE
+///
+/// NOTE: A `SortedMap`'s state must always be empty. See #3328.
+message SortedMap {
+  option (rbt.v1alpha1.state) = {
+  };
+}
+
+/**
+ * A larger than memory map, sorted by its keys. Supports batch insertion, batch
+ * removal, sorted range queries, and point-lookup queries.
+ */
+service SortedMapMethods {
+  /**
+   * Insert a batch of entries into the `SortedMap`.
+   *
+   * Keys which are already in the map will be overwritten.
+   */
+  rpc Insert(InsertRequest) returns (InsertResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  /**
+   * Remove a batch of keys from the `SortedMap`.
+   *
+   * Any keys in the batch that are not present in the map will be ignored.
+   */
+  rpc Remove(RemoveRequest) returns (RemoveResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  /**
+   * Fetch a single key's value.
+   *
+   * If the key does not exist, the `GetResponse` leaves the `value` field
+   * unset; the client can use proto's generated field-presence check to
+   * determine whether the key existed.
+   */
+  rpc Get(GetRequest) returns (GetResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  /**
+   * Read a range of data in ascending order from the `SortedMap`.
+   *
+   * The `start_key` must be less than the `end_key` (if both are specified),
+   * and the results are returned in ascending key order.
+   *
+   * The `start_key` is inclusive and the `end_key` is exclusive. If the start
+   * or end are unset, then the range is unbounded in that direction. If both
+   * the start and end keys are unset, the `limit` smallest keys in the map are
+   * returned.
+   *
+   * The `limit` argument is required, to avoid exhausting memory in the client
+   * or server.
+   */
+  rpc Range(RangeRequest) returns (RangeResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [ "InvalidRangeError" ],
+    };
+  }
+
+  /**
+   * Read a range of data in descending order from the `SortedMap`.
+   *
+   * This is similar to `Range` but reads data in reverse order: the `start_key`
+   * must be greater than the `end_key` (if both are specified), and the results
+   * are returned in descending key order.
+   *
+   * The `start_key` is inclusive and the `end_key` is exclusive. If the start
+   * or end are unset, then the range is unbounded in that direction. If both
+   * the start and end keys are unset, the `limit` largest keys in the map are
+   * returned.
+   *
+   * The `limit` argument is required, to avoid exhausting memory in the client
+   * or server
+   */
+  rpc ReverseRange(ReverseRangeRequest) returns (ReverseRangeResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [ "InvalidRangeError" ],
+    };
+  }
+}
+
+// See `Insert`.
+message InsertRequest {
+  // The entries to insert.
+  map<string, bytes> entries = 1;
+}
+
+// See `Insert`.
+message InsertResponse {}
+
+// See `Remove`.
+message RemoveRequest {
+  // The keys to remove.
+  repeated string keys = 1;
+}
+
+// See `Remove`.
+message RemoveResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+// See `Get`.
+message GetRequest {
+  string key = 1;
+}
+
+// See `Get`.
+message GetResponse {
+  optional bytes value = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// See `Range`.
+message RangeRequest {
+  // The start key to scan from (inclusive). Must be smaller than `end_key`. If
+  // not specified, the range is unbounded at the start.
+  optional string start_key = 1;
+  // The end key to scan to (exclusive). If not specified, the range is
+  // unbounded at the end.
+  optional string end_key = 2;
+  // The maximum number of entries to return. Must be specified and non-zero.
+  uint32 limit = 3;
+}
+
+// See `Range`.
+message RangeResponse {
+  // Entries are in (ascending) key order. We cannot use protobuf's `map`
+  // because it does not preserve insertion order.
+  repeated Entry entries = 1;
+}
+
+// See `ReverseRange`.
+message ReverseRangeRequest {
+  // The start key to scan from (inclusive). Must be greater than `end_key`. If
+  // not specified, the range is unbounded at the start.
+  optional string start_key = 1;
+  // The end key to scan to (exclusive). If not specified, the range is
+  // unbounded at the end.
+  optional string end_key = 2;
+  // The maximum number of entries to return. Must be specified and non-zero.
+  uint32 limit = 3;
+}
+
+// See `ReverseRange`.
+message ReverseRangeResponse {
+  // Entries are in (descending) key order. We cannot use protobuf's `map`
+  // because it does not preserve insertion order.
+  repeated Entry entries = 1;
+}
+
+// See `Range` and `ReverseRange`.
+message Entry {
+  // The key of an entry.
+  string key = 1;
+  // The value of an entry.
+  bytes value = 2;
+}
+
+// See `Range` and `ReverseRange`. Raised when the requested range is not valid;
+// contains an error string explaining why the range is not valid.
+message InvalidRangeError {
+  string message = 1;
+}

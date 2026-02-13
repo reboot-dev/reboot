@@ -6,7 +6,11 @@ submodules/
 # Required for npm_translate_lock.verify_node_modules_ignored.
 node_modules/
 rbt/v1alpha1/node_modules/
+rbt/std/node_modules/
 reboot/inspect/node_modules/
 reboot/nodejs/node_modules/
 reboot/react/node_modules/
+reboot/std/node_modules/
+reboot/std/react/node_modules/
+reboot/web/node_modules/
 tests/reboot/node_modules/

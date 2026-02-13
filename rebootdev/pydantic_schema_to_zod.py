@@ -17,7 +17,16 @@ from rebootdev.api import (
     snake_to_camel,
 )
 from rebootdev.fail import fail
-from typing import Literal, Optional, Type, Union, get_args, get_origin
+from typing import (
+    Any,
+    Literal,
+    Optional,
+    Type,
+    Union,
+    cast,
+    get_args,
+    get_origin,
+)
 
 
 def collect_all_error_models(
@@ -93,7 +102,7 @@ def _compute_relative_import_path(
 
 
 def _collect_external_references(
-    field_type: Type,
+    field_type: Any | None,
     current_module: str,
     external_imports: dict[str, set[str]],
     visited: set[type],
@@ -107,6 +116,9 @@ def _collect_external_references(
         external_imports: Dict mapping module path to set of `Model` names.
         visited: Set of already visited types to avoid infinite recursion.
     """
+    if field_type is None:
+        return
+
     origin = get_origin(field_type)
     args = get_args(field_type)
 
@@ -136,19 +148,21 @@ def _collect_external_references(
             visited,
         )
     elif isinstance(field_type, type) and issubclass(field_type, Model):
-        if field_type in visited:
-            return
-        visited.add(field_type)
+        model_type = cast(Type[Model], field_type)
 
-        model_module = field_type.__module__
+        if model_type in visited:
+            return
+        visited.add(model_type)
+
+        model_module = model_type.__module__
         if model_module != current_module:
             # Track for imports but don't recurse for external models.
             if model_module not in external_imports:
                 external_imports[model_module] = set()
-            external_imports[model_module].add(field_type.__name__)
+            external_imports[model_module].add(model_type.__name__)
         else:
             # Recurse into local model fields.
-            for field_info in field_type.model_fields.values():
+            for field_info in model_type.model_fields.values():
                 _collect_external_references(
                     field_info.annotation,
                     current_module,
@@ -175,7 +189,10 @@ def _collect_models_in_module(
 
 
 def pydantic_to_zod(
-    input: Type[Model] | PRIMITIVE_TYPE | COLLECTION_TYPE | None,
+    input: (
+        Type[Model] | type[str] | type[int] | type[float] | type[bool] |
+        PRIMITIVE_TYPE | COLLECTION_TYPE | None
+    ),
     path: str,
     external_refs: dict[str, str],
     tag: Optional[int] = None,

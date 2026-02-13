@@ -1,0 +1,28 @@
+import asyncio
+from {{ name }}.v1.hello_world_rbt import *
+from rebootdev.aio.external import ExternalContext
+
+EXAMPLE_STATE_MACHINE_ID = 'reboot-hello-world'
+
+async def main():
+    context = ExternalContext(
+        name="cli",
+        url="http://127.0.0.1:9991",
+    )
+
+    helloWorld = HelloWorld.ref(EXAMPLE_STATE_MACHINE_ID)
+
+    response = await helloWorld.Greet(context)
+
+    if response.number_of_greetings == 1:
+        print("Server now has 1 greeting!")
+    else:
+        print(f"Server now has {response.number_of_greetings} greetings!")
+
+
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        # Don't print an exception and stack trace if a Ctrl-C happens.
+        pass

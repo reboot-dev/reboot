@@ -120,7 +120,7 @@ def py_reboot_library(
     )
 
 _ts_reboot_react_files = create_protoc_plugin_rule(
-    "@com_github_reboot_dev_mono//reboot:protoc-gen-reboot_react",
+    "@com_github_reboot_dev_reboot//reboot:protoc-gen-reboot_react",
     extensions = ("_rbt_react.ts",),
     env = {
         "REBOOT_REACT_EXTENSIONS": "true",
@@ -171,7 +171,7 @@ def js_reboot_react_library(
     )
 
 _ts_reboot_files = create_protoc_plugin_rule(
-    "@com_github_reboot_dev_mono//reboot:protoc-gen-reboot_nodejs",
+    "@com_github_reboot_dev_reboot//reboot:protoc-gen-reboot_nodejs",
     extensions = ("_rbt.ts",),
     env = {
         "REBOOT_NODEJS_EXTENSIONS": "true",
@@ -514,7 +514,7 @@ def py_boilerplate_reboot_library(
     )
 
 _ts_boilerplate_reboot_files = create_protoc_plugin_rule(
-    "@com_github_reboot_dev_mono//reboot:protoc-gen-reboot_nodejs_boilerplate",
+    "@com_github_reboot_dev_reboot//reboot:protoc-gen-reboot_nodejs_boilerplate",
     extensions = ("_servicer.ts",),
 )
 
@@ -539,7 +539,7 @@ def ts_reboot_boilerplate_files(
     )
 
 _ts_reboot_web_files = create_protoc_plugin_rule(
-    "@com_github_reboot_dev_mono//reboot:protoc-gen-reboot_web",
+    "@com_github_reboot_dev_reboot//reboot:protoc-gen-reboot_web",
     extensions = ("_rbt_web.ts",),
     env = {
         "REBOOT_WEB_EXTENSIONS": "true",

@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package rbt.cloud.v1alpha1.organizations;
+
+import "rbt/v1alpha1/options.proto";
+
+/////////////////////////////////////////////////////////////////////////
+
+// A singleton state type for resolving organization names to IDs.
+message Organizations {
+  option (rbt.v1alpha1.state) = {
+  };
+}
+
+/////////////////////////////////////////////////////////////////////////
+
+service OrganizationsMethods {
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Resolve an organization name to its ID.
+  rpc Resolve(ResolveRequest) returns (ResolveResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message CreateRequest {}
+
+message CreateResponse {}
+
+//////////////////////////////////////////////////////////////////////
+
+message ResolveRequest {
+  string organization_name = 1;
+}
+
+message ResolveResponse {
+  optional string organization_id = 1;
+}
+
+//////////////////////////////////////////////////////////////////////

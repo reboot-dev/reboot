@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "declaration": true,
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "target": "es2020",
+    "rootDir": ".",
+    "outDir": "dist",
+    "sourceMap": true,
+    "paths": {
+      "@reboot-dev/docubot-api": ["./api/*"],
+      "@reboot-dev/docubot": ["./docubot/*"]
+    },
+    "incremental": true,
+    "customConditions": ["production"]
+  },
+  "exclude": ["api", "docubot", "web", "dist"],
+  "references": [{ "path": "api" }, { "path": "docubot" }]
+}

@@ -1,0 +1,252 @@
+local sha1 = require "sha1.init"
+
+-- Constants
+local _STATE_TYPE_TAG_LENGTH = 14
+
+-- A list of server IDs, efficient for random selection.
+local server_ids_list = {
+  {% for server_id in server_ids %}
+  "{{ server_id }}",
+  {% endfor %}
+}
+-- A set of server IDs, efficient for membership testing.
+local server_ids_set = {
+  {% for server_id in server_ids %}
+  ["{{ server_id }}"] = true,
+  {% endfor %}
+}
+-- A list of server IDs that are served by this replica.
+local this_replica_server_ids_list = {
+  {% for server_id in this_replica_server_ids %}
+  "{{ server_id }}",
+  {% endfor %}
+}
+-- A representation of the route map, efficient for lookup.
+local server_id_by_keyrange_start = {
+  {% for route_map_entry in route_map %}
+  ["{{ route_map_entry.shard_keyrange_start }}"] = "{{ route_map_entry.server_id }}",
+  {% endfor %}
+}
+-- The "first byte"s (shard boundaries) from the route map, from high to low.
+local shard_keyrange_starts_high_to_low = {
+  {% for route_map_entry in route_map|reverse %}
+  "{{ route_map_entry.shard_keyrange_start }}",
+  {% endfor %}
+}
+
+-- A StackOverflow-provided url-safe base64 encoder, because...
+-- (1) there are no great libraries to find for this, and...
+-- (2) it's really not worth the effort of installing another
+--     Lua library into all of our proxy environments to avoid
+--     these 13 lines of code.
+local b='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+function base64_urlsafe(data)
+    return ((data:gsub('.', function(x)
+        local r,b='',x:byte()
+        for i=8,1,-1 do r=r..(b%2^i-b%2^(i-1)>0 and '1' or '0') end
+        return r;
+    end)..'0000'):gsub('%d%d%d?%d?%d?%d?', function(x)
+        if (#x < 6) then return '' end
+        local c=0
+        for i=1,6 do c=c+(x:sub(i,i)=='1' and 2^(6-i) or 0) end
+        return b:sub(c+1,c+1)
+    end)..({ '', '==', '=' })[#data%3+1])
+end
+
+-- Generate a type tag for a given state type.
+-- E.g.: "tests.reboot.General" -> "AFk1ev8EXQ5LUQ".
+--
+-- This is a re-implementation of the Python function
+-- `rebootdev.aio.state_type_tag_for_name()` in `public/rebootdev/aio/types.py`; we MUST keep
+-- them in sync for our routing logic to work.
+local function state_type_tag_for_name(state_type)
+    -- Compute SHA-1 hash
+    local state_type_hash = sha1.binary(state_type)
+
+    -- Take the first half of the hash
+    local half_length = math.floor(#state_type_hash / 2)
+    local state_type_bytes = state_type_hash:sub(1, half_length)
+
+    -- Zero the high-order byte
+    state_type_bytes = "\0" .. state_type_bytes:sub(2)
+
+    -- URL-safe base64 encode the bytes
+    local state_type_tag = base64_urlsafe(state_type_bytes)
+
+    -- Validate and truncate padding
+    if state_type_tag:sub(-2) ~= "==" then
+        error({message="Unexpected base64 padding"})
+    end
+    state_type_tag = state_type_tag:sub(1, -3)
+
+    -- Ensure length is correct
+    assert(#state_type_tag == _STATE_TYPE_TAG_LENGTH, "Incorrect tag length")
+
+    return state_type_tag
+end
+
+-- Function to turn a (partially) human-readable state ref into a state type tag
+-- E.g.: "tests.reboot.General:foo/tests.reboot.Lieutenant:bar"
+--       -> "AFk1ev8EXQ5LUQ:foo/BDkaev8DE2Mak:bar".
+--
+-- This is a re-implementation of the Python function
+-- `rebootdev.aio.StateRef.from_maybe_readable()` in `public/rebootdev/aio/types.py`; we
+-- MUST keep them in sync for our routing logic to work.
+local function state_ref_from_maybe_human_readable(state_ref)
+    local result = {}
+
+    -- Use 'gmatch' to split the state ref into components separated by "/".
+    for component in state_ref:gmatch("[^/]+") do
+        -- Each component is a state type and state ID separated by a colon.
+        local component_pieces = {}
+        for piece in component:gmatch("[^:]+") do
+            table.insert(component_pieces, piece)
+        end
+
+        if #component_pieces ~= 2 then
+            error({message=string.format(
+                "Invalid state reference component '%s': must contain exactly one ':'. "
+                .. "If your state ID contains slashes ('/'), remember to replace them "
+                .. "with their escape character: a backslash ('\\').",
+                component
+            )})
+        end
+
+        -- Whether a state ref component is human-readable or "tagged" can be
+        -- determined by looking for a period (".") in the state type portion
+        -- (before the ":"). If the state type is human-readable then it must
+        -- contain a proto package name, so must contain a period. State type
+        -- tags don't have periods.
+        local state_type = component_pieces[1]
+        if string.find(state_type, "%.") == nil then
+            -- This component is already tagged; keep it as-is.
+            table.insert(result, component)
+        else
+            -- This is a human-readable state type; convert it into a tag.
+            local state_type_tag = state_type_tag_for_name(state_type)
+            local state_id = component_pieces[2]
+            table.insert(result, state_type_tag .. ":" .. state_id)
+        end
+    end
+
+    if #result == 0 then
+        error({message="Cannot create empty StateRef."})
+    end
+
+    return table.concat(result, "/")
+end
+
+function envoy_on_request(request_handle)
+  -- Check if we have any servers configured. If not, reject the request
+  -- with a retriable error code. This is essential to avoid these
+  -- requests instead getting a 404 and failing permanently (i.e. not
+  -- getting retried); see:
+  --   https://github.com/reboot-dev/mono/issues/5051
+  if #server_ids_list == 0 then
+    -- Use 502 "Bad Gateway" which maps to gRPC UNAVAILABLE (retriable).
+    -- See: https://github.com/grpc/grpc/blob/master/doc/http-grpc-status-mapping.md
+    request_handle:respond(
+        {[":status"] = "502"}, "Route not configured yet (no servers available)"
+    )
+    return
+  end
+
+  local server_id = request_handle:headers():get("x-reboot-server-id")
+  if server_id ~= nil then
+    -- Caller has already chosen a server.
+    if server_ids_set[server_id] == nil then
+      -- Since this may be a transient error (this router may not have
+      -- heard about a new server) we'd like gRPC callers to get the
+      -- clearly-retryable "UNAVAILABLE" error code. That leaves us with
+      -- primarily the 50x status codes:
+      --   https://github.com/grpc/grpc/blob/master/doc/http-grpc-status-mapping.md
+      -- From this list we use 502 "Bad Gateway" to indicate that this is
+      -- not an error at the server but at the router.
+      request_handle:respond(
+          {[":status"] = "502"}, "Unknown server '" .. server_id .. "'"
+      )
+    end
+    -- Caller picked a legal server, so our header matching route
+    -- logic will handle the rest.
+    return
+  end
+
+  local state_ref = request_handle:headers():get("x-reboot-state-ref")
+  if state_ref == nil then
+    -- This request doesn't care which specific server it goes to, but
+    -- it should be a server on this replica - e.g. health checks for
+    -- this replica don't make much sense if we forward the traffic to a
+    -- different replica. Even for traffic that could truly go to any
+    -- server, using the local replica's servers is more efficient.
+    -- Using local servers only is OK, since traffic gets load-balanced
+    -- randomly across replicas before we get to make this decision about
+    -- which server to use.
+    if #this_replica_server_ids_list == 0 then
+      -- No servers on this replica yet. Use 502 "Bad Gateway" which
+      -- maps to gRPC UNAVAILABLE (retriable).
+      request_handle:respond(
+          {[":status"] = "502"}, "No servers available on this replica"
+      )
+      return
+    end
+    local server_id = this_replica_server_ids_list[math.random(#this_replica_server_ids_list)]
+    request_handle:headers():add("x-reboot-server-id", server_id)
+    request_handle:logDebug(
+        "No state reference; picked random server '" .. server_id .. "'"
+    )
+    return
+  end
+
+  -- If the state ref is a human-readable string, we must convert its state
+  -- type(s) into a state type _tags_ first.
+  --
+  -- `pcall` is used to catch errors in the conversion process. If an error
+  -- occurs, we assume the user made a typo in the state ref and return a
+  -- 400 error with details about the error. We use a `message` field in the
+  -- error object to obtain just our developer-facing error message without
+  -- a maintainer-facing line number.
+  local success, state_ref_or_error = pcall(state_ref_from_maybe_human_readable, state_ref)
+  if not success then
+    request_handle:logInfo(
+      "Failed to convert state ref " .. state_ref .. " to state type tag: " .. state_ref_or_error.message
+    )
+    request_handle:respond({[":status"] = "400"}, state_ref_or_error.message)
+    return
+  end
+  state_ref = state_ref_or_error
+
+  -- Pick a server based on the state ID. We do this as follows:
+  -- 1. Take a SHA1 hash of the state ID (which includes a service tag).
+  --    TODO: only hash the _top-level_ state ID, once colocation is a thing.
+  -- 2. Walk through the shard map, and find the shard whose key range
+  --    contains the resulting hash.
+  local hashed_state_ref = sha1.binary(state_ref)
+  -- TODO: do binary search instead of this linear lookup.
+  for i = 1, #shard_keyrange_starts_high_to_low do
+    local shard_keyrange_start = shard_keyrange_starts_high_to_low[i]
+    if shard_keyrange_start <= hashed_state_ref then
+      -- This is the shard that will hold our state.
+      local server_id = server_id_by_keyrange_start[shard_keyrange_start]
+      request_handle:headers():add("x-reboot-server-id", server_id)
+      request_handle:logDebug(
+          "Picked server '" .. server_id .. "' for state '" .. state_ref .. "'"
+      )
+      return
+    end
+  end
+
+  -- This code should be unreachable; the last shard in the
+  -- `shard_keyrange_start` list should have a value of `0` and thereby
+  -- there can't be traffic that doesn't have a shard to go to. If we
+  -- print the following we in fact have a bug.
+  request_handle:logErr(
+      "Failed to pick server for state '" .. state_ref .. "'"
+  )
+  -- If we let the request continue we'd get a "no_route" error, which is
+  -- a 404 that gRPC interprets as "not implemented". We'd like to send a
+  -- 'internal error' instead; to gRPC that would be error code 400, but
+  -- to any other (HTTP) client error 500 (to gRPC: "unknown") is more
+  -- accurate. See:
+  --   https://github.com/grpc/grpc/blob/master/doc/http-grpc-status-mapping.md
+  request_handle:respond({[":status"] = "500"}, "Router internal error")
+end

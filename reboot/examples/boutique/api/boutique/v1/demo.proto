@@ -1,0 +1,378 @@
+// Copyright 2020 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package boutique.v1;
+
+import "rbt/v1alpha1/options.proto";
+import "google/api/annotations.proto";
+
+// ----------------WORKAROUND--------------------
+// TODO(rjh,riley): for unclear reasons, Buf's `es` protoc plugin can't handle
+// imports of .proto files in one's own directory when its types are actually
+// used in the generated Typescript code. Avoid having to import
+// `rbt/v1alpha1/tasks.proto` by duplicating the definition of `TaskId`.
+
+message TaskId {
+  string service = 1;
+  string state_ref = 2;
+  bytes task_uuid = 3;
+}
+
+// -----------------Cart service-----------------
+
+service CartMethods {
+  rpc AddItem(AddItemRequest) returns (Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+  rpc GetItems(GetItemsRequest) returns (GetItemsResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+  rpc EmptyCart(EmptyCartRequest) returns (Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
+
+message Cart {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated CartItem items = 1;
+}
+
+message CartItem {
+  string product_id = 1;
+  int32 quantity = 2;
+  int64 added_at = 3;
+}
+
+message AddItemRequest {
+  CartItem item = 2;
+}
+
+message EmptyCartRequest {}
+
+message GetItemsRequest {}
+
+message GetItemsResponse {
+  repeated CartItem items = 2;
+}
+
+message Empty {}
+
+// ---------------Recommendation service----------
+
+service RecommendationService {
+  rpc ListRecommendations(ListRecommendationsRequest)
+      returns (ListRecommendationsResponse) {}
+}
+
+message ListRecommendationsRequest {
+  string user_id = 1;
+  repeated string product_ids = 2;
+}
+
+message ListRecommendationsResponse {
+  repeated string product_ids = 1;
+}
+
+// ---------------Product Catalog----------------
+
+message ProductCatalog {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated Product products = 1;
+}
+
+service ProductCatalogMethods {
+  rpc LoadProducts(Empty) returns (Empty) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {},
+    };
+  }
+  rpc ListProducts(Empty) returns (ListProductsResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+  rpc GetProduct(GetProductRequest) returns (Product) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+  rpc SearchProducts(SearchProductsRequest) returns (SearchProductsResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}
+
+message Product {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string picture = 4;
+  Money price = 5;
+
+  // Categories such as "clothing" or "kitchen" that can be used to look up
+  // other related products.
+  repeated string categories = 6;
+}
+
+message ListProductsResponse {
+  repeated Product products = 1;
+}
+
+message GetProductRequest {
+  string id = 1;
+}
+
+message SearchProductsRequest {
+  string query = 1;
+}
+
+message SearchProductsResponse {
+  repeated Product results = 1;
+}
+
+// ---------------Shipping Service----------
+
+message ShippingQuote {
+  string id = 1;
+  Money cost = 2;
+}
+
+message Shipping {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated ShippingQuote quotes = 1;
+}
+
+service ShippingMethods {
+  rpc GetQuote(GetQuoteRequest) returns (GetQuoteResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+  rpc PrepareShipOrder(PrepareShipOrderRequest)
+      returns (PrepareShipOrderResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      errors: [ "ShippingQuoteInvalidOrExpired" ],
+    };
+  }
+  rpc ExpireQuote(ExpireQuoteRequest) returns (Empty) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+  rpc ShipOrder(ShipOrderRequest) returns (Empty) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+}
+
+message GetQuoteRequest {
+  Address address = 1;
+  repeated CartItem items = 2;
+  string cart_id = 3;
+  int32 quote_expiration_seconds = 4;
+}
+
+message GetQuoteResponse {
+  ShippingQuote quote = 1;
+}
+
+message PrepareShipOrderRequest {
+  ShippingQuote quote = 1;
+}
+
+message ShippingQuoteInvalidOrExpired {}
+
+message PrepareShipOrderResponse {
+  string tracking_id = 1;
+}
+
+message ExpireQuoteRequest {
+  ShippingQuote quote = 1;
+}
+
+message ShipOrderRequest {}
+
+message Address {
+  string street_address = 1;
+  string city = 2;
+  string state = 3;
+  string country = 4;
+  int32 zip_code = 5;
+}
+
+// -----------------Currency service-----------------
+
+service CurrencyConverter {
+  rpc GetSupportedCurrencies(Empty) returns (GetSupportedCurrenciesResponse) {
+    // This http option allows the frontend to easily address this legacy gRPC
+    // endpoint.
+    option (google.api.http) = {
+      get: "/get_supported_currencies"
+    };
+  }
+  rpc Convert(CurrencyConversionRequest) returns (CurrencyConversionResponse) {
+    // This http option allows the frontend to easily address this legacy gRPC
+    // endpoint.
+    option (google.api.http) = {
+      post: "/convert"
+    };
+  }
+}
+
+// Represents an amount of money with its currency type.
+message Money {
+  // The 3-letter currency code defined in ISO 4217.
+  string currency_code = 1;
+
+  // The whole units of the amount.
+  // For example if `currencyCode` is `"USD"`, then 1 unit is one US dollar.
+  int64 units = 2;
+
+  // Number of nano (10^-9) units of the amount.
+  // The value must be between -999,999,999 and +999,999,999 inclusive.
+  // If `units` is positive, `nanos` must be positive or zero.
+  // If `units` is zero, `nanos` can be positive, zero, or negative.
+  // If `units` is negative, `nanos` must be negative or zero.
+  // For example $-1.75 is represented as `units`=-1 and `nanos`=-750,000,000.
+  int32 nanos = 3;
+}
+
+message GetSupportedCurrenciesResponse {
+  // The 3-letter currency code defined in ISO 4217.
+  repeated string currency_codes = 1;
+}
+
+message CurrencyConversionRequest {
+  repeated Product products = 1;
+
+  // The 3-letter currency code defined in ISO 4217.
+  string to_code = 2;
+}
+
+message CurrencyConversionResponse {
+  repeated Product products = 1;
+}
+
+// -------------Payment service-----------------
+
+service PaymentService {
+  rpc Charge(ChargeRequest) returns (ChargeResponse) {}
+}
+
+message CreditCardInfo {
+  string credit_card_number = 1;
+  int32 credit_card_cvv = 2;
+  int32 credit_card_expiration_year = 3;
+  int32 credit_card_expiration_month = 4;
+}
+
+message ChargeRequest {
+  Money amount = 1;
+  CreditCardInfo credit_card = 2;
+}
+
+message ChargeResponse {
+  string transaction_id = 1;
+}
+
+// -------------Checkout service-----------------
+
+service CheckoutMethods {
+  rpc Create(Empty) returns (Empty) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {},
+    };
+  }
+
+  rpc PlaceOrder(PlaceOrderRequest) returns (PlaceOrderResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+      errors: [ "ShippingQuoteInvalidOrExpired" ],
+    };
+  }
+
+  rpc Orders(OrdersRequest) returns (OrdersResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}
+
+message OrderItem {
+  CartItem item = 1;
+  Money cost = 2;
+}
+
+message OrderResult {
+  string order_id = 1;
+  Money shipping_cost = 2;
+  Address shipping_address = 3;
+  repeated OrderItem items = 4;
+}
+
+message Checkout {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated OrderResult orders = 3;
+}
+
+message PlaceOrderRequest {
+  string user_id = 1;
+  string user_currency = 2;
+
+  Address address = 3;
+  string email = 5;
+  CreditCardInfo credit_card = 6;
+
+  ShippingQuote quote = 7;
+}
+
+message PlaceOrderResponse {
+  OrderResult order = 1;
+}
+
+message OrdersRequest {}
+
+message OrdersResponse {
+  repeated OrderResult orders = 1;
+}
+
+// ------------Ad service------------------
+
+service AdService {
+  rpc GetAds(AdRequest) returns (AdResponse) {}
+}
+
+message AdRequest {
+  // List of important key words from the current page describing the context.
+  repeated string context_keys = 1;
+}
+
+message AdResponse {
+  repeated Ad ads = 1;
+}
+
+message Ad {
+  // url to redirect to when an ad is clicked.
+  string redirect_url = 1;
+
+  // short advertisement text to display.
+  string text = 2;
+}

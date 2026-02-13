@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package rbt.std.item.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+message Item {
+  // NOTE: we provide many "value" fields to provide a better
+  // developer experience when storing different types. For example,
+  // in TypeScript you will probably only ever use `value` and maybe
+  // `bytes`, but in Python `any` may be more useful when using
+  // protobuf directly.
+  //
+  // We're not using a `oneof` because the code generation of those
+  // are all different and not always more clear what the intent is,
+  // see this blog post which illuminates this in more detail, and may
+  // also be a better way of doing validation then the manual
+  // validation that we're doing in the servicer:
+  // https://buf.build/blog/fixing-oneofs
+  //
+  // TODO: consider also having `string_value`, `number_value`, etc,
+  // to provide a better developer experience in languages other than
+  // TypeScript which has first-class support for passing JSON
+  // stringifiable objects to `value`.
+  optional google.protobuf.Value value = 1;
+  optional bytes bytes = 2;
+  optional google.protobuf.Any any = 3;
+}
+
+////////////////////////////////////////////////////////////////////////

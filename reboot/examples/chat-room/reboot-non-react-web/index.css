@@ -1,0 +1,66 @@
+/* Styles by @sowg: https://codepen.io/sowg/pen/qBXexaZ */
+
+#app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* height: 100vh; */
+  background-color: #ffffff;
+}
+
+#messages {
+  width: 300px;
+  margin: 0 auto;
+}
+
+#input {
+  margin: 1em;
+  appearance: none;
+  border: none;
+  outline: none;
+  border-bottom: 0.2em solid #e91e63;
+  background: rgba(#e91e63, 0.2);
+  border-radius: 0.2em 0.2em 0 0;
+  padding: 0.4em;
+  color: #e91e63;
+}
+
+.message {
+  appearance: none;
+  border: 0.2em solid #e91e63;
+  background: hsl(0 0 0/0);
+  padding: 0.85em 1.5em;
+  color: #e91e63;
+  border-radius: 2em;
+  transition: 1s;
+  margin: 1em 0;
+  font-family: sans-serif;
+}
+
+.informationText {
+  text-align: center;
+  color: #a9a9a9;
+  font-family: Sans-Serif;
+}
+
+#button {
+  float: right;
+  appearance: none;
+  border: 0.2em solid;
+  background: hsl(0 0 0/0);
+  padding: 0.85em 1.5em;
+  border-radius: 2em;
+  transition: 1s;
+}
+
+#button {
+  color: #e91e63;
+  border-color: #e91e63;
+  &:hover,
+  &:focus,
+  &:active {
+    background: #e91e63;
+    color: #fff;
+  }
+}

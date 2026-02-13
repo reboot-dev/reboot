@@ -1,0 +1,176 @@
+syntax = "proto3";
+
+package bank.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service AccountMethods {
+  rpc Balance(BalanceRequest) returns (BalanceResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  rpc Deposit(DepositRequest) returns (DepositResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      errors: [ "OverdraftError" ],
+    };
+  }
+
+  rpc Open(OpenRequest) returns (OpenResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {
+        constructor: {},
+      },
+    };
+  }
+
+  rpc Interest(InterestRequest) returns (InterestResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Account {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  string name = 1;
+  int64 balance = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message OverdraftError {
+  // Amount that we would have overdraft.
+  uint64 amount = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message BalanceRequest {}
+
+message BalanceResponse {
+  int64 amount = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message DepositRequest {
+  uint64 amount = 1;
+}
+
+message DepositResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message WithdrawRequest {
+  uint64 amount = 1;
+}
+
+message WithdrawResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message OpenRequest {}
+
+message OpenResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message InterestRequest {}
+
+message InterestResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+service BankMethods {
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+      constructor: {},
+    };
+  }
+
+  rpc SignUp(SignUpRequest) returns (SignUpResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {}
+    };
+  }
+
+  rpc Transfer(TransferRequest) returns (TransferResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+    };
+  }
+
+  rpc AccountBalances(AccountBalancesRequest)
+      returns (AccountBalancesResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Bank {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  // ID for underlying `SortedMap` of account IDs.
+  string account_ids_map_id = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message CreateRequest {}
+
+message CreateResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message SignUpRequest {
+  string account_id = 1;
+  uint64 initial_deposit = 2;
+}
+
+message SignUpResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message TransferRequest {
+  string from_account_id = 1;
+  string to_account_id = 2;
+  uint64 amount = 3;
+}
+
+message TransferResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message Balance {
+  string account_id = 1;
+  int64 balance = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message AccountBalancesRequest {}
+
+message AccountBalancesResponse {
+  repeated Balance balances = 1;
+}
+
+////////////////////////////////////////////////////////////////////////

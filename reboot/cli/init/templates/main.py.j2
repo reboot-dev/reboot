@@ -1,0 +1,29 @@
+import asyncio
+import logging
+from {{ name }}.v1.hello_world_rbt import HelloWorld
+from hello_world_servicer import HelloWorldServicer
+from reboot.aio.applications import Application
+from rebootdev.aio.external import InitializeContext
+
+logging.basicConfig(level=logging.INFO)
+
+EXAMPLE_STATE_MACHINE_ID = 'reboot-hello-world'
+
+
+async def initialize(context: InitializeContext):
+    await HelloWorld.ref(EXAMPLE_STATE_MACHINE_ID).Greet(context)
+
+
+async def main():
+    application = Application(
+        servicers=[HelloWorldServicer],
+        initialize=initialize,
+    )
+
+    logging.info('👋 Hello, World? Hello, Reboot! 👋')
+
+    await application.run()
+
+
+if __name__ == '__main__':
+    asyncio.run(main())

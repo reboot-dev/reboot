@@ -1,0 +1,39 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "init_py",
+    srcs = ["init.py"],
+    data = [
+        "//reboot/cli/init/templates:.env.j2",
+        "//reboot/cli/init/templates:.rbtrc.j2",
+        "//reboot/cli/init/templates:App.module.css.j2",
+        "//reboot/cli/init/templates:App.tsx.j2",
+        "//reboot/cli/init/templates:backend_package.json.j2",
+        "//reboot/cli/init/templates:backend_tsconfig.json.j2",
+        "//reboot/cli/init/templates:cli.py.j2",
+        "//reboot/cli/init/templates:hello_world.proto.j2",
+        "//reboot/cli/init/templates:hello_world_servicer.py.j2",
+        "//reboot/cli/init/templates:hello_world_servicer.ts.j2",
+        "//reboot/cli/init/templates:index.html.j2",
+        "//reboot/cli/init/templates:index.tsx.j2",
+        "//reboot/cli/init/templates:main.py.j2",
+        "//reboot/cli/init/templates:main.ts.j2",
+        "//reboot/cli/init/templates:package.json.j2",
+        "//reboot/cli/init/templates:react-app-env.d.ts.j2",
+        "//reboot/cli/init/templates:reboot-logo.svg.j2",
+        "//reboot/cli/init/templates:tsconfig.json.j2",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot/cli:rc_py",
+        "//reboot/cli:terminal_py",
+        requirement("jinja2"),
+    ],
+)
+
+exports_files([
+    "test.sh",
+    "nodejs_test.sh",
+])

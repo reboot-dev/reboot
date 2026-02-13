@@ -1,0 +1,49 @@
+name: Test
+
+on:
+  push:
+    # Run CI (only) on our main branch to show that it is always in a green
+    # state. Don't run it on other branches; if a developer cares about one
+    # of the non-main branches they'll run tests manually or open a PR.
+    branches:
+      - "main"
+  pull_request:
+    # Run CI on pull requests. Passing checks will be required to merge.
+    branches:
+      - "**"
+  merge_group:
+    # Required if we want to use GitHub's Merge Queue feature. See:
+    #   https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue#triggering-merge-group-checks-with-github-actions
+
+concurrency:
+  # Have at most one of these workflows running per branch, cancelling older
+  # runs that haven't completed yet when they become obsolete.
+  #
+  # When pushing new commits to a PR, each one of those commits triggers a new
+  # workflow run that would normally run to completion, even when subsequent
+  # pushes to the PR make their result obsolete. This consumes resources for no
+  # benefit. We override that default behavior to save resources, cancelling any
+  # older still-running workflows when a new workflow starts
+  #
+  # See documentation about the `github` context variables here:
+  #   https://docs.github.com/en/actions/learn-github-actions/contexts#github-context
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Do not cancel runs on the main branch. On the main branch we want every
+  # commit to be tested.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  readme-test:
+    name: README.md test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: readme_test.sh (in Dev Container)
+        uses: devcontainers/ci@v0.3
+        with:
+          # Run the readme_test.sh script from the root of the repository.
+          # This script is used to validate the README.md file.
+          runCmd: |
+            ./.tests/readme_test.sh

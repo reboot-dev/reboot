@@ -1,0 +1,42 @@
+########################################################################
+# To expand flags or positional arguments for a specific subcommand    #
+# you can include a line such as:                                      #
+#                                                                      #
+# subcommand --flag1 --flag2=value argument                            #
+#                                                                      #
+# You can also include one flag or argument per line:                  #
+#                                                                      #
+# subcommand --flag1                                                   #
+# subcommand --flag2=value                                             #
+# subcommand argument                                                  #
+#                                                                      #
+# To only expand flags or arguments if a specific config is used with  #
+# a subcommand include lines that include 'subcommand:config', for     #
+# example:                                                             #
+#                                                                      #
+# subcommand:use-foo --flag3=foo                                       #
+#                                                                      #
+# Then you can expand that config on the command line via:             #
+#                                                                      #
+# rbt subcommand --config=use-foo`                                     #
+########################################################################
+
+# Find '.proto' files in 'api/'.
+generate api/
+
+# Generate code for a React frontend and TypeScript/nodejs backend.
+generate --react=web/lib/api
+generate --nodejs=api
+
+# This project requires the use of the 'customConditions' tsconfig option.
+# This options is only available with moduleResolution of 'node16', 'nodenext',
+# or 'bundler'. We choose 'nodenext' which requires imports with file extensions.
+generate --nodejs-extensions
+
+dev run --name=docubot
+
+dev run --nodejs
+
+dev run --application=backend/src/main.ts
+
+dev expunge --name=docubot

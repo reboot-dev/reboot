@@ -1,0 +1,36 @@
+import asyncio
+from {{ name }}.v1.hello_world_rbt import (
+    HelloWorld,
+    GreetRequest,
+    GreetResponse,
+    NumGreetingsRequest,
+    NumGreetingsResponse,
+)
+from rebootdev.aio.auth.authorizers import allow
+from rebootdev.aio.contexts import WriterContext, ReaderContext
+
+
+class HelloWorldServicer(HelloWorld.singleton.Servicer):
+
+    def authorizer(self):
+        return HelloWorld.Authorizer(
+            Greet=allow(),
+            NumGreetings=allow(),
+        )
+
+    async def Greet(
+        self,
+        context: WriterContext,
+        state: HelloWorld.State,
+        request: GreetRequest,
+    ) -> GreetResponse:
+        state.number_of_greetings += 1
+        return GreetResponse(number_of_greetings=state.number_of_greetings)
+
+    async def NumGreetings(
+        self,
+        context: ReaderContext,
+        state: HelloWorld.State,
+        request: NumGreetingsRequest,
+    ) -> NumGreetingsResponse:
+        return NumGreetingsResponse(number_of_greetings=state.number_of_greetings)

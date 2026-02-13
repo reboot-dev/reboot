@@ -1,0 +1,40 @@
+System Info: Linux codespaces-38d6d5 6.5.0-1025-azure #26~22.04.1-Ubuntu SMP Thu Jul 11 22:33:04 UTC 2024 x86_64 x86_64 x86_64 GNU/Linux
+Date & Time: 2025-02-17 03:16:15
+CPU Model: AMD EPYC 7763 64-Core Processor
+
+PARTITIONS=1
+
+Concurrency;50th percentile;99th percentile;99.9th percentile;op/s
+1;4.319;8.099;37.611;218
+2;5.302;11.655;48.323;348
+3;7.063;20.206;79.740;377
+4;8.429;31.294;57.866;446
+5;10.289;41.238;62.731;455
+6;12.187;46.725;70.575;458
+7;14.406;51.858;79.214;453
+8;16.435;55.874;89.322;457
+
+PARTITIONS=2
+
+Concurrency;50th percentile;99th percentile;99.9th percentile;op/s
+2;5.032;9.448;39.289;379
+3;5.861;14.679;45.093;481
+4;6.991;22.284;69.874;526
+5;7.550;30.700;55.379;610
+6;8.610;36.327;56.465;645
+7;9.801;42.487;60.369;662
+8;10.686;46.586;64.105;703
+
+PARTITIONS=4
+
+Concurrency;50th percentile;99th percentile;99.9th percentile;op/s
+4;5.892;16.834;51.354;623
+5;6.471;23.613;57.755;686
+6;7.004;32.482;59.059;758
+7;7.909;37.120;82.619;778
+8;7.914;42.537;78.090;876
+
+PARTITIONS=8
+
+Concurrency;50th percentile;99th percentile;99.9th percentile;op/s
+8;7.442;33.589;87.676;944

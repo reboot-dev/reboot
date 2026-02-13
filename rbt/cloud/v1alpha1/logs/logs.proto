@@ -1,0 +1,206 @@
+syntax = "proto3";
+
+package rbt.cloud.v1alpha1.logs;
+
+import "rbt/v1alpha1/options.proto";
+import "google/protobuf/timestamp.proto";
+
+/////////////////////////////////////////////////////////////////////////
+
+message LogRecord {
+  // A unique identifier for this record. Must be lexicographically ordered such
+  // that newer records have a greater UUID than older records (e.g. a UUIDv7),
+  // where "newer" means the timestamp is greater, or if the timestamp is equal
+  // and two records came from the same stream: the record that came later in
+  // that stream.
+  string uuid = 1;
+
+  google.protobuf.Timestamp timestamp = 2;
+
+  oneof source {
+    string server_id = 3;
+    string config_run_id = 5;
+  }
+
+  // The revision number is a required field; it is `optional` so that the
+  // server can validate that it is present.
+  optional uint32 revision_number = 6;
+
+  string text = 4;
+
+  // No other markers for now, but room for e.g. actor ID, level, [...].
+}
+
+///////////////////////////////////////////////////////////////////////
+
+message ApplicationLogs {
+  // State ID: application ID.
+  option (rbt.v1alpha1.state) = {
+  };
+  reserved "consensus_ids";
+  reserved 1;
+
+  uint32 latest_revision = 2;
+}
+
+service ApplicationLogsMethods {
+  // A service run by facilitators, which can coordinate the retrieval of logs
+  // for a given application.
+
+  /**
+   * Ensures that this state exists. If it does not, it will be created with an
+   * empty set of servers that will be expanded as servers are
+   * registered.
+   */
+  rpc Ensure(EnsureRequest) returns (EnsureResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  /**
+   * ISSUE(
+   *   https://github.com/reboot-dev/mono/issues/3816#issuecomment-2857766457
+   * ):
+   *   DO NOT CALL THIS METHOD; it is deprecated, pending removal.
+   */
+  rpc RegisterConsensus(RegisterConsensusRequest)
+      returns (RegisterConsensusResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  /**
+   * Registers a new revision at the logs service, so that it knows to
+   * fetch logs for that revision.
+   */
+  rpc RegisterRevision(RegisterRevisionRequest)
+      returns (RegisterRevisionResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  /**
+   * Fetches the log records ingested so far. If `follow=true`, will
+   * subsequently stream new records as they are ingested.
+   *
+   * The server will make an attempt to deliver records in timestamp-order, but
+   * may (particularly when streaming newly-ingested records) send records in
+   * ingestion-order if timestamp-order is infeasible. The server will attempt
+   * to deliver every record, but when streaming new records may omit ones that
+   * are ingested too far out of time-order.
+   */
+  rpc Logs(LogsRequest) returns (stream LogsResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {
+        // ISSUE(https://github.com/reboot-dev/mono/issues/3816):
+        // there is no reason anymore for this to be a state-streaming RPC, but
+        // changing method options is considered a backwards incompatible
+        // change, which we can't currently make.
+        state: STREAMING,
+      },
+    };
+  }
+}
+
+message EnsureRequest {}
+message EnsureResponse {}
+
+message RegisterConsensusRequest {
+  reserved "consensus_id";
+  reserved 1;
+}
+message RegisterConsensusResponse {}
+
+message RegisterRevisionRequest {
+  // The revision number to register.
+  uint32 revision_number = 2;
+}
+
+message RegisterRevisionResponse {}
+
+///////////////////////////////////////////////////////////////////////
+
+service LogsProxy {
+  // A legacy gRPC service that takes logs to ingest and proxies them to the
+  // appropriate SortedMap to be archived.
+  //
+  // A FluentBit will call HTTP methods with JSON that looks like...
+  // ```
+  // { "text": "foo" }
+  // { "text": "bar" }
+  // ```
+  // A JSON/gRPC transcoder interprets this as being multiple requests for a
+  // client-streaming RPC, which Reboot only supports in the legacy gRPC API,
+  // therefore we expose this legacy gRPC method.
+  rpc Ingest(stream IngestRequest) returns (IngestResponse) {}
+}
+
+///////////////////////////////////////////////////////////////////////
+
+message IngestRequest {
+  repeated LogRecord records = 1;
+}
+
+message IngestResponse {}
+
+enum Source {
+  UNSPECIFIED = 0;
+  SERVER = 1;      // Logs from a server.
+  CONFIG_RUN = 2;  // Logs from a config run.
+}
+
+message LogsRequest {
+  // If set >0, fetch only the last `last` records (that match the
+  // filters below). If set to 0, fetch all records.
+  uint32 last = 3;
+
+  // Whether to keep the connection open and stream additional responses
+  // as new records come in.
+  bool follow = 1;
+
+  message RevisionFilter {
+    // The operator to use for the revision number filter.
+    enum Operator {
+      EQUAL = 0;                  // "="
+      GREATER_THAN_OR_EQUAL = 1;  // ">="
+      // Room for additional operators in the future, if customers
+      // request them.
+    }
+    Operator operator = 1;
+
+    // The revision number on the right-hand side of the operator.
+    oneof right_hand {
+      uint32 right_hand_revision_number = 2;
+      bool right_hand_latest = 3;  // Requests the latest revision.
+    }
+
+    // Room for a left-hand side number in the future, if customers
+    // request it.
+  }
+
+  // The revision filters to apply. Must specify at least one filter.
+  // TODO: for now, if unset, falls back to `revision_numbers`. In the
+  //       future `revision_numbers` will be removed and requests will
+  //       fail if no `revisions` are set.
+  repeated RevisionFilter revisions = 5;
+
+  // Only relevant if `revisions` is unspecified. The revision
+  // number(s) to fetch logs for. If not specified, fetch logs for all
+  // revisions. DEPRECATED: Use `revisions` instead.
+  repeated uint32 revision_numbers = 2;
+
+  // The sources to fetch logs for. If not specified, fetch logs from
+  // all sources.
+  repeated Source sources = 4;
+}
+
+message LogsResponse {
+  repeated LogRecord records = 1;
+}
+
+message ArchiveRequest {}
+
+message ArchiveResponse {}

@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "declaration": true,
+    "moduleResolution": "node",
+    "target": "es2020",
+    "rootDir": ".",
+    "outDir": "dist",
+    "sourceMap": true,
+    "incremental": true
+  },
+  "exclude": ["web", "dist"]
+}

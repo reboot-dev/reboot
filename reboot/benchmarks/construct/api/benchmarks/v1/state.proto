@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package benchmarks.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+message State {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated string messages = 1;
+}
+
+service StateMethods {
+  rpc Writer(WriterRequest) returns (WriterResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc AssignSyncReadStateId(AssignSyncReadStateIdRequest)
+      returns (AssignSyncReadStateIdResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
+
+message WriterRequest {
+  string message = 1;
+}
+
+message WriterResponse {}
+
+message AssignSyncReadStateIdRequest {
+  string message = 1;
+}
+
+message AssignSyncReadStateIdResponse {}

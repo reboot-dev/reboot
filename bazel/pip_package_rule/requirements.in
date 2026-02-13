@@ -1,0 +1,6 @@
+auditwheel==5.4.0  # Latest as of 2023/09/22.
+build==1.0.3  # Latest as of 2023/09/22.
+patchelf==0.17.2.1  # Required by `auditwheel repair`, but not listed in its dependencies. Latest as of 2023/09/22.
+twine==4.0.2 # Latest as of 2023/09/25.
+packaging==24.2  # Because of https://github.com/reboot-dev/mono/issues/4342.
+pkginfo==1.12.1.2  # Latest as of 2025/03/25.

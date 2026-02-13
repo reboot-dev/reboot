@@ -1,0 +1,360 @@
+syntax = "proto3";
+
+package rbt.std.collections.ordered_map.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service NodeMethods {
+  rpc Create(NodeCreateRequest) returns (NodeCreateResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      errors: [ "rbt.v1alpha1.StateAlreadyConstructed" ],
+    };
+  }
+
+  rpc Search(NodeSearchRequest) returns (NodeSearchResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  rpc Insert(NodeInsertRequest) returns (NodeInsertResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+    };
+  }
+
+  rpc Remove(NodeRemoveRequest) returns (NodeRemoveResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+    };
+  }
+
+  rpc Range(NodeRangeRequest) returns (NodeRangeResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [ "InvalidRangeError" ],
+    };
+  }
+
+  rpc ReverseRange(NodeReverseRangeRequest) returns (NodeReverseRangeResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [ "InvalidRangeError" ],
+    };
+  }
+
+  rpc Stringify(NodeStringifyRequest) returns (NodeStringifyResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Node {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  uint32 degree = 1;
+  bool is_leaf = 2;
+  repeated string keys = 3;
+  repeated string children_ids = 4;
+  repeated bytes values = 5;
+  string next_id = 6;
+  string prev_id = 7;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message NodeCreateRequest {
+  uint32 degree = 1;
+  bool is_leaf = 2;
+  repeated string keys = 3;
+  repeated string children_ids = 4;
+  repeated bytes values = 5;
+  string next_id = 6;
+  string prev_id = 7;
+}
+
+message NodeCreateResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message NodeSearchRequest {
+  string key = 1;
+}
+
+message NodeSearchResponse {
+  bool found = 1;
+  // NOTE: this is a message of type `Value`, but for performance
+  // reasons we don't bother deserializing it except when a user is
+  // calling into the `OrderedMap` type directly.
+  optional bytes value = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message NodeInsertRequest {
+  string key = 1;
+  // NOTE: this is a message of type `Value`, but for performance
+  // reasons we don't bother deserializing it except when a user is
+  // calling into the `OrderedMap` type directly.
+  bytes value = 2;
+}
+
+message NodeInsertResponse {
+  bool split = 1;
+  string promoted_key = 2;
+  string new_child_id = 3;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message NodeRemoveRequest {
+  string key = 1;
+}
+
+message NodeRemoveResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message NodeRangeRequest {
+  // The start key to scan from (inclusive). If not specified,
+  // the range is unbounded at the start.
+  optional string start_key = 1;
+  // The maximum number of entries to return. Must be specified and
+  // non-zero.
+  uint32 limit = 2;
+}
+
+message NodeRangeResponse {
+  repeated NodeEntry entries = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message NodeReverseRangeRequest {
+  // The start key to scan from (inclusive). If not specified,
+  // the range is unbounded at the start.
+  optional string start_key = 1;
+  // The maximum number of entries to return. Must be specified and
+  // non-zero.
+  uint32 limit = 2;
+}
+
+message NodeReverseRangeResponse {
+  repeated NodeEntry entries = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message NodeStringifyRequest {
+  uint32 level = 1;
+}
+
+message NodeStringifyResponse {
+  string value = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// See `Range` and `ReverseRange`.
+message NodeEntry {
+  string key = 1;
+  bytes value = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// See `Range` and `ReverseRange`. Raised when the requested range
+// is not valid.
+message InvalidRangeError {
+  string message = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+service OrderedMapMethods {
+  rpc Create(OrderedMapCreateRequest) returns (OrderedMapCreateResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+      errors: [ "rbt.v1alpha1.StateAlreadyConstructed" ],
+    };
+  }
+
+  rpc Search(OrderedMapSearchRequest) returns (OrderedMapSearchResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  rpc Insert(OrderedMapInsertRequest) returns (OrderedMapInsertResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {}
+    };
+  }
+
+  rpc Remove(OrderedMapRemoveRequest) returns (OrderedMapRemoveResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {}
+    };
+  }
+
+  rpc Range(OrderedMapRangeRequest) returns (OrderedMapRangeResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [ "InvalidRangeError" ],
+    };
+  }
+
+  rpc ReverseRange(OrderedMapReverseRangeRequest)
+      returns (OrderedMapReverseRangeResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [ "InvalidRangeError" ],
+    };
+  }
+
+  rpc Stringify(OrderedMapStringifyRequest)
+      returns (OrderedMapStringifyResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message OrderedMap {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  uint32 degree = 1;
+  string root_id = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message OrderedMapCreateRequest {
+  uint32 degree = 1;
+}
+
+message OrderedMapCreateResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message OrderedMapSearchRequest {
+  string key = 1;
+}
+
+message OrderedMapSearchResponse {
+  bool found = 1;
+  // NOTE: see comment in `OrderedMapInsertRequest` for why we have
+  // multiple "value" fields.
+  optional google.protobuf.Value value = 2;
+  optional bytes bytes = 3;
+  optional google.protobuf.Any any = 4;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message OrderedMapInsertRequest {
+  string key = 1;
+  // NOTE: we provide many "value" fields to provide a better
+  // developer experience when storing different types. For example,
+  // in TypeScript you will probably only ever use `value` and maybe
+  // `bytes`, but in Python `any` may be more useful when using
+  // protobuf directly.
+  //
+  // We're not using a `oneof` because the code generation of those
+  // are all different and not always more clear what the intent is,
+  // see this blog post which illuminates this in more detail, and may
+  // also be a better way of doing validation then the manual
+  // validation that we're doing in the servicer:
+  // https://buf.build/blog/fixing-oneofs
+  //
+  // TODO: consider also having `string_value`, `number_value`, etc,
+  // to provide a better developer experience in languages other than
+  // TypeScript which has first-class support for passing JSON
+  // stringifiable objects to `value`.
+  optional google.protobuf.Value value = 2;
+  optional bytes bytes = 3;
+  optional google.protobuf.Any any = 4;
+}
+
+message OrderedMapInsertResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message OrderedMapRemoveRequest {
+  string key = 1;
+}
+
+message OrderedMapRemoveResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message OrderedMapRangeRequest {
+  // The start key to scan from (inclusive). If not specified,
+  // the range is unbounded at the start.
+  optional string start_key = 1;
+  // The maximum number of entries to return. Must be specified and
+  // non-zero.
+  uint32 limit = 2;
+}
+
+message OrderedMapRangeResponse {
+  repeated Entry entries = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message OrderedMapReverseRangeRequest {
+  // The start key to scan from (inclusive). If not specified,
+  // the range is unbounded at the start.
+  optional string start_key = 1;
+  // The maximum number of entries to return. Must be specified and
+  // non-zero.
+  uint32 limit = 2;
+}
+
+message OrderedMapReverseRangeResponse {
+  repeated Entry entries = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message OrderedMapStringifyRequest {}
+
+message OrderedMapStringifyResponse {
+  string value = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// See `Range` and `ReverseRange`.
+message Entry {
+  string key = 1;
+  optional google.protobuf.Value value = 2;
+  optional bytes bytes = 3;
+  optional google.protobuf.Any any = 4;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Value {
+  // NOTE: while we don't use a `oneof` for `OrderedMapInsertRequest`
+  // because the code generation is not as ideal, we do use one here
+  // for better safety.
+  oneof options {
+    google.protobuf.Value value = 1;
+    bytes bytes = 2;
+    google.protobuf.Any any = 3;
+  }
+}

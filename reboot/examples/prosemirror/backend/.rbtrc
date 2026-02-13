@@ -1,0 +1,58 @@
+########################################################################
+# To expand flags or positional arguments for a specific subcommand    #
+# you can include a line such as:                                      #
+#                                                                      #
+# subcommand --flag1 --flag2=value argument                            #
+#                                                                      #
+# You can also include one flag or argument per line:                  #
+#                                                                      #
+# subcommand --flag1                                                   #
+# subcommand --flag2=value                                             #
+# subcommand argument                                                  #
+#                                                                      #
+# To only expand flags or arguments if a specific config is used with  #
+# a subcommand include lines that include 'subcommand:config', for     #
+# example:                                                             #
+#                                                                      #
+# subcommand:use-foo --flag3=foo                                       #
+#                                                                      #
+# Then you can expand that config on the command line via:             #
+#                                                                      #
+# rbt subcommand --config=use-foo`                                     #
+########################################################################
+
+# Find '.proto' files in '../api/'.
+generate ../api
+
+# Tell `rbt generate` where to put generated files.
+generate --nodejs=../api
+generate --react=../api
+
+# Tell `rbt` that this is a Node.js application.
+dev run --nodejs
+
+# Save state between chaos restarts.
+dev run --name=docs
+
+# Run the application!
+dev run --application=src/main.ts
+
+# Use the same name to expunge that we do to run.
+dev expunge --name=docs
+
+serve run --name=docs
+
+# Tell `rbt serve` that this is a Node.js application.
+serve run --nodejs
+
+# The number of servers to run. Each server runs as a separate process,
+# and so increasing the server count requires more cores but also allows
+# the application to use more cores.
+serve run --servers=4
+
+# Leave TLS termination to the external load balancer; expose a non-SSL port to
+# that loadbalancer.
+serve run --tls=external
+
+# Run the application!
+serve run --application=src/main.ts

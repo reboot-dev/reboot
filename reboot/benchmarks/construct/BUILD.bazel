@@ -1,0 +1,37 @@
+load("//reboot/benchmarks/bazel:benchmark.bzl", "benchmark")
+
+benchmark(
+    name = "construct",
+    srcs = [
+        ":main.ts",
+        ":state_servicer.ts",
+    ],
+    concurrency = "8",
+    duration = "30s",
+    package_json = ":package.json",
+    partitions = "8",
+    protos = [
+        ":api/benchmarks/v1/state.proto",
+    ],
+    rbtrc = ":.rbtrc",
+    script = "construct.ts",
+    working_directory = "reboot/benchmarks/construct",
+)
+
+benchmark(
+    name = "construct_assign_sync_read_state_id",
+    srcs = [
+        ":main.ts",
+        ":state_servicer.ts",
+    ],
+    concurrency = "8",
+    duration = "30s",
+    package_json = ":package.json",
+    partitions = "8",
+    protos = [
+        ":api/benchmarks/v1/state.proto",
+    ],
+    rbtrc = ":.rbtrc",
+    script = "construct_assign_sync_read_state_id.ts",
+    working_directory = "reboot/benchmarks/construct",
+)

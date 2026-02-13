@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package {{ name }}.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+message HelloWorld {
+    option (rbt.v1alpha1.state) = {
+    };
+    int32 number_of_greetings = 1;
+}
+
+service HelloWorldMethods {
+    // Record a greeting.
+    rpc Greet(GreetRequest) returns (GreetResponse) {
+        option (rbt.v1alpha1.method).writer = {};
+    }
+
+    // Returns the number of greetings recorded so far.
+    rpc NumGreetings(NumGreetingsRequest) returns (NumGreetingsResponse) {
+        option (rbt.v1alpha1.method).reader = {};
+    }
+}
+
+message GreetRequest {}
+
+message GreetResponse {
+    int32 number_of_greetings = 1;
+}
+
+message NumGreetingsRequest {}
+
+message NumGreetingsResponse {
+    int32 number_of_greetings = 1;
+}

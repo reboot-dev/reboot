@@ -1,0 +1,40 @@
+import { PartialMessage } from "@bufbuild/protobuf";
+import { ReaderContext, WriterContext, allow } from "@reboot-dev/reboot";
+import {
+  HelloWorld,
+  GreetRequest,
+  GreetResponse,
+  NumGreetingsRequest,
+  NumGreetingsResponse,
+} from "../{{ api_directory }}/{{ name }}/v1/hello_world_rbt.js";
+
+export class HelloWorldServicer extends HelloWorld.singleton.Servicer {
+  authorizer() {
+    return new HelloWorld.Authorizer({
+      numGreetings: allow(),
+      greet: allow(),
+    });
+  }
+
+  async numGreetings(
+    context: ReaderContext,
+    state: HelloWorld.State,
+    request: NumGreetingsRequest
+  ): Promise<PartialMessage<NumGreetingsResponse>> {
+    return {
+      numberOfGreetings: state.numberOfGreetings
+    };
+  }
+
+  async greet(
+    context: WriterContext,
+    state: HelloWorld.State,
+    request: GreetRequest
+  ): Promise<PartialMessage<GreetResponse>> {
+    state.numberOfGreetings += 1;
+
+    return {
+      numberOfGreetings: state.numberOfGreetings
+    };
+  }
+}

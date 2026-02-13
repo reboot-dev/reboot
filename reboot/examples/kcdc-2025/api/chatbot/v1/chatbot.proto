@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package chatbot.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service ChatbotMethods {
+  rpc Get(GetRequest) returns (GetResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {
+        constructor: {},
+      },
+    };
+  }
+
+  rpc ListPostsForApproval(ListPostsForApprovalRequest)
+      returns (ListPostsForApprovalResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  rpc Approve(ApproveRequest) returns (ApproveResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+    };
+  }
+
+  rpc Deny(DenyRequest) returns (DenyResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  rpc ControlLoop(ControlLoopRequest) returns (ControlLoopResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Post {
+  string id = 1;
+  string author = 2;
+  string text = 3;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Chatbot {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  string channel_id = 1;
+  repeated Post posts_for_approval = 2;
+  string name = 3;
+  string prompt = 4;
+  bool human_in_the_loop = 5;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message GetRequest {}
+
+message GetResponse {
+  Chatbot chatbot = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message CreateRequest {
+  string name = 1;
+  string channel_id = 2;
+  string prompt = 3;
+  bool human_in_the_loop = 4;
+}
+
+message CreateResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message ListPostsForApprovalRequest {}
+
+message ListPostsForApprovalResponse {
+  repeated Post posts = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message ApproveRequest {
+  string id = 1;
+}
+
+message ApproveResponse {}
+
+message DenyRequest {
+  string id = 1;
+}
+
+message DenyResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message ControlLoopRequest {
+  string name = 1;
+  string channel_id = 2;
+  string prompt = 3;
+  bool human_in_the_loop = 4;
+}
+
+message ControlLoopResponse {}
+
+////////////////////////////////////////////////////////////////////////

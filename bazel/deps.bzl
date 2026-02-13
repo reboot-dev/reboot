@@ -15,6 +15,7 @@ load("@io_bazel_rules_webtesting//web:repositories.bzl", "web_test_repositories"
 load("@io_bazel_rules_webtesting//web/versioned:browsers-0.3.3.bzl", "browser_repositories")
 load("@mypy_integration//repositories:repositories.bzl", mypy_integration_repositories = "repositories")
 load("@mypy_integration_pip_deps//:requirements.bzl", mypy_integration_pypi_deps = "install_deps")
+load("@pip_package_rule_pypi//:requirements.bzl", pip_package_rule_pypi_deps = "install_deps")
 load("@rbt_pypi//:requirements.bzl", rbt_pypi_deps = "install_deps")
 load("@rules_buf//buf:repositories.bzl", "rules_buf_dependencies", "rules_buf_toolchains")
 load("@rules_foreign_cc//foreign_cc:repositories.bzl", "rules_foreign_cc_dependencies")
@@ -71,6 +72,8 @@ def deps():
     # https://github.com/bazel-contrib/bazel-mypy-integration/releases/tag/0.4.0
     mypy_integration_repositories()
     mypy_integration_pypi_deps()
+
+    pip_package_rule_pypi_deps()
 
     rbt_pypi_deps()
 

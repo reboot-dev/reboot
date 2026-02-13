@@ -1,0 +1,14 @@
+generate api/
+
+# Generate code for a TypeScript/nodejs backend and React frontend.
+generate --nodejs=api
+generate --react=web/src/api
+
+# Save state between chaos restarts.
+dev run --name=fig
+dev run --watch=backend/src/**/*.ts
+dev run --nodejs
+
+dev run --application=backend/src/main.ts
+
+dev expunge --name=fig

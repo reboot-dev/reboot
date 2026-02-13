@@ -1,0 +1,12 @@
+{
+  "name": "@monorepo/common",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@monorepo/api": "workspace:*",
+    "prosemirror-model": "^1.23.0",
+    "prosemirror-schema-basic": "^1.2.3",
+    "prosemirror-schema-list": "^1.4.1"
+  }
+}

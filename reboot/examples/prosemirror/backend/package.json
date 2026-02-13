@@ -1,0 +1,18 @@
+{
+  "name": "@monorepo/backend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "rbt dev run"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "1.10.1",
+    "@monorepo/api": "workspace:*",
+    "@monorepo/common": "workspace:*",
+    "@reboot-dev/reboot": "0.44.0",
+    "@reboot-dev/reboot-api": "0.44.0",
+    "prosemirror-model": "^1.23.0",
+    "prosemirror-transform": "^1.1.0"
+  }
+}

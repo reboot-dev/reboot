@@ -1,0 +1,31 @@
+{
+  "name": "@reboot-dev/reboot-react",
+  "version": "0.44.0",
+  "description": "npm package for Reboot React",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc"
+  },
+  "author": "reboot-dev",
+  "dependencies": {
+    "@reboot-dev/reboot-api": "0.44.0",
+    "@reboot-dev/reboot-web": "0.44.0",
+    "@types/uuid": "^9.0.4",
+    "js-sha1": "0.7.0",
+    "tslib": "^2.6.2",
+    "typescript": "4.8.4",
+    "uuid": "11.1.0",
+    "@scarf/scarf": "1.4.0"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^22.7.4"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0",
+    "@bufbuild/protobuf": "1.10.1"
+  }
+}

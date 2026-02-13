@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>This Reboot Application is Ready</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #f4f4f9;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+      }
+      .container {
+        text-align: center;
+        padding: 20px;
+        background-color: #fff;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        font-size: 24px;
+        color: #333;
+        margin-bottom: 10px;
+      }
+      p {
+        font-size: 16px;
+        color: #555;
+        text-align: left;
+      }
+      a {
+        text-decoration: none;
+        color: #007bff;
+        font-weight: bold;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      pre {
+        background-color: #f9f9f9;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 10px;
+        margin-top: 15px;
+        text-align: left;
+        color: #333;
+        font-family: Consolas, monospace;
+        font-size: 14px;
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container" style="width: 90%; max-width: 700px">
+      <h1>This Reboot Application API is Ready to Serve Traffic</h1>
+      <p>
+        If you are the administrator of this application, you may
+        <a href="/__/inspect">click here</a> to inspect its state.
+      </p>
+      <p>
+        If you are using React to build a web application, you can wrap your app
+        with the <code>RebootClientProvider</code> component to allow your
+        <code>App</code> to call the Reboot generated custom hooks:
+      </p>
+      <pre id="code-snippet-frontend"></pre>
+      <p>
+        You can call into your Reboot application from outside of the
+        application itself using the generated code and an
+        <code>ExternalContext</code>:
+      </p>
+      <p>From Node.js:</p>
+      <pre id="code-snippet-external-context-ts"></pre>
+      <p>From Python:</p>
+      <pre id="code-snippet-external-context-py"></pre>
+      <p>
+        For more information, consult
+        <a href="https://docs.reboot.dev">the Reboot documentation</a>.
+      </p>
+    </div>
+    <script>
+      const url = window.location.href;
+      const frontendCodeSnippet = `<RebootClientProvider url=${url}>
+  <App />
+</RebootClientProvider>
+`;
+      document.getElementById("code-snippet-frontend").textContent =
+        frontendCodeSnippet;
+
+      const externalContextCodeSnippetTS = `const context = new ExternalContext({url: "${url}", name: "..." });`;
+      document.getElementById("code-snippet-external-context-ts").textContent =
+        externalContextCodeSnippetTS;
+
+      const externalContextCodeSnippetPython = `context = ExternalContext(url="${url}, name="...")`;
+      document.getElementById("code-snippet-external-context-py").textContent =
+        externalContextCodeSnippetPython;
+    </script>
+  </body>
+</html>

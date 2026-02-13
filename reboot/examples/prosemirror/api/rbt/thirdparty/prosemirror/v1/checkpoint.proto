@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package rbt.thirdparty.prosemirror.v1;
+
+import "google/protobuf/struct.proto";
+import "rbt/thirdparty/prosemirror/v1/authority.proto";
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service CheckpointMethods {
+  rpc Latest(LatestRequest) returns (LatestResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc Update(UpdateRequest) returns (UpdateResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Checkpoint {
+  option (rbt.v1alpha1.state) = {
+  };
+  // See prosemirror `Node` type which is used to represent a "doc".
+  optional google.protobuf.Struct doc = 1;
+  uint32 version = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message LatestRequest {}
+
+message LatestResponse {
+  // See prosemirror `Node` type which is used to represent a "doc".
+  google.protobuf.Struct doc = 1;
+  uint32 version = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message UpdateRequest {
+  repeated Change changes = 1;
+}
+
+message UpdateResponse {}
+
+////////////////////////////////////////////////////////////////////////

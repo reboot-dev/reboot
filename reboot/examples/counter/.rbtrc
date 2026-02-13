@@ -1,0 +1,12 @@
+generate api/
+generate --nodejs=api
+generate --react=api
+
+# Set the name of our application.
+dev run --name=counter
+
+# Declare that this is a nodejs application.
+dev run --nodejs
+
+# And specify where our application entrypoint is.
+dev run --application=backend/src/main.ts

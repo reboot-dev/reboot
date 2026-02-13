@@ -1,0 +1,6 @@
+function envoy_on_request(request_handle)
+  local headers = request_handle:headers()
+  if headers:get("x-reboot-application-id") == nil then
+    headers:add("x-reboot-application-id", "{{ application_id }}")
+  end
+end

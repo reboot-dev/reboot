@@ -1,0 +1,62 @@
+########################################################################
+# To expand flags or positional arguments for a specific subcommand    #
+# you can include a line such as:                                      #
+#                                                                      #
+# subcommand --flag1 --flag2=value argument                            #
+#                                                                      #
+# You can also include one flag or argument per line:                  #
+#                                                                      #
+# subcommand --flag1                                                   #
+# subcommand --flag2=value                                             #
+# subcommand argument                                                  #
+#                                                                      #
+# To only expand flags or arguments if a specific config is used with  #
+# a subcommand include lines that include 'subcommand:config', for     #
+# example:                                                             #
+#                                                                      #
+# subcommand:use-foo --flag3=foo                                       #
+#                                                                      #
+# Then you can expand that config on the command line via:             #
+#                                                                      #
+# rbt subcommand --config=use-foo`                                     #
+########################################################################
+
+# Find '.proto' files in '{{ api_directory }}'.
+generate {{ api_directory }}
+
+# Put boilerplate files in 'boilerplate/'.
+generate --boilerplate=boilerplate/{% if backend == 'python' %}
+
+# Specify output folder for generated code for Python backend.
+generate --python={{ backend_directory }}/{{ api_directory }}{% elif backend == 'nodejs' %}
+
+# Specify output folder for generated code for Typescript backend.
+generate --nodejs={{ backend_directory }}/{{ api_directory }}{% endif %}{% if web_directory %}
+
+# Specify output folder for generated code for React frontend.
+generate --react={{ web_directory }}/{{ api_directory }}{% endif %}
+
+# Watch if any generated or source files are modified.
+dev run --watch={{ backend_directory }}/{{ api_directory }}/**/*.{{ 'py' if backend == 'python' else 'ts' }}
+dev run --watch={{ backend_src_directory }}/**/*.{{ 'py' if backend == 'python' else 'ts' }}
+dev run --generate-watch
+{%- if backend == 'nodejs'%}
+
+# Tell `rbt` that this is a Typescript application.
+dev run --nodejs
+
+# Run the application!
+dev run --application={{ backend_src_directory }}/main.ts
+{% elif backend == 'python' %}
+
+# Tell `rbt` that this is a Python application.
+dev run --python
+
+# Run the application!
+dev run --application=backend/src/main.py
+{% endif %}
+# Save state between restarts.
+dev run --name={{ name }}
+
+# When expunging, expunge that state we've saved.
+dev expunge --name={{ name }}

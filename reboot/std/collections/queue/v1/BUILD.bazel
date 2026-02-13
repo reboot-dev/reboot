@@ -1,0 +1,41 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "queue_py",
+    srcs = [
+        "queue.py",
+        "uuid7.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot:protobuf_py",
+        "//reboot/aio:contexts_py",
+        "//reboot/std/collections/v1:sorted_map_py",
+        "//reboot/std/item/v1:item_py",
+        "@com_github_reboot_dev_reboot//rbt/std/collections/queue/v1:queue_py_reboot",
+    ],
+)
+
+ts_project(
+    name = "queue_ts",
+    srcs = [
+        "index.ts",
+        "package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-std-api",
+        "//:node_modules/@types/node",
+    ],
+)

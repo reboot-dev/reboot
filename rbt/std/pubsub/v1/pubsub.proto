@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package rbt.std.pubsub.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+import "rbt/std/item/v1/item.proto";
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service TopicMethods {
+  rpc Publish(PublishRequest) returns (PublishResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  rpc Subscribe(SubscribeRequest) returns (SubscribeResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  rpc Broker(BrokerRequest) returns (BrokerResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Topic {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  bool broker_started = 1;
+  repeated string queue_ids = 2;
+  repeated rbt.std.item.v1.Item items = 3;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message PublishRequest {
+  optional google.protobuf.Value value = 1;
+  optional bytes bytes = 2;
+  optional google.protobuf.Any any = 3;
+
+  repeated rbt.std.item.v1.Item items = 4;
+}
+
+message PublishResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message SubscribeRequest {
+  string queue_id = 1;
+}
+
+message SubscribeResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message BrokerRequest {}
+
+message BrokerResponse {}
+
+////////////////////////////////////////////////////////////////////////

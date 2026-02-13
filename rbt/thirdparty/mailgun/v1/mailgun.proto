@@ -1,0 +1,92 @@
+/**
+ * Third-party integration that supports sending email messages using
+ * the Mailgun API.
+ *
+ * To use the Mailgun integration, store your Mailgun API key as a secret
+ * named `mailgun-api-key`, and use that secret to authenticate to the
+ * integration.
+ */
+syntax = "proto3";
+
+package rbt.thirdparty.mailgun.v1;
+
+import "rbt/v1alpha1/options.proto";
+import "rbt/v1alpha1/tasks.proto";
+import "google/protobuf/timestamp.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+/**
+ * A single message sent using the integration.
+ *
+ * Created and scheduled using its constructor: `await Message.Send(...)`.
+ */
+service MessageMethods {
+  /**
+   * Construct and send an email message using the Mailgun API.
+   *
+   * Returns a `task_id` which can be used for the message to have
+   * been sent.
+   */
+  rpc Send(SendRequest) returns (SendResponse) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {},
+    };
+  }
+
+  /// PRIVATE
+  rpc SendWorkflow(SendWorkflowRequest) returns (SendWorkflowResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+}
+
+/// PRIVATE
+message Message {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  // An idempotency key passed through the Mailgun API to ensure this message is
+  // only sent once.
+  string idempotency_key = 1;
+
+  // Time of initial message send request, so that we can expire the request 24
+  // hours later.
+  google.protobuf.Timestamp initial_send_time = 2;
+
+  // Time message was accepted by mailgun.
+  optional google.protobuf.Timestamp accepted_time = 3;
+}
+
+// See Send.
+message SendRequest {
+  // The email address of the recipient of the message.
+  string recipient = 1;
+  // The email address of the sender of the message.
+  string sender = 2;
+  // The subject of the message.
+  string subject = 3;
+  // The domain to send from.
+  string domain = 4;
+  oneof body {
+    // The body content of the message, as text.
+    string text = 5;
+    // The body content of the message, as HTML.
+    string html = 6;
+  }
+}
+
+// See Send.
+message SendResponse {
+  // Task ID of the workflow scheduled to actually send the email.
+  rbt.v1alpha1.TaskId task_id = 1;
+}
+
+/// PRIVATE
+message SendWorkflowRequest {
+  SendRequest send_request = 1;
+}
+
+/// PRIVATE
+message SendWorkflowResponse {}

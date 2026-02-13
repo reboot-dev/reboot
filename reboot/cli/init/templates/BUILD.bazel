@@ -1,0 +1,4 @@
+exports_files(glob([
+    "*.j2",
+    ".*.j2",
+]))
