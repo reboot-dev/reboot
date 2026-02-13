@@ -124,11 +124,14 @@ def _generate_filtered_pb2_grpc_src_impl(ctx):
 _generate_filtered_pb2_grpc_src = rule(
     implementation = _generate_filtered_pb2_grpc_src_impl,
     attrs = {
-        # proto_library input(s); this rule expects exactly one.
-        "srcs": attr.label_list(
+        "grpc_library": attr.label(
+            default = Label("@com_github_grpc_grpc//src/python/grpcio/grpc:grpcio"),
+            providers = [PyInfo],
+        ),
+        # Basename filter applied to direct proto sources in `srcs`.
+        "proto_filenames": attr.string_list(
             mandatory = True,
             allow_empty = False,
-            providers = [ProtoInfo],
         ),
         # py_proto_library dependency supplying *_pb2.py and related imports.
         "py_deps": attr.label_list(
@@ -136,10 +139,11 @@ _generate_filtered_pb2_grpc_src = rule(
             allow_empty = False,
             providers = [PyInfo],
         ),
-        # Basename filter applied to direct proto sources in `srcs`.
-        "proto_filenames": attr.string_list(
+        # proto_library input(s); this rule expects exactly one.
+        "srcs": attr.label_list(
             mandatory = True,
             allow_empty = False,
+            providers = [ProtoInfo],
         ),
         "strip_prefixes": attr.string_list(),
         "_grpc_plugin": attr.label(
@@ -153,10 +157,6 @@ _generate_filtered_pb2_grpc_src = rule(
             providers = ["files_to_run"],
             cfg = "exec",
             default = Label("@com_google_protobuf//:protoc"),
-        ),
-        "grpc_library": attr.label(
-            default = Label("@com_github_grpc_grpc//src/python/grpcio/grpc:grpcio"),
-            providers = [PyInfo],
         ),
     },
 )

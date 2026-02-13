@@ -1,7 +1,7 @@
+load("@com_github_reboot_dev_reboot//bazel:linux_transition.bzl", "cc_binary_linux")
 load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 load("@rules_python//python:defs.bzl", "py_library")
-load("@com_github_reboot_dev_reboot//bazel:linux_transition.bzl", "cc_binary_linux")
 
 cc_binary(
     name = "local_envoy_nanny",

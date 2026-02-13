@@ -1,5 +1,6 @@
 import enum
 import math
+import rbt.v1alpha1.database_pb2 as database_pb2
 from dataclasses import dataclass
 from envoy.config.cluster.v3 import circuit_breaker_pb2, cluster_pb2
 from envoy.config.core.v3 import address_pb2, base_pb2, protocol_pb2
@@ -24,7 +25,6 @@ from google.protobuf.duration_pb2 import Duration
 from google.protobuf.message import Message
 from google.protobuf.wrappers_pb2 import UInt32Value
 from pathlib import Path
-import rbt.v1alpha1.database_pb2 as database_pb2
 from reboot.routing.filters.lua import (
     ADD_HEADER_X_REBOOT_APPLICATION_ID_TEMPLATE_FILENAME,
     COMPUTE_HEADER_X_REBOOT_SERVER_ID_TEMPLATE_FILENAME,
