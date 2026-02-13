@@ -225,6 +225,10 @@ ENVVAR_SIGNALS_AVAILABLE = 'REBOOT_SIGNALS_AVAILABLE'
 ENVVAR_NODEJS_SERVER = 'REBOOT_NODEJS_SERVER'
 ENVVAR_NODEJS_SERVER_BASE64_ARGS = 'REBOOT_NODEJS_SERVER_BASE64_ARGS'
 
+# Args for launching a Python based server.
+ENVVAR_PYTHON_SERVER = 'REBOOT_PYTHON_SERVER'
+ENVVAR_PYTHON_SERVER_BASE64_ARGS = 'REBOOT_PYTHON_SERVER_BASE64_ARGS'
+
 # Environment variables that are only set when running in the Reboot
 # Cloud.
 ENVVAR_REBOOT_CLOUD_VERSION = 'REBOOT_CLOUD_VERSION'
@@ -242,6 +246,18 @@ ENVVAR_REBOOT_USE_TTY = 'REBOOT_USE_TTY'
 # An environment variable to enable event loop lag monitoring.
 # Turned off by default, if set we will print warnings about event loop lag.
 ENVVAR_REBOOT_ENABLE_EVENT_LOOP_LAG_MONITORING = 'REBOOT_ENABLE_EVENT_LOOP_LAG_MONITORING'
+# An environment variable to enable the event loop blocked watchdog,
+# which detects when the event loop is completely blocked by a
+# synchronous call and logs a warning in real time.
+# Turned off by default for `Application.run`, which is used in
+# `rbt dev run`, but turned on for `rbt.up` in tests.
+# We could run each server in a separate thread with its own event loop
+# to isolate them from the main event loop and avoid any blocking
+# issues. But unfortunately gRPC has a bug in that architecture right now.
+# See https://github.com/grpc/grpc/pull/41483.
+# We could revisit that approach once that bug is fixed and we upgrade
+# gRPC library.
+ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG = 'REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG'
 
 REBOOT_DISCORD_URL = 'https://discord.gg/cRbdcS94Nr'
 REBOOT_GITHUB_ISSUES_URL = 'https://github.com/reboot-dev/reboot/issues'

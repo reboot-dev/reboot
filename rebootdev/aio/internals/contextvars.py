@@ -20,10 +20,10 @@ _servicing: ContextVar[Servicing] = ContextVar(
 )
 
 # Within tests we may have multiple applications running from multiple
-# calls to `reboot.aio.tests.Reboot.up()` and they may all have
-# set `in_process=True` meaning a single environment variable for the
-# application ID will not work. Instead, we use a Python asyncio
-# context variable that we ensure gets set properly in all code paths.
+# calls to `reboot.aio.tests.Reboot.up()` and they all run in process
+# meaning a single environment variable for the application ID will not
+# work. Instead, we use a Python asyncio context variable that we ensure
+# gets set properly in all code paths.
 _application_id: ContextVar[Optional[ApplicationId]] = ContextVar(
     'Application ID of the current asyncio context',
     default=None,

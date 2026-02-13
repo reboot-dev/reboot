@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from enum import Enum
 from rebootdev.settings import (
     ENVVAR_NODEJS_SERVER,
+    ENVVAR_PYTHON_SERVER,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_SERVE,
     ENVVAR_RBT_SERVERS,
@@ -49,7 +50,19 @@ def within_nodejs_server():
     NODE.JS, JUST IF WE'RE IN A NODE.JS SERVER!
 
     """
-    return os.environ.get(ENVVAR_NODEJS_SERVER, 'false').lower() == 'true'
+    return os.environ.get(
+        ENVVAR_NODEJS_SERVER,
+        'false',
+    ).lower() == 'true'
+
+
+def within_python_server():
+    """Internal helper to determine if we're within a Python
+    server subprocess."""
+    return (os.environ.get(
+        ENVVAR_PYTHON_SERVER,
+        'false',
+    ).lower() == 'true')
 
 
 def on_cloud() -> bool:
