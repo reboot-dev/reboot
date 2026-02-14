@@ -11,6 +11,7 @@ grpcio-reflection==1.64.3  # Matching `grpcio`.
 grpcio-status==1.64.3  # Matching `grpcio`.
 grpcio-tools==1.64.3 # Matching `grpcio`.
 h2==4.3.0  # For HTTP/2 low-level protocol testing.
+httpx==0.28.1 # Latest as of 2026/02/14.
 jinja2==3.1.2  # Latest as of 2023/03/20.
 jinja2-strcase==0.0.2 # Latest as 2023/12/03.
 kubernetes-asyncio==31.1.0  # Latest as of 2024/09/16.
@@ -38,3 +39,4 @@ fastapi==0.115.12 # Latest as of 2025/03/30.
 uvicorn==0.34.0 # Latest as of 2025/03/30.
 pydantic>=2.7.4 # To be version compatibable with projects like `langchain`.
 bitarray==3.8.0 # Lastest as of 2025/12/14.
+stripe==14.3.0 # Latest as of 2026/02/13.
