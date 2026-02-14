@@ -42,7 +42,11 @@ message Application {
   option (rbt.v1alpha1.state) = {
   };
 
-  string owner_id = 2;  // Organization ID or user ID for old applications.
+  // Organization ID or user ID for old applications.
+  string owner_id = 2;
+  // Organization of this application; exists only if this application
+  // was created after we added organizations.
+  optional string organization_id = 9;
   string space_name = 3;
   string space_id = 4;
   string application_name = 5;
