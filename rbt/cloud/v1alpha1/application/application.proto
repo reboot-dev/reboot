@@ -16,6 +16,8 @@ enum Status {
   FAILED = 5;
 }
 
+//////////////////////////////////////////////////////////////////////
+
 message Revision {
   // Revisions have monotonically increasing numbers that are unique within
   // their app.
@@ -37,6 +39,8 @@ message Revision {
   // compatibility, the value may be absent.
   optional uint32 replicas = 5;
 }
+
+//////////////////////////////////////////////////////////////////////
 
 message Application {
   option (rbt.v1alpha1.state) = {
@@ -90,7 +94,11 @@ service ApplicationMethods {
   rpc Up(UpRequest) returns (UpResponse) {
     option (rbt.v1alpha1.method) = {
       writer: {},
-      errors: [ "InvalidInputError", "ConcurrentModificationError" ],
+      errors: [
+        "InvalidInputError",
+        "ConcurrentModificationError",
+        "PaymentMethodRequiredError"
+      ],
     };
   }
 
@@ -164,7 +172,10 @@ message CreateRequest {}
 
 message CreateResponse {}
 
+//////////////////////////////////////////////////////////////////////
+
 message PushInfoRequest {}
+
 message PushInfoResponse {
   // The URL of the registry to push to; e.g.:
   //   "https://registry.prod1.rbt.cloud:5000".
@@ -181,6 +192,8 @@ message PushInfoResponse {
   string username = 4;
   string password = 5;
 }
+
+//////////////////////////////////////////////////////////////////////
 
 message UpRequest {
   // Previously we permitted the client to specify any image, not just ones
@@ -206,18 +219,28 @@ message UpResponse {
   uint64 revision_number = 3;
 }
 
+//////////////////////////////////////////////////////////////////////
+
 message UpWorkflowRequest {
   uint64 revision_number = 1;
 }
 message UpWorkflowResponse {}
 
+//////////////////////////////////////////////////////////////////////
+
 message DownRequest {}
+
 message DownResponse {
   Status status = 1;
 }
 
+//////////////////////////////////////////////////////////////////////
+
 message DownWorkflowRequest {}
+
 message DownWorkflowResponse {}
+
+//////////////////////////////////////////////////////////////////////
 
 message RevisionStatusRequest {
   // The revision number is a required field; it is `optional` so that the
@@ -228,6 +251,8 @@ message RevisionStatusRequest {
 message RevisionStatusResponse {
   Revision revision = 1;
 }
+
+//////////////////////////////////////////////////////////////////////
 
 message LogsRequest {
   // TODO(rjh): this whole request is a ~copy-pasted duplicate of the
@@ -267,16 +292,23 @@ message LogsResponse {
   repeated rbt.cloud.v1alpha1.logs.LogRecord records = 1;
 }
 
+//////////////////////////////////////////////////////////////////////
+
 message ActiveRevisionsRequest {}
 
 message ActiveRevisionsResponse {
   repeated Revision revisions = 1;
 }
 
+//////////////////////////////////////////////////////////////////////
+
 message StatusRequest {}
+
 message StatusResponse {
   Status status = 1;
 }
+
+//////////////////////////////////////////////////////////////////////
 
 message IsAdminRequest {
   string user_id = 1;
@@ -292,6 +324,14 @@ message InvalidInputError {
   string reason = 1;
 }
 
+//////////////////////////////////////////////////////////////////////
+
 message ConcurrentModificationError {
   string details = 1;
 }
+
+//////////////////////////////////////////////////////////////////////
+
+message PaymentMethodRequiredError {}
+
+//////////////////////////////////////////////////////////////////////

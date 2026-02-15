@@ -8,6 +8,7 @@ from pathlib import Path
 from rbt.cloud.v1alpha1.application.application_pb2 import (
     ConcurrentModificationError,
     InvalidInputError,
+    PaymentMethodRequiredError,
     Status,
 )
 from rbt.cloud.v1alpha1.application.application_rbt import Application
@@ -535,6 +536,13 @@ async def cloud_up(args: argparse.Namespace) -> int:
                 "🛑 failed:\n"
                 "  The application is already being `up`ped or `down`ed. "
                 "Please wait until that operation completes."
+            )
+        elif isinstance(aborted.error, PaymentMethodRequiredError):
+            terminal.fail(
+                "🛑 failed:\n"
+                f"  Organization '{organization_name}' does not have a "
+                "valid payment method. Please add a payment method before "
+                "deploying applications."
             )
         elif isinstance(aborted.error, PermissionDenied):
             # Invariant for applications before organizations were
