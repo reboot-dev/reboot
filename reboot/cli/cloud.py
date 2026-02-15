@@ -6,6 +6,7 @@ import traceback
 from enum import Enum
 from pathlib import Path
 from rbt.cloud.v1alpha1.application.application_pb2 import (
+    ApplicationSize,
     ConcurrentModificationError,
     InvalidInputError,
     PaymentMethodRequiredError,
@@ -47,6 +48,16 @@ from typing import Optional
 DEFAULT_REBOOT_CLOUD_URL = "https://cloud.prod1.rbt.cloud:9991"
 
 _API_KEY_FLAG = '--api-key'
+
+SIZE_NAME_TO_ENUM = {
+    'xsmall': ApplicationSize.XSMALL,
+    'small': ApplicationSize.SMALL,
+    'medium': ApplicationSize.MEDIUM,
+    'large': ApplicationSize.LARGE,
+    'xlarge': ApplicationSize.XLARGE,
+}
+
+VALID_SIZES = list(SIZE_NAME_TO_ENUM.keys())
 
 
 class SourceType(Enum):
@@ -135,6 +146,13 @@ def register_cloud(parser: ArgumentParser):
         help='additional build arguments to pass to the Docker build command. '
         'Can be specified multiple times, e.g. '
         '`--docker-build-arg=key1=value1 --docker-build-arg=key2`',
+    )
+    up_subcommand.add_argument(
+        '--size',
+        type=str,
+        choices=VALID_SIZES,
+        default=None,
+        help='the size of the application',
     )
     # Hidden flag for configuring the number of replicas. If not specified,
     # the backend will use its default.
@@ -473,6 +491,9 @@ async def _parse_common_cloud_args(
 async def cloud_up(args: argparse.Namespace) -> int:
     """Implementation of the 'cloud up' subcommand."""
 
+    if args.size is not None and args.replicas is not None:
+        terminal.fail("Cannot specify both --size and --replicas")
+
     user_id, qualified_application_name, organization_name = (
         await _parse_common_cloud_args(args)
     )
@@ -524,7 +545,13 @@ async def cloud_up(args: argparse.Namespace) -> int:
 
         terminal.info("[🚀] deploying...", end=" ")
         up_response = await application.idempotently().Up(
-            context, digest=digest, replicas=args.replicas
+            context,
+            digest=digest,
+            replicas=args.replicas,
+            size=(
+                None if args.replicas is not None else
+                SIZE_NAME_TO_ENUM[args.size or 'xsmall']
+            ),
         )
 
     except Aborted as aborted:

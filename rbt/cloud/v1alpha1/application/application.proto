@@ -18,6 +18,17 @@ enum Status {
 
 //////////////////////////////////////////////////////////////////////
 
+enum ApplicationSize {
+  APPLICATION_SIZE_UNSPECIFIED = 0;
+  XSMALL = 1;
+  SMALL = 2;
+  MEDIUM = 3;
+  LARGE = 4;
+  XLARGE = 5;
+}
+
+//////////////////////////////////////////////////////////////////////
+
 message Revision {
   // Revisions have monotonically increasing numbers that are unique within
   // their app.
@@ -38,6 +49,9 @@ message Revision {
   // not support horizontal scaling; in that case, for backwards
   // compatibility, the value may be absent.
   optional uint32 replicas = 5;
+
+  // The size tier for this revision, if specified via `--size`.
+  optional ApplicationSize size = 6;
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -209,6 +223,10 @@ message UpRequest {
   // of 2 (e.g. 1, 2, 4, ...). If not set, defaults to a
   // system-determined value.
   optional uint32 replicas = 3;
+
+  // The size tier for this revision. Mutually exclusive with
+  // `replicas`.
+  optional ApplicationSize size = 4;
 }
 
 message UpResponse {
