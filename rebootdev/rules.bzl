@@ -224,7 +224,14 @@ def _isolate_filegroup_to_directory_impl(ctx):
     args = ctx.actions.args()
     args.add(outdir.path)
     for src in ctx.files.srcs:
-        args.add(src.path + " " + src.short_path)
+        # For files from external repos, `short_path` starts
+        # with `../<repo_name>/`. Strip that prefix so all
+        # files are placed relative to the output directory.
+        short_path = src.short_path
+        if short_path.startswith("../"):
+            # Remove the `../<repo_name>/` prefix.
+            short_path = "/".join(short_path.split("/")[2:])
+        args.add(src.path + " " + short_path)
     ctx.actions.run_shell(
         outputs = [outdir],
         inputs = ctx.files.srcs,
