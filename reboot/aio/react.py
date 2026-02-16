@@ -347,16 +347,20 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
             request.method,
             request.request,
         ):
-            yield react_pb2.QueryResponse(
-                response=(
-                    response.SerializeToString()
-                    if response is not None else b""
-                ),
+            query_response = react_pb2.QueryResponse(
                 idempotency_keys=[
                     str(idempotency_key)
                     for idempotency_key in idempotency_keys
                 ],
             )
+
+            # Leave the `response` empty if the `react_query` returned
+            # `None`, so that the client can distinguish between a
+            # `None` response and a response with an empty payload.
+            if response is not None:
+                query_response.response = response.SerializeToString()
+
+            yield query_response
 
     async def Query(
         self,
