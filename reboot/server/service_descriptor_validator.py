@@ -290,6 +290,16 @@ def legal_diff_method_type_change(
     return old_opts == new_opts
 
 
+def legal_diff_errors_change(
+    diff: PathDiff,
+    old: options_pb2.MethodOptions,
+    new: options_pb2.MethodOptions,
+) -> bool:
+    """Adding or removing declared errors is always allowed."""
+    path, _, _ = diff
+    return path == "errors"
+
+
 LegalMethodOptionDiffPredicate = Callable[
     [PathDiff, options_pb2.MethodOptions, options_pb2.MethodOptions], bool]
 
@@ -297,6 +307,7 @@ _LEGAL_REBOOT_METHOD_OPTION_DIFFS: list[LegalMethodOptionDiffPredicate] = [
     legal_diff_constructor_to_message,
     legal_diff_task_to_message,
     legal_diff_method_type_change,
+    legal_diff_errors_change,
 ]
 
 ProtoValidationErrorMessage = str

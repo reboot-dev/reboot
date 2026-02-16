@@ -51,6 +51,7 @@ class ServiceDescriptorValidatorProtoTestCase(unittest.TestCase):
     reply_transaction: FileDescriptorSet
     reply_writer_constructor: FileDescriptorSet
     reply_transaction_constructor: FileDescriptorSet
+    errors_added: FileDescriptorSet
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -113,6 +114,7 @@ class ServiceDescriptorValidatorProtoTestCase(unittest.TestCase):
         cls.reply_transaction_constructor = get_descriptor_set(
             'echo_reply_transaction_constructor_pb2'
         )
+        cls.errors_added = get_descriptor_set('echo_errors_added_pb2')
 
     def test_no_change(self):
         """Test that an unchanged ServiceDescriptor has no errors."""
@@ -718,6 +720,20 @@ class ServiceDescriptorValidatorProtoTestCase(unittest.TestCase):
                 self.reply_writer_constructor,
                 self.reply_transaction,
             )
+
+    def test_errors_added(self):
+        """Test that adding declared errors to a method is allowed."""
+        validate_descriptor_sets_are_backwards_compatible(
+            self.original,
+            self.errors_added,
+        )
+
+    def test_errors_removed(self):
+        """Test that removing declared errors from a method is allowed."""
+        validate_descriptor_sets_are_backwards_compatible(
+            self.errors_added,
+            self.original,
+        )
 
 
 if __name__ == '__main__':

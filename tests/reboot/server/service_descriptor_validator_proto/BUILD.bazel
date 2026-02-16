@@ -348,6 +348,21 @@ py_proto_library(
     deps = [":echo_with_message_id_proto"],
 )
 
+proto_library(
+    name = "echo_errors_added_proto",
+    srcs = ["echo_errors_added.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_errors_added_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_errors_added_proto"],
+)
+
 py_test(
     name = "service_descriptor_validator_proto_test_py",
     srcs = ["test.py"],
@@ -358,6 +373,7 @@ py_test(
         ":echo_empty_reserved_input_type_py_proto",
         ":echo_enum_three_options_input_type_py_proto",
         ":echo_enum_two_options_input_type_py_proto",
+        ":echo_errors_added_py_proto",
         ":echo_hello_added_py_proto",
         ":echo_legacy_service_name_py_proto",
         ":echo_nested_repeated_string_input_type_py_proto",
