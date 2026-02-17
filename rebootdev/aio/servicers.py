@@ -9,7 +9,7 @@ from google.protobuf.descriptor import FileDescriptor
 from google.protobuf.message import Message
 from rbt.v1alpha1.application_config_pb2 import ApplicationConfig
 from rebootdev.aio.types import ServiceName, StateTypeName
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 
 class Servicer(ABC):
@@ -119,8 +119,6 @@ class Serviceable(Routable):
 
 class RebootServiceable(Serviceable):
 
-    AUTHORIZER_KEY = "_authorizer"
-
     def __init__(self, servicer_type: type[Servicer]):
         self._servicer_type = servicer_type
 
@@ -135,41 +133,6 @@ class RebootServiceable(Serviceable):
 
     def instantiate(self) -> tuple[Servicer, None]:
         return (self._servicer_type(), None)
-
-    def __getstate__(self):
-        """
-        `__getstate__` and `__setstate__` allows us to grab the authorizer
-        and set it across processes.
-        TODO: Remove `__get/setstate__` when there is better multiprocess support.
-        """
-        state: dict[str, Any] = self.__dict__.copy()
-
-        # Specifically pull out `_authorizer` if it is present.
-        variables = vars(self._servicer_type)
-        if self.AUTHORIZER_KEY in variables:
-            state[self.AUTHORIZER_KEY] = variables[self.AUTHORIZER_KEY]
-
-        return state
-
-    def __setstate__(self, state):
-        """
-        `__getstate__` and `__setstate__` allows us to grab the authorizer
-        and set it across processes.
-        TODO: Remove `__get/setstate__` when there is better multiprocess support.
-        """
-        # Specifically pull out `_authorizer` if it is present.
-        authorizer = state.pop(
-            self.AUTHORIZER_KEY
-        ) if self.AUTHORIZER_KEY in state else None
-
-        self.__dict__.update(state)
-
-        # Has to be set after the `__dict__.update()` has set `_servicer_type`.
-        setattr(
-            self._servicer_type,
-            self.AUTHORIZER_KEY,
-            authorizer,
-        )
 
 
 def _find_legacy_serviceable(
