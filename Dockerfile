@@ -29,7 +29,7 @@
 ARG ISTIO_VERSION=1.24.2
 
 # This version should match `ENVOY_VERSION` in
-# `public/rebootdev/settings.py` and
+# `public/reboot/settings.py` and
 # `reboot/containers/reboot-base/Dockerfile`.
 ARG ENVOY_VERSION=1.30.2
 

@@ -1,7 +1,7 @@
 import asyncio
 import grpc
 import logging
-import rebootdev.aio.placement
+import reboot.aio.placement
 import traceback
 import uuid
 import websockets
@@ -12,23 +12,19 @@ from grpc_status import rpc_status
 from log.log import get_logger, log_at_most_once_per
 from rbt.v1alpha1 import react_pb2, react_pb2_grpc
 from rbt.v1alpha1.errors_pb2 import Unavailable, UnknownService
-from rebootdev.aio.aborted import Aborted, SystemAborted
-from rebootdev.aio.headers import (
-    APPLICATION_ID_HEADER,
-    STATE_REF_HEADER,
-    Headers,
-)
-from rebootdev.aio.internals.contextvars import use_application_id
-from rebootdev.aio.internals.middleware import Middleware
-from rebootdev.aio.types import (
+from reboot.aio.aborted import Aborted, SystemAborted
+from reboot.aio.headers import APPLICATION_ID_HEADER, STATE_REF_HEADER, Headers
+from reboot.aio.internals.contextvars import use_application_id
+from reboot.aio.internals.middleware import Middleware
+from reboot.aio.types import (
     ApplicationId,
     StateRef,
     StateTypeName,
     StateTypeTag,
     state_type_tag_for_name,
 )
-from rebootdev.nodejs.python import should_print_stacktrace
-from rebootdev.settings import EVERY_LOCAL_NETWORK_ADDRESS
+from reboot.nodejs.python import should_print_stacktrace
+from reboot.settings import EVERY_LOCAL_NETWORK_ADDRESS
 from typing import AsyncIterable, AsyncIterator, Optional
 
 logger = get_logger(__name__)
@@ -402,7 +398,7 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
                     headers.application_id,
                     state_ref,
                 )
-            except rebootdev.aio.placement.UnknownApplicationError:
+            except reboot.aio.placement.UnknownApplicationError:
                 # It's possible that the user did indeed type an application ID
                 # that doesn't exist, but it's also quite possible that this
                 # request reached us before the placement planner had gossipped

@@ -3,7 +3,7 @@ import os
 import threading
 import time
 from log.log import get_logger
-from rebootdev.settings import (
+from reboot.settings import (
     ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG,
     ENVVAR_REBOOT_ENABLE_EVENT_LOOP_LAG_MONITORING,
 )

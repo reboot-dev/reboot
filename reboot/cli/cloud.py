@@ -21,6 +21,10 @@ from rbt.v1alpha1.errors_pb2 import (
     Unauthenticated,
     Unavailable,
 )
+from reboot.aio.aborted import Aborted
+from reboot.aio.backoff import Backoff
+from reboot.aio.external import ExternalContext
+from reboot.aio.types import ApplicationId
 from reboot.api_keys import (
     InvalidAPIKeyBearerToken,
     parse_api_key_bearer_token,
@@ -28,11 +32,7 @@ from reboot.api_keys import (
 from reboot.cli import terminal
 from reboot.cli.commands import run_command
 from reboot.cli.rc import ArgumentParser, SubcommandParser
-from rebootdev.aio.aborted import Aborted
-from rebootdev.aio.backoff import Backoff
-from rebootdev.aio.external import ExternalContext
-from rebootdev.aio.types import ApplicationId
-from rebootdev.naming import (
+from reboot.naming import (
     ORGANIZATIONS_ID,
     OrganizationId,
     OrganizationName,
@@ -40,7 +40,7 @@ from rebootdev.naming import (
     UserId,
     make_qualified_application_name_from_owner_id_and_application_name,
 )
-from rebootdev.time import DateTimeWithTimeZone
+from reboot.time import DateTimeWithTimeZone
 from typing import Optional
 
 DEFAULT_REBOOT_CLOUD_URL = "https://cloud.prod1.rbt.cloud:9991"

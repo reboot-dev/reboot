@@ -37,8 +37,8 @@ from rbt.std.collections.ordered_map.v1.ordered_map_rbt import (
 )
 from rbt.v1alpha1.errors_pb2 import InvalidArgument, StateAlreadyConstructed
 from reboot.aio.applications import Library
-from rebootdev.aio.auth.authorizers import allow_if, is_app_internal
-from rebootdev.aio.contexts import (
+from reboot.aio.auth.authorizers import allow_if, is_app_internal
+from reboot.aio.contexts import (
     ReaderContext,
     TransactionContext,
     WriterContext,

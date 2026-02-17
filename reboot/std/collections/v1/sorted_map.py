@@ -18,8 +18,8 @@ from rbt.std.collections.v1.sorted_map_rbt import (
     SortedMap,
 )
 from reboot.aio.applications import Library
-from rebootdev.aio.auth.authorizers import allow_if, is_app_internal
-from rebootdev.aio.contexts import ReaderContext, WriterContext
+from reboot.aio.auth.authorizers import allow_if, is_app_internal
+from reboot.aio.contexts import ReaderContext, WriterContext
 from typing import Optional
 
 logger = log.log.get_logger(__name__)

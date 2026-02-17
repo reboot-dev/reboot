@@ -1,4 +1,4 @@
-from rebootdev.api import (
+from reboot.api import (
     API,
     Field,
     Methods,

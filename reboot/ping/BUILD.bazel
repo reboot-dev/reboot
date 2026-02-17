@@ -1,6 +1,6 @@
 load("@com_github_reboot_dev_reboot//bazel:oci_image.bzl", "py_oci_image")
 load(
-    "@com_github_reboot_dev_reboot//rebootdev:pydantic_to_proto.bzl",
+    "@com_github_reboot_dev_reboot//reboot:pydantic_to_proto.bzl",
     "py_reboot_library_from_pydantic",
 )
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
@@ -10,7 +10,7 @@ py_library(
     srcs = ["ping_api.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "@com_github_reboot_dev_reboot//rebootdev:api_py",
+        "@com_github_reboot_dev_reboot//reboot:api_py",
     ],
 )
 
@@ -30,7 +30,7 @@ py_library(
     deps = [
         ":ping_py_reboot",
         "//reboot/aio:applications_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:tasks_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:tasks_py",
     ],
 )
 

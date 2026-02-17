@@ -1,12 +1,12 @@
 import os
 from pathlib import Path
+from reboot.aio.servicers import Routable
+from reboot.aio.types import ApplicationId
+from reboot.helpers import generate_proto_descriptor_set
 from reboot.server.docker_local_envoy import DockerLocalEnvoy
 from reboot.server.executable_local_envoy import ExecutableLocalEnvoy
 from reboot.server.local_envoy import LocalEnvoy
-from rebootdev.aio.servicers import Routable
-from rebootdev.aio.types import ApplicationId
-from rebootdev.helpers import generate_proto_descriptor_set
-from rebootdev.settings import (
+from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_DEBUG,
     ENVVAR_LOCAL_ENVOY_MODE,
     ENVVAR_LOCAL_ENVOY_TLS_CERTIFICATE_PATH,

@@ -2,7 +2,7 @@ import aiofiles.os
 import asyncio
 import glob
 import os
-import rebootdev.aio.tracing
+import reboot.aio.tracing
 import shutil
 import sys
 import tempfile
@@ -21,12 +21,12 @@ from reboot.cli.directories import (
 )
 from reboot.cli.rc import ArgumentParser
 from reboot.cli.subprocesses import Subprocesses
-from rebootdev.pydantic_schema_to_proto import generate_proto_file_from_api
-from rebootdev.pydantic_schema_to_zod import (
+from reboot.pydantic_schema_to_proto import generate_proto_file_from_api
+from reboot.pydantic_schema_to_zod import (
     collect_all_error_models,
     generate_zod_file_from_api,
 )
-from rebootdev.settings import (
+from reboot.settings import (
     DOCS_BASE_URL,
     ENVVAR_RBT_FROM_NODEJS,
     ENVVAR_REBOOT_NODEJS_EXTENSIONS,
@@ -246,7 +246,7 @@ def add_protoc_gen_es_to_path(
     os.environ["NODE_PATH"] = env_node_path
 
 
-@rebootdev.aio.tracing.function_span()
+@reboot.aio.tracing.function_span()
 async def ensure_protoc_gen_es(
     args,
     parser: ArgumentParser,
@@ -367,7 +367,7 @@ async def generate(
         )
 
 
-@rebootdev.aio.tracing.function_span()
+@reboot.aio.tracing.function_span()
 async def generate_direct(
     args,
     argv_after_dash_dash: list[str],
@@ -424,7 +424,7 @@ async def generate_direct(
     # thereby maybe only ever see one of the `rbt/` folders too (if there's
     # nothing unique inside it). So instead of looking for `rbt/` (which only
     # contains `v1alpha1/`, which is not unique) we look for its sibling paths
-    # `reboot/` and `rebootdev/`, which contains a lot of unique names in every
+    # `reboot/` and `reboot/`, which contains a lot of unique names in every
     # place it is present.
     #
     # The paths we get don't contain a `parent` attribute, since there isn't one
@@ -435,7 +435,7 @@ async def generate_direct(
     for resource in resources.files('reboot').iterdir():
         with resources.as_file(resource) as path:
             reboot_parent_paths.add(str(path.parent.parent))
-    for resource in resources.files('rebootdev').iterdir():
+    for resource in resources.files('reboot').iterdir():
         with resources.as_file(resource) as path:
             reboot_parent_paths.add(str(path.parent.parent))
 
@@ -1100,7 +1100,7 @@ async def generate_direct(
             end=' ',
         )
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def _invoke_protoc(
         common_args,
         all_plugins_args,

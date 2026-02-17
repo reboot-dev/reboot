@@ -5,19 +5,14 @@ from reboot.aio.auth.admin_auth import (
     AdminAuthMixin,
     auth_metadata_from_metadata,
 )
-from rebootdev.aio.headers import SERVER_ID_HEADER, Headers
-from rebootdev.aio.internals.channel_manager import _ChannelManager
-from rebootdev.aio.internals.middleware import Middleware
-from rebootdev.aio.internals.tasks_cache import TasksCache
-from rebootdev.aio.placement import PlacementClient
-from rebootdev.aio.state_managers import StateManager
-from rebootdev.aio.types import (
-    ApplicationId,
-    ServerId,
-    StateRef,
-    StateTypeName,
-)
-from rebootdev.server.database import NonexistentTaskId
+from reboot.aio.headers import SERVER_ID_HEADER, Headers
+from reboot.aio.internals.channel_manager import _ChannelManager
+from reboot.aio.internals.middleware import Middleware
+from reboot.aio.internals.tasks_cache import TasksCache
+from reboot.aio.placement import PlacementClient
+from reboot.aio.state_managers import StateManager
+from reboot.aio.types import ApplicationId, ServerId, StateRef, StateTypeName
+from reboot.server.database import NonexistentTaskId
 from typing import Optional
 
 

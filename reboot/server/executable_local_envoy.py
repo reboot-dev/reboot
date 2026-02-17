@@ -6,8 +6,8 @@ import urllib.request
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from log.log import get_logger
 from pathlib import Path
+from reboot.aio.types import ApplicationId
 from reboot.server.local_envoy import LocalEnvoy
-from rebootdev.aio.types import ApplicationId
 from typing import Optional
 
 logger = get_logger(__name__)

@@ -7,7 +7,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//reboot/aio:applications_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:external_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
         # Note: 'mcp', 'anyio', and 'starlette' are runtime dependencies
         # only - not declared in Bazel deps since they're user-provided.
     ],

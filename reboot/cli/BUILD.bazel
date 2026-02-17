@@ -8,7 +8,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("colorama"),
-        "@com_github_reboot_dev_reboot//rebootdev/aio:once_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:once_py",
     ],
 )
 
@@ -26,12 +26,12 @@ py_library(
         "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/auth:auth_py_reboot",
         "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/organizations:organizations_py_reboot",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
-        "@com_github_reboot_dev_reboot//rebootdev:naming_py",
-        "@com_github_reboot_dev_reboot//rebootdev:settings_py",
-        "@com_github_reboot_dev_reboot//rebootdev:time_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:aborted_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:external_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio/backoff:python",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot:time_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:aborted_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+        "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
     ],
 )
 
@@ -75,10 +75,10 @@ py_library(
         ":transpile_py",
         ":watch_py",
         "//reboot/controller:plan_makers_py",
-        "@com_github_reboot_dev_reboot//rebootdev:settings_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:exceptions_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio/backoff:python",
-        "@com_github_reboot_dev_reboot//rebootdev/ssl:localhost_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
+        "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
+        "@com_github_reboot_dev_reboot//reboot/ssl:localhost_py",
     ],
 )
 
@@ -90,7 +90,7 @@ py_library(
     deps = [
         ":subprocesses_py",
         ":terminal_py",
-        "@com_github_reboot_dev_reboot//rebootdev:settings_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
     ],
 )
 
@@ -105,8 +105,8 @@ py_library(
         "//reboot/aio/auth:admin_auth_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:export_import_py_grpc",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:export_import_py_proto",
-        "@com_github_reboot_dev_reboot//rebootdev:settings_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:external_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
     ],
 )
 
@@ -124,8 +124,8 @@ py_library(
         ":terminal_py",
         ":transpile_py",
         "//reboot/controller:plan_makers_py",
-        "@com_github_reboot_dev_reboot//rebootdev:settings_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:exceptions_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
     ],
 )
 
@@ -140,16 +140,16 @@ py_library(
         # block the event loop, so we use 'aiofiles' instead.
         requirement("aiofiles"),
         requirement("grpcio-health-checking"),
-        "@com_github_reboot_dev_reboot//rebootdev:version_py",
+        "@com_github_reboot_dev_reboot//reboot:version_py",
         ":directories_py",
         ":rc_py",
         ":subprocesses_py",
         ":terminal_py",
         ":watch_py",
-        "@com_github_reboot_dev_reboot//rebootdev:pydantic_schema_to_proto_py",
-        "@com_github_reboot_dev_reboot//rebootdev:pydantic_schema_to_zod_py",
-        "@com_github_reboot_dev_reboot//rebootdev:settings_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:tracing_py",
+        "@com_github_reboot_dev_reboot//reboot:pydantic_schema_to_proto_py",
+        "@com_github_reboot_dev_reboot//reboot:pydantic_schema_to_zod_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:tracing_py",
     ],
 )
 
@@ -162,7 +162,7 @@ py_library(
         ":cloud_py",
         ":rc_py",
         ":terminal_py",
-        "@com_github_reboot_dev_reboot//rebootdev:settings_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
     ],
 )
 
@@ -197,7 +197,7 @@ py_library(
     deps = [
         ":rc_py",
         ":terminal_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:directories_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:directories_py",
     ],
 )
 
@@ -231,8 +231,8 @@ py_library(
         "//reboot/aio/auth:admin_auth_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_grpc",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
-        "@com_github_reboot_dev_reboot//rebootdev:settings_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:external_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
     ],
 )
 
@@ -247,9 +247,9 @@ py_library(
         "//reboot:protoc-gen-reboot_react",
         "@com_github_reboot_dev_reboot//protoc_gen_mypy_plugin:protoc-gen-mypy",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:protos",
-        "@com_github_reboot_dev_reboot//rebootdev:protoc-gen-es_with_deps",
-        "@com_github_reboot_dev_reboot//rebootdev:protoc-gen-reboot_python",
-        "@com_github_reboot_dev_reboot//rebootdev:protoc-gen-reboot_python_boilerplate",
+        "@com_github_reboot_dev_reboot//reboot:protoc-gen-es_with_deps",
+        "@com_github_reboot_dev_reboot//reboot:protoc-gen-reboot_python",
+        "@com_github_reboot_dev_reboot//reboot:protoc-gen-reboot_python_boilerplate",
     ],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],

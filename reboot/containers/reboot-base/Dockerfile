@@ -1,4 +1,4 @@
-# Keep in sync with top-level `Dockerfile` and `rebootdev/settings.py`.
+# Keep in sync with top-level `Dockerfile` and `reboot/settings.py`.
 ARG ENVOY_VERSION=1.30.2
 
 FROM envoyproxy/envoy:v${ENVOY_VERSION}
@@ -17,7 +17,7 @@ ARG PYTHON_VERSION=3.10
 # * `python3-dev` and `build-essential` to allow `node-gyp` to build native Node
 #                 modules, notably `@reboot-dev/reboot`.
 # * `python-is-python3` to make sure we're using python3 (not python2).
-# * `tini` to provide an entrypoint with proper signal handling in the 
+# * `tini` to provide an entrypoint with proper signal handling in the
 #         container, which is important for graceful shutdowns and
 #         proper handling of signals like `SIGTERM` and `SIGINT`.
 # * `git` since the Reboot CLI relies on it to do its `.rbtrc` logic.

@@ -614,7 +614,7 @@ export const GRPC_ERROR_TYPES = [
 
 export const REBOOT_ERROR_TYPES = [
   // NOTE: also add any new errors into
-  // `rebootdev/templates/reboot_react.ts.j2`.
+  // `reboot/templates/reboot_react.ts.j2`.
   errors_pb.StateAlreadyConstructed,
   errors_pb.StateNotConstructed,
   errors_pb.TransactionParticipantFailedToPrepare,
@@ -958,7 +958,7 @@ type StateId = string;
 type StateRef = string;
 type StateTypeName = string;
 
-// Corresponds to encodings in `rebootdev.aio.types`.
+// Corresponds to encodings in `reboot.aio.types`.
 export function stateIdToRef(stateType: StateTypeName, id: StateId): StateRef {
   // This is the earliest time we can validate the state ID given to us by the
   // user; do it now, so that any stack trace is as short as possible.
@@ -970,7 +970,7 @@ export function stateIdToRef(stateType: StateTypeName, id: StateId): StateRef {
   // class will escape back any backslashes to forward slashes.
   // We can't escape a forward slash with '%2F' currently, because we
   // use forward slashes in the collocations.
-  // See more at public/rebootdev/aio/types.py.
+  // See more at public/reboot/aio/types.py.
   const encoded = escapedKey.replace(/\\/g, "%5C");
   return `${stateType}:${encoded}`;
 }

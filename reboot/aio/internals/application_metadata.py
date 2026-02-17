@@ -3,10 +3,10 @@ from dataclasses import dataclass
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from log.log import get_logger
 from rbt.v1alpha1 import application_metadata_pb2
+from reboot.aio.types import ApplicationId
 from reboot.controller.application_config import ApplicationConfig
-from rebootdev.aio.types import ApplicationId
-from rebootdev.server.database import DatabaseClient
-from rebootdev.server.service_descriptor_validator import (
+from reboot.server.database import DatabaseClient
+from reboot.server.service_descriptor_validator import (
     validate_descriptor_sets_are_backwards_compatible,
 )
 from typing import AsyncIterator

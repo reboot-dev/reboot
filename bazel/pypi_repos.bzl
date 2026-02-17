@@ -30,5 +30,5 @@ def pypi_repos():
         python_interpreter_target = interpreter,
         # Fully-specified path (including repo) so that this `.bzl` file can
         # also be imported from other repos.
-        requirements_lock = "@com_github_reboot_dev_reboot//rebootdev:requirements_lock.txt",
+        requirements_lock = "@com_github_reboot_dev_reboot//reboot:requirements_lock.txt",
     )

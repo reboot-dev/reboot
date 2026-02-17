@@ -2,7 +2,7 @@ import kubernetes_asyncio.client
 from dataclasses import dataclass, field
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from rbt.v1alpha1 import database_pb2, placement_planner_pb2
-from rebootdev.aio.types import ApplicationId, RevisionNumber, ServiceName
+from reboot.aio.types import ApplicationId, RevisionNumber, ServiceName
 from typing import Optional
 
 

@@ -3,7 +3,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
 from pathlib import Path
-from rebootdev.settings import ENVVAR_RBT_SECRETS_DIRECTORY
+from reboot.settings import ENVVAR_RBT_SECRETS_DIRECTORY
 from typing import ClassVar, Optional
 
 

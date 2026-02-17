@@ -10,14 +10,14 @@ py_library(
         "@com_github_reboot_dev_reboot//log:log_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_grpc",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
-        "@com_github_reboot_dev_reboot//rebootdev:helpers_py",
-        "@com_github_reboot_dev_reboot//rebootdev:naming_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
+        "@com_github_reboot_dev_reboot//reboot:helpers_py",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:types_py",
         requirement("grpcio"),
         ":application_config_trackers_py",
         ":plan_makers_py",
         ":server_managers_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:exceptions_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
     ],
 )
 
@@ -30,8 +30,8 @@ py_library(
         ":application_config_py",
         ":settings_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:servicers_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:servicers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:types_py",
     ],
 )
 
@@ -58,7 +58,7 @@ py_library(
         requirement("psutil"),
         ":servers_py",
         ":settings_py",
-        "@com_github_reboot_dev_reboot//rebootdev:naming_py",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
         "//reboot/aio:http_py",
         "//reboot/aio:monitoring_py",
         "//reboot/aio:servers_py",
@@ -66,17 +66,17 @@ py_library(
         "//reboot/cli:terminal_py",
         "//reboot/server:local_envoy_factory_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
-        "@com_github_reboot_dev_reboot//rebootdev:run_environments_py",
-        "@com_github_reboot_dev_reboot//rebootdev:settings_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:exceptions_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:resolvers_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:servicers_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:signals_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:state_managers_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:tracing_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio/auth:token_verifiers_py",
-        "@com_github_reboot_dev_reboot//rebootdev/nodejs:python_py",
+        "@com_github_reboot_dev_reboot//reboot:run_environments_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:resolvers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:servicers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:signals_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:state_managers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:tracing_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:types_py",
+        "@com_github_reboot_dev_reboot//reboot/aio/auth:token_verifiers_py",
+        "@com_github_reboot_dev_reboot//reboot/nodejs:python_py",
     ],
 )
 
@@ -87,7 +87,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":application_config_py",
-        "@com_github_reboot_dev_reboot//rebootdev:naming_py",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
     ],
 )
 
@@ -99,11 +99,11 @@ py_library(
     deps = [
         requirement("kubernetes_asyncio"),
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:application_config_py_proto",
-        "@com_github_reboot_dev_reboot//rebootdev:helpers_py",
-        "@com_github_reboot_dev_reboot//rebootdev:naming_py",
-        "@com_github_reboot_dev_reboot//rebootdev:version_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:servicers_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
+        "@com_github_reboot_dev_reboot//reboot:helpers_py",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
+        "@com_github_reboot_dev_reboot//reboot:version_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:servicers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:types_py",
     ],
 )
 
@@ -114,7 +114,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
-        "@com_github_reboot_dev_reboot//rebootdev:naming_py",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
     ],
 )
 
@@ -133,11 +133,11 @@ py_library(
         requirement("grpcio"),
         ":application_config_py",
         ":shards_py",
-        "@com_github_reboot_dev_reboot//rebootdev:naming_py",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
         "//reboot/aio:servers_py",
         "@com_github_reboot_dev_reboot//log:log_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
-        "@com_github_reboot_dev_reboot//rebootdev:run_environments_py",
+        "@com_github_reboot_dev_reboot//reboot:run_environments_py",
     ],
 )
 
@@ -148,6 +148,6 @@ py_library(
     deps = [
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:types_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:types_py",
     ],
 )

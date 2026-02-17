@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from reboot.cli import terminal
 from reboot.cli.subprocesses import Subprocesses
-from rebootdev.settings import ENVVAR_RBT_FROM_NODEJS
+from reboot.settings import ENVVAR_RBT_FROM_NODEJS
 from typing import Optional
 
 rbt_from_nodejs = os.environ.get(

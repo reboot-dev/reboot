@@ -3,39 +3,39 @@ from __future__ import annotations
 import asyncio
 import colorama
 import os
-import rebootdev.aio.memoize
-import rebootdev.aio.workflows
+import reboot.aio.memoize
+import reboot.aio.workflows
 import sys
 import traceback
 from log.log import get_logger
 from pathlib import Path
+from reboot.aio.auth.token_verifiers import TokenVerifier
+from reboot.aio.exceptions import InputError
+from reboot.aio.external import InitializeContext
 from reboot.aio.http import NodeWebFramework, PythonWebFramework, WebFramework
+from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.libraries import AbstractLibrary
 from reboot.aio.reboot import Reboot
 from reboot.aio.servers import ConfigServer
+from reboot.aio.servicers import Serviceable, Servicer
+from reboot.aio.tracing import function_span
+from reboot.aio.types import ServerId
 from reboot.cli import terminal
 from reboot.controller.server_managers import (
     run_nodejs_server_process,
     run_python_server_process,
 )
 from reboot.controller.settings import ENVVAR_REBOOT_MODE, REBOOT_MODE_CONFIG
-from rebootdev.aio.auth.token_verifiers import TokenVerifier
-from rebootdev.aio.exceptions import InputError
-from rebootdev.aio.external import InitializeContext
-from rebootdev.aio.internals.channel_manager import _ChannelManager
-from rebootdev.aio.servicers import Serviceable, Servicer
-from rebootdev.aio.tracing import function_span
-from rebootdev.aio.types import ServerId
-from rebootdev.nodejs.python import should_print_stacktrace
-from rebootdev.run_environments import (
+from reboot.nodejs.python import should_print_stacktrace
+from reboot.run_environments import (
     InvalidRunEnvironment,
     RunEnvironment,
     detect_run_environment,
     within_nodejs_server,
     within_python_server,
 )
-from rebootdev.server.service_descriptor_validator import ProtoValidationError
-from rebootdev.settings import (
+from reboot.server.service_descriptor_validator import ProtoValidationError
+from reboot.settings import (
     DEFAULT_SECURE_PORT,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_SERVERS,
@@ -99,9 +99,9 @@ def _handle_input_error(input_error: InputError) -> None:
 # dependency between generated code and functions in
 # `workflows.py` which need to call `memoize` which also
 # depends on generated code!
-assert rebootdev.aio.workflows.memoize is None
-assert rebootdev.aio.memoize.memoize is not None
-rebootdev.aio.workflows.memoize = rebootdev.aio.memoize.memoize
+assert reboot.aio.workflows.memoize is None
+assert reboot.aio.memoize.memoize is not None
+reboot.aio.workflows.memoize = reboot.aio.memoize.memoize
 
 
 class Library(AbstractLibrary):
@@ -362,7 +362,7 @@ class Application:
     @property
     def servicers(self):
         # Always include `memoize` servicers.
-        return (self._servicers or []) + rebootdev.aio.memoize.servicers()
+        return (self._servicers or []) + reboot.aio.memoize.servicers()
 
     @property
     def legacy_grpc_servicers(self):

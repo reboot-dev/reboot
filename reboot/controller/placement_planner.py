@@ -1,6 +1,6 @@
 import asyncio
 import grpc
-import rebootdev.aio.tracing
+import reboot.aio.tracing
 from concurrent import futures
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from log.log import ERROR, get_logger
@@ -9,6 +9,7 @@ from rbt.v1alpha1 import (
     placement_planner_pb2,
     placement_planner_pb2_grpc,
 )
+from reboot.aio.types import RevisionNumber, ServerId
 from reboot.controller.application_config import ApplicationConfig
 from reboot.controller.application_config_trackers import (
     ApplicationConfigTracker,
@@ -16,8 +17,7 @@ from reboot.controller.application_config_trackers import (
 from reboot.controller.plan_makers import PlanMaker
 from reboot.controller.server_managers import ServerManager
 from reboot.controller.servers import ServerSpec
-from rebootdev.aio.types import RevisionNumber, ServerId
-from rebootdev.naming import ApplicationId
+from reboot.naming import ApplicationId
 from typing import AsyncGenerator, Awaitable, Callable, Optional
 
 logger = get_logger(__name__)
@@ -100,7 +100,7 @@ class PlacementPlanner(placement_planner_pb2_grpc.PlacementPlannerServicer):
             await self._server.stop(grace=None)
             logger.info('PlacementPlanner server stopped')
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def make_plan(self) -> None:
         """
         Generate a new placement plan based on the currently valid set of

@@ -5,7 +5,7 @@ import functools
 import grpc
 import os
 import random
-import rebootdev.aio.tracing
+import reboot.aio.tracing
 import shutil
 import signal
 import sys
@@ -21,6 +21,9 @@ from opentelemetry.sdk.environment_variables import (
     OTEL_EXPORTER_OTLP_TRACES_INSECURE,
 )
 from pathlib import Path
+from reboot.aio.backoff import Backoff
+from reboot.aio.contexts import EffectValidation
+from reboot.aio.exceptions import InputError
 # We import the whole `terminal` module (as opposed to the methods it contains)
 # to allow us to mock these methods out in tests.
 from reboot.cli import terminal
@@ -44,10 +47,7 @@ from reboot.cli.subprocesses import Subprocesses
 from reboot.cli.transpile import auto_transpile, ensure_can_auto_transpile
 from reboot.cli.watch import FileWatcher, file_watcher
 from reboot.controller.plan_makers import validate_num_servers
-from rebootdev.aio.backoff import Backoff
-from rebootdev.aio.contexts import EffectValidation
-from rebootdev.aio.exceptions import InputError
-from rebootdev.settings import (
+from reboot.settings import (
     DEFAULT_SECURE_PORT,
     DOCS_BASE_URL,
     ENVOY_PROXY_IMAGE,
@@ -69,7 +69,7 @@ from rebootdev.settings import (
     ENVVAR_REBOOT_USE_TTY,
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
 )
-from rebootdev.ssl.localhost import LOCALHOST_CRT_DATA
+from reboot.ssl.localhost import LOCALHOST_CRT_DATA
 from typing import Any, Awaitable, Callable, Optional, TextIO, TypeVar
 
 TLS_CERTIFICATE_BEGINNING = "-----BEGIN CERTIFICATE-----"
@@ -367,7 +367,7 @@ async def _run_background_command(
             )
 
 
-@rebootdev.aio.tracing.asynccontextmanager_span(set_status_on_exception=False)
+@reboot.aio.tracing.asynccontextmanager_span(set_status_on_exception=False)
 async def _run(
     application,
     *,
@@ -891,7 +891,7 @@ def _handle_application_exit(
     return None
 
 
-@rebootdev.aio.tracing.function_span()
+@reboot.aio.tracing.function_span()
 async def dev_run(
     args,
     *,
@@ -994,7 +994,7 @@ async def dev_run(
             return return_code
 
 
-@rebootdev.aio.tracing.function_span()
+@reboot.aio.tracing.function_span()
 async def _dev_run(
     args,
     *,
@@ -1088,7 +1088,7 @@ async def _dev_run(
                 )
 
 
-@rebootdev.aio.tracing.function_span()
+@reboot.aio.tracing.function_span()
 async def __dev_run(
     args,
     *,
@@ -1233,7 +1233,7 @@ async def __dev_run(
         )
 
     # Set all the environment variables that
-    # 'rebootdev.aio.Application' will be looking for.
+    # 'reboot.aio.Application' will be looking for.
     #
     # We make a copy of the environment so that we don't change
     # our environment variables which might cause an issue.

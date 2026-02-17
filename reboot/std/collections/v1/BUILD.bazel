@@ -15,8 +15,8 @@ py_library(
         "//reboot/aio:secrets_py",
         "//reboot/aio/auth:authorizers_py",
         "@com_github_reboot_dev_reboot//rbt/std/collections/v1:sorted_map_py_reboot",
-        "@com_github_reboot_dev_reboot//rebootdev:run_environments_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:tasks_py",
+        "@com_github_reboot_dev_reboot//reboot:run_environments_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:tasks_py",
     ],
 )
 

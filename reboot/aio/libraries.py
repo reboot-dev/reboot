@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from rebootdev.aio.external import InitializeContext
-from rebootdev.aio.servicers import Servicer
+from reboot.aio.external import InitializeContext
+from reboot.aio.servicers import Servicer
 from typing import ClassVar
 
 

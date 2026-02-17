@@ -57,7 +57,7 @@ end
 -- E.g.: "tests.reboot.General" -> "AFk1ev8EXQ5LUQ".
 --
 -- This is a re-implementation of the Python function
--- `rebootdev.aio.state_type_tag_for_name()` in `public/rebootdev/aio/types.py`; we MUST keep
+-- `reboot.aio.state_type_tag_for_name()` in `public/reboot/aio/types.py`; we MUST keep
 -- them in sync for our routing logic to work.
 local function state_type_tag_for_name(state_type)
     -- Compute SHA-1 hash
@@ -90,7 +90,7 @@ end
 --       -> "AFk1ev8EXQ5LUQ:foo/BDkaev8DE2Mak:bar".
 --
 -- This is a re-implementation of the Python function
--- `rebootdev.aio.StateRef.from_maybe_readable()` in `public/rebootdev/aio/types.py`; we
+-- `reboot.aio.StateRef.from_maybe_readable()` in `public/reboot/aio/types.py`; we
 -- MUST keep them in sync for our routing logic to work.
 local function state_ref_from_maybe_human_readable(state_ref)
     local result = {}

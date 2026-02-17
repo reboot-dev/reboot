@@ -5,8 +5,8 @@ import base64
 import dataclasses
 import os
 import pickle
-import rebootdev.aio.tracing
-import rebootdev.nodejs.python
+import reboot.aio.tracing
+import reboot.nodejs.python
 import signal
 import subprocess
 import sys
@@ -18,29 +18,29 @@ from dataclasses import dataclass
 from google.protobuf import json_format
 from pathlib import Path
 from rbt.v1alpha1 import database_pb2, placement_planner_pb2
+from reboot.aio.auth.token_verifiers import TokenVerifier
+from reboot.aio.contexts import EffectValidation
+from reboot.aio.exceptions import InputError
 from reboot.aio.http import WebFramework
 from reboot.aio.internals.application_metadata import ApplicationMetadata
 from reboot.aio.monitoring import monitor_event_loop
+from reboot.aio.placement import PlanOnlyPlacementClient
+from reboot.aio.resolvers import StaticResolver
 from reboot.aio.servers import ServiceServer
+from reboot.aio.servicers import Serviceable
+from reboot.aio.state_managers import SidecarStateManager
+from reboot.aio.types import ApplicationId, RoutableAddress, ServerId
 from reboot.controller.servers import ServerSpec
 from reboot.controller.settings import (
     ENVVAR_REBOOT_REPLICA_CONFIG,
     ENVVAR_REBOOT_REPLICA_INDEX,
 )
+from reboot.naming import ensure_valid_application_id
 from reboot.routing.envoy_config import ServerAddress, ServerInfo
+from reboot.run_environments import on_cloud
 from reboot.server.local_envoy import LocalEnvoy
 from reboot.server.local_envoy_factory import LocalEnvoyFactory
-from rebootdev.aio.auth.token_verifiers import TokenVerifier
-from rebootdev.aio.contexts import EffectValidation
-from rebootdev.aio.exceptions import InputError
-from rebootdev.aio.placement import PlanOnlyPlacementClient
-from rebootdev.aio.resolvers import StaticResolver
-from rebootdev.aio.servicers import Serviceable
-from rebootdev.aio.state_managers import SidecarStateManager
-from rebootdev.aio.types import ApplicationId, RoutableAddress, ServerId
-from rebootdev.naming import ensure_valid_application_id
-from rebootdev.run_environments import on_cloud
-from rebootdev.settings import (
+from reboot.settings import (
     ENVVAR_NODEJS_SERVER_BASE64_ARGS,
     ENVVAR_PYTHON_SERVER,
     ENVVAR_PYTHON_SERVER_BASE64_ARGS,
@@ -83,7 +83,7 @@ class ServerManager:
         """Delete the given server from the system."""
         raise NotImplementedError()
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def set_servers(
         self,
         planned_servers: Sequence[ServerSpec],
@@ -169,7 +169,7 @@ async def _run_server_process(
     server: Optional[ServiceServer] = None
 
     # Since we've just started a new process, we must start any tracers.
-    rebootdev.aio.tracing.start(server_id=server_id)
+    reboot.aio.tracing.start(server_id=server_id)
 
     # This is the entrypoint for a server process; we monitor
     # its event loop.
@@ -365,7 +365,7 @@ async def run_python_server_process(
     )
 
 
-@rebootdev.aio.tracing.function_span()
+@reboot.aio.tracing.function_span()
 async def get_subprocess_server_ports_via_fifo(fifo: Path):
     # Open the FIFO for reading in non-blocking mode to not block the
     # event loop, which would prevent the subprocess from starting.
@@ -634,7 +634,7 @@ class LocalServerManager(ServerManager):
             effect_validation=effect_validation,
         )
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def set_servers(
         self,
         planned_servers: Sequence[ServerSpec],
@@ -668,7 +668,7 @@ class LocalServerManager(ServerManager):
             await self._local_envoy.stop()
             self._local_envoy = None
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def _delete_server(
         self,
         server: ServerSpec,
@@ -699,7 +699,7 @@ class LocalServerManager(ServerManager):
 
         self._launched_servers[server.id] = await launched_server.stop()
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def _set_server(
         self,
         server: ServerSpec,
@@ -744,7 +744,7 @@ class LocalServerManager(ServerManager):
 
         return await self._start_server(server)
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def _start_server(
         self,
         server: ServerSpec,
@@ -826,7 +826,7 @@ class LocalServerManager(ServerManager):
         # And reconfigure envoy, since the server will be on a new port.
         await self._configure_envoy()
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def _launch_in_process_server(
         self,
         host: str,
@@ -1003,7 +1003,7 @@ class LocalServerManager(ServerManager):
             'effect_validation': effect_validation,
         }
 
-        pid = await rebootdev.nodejs.python.launch_subprocess_server(
+        pid = await reboot.nodejs.python.launch_subprocess_server(
             # NOTE: Base64 encoding returns bytes that we then need
             # "decode" into a string to pass into nodejs.
             base64.b64encode(pickle.dumps(args)).decode('utf-8')
@@ -1073,7 +1073,7 @@ class LocalServerManager(ServerManager):
             ),
         )
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def _launch_python_subprocess_server(
         self,
         host: str,
@@ -1182,7 +1182,7 @@ class LocalServerManager(ServerManager):
             ),
         )
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def _ensure_envoy_if_needed(self, application_id: ApplicationId):
         """
         Starts the Envoy if it's needed, and hasn't been started yet.
@@ -1220,7 +1220,7 @@ class LocalServerManager(ServerManager):
 
         await self._local_envoy.start()
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def _configure_envoy(self):
         if self._local_envoy is None:
             # There is no Envoy to configure. We're done.
@@ -1292,7 +1292,7 @@ class FakeServerManager(ServerManager):
             port=port,
         )
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def _set_server(
         self,
         server: ServerSpec,
@@ -1300,7 +1300,7 @@ class FakeServerManager(ServerManager):
         self.servers[server.id] = server
         return self.address_for_server(server.id)
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def _delete_server(
         self,
         server: ServerSpec,

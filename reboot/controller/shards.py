@@ -1,5 +1,5 @@
 from rbt.v1alpha1 import database_pb2
-from rebootdev.naming import make_shard_id
+from reboot.naming import make_shard_id
 
 NUM_SHARDS = 2**14  # = 16,384.
 

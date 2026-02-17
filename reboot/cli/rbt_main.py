@@ -11,12 +11,12 @@ def main():
         import asyncio
         import os
         import platform
-        import rebootdev.aio.tracing
+        import reboot.aio.tracing
         import signal
         import sys
         from reboot.cli.cli import cli
 
-        rebootdev.aio.tracing.start("reboot cli")
+        reboot.aio.tracing.start("reboot cli")
 
         handling_keyboard_interrupt = False
 

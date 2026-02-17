@@ -1,7 +1,7 @@
 import argparse
 import asyncio
 from fig.v1.fig_rbt import Fig, FigBoard
-from rebootdev.aio.external import ExternalContext
+from reboot.aio.external import ExternalContext
 from typing import Optional
 
 FIG_BOARD_ID = 'fig-board-for-now-singleton'

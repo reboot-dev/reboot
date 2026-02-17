@@ -2,15 +2,15 @@ import os
 import reboot.aio.reboot
 import unittest
 from reboot.aio.applications import Application
+from reboot.aio.auth.token_verifiers import TokenVerifier
+from reboot.aio.contexts import EffectValidation
+from reboot.aio.external import InitializeContext
 from reboot.aio.http import WebFramework
 from reboot.aio.libraries import AbstractLibrary
 from reboot.aio.reboot import ApplicationRevision
-from rebootdev.aio.auth.token_verifiers import TokenVerifier
-from rebootdev.aio.contexts import EffectValidation
-from rebootdev.aio.external import InitializeContext
-from rebootdev.aio.servicers import Servicer
-from rebootdev.run_environments import in_nodejs
-from rebootdev.settings import ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG
+from reboot.aio.servicers import Servicer
+from reboot.run_environments import in_nodejs
+from reboot.settings import ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG
 from typing import Any, Awaitable, Callable, Optional, Sequence, overload
 from unittest import mock
 

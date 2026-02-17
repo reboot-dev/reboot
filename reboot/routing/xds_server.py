@@ -7,7 +7,7 @@ from envoy.config.listener.v3 import listener_pb2
 from envoy.service.discovery.v3 import ads_pb2_grpc, discovery_pb2
 from google.protobuf import any_pb2
 from log.log import get_logger
-from rebootdev.settings import ENVOY_VERSION
+from reboot.settings import ENVOY_VERSION
 from typing import AsyncIterator, Literal, Optional
 
 logger = get_logger(__name__)

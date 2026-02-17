@@ -29,13 +29,9 @@ from rbt.std.presence.v1.presence_rbt import (
     WatchResponse,
 )
 from rbt.v1alpha1.errors_pb2 import AlreadyExists, FailedPrecondition, NotFound
-from rebootdev.aio.auth.authorizers import allow
-from rebootdev.aio.contexts import (
-    ReaderContext,
-    WorkflowContext,
-    WriterContext,
-)
-from rebootdev.aio.workflows import until
+from reboot.aio.auth.authorizers import allow
+from reboot.aio.contexts import ReaderContext, WorkflowContext, WriterContext
+from reboot.aio.workflows import until
 
 
 class Event:

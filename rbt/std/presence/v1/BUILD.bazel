@@ -1,5 +1,5 @@
 load(
-    "@com_github_reboot_dev_reboot//rebootdev:rules.bzl",
+    "@com_github_reboot_dev_reboot//reboot:rules.bzl",
     "js_proto_library",
     "js_reboot_library",
     "js_reboot_react_library",

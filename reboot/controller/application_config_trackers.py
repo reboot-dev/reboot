@@ -1,5 +1,5 @@
 from reboot.controller.application_config import ApplicationConfig
-from rebootdev.naming import ApplicationId
+from reboot.naming import ApplicationId
 from typing import Awaitable, Callable
 
 

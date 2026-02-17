@@ -2,8 +2,8 @@ import asyncio
 import json
 import logging
 import os
-import rebootdev.aio.signals as signals
-import rebootdev.aio.tracing
+import reboot.aio.signals as signals
+import reboot.aio.tracing
 import signal
 import socket
 import subprocess
@@ -13,10 +13,10 @@ import traceback
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from log.log import get_logger
 from pathlib import Path
+from reboot.aio.types import ApplicationId
 from reboot.routing.envoy_config import ServerInfo
 from reboot.server.local_envoy import LocalEnvoy
-from rebootdev.aio.types import ApplicationId
-from rebootdev.settings import (
+from reboot.settings import (
     DEFAULT_INSECURE_PORT,
     DEFAULT_SECURE_PORT,
     DEFAULT_TRUSTED_PORT,
@@ -195,7 +195,7 @@ class DockerLocalEnvoy(LocalEnvoy):
             )
         return self._published_trusted_port
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def _start(self) -> None:
         """Starts Envoy in a container on an unused port. The port started on
         is retrieved and saved.
@@ -295,7 +295,7 @@ class DockerLocalEnvoy(LocalEnvoy):
             self._tmp_envoy_dir.cleanup()
             self._nanny_socket.close()
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def _docker_run_envoy(self) -> None:
         """Checks that Docker is installed and starts up Envoy in a container.
         """
@@ -515,7 +515,7 @@ class DockerLocalEnvoy(LocalEnvoy):
         stdout_data, _ = await process.communicate()
         return stdout_data.decode()
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def _get_forwarded_local_port_from_docker(
         self,
         container_id: str,
@@ -558,7 +558,7 @@ class DockerLocalEnvoy(LocalEnvoy):
                 )
                 raise
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def _exec_local_envoy_nanny(self):
         # Start listening for the 'local_envoy_nanny' to connect. We
         # use a daemon thread which ignores any errors after we've

@@ -1,18 +1,18 @@
 import os
-import rebootdev.aio.tracing
+import reboot.aio.tracing
 import sys
 from dataclasses import dataclass
 from google.protobuf.descriptor import FileDescriptor
-from reboot.protoc_gen_reboot_nodejs import (
-    NodejsFile,
-    NodejsRebootProtocPlugin,
-)
-from rebootdev.protoc_gen_reboot_generic import (
+from reboot.protoc_gen_reboot_generic import (
     BaseFile,
     PluginSpecificData,
     UserProtoError,
 )
-from rebootdev.settings import ENVVAR_REBOOT_NODEJS_EXTENSIONS
+from reboot.protoc_gen_reboot_nodejs import (
+    NodejsFile,
+    NodejsRebootProtocPlugin,
+)
+from reboot.settings import ENVVAR_REBOOT_NODEJS_EXTENSIONS
 
 
 @dataclass
@@ -103,7 +103,7 @@ class NodejsRebootBoilerplateProtocPlugin(NodejsRebootProtocPlugin):
 
 # This is a separate function (rather than just being in `__main__`) so that we
 # can refer to it as a `script` in our `pip_package` BUILD targets.
-@rebootdev.aio.tracing.main_span("protoc_gen_reboot_nodejs_boilerplate")
+@reboot.aio.tracing.main_span("protoc_gen_reboot_nodejs_boilerplate")
 def main():
     try:
         NodejsRebootBoilerplateProtocPlugin.execute()

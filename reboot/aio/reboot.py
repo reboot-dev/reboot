@@ -1,6 +1,6 @@
 import asyncio
 import os
-import rebootdev.aio.tracing
+import reboot.aio.tracing
 import shutil
 import tempfile
 import uuid
@@ -8,11 +8,22 @@ from dataclasses import dataclass
 from log.log import get_logger
 from pathlib import Path
 from rbt.v1alpha1 import database_pb2
+from reboot.aio.auth.token_verifiers import TokenVerifier
+from reboot.aio.caller_id import CallerID
+from reboot.aio.contexts import EffectValidation
+from reboot.aio.exceptions import InputError
+from reboot.aio.external import ExternalContext, InitializeContext
 from reboot.aio.http import WebFramework
 from reboot.aio.internals.application_metadata import ApplicationMetadata
+from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.libraries import AbstractLibrary
 from reboot.aio.monitoring import monitor_event_loop
+from reboot.aio.placement import PlanOnlyPlacementClient
+from reboot.aio.resolvers import StaticResolver
 from reboot.aio.servers import run_application_initializer
+from reboot.aio.servicers import Serviceable, Servicer
+from reboot.aio.tracing import function_span
+from reboot.aio.types import ApplicationId, ServerId, ServiceName, StateRef
 from reboot.controller.application_config import ApplicationConfig
 from reboot.controller.application_config_trackers import (
     LocalApplicationConfigTracker,
@@ -23,21 +34,10 @@ from reboot.controller.plan_makers import make_shard_infos
 from reboot.controller.server_managers import LocalServerManager
 from reboot.controller.servers import ServerSpec
 from reboot.controller.settings import ENVVAR_REBOOT_APPLICATION_ID
-from rebootdev.aio.auth.token_verifiers import TokenVerifier
-from rebootdev.aio.caller_id import CallerID
-from rebootdev.aio.contexts import EffectValidation
-from rebootdev.aio.exceptions import InputError
-from rebootdev.aio.external import ExternalContext, InitializeContext
-from rebootdev.aio.internals.channel_manager import _ChannelManager
-from rebootdev.aio.placement import PlanOnlyPlacementClient
-from rebootdev.aio.resolvers import StaticResolver
-from rebootdev.aio.servicers import Serviceable, Servicer
-from rebootdev.aio.tracing import function_span
-from rebootdev.aio.types import ApplicationId, ServerId, ServiceName, StateRef
-from rebootdev.naming import get_local_application_id
-from rebootdev.run_environments import on_cloud
-from rebootdev.server.database import DatabaseServer, DatabaseServerFailed
-from rebootdev.settings import (
+from reboot.naming import get_local_application_id
+from reboot.run_environments import on_cloud
+from reboot.server.database import DatabaseServer, DatabaseServerFailed
+from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_MODE,
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS,
@@ -104,7 +104,7 @@ class Reboot:
             self._application_id = ApplicationId(application_id)
 
         if initialize_tracing:
-            rebootdev.aio.tracing.start(process_name=self._application_name)
+            reboot.aio.tracing.start(process_name=self._application_name)
 
         self._in_process = in_process
 
@@ -654,7 +654,7 @@ class Reboot:
 
         return envoy.trusted_port
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def _wait_for_local_plan_sync(self) -> None:
         """Waits for our placement client to have seen the most recent plan.
 
@@ -735,7 +735,7 @@ class Reboot:
             # `DatabaseServer`.
             await self._database_server.shutdown_and_wait()
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def down(self) -> None:
         """Bring down this Reboot application."""
         # Delete all configs so that the PlacementPlanner will bring down
@@ -743,4 +743,4 @@ class Reboot:
         assert len(await self._config_tracker.get_application_configs()) <= 1
         await self._config_tracker.delete_all_configs()
         await self._wait_for_local_plan_sync()
-        rebootdev.aio.tracing.force_flush()
+        reboot.aio.tracing.force_flush()

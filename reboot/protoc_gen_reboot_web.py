@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 import os
-import rebootdev.aio.tracing
+import reboot.aio.tracing
 from dataclasses import dataclass
 from reboot.cli import terminal
-from reboot.protoc_gen_reboot_typescript import TypescriptRebootProtocPlugin
-from rebootdev.protoc_gen_reboot_generic import (
+from reboot.protoc_gen_reboot_generic import (
     BaseClient,
     BaseFile,
     BaseMethod,
@@ -15,7 +14,8 @@ from rebootdev.protoc_gen_reboot_generic import (
     ProtoType,
     UserProtoError,
 )
-from rebootdev.settings import ENVVAR_REBOOT_WEB_EXTENSIONS
+from reboot.protoc_gen_reboot_typescript import TypescriptRebootProtocPlugin
+from reboot.settings import ENVVAR_REBOOT_WEB_EXTENSIONS
 from typing import Sequence
 
 ReactType = str
@@ -266,7 +266,7 @@ class WebRebootProtocPlugin(TypescriptRebootProtocPlugin):
 
 # This is a separate function (rather than just being in `__main__`) so that we
 # can refer to it as a `script` in our `pyproject.rbt.toml` file.
-@rebootdev.aio.tracing.main_span("protoc_gen_reboot_web")
+@reboot.aio.tracing.main_span("protoc_gen_reboot_web")
 def main():
     try:
         WebRebootProtocPlugin.execute()

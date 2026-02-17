@@ -6,8 +6,8 @@ from google.protobuf.descriptor import (
     FileDescriptor,
     MethodDescriptor,
 )
-from rebootdev.options import get_method_options
-from rebootdev.protoc_gen_reboot_generic import RebootProtocPlugin
+from reboot.options import get_method_options
+from reboot.protoc_gen_reboot_generic import RebootProtocPlugin
 from typing import Optional
 
 

@@ -3,7 +3,7 @@
 import colorama
 import sys
 from colorama import Fore, Style
-from rebootdev.aio.once import Once
+from reboot.aio.once import Once
 from typing import NoReturn
 
 _VERBOSE: bool = False

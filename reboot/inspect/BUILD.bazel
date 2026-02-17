@@ -63,9 +63,9 @@ py_library(
         "//rbt/v1alpha1/inspect:inspect_py_proto",
         "//reboot/aio/auth:admin_auth_py",
         "//reboot/templates:tools_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:aborted_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:state_managers_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio:stubs_py",
-        "@com_github_reboot_dev_reboot//rebootdev/aio/internals:middleware_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:aborted_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:state_managers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:stubs_py",
+        "@com_github_reboot_dev_reboot//reboot/aio/internals:middleware_py",
     ],
 )

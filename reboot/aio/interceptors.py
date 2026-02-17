@@ -2,11 +2,11 @@ import grpc
 import traceback
 import uuid
 from grpc_interceptor.server import AsyncServerInterceptor
-from rebootdev.aio.caller_id import CallerID
-from rebootdev.aio.external import ExternalContext
-from rebootdev.aio.internals.channel_manager import _ChannelManager
-from rebootdev.aio.internals.contextvars import use_application_id
-from rebootdev.aio.types import ApplicationId
+from reboot.aio.caller_id import CallerID
+from reboot.aio.external import ExternalContext
+from reboot.aio.internals.channel_manager import _ChannelManager
+from reboot.aio.internals.contextvars import use_application_id
+from reboot.aio.types import ApplicationId
 from typing import Any, Callable, Iterable, Mapping, Optional
 
 

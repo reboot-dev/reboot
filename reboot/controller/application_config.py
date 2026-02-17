@@ -1,10 +1,10 @@
 import kubernetes_asyncio.client
 from rbt.v1alpha1 import application_config_pb2
-from rebootdev.aio.servicers import Routable
-from rebootdev.aio.types import ServiceName
-from rebootdev.helpers import generate_proto_descriptor_set
-from rebootdev.naming import ApplicationId
-from rebootdev.version import REBOOT_VERSION
+from reboot.aio.servicers import Routable
+from reboot.aio.types import ServiceName
+from reboot.helpers import generate_proto_descriptor_set
+from reboot.naming import ApplicationId
+from reboot.version import REBOOT_VERSION
 from typing import Optional, Protocol, Sequence
 
 

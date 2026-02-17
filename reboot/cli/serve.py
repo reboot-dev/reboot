@@ -5,6 +5,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from reboot.aio.exceptions import InputError
 from reboot.cli import terminal
 from reboot.cli.detect_cores import detect_cores
 from reboot.cli.dev import (
@@ -31,9 +32,8 @@ from reboot.controller.settings import (
     ENVVAR_RBT_PORT,
     USER_CONTAINER_GRPC_PORT,
 )
-from rebootdev.aio.exceptions import InputError
-from rebootdev.run_environments import on_cloud
-from rebootdev.settings import (
+from reboot.run_environments import on_cloud
+from reboot.settings import (
     ENVOY_VERSION,
     ENVVAR_LOCAL_ENVOY_MODE,
     ENVVAR_LOCAL_ENVOY_USE_TLS,
@@ -275,7 +275,7 @@ async def serve_run(
         application = os.path.abspath(args.application)
 
         # Set all the environment variables that
-        # 'rebootdev.aio.Application' will be looking for.
+        # 'reboot.aio.Application' will be looking for.
         #
         # We make a copy of the environment so that we don't change
         # our environment variables which might cause an issue.

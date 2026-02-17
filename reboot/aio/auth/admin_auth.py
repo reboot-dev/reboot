@@ -3,11 +3,11 @@ import os
 import rbt.v1alpha1.admin.auth_pb2 as admin_auth_pb2
 import rbt.v1alpha1.admin.auth_pb2_grpc as admin_auth_pb2_grpc
 from log.log import get_logger
+from reboot.aio.headers import AUTHORIZATION_HEADER
 from reboot.aio.secrets import SecretNotFoundException, Secrets
 from reboot.controller.settings import ENVVAR_REBOOT_ADMIN_AUTH_URL
-from rebootdev.aio.headers import AUTHORIZATION_HEADER
-from rebootdev.run_environments import running_rbt_dev
-from rebootdev.settings import ADMIN_SECRET_NAME
+from reboot.run_environments import running_rbt_dev
+from reboot.settings import ADMIN_SECRET_NAME
 from typing import Optional
 
 logger = get_logger(__name__)

@@ -2,7 +2,7 @@
 import base64
 import gzip
 import os
-import rebootdev.aio.tracing
+import reboot.aio.tracing
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -13,9 +13,8 @@ from google.protobuf.descriptor_pb2 import (
 )
 from grpc_tools import protoc as grpc_tools_protoc
 from importlib import resources
-from reboot.protoc_gen_reboot_typescript import TypescriptRebootProtocPlugin
-from rebootdev.aio.directories import chdir
-from rebootdev.protoc_gen_reboot_generic import (
+from reboot.aio.directories import chdir
+from reboot.protoc_gen_reboot_generic import (
     BaseClient,
     BaseFile,
     BaseMethod,
@@ -26,11 +25,12 @@ from rebootdev.protoc_gen_reboot_generic import (
     ProtoType,
     UserProtoError,
 )
-from rebootdev.protoc_gen_reboot_python import (
+from reboot.protoc_gen_reboot_python import (
     PythonRebootProtocPlugin,
     PythonType,
 )
-from rebootdev.settings import ENVVAR_REBOOT_NODEJS_EXTENSIONS
+from reboot.protoc_gen_reboot_typescript import TypescriptRebootProtocPlugin
+from reboot.settings import ENVVAR_REBOOT_NODEJS_EXTENSIONS
 from typing import Sequence
 
 
@@ -423,7 +423,7 @@ class NodejsRebootProtocPlugin(TypescriptRebootProtocPlugin):
 
 # This is a separate function (rather than just being in `__main__`) so that we
 # can refer to it as a `script` in our `pyproject.rbt.toml` file.
-@rebootdev.aio.tracing.main_span("protoc_gen_reboot_nodejs")
+@reboot.aio.tracing.main_span("protoc_gen_reboot_nodejs")
 def main():
     try:
         NodejsRebootProtocPlugin.execute()

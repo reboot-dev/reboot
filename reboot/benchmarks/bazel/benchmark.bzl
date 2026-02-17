@@ -3,7 +3,7 @@
 # collection script on a given benchmark script.
 """
 
-load("@com_github_reboot_dev_reboot//rebootdev:versions.bzl", "REBOOT_VERSION")
+load("@com_github_reboot_dev_reboot//reboot:versions.bzl", "REBOOT_VERSION")
 
 dev_reboot_env = {
     "REBOOT_API_NPM_PACKAGE": "$(location @com_github_reboot_dev_reboot//rbt/v1alpha1:reboot-dev-reboot-api)",

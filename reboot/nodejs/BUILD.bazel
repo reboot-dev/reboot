@@ -1,8 +1,8 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_js//npm:defs.bzl", "npm_package")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config", "ts_project")
-load("@com_github_reboot_dev_reboot//rebootdev:rules.bzl", "generate_version_ts")
-load("@com_github_reboot_dev_reboot//rebootdev:versions.bzl", "REBOOT_VERSION")
+load("@com_github_reboot_dev_reboot//reboot:rules.bzl", "generate_version_ts")
+load("@com_github_reboot_dev_reboot//reboot:versions.bzl", "REBOOT_VERSION")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@rules_python//python:defs.bzl", "py_library")
 
@@ -139,11 +139,29 @@ genrule(
 )
 
 py_library(
+    name = "python_py",
+    srcs = [
+        "python.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot/aio:aborted_py",
+        "//reboot/aio:contexts_py",
+        "//reboot/aio:directories_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio/auth:authorizers_py",
+        "//reboot/aio/auth:token_verifiers_py",
+        "//reboot/aio/internals:contextvars_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:nodejs_py_proto",
+    ],
+)
+
+py_library(
     name = "python",
     visibility = ["//visibility:public"],
     deps = [
+        ":python_py",
         "//reboot/aio:python",
-        "@com_github_reboot_dev_reboot//rebootdev/nodejs:python_py",
     ],
 )
 

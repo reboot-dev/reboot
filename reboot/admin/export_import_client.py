@@ -11,8 +11,8 @@ from rbt.v1alpha1.admin.export_import_pb2 import (
     ExportRequest,
     ListServersRequest,
 )
-from rebootdev.aio.headers import AUTHORIZATION_HEADER
-from rebootdev.aio.types import ServerId
+from reboot.aio.headers import AUTHORIZATION_HEADER
+from reboot.aio.types import ServerId
 from typing import AsyncIterator
 
 

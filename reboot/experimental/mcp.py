@@ -32,7 +32,7 @@ import logging
 import reboot.aio.applications
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.streamable_http import StreamableHTTPServerTransport
-from rebootdev.aio.external import ExternalContext
+from reboot.aio.external import ExternalContext
 from starlette.requests import Request
 from starlette.types import Receive, Scope, Send
 from typing import Any, Callable

@@ -86,8 +86,7 @@ struct PythonNodeAdaptor {
             dynamic_cast<const py::error_already_set*>(&e)) {
       // This is a Python exception. Is it an `InputError`?
       if (e_py->matches(
-              py::module::import("rebootdev.aio.exceptions")
-                  .attr("InputError"))) {
+              py::module::import("reboot.aio.exceptions").attr("InputError"))) {
         // This is an InputError, which means it reports a mistake in the input
         // provided by the developer. We want to print _only_ the user-friendly
         // error message in the exception, without intimidating stack traces.
@@ -128,7 +127,7 @@ struct PythonNodeAdaptor {
     if (signal_fd) {
       uint64_t one = 1;
       // Writing to this file descriptor communicates to Python
-      // (see `public/rebootdev/nodejs/python.py`) that
+      // (see `public/reboot/nodejs/python.py`) that
       // `run_functions()` should be called (while holding the Python
       // GIL). In `Initialize()` we've set up `run_functions()` to run
       // the `python_functions` we've just added our callback to.
@@ -398,7 +397,7 @@ void PythonNodeAdaptor::Initialize(
     py::initialize_interpreter();
 
     try {
-      py::object module = py::module::import("rebootdev.nodejs.python");
+      py::object module = py::module::import("reboot.nodejs.python");
 
       module.attr("launch_subprocess_server") =
           py::cpp_function([](py::str py_base64_args) {
@@ -858,7 +857,7 @@ Napi::Promise NodePromiseFromPythonTaskWithContext(
       env,
       std::move(name),
       std::make_tuple(
-          std::string("rebootdev.nodejs.python"),
+          std::string("reboot.nodejs.python"),
           std::string("create_task_with_context"),
           py_context),
       [js_context,  // Ensures `py_context` remains valid.
@@ -1045,7 +1044,7 @@ void ImportPy(const Napi::CallbackInfo& info) {
   std::string base64_encoded_rbt_py = info[1].As<Napi::String>().Utf8Value();
 
   RunCallbackOnPythonEventLoop([&module, &base64_encoded_rbt_py]() {
-    py::module::import("rebootdev.nodejs.python")
+    py::module::import("reboot.nodejs.python")
         .attr("import_py")(module, base64_encoded_rbt_py);
   });
 }
@@ -1081,7 +1080,7 @@ static const napi_type_tag reboot_aio_applications_Application =
 
 
 static const napi_type_tag reboot_aio_external_ExternalContext =
-    MakeTypeTag("rebootdev.aio.external", "ExternalContext");
+    MakeTypeTag("reboot.aio.external", "ExternalContext");
 
 
 Napi::Value python3Path(const Napi::CallbackInfo& info) {
@@ -1268,8 +1267,8 @@ py::object make_py_authorizer(NapiSafeObjectReference js_authorizer) {
       py::is_method(py::none()));
 
   // Now define our subclass.
-  py::object py_parent_class = py::module::import("rebootdev.nodejs.python")
-                                   .attr("NodeAdaptorAuthorizer");
+  py::object py_parent_class =
+      py::module::import("reboot.nodejs.python").attr("NodeAdaptorAuthorizer");
 
   py::object py_parent_metaclass =
       py::reinterpret_borrow<py::object>((PyObject*) &PyType_Type);
@@ -1531,7 +1530,7 @@ py::list make_py_servicers(
 
   // Include memoize servicers by default!
   py_servicers.attr("extend")(
-      py::module::import("rebootdev.aio.memoize").attr("servicers")());
+      py::module::import("reboot.aio.memoize").attr("servicers")());
 
   return py_servicers;
 }
@@ -1788,7 +1787,7 @@ py::object make_py_token_verifier(NapiSafeObjectReference js_token_verifier) {
       py::arg("bytes_call"),
       py::is_method(py::none()));
 
-  py::object py_parent_class = py::module::import("rebootdev.nodejs.python")
+  py::object py_parent_class = py::module::import("reboot.nodejs.python")
                                    .attr("NodeAdaptorTokenVerifier");
 
   py::object py_parent_metaclass =
@@ -2083,7 +2082,7 @@ Napi::Value Task_await(const Napi::CallbackInfo& info) {
 
   return NodePromiseFromPythonTaskWithContext(
       info.Env(),
-      "rebootdev.nodejs.python.task_await(\"" + state_name + "\", \"" + method
+      "reboot.nodejs.python.task_await(\"" + state_name + "\", \"" + method
           + "\", ...) in nodejs",
       js_external_context,
       [rbt_module = std::move(rbt_module),
@@ -2092,7 +2091,7 @@ Napi::Value Task_await(const Napi::CallbackInfo& info) {
        js_external_context,  // Ensures `py_context` remains valid.
        py_context,
        json_task_id]() {
-        return py::module::import("rebootdev.nodejs.python")
+        return py::module::import("reboot.nodejs.python")
             .attr("task_await")(
                 py_context,
                 py::module::import(rbt_module.c_str()).attr(state_name.c_str()),
@@ -2140,7 +2139,7 @@ Napi::Value ExternalContext_constructor(const Napi::CallbackInfo& info) {
                                     &idempotency_seed,
                                     &idempotency_required,
                                     &idempotency_required_reason]() {
-        py::object py_external = py::module::import("rebootdev.aio.external");
+        py::object py_external = py::module::import("reboot.aio.external");
 
         auto convert_str =
             [](const std::optional<std::string>& optional) -> py::object {
@@ -2277,7 +2276,7 @@ Napi::Value Application_constructor(const Napi::CallbackInfo& info) {
 
                                     return new py::object(
                                         py::module::import(
-                                            "rebootdev.aio.external")
+                                            "reboot.aio.external")
                                             .attr("ExternalContext")(
                                                 "name"_a = py::str(name),
                                                 "channel_manager"_a =
@@ -2418,7 +2417,7 @@ Napi::Value Application_run(const Napi::CallbackInfo& info) {
   Napi::Promise js_promise = NodePromiseFromPythonTask(
       info.Env(),
       "Application.run() in nodejs",
-      {"rebootdev.nodejs.python", "create_task"},
+      {"reboot.nodejs.python", "create_task"},
       [js_external_application,  // Ensures `py_application` remains valid.
        py_application]() { return py_application->attr("run")(); });
 
@@ -2491,7 +2490,7 @@ Napi::Value Context_generateIdempotentStateId(const Napi::CallbackInfo& info) {
         // Need to use `call_with_context` to ensure that we have
         // `py_context` as a valid asyncio context variable.
         py::object py_idempotency =
-            py::module::import("rebootdev.nodejs.python")
+            py::module::import("reboot.nodejs.python")
                 .attr("call_with_context")(
                     py::cpp_function([&]() {
                       py::object py_key = py::none();
@@ -2506,7 +2505,7 @@ Napi::Value Context_generateIdempotentStateId(const Napi::CallbackInfo& info) {
                       if (each_iteration.has_value()) {
                         py_each_iteration = py::cast(*each_iteration);
                       }
-                      return py::module::import("rebootdev.aio.contexts")
+                      return py::module::import("reboot.aio.contexts")
                           .attr("Context")
                           .attr("idempotency")(
                               "key"_a = py_key,
@@ -2567,7 +2566,7 @@ Napi::Value WorkflowContext_loop(const Napi::CallbackInfo& info) {
       [js_external_context,  // Ensures `py_context` remains valid.
        py_context,
        alias = std::move(alias)]() {
-        return py::module::import("rebootdev.nodejs.python")
+        return py::module::import("reboot.nodejs.python")
             .attr("loop")(py_context, alias);
       },
       [](py::object py_iterate) { return new py::object(py_iterate); },
@@ -2645,7 +2644,7 @@ Napi::Value retry_reactively_until(const Napi::CallbackInfo& info) {
                   });
             });
 
-        return py::module::import("rebootdev.aio.contexts")
+        return py::module::import("reboot.aio.contexts")
             .attr("retry_reactively_until")(py_context, py_condition);
       });
 }
@@ -2697,7 +2696,7 @@ Napi::Value memoize(const Napi::CallbackInfo& info) {
                   });
             });
 
-        return py::module::import("rebootdev.aio.memoize")
+        return py::module::import("reboot.aio.memoize")
             .attr("memoize")(
                 py::make_tuple(alias, how),
                 py_context,

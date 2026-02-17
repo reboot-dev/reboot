@@ -1,14 +1,14 @@
 import os
 from google.protobuf import json_format
 from rbt.v1alpha1 import placement_planner_pb2
+from reboot.aio.servicers import Serviceable
+from reboot.aio.types import ApplicationId
 from reboot.controller.application_config import (
     ApplicationConfig,
     LocalApplicationConfig,
     application_config_spec_from_routables,
 )
 from reboot.controller.settings import ENVVAR_REBOOT_REPLICA_CONFIG
-from rebootdev.aio.servicers import Serviceable
-from rebootdev.aio.types import ApplicationId
 from typing import Optional
 
 

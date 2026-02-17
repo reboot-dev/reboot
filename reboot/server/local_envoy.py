@@ -6,7 +6,7 @@ import grpc.aio
 import json
 import math
 import os
-import rebootdev.aio.tracing
+import reboot.aio.tracing
 import shutil
 import yaml
 from abc import ABC, abstractmethod
@@ -18,12 +18,12 @@ from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from google.protobuf.json_format import MessageToDict
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 from pathlib import Path
+from reboot.aio.headers import SERVER_ID_HEADER
+from reboot.aio.types import ApplicationId, ServerId
 from reboot.routing import envoy_config
 from reboot.routing.envoy_config import ServerInfo
 from reboot.routing.xds_server import AggregatedDiscoveryServiceServicer
-from rebootdev.aio.headers import SERVER_ID_HEADER
-from rebootdev.aio.types import ApplicationId, ServerId
-from rebootdev.ssl.localhost import (
+from reboot.ssl.localhost import (
     LOCALHOST_CRT,
     LOCALHOST_CRT_DATA,
     LOCALHOST_KEY,
@@ -125,7 +125,7 @@ class LocalEnvoy(ABC):
     async def _stop(self) -> None:
         raise NotImplementedError()
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def start(self) -> None:
         await self._grpc_server.start()
         await self._start()
@@ -137,7 +137,7 @@ class LocalEnvoy(ABC):
         await self._grpc_server.stop(0)
         await self._grpc_server.wait_for_termination()
 
-    @rebootdev.aio.tracing.function_span()
+    @reboot.aio.tracing.function_span()
     async def set_servers(self, servers: list[ServerInfo]):
         await self._servicer.set_config(
             clusters=envoy_config.clusters(

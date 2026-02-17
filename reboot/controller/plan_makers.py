@@ -2,12 +2,12 @@ import math
 import time
 from log.log import get_logger
 from rbt.v1alpha1 import placement_planner_pb2
+from reboot.aio.exceptions import InputError
 from reboot.aio.servers import ServiceServer
+from reboot.aio.types import ServiceName, StateTypeName
 from reboot.controller.application_config import ApplicationConfig
 from reboot.controller.shards import make_shard_infos
-from rebootdev.aio.exceptions import InputError
-from rebootdev.aio.types import ServiceName, StateTypeName
-from rebootdev.naming import make_server_id
+from reboot.naming import make_server_id
 from typing import Iterable, Optional
 
 logger = get_logger(__name__)

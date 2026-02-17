@@ -2,7 +2,7 @@ import aiohttp
 import asyncio
 import log.log
 import os
-import rebootdev.aio.auth.token_verifiers
+import reboot.aio.auth.token_verifiers
 import uuid
 from abc import abstractmethod
 from datetime import timedelta
@@ -19,25 +19,21 @@ from rbt.v1alpha1.errors_pb2 import (
     PermissionDenied,
     Unauthenticated,
 )
+from reboot.aio.auth import Auth
+from reboot.aio.auth.authorizers import Authorizer, allow_if
+from reboot.aio.call import Options
+from reboot.aio.contexts import ReaderContext, WorkflowContext, WriterContext
 from reboot.aio.secrets import (
     EnvironmentSecretSource,
     SecretNotFoundException,
     Secrets,
 )
+from reboot.run_environments import on_cloud
 from reboot.thirdparty.mailgun.settings import (
     MAILGUN_API_KEY_SECRET_NAME,
     MAILGUN_EVENT_API_CONSISTENCY_DELAY_SEC,
 )
-from rebootdev.aio.auth import Auth
-from rebootdev.aio.auth.authorizers import Authorizer, allow_if
-from rebootdev.aio.call import Options
-from rebootdev.aio.contexts import (
-    ReaderContext,
-    WorkflowContext,
-    WriterContext,
-)
-from rebootdev.run_environments import on_cloud
-from rebootdev.time import DateTimeWithTimeZone
+from reboot.time import DateTimeWithTimeZone
 from typing import ClassVar, Optional
 
 logger = log.log.get_logger(__name__)
@@ -77,9 +73,9 @@ class _AbstractMessageServicer(Message.singleton.Servicer):
 
     def token_verifier(
         self,
-    ) -> Optional[rebootdev.aio.auth.token_verifiers.TokenVerifier]:
+    ) -> Optional[reboot.aio.auth.token_verifiers.TokenVerifier]:
 
-        class TokenVerifier(rebootdev.aio.auth.token_verifiers.TokenVerifier):
+        class TokenVerifier(reboot.aio.auth.token_verifiers.TokenVerifier):
 
             def __init__(self, secrets: Secrets):
                 self._secrets = secrets

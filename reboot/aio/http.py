@@ -4,9 +4,9 @@ import uvicorn  # type: ignore[import]
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from fastapi import Depends, FastAPI  # type: ignore[import]
-from rebootdev.aio.external import ExternalContext
-from rebootdev.aio.internals.channel_manager import _ChannelManager
-from rebootdev.aio.types import ServerId
+from reboot.aio.external import ExternalContext
+from reboot.aio.internals.channel_manager import _ChannelManager
+from reboot.aio.types import ServerId
 from starlette.requests import Request  # type: ignore[import]
 from starlette.types import Receive, Scope, Send  # type: ignore[import]
 from typing import (

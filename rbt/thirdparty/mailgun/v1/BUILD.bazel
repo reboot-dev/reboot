@@ -1,4 +1,4 @@
-load("@com_github_reboot_dev_reboot//rebootdev:rules.bzl", "py_reboot_library")
+load("@com_github_reboot_dev_reboot//reboot:rules.bzl", "py_reboot_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 
 proto_library(

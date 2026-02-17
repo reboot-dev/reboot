@@ -25,15 +25,7 @@ from google.protobuf.duration_pb2 import Duration
 from google.protobuf.message import Message
 from google.protobuf.wrappers_pb2 import UInt32Value
 from pathlib import Path
-from reboot.routing.filters.lua import (
-    ADD_HEADER_X_REBOOT_APPLICATION_ID_TEMPLATE_FILENAME,
-    COMPUTE_HEADER_X_REBOOT_SERVER_ID_TEMPLATE_FILENAME,
-    MANGLED_HTTP_PATH_FILENAME,
-    REMOVE_JSON_TRAILERS_FILENAME,
-    load_lua,
-    render_lua_template,
-)
-from rebootdev.aio.headers import (
+from reboot.aio.headers import (
     APPLICATION_ID_HEADER,
     AUTHORIZATION_HEADER,
     CALLER_ID_HEADER,
@@ -42,10 +34,18 @@ from rebootdev.aio.headers import (
     STATE_REF_HEADER,
     WORKFLOW_ID_HEADER,
 )
-from rebootdev.aio.types import ApplicationId, ServerId
-from rebootdev.helpers import get_path_prefixes_from_file_descriptor_set
-from rebootdev.run_environments import on_cloud
-from rebootdev.settings import MAX_GRPC_RESPONSE_SIZE_BYTES
+from reboot.aio.types import ApplicationId, ServerId
+from reboot.helpers import get_path_prefixes_from_file_descriptor_set
+from reboot.routing.filters.lua import (
+    ADD_HEADER_X_REBOOT_APPLICATION_ID_TEMPLATE_FILENAME,
+    COMPUTE_HEADER_X_REBOOT_SERVER_ID_TEMPLATE_FILENAME,
+    MANGLED_HTTP_PATH_FILENAME,
+    REMOVE_JSON_TRAILERS_FILENAME,
+    load_lua,
+    render_lua_template,
+)
+from reboot.run_environments import on_cloud
+from reboot.settings import MAX_GRPC_RESPONSE_SIZE_BYTES
 
 
 @dataclass
