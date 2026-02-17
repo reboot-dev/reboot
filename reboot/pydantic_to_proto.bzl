@@ -1,12 +1,12 @@
 """Bazel rules for generating Reboot code from Pydantic API definitions."""
 
+load("@rules_proto//proto:defs.bzl", "proto_library")
 load(
     "//reboot:rules.bzl",
     "js_proto_library",
     "js_reboot_react_library",
     "py_reboot_library",
 )
-load("@rules_proto//proto:defs.bzl", "proto_library")
 
 def _collect_transitive_sources(deps):
     """Collect transitive Python sources from `py_library` deps."""

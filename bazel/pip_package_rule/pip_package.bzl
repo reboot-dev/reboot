@@ -473,8 +473,18 @@ def _pip_package_impl(ctx):
     # get included in the package.
     STAGING_DIRECTORY_NAME = ".pip_package_" + ctx.attr.name
     package_files = []
+    seen_staged_paths = {}
     for file in source_depset.to_list() + data_depset.to_list():
         staged_path = _staging_path(file, path_maps)
+
+        # Deduplicate files that map to the same staged path. This
+        # can happen when the same physical file is reachable via
+        # both a local workspace symlink and an external repository
+        # (e.g., `//reboot/...` vs
+        # `@com_github_reboot_dev_reboot//reboot/...`).
+        if staged_path in seen_staged_paths:
+            continue
+        seen_staged_paths[staged_path] = True
 
         # TODO(rjh): use a symlink instead of a copy to make this faster?
         copy = ctx.actions.declare_file(

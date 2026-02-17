@@ -1,5 +1,5 @@
-load("//reboot:rules.bzl", "py_reboot_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("//reboot:rules.bzl", "py_reboot_library")
 
 proto_library(
     name = "memoize_proto",

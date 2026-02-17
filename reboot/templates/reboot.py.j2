@@ -3824,7 +3824,9 @@ class {{ client.proto.state_name }}:
 
     Authorizer: IMPORT_typing.TypeAlias = {{ client.proto.state_name }}Authorizer
 
-    State: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_api.{{ client.proto.state_name }}.state{% else %}{{ pb2_name }}.{{ client.proto.state_name }}{% endif %}
+    {# Since 'API' uses 'extra="allow"', mypy can't resolve dynamic
+    attributes like 'api.Ping.state', so we use 'cast' to help it. #}
+    State: IMPORT_typing.TypeAlias = {% if options.proto.pydantic %}IMPORT_typing.cast(type, IMPORT_api.{{ client.proto.state_name }}.state){% else %}{{ pb2_name }}.{{ client.proto.state_name }}{% endif %}
     {% endif %}
 
     {% for service in client.services %}
