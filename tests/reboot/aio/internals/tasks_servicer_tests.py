@@ -78,7 +78,7 @@ class TasksServicerTestCase(unittest.IsolatedAsyncioTestCase):
         self,
         stub: tasks_pb2_grpc.TasksStub,
         task_id: tasks_pb2.TaskId,
-        response_statuses: list[tasks_pb2.CancelTaskResponse.Status
+        response_statuses: list[tasks_pb2.CancelTaskResponse.Status.ValueType
                                ] = [tasks_pb2.CancelTaskResponse.Status.OK],
     ):
         cancel_task_response = await stub.CancelTask(

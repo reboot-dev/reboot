@@ -8,7 +8,7 @@ from reboot.aio.external import ExternalContext
 from reboot.aio.headers import AUTHORIZATION_HEADER
 from reboot.aio.secrets import MockSecretSource, Secrets
 from reboot.aio.tests import Reboot
-from reboot.aio.types import StateRef
+from reboot.aio.types import ApplicationId, StateRef, StateTypeName
 from reboot.controller.application_config import LocalApplicationConfig
 from reboot.server.service_descriptor_validator import ProtoValidationError
 from tests.reboot import echo_rbt
@@ -225,7 +225,8 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
 
         # Check that the created task is pending.
         channel = context.channel_manager.get_channel_to_state(
-            task_id.state_type, StateRef(task_id.state_ref)
+            StateTypeName(task_id.state_type),
+            StateRef(task_id.state_ref),
         )
         stub = tasks_pb2_grpc.TasksStub(channel)
         list_tasks_response = await stub.ListTasks(
@@ -248,7 +249,8 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
         # Check that the task is again pending. We need to create a new stub to
         # pick up the new address.
         channel = context.channel_manager.get_channel_to_state(
-            task_id.state_type, StateRef(task_id.state_ref)
+            StateTypeName(task_id.state_type),
+            StateRef(task_id.state_ref),
         )
         stub = tasks_pb2_grpc.TasksStub(channel)
         list_tasks_response = await stub.ListTasks(
@@ -383,7 +385,8 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
         # Try to bring up a config with a different application ID that contains
         # the same servicer. That's not permitted.
         revision.config = LocalApplicationConfig(
-            application_id="something-new",  # Changes the application ID.
+            # Changes the application ID.
+            application_id=ApplicationId("something-new"),
             spec=revision.config.spec,
         )
         with self.assertRaises(ValueError) as error:

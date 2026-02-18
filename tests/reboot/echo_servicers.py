@@ -57,7 +57,7 @@ class MyEchoServicer(Echo.singleton.Servicer):
         try:
             await Echo.ref(
                 str(uuid.uuid4()),
-            ).Reply(context)  # type: ignore[arg-type]
+            ).Reply(context)  # type: ignore[arg-type, call-overload]
         except TypeError as error:
             assert (
                 "reboot.aio.contexts.WriterContext is not an "
@@ -72,7 +72,9 @@ class MyEchoServicer(Echo.singleton.Servicer):
         try:
             await Echo.ref(
                 str(uuid.uuid4()),
-            ).schedule().Reply(context)  # type: ignore[arg-type]
+            ).schedule().Reply(
+                context
+            )  # type: ignore[arg-type, call-overload]
         except TypeError as error:
             assert (
                 "reboot.aio.contexts.WriterContext is not an "

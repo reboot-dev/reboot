@@ -41,11 +41,12 @@ class TestServicer(Test.Servicer):
     def authorizer(self):
 
         def update_state_rule(
-            context: WriterContext,
-            state: State,
-            request: UpdateRequest,
+            context: ReaderContext,
+            state: State | None,
+            request: UpdateRequest | None,
             **kwargs,
         ):
+            assert request is not None
             if request.int_increment < 0:
                 return PermissionDenied()
             return Ok()
@@ -66,7 +67,7 @@ class TestServicer(Test.Servicer):
 
     async def initialize(
         self,
-        context: TransactionContext,
+        context: WriterContext,
     ) -> None:
         assert isinstance(self.state, State)
         # Set the required fields in the constructor.

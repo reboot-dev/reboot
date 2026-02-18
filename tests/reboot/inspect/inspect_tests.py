@@ -12,7 +12,7 @@ from reboot.aio.applications import Application
 from reboot.aio.headers import AUTHORIZATION_HEADER, STATE_REF_HEADER
 from reboot.aio.secrets import MockSecretSource, Secrets
 from reboot.aio.tests import Reboot
-from reboot.aio.types import StateRef
+from reboot.aio.types import StateRef, StateTypeName
 from reboot.settings import ADMIN_SECRET_NAME
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA
 from tests.reboot.echo_rbt import Echo
@@ -303,7 +303,10 @@ class InspectTestCase(unittest.IsolatedAsyncioTestCase):
 
         # Test GetState for a non-existent state - should return NOT_FOUND error
         # Create state ref for the non-existent state.
-        state_ref = StateRef.from_id(expected_service, test_state_id)
+        state_ref = StateRef.from_id(
+            StateTypeName(expected_service),
+            test_state_id,
+        )
         metadata = admin_auth_metadata(
         ) + ((STATE_REF_HEADER, state_ref.to_str()),)
 
@@ -416,7 +419,10 @@ class InspectTestCase(unittest.IsolatedAsyncioTestCase):
         stub = inspect_pb2_grpc.InspectStub(channel)
 
         # Create state ref and metadata.
-        state_ref = StateRef.from_id('tests.reboot.Echo', 'test-state')
+        state_ref = StateRef.from_id(
+            StateTypeName('tests.reboot.Echo'),
+            'test-state',
+        )
         metadata = admin_auth_metadata(
         ) + ((STATE_REF_HEADER, state_ref.to_str()),)
 
@@ -448,7 +454,10 @@ class InspectTestCase(unittest.IsolatedAsyncioTestCase):
 
         # Request state for a non-existent state type should result in
         # NOT_FOUND error.
-        state_ref = StateRef.from_id('nonexistent.StateType', 'test-id')
+        state_ref = StateRef.from_id(
+            StateTypeName('nonexistent.StateType'),
+            'test-id',
+        )
         metadata = admin_auth_metadata(
         ) + ((STATE_REF_HEADER, state_ref.to_str()),)
 
@@ -513,7 +522,10 @@ class InspectTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(initial_message, response.message)
 
         # Start streaming GetState for the existing state.
-        state_ref = StateRef.from_id(expected_service, test_state_id)
+        state_ref = StateRef.from_id(
+            StateTypeName(expected_service),
+            test_state_id,
+        )
         metadata = admin_auth_metadata(
         ) + ((STATE_REF_HEADER, state_ref.to_str()),)
 

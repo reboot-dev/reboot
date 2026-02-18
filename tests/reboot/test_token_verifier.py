@@ -1,5 +1,4 @@
 import jwt
-import sys
 from log.log import get_logger
 from reboot.aio.auth import Auth
 from reboot.aio.auth.token_verifiers import TokenVerifier
@@ -49,11 +48,9 @@ class TestTokenVerifier(TokenVerifier):
         except (jwt.exceptions.DecodeError, KeyError) as e:
             logger.debug(
                 f"An error occurred while decoding the token: {e}",
-                file=sys.stderr,
             )
             logger.debug(
                 f"The token that was attempted to be decoded was: '{token}'",
-                file=sys.stderr,
             )
             return None
 

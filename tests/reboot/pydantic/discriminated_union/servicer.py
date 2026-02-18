@@ -30,7 +30,7 @@ class DiscriminatedUnionTestServicer(DiscriminatedUnionTest.Servicer):
 
     async def initialize(
         self,
-        context: TransactionContext,
+        context: WriterContext,
     ) -> None:
         assert isinstance(self.state, State)
         self.state.current_variant = OptionA(
@@ -72,7 +72,7 @@ class NestedDiscriminatedUnionTestServicer(
 
     async def initialize(
         self,
-        context: TransactionContext,
+        context: WriterContext,
     ) -> None:
         assert isinstance(self.state, NestedState)
         self.state.current_variant = OptionA(

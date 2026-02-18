@@ -457,7 +457,7 @@ class TestPlacementPlanner(unittest.IsolatedAsyncioTestCase):
                 # Lack of namespace implies that we are looking at local routing.
                 # ISSUE(https://github.com/reboot-dev/mono/issues/1451): Expand
                 # or add to placement_planner_test.py to cover the non-local case.
-                application_id=APPLICATION_ID + '-first',
+                application_id=ApplicationId(APPLICATION_ID + '-first'),
                 spec=application_config_pb2.ApplicationConfig.Spec(
                     revision_number=REVISION_NUMBER,
                     file_descriptor_set=serialized_file_descriptor_set,
@@ -506,7 +506,7 @@ class TestPlacementPlanner(unittest.IsolatedAsyncioTestCase):
 
         await self.add_application_config(
             LocalApplicationConfig(
-                application_id=APPLICATION_ID + '-first',
+                application_id=ApplicationId(APPLICATION_ID + '-first'),
                 spec=application_config_pb2.ApplicationConfig.Spec(
                     revision_number=REVISION_NUMBER,
                     file_descriptor_set=serialized_file_descriptor_set,
@@ -533,7 +533,7 @@ class TestPlacementPlanner(unittest.IsolatedAsyncioTestCase):
         # servicers.
         await self.add_application_config(
             LocalApplicationConfig(
-                application_id=APPLICATION_ID + '-second',
+                application_id=ApplicationId(APPLICATION_ID + '-second'),
                 spec=application_config_pb2.ApplicationConfig.Spec(
                     revision_number=REVISION_NUMBER,
                     file_descriptor_set=serialized_file_descriptor_set,

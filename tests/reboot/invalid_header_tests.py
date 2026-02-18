@@ -85,7 +85,9 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
             context = ExternalContext(name='test', url='http://test')
             # Intentionally create a type error, as might happen when the user
             # doesn't use mypy.
-            await Greeter.Create(context, 123)  # type: ignore[arg-type]
+            await Greeter.Create(
+                context, 123
+            )  # type: ignore[arg-type, call-overload]
         self.assertEqual(
             str(assertion_error.exception),
             "Invalid argument type. Did you pass:\n"
