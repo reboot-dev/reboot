@@ -1,0 +1,11 @@
+Using .rbtrc (from .rbtrc) and working directory .
+Starting application with name "chat-room-nodejs"...
+
+Running `generate ...` (use --verbose to see full command) ✅
+
+Application is serving traffic ...
+
+  Your API is available at the URL http://127.0.0.1:9991
+
+  You can inspect your state at http://127.0.0.1:9991/__/inspect
+

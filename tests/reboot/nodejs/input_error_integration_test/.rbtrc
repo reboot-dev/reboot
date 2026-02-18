@@ -1,0 +1,11 @@
+# Generate 'nodejs' code from our '.proto' files in 'api/'.
+generate --nodejs=api/
+
+# Find '.proto' files in 'api/'.
+generate api/
+
+dev run --name=hello-nodejs
+dev run --nodejs
+dev run --application=backend/src/main.ts
+
+dev expunge --name=hello-nodejs

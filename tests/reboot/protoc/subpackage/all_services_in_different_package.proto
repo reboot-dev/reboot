@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/protoc/shared.proto";
+
+package tests.reboot.protoc.subpackage;
+
+// TESTS: there are two services that supply methods to state type
+// "tests.reboot.protoc.Echo"; they're both here, instead of in the state's own
+// package.
+
+service EchoMethods {
+  option (rbt.v1alpha1.service) = {
+    state: "tests.reboot.protoc.Echo"
+  };
+
+  rpc Reply(Text) returns (Text) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
+
+service EchoMoreMethods {
+  option (rbt.v1alpha1.service) = {
+    state: "tests.reboot.protoc.Echo"
+  };
+
+  rpc LastMessage(Empty) returns (Text) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}

@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/protoc/shared.proto";
+
+package tests.reboot.protoc;
+
+// TESTS: if a service has Reboot annotations, it must adhere to the Reboot
+//        naming scheme (ending in `Methods`).
+service SomePoorlyNamedService {
+  rpc Reply(Text) returns (Text) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}

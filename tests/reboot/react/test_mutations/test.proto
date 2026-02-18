@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package tests.reboot.react.test_mutations;
+
+import "rbt/v1alpha1/options.proto";
+import "google/protobuf/empty.proto";
+
+message TestNoMutators {
+  option (rbt.v1alpha1.state) = {
+  };
+  google.protobuf.Empty empty = 1;
+}
+
+service TestNoMutatorsMethods {
+  rpc Reader(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}

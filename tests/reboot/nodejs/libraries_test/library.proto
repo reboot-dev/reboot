@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package tests.reboot.nodejs.libraries_test;
+
+import "rbt/v1alpha1/options.proto";
+import "google/protobuf/empty.proto";
+
+message Box {
+  option (rbt.v1alpha1.state) = {
+  };
+  string value = 1;
+}
+
+service BoxMethods {
+  rpc Get(google.protobuf.Empty) returns (ValueMessage) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc Put(ValueMessage) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
+
+message ValueMessage {
+  string value = 1;
+}

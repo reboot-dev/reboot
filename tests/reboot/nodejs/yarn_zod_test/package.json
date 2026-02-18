@@ -1,0 +1,11 @@
+{
+  "type": "module",
+  "scripts": {
+    "dev:backend": "cd backend && yarn dev"
+  },
+  "packageManager": "yarn@4.9.1",
+  "workspaces": [
+    "api",
+    "backend"
+  ]
+}

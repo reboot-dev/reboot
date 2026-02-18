@@ -1,0 +1,56 @@
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "applications_test_py",
+    timeout = "short",
+    srcs = [":applications_test.py"],
+    main = "applications_test.py",
+    deps = [
+        "//tests/reboot:greeter_servicers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:applications_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "@com_github_reboot_dev_reboot//reboot/std/collections/v1:sorted_map_py",
+    ],
+)
+
+py_test(
+    name = "initialize_test_py",
+    timeout = "short",
+    srcs = [":initialize_test.py"],
+    main = "initialize_test.py",
+    deps = [
+        "@com_github_reboot_dev_reboot//reboot/aio:applications_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "@com_github_reboot_dev_reboot//reboot/std/collections/v1:sorted_map_py",
+    ],
+)
+
+py_test(
+    name = "libraries_test_py",
+    timeout = "short",
+    srcs = [":libraries_test.py"],
+    main = "libraries_test.py",
+    deps = [
+        "//tests/reboot:greeter_servicers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:applications_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+    ],
+)
+
+py_test(
+    name = "caller_id_test_py",
+    timeout = "short",
+    srcs = [":caller_id_test.py"],
+    main = "caller_id_test.py",
+    deps = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:caller_id_auth_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:caller_id_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:headers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:types_py",
+    ],
+)

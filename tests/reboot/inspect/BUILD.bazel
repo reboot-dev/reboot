@@ -1,0 +1,20 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "inspect_tests_py",
+    srcs = [
+        ":inspect_tests.py",
+    ],
+    main = "inspect_tests.py",
+    deps = [
+        requirement("grpcio"),
+        "//tests/reboot:echo_servicers_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/inspect:inspect_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/inspect:inspect_py_proto",
+        "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "@com_github_reboot_dev_reboot//reboot/inspect:servicer_py",
+        "@com_github_reboot_dev_reboot//reboot/ssl:localhost_py",
+    ],
+)

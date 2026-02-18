@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package tests.reboot.documentation;
+
+import "rbt/v1alpha1/options.proto";
+import "rbt/v1alpha1/tasks.proto";
+
+message TestTask {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  int32 iteration = 1;
+  string customer_name = 2;
+  repeated string messages = 3;
+}
+
+service TestTaskMethods {
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {},
+    };
+  }
+
+  rpc CreateWorkflow(CreateWorkflowRequest) returns (CreateWorkflowResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  rpc LoadS3Blob(LoadS3BlobRequest) returns (LoadS3BlobResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  rpc StartPipeline(StartPipelineRequest) returns (StartPipelineResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  rpc ReadState(ReadStateRequest) returns (ReadStateResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  rpc WriteState(WriteStateRequest) returns (WriteStateResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  rpc Open(OpenRequest) returns (OpenResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc OpenLater(OpenLaterRequest) returns (OpenLaterResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc TwoEmails(TwoEmailsRequest) returns (TwoEmailsResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  rpc WelcomeEmail(WelcomeEmailRequest) returns (WelcomeEmailResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  rpc PauseService(PauseServiceRequest) returns (PauseServiceResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+}
+
+message CreateRequest {}
+
+message CreateResponse {}
+
+message CreateWorkflowRequest {}
+
+message CreateWorkflowResponse {}
+
+message StartPipelineRequest {}
+
+message StartPipelineResponse {
+  rbt.v1alpha1.TaskId task_id = 1;
+}
+
+message ReadStateRequest {}
+
+message ReadStateResponse {
+  TestTask snapshot = 1;
+}
+
+message WriteStateRequest {}
+
+message WriteStateResponse {}
+
+message OpenRequest {
+  string customer_name = 1;
+}
+
+message OpenResponse {
+  rbt.v1alpha1.TaskId welcome_email_task_id = 1;
+}
+
+message OpenLaterRequest {
+  string customer_name = 1;
+}
+
+message OpenLaterResponse {
+  rbt.v1alpha1.TaskId welcome_email_task_id = 1;
+}
+
+message TwoEmailsRequest {}
+
+message TwoEmailsResponse {}
+
+message WelcomeEmailRequest {}
+
+message WelcomeEmailResponse {}
+
+message PauseServiceRequest {}
+
+message PauseServiceResponse {}
+
+message LoadS3BlobRequest {}
+
+message LoadS3BlobResponse {
+  rbt.v1alpha1.TaskId task_id = 1;
+}

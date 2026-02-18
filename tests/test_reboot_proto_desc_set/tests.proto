@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+import "tests/test_reboot_proto_desc_set/beans.proto";
+
+package tests.test_reboot_proto_desc_set;
+
+message TestMessage {
+  BeanMessage bean = 1;
+  string message = 2;
+}

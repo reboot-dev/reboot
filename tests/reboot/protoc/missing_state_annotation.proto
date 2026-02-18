@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/protoc/shared.proto";
+
+package tests.reboot.protoc;
+
+message Echo {
+  // TESTS: the presence of Reboot service `EchoMethods` clues us in that `Echo`
+  //        must be a Reboot state, but it isn't annotated as such, which is
+  //        illegal.
+  Text last_message = 1;
+}
+
+service EchoMethods {
+  rpc Reply(Text) returns (Text) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}

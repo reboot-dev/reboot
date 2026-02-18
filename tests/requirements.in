@@ -1,0 +1,10 @@
+colorama==0.4.6 # Latest as of 2023/06/02, matching `public/reboot/requirements.in`.
+grpcio==1.64.3 # Matching `public/reboot/requirements.in`.
+grpcio-health-checking==1.64.3  # Matching `grpcio`
+grpcio-reflection==1.64.3  # Matching `grpcio`.
+grpcio-status==1.64.3  # Matching `grpcio`.
+grpcio-tools==1.64.3 # Matching `grpcio`.
+kubernetes-asyncio==31.1.0  # Latest as of 2024/09/16.
+protobuf==5.28.3  # Matching `public/reboot/requirements.in`.
+pyyaml==6.0.2  # Latest as of 2024/09/02.
+requests==2.31.0  # Latest as of 2024/09/02.

@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/protoc/shared.proto";
+import "tests/reboot/protoc/subpackage/all_services_in_different_package.proto";
+
+package tests.reboot.protoc;
+
+message Echo {
+  option (rbt.v1alpha1.state) = {
+    implements: [
+      "tests.reboot.protoc.subpackage.EchoMethods",
+      "tests.reboot.protoc.subpackage.EchoMoreMethods"
+    ]
+  };
+  Text last_message = 1;
+}

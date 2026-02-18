@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package tests.test_reboot_proto_desc_set;
+
+message BeanMessage {
+  string bean_name = 1;
+  string bean_type = 2;
+}

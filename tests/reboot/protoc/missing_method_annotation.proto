@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/protoc/shared.proto";
+
+package tests.reboot.protoc;
+
+service EchoMethods {
+  option (rbt.v1alpha1.service) = {
+  };
+
+  rpc Reply(Text) returns (Text) {
+    // TESTS: missing a Reboot method annotation.
+  }
+}

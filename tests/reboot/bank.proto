@@ -1,0 +1,373 @@
+syntax = "proto3";
+
+package tests.reboot;
+
+import "rbt/v1alpha1/options.proto";
+import "rbt/v1alpha1/tasks.proto";
+import "google/protobuf/empty.proto";
+
+message Account {
+  option (rbt.v1alpha1.state) = {
+  };
+  int64 balance = 1;
+}
+
+message OpenRequest {
+  optional int64 initial_deposit = 1;
+}
+
+message OpenResponse {}
+
+message DepositRequest {
+  uint32 amount = 1;
+}
+
+message DepositResponse {}
+
+message ZeroDepositError {}
+
+message WithdrawRequest {
+  uint32 amount = 1;
+}
+
+message WithdrawResponse {}
+
+message BalanceRequest {}
+
+message BalanceResponse {
+  uint32 amount = 1;
+}
+
+message PostOpenRequest {}
+message PostOpenResponse {}
+
+message ThrowExceptionRequest {}
+message ThrowExceptionResponse {}
+
+message MimicUnavailableRequest {
+  string account_id = 1;
+  bool system = 2;
+}
+
+message FailRequest {}
+message FailResponse {}
+
+message StreamStateUpdatesRequest {}
+message StreamStateUpdatesResponse {
+  Account state = 1;
+}
+
+message OverdraftError {
+  // Amount that we would have overdraft.
+  uint32 amount = 1;
+}
+
+message UserError {}
+
+service AccountMethods {
+  rpc Open(OpenRequest) returns (OpenResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: { constructor: {} },
+      errors: [ "ZeroDepositError" ],
+    };
+  }
+
+  rpc PostOpen(PostOpenRequest) returns (PostOpenResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  rpc Deposit(DepositRequest) returns (DepositResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      errors: [ "ZeroDepositError" ],
+    };
+  }
+
+  rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      errors: [ "OverdraftError" ],
+    };
+  }
+
+  rpc Balance(BalanceRequest) returns (BalanceResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  // Test method for testing behaviour in case user catches an exception from
+  // a stub method call.
+  rpc ThrowException(ThrowExceptionRequest) returns (ThrowExceptionResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc MimicUnavailable(MimicUnavailableRequest)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  // Test method for testing behaviour where users raises/throws one
+  // of their own defined errors.
+  rpc Fail(FailRequest) returns (FailResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [ "UserError" ],
+    };
+  }
+
+  rpc StreamStateUpdates(StreamStateUpdatesRequest)
+      returns (stream StreamStateUpdatesResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc TestNestedTransactionThatAborts(google.protobuf.Empty)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+      errors: [ "UserError" ],
+    };
+  }
+}
+
+message Bank {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated string account_ids = 1;
+}
+
+message SignUpRequest {
+  string account_id = 1;
+
+  optional int64 initial_deposit = 2;
+
+  // Possibly make the initial deposit by transferring from an
+  // existing account.
+  optional string initial_deposit_transfer_from_account_id = 3;
+}
+
+message SignUpResponse {
+  rbt.v1alpha1.TaskId task_id = 1;
+}
+
+message TransferrableRequest {
+  string from_account_id = 1;
+  string to_account_id = 2;
+  int64 amount = 3;
+}
+
+message TransferrableResponse {
+  bool transferrable = 1;
+}
+
+message TransferRequest {
+  string from_account_id = 1;
+  string to_account_id = 2;
+  int64 amount = 3;
+}
+
+message TransferResponse {}
+
+message AwaitPostSignUpRequest {
+  rbt.v1alpha1.TaskId task_id = 1;
+}
+
+message AssetsUnderManagementRequest {
+  uint32 wait_for_amount_at_least = 1;
+}
+
+message AssetsUnderManagementResponse {
+  uint64 amount = 1;
+  uint32 num_accounts = 2;
+}
+
+message TryCatchUndeclaredErrorRequest {
+  string account_id = 1;
+}
+
+message TryCatchDeclaredErrorRequest {
+  string account_id = 1;
+  bool read_before = 2;
+  bool write_before = 3;
+  bool write_after = 4;
+  bool read_after = 5;
+}
+
+message TestUnconstructedReaderFailsRequest {}
+message TestUnconstructedReaderFailsResponse {}
+
+message TestUnconstructedStreamingReaderFailsRequest {}
+message TestUnconstructedStreamingReaderFailsResponse {}
+
+message TestUndeclaredErrorRequest {}
+message TestUndeclaredErrorResponse {}
+
+message TestCallingLegacyGrpcServiceRequest {}
+message TestCallingLegacyGrpcServiceResponse {}
+
+message TestUnsupportedNestedTransactionsRequest {
+  enum Type {
+    NESTED_TXN_SAME_STATE = 0;
+    NESTED_TXN_PARENT_WRITER = 1;
+  }
+
+  Type type = 1;
+}
+
+message TestNestedTransactionThatAbortsRequest {
+  string account_id = 1;
+}
+
+service BankMethods {
+  // Creates the Bank instance. Only a single bank instance may exist in the
+  // whole system; it must have the agreed-upon singleton ID.
+  rpc Create(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {},
+    };
+  }
+
+  // Signs up and constructs an account transactionally!
+  rpc SignUp(SignUpRequest) returns (SignUpResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // For testing task creation from a transaction.
+  rpc PostSignUp(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  // For testing that we can await a task within a Reboot method.
+  rpc AwaitPostSignUp(AwaitPostSignUpRequest) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  // Returns whether or not a transfer could take place from an
+  // account to another account. Uses a transaction to ensure the check
+  // is performed atomically, although no writes occur within the
+  // transaction!
+  rpc Transferrable(TransferrableRequest) returns (TransferrableResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // Performs a transfer.
+  rpc Transfer(TransferRequest) returns (TransferResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+      // NOTE: we are explicitly not including 'ZeroDepositError' as a
+      // possible error here in order to test propagating an
+      // undeclared error.
+      errors: [ "OverdraftError" ],
+    };
+  }
+
+  rpc AssetsUnderManagement(AssetsUnderManagementRequest)
+      returns (AssetsUnderManagementResponse) {
+    // TODO: We should probably have some way of providing a consistent view of
+    //       assets under management, rather than this inconsistent "reader"
+    //       whose transitive "reader" calls to accounts may run interleaved
+    //       with modifications to account state. A "transaction" would give
+    //       this consistency, but would lock all of the accounts for the
+    //       duration of the call. Let's think about what the best solution for
+    //       this would be.
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  // Test method for testing behaviour in case user catches an
+  // undeclared error from a stub method call.
+  rpc TryCatchUndeclaredError(TryCatchUndeclaredErrorRequest)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // Test method for testing behaviour in case user catches a declared
+  // error from a stub method call.
+  rpc TryCatchDeclaredError(TryCatchDeclaredErrorRequest)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // Test method used to test that calling reader methods on actors with
+  // constructors fail.
+  rpc TestUnconstructedReaderFails(TestUnconstructedReaderFailsRequest)
+      returns (TestUnconstructedReaderFailsResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // Test method used to test that calling streaming reader methods on actors
+  // with constructors fail.
+  rpc TestUnconstructedStreamingReaderFails(
+      TestUnconstructedStreamingReaderFailsRequest)
+      returns (TestUnconstructedStreamingReaderFailsResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // Test method used to test calling a reader that raises an
+  // undeclared error.
+  rpc TestUndeclaredError(TestUndeclaredErrorRequest)
+      returns (TestUndeclaredErrorResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  // Test calling a legacy gRPC service.
+  rpc TestCallingLegacyGrpcService(TestCallingLegacyGrpcServiceRequest)
+      returns (TestCallingLegacyGrpcServiceResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // Test unsupported nested transactions.
+  rpc TestUnsupportedNestedTransactions(
+      TestUnsupportedNestedTransactionsRequest)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // Test that it's possible to call other methods reactively from within a
+  // Reboot method that is not itself reactive.
+  rpc TestReactiveMethodCall(google.protobuf.Empty)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc MimicUnavailable(MimicUnavailableRequest)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc TestNestedTransactionThatAborts(TestNestedTransactionThatAbortsRequest)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+}
+
+service LegacyRedTape {
+  // An example of a legacy gRPC service.
+
+  // `Compliance` sounds important but the method does nothing.
+  rpc Compliance(ComplianceRequest) returns (ComplianceResponse) {}
+}
+
+message ComplianceRequest {}
+
+message ComplianceResponse {}

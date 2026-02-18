@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/protoc/shared.proto";
+import "tests/reboot/protoc/subpackage/multiple_services_across_packages.proto";
+
+package tests.reboot.protoc;
+
+message Echo {
+  option (rbt.v1alpha1.state) = {
+    implements: [
+      "EchoMethods",
+      "tests.reboot.protoc.subpackage.EchoMoreMethods"
+    ]
+  };
+  Text last_message = 1;
+}
+
+service EchoMethods {
+  option (rbt.v1alpha1.service) = {
+  };
+
+  rpc Reply(Text) returns (Text) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}

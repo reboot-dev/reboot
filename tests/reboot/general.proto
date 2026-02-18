@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package tests.reboot;
+
+import "rbt/v1alpha1/options.proto";
+
+message General {
+  option (rbt.v1alpha1.state) = {
+  };
+  map<string, string> content = 1;
+}
+
+service GeneralMethods {
+  rpc ConstructorTransaction(GeneralRequest) returns (GeneralResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+      constructor: {},
+    };
+  }
+
+  rpc ConstructorWriter(GeneralRequest) returns (GeneralResponse) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {},
+    };
+  }
+
+  rpc Reader(GeneralRequest) returns (GeneralResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc Writer(GeneralRequest) returns (GeneralResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc Transaction(GeneralRequest) returns (GeneralResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {}
+      errors: [ "GeneralError" ]
+    };
+  }
+
+  rpc Workflow(GeneralRequest) returns (GeneralResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  // Existence of this method helps demonstrate that we can codegen a `workflow`
+  // method while there is another method on this service that's called
+  // `Workflow`.
+  rpc SecondWorkflow(GeneralRequest) returns (GeneralResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  rpc ServerStreamingReader(GeneralRequest) returns (stream GeneralResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc ClientStreamingReader(stream GeneralRequest) returns (GeneralResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc BidirectionalStreamingReader(stream GeneralRequest)
+      returns (stream GeneralResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}
+
+service LegacyGeneral {
+  rpc LegacyCall(GeneralRequest) returns (GeneralResponse) {}
+}
+
+message GeneralRequest {
+  map<string, string> content = 1;
+}
+
+message GeneralResponse {
+  map<string, string> content = 1;
+}
+
+message GeneralError {}

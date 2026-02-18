@@ -1,0 +1,52 @@
+// A set of messages and services to be used for Descriptors in
+// service_descriptor_validator_test.py. Constructing Descriptors in code is
+// messy, so we define the objects we want in proto and fetch their Descriptors
+// directly.
+syntax = "proto3";
+
+package tests.reboot.server;
+
+message EmptyMessage {}
+
+message EmptyMessageWithReserved {
+  reserved 1;
+  reserved "string_field";
+}
+
+message SingleStringField {
+  string string_field = 1;
+}
+
+message RepeatedStringField {
+  repeated string string_field = 1;
+}
+
+message TwoFields {
+  string new_first_field = 1;
+  string string_field = 2;
+}
+
+message NestedSingleStringField {
+  SingleStringField string_field = 1;
+}
+
+message NestedRepeatedStringField {
+  RepeatedStringField string_field = 1;
+}
+
+message EnumTwoOptionsField {
+  enum MyEnum {
+    ZERO = 0;
+    ONE = 1;
+  }
+  MyEnum enum_field = 1;
+}
+
+message EnumThreeOptionsField {
+  enum MyEnum {
+    ZERO = 0;
+    ONE = 1;
+    TWO = 2;
+  }
+  MyEnum enum_field = 1;
+}
