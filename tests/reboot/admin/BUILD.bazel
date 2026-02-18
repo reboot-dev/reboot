@@ -13,12 +13,12 @@ py_test(
         # wrong `grpcio` path first (i.e. it'll use the one from the outdated
         # `com_github_grpc_grpc`).
         requirement("grpcio"),
-        "@com_github_reboot_dev_reboot//reboot/admin:export_import_client_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:secrets_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "//reboot/admin:export_import_client_py",
+        "//reboot/aio:secrets_py",
+        "//reboot/aio:tests_py",
         "//tests/reboot:echo_servicers_py",
-        "@com_github_reboot_dev_reboot//reboot:settings_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
-        "@com_github_reboot_dev_reboot//reboot/ssl:localhost_py",
+        "//reboot:settings_py",
+        "//reboot/aio:exceptions_py",
+        "//reboot/ssl:localhost_py",
     ],
 )

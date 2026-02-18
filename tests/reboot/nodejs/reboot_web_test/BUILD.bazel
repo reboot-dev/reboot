@@ -1,5 +1,5 @@
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
-load("@com_github_reboot_dev_reboot//reboot/nodejs:rules.bzl", "js_reboot_test")
+load("//reboot/nodejs:rules.bzl", "js_reboot_test")
 
 ts_project(
     name = "test_ts",

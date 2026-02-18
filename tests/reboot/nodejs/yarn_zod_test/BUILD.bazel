@@ -1,4 +1,4 @@
-load("@com_github_reboot_dev_reboot//reboot:versions.bzl", "REBOOT_VERSION")
+load("//reboot:versions.bzl", "REBOOT_VERSION")
 load("//tests:sh_test_in_working_directory.bzl", "sh_test_in_working_directory")
 
 # TODO: This `sh_library` is a necessary indirection until Bazel 6, because a `sh_binary`
@@ -6,10 +6,10 @@ load("//tests:sh_test_in_working_directory.bzl", "sh_test_in_working_directory")
 # remove the indirection once we upgrade. See https://github.com/bazelbuild/bazel/issues/12348
 test_packages = [
     "//rbt/v1alpha1:reboot-dev-reboot-api",
-    "@com_github_reboot_dev_reboot//rbt/std:reboot-dev-reboot-std-api",
-    "@com_github_reboot_dev_reboot//reboot:reboot.dev",
-    "@com_github_reboot_dev_reboot//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
-    "@com_github_reboot_dev_reboot//reboot/std:reboot-dev-reboot-std",
+    "//rbt/std:reboot-dev-reboot-std-api",
+    "//reboot:reboot.dev",
+    "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+    "//reboot/std:reboot-dev-reboot-std",
 ]
 
 sh_library(
@@ -19,10 +19,10 @@ sh_library(
 
 general_env = {
     "REBOOT_API_NPM_PACKAGE": "$(location //rbt/v1alpha1:reboot-dev-reboot-api)",
-    "REBOOT_NPM_PACKAGE": "$(location @com_github_reboot_dev_reboot//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
-    "REBOOT_STD_API_NPM_PACKAGE": "$(location @com_github_reboot_dev_reboot//rbt/std:reboot-dev-reboot-std-api)",
-    "REBOOT_STD_NPM_PACKAGE": "$(location @com_github_reboot_dev_reboot//reboot/std:reboot-dev-reboot-std)",
-    "REBOOT_WHL_FILE": "$(location @com_github_reboot_dev_reboot//reboot:reboot.dev)",
+    "REBOOT_NPM_PACKAGE": "$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
+    "REBOOT_STD_API_NPM_PACKAGE": "$(location //rbt/std:reboot-dev-reboot-std-api)",
+    "REBOOT_STD_NPM_PACKAGE": "$(location //reboot/std:reboot-dev-reboot-std)",
+    "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
 }
 
 osx_env = dict(general_env)

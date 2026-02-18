@@ -8,10 +8,10 @@ py_test(
     deps = [
         requirement("grpcio"),
         requirement("grpcio-health-checking"),
+        "//reboot/aio:health_check_py",
+        "//reboot/aio:tests_py",
+        "//reboot/ssl:localhost_py",
         "//tests/reboot:echo_servicers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:health_check_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
-        "@com_github_reboot_dev_reboot//reboot/ssl:localhost_py",
     ],
 )
 
@@ -21,13 +21,13 @@ py_test(
     main = "tasks_servicer_tests.py",
     deps = [
         requirement("grpcio"),
+        "//rbt/v1alpha1:tasks_py_grpc",
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot/aio:secrets_py",
+        "//reboot/aio:tasks_py",
+        "//reboot/aio:tests_py",
+        "//reboot/ssl:localhost_py",
         "//tests/reboot:echo_servicers_py",
         "//tests/reboot:general_boilerplate_py_reboot",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_grpc",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
-        "@com_github_reboot_dev_reboot//reboot/aio:secrets_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tasks_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
-        "@com_github_reboot_dev_reboot//reboot/ssl:localhost_py",
     ],
 )

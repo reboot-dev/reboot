@@ -9,7 +9,7 @@
 # instructions at https://github.com/reboot-dev/mono.
 ########################################################################
 
-load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
 load("@com_github_3rdparty_stout//bazel:repos.bzl", stout_repos = "repos")
@@ -187,6 +187,31 @@ def repos():
         sha256 = "53cadea9109e646a93ed4dc90c9bbcaa8073c7c3df745b92f6a5000daf7aa3da",
         strip_prefix = "bazel-lib-2.21.2",
         url = "https://github.com/aspect-build/bazel-lib/releases/download/v2.21.2/bazel-lib-v2.21.2.tar.gz",
+    )
+
+    maybe(
+        http_archive,
+        name = "com_github_google_googletest",
+        sha256 = "7b42b4d6ed48810c5362c265a17faebe90dc2373c885e5216439d37927f02926",
+        strip_prefix = "googletest-1.15.2",
+        urls = ["https://github.com/google/googletest/archive/refs/tags/v1.15.2.tar.gz"],
+    )
+
+    maybe(
+        git_repository,
+        name = "com_github_3rdparty_bazel_rules_backward_cpp",
+        remote = "https://github.com/3rdparty/bazel-rules-backward-cpp",
+        commit = "03010529669f45b2abcadc06c72248b9a50045ef",
+        shallow_since = "1748009036 +0200",
+    )
+
+    maybe(
+        new_git_repository,
+        name = "com_github_3rdparty_bazel_rules_backward_cpp_stacktrace",
+        remote = "https://github.com/3rdparty/bazel-rules-backward-cpp",
+        build_file = "@com_github_3rdparty_bazel_rules_backward_cpp//:BUILD.backward-stacktrace.bazel",
+        commit = "03010529669f45b2abcadc06c72248b9a50045ef",
+        shallow_since = "1748009036 +0200",
     )
 
     maybe(

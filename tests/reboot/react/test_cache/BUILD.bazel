@@ -129,13 +129,13 @@ vitest_test(
     config = "vitest-local_storage.config.mjs",
     data = [
         ":storage_type_local_storage_test_ts",
-        "@com_github_reboot_dev_reboot//reboot:reboot.dev",
+        "//reboot:reboot.dev",
     ],
     # To use a "dev" version of Reboot instead of a publicly released
     # version of Reboot in the test, we set the 'REBOOT_WHL_FILE'
     # environment variable to point to the Reboot wheel file to install
     # from.
-    env = {"REBOOT_WHL_FILE": "$(rootpath @com_github_reboot_dev_reboot//reboot:reboot.dev)"},
+    env = {"REBOOT_WHL_FILE": "$(rootpath //reboot:reboot.dev)"},
     node_modules = "//:node_modules",
     visibility = ["//visibility:public"],
 )
@@ -147,13 +147,13 @@ vitest_test(
     data = [
         "disableLocalStorage.mjs",
         ":storage_type_in_memory_test_ts",
-        "@com_github_reboot_dev_reboot//reboot:reboot.dev",
+        "//reboot:reboot.dev",
     ],
     # To use a "dev" version of Reboot instead of a publicly released
     # version of Reboot in the test, we set the 'REBOOT_WHL_FILE'
     # environment variable to point to the Reboot wheel file to install
     # from.
-    env = {"REBOOT_WHL_FILE": "$(rootpath @com_github_reboot_dev_reboot//reboot:reboot.dev)"},
+    env = {"REBOOT_WHL_FILE": "$(rootpath //reboot:reboot.dev)"},
     node_modules = "//:node_modules",
     visibility = ["//visibility:public"],
 )
@@ -165,13 +165,13 @@ vitest_test(
     data = [
         "fakeIndexedDb.mjs",
         ":storage_type_indexeddb_test_ts",
-        "@com_github_reboot_dev_reboot//reboot:reboot.dev",
+        "//reboot:reboot.dev",
     ],
     # To use a "dev" version of Reboot instead of a publicly released
     # version of Reboot in the test, we set the 'REBOOT_WHL_FILE'
     # environment variable to point to the Reboot wheel file to install
     # from.
-    env = {"REBOOT_WHL_FILE": "$(rootpath @com_github_reboot_dev_reboot//reboot:reboot.dev)"},
+    env = {"REBOOT_WHL_FILE": "$(rootpath //reboot:reboot.dev)"},
     node_modules = "//:node_modules",
     visibility = ["//visibility:public"],
 )

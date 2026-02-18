@@ -5,8 +5,8 @@ py_test(
     srcs = [":tests.py"],
     main = "tests.py",
     deps = [
-        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
-        "@com_github_reboot_dev_reboot//reboot/thirdparty/mailgun:servicers_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:tests_py",
+        "//reboot/thirdparty/mailgun:servicers_py",
     ],
 )

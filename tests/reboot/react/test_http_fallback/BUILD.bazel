@@ -38,12 +38,12 @@ py_library(
     ],
     visibility = ["//tests:__subpackages__"],
     deps = [
+        "//reboot/aio:external_py",
+        "//reboot/aio:idempotency_py",
+        "//reboot/aio:servicers_py",
+        "//reboot/aio:tests_py",
         "//tests/reboot:greeter_servicers_py",
         "//tests/reboot/react:web_driver_runner",
-        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:idempotency_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:servicers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
     ],
 )
 

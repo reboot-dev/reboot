@@ -1,5 +1,5 @@
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
-load("@com_github_reboot_dev_reboot//reboot/nodejs:rules.bzl", "js_reboot_test")
+load("//reboot/nodejs:rules.bzl", "js_reboot_test")
 load("//tests:zod_to_proto.bzl", "js_reboot_library_from_zod")
 
 js_reboot_library_from_zod(

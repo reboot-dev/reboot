@@ -1,16 +1,16 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
-load("@com_github_reboot_dev_reboot//reboot:rules.bzl", "js_proto_library", "js_reboot_react_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_python//python:defs.bzl", "py_library")
+load("//reboot:rules.bzl", "js_proto_library", "js_reboot_react_library")
 load("//tests/reboot/react:py_web_test_suite_env.bzl", "py_web_test_suite_env")
 
 proto_library(
     name = "test_proto",
     srcs = [":test.proto"],
     deps = [
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
         "@com_google_protobuf//:empty_proto",
         "@com_google_protobuf//:wrappers_proto",
         "@googleapis//google/api:http_proto",
@@ -26,7 +26,7 @@ js_proto_library(
         # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
         # use `create_protoc_plugin_rule` we need to repeat the dependencies of
         # the `proto_libraries` here.
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
         "@com_google_protobuf//:empty_proto",
         "@com_google_protobuf//:descriptor_proto",
         "@com_google_protobuf//:wrappers_proto",
@@ -89,10 +89,10 @@ py_library(
     ],
     visibility = ["//tests:__subpackages__"],
     deps = [
+        "//reboot/aio:external_py",
+        "//reboot/aio:idempotency_py",
         "//tests/reboot:greeter_servicers_py",
         "//tests/reboot/react:web_driver_runner",
-        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:idempotency_py",
     ],
 )
 

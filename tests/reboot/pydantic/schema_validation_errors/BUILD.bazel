@@ -5,6 +5,6 @@ py_test(
     srcs = ["test.py"],
     main = "test.py",
     deps = [
-        "@com_github_reboot_dev_reboot//reboot:api_py",
+        "//reboot:api_py",
     ],
 )

@@ -8,7 +8,7 @@ proto_library(
     name = "echo_shared_messages_proto",
     srcs = [":echo_shared_messages.proto"],
     deps = [
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -17,7 +17,7 @@ proto_library(
     srcs = ["echo_original.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -32,7 +32,7 @@ proto_library(
     srcs = ["echo_replay_deleted.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -47,7 +47,7 @@ proto_library(
     srcs = ["echo_empty_input_type.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -62,7 +62,7 @@ proto_library(
     srcs = ["echo_with_message.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -77,7 +77,7 @@ proto_library(
     srcs = ["echo_with_message_id.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -92,7 +92,7 @@ proto_library(
     srcs = ["echo_empty_reserved_input_type.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -107,7 +107,7 @@ proto_library(
     srcs = ["echo_hello_added.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -122,7 +122,7 @@ proto_library(
     srcs = ["echo_nested_repeated_string_input_type.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -137,7 +137,7 @@ proto_library(
     srcs = ["echo_nested_single_string_input_type.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -152,7 +152,7 @@ proto_library(
     srcs = ["echo_output_type_changed.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -167,7 +167,7 @@ proto_library(
     srcs = ["echo_replay_option_changed.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -182,7 +182,7 @@ proto_library(
     srcs = ["echo_replay_type_changed.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -197,7 +197,7 @@ proto_library(
     srcs = ["echo_two_fields_input_type.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -212,7 +212,7 @@ proto_library(
     srcs = ["echo_enum_two_options_input_type.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -227,7 +227,7 @@ proto_library(
     srcs = ["echo_enum_three_options_input_type.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -242,7 +242,7 @@ proto_library(
     srcs = ["echo_state_message_changed.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -257,7 +257,7 @@ proto_library(
     srcs = ["echo_state_message_name_changed.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -272,7 +272,7 @@ proto_library(
     srcs = ["echo_state_message_new_field.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -287,7 +287,7 @@ proto_library(
     srcs = ["echo_recursion.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -302,7 +302,7 @@ proto_library(
     srcs = ["echo_reply_transaction.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -317,7 +317,7 @@ proto_library(
     srcs = ["echo_reply_writer_constructor.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -332,7 +332,7 @@ proto_library(
     srcs = ["echo_reply_transaction_constructor.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -347,7 +347,7 @@ proto_library(
     srcs = ["echo_legacy_service_name.proto"],
     deps = [
         ":echo_shared_messages_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
     ],
 )
 
@@ -363,10 +363,10 @@ py_library(
     deps = [
         requirement("protobuf"),
         requirement("h2"),
+        "//reboot/aio:tests_py",
+        "//reboot/ssl:localhost_py",
         "//tests/reboot:general_boilerplate_py_reboot",
         "//tests/reboot:test_helpers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
-        "@com_github_reboot_dev_reboot//reboot/ssl:localhost_py",
     ],
 )
 
@@ -380,10 +380,10 @@ py_test(
         ":local_envoy_test_lib",
         requirement("protobuf"),
         requirement("h2"),
+        "//reboot/aio:tests_py",
+        "//reboot/ssl:localhost_py",
         "//tests/reboot:general_boilerplate_py_reboot",
         "//tests/reboot:test_helpers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
-        "@com_github_reboot_dev_reboot//reboot/ssl:localhost_py",
     ],
 )
 
@@ -396,10 +396,10 @@ py_test(
         ":local_envoy_test_lib",
         requirement("protobuf"),
         requirement("h2"),
+        "//reboot/aio:tests_py",
+        "//reboot/ssl:localhost_py",
         "//tests/reboot:general_boilerplate_py_reboot",
         "//tests/reboot:test_helpers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
-        "@com_github_reboot_dev_reboot//reboot/ssl:localhost_py",
     ],
 )
 
@@ -432,9 +432,9 @@ py_test(
         ":echo_two_fields_input_type_py_proto",
         ":echo_with_message_id_py_proto",
         ":echo_with_message_py_proto",
+        "//reboot:helpers_py",
+        "//reboot/server:service_descriptor_validator_py",
         "//tests/reboot:test_helpers_py",
-        "@com_github_reboot_dev_reboot//reboot:helpers_py",
-        "@com_github_reboot_dev_reboot//reboot/server:service_descriptor_validator_py",
     ],
 )
 
@@ -445,9 +445,9 @@ cc_test(
         "uuidv7.h",
     ],
     deps = [
+        "//reboot/server:database_cc",
         "@com_github_3rdparty_stout//:stout",
         "@com_github_google_googletest//:gtest_main",
-        "@com_github_reboot_dev_reboot//reboot/server:database_cc",
     ] + select(
         {
             "@platforms//os:linux": [

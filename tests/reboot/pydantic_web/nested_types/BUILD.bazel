@@ -1,11 +1,11 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@rules_python//python:defs.bzl", "py_library")
 load(
-    "@com_github_reboot_dev_reboot//reboot:pydantic_to_proto.bzl",
+    "//reboot:pydantic_to_proto.bzl",
     "js_reboot_react_library_from_pydantic",
     "py_reboot_library_from_pydantic",
 )
-load("@rules_python//python:defs.bzl", "py_library")
 load("//tests/reboot/react:py_web_test_suite_env.bzl", "py_web_test_suite_env")
 
 # Export servicer_api.py for shared models to scan for error models.
@@ -18,9 +18,9 @@ py_library(
     name = "servicer_api_py",
     srcs = ["servicer_api.py"],
     deps = [
+        "//reboot:api_py",
         "//tests/reboot/pydantic_web/nested_types/base_models:models_py",
         "//tests/reboot/pydantic_web/nested_types/shared:models_py",
-        "@com_github_reboot_dev_reboot//reboot:api_py",
     ],
 )
 
@@ -96,9 +96,9 @@ py_library(
     ],
     deps = [
         ":servicer_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:idempotency_py",
         "//tests/reboot/react:web_driver_runner",
-        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:idempotency_py",
     ],
 )
 

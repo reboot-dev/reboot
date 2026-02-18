@@ -17,7 +17,7 @@ py_library(
     ],
     visibility = ["//tests:__subpackages__"],
     deps = [
-        "@com_github_reboot_dev_reboot//reboot/templates:tools_py",
+        "//reboot/templates:tools_py",
         "@io_bazel_rules_webtesting//testing/web",
     ],
 )
@@ -31,10 +31,10 @@ py_library(
     visibility = ["//tests:__subpackages__"],
     deps = [
         requirement("urllib3"),
-        "@com_github_reboot_dev_reboot//reboot/aio:applications_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:health_check_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:servicers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:health_check_py",
+        "//reboot/aio:servicers_py",
+        "//reboot/aio:tests_py",
     ],
 )

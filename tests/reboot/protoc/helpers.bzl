@@ -4,17 +4,17 @@ Helpers that aid in testing various features of our protoc plugins.
 
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//bazel:proto_descriptor_set.bzl", "proto_descriptor_set")
 load(
-    "@com_github_reboot_dev_reboot//reboot:rules.bzl",
+    "//reboot:rules.bzl",
     "js_proto_library",
     "js_reboot_library",
     "js_reboot_react_library",
     "py_reboot_library",
 )
-load("@com_github_reboot_dev_reboot//reboot/nodejs:rules.bzl", "js_reboot_test")
-load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//bazel:proto_descriptor_set.bzl", "proto_descriptor_set")
+load("//reboot/nodejs:rules.bzl", "js_reboot_test")
 load("//tests/reboot/react:py_web_test_suite_env.bzl", "py_web_test_suite_env")
 
 def _template_impl(ctx):
@@ -83,7 +83,7 @@ def success_echo_test(
         tags = tags + ["py"],
         deps = [
             ":" + name + "_py_reboot",
-            "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+            "//reboot/aio:tests_py",
             "//tests/reboot/protoc:shared_py_proto",
         ],
     )
@@ -162,7 +162,7 @@ def success_echo_test(
         data = [":" + name + "_bundle"],
         deps = [
             "//tests/reboot/protoc:shared_py_proto",
-            "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+            "//reboot/aio:external_py",
             "//tests/reboot/react:web_driver_runner",
             "//tests/reboot/react:test_against_local_envoy_py",
         ],
@@ -212,7 +212,7 @@ def failure_test(name, expected_error):
         ],
         deps = [
             "//tests/reboot/protoc:shared_proto",
-            "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+            "//rbt/v1alpha1:options_proto",
         ],
     )
 
@@ -237,8 +237,8 @@ def failure_test(name, expected_error):
             ":" + name + "_descriptor_set",
         ],
         deps = [
-            "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
-            "@com_github_reboot_dev_reboot//reboot:protoc_gen_reboot_python_py",
+            "//reboot/aio:tests_py",
+            "//reboot:protoc_gen_reboot_python_py",
             "//tests/reboot/protoc:shared_py_proto",
         ],
     )
@@ -266,7 +266,7 @@ def reboot_libraries_for_proto(
         visibility = ["//visibility:public"],
         deps = [
             "//tests/reboot/protoc:shared_proto",
-            "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+            "//rbt/v1alpha1:options_proto",
         ] + proto_deps,
     )
 
@@ -288,7 +288,7 @@ def reboot_libraries_for_proto(
             # use `create_protoc_plugin_rule` we need to repeat the dependencies of
             # the `proto_libraries` here.
             "//tests/reboot/protoc:shared_proto",
-            "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+            "//rbt/v1alpha1:options_proto",
             "@com_google_protobuf//:descriptor_proto",
         ] + proto_deps,
         visibility = ["//visibility:public"],

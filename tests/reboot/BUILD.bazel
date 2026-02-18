@@ -1,6 +1,11 @@
-load("@com_github_reboot_dev_reboot//bazel:oci_image.bzl", "py_oci_image")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//bazel:oci_image.bzl", "py_oci_image")
+load("//bazel:proto_descriptor_set.bzl", "proto_descriptor_set")
+load("//bazel:py_test_with_workspace_dir.bzl", "py_test_with_workspace_dir")
 load(
-    "@com_github_reboot_dev_reboot//reboot:rules.bzl",
+    "//reboot:rules.bzl",
     "js_proto_library",
     "js_reboot_library",
     "js_reboot_react_library",
@@ -9,18 +14,13 @@ load(
     "py_reboot_library",
     "ts_reboot_boilerplate_files",
 )
-load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
-load("@rbt_pypi//:requirements.bzl", "requirement")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//bazel:proto_descriptor_set.bzl", "proto_descriptor_set")
-load("//bazel:py_test_with_workspace_dir.bzl", "py_test_with_workspace_dir")
 
 proto_library(
     name = "greeter_proto",
     srcs = [":greeter.proto"],
     deps = [
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
         "@com_google_protobuf//:any_proto",
         "@com_google_protobuf//:empty_proto",
         "@com_google_protobuf//:wrappers_proto",
@@ -67,8 +67,8 @@ py_test(
     ],
     main = "protoc_gen_reboot_tests.py",
     deps = [
-        "@com_github_reboot_dev_reboot//reboot:protoc-gen-reboot_python",
-        "@com_github_reboot_dev_reboot//reboot:protoc_gen_reboot_generic_py",
+        "//reboot:protoc-gen-reboot_python",
+        "//reboot:protoc_gen_reboot_generic_py",
         "@googleapis//google/api:annotations_py_proto",
     ],
 )
@@ -80,24 +80,24 @@ py_library(
     # "reboot/helpers.py" - Python would occasionally get confused and
     # import the wrong file.
     srcs = [":test_helpers.py"],
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         requirement("protobuf"),
+        "//reboot:helpers_py",
+        "//reboot/aio:tests_py",
         "//tests/reboot/server:echo_empty_reserved_input_type_py_proto",
         "//tests/reboot/server:echo_original_py_proto",
         "//tests/reboot/server:echo_replay_deleted_py_proto",
-        "@com_github_reboot_dev_reboot//reboot:helpers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
     ],
 )
 
 py_library(
     name = "test_token_verifier_py",
     srcs = [":test_token_verifier.py"],
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         requirement("pyjwt"),
-        "@com_github_reboot_dev_reboot//reboot/aio/auth:token_verifiers_py",
+        "//reboot/aio/auth:token_verifiers_py",
     ],
 )
 
@@ -191,7 +191,7 @@ py_boilerplate_reboot_library(
     name = "echo_boilerplate_py_reboot",
     proto = "echo.proto",
     proto_library = ":echo_proto",
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 py_test(
@@ -237,7 +237,7 @@ py_library(
     srcs = [
         "greeter_servicers.py",
     ],
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":greeter_py_reboot",
     ],
@@ -254,13 +254,13 @@ py_test(
         ":bank_py",
         ":echo_servicers_py",
         ":greeter_servicers_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_grpc",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
-        "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:reboot_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:secrets_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
-        "@com_github_reboot_dev_reboot//reboot/server:service_descriptor_validator_py",
+        "//rbt/v1alpha1:tasks_py_grpc",
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot/aio:exceptions_py",
+        "//reboot/aio:reboot_py",
+        "//reboot/aio:secrets_py",
+        "//reboot/aio:tests_py",
+        "//reboot/server:service_descriptor_validator_py",
     ],
 )
 
@@ -273,9 +273,9 @@ py_test(
     deps = [
         requirement("grpcio"),
         ":greeter_servicers_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_grpc",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
-        "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
+        "//rbt/v1alpha1:tasks_py_grpc",
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot/aio:exceptions_py",
     ],
 )
 
@@ -283,8 +283,8 @@ proto_library(
     name = "echo_proto",
     srcs = [":echo.proto"],
     deps = [
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
     ],
 )
 
@@ -292,7 +292,7 @@ py_reboot_library(
     name = "echo_py_reboot",
     proto = "echo.proto",
     proto_library = ":echo_proto",
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 py_library(
@@ -300,10 +300,10 @@ py_library(
     srcs = [
         "echo_servicers.py",
     ],
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":echo_boilerplate_py_reboot",
-        "@com_github_reboot_dev_reboot//reboot/aio:memoize_py",
+        "//reboot/aio:memoize_py",
     ],
 )
 
@@ -312,12 +312,12 @@ py_library(
     srcs = [
         "greeter_main.py",
     ],
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":greeter_servicers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:applications_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:http_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:http_py",
     ],
 )
 
@@ -333,7 +333,7 @@ py_oci_image(
         "PYTHONUNBUFFERED": "1",
     },
     main = "greeter_main.py",
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":greeter_main_py",
     ],
@@ -347,7 +347,7 @@ py_test(
     main = "cancellation_tests.py",
     deps = [
         ":general_boilerplate_py_reboot",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "//reboot/aio:tests_py",
     ],
 )
 
@@ -359,7 +359,7 @@ py_test(
     main = "context_tests.py",
     deps = [
         ":greeter_servicers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "//reboot/aio:tests_py",
     ],
 )
 
@@ -381,7 +381,7 @@ py_test(
     deps = [
         ":general_boilerplate_py_reboot",
         ":greeter_servicers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "//reboot/aio:tests_py",
     ],
 )
 
@@ -392,8 +392,8 @@ py_test(
     deps = [
         ":greeter_servicers_py",
         ":test_helpers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "//reboot/aio:exceptions_py",
+        "//reboot/aio:tests_py",
     ],
 )
 
@@ -404,7 +404,7 @@ py_test(
     deps = [
         ":echo_servicers_py",
         ":greeter_servicers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "//reboot/aio:tests_py",
     ],
 )
 
@@ -415,8 +415,8 @@ py_test(
     deps = [
         requirement("aiohttp"),
         ":greeter_servicers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
-        "@com_github_reboot_dev_reboot//reboot/ssl:localhost_py",
+        "//reboot/aio:tests_py",
+        "//reboot/ssl:localhost_py",
     ],
 )
 
@@ -426,7 +426,7 @@ py_test(
     main = "streaming_readers_tests.py",
     deps = [
         ":echo_servicers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "//reboot/aio:tests_py",
     ],
 )
 
@@ -442,10 +442,10 @@ py_test(
         ":general_boilerplate_py_reboot",
         ":greeter_py_reboot",
         ":greeter_servicers_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
-        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
-        "@com_github_reboot_dev_reboot//reboot/aio/internals:tasks_cache_py",
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot/aio:external_py",
+        "//reboot/aio:tests_py",
+        "//reboot/aio/internals:tasks_cache_py",
     ],
 )
 
@@ -453,8 +453,8 @@ proto_library(
     name = "bank_proto",
     srcs = [":bank.proto"],
     deps = [
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
         "@com_google_protobuf//:empty_proto",
     ],
 )
@@ -463,7 +463,7 @@ py_reboot_library(
     name = "bank_py_reboot",
     proto = "bank.proto",
     proto_library = ":bank_proto",
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 js_proto_library(
@@ -475,8 +475,8 @@ js_proto_library(
         # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
         # use `create_protoc_plugin_rule` we need to repeat the dependencies of
         # the `proto_libraries` here.
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
         "@com_google_protobuf//:empty_proto",
         "@com_google_protobuf//:any_proto",
         "@com_google_protobuf//:descriptor_proto",
@@ -491,13 +491,13 @@ js_reboot_react_library(
     proto_deps = [
         ":bank_proto",
     ],
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "bank_py",
     srcs = ["bank.py"],
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":bank_py_reboot",
     ],
@@ -515,18 +515,18 @@ py_oci_image(
         "PYTHONUNBUFFERED": "1",
     },
     main = "bank_main.py",
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":bank_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:applications_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
     ],
 )
 
 py_library(
     name = "auth_bank_py",
     srcs = ["auth_bank.py"],
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":bank_py",
         ":test_token_verifier_py",
@@ -545,12 +545,12 @@ py_oci_image(
         "PYTHONUNBUFFERED": "1",
     },
     main = "auth_bank_main.py",
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":auth_bank_py",
         ":test_token_verifier_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:applications_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
     ],
 )
 
@@ -561,7 +561,7 @@ py_test(
     deps = [
         ":bank_py",
         ":test_token_verifier_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "//reboot/aio:tests_py",
     ],
 )
 
@@ -578,11 +578,11 @@ py_oci_image(
     },
     main = "presence_main.py",
     tags = ["requires-docker"],
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
-        "@com_github_reboot_dev_reboot//reboot/aio:applications_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
-        "@com_github_reboot_dev_reboot//reboot/std/presence/v1:presence_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/std/presence/v1:presence_py",
     ],
 )
 
@@ -590,8 +590,8 @@ proto_library(
     name = "general_proto",
     srcs = [":general.proto"],
     deps = [
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
         "@com_google_protobuf//:struct_proto",
     ],
 )
@@ -600,20 +600,20 @@ py_reboot_library(
     name = "general_py_reboot",
     proto = "general.proto",
     proto_library = ":general_proto",
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 py_boilerplate_reboot_library(
     name = "general_boilerplate_py_reboot",
     proto = "general.proto",
     proto_library = ":general_proto",
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 ts_reboot_boilerplate_files(
     name = "general_boilerplate_ts_reboot",
     proto = "general.proto",
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":general_proto",
     ],
@@ -663,7 +663,7 @@ py_binary(
     main = "benchmark.py",
     deps = [
         ":general_boilerplate_py_reboot",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "//reboot/aio:tests_py",
     ],
 )
 
@@ -674,8 +674,8 @@ py_test(
     deps = [
         ":bank_py",
         ":general_boilerplate_py_reboot",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
-        "@com_github_reboot_dev_reboot//reboot/std/collections/v1:sorted_map_py",
+        "//reboot/aio:tests_py",
+        "//reboot/std/collections/v1:sorted_map_py",
     ],
 )
 
@@ -685,7 +685,7 @@ py_test(
     main = "idempotency_tests.py",
     deps = [
         ":bank_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "//reboot/aio:tests_py",
     ],
 )
 
@@ -696,7 +696,7 @@ py_test(
     ],
     main = "types_tests.py",
     deps = [
-        "@com_github_reboot_dev_reboot//reboot/aio:types_py",
+        "//reboot/aio:types_py",
     ],
 )
 
@@ -706,7 +706,7 @@ py_test(
     main = "errors_tests.py",
     deps = [
         ":bank_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "//reboot/aio:tests_py",
     ],
 )
 
@@ -716,10 +716,10 @@ py_test(
     main = "effect_validation_tests.py",
     deps = [
         ":general_boilerplate_py_reboot",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
-        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
-        "@com_github_reboot_dev_reboot//reboot/aio/auth:authorizers_py",
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot/aio:external_py",
+        "//reboot/aio:tests_py",
+        "//reboot/aio/auth:authorizers_py",
     ],
 )
 
@@ -731,7 +731,7 @@ py_test(
     deps = [
         ":greeter_py_reboot",
         ":greeter_servicers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "//reboot/aio:tests_py",
     ],
 )
 
@@ -741,7 +741,7 @@ py_test_with_workspace_dir(
         ":versions_test.py",
     ],
     data = [
-        "@com_github_reboot_dev_reboot//reboot:versions.bzl",
+        "//reboot:versions.bzl",
     ],
     main = ":versions_test.py",
     workspace_dir_py_file_name = "workspace_directory.py",
@@ -759,8 +759,8 @@ js_proto_library(
         # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
         # use `create_protoc_plugin_rule` we need to repeat the dependencies of
         # the `proto_libraries` here.
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
         "@com_google_protobuf//:any_proto",
         "@com_google_protobuf//:descriptor_proto",
         "@com_google_protobuf//:empty_proto",
@@ -778,7 +778,7 @@ js_reboot_react_library(
     proto_deps = [
         ":greeter_proto",
     ],
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 py_test(
@@ -786,7 +786,7 @@ py_test(
     srcs = ["log_test.py"],
     main = "log_test.py",
     deps = [
-        "@com_github_reboot_dev_reboot//log:log_py",
+        "//log:log_py",
     ],
 )
 
@@ -807,7 +807,7 @@ js_reboot_web_library(
 py_library(
     name = "settings_py",
     srcs = ["settings.py"],
-    visibility = ["//tests:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 py_test(
@@ -815,6 +815,6 @@ py_test(
     srcs = ["versioning_test.py"],
     main = "versioning_test.py",
     deps = [
-        "@com_github_reboot_dev_reboot//reboot:versioning_py",
+        "//reboot:versioning_py",
     ],
 )

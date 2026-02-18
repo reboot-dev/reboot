@@ -1,15 +1,15 @@
+load("@rules_python//python:defs.bzl", "py_library")
 load(
-    "@com_github_reboot_dev_reboot//reboot:pydantic_to_proto.bzl",
+    "//reboot:pydantic_to_proto.bzl",
     "pydantic_to_zod",
 )
-load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
     name = "models_py",
     srcs = ["models.py"],
     visibility = ["//tests/reboot/pydantic_web/nested_types:__subpackages__"],
     deps = [
-        "@com_github_reboot_dev_reboot//reboot:api_py",
+        "//reboot:api_py",
     ],
 )
 

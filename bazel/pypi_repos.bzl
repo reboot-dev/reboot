@@ -32,3 +32,11 @@ def pypi_repos():
         # also be imported from other repos.
         requirements_lock = "@com_github_reboot_dev_reboot//reboot:requirements_lock.txt",
     )
+
+    pip_parse(
+        name = "rbt_test_pypi",
+        python_interpreter_target = interpreter,
+        # Fully-specified path (including repo) so that this `.bzl` file can
+        # also be imported from other repos.
+        requirements_lock = "@com_github_reboot_dev_reboot//tests:requirements_lock.txt",
+    )

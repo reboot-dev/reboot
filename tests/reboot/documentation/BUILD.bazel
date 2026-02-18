@@ -1,22 +1,22 @@
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rbt_test_pypi//:requirements.bzl", requirement_test = "requirement")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load(
-    "@com_github_reboot_dev_reboot//reboot:rules.bzl",
+    "//reboot:rules.bzl",
     "js_proto_library",
     "js_reboot_library",
     "py_reboot_library",
 )
-load("@com_github_reboot_dev_reboot//reboot/nodejs:rules.bzl", "js_reboot_test")
-load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
-load("@rbt_infrastructure_pypi//:requirements.bzl", requirement_infrastructure = "requirement")
-load("@rbt_pypi//:requirements.bzl", "requirement")
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//reboot/nodejs:rules.bzl", "js_reboot_test")
 
 proto_library(
     name = "task_proto",
     srcs = [":task.proto"],
     deps = [
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
         "@com_google_protobuf//:any_proto",
         "@com_google_protobuf//:descriptor_proto",
         "@com_google_protobuf//:timestamp_proto",
@@ -47,9 +47,9 @@ js_proto_library(
         # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
         # use `create_protoc_plugin_rule` we need to repeat the dependencies of
         # the `proto_libraries` here.
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
         "@com_google_protobuf//:descriptor_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
+        "//rbt/v1alpha1:tasks_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@com_google_protobuf//:any_proto",
     ],
@@ -141,11 +141,11 @@ py_test(
     main = "test_http.py",
     deps = [
         requirement("fastapi"),
-        requirement_infrastructure("requests"),
+        requirement_test("requests"),
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:http_py",
+        "//reboot/aio:tests_py",
         "//tests/reboot:greeter_servicers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:applications_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:http_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
     ],
 )

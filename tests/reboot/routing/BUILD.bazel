@@ -1,7 +1,7 @@
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
-load("@com_github_reboot_dev_mono//bazel:rules.bzl", "py_generated_file")
-load("@common_test_pypi//:requirements.bzl", "requirement")
+load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_test")
+load("//bazel:rules.bzl", "py_generated_file")
 
 py_generated_file(
     name = "sorted_envoy_yaml",
@@ -10,9 +10,9 @@ py_generated_file(
     deps = [
         requirement("protobuf"),
         requirement("pyyaml"),
+        "//reboot:helpers_py",
+        "//reboot/server:local_envoy_py",
         "//tests/reboot:greeter_servicers_py",
-        "@com_github_reboot_dev_reboot//reboot:helpers_py",
-        "@com_github_reboot_dev_reboot//reboot/server:local_envoy_py",
     ],
 )
 
@@ -41,6 +41,6 @@ py_test(
         "//envoy/config/listener/v3:listenerv3_py_proto",
         "//envoy/service/discovery/v3:discoveryv3_py_grpc",
         "//envoy/service/discovery/v3:discoveryv3_py_proto",
-        "@com_github_reboot_dev_reboot//reboot/routing:xds_server_py",
+        "//reboot/routing:xds_server_py",
     ],
 )

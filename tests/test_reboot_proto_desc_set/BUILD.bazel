@@ -1,6 +1,6 @@
-load("@com_github_reboot_dev_reboot//reboot:rules.bzl", "py_reboot_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_python//python:defs.bzl", "py_test")
+load("//reboot:rules.bzl", "py_reboot_library")
 
 proto_library(
     name = "tests_proto",
@@ -25,7 +25,7 @@ proto_library(
         ":tests.proto",
     ],
     deps = [
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:options_proto",
         "@com_google_protobuf//:empty_proto",
         "@com_google_protobuf//:wrappers_proto",
     ],
@@ -44,6 +44,6 @@ py_test(
     main = "greeter_proto_desc_set_test.py",
     deps = [
         ":greeter_py_reboot",
-        "@com_github_reboot_dev_reboot//reboot:helpers_py",
+        "//reboot:helpers_py",
     ],
 )

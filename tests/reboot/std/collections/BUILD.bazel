@@ -1,7 +1,7 @@
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
-load("@com_github_reboot_dev_reboot//reboot/nodejs:rules.bzl", "js_reboot_test")
 load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_test")
+load("//reboot/nodejs:rules.bzl", "js_reboot_test")
 
 py_test(
     name = "sorted_map_tests_py",
@@ -13,13 +13,13 @@ py_test(
         # wrong `grpcio` path first (i.e. it'll use the one from the outdated
         # `com_github_grpc_grpc`).
         requirement("grpcio"),
-        "@com_github_reboot_dev_reboot//reboot/aio/auth:authorizers_py",
-        "@com_github_reboot_dev_reboot//reboot/admin:export_import_client_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
-        "@com_github_reboot_dev_reboot//reboot/std/collections/v1:sorted_map_py",
+        "//reboot/aio/auth:authorizers_py",
+        "//reboot/admin:export_import_client_py",
+        "//reboot/aio:tests_py",
+        "//reboot/std/collections/v1:sorted_map_py",
         "//tests/reboot:general_boilerplate_py_reboot",
-        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
-        "@com_github_reboot_dev_reboot//reboot/ssl:localhost_py",
+        "//reboot/aio:external_py",
+        "//reboot/ssl:localhost_py",
     ],
 )
 

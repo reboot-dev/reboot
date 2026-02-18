@@ -7,18 +7,18 @@ py_library(
     ],
     data = [
         "//rbt/v1alpha1:reboot-dev-reboot-api",
-        "@com_github_reboot_dev_reboot//reboot/cli:rbt",
-        "@com_github_reboot_dev_reboot//reboot/nodejs",
-        "@com_github_reboot_dev_reboot//reboot/nodejs:reboot-dev-reboot",
-        "@com_github_reboot_dev_reboot//reboot/react:reboot-dev-reboot-react",
-        "@com_github_reboot_dev_reboot//reboot/web:reboot-dev-reboot-web",
+        "//reboot/cli:rbt",
+        "//reboot/nodejs",
+        "//reboot/nodejs:reboot-dev-reboot",
+        "//reboot/react:reboot-dev-reboot-react",
+        "//reboot/web:reboot-dev-reboot-web",
     ],
     deps = [
+        "//reboot:version_py",
+        "//reboot/cli:cli_py",
+        "//reboot/cli:generate_py",
+        "//reboot/cli:rc_py",
         "//tests/reboot/cli:mock_exit_py",
-        "@com_github_reboot_dev_reboot//reboot:version_py",
-        "@com_github_reboot_dev_reboot//reboot/cli:cli_py",
-        "@com_github_reboot_dev_reboot//reboot/cli:generate_py",
-        "@com_github_reboot_dev_reboot//reboot/cli:rc_py",
     ],
 )
 

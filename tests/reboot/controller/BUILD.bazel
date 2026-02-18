@@ -10,18 +10,18 @@ py_test(
         requirement("grpcio"),
         requirement("kubernetes_asyncio"),
         requirement("protobuf"),
+        "//rbt/v1alpha1:application_config_py_proto",
+        "//rbt/v1alpha1:placement_planner_py_grpc",
+        "//rbt/v1alpha1:placement_planner_py_proto",
+        "//reboot:helpers_py",
+        "//reboot/aio:exceptions_py",
+        "//reboot/aio:resolvers_py",
+        "//reboot/controller:application_config_py",
+        "//reboot/controller:application_config_trackers_py",
+        "//reboot/controller:placement_planner_py",
+        "//reboot/controller:server_managers_py",
         "//tests/reboot:settings_py",
         "//tests/reboot:test_helpers_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:application_config_py_proto",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_grpc",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
-        "@com_github_reboot_dev_reboot//reboot:helpers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:resolvers_py",
-        "@com_github_reboot_dev_reboot//reboot/controller:application_config_py",
-        "@com_github_reboot_dev_reboot//reboot/controller:application_config_trackers_py",
-        "@com_github_reboot_dev_reboot//reboot/controller:placement_planner_py",
-        "@com_github_reboot_dev_reboot//reboot/controller:server_managers_py",
     ],
 )
 
@@ -30,8 +30,8 @@ py_test(
     srcs = ["application_config_trackers_test.py"],
     main = "application_config_trackers_test.py",
     deps = [
-        "@com_github_reboot_dev_reboot//reboot/controller:application_config_py",
-        "@com_github_reboot_dev_reboot//reboot/controller:application_config_trackers_py",
+        "//reboot/controller:application_config_py",
+        "//reboot/controller:application_config_trackers_py",
     ],
 )
 
@@ -41,9 +41,9 @@ py_test(
     main = "server_managers_test.py",
     deps = [
         requirement("protobuf"),
+        "//rbt/v1alpha1:placement_planner_py_proto",
+        "//reboot/controller:server_managers_py",
         "//tests/reboot:settings_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
-        "@com_github_reboot_dev_reboot//reboot/controller:server_managers_py",
     ],
 )
 
@@ -60,12 +60,12 @@ py_test(
         # See https://github.com/reboot-dev/mono/issues/2347
         requirement("grpcio"),
         requirement("protobuf"),
-        "@com_github_reboot_dev_reboot//reboot/aio:servers_py",
+        "//reboot/aio:servers_py",
         "//tests/reboot:echo_servicers_py",
         "//tests/reboot:greeter_servicers_py",
-        "@com_github_reboot_dev_reboot//reboot:helpers_py",
-        "@com_github_reboot_dev_reboot//reboot:version_py",
-        "@com_github_reboot_dev_reboot//reboot/grpc:options_py",
+        "//reboot:helpers_py",
+        "//reboot:version_py",
+        "//reboot/grpc:options_py",
     ],
 )
 
@@ -82,10 +82,10 @@ py_test(
         # See https://github.com/reboot-dev/mono/issues/2347
         requirement("grpcio"),
         requirement("protobuf"),
-        "@com_github_reboot_dev_reboot//reboot:naming_py",
-        "@com_github_reboot_dev_reboot//reboot/controller:config_extractor_py",
+        "//reboot:naming_py",
+        "//reboot/controller:config_extractor_py",
         "//tests/reboot:greeter_servicers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:servicers_py",
+        "//reboot/aio:servicers_py",
     ],
 )
 
@@ -94,6 +94,6 @@ py_test(
     srcs = ["shards_test.py"],
     main = "shards_test.py",
     deps = [
-        "@com_github_reboot_dev_reboot//reboot/controller:shards_py",
+        "//reboot/controller:shards_py",
     ],
 )

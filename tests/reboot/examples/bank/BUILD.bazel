@@ -4,7 +4,7 @@ load("//tests:sh_test_in_working_directory.bzl", "sh_test_in_working_directory")
 # does not actually force a `data` attribute to build, but a `sh_library` does. We can
 # remove the indirection once we upgrade. See https://github.com/bazelbuild/bazel/issues/12348
 test_packages = [
-    "@com_github_reboot_dev_reboot//reboot:reboot.dev",
+    "//reboot:reboot.dev",
 ]
 
 sh_library(
@@ -16,7 +16,7 @@ sh_library(
 # the test script.
 general_env = {
     "EXPECTED_RBT_DEV_OUTPUT_FILE": "tests/reboot/examples/bank/expected_output.txt",
-    "REBOOT_WHL_FILE": "$(location @com_github_reboot_dev_reboot//reboot:reboot.dev)",
+    "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
 }
 
 osx_env = dict(general_env)
@@ -31,7 +31,7 @@ sh_test_in_working_directory(
         ":test_packages",
         # The actual test script will be given access to all of the files in
         # the example.
-        "@com_github_reboot_dev_reboot//reboot/examples/bank:everything",
+        "//reboot/examples/bank:everything",
         "expected_output.txt",
     ],
     env = select({

@@ -2,8 +2,8 @@
 Bazel rule for generating proto files from TypeScript Zod schema files.
 """
 
-load("@com_github_reboot_dev_reboot//reboot:rules.bzl", "js_proto_library", "js_reboot_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("//reboot:rules.bzl", "js_proto_library", "js_reboot_library")
 
 # The dependencies of 'zod-to-proto.ts'.
 PACKAGE_JSON = """
@@ -45,7 +45,7 @@ def zod_to_proto(
             zod_file_relative_path=$(execpath {zod})
             zod_file_absolute_path=$$(realpath $$zod_file_relative_path)
             zod_file_relative_directory=$$(dirname $$zod_file_relative_path)
-            zod_to_proto_absolute_path=$$(realpath $(execpath @com_github_reboot_dev_reboot//reboot/nodejs:zod-to-proto.ts))
+            zod_to_proto_absolute_path=$$(realpath $(execpath //reboot/nodejs:zod-to-proto.ts))
 
             reboot_api_tarball=$$(realpath $(location //rbt/v1alpha1:reboot-dev-reboot-api))
 
@@ -84,7 +84,7 @@ EOFPKG
         ),
         tools = [
             "@node//:npm",
-            "@com_github_reboot_dev_reboot//reboot/nodejs:zod-to-proto.ts",
+            "//reboot/nodejs:zod-to-proto.ts",
             "//rbt/v1alpha1:reboot-dev-reboot-api",
         ],
         visibility = visibility,
@@ -117,8 +117,8 @@ def js_reboot_library_from_zod(
         srcs = [":" + name + "_proto_file"],
         visibility = visibility,
         deps = [
-            "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
-            "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
+            "//rbt/v1alpha1:options_proto",
+            "//rbt/v1alpha1:tasks_proto",
             "@com_google_protobuf//:empty_proto",
             "@com_google_protobuf//:struct_proto",
         ],
@@ -131,8 +131,8 @@ def js_reboot_library_from_zod(
         proto = zod.split("/")[-1].removesuffix(".ts") + ".proto",
         package_json = package_json,
         proto_deps = [
-            "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
-            "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
+            "//rbt/v1alpha1:options_proto",
+            "//rbt/v1alpha1:tasks_proto",
             "@com_google_protobuf//:any_proto",
             "@com_google_protobuf//:descriptor_proto",
             "@com_google_protobuf//:empty_proto",

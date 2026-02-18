@@ -37,10 +37,10 @@ py_library(
         ":bundle",
     ],
     deps = [
+        "//reboot/aio:external_py",
+        "//reboot/aio:idempotency_py",
         "//tests/reboot:bank_py",
         "//tests/reboot/react:web_driver_runner",
-        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:idempotency_py",
     ],
 )
 

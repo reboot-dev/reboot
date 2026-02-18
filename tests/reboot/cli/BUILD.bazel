@@ -16,9 +16,9 @@ py_test(
     main = "detect_cores_tests.py",
     deps = [
         ":mock_exit_py",
-        "@com_github_reboot_dev_reboot//reboot/cli:detect_cores_py",
-        "@com_github_reboot_dev_reboot//reboot/cli:serve_py",
-        "@com_github_reboot_dev_reboot//reboot/controller:plan_makers_py",
+        "//reboot/cli:detect_cores_py",
+        "//reboot/cli:serve_py",
+        "//reboot/controller:plan_makers_py",
     ],
 )
 
@@ -30,8 +30,8 @@ py_test(
     main = "dev_tests.py",
     deps = [
         ":mock_exit_py",
-        "@com_github_reboot_dev_reboot//reboot/cli:cli_py",
-        "@com_github_reboot_dev_reboot//reboot/cli:rc_py",
+        "//reboot/cli:cli_py",
+        "//reboot/cli:rc_py",
     ],
 )
 
@@ -43,8 +43,8 @@ py_test(
     main = "serve_tests.py",
     deps = [
         ":mock_exit_py",
-        "@com_github_reboot_dev_reboot//reboot/cli:cli_py",
-        "@com_github_reboot_dev_reboot//reboot/cli:rc_py",
+        "//reboot/cli:cli_py",
+        "//reboot/cli:rc_py",
     ],
 )
 
@@ -53,7 +53,7 @@ py_test(
     srcs = [
         "subcommand_run_tests.py",
     ],
-    data = ["@com_github_reboot_dev_reboot//reboot/cli:rbt"],
+    data = ["//reboot/cli:rbt"],
     main = "subcommand_run_tests.py",
 )
 
@@ -64,7 +64,7 @@ py_test(
     ],
     main = "rc_tests.py",
     deps = [
-        "@com_github_reboot_dev_reboot//reboot/cli:rc_py",
+        "//reboot/cli:rc_py",
     ],
 )
 
@@ -76,8 +76,8 @@ py_test(
     main = "rbt_tests.py",
     deps = [
         ":mock_exit_py",
-        "@com_github_reboot_dev_reboot//reboot/cli:cli_py",
-        "@com_github_reboot_dev_reboot//reboot/cli:rc_py",
+        "//reboot/cli:cli_py",
+        "//reboot/cli:rc_py",
     ],
 )
 
@@ -88,7 +88,7 @@ py_test(
     ],
     main = "nested_subcommand_tests.py",
     deps = [
-        "@com_github_reboot_dev_reboot//reboot/cli:rc_py",
+        "//reboot/cli:rc_py",
     ],
 )
 
@@ -99,6 +99,6 @@ py_test(
     ],
     main = "watch_tests.py",
     deps = [
-        "@com_github_reboot_dev_reboot//reboot/cli:watch_py",
+        "//reboot/cli:watch_py",
     ],
 )

@@ -88,25 +88,24 @@ bazel_features_deps()
 
 load("@rules_nodejs//nodejs:repositories.bzl", "nodejs_register_toolchains")
 
-# The 'node_repositories' dict specifiying Nodejs v20.9.0 information comes
-# from:
+# The 'node_repositories' dict specifiying Nodejs v20.19.0 information comes
 # https://github.com/bazelbuild/rules_nodejs/blob/main/nodejs/private/node_versions.bzl
 # We have to do this explicitly because the default Nodejs version is 16. We
-# need a Nodejs version >=18.
+# need a Nodejs version >=20.10.
 # The name 'node' for this toolchain is important, since it's how we refer
 # to it in several other Bazel files.
 nodejs_register_toolchains(
     name = "node",
     node_repositories = {
-        "20.9.0-darwin_amd64": ("node-v20.9.0-darwin-x64.tar.gz", "node-v20.9.0-darwin-x64", "fc5b73f2a78c17bbe926cdb1447d652f9f094c79582f1be6471b4b38a2e1ccc8"),
-        "20.9.0-darwin_arm64": ("node-v20.9.0-darwin-arm64.tar.gz", "node-v20.9.0-darwin-arm64", "31d2d46ae8d8a3982f54e2ff1e60c2e4a8e80bf78a3e8b46dcaac95ac5d7ce6a"),
-        "20.9.0-linux_amd64": ("node-v20.9.0-linux-x64.tar.xz", "node-v20.9.0-linux-x64", "9033989810bf86220ae46b1381bdcdc6c83a0294869ba2ad39e1061f1e69217a"),
-        "20.9.0-linux_arm64": ("node-v20.9.0-linux-arm64.tar.xz", "node-v20.9.0-linux-arm64", "ced3ecece4b7c3a664bca3d9e34a0e3b9a31078525283a6fdb7ea2de8ca5683b"),
-        "20.9.0-linux_ppc64le": ("node-v20.9.0-linux-ppc64le.tar.xz", "node-v20.9.0-linux-ppc64le", "3c6cea5d614cfbb95d92de43fbc2f8ecd66e431502fe5efc4f3c02637897bd45"),
-        "20.9.0-linux_s390x": ("node-v20.9.0-linux-s390x.tar.xz", "node-v20.9.0-linux-s390x", "af1f4e63756ff685d452166c4d5ba93a308e816ee7c46015b5e086163d9f011b"),
-        "20.9.0-windows_amd64": ("node-v20.9.0-win-x64.zip", "node-v20.9.0-win-x64", "70d87dad2378c63216ff83d5a754c61d2886fc39d32ce0d2ea6de763a22d3780"),
+        "20.19.0-darwin_amd64": ("node-v20.19.0-darwin-x64.tar.gz", "node-v20.19.0-darwin-x64", "a8554af97d6491fdbdabe63d3a1cfb9571228d25a3ad9aed2df856facb131b20"),
+        "20.19.0-darwin_arm64": ("node-v20.19.0-darwin-arm64.tar.gz", "node-v20.19.0-darwin-arm64", "c016cd1975a264a29dc1b07c6fbe60d5df0a0c2beb4113c0450e3d998d1a0d9c"),
+        "20.19.0-linux_amd64": ("node-v20.19.0-linux-x64.tar.xz", "node-v20.19.0-linux-x64", "b4e336584d62abefad31baecff7af167268be9bb7dd11f1297112e6eed3ca0d5"),
+        "20.19.0-linux_arm64": ("node-v20.19.0-linux-arm64.tar.xz", "node-v20.19.0-linux-arm64", "dbe339e55eb393955a213e6b872066880bb9feceaa494f4d44c7aac205ec2ab9"),
+        "20.19.0-linux_ppc64le": ("node-v20.19.0-linux-ppc64le.tar.xz", "node-v20.19.0-linux-ppc64le", "84937108f005679e60b486ed8e801cebfe923f02b76d8e710463d32f82181f65"),
+        "20.19.0-linux_s390x": ("node-v20.19.0-linux-s390x.tar.xz", "node-v20.19.0-linux-s390x", "11f8ee99d792a83bba7b29911e0229dd6cd5e88987d7416346067db1cc76d89a"),
+        "20.19.0-windows_amd64": ("node-v20.19.0-win-x64.zip", "node-v20.19.0-win-x64", "be72284c7bc62de07d5a9fd0ae196879842c085f11f7f2b60bf8864c0c9d6a4f"),
     },
-    node_version = "20.9.0",
+    node_version = "20.19.0",
 )
 
 load("@aspect_rules_js//npm:repositories.bzl", "npm_translate_lock")
@@ -142,4 +141,17 @@ esbuild_register_toolchains(
     esbuild_version = LATEST_ESBUILD_VERSION,
 )
 
-########################################################################
+#### vitest rules - START
+
+http_archive(
+    name = "fremtind_rules_vitest",
+    sha256 = "b4cf44ec735b3dc1476a83c7bfeec8410e0f2e1346f0143cc88f8b3f9e3ebff8",
+    strip_prefix = "rules_vitest-0.1.0",
+    url = "https://github.com/fremtind/rules_vitest/releases/download/v0.1.0/rules_vitest-v0.1.0.tar.gz",
+)
+
+load("@fremtind_rules_vitest//vitest:dependencies.bzl", "rules_vitest_dependencies")
+
+rules_vitest_dependencies()
+
+#### vitest rules - END

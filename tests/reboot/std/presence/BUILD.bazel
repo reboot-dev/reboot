@@ -1,14 +1,14 @@
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
-load("@com_github_reboot_dev_reboot//reboot/nodejs:rules.bzl", "js_reboot_test")
 load("@rules_python//python:defs.bzl", "py_test")
+load("//reboot/nodejs:rules.bzl", "js_reboot_test")
 
 py_test(
     name = "presence_tests_py",
     srcs = [":presence_tests.py"],
     main = "presence_tests.py",
     deps = [
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
-        "@com_github_reboot_dev_reboot//reboot/std/presence/v1:presence_py",
+        "//reboot/aio:tests_py",
+        "//reboot/std/presence/v1:presence_py",
     ],
 )
 

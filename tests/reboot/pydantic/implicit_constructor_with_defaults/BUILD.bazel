@@ -1,11 +1,11 @@
-load("@com_github_reboot_dev_reboot//reboot:pydantic_to_proto.bzl", "py_reboot_library_from_pydantic")
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//reboot:pydantic_to_proto.bzl", "py_reboot_library_from_pydantic")
 
 py_library(
     name = "servicer_api_py",
     srcs = ["servicer_api.py"],
     deps = [
-        "@com_github_reboot_dev_reboot//reboot:api_py",
+        "//reboot:api_py",
     ],
 )
 
@@ -32,7 +32,7 @@ py_test(
     main = "test.py",
     deps = [
         ":servicer_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:applications_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:tests_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:tests_py",
     ],
 )
