@@ -26,7 +26,7 @@
 
 # Latest version as of 2025-02-06. Keep in sync with `ISTIO_VERSION` in
 # `infrastructure/clusters/resources/istio.py`.
-ARG ISTIO_VERSION=1.24.2
+ARG ISTIO_VERSION=1.29.0
 
 # This version should match `ENVOY_VERSION` in
 # `public/reboot/settings.py` and
@@ -473,7 +473,7 @@ RUN curl -Lo aws-iam-authenticator https://github.com/kubernetes-sigs/aws-iam-au
 #
 # Even if we don't use Pulumi CLI directly as humans, the Pulumi SDK (used by
 # our code) requires that it is present.
-ARG PULUMI_VERSION=3.193.0
+ARG PULUMI_VERSION=3.220.0
 RUN set -e; \
     if [ "${TARGETARCH}" = "amd64" ]; then \
     ARCH_SUFFIX="x64"; \
