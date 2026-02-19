@@ -1,0 +1,91 @@
+# Envoy configuration generated from `standalone_envoy_config.yaml.j2`.
+# This configuration will configure Envoy to...
+# 1. Serve on a single port (8080).
+# 2. Run all incoming requests through a Lua filter.
+# 3. Send a response to the request, with headers matching the headers of the
+#    request. This allows the caller to see what headers the Lua filter added.
+# prettier-ignore
+static_resources:
+  # Routes must always have a cluster to point to, so we need at least one
+  # cluster here, even though we expect to never send any traffic onwards.
+  clusters:
+    - name: web_service
+      type: static
+
+  listeners:
+    - name: main
+      address:
+        # Listen on port 8080.
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8080
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_http
+                codec_type: AUTO
+                route_config:
+                  # Send all traffic to the `web_service` cluster. We don't actualy
+                  # expect this traffic to arrive, but we need a valid destination
+                  # here anyway.
+                  name: local_route
+                  virtual_hosts:
+                    - name: local_service
+                      domains:
+                        - "*"
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: web_service
+                http_filters:
+                  # The Envoy filter injected into the template; it is assumed to be
+                  # modifying the request headers.
+                  - name: envoy.filters.http.lua
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                      inline_code: |
+                        {# By doing the following line-by-line each line is correctly indented
+                           in this specific context, since the leading whitespace is a literal
+                           part of this template. That avoids the caller having to know exactly
+                           how many spaces to add to their input. #}
+                        {% for line in filter_code_lines %}
+                        {{ line }}
+                        {% endfor %}
+
+                  # A filter that will echo all requests back, with the headers of the
+                  # response being the same as the headers it received on the request.
+                  # That includes headers added to the request by the previous filter,
+                  # which allows the caller to see those.
+                  - name: envoy.filters.http.lua
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                      inline_code: |
+                        function envoy_on_request(request_handle)
+                          response_headers = {
+                            [":status"] = "200"
+                          }
+                          for key, value in pairs(request_handle:headers()) do
+                            response_headers[key] = value
+                          end
+                          request_handle:respond(
+                            response_headers,
+                            "This is an echo from Envoy; response headers are copied from the request.")
+                        end
+
+                  # The request will never get here, because the filter above will
+                  # always respond, but Envoy requires that a filter chain ends with a
+                  # "terminal" filter, and Lua filters can't be terminal. The `router`
+                  # is a terminal filter.
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+admin:
+  access_log_path: "/dev/null"
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 8001

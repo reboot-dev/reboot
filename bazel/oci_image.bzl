@@ -46,13 +46,34 @@ def py_oci_image(name, main, srcs, deps, base, env = None, entrypoint = False, *
         **kwargs
     )
 
+    # Compute the correct `strip_prefix` for `pkg_tar`. When a
+    # `py_binary` is defined in an external repository the
+    # "external/<repo>" is prepended to the path.
+    # The `strip_prefix = "."` form only strips `label.package` (e.g.,
+    # "tests/reboot"), so it fails to strip the "external/<repo>/" prefix,
+    # causing the binary to land at the wrong path inside the container.
+    repo_name = native.repository_name()
+    pkg = native.package_name()
+    if repo_name == "@":
+        # Main workspace: strip_prefix = "." strips <pkg>/ correctly.
+        computed_strip_prefix = "."
+    else:
+        # External workspace: strip the full "external/<repo>/<pkg>/"
+        # prefix so the binary lands at
+        # "/app/reboot/<name>/<binary_name>" as expected by the
+        # container command below.
+        computed_strip_prefix = "/external/{}/{}".format(
+            repo_name[1:],
+            pkg,
+        )
+
     # Create a tarball with the Python binary and its dependencies to be used as
     # a layer.
     pkg_tar(
         name = layer_name,
         srcs = [":" + binary_name],
         include_runfiles = True,
-        strip_prefix = ".",
+        strip_prefix = computed_strip_prefix,
         package_dir = "/app/reboot/" + name,
     )
 

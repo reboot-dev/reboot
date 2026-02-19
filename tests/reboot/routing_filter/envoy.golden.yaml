@@ -1,0 +1,204 @@
+# Envoy configuration generated from `standalone_envoy_config.yaml.j2`.
+# This configuration will configure Envoy to...
+# 1. Serve on a single port (8080).
+# 2. Run all incoming requests through a Lua filter.
+# 3. Send a response to the request, with headers matching the headers of the
+#    request. This allows the caller to see what headers the Lua filter added.
+# prettier-ignore
+static_resources:
+  # Routes must always have a cluster to point to, so we need at least one
+  # cluster here, even though we expect to never send any traffic onwards.
+  clusters:
+    - name: web_service
+      type: static
+
+  listeners:
+    - name: main
+      address:
+        # Listen on port 8080.
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8080
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_http
+                codec_type: AUTO
+                route_config:
+                  # Send all traffic to the `web_service` cluster. We don't actualy
+                  # expect this traffic to arrive, but we need a valid destination
+                  # here anyway.
+                  name: local_route
+                  virtual_hosts:
+                    - name: local_service
+                      domains:
+                        - "*"
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: web_service
+                http_filters:
+                  # The Envoy filter injected into the template; it is assumed to be
+                  # modifying the request headers.
+                  - name: envoy.filters.http.lua
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                      inline_code: |
+                        function envoy_on_request(request_handle)
+                          -- Lua code generated from `routing_filter.lua.j2` template.
+                          -- This follows internet wisdom, most notably:
+                          --   https://medium.com/gojekengineering/how-not-to-write-an-envoy-lua-filter-51eeec71e9f0
+                          -- And from that, most notably:
+                          --   * We never use global (= not-explicitly-`local`) variables.
+                          --   * We operate only on headers, and avoid reading the whole body of the request.
+                          --   * We log only in case of errors.
+                          --   * We do not hold references to anything returned by the `request_handle`.
+                          -- Follows the following hardcoded (generated) routing table.
+                          local server_routing_map = {
+                            ["application1"] = {
+                                "server_1234",
+                            },
+                            ["application2"] = {
+                                "server_2345",
+                            },
+                          }
+                        
+                          function startswith(s, prefix)
+                            return s:sub(1, #prefix) == prefix
+                          end
+                        
+                          function split(s, separator)
+                            local t = {}
+                            for found in string.gmatch(s, "([^" .. separator .. "]+)") do
+                              t[#t + 1] = found
+                            end
+                            return t
+                          end
+                        
+                          -- The following code is valid (and used) as a standalone Envoy filter, but is
+                          -- not wrapped in a `envoy_on_request` function because it is also used inside
+                          -- the routing filter's `envoy_on_request` function.
+                          local path = request_handle:headers():get(":path")
+                        
+                          local reboot_prefix = "/__/reboot/rpc/"
+                        
+                          if startswith(path, reboot_prefix) then
+                            local values = split(path, "/")
+                        
+                            local state_ref = values[4]
+                            if state_ref == nil then
+                              request_handle:respond(
+                                {[":status"] = "400"},
+                                "ERROR: Missing 'state_ref' path parameter")
+                            end
+                        
+                            -- The state ref may contain URL-encoded colons and slashes; those shouldn't
+                            -- be URL-encoded in the header. Note that '%%' is Lua-escaped '%'.
+                            state_ref = string.gsub(state_ref, "%%3A", ":")
+                            state_ref = string.gsub(state_ref, "%%2F", "/")
+                            state_ref = string.gsub(state_ref, "%%5C", "\\")
+                        
+                            request_handle:headers():replace("x-reboot-state-ref", state_ref)
+                        
+                            request_handle:headers():replace(":path", "/" .. table.concat({ table.unpack(values, 5) }, "/"))
+                          end
+                        
+                        
+                          local application_id = request_handle:headers():get("x-reboot-application-id")
+                          if application_id == nil then
+                            -- HTTP/2 mandate use of 'authority' header, but to be
+                            -- conservative if it's not present we look for 'host'.
+                            local authority = request_handle:headers():get(":authority")
+                            if authority == nil then
+                              authority = request_handle:headers():get(":host")
+                            end
+                        
+                            -- NOTE: relying on `split()` from 'mangled_http_path_filter'
+                            -- which we embed above.
+                            local values = split(authority, ".")
+                        
+                            -- We expect an application ID as the prefix, but it's not easy
+                            -- to determine if someone forgot to send it. At the very least
+                            -- we error out if we get something like 'localhost' by ensuring
+                            -- our `split()` returned at least two values.
+                            if #values < 2 then
+                              print("Unable to determine application ID from authority/host: " .. authority)
+                              request_handle:respond(
+                                {[":status"] = "400"},
+                                "ERROR: Unable to determine application ID from authority/host")
+                              return
+                            end
+                        
+                            application_id = values[1]
+                            request_handle:headers():replace("x-reboot-application-id", application_id)
+                          end
+                        
+                          local application_servers = server_routing_map[application_id]
+                          if application_servers == nil or #application_servers == 0 then
+                            -- We don't know this application, so we can't pick a server for
+                            -- this request right now. That's OK; this is likely traffic for a
+                            -- modern reboot application which expects to receive any traffic
+                            -- at any replica and then does its own routing.
+                            return
+                          end
+                        
+                          -- For now, we only have one server per application, ever. So it doesn't
+                          -- matter what service or state ID the request is for. We can blindly forward
+                          -- the request to that server.
+                          --
+                          -- This won't always be the case. In the (near) future we'll support
+                          -- partitioning, and the routing logic may look as follows:
+                          --  * If we can identify the state ID from the request (e.g. via a header),
+                          --    route to the appropriate server for that state.
+                          --  * If we can't identify the state ID from the request (e.g. traffic for
+                          --    legacy gRPC services), pick _any_ server. The server will then
+                          --    either be able to handle the request, forward it, or return an error.
+                          if #application_servers > 1 then
+                            print("Too many servers for application " .. application_id)
+                            request_handle:respond(
+                              {[":status"] = "500"},
+                              "ERROR: too many servers for application " .. application_id)
+                            return
+                          end
+                        
+                          local server_id = application_servers[1]
+                          request_handle:headers():replace("x-reboot-server-id", server_id)
+                        end
+
+                  # A filter that will echo all requests back, with the headers of the
+                  # response being the same as the headers it received on the request.
+                  # That includes headers added to the request by the previous filter,
+                  # which allows the caller to see those.
+                  - name: envoy.filters.http.lua
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                      inline_code: |
+                        function envoy_on_request(request_handle)
+                          response_headers = {
+                            [":status"] = "200"
+                          }
+                          for key, value in pairs(request_handle:headers()) do
+                            response_headers[key] = value
+                          end
+                          request_handle:respond(
+                            response_headers,
+                            "This is an echo from Envoy; response headers are copied from the request.")
+                        end
+
+                  # The request will never get here, because the filter above will
+                  # always respond, but Envoy requires that a filter chain ends with a
+                  # "terminal" filter, and Lua filters can't be terminal. The `router`
+                  # is a terminal filter.
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+admin:
+  access_log_path: "/dev/null"
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 8001

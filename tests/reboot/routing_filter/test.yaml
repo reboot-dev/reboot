@@ -1,0 +1,25 @@
+# Specifies a Container Structure Test.
+# https://github.com/GoogleContainerTools/container-structure-test
+schemaVersion: "2.0.0"
+
+commandTests:
+  - name: "missing everything"
+    command: "/reboot/one_envoy_request.sh"
+    # Expected output is an error returned by the Envoy filter.
+    expectedOutput: [
+        "ERROR: Unable to determine application ID from authority/host",
+      ] # (Takes a regex.)
+
+  - name: "correct application ID from custom header"
+    command: "/reboot/one_envoy_request.sh"
+    args: ["-H", "x-reboot-application-id: application1"]
+    # Expected output is an echo of the request, into which Envoy should have
+    # added a server ID header.
+    expectedOutput: ["x-reboot-server-id: server_1234"] # (Takes a regex.)
+
+  - name: "application ID from host header, different application"
+    command: "/reboot/one_envoy_request.sh"
+    args: [-H, "Host: application2.localhost:8080"]
+    # Expected output is an echo of the request, into which Envoy should have
+    # added a server ID header.
+    expectedOutput: ["x-reboot-server-id: server_2345"] # (Takes a regex.)

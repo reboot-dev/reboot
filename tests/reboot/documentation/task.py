@@ -45,12 +45,12 @@ class TestTaskServicer(TestTask.Servicer):
         now = datetime.now()
 
         # This task might complete before or after next.
-        await TestTask.ref().schedule(
+        _ = await TestTask.ref().spawn(
             when=now + timedelta(hours=1),
         ).welcome_email(context)
 
         # This task might complete before or after previous.
-        await TestTask.ref().schedule(
+        _ = await TestTask.ref().spawn(
             when=now + timedelta(hours=1),
         ).welcome_email(context)
 

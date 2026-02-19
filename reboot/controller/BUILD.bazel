@@ -146,6 +146,7 @@ py_library(
     srcs = ["servers.py"],
     visibility = ["//visibility:public"],
     deps = [
+        requirement("kubernetes_asyncio"),
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
         "@com_github_reboot_dev_reboot//reboot/aio:types_py",

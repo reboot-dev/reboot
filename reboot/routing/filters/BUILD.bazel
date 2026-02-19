@@ -28,3 +28,21 @@ py_library(
         requirement("jinja2"),
     ],
 )
+
+py_library(
+    name = "routing_filter_generator_py",
+    srcs = [
+        "routing_filter_generator.py",
+    ],
+    data = [
+        "//reboot/templates:routing_filter.lua.j2",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":lua_py",
+        "//reboot/templates:tools_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
+        "@com_github_reboot_dev_reboot//reboot/controller:servers_py",
+    ],
+)

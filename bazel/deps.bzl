@@ -10,6 +10,7 @@ load("@com_github_3rdparty_stout//bazel:deps.bzl", stout_deps = "deps")
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
 load("@com_github_reboot_dev_pyprotoc_plugin//bazel:deps.bzl", pyprotoc_plugin_deps = "deps")
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
+load("@container_structure_test//:repositories.bzl", "container_structure_test_register_toolchain")
 load("@hermetic_cc_toolchain//toolchain:defs.bzl", zig_toolchains = "toolchains")
 load("@io_bazel_rules_webtesting//web:py_repositories.bzl", web_test_py_repositories = "py_repositories")
 load("@io_bazel_rules_webtesting//web:repositories.bzl", "web_test_repositories")
@@ -46,6 +47,8 @@ def deps():
     rules_oci_dependencies()
 
     rules_pkg_dependencies()
+
+    container_structure_test_register_toolchain(name = "cst")
 
     dockerfile_oci_image(
         name = "respect_base_image",

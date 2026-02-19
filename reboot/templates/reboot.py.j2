@@ -5215,7 +5215,7 @@ class {{ client.proto.state_name }}:
             @IMPORT_typing.overload
             async def {{ method.proto.name }}(
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -5224,7 +5224,7 @@ class {{ client.proto.state_name }}:
             @IMPORT_typing.overload
             async def {{ method.proto.name }}(
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 {% for name, type in method.input_type_fields.items() %}
                 {% if loop.first %}
@@ -5242,7 +5242,7 @@ class {{ client.proto.state_name }}:
 
             async def {{ method.proto.name }}( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
                 {% if method.has_non_none_request %}
                 __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
                 {% endif %}
@@ -5258,7 +5258,7 @@ class {{ client.proto.state_name }}:
                 {% endif %}
                 {% endfor %}
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
                 {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally
                 # given a gRPC request type.
@@ -5370,7 +5370,7 @@ class {{ client.proto.state_name }}:
             @IMPORT_typing.overload
             async def {{ method.proto.name }}(
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
                 __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
@@ -5379,7 +5379,7 @@ class {{ client.proto.state_name }}:
             @IMPORT_typing.overload
             async def {{ method.proto.name }}(
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
                 {% for name, type in method.input_type_fields.items() %}
                 {% if loop.first %}
@@ -5397,7 +5397,7 @@ class {{ client.proto.state_name }}:
 
             async def {{ method.proto.name }}( # type: ignore[misc]
                 __this__,
-                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
                 {% if method.has_non_none_request %}
                 __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
                 {% endif %}
@@ -5415,7 +5415,7 @@ class {{ client.proto.state_name }}:
             ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
                 # Only `writer`s and `transaction`s should ``schedule()`, a
                 # `workflow` should `spawn()`.
-                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext, IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
 
                 {% if method.has_non_none_request %}
                 # UX improvement: check that neither positional argument was accidentally

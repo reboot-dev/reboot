@@ -429,8 +429,7 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
                 WorkflowContext, MyGreeterServicer, state_id
             ),
             task_effect,
-            on_loop_iteration=lambda iteration,
-            _: None,
+            on_loop_iteration=(lambda iteration, _: None),
             validating_effects=False,
         ) as complete:
             await complete(
