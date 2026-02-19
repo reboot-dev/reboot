@@ -6,7 +6,7 @@
     "docusaurus": "docusaurus",
     "start": "docusaurus start",
     "//comment1": "Run the generate-code-snippets command in bash rather than sh to get access to globstar functionality",
-    "generate-code-snippets": "bash -c \"shopt -s globstar && npx -y markdown-autodocs -c code-block -o './docs/**/*.md*' '../reboot/examples/**/*.md' && python unindent_auto_doc.py './docs/**/*.md*'\"",
+    "generate-code-snippets": "bash -c \"shopt -s globstar && npx -y markdown-autodocs -c code-block -o './docs/**/*.md*' && python unindent_auto_doc.py './docs/**/*.md*'\"",
     "build": "docusaurus build && printf '\n \n NOTE!: disregard warnings for remarkAdmonitions and broken anchor on /library_services/**/*\n \n'",
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",
