@@ -1,0 +1,134 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Transactions
+
+A `transaction` method gets exclusive, atomic access to state in order
+to update it (similar to a `writer`). But unlike a `writer`, a
+`transaction` can _also_ call other `writer` and `transaction`
+methods. _Those reads and writes all occur as a (distributed) ACID
+transaction._
+
+A `transaction` method gets passed a context of type `TransactionContext`.
+A `TransactionContext` can be used to make calls to `reader`'s, `writer`'s,
+and other `transaction` methods (although currently nested calls to a
+`transaction` method may only read/write mutually exclusive state.)
+
+Here's an example of a `transaction` method called `Transfer` on our
+`Bank` state that deposits money in one account and withdraws it from
+another:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from bank.v1.bank_rbt import Bank
+
+class BankServicer(Bank.Servicer):
+
+    async def transfer(
+        self,
+        context: TransactionContext,
+        request: TransferRequest,
+    ) -> TransferResponse:
+        from_account = Account.ref(request.from_account_id)
+        to_account = Account.ref(request.to_account_id)
+
+        await from_account.withdraw(context, amount=request.amount)
+        await to_account.deposit(context, amount=request.amount)
+
+        return TransferResponse()
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+    <Tabs groupId="typescript-object-class">
+      <TabItem value="object" label="Object literal">
+```ts
+import { Account } from "../../api/bank/v1/account_rbt.js";
+
+const accountServicer = Account.servicer({
+  transfer: async (
+    context: TransactionContext,
+    state: Bank.State,
+    request: Bank.TransferRequest
+  ): Promise<[Bank.State, Bank.PartialTransferResponse]> => {
+    const fromAccount = Account.ref(request.fromAccountId);
+    const toAccount = Account.ref(request.toAccountId);
+
+    await fromAccount.withdraw(context, { amount: request.amount });
+    await toAccount.deposit(context, { amount: request.amount });
+
+    return [state, {}];
+  },
+});
+```
+      </TabItem>
+      <TabItem value="class" label="Class">
+```ts
+import { Account } from "../../api/bank/v1/account_rbt.js";
+
+class AccountServicer extends Account.Servicer {
+  async transfer(
+    context: TransactionContext,
+    request: Bank.TransferRequest
+  ): Promise<Bank.PartialTransferResponse> {
+    const fromAccount = Account.ref(request.fromAccountId);
+    const toAccount = Account.ref(request.toAccountId);
+
+    await fromAccount.withdraw(context, { amount: request.amount });
+    await toAccount.deposit(context, { amount: request.amount });
+
+    return {};
+  }
+}
+```
+      </TabItem>
+    </Tabs>
+  </TabItem>
+</Tabs>
+
+Again, like `writers`, `state` can be modified directly in a
+`transaction` method, for example here is an example from the `SignUp`
+method for `Bank` that stores the account IDs:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/monorepo/bank/backend/src/bank_servicer.py&lines=40-41) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/monorepo/bank/backend/src/bank_servicer.py -->
+
+```py
+# Transactions like writers can alter state directly.
+self.state.account_ids.append(account.state_id)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+    <Tabs groupId="typescript-object-class">
+      <TabItem value="object" label="Object literal">
+```ts
+// Transactions like writers can alter state directly.
+state.accountIds.push(newAccountId);
+```
+      </TabItem>
+      <TabItem value="class" label="Class">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts&lines=35-36) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts -->
+
+```ts
+// Transactions like writers can alter state directly.
+this.state.accountIds.push(newAccountId);
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+      </TabItem>
+    </Tabs>
+  </TabItem>
+</Tabs>
+
+In addition to returning a response and updating state, a
+`transaction` can also schedule [async tasks](/develop/tasks), which
+are atomically started (or enqueued) if and only if the `transaction`
+completes successfully.

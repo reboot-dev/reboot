@@ -1,0 +1,357 @@
+import { CodeStepByStep, Step } from "../../src/components/Steps";
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# React
+
+<CodeStepByStep>
+<Step
+  title="Make sure your Reboot application is running"
+  description={`
+
+This guide assumes you've already completed either the
+[Python](/get_started/python_backend) or
+[TypeScript](/get_started/typescript_backend) getting started and have
+a Reboot application running.
+
+`}>
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```sh
+source ./.venv/bin/activate
+rbt dev run
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```sh
+npx rbt dev run
+```
+  </TabItem>
+</Tabs>
+
+
+</Step>
+
+<Step
+  title="Setup your frontend folder"
+  description={`
+
+Create a folder for your React frontend and \`cd\` into it.
+
+`}>
+
+```sh
+mkdir web && cd web
+```
+
+</Step>
+
+<Step
+  title="Create Vite project"
+  description={`
+
+Create a new Vite project and set it up for React development.
+
+`}>
+
+```sh
+npm create vite@latest . -- --template react-ts
+```
+
+</Step>
+
+<Step
+  title={<div>Install <code>@reboot-dev/reboot-react</code></div>}
+  description={`
+
+Install Reboot's React library.
+
+`}>
+
+```sh
+npm install @reboot-dev/reboot-react
+```
+
+</Step>
+
+<Step
+  title={<div>Add <code>RebootClientProvider</code> to <code>src/main.tsx</code></div>}
+  description={`
+
+Wrap your \`App\` with the Reboot client provider.
+
+`}>
+
+```typescript title=src/main.tsx
+// ./src/main.tsx
+// highlight-next-line
+import { RebootClientProvider } from "@reboot-dev/reboot-react";
+// ...
+// Matching the URL that `rbt dev run` prints out.
+// highlight-next-line
+const url = "http://localhost:9991";
+// ...
+// highlight-next-line
+    <RebootClientProvider url={url}>
+      <App />
+// highlight-next-line
+    </RebootClientProvider>
+// ...
+```
+
+</Step>
+
+<Step
+  title="Generate React API files"
+  description={`
+
+Add React code generation to the \`.rbtrc\` file so that the React hooks are generated directly into your frontend project.
+
+`}>
+
+Add the following line to your existing `.rbtrc` file:
+
+```sh
+generate --react=web/src/api
+```
+
+In the terminal running `rbt dev run` you'll see that the change is
+detected and the React code is generated.
+
+</Step>
+
+<Step
+  title={<div>Replace exiting code in <code>src/App.tsx</code></div>}
+  description={`
+
+Implement a simple React app that displays messages and allows sending new ones using the generated Reboot React hooks.
+
+`}>
+
+```typescript title=src/App.tsx
+// ./src/App.tsx
+import { useState } from "react";
+import { useChatRoom } from "./api/chat_room/v1/chat_room_rbt_react";
+// TODO: import "./App.css";
+
+const App = () => {
+  const [message, setMessage] = useState("Hello, Reboot!");
+
+  const { useMessages, send } = useChatRoom({ id: "reboot-chat-room" });
+  const { response } = useMessages();
+
+  const handleSend = async () => {
+    if (message.trim()) {
+      await send({ message });
+      setMessage("");
+    }
+  };
+
+  return (
+    <div className="app-container">
+      <h3 className="app-title">This is Reboot 🎉</h3>
+
+      <div className="messages-container">
+        {response?.messages.map((msg, index) => (
+          <div key={index} className="message">{msg}</div>
+        ))}
+        {/* TODO: render pending messages optimistically. */}
+      </div>
+
+      <div className="input-container">
+        <input
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSend()}
+          placeholder="Type your message here..."
+          className="message-input"
+        />
+        <button onClick={handleSend} className="send-button">
+          Send
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default App;
+```
+
+</Step>
+
+<Step
+  title="Add styling (optional)"
+  description={`
+
+Add the following styles to make your chat app look clean and modern.
+
+`}>
+
+```css title=src/App.css
+/* ./src/App.css */
+.app-container {
+  max-width: 500px;
+  margin: 50px auto;
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-family: Arial, sans-serif;
+}
+
+.app-title {
+  text-align: center;
+  font-weight: normal;
+  margin-bottom: 20px;
+}
+
+.messages-container {
+  margin-bottom: 20px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.message {
+  background-color: #e3f2fd;
+  padding: 8px 12px;
+  margin: 4px 0;
+  border-radius: 12px;
+  word-wrap: break-word;
+  color: black;
+}
+
+.pending-message {
+  background-color: #fff3cd;
+  padding: 8px 12px;
+  margin: 4px 0;
+  border-radius: 12px;
+  word-wrap: break-word;
+  opacity: 0.8;
+}
+
+.input-container {
+  display: flex;
+  gap: 8px;
+}
+
+.message-input {
+  padding: 10px;
+  flex: 1;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  outline: none;
+}
+
+.message-input:focus {
+  border-color: #007bff;
+}
+
+.send-button {
+  padding: 10px 16px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+}
+
+.send-button:hover {
+  background-color: #0056b3;
+}
+```
+
+Then replace this line in your `App` component:
+
+```typescript
+// TODO: import "./App.css";
+```
+
+With:
+
+```typescript
+import "./App.css";
+```
+
+</Step>
+
+<Step
+  title="Start your React app"
+  description={`
+
+Make sure your Reboot application is running (for
+[Python](/get_started/python_backend) or
+[TypeScript](/get_started/python_backend)), then start your React
+development server.
+
+`}>
+
+```sh
+npm run dev
+```
+
+</Step>
+
+<Step
+  title="Test your app"
+  description={`
+
+Your React frontend is connected to your Reboot backend!
+
+`}>
+
+View your app at [`http://localhost:3000`](http://localhost:3000) 🎉.
+Try opening your app in multiple browser tabs!
+
+</Step>
+
+<Step
+  title="Add optimistic updates (optional)"
+  description={`
+
+For a better user experience, you can show pending messages immediately while they're being sent to the backend.
+
+`}>
+
+Replace this line in your `App` component:
+
+```typescript
+{/* TODO: render pending messages optimistically. */}
+```
+
+With this code:
+
+```typescript
+{send.pending.map(({ request: { message } }, index) => (
+  <div key={`pending-${index}`} className="pending-message">
+    {message} (sending...)
+  </div>
+))}
+```
+
+This will show messages immediately when you click Send, even before the
+backend confirms they've been processed. Try it out by making your
+backend sleep for a few seconds in the `send` method!
+
+</Step>
+
+</CodeStepByStep>
+
+<!-- TODO: use `## Next steps` instead of `<h1>Next steps</h1>` once
+we figure out to hide the right side navigation/table of contents. -->
+
+<h1>Next steps</h1>
+
+Well done! You made it! Check out these links to continue your exploration:
+
+* **[Learn advanced React usage](/develop/call/from_react)** - like [error
+  handling](/develop/call/from_react#errors), or [Next.js and Server
+  Components](/develop/call/from_react#nextjs-and-server-components).
+* **[Learn about transactions](/develop/define/methods#kinds)** - so far,
+  we've covered `reader` and
+  `writer` methods, but Reboot's power
+  extends to `transactions`. [Learn about
+  `transactions` and all of the other method kinds
+  here](/develop/define/methods#kinds).
+* **[Join us on Discord](https://discord.gg/cRbdcS94Nr)** - to ask
+  questions and let us know what you think!
+

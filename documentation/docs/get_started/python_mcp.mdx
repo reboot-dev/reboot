@@ -1,0 +1,250 @@
+import { CodeStepByStep, Step } from "../../src/components/Steps";
+
+# Python
+
+
+<CodeStepByStep>
+<Step
+  title="Setup your project"
+  description={`
+
+We recommend using \`uv\`, as it will manage the version of Python for you.
+For example, to start a new project in the directory \`foo\`:
+`}>
+
+```sh
+uv init --python 3.12.11
+uv add durable-mcp
+```
+</Step>
+<Step
+  title={<div>Activate your <code>venv</code></div>}
+>
+
+```sh
+source .venv/bin/activate
+```
+</Step>
+<Step
+  title="Make sure Docker is running:"
+>
+
+```sh
+docker ps
+```
+</Step>
+<Step
+  title="Building your MCP server"
+  description={`
+Instead of using \`FastMCP\` from the MCP SDK, you use \`DurableMCP\`. Here is
+a simple server to get you started:
+`}
+>
+
+```python
+import asyncio
+from reboot.aio.applications import Application
+from reboot.mcp.server import DurableContext, DurableMCP
+from reboot.std.collections.v1.sorted_map import SortedMap
+
+# `DurableMCP` server which will handle HTTP requests at path "/mcp".
+mcp = DurableMCP(path="/mcp")
+
+
+@mcp.tool()
+async def add(a: int, b: int, context: DurableContext) -> int:
+    """Add two numbers and also store result in `SortedMap`."""
+    result = a + b
+    await SortedMap.ref("adds").insert(
+        context,
+        entries={f"{a} + {b}": f"{result}".encode()},
+    )
+    return result
+
+
+async def main():
+    # Reboot application that runs everything necessary for `DurableMCP`.
+    await mcp.application().run()
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
+```
+</Step>
+<Step
+  title="Run your server"
+>
+
+```sh
+rbt dev run --python --application=path/to/main.py --working-directory=. --no-generate-watch
+```
+</Step>
+<Step
+  title="Setup your .rbtrc"
+  description={`
+While developing you can tell \`rbt\` to restart your server when you modify
+files by adding one or more \`--watch=path/to/**/*.py\` to the above command line.
+
+We recommend you move all of your command line args to a \`.rbtrc\`:
+`}>
+
+```sh
+# This file will aggregate all of the command line args
+# into a single command line that will be run when you
+# use `rbt`.
+#
+# For example, to add args for running `rbt dev run`
+# you can add lines that start with `dev run`. You can add
+# one or more args to each line.
+dev run --no-generate-watch
+dev run --python --application=path/to/your/main.py
+dev run --watch=path/to/**/*.py --watch=different/path/to/**/*.py
+```
+</Step>
+<Step
+  title="Then just run:"
+>
+
+```sh
+rbt dev run
+```
+</Step>
+<Step
+  title="Test your MCP server"
+  description={`
+You can use the [MCP Inspector](https://modelcontextprotocol.io/legacy/tools/inspector) to test out the server, or create a simple client.
+`}>
+
+```python
+import asyncio
+from reboot.mcp.client import connect, reconnect
+
+URL = "http://localhost:9991"
+
+
+async def main():
+    # `connect()` is a helper that creates a streamable HTTP client
+    # and session using the MCP SDK. You can also write a client the
+    # directly uses the MCP SDK you prefer!
+    async with connect(URL + "/mcp") as (
+        session, session_id, protocol_version
+    ):
+        print(await session.list_tools())
+        print(await session.call_tool("add", arguments={"a": 5, "b": 3}))
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
+```
+</Step>
+<Step
+  title='Perform a side-effect "at least once"'
+  description={`
+Within your tools (and eventually within your prompts and resources too), you
+can try and perform a side-effect that it is safe to try one or more times until
+success using \`at_least_once\`. Usually what makes it safe to perform one or more
+times is that you can somehow do it idempotently, e.g., passing an idempotency
+key as part of an API call. Use \`at_least_once\` for this, for example:`}>
+
+```python
+from reboot.aio.workflows import at_least_once
+from reboot.mcp.server import DurableContext, DurableMCP
+
+
+# `DurableMCP` server which will handle HTTP requests at path "/mcp".
+mcp = DurableMCP(path="/mcp")
+
+
+@mcp.tool()
+async def add(a: int, b: int, context: DurableContext) -> int:
+
+    async def do_side_effect_idempotently() -> int:
+        """
+        Pretend that we are doing a side-effect that we can try
+        more than once because we can do it idempotently, hence using
+        `at_least_once`.
+        """
+        return a + b
+
+    result = await at_least_once(
+        "Do side-effect _idempotently_",
+        context,
+        do_side_effect_idempotently,
+        type=int,
+    )
+
+    # ...
+```
+</Step>
+<Step
+  title='Performing a side-effect "at most once"'
+  description={`
+Within your tools (and eventually within your prompts and resources too), you
+can try and perform a side-effect that can only be tried once using
+\`at_most_once\`. If you can attempt to perform the side-effect more than once
+always prefer \`at_least_once\`. Here's an example of \`at_most_once\`:`}>
+
+```python
+from reboot.aio.workflows import at_least_once
+from reboot.mcp.server import DurableContext, DurableMCP
+
+
+# `DurableMCP` server which will handle HTTP requests at path "/mcp".
+mcp = DurableMCP(path="/mcp")
+
+
+@mcp.tool()
+async def add(a: int, b: int, context: DurableContext) -> int:
+
+    async def do_side_effect() -> int:
+        """
+        Pretend that we are doing a side-effect that we can only
+        try to do once because it is not able to be performed
+        idempotently, hence using `at_most_once`.
+        """
+        return a + b
+
+    # NOTE: if we reboot, e.g., due to a hardware failure, within
+    # `do_side_effect()` then `at_most_once` will forever raise with
+    # `AtMostOnceFailedBeforeCompleting` and you will need to handle
+    # appropriately.
+    result = await at_most_once(
+        "Do side-effect",
+        context,
+        do_side_effect,
+        type=int,
+    )
+
+    # ...
+```
+</Step>
+<Step
+  title="Debugging"
+  description={`
+Start by enabling debug logging.
+
+Then consider wrapping your tool/prompt/etc functions in a try/except because
+the MCP SDK will "swallow" errors and all that the client gets back is just that
+the request failed.
+`}>
+
+```python
+mcp = DurableMCP(path="/mcp", log_level="DEBUG")
+```
+</Step>
+</CodeStepByStep>
+
+
+<!-- TODO: use `## Next steps` instead of `<h1>Next steps</h1>` once
+we figure out to hide the right side navigation/table of contents. -->
+
+<h1>Next steps</h1>
+
+Well done! You made it! Here are some great next steps:
+
+- Every tool (and eventually prompt, and resource) is a generic Reboot
+  workflow! Check out the docs for the other things you can do in a
+  [`workflow`](/develop/implement/workflows).
+- Consider creating your own Reboot [durable data
+  structures](/develop/define/overview) to use from your durable MCP
+  servers!

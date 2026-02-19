@@ -1,0 +1,393 @@
+import { CodeStepByStep, Step } from "../../src/components/Steps";
+
+# Python
+
+<CodeStepByStep>
+<Step
+  title="Setup your app folder"
+  description={`
+
+Create a folder where your Reboot app will live and \`cd\` into it.
+
+`}>
+
+```sh
+mkdir reboot-chat-room && cd reboot-chat-room
+```
+
+</Step>
+<Step
+  title="Install Reboot"
+  description={`
+
+Create a [virtual environment](https://docs.python.org/3/tutorial/venv.html)
+for your Python dependencies and install the
+[\`reboot\` pip package](https://pypi.org/project/reboot/).
+
+:::info
+Reboot requires Python ≥ 3.10 and < 3.13
+:::
+
+`}>
+
+```sh
+python3 -m venv ./.venv && source .venv/bin/activate && pip install reboot pydantic
+```
+
+</Step>
+<Step
+  title="Make sure Docker is running:"
+>
+
+```sh
+docker ps
+```
+</Step>
+<Step
+  title={<div>Create a Pydantic <code>.py</code> file</div>}
+  description={`
+
+Reboot uses an interface definition language (IDL) to define
+your APIs. Currently we support [Pydantic](https://docs.pydantic.dev/)
+and [protocol
+buffers](https://protobuf.dev) (if you're interested in
+[OpenAPI](https://www.openapis.org/) support, please [reach out to us
+on Discord](https://discord.gg/cRbdcS94Nr)).
+
+This is where you will define and annotate your durable data
+types and their operations. This example uses Pydantic.
+
+`}>
+
+```sh
+mkdir -p ./api/chat_room/v1 && touch ./api/chat_room/v1/chat_room.py
+```
+
+</Step>
+
+<Step
+  title="Define your durable state data types and operations"
+  description={`
+
+First, import Reboot's \`Model\`, from which you will subclass your
+requests and responses.
+
+Next, import the necessary types to define your API from \`reboot.api\`.
+
+Next, define your durable state type in Reboot called \`ChatRoomState\` by
+creating a \`ChatRoomState\` class subclassed from \`Model\`. This is where
+your \`messages\` will be stored.
+
+Next, define the methods on your data type calling the \`Methods\` function
+and passing to it the name of your methods, what type of method it is:
+\`Reader\`, \`Writer\`, \`Transaction\` or \`Workflow\`, a \`request\`
+and a \`response\` classes.
+
+Lastly, define your API by passing the API \`Type\`, \`ChatRoom\`, to the \`API\`
+function.
+
+:::info Naming conventions
+Your state class should end in \`State\`, e.g., \`ChatRoomState\`. Your \`Methods\`
+variable should end in \`Methods\`, e.g., \`ChatRoomMethods\`. Your \`API\` types
+are composed of \`state\` and \`methods\` and should be descriptive of the
+interface, e.g., \`ChatRoom\`. Following these naming conventions will make your
+backend code easy to understand.
+:::
+
+For brevity we are defining just two operations:
+
+1. \`messages\` returns all of your messages. It is a
+[\`Reader\`](/develop/define/methods#kinds) because it only reads state.
+1. \`send\` takes a \`message\` and updates state, so it is a
+[\`Writer\`](/develop/define/methods#kinds) method.
+
+In addition to the operations, we need to define any supporting
+\`classes\`'s, e.g., \`SendRequest\`, \`SendResponse\`, etc.
+
+:::tip
+[\`Reader\`](/develop/define/methods#kinds) methods safely execute concurrently!
+:::
+
+`}>
+
+```python title=./api/chat_room/v1/chat_room.py
+# ./api/chat_room/v1/chat_room.py
+from reboot.api import (
+    API,
+    Field,
+    Methods,
+    Reader,
+    Model,
+    Writer,
+    Type,
+)
+from typing import Optional
+
+class ChatRoomState(Model):
+    messages: Optional[list[str]] = Field(tag=1)
+
+class MessagesResponse(Model):
+    messages: list[str] = Field(tag=1)
+
+class SendRequest(Model):
+    message: str = Field(tag=1)
+
+ChatRoomMethods = Methods(
+    messages=Reader(
+        request=None,
+        response=MessagesResponse,
+    ),
+    send=Writer(
+        request=SendRequest,
+        response=None,
+    ),
+)
+
+api = API(
+    ChatRoom=Type(
+        state=ChatRoomState,
+        methods=ChatRoomMethods,
+    ),
+)
+```
+</Step>
+
+<Step
+  title={<div>Create <code>.py</code> implementation file</div>}
+  description={`
+
+For each of the \`Methods\`'s we define, we need to
+implement [servicers](/develop/implement/servicers) - a class containing
+methods that implement the operations of your data type.
+
+`}>
+
+```sh
+mkdir -p ./backend/src && touch ./backend/src/chat_room_servicer.py
+```
+
+</Step>
+<Step
+  title={<div>Implement <code>ChatServicer</code></div>}
+  description={`
+
+To start, your servicer class must extend \`ChatRoom.Servicer\`.
+
+An instance of your servicer will be created for every instance of the
+\`ChatRoom\` type that you create, and you can access the state of that
+instance via \`self.state\`.
+
+Each method expects a \`context\` as the first argument that aligns
+with the function given in the \`.py\` file; \`Messages\`
+takes a \`ReaderContext\` and \`Send\` takes a \`WriterContext\`.
+
+\`Send\` can mutate \`self.state\` and \`Messages\` can only read from
+it.
+
+:::note
+When \`request\` is \`None\`, no request argument is passed to the method.
+The method should return \`None\` if \`response\` is \`None\`, otherwise
+an instance of the \`response\` type.
+:::
+
+`}>
+
+```python title=./backend/src/chat_room_servicer.py
+# ./backend/src/chat_room_servicer.py
+from chat_room.v1.chat_room import (
+    MessagesResponse,
+    SendRequest,
+)
+from chat_room.v1.chat_room_rbt import ChatRoom
+from reboot.aio.contexts import ReaderContext, WriterContext
+
+
+class ChatRoomServicer(ChatRoom.Servicer):
+
+    async def messages(
+        self,
+        context: ReaderContext,
+    ) -> MessagesResponse:
+        return MessagesResponse(messages=self.state.messages or [])
+
+    async def send(
+        self,
+        context: WriterContext,
+        request: SendRequest,
+    ) -> None:
+        if not self.state.messages:
+            self.state.messages = []
+
+        self.state.messages.append(request.message)
+```
+
+</Step>
+
+<Step
+  title={<div>Create a <code>main</code> entrypoint</div>}
+  description={`
+
+Create a \`main.py\` file as the entrypoint for your app. In particular, this is
+where you'll construct an \`Application\` to run your app.
+
+`}>
+
+```sh
+touch ./backend/src/main.py
+```
+
+</Step>
+<Step
+  title={<div>Implement <code>main.py</code></div>}
+  description={`
+
+\`Application\` takes a list of the Python
+[\`servicers\`](/develop/implement/servicers) that you have implemented.
+
+It optionally takes an \`initialize\` function that runs before the app loads,
+which can be used to construct default state.
+
+`}>
+
+```python title=./backend/src/main.py
+# ./backend/src/main.py
+import asyncio
+from chat_room.v1.chat_room_rbt import ChatRoom
+from chat_room_servicer import ChatRoomServicer
+from reboot.aio.applications import Application
+from reboot.aio.external import InitializeContext
+
+
+async def initialize(context: InitializeContext):
+    chat_room = ChatRoom.ref('reboot-chat-room')
+
+    await chat_room.send(
+        context,
+        message='Hello, World!',
+    )
+
+
+async def main():
+    application = Application(
+        servicers=[ChatRoomServicer],
+        initialize=initialize,
+    )
+
+    await application.run()
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
+```
+
+</Step>
+
+<Step
+  title={<div>Create an <code>.rbtrc</code> file</div>}
+  description={`
+
+An [\`.rbtrc\`](/develop_locally#rbtrc-and-flags) file contains the flags
+needed to generate code from your \`.proto\` file as well as run your
+app.
+
+`}>
+
+```sh
+touch .rbtrc
+```
+
+</Step>
+
+<Step
+  title={<div>Add necessary flags to your <code>.rbtrc</code> file</div>}
+  description={`
+
+First, tell Reboot where the proto files live, the \`api/\` directory,
+and where to output the generated code, \`backend/api/\`.
+
+Next, tell Reboot how to run your app. Give the app a name via
+\`--name=chat-room\` to persist state between app restarts. Watch for source
+code changes via \`--watch=...\` to restart the app whenever there is a
+modification. Finally, tell Reboot that it should use Python to run
+our app.
+
+:::tip
+If you want to remove all of your changes between app restarts, do not pass the
+\`--name\` flag to \`rbt\`.
+:::
+
+Last, specify the entrypoint for your app.
+
+See a complete list of supported flags by running \`rbt dev run --help\`.
+
+`}>
+
+```sh
+generate api/
+generate --python=backend/api/
+
+dev run --name=chat-room
+dev run --watch=backend/src/**/*.py
+dev run --python
+dev run --application=backend/src/main.py
+```
+
+</Step>
+
+<Step
+  title="Run your app"
+  description={`
+
+This command will run your app in
+[\`dev\`](/develop_locally#running-your-app-for-development) mode.
+
+`}>
+
+```sh
+rbt dev run
+```
+
+</Step>
+
+<Step
+  title="Query your app"
+  description={`
+
+Your app is up and running! Let's make an HTTP request for the \`Messages\`.
+`}>
+
+```sh
+curl -XPOST http://localhost:9991/chat_room.v1.ChatRoomMethods/Messages \
+  -H "x-reboot-state-ref:chat_room.v1.ChatRoom:reboot-chat-room"
+```
+
+</Step>
+
+</CodeStepByStep>
+
+<!-- TODO: use `## Next steps` instead of `<h1>Next steps</h1>` once
+we figure out to hide the right side navigation/table of contents. -->
+
+<h1>Next steps</h1>
+
+Well done! You made it!
+
+This example is somewhat contrived as we only created one instance of
+your `ChatRoom` data type, but in practice you are free to make as many
+of these as you like!
+
+Check out these links to continue your exploration:
+
+* **[Build a React frontend](/get_started/react_frontend)** - create a
+  React frontend that connects to your backend and displays your
+  messages in real-time.
+* **[Learn about transactions](/develop/define/methods#kinds)** - so far,
+  we've covered `reader` and
+  `writer` methods, but Reboot's power
+  extends to `transactions`. [Learn about
+  `transactions` and all of the other method kinds
+  here](/develop/define/methods#kinds).
+* **[Join us on Discord](https://discord.gg/cRbdcS94Nr)** - to ask
+  questions and let us know what you think!
+
+Hopefully, your wheels are starting to spin thinking of all of the possibilities!

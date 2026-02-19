@@ -1,0 +1,280 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Overview
+
+Usually you'll call methods via the generated Python, TypeScript, or
+[React](/develop/call/from_react) client code (or libraries that
+wrap the generated code).
+
+In order to call a method on an instance of your data types you need
+to first get a reference to it, e.g., on the backend via `ref()`:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/monorepo/bank/backend/src/bank_servicer.py&lines=50-50) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/monorepo/bank/backend/src/bank_servicer.py -->
+
+```py
+from_account = Account.ref(request.from_account_id)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts&lines=50-50) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts -->
+
+```ts
+const fromAccount = Account.ref(request.fromAccountId);
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+Or in React using one of the generated hooks:
+
+```ts
+const account = useAccount({ id });
+```
+
+:::important
+
+**You can think of a reference like a handle (and it's similar to a
+"stub" in gRPC), but getting a reference via `ref()` or `use...()`
+does not mean that an instance of the data type has been
+[constructed](/develop/call/overview#constructing-instances)!**
+
+In fact, the type returned from calling `.ref()` is a `WeakReference`,
+where "weak" indicates that the instance may or may not have been
+constructed.
+
+:::
+
+### State IDs
+
+We call the ID that you use to get a reference to your data type its
+"state ID". This ID is unique within your application, i.e., you'll
+always get the same instance of your data type for that ID.
+
+The ID is also used to automatically partition your data type
+instances across CPU cores. **You can think of the state ID like a
+primary key in a database.**
+
+:::tip
+
+Within one of your servicer methods you can get the ID of the current
+instance via `context.state_id` (Python), `context.stateId`
+(TypeScript).
+
+:::
+
+:::note
+
+**Singletons**
+
+Sometimes you might want a data type to act as a "singleton" where
+there is a single well-known ID that is always used. But be warned, to
+avoid making the singleton a scalability bottleneck you should avoid
+storing too much data in a single instance of a data type.
+
+It's a good practice to ensure your singletons are constructed in the
+[`initialize`](/develop/applications#initialize-functions) function
+that you pass to [`Application`](/develop/applications).
+
+:::
+
+
+## Constructing instances
+
+You construct an instance of your data types either _implicitly_
+or _explicitly_, depending on whether or not you have explicitly
+designated certain methods as _constructors_ in your `.proto`, or a
+_factory_, in your Zod schema.
+
+:::tip
+If your state can be default constructed, prefer _implicit_
+construction! Only use explicit construction if you have some
+_initialization that must be performed_.
+:::
+
+### Implicit construction
+
+Any data types that don't have an explicit constructor/factory will be
+_implicitly_ constructed when you call a `writer` or `transaction`
+method:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```python
+counter = Counter.ref(id)
+
+# Will implicitly construct if not already constructed!
+await counter.Increment(context)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```typescript
+const counter = Counter.ref(id);
+
+// Will implicitly construct if not already constructed!
+await counter.increment(context);
+```
+  </TabItem>
+</Tabs>
+
+:::tip
+
+A state will not be implicitly constructed when you call a `reader`
+method so you may need to properly ensure you've constructed your
+state by calling a `writer` or `transaction` first (which may just be
+a no-op method that acts like a "constructor" but can be called
+multiple times unlike explicit constructors which can only be called
+once).
+
+:::
+
+### Explicit construction
+
+If you've defined a constructor/factory for your data type then you
+must use it for constructing an instance.
+
+Here's an example, in both Zod and Pydantic, that designates
+the `Open` method as an explicit constructor for `Account`:
+
+<!-- TODO: update this snippet to use the basic bank example once it lands. -->
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Pydantic" default>
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/bank-pydantic/api/bank/v1/pydantic/account.py&syntax=python&lines=50-55) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/bank-pydantic/api/bank/v1/pydantic/account.py -->
+
+```python
+api = API(
+    Account=Type(
+        state=AccountState,
+        methods=AccountMethods,
+    ),
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="Zod">
+```typescript
+export const api: API = {
+  Account: {
+    // ...
+    methods: {
+      // ...
+      open: writer({
+        // Must use this function to construct an instance of `Account`.
+        factory: {},
+        // ...
+      }),
+    },
+  },
+};
+```
+  </TabItem>
+</Tabs>
+
+A constructor/factory is exposed as a static or class method in the
+generated code, and returns a tuple where the first element is a
+_reference_ to the constructed state (same thing returned from
+`ref()`) and the second is the response from calling the method. For
+example:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```python
+account, response = await Account.open(
+    context,
+    customer_name=request.customer_name,
+)
+```
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```typescript
+const [account, response] = await Account.open(context, {
+  customerName: request.customerName,
+});
+```
+  </TabItem>
+</Tabs>
+
+:::caution
+
+You can only call an explicit constructor once! Otherwise you'll get
+back a `StateAlreadyConstructed` error. This can be useful if you're
+trying to check if you've already constructed the state, but you may
+also consider using implicit construction and calling a no-op method
+to ensure that the state has been constructed.
+
+:::
+
+Calling an explicit constructor will generate a new unique ID (a
+[UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier))
+for the constructed state. Alternatively, you can specify an ID
+_explicitly_ upon construction by passing it after `context`. Here is
+an example of constructing an `Account` with an explicit ID using the
+`Open` constructor:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/monorepo/bank/backend/src/bank_servicer.py&syntax=python&lines=34-38) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/monorepo/bank/backend/src/bank_servicer.py -->
+
+```python
+account, _ = await Account.open(
+    context,
+    new_account_id,
+    customer_name=request.customer_name,
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts&syntax=typescript&lines=39-41) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts -->
+
+```typescript
+const [account, response] = await Account.open(context, newAccountId, {
+  customerName: request.customerName,
+});
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+  </TabItem>
+</Tabs>
+
+#### Idempotent construction
+
+You can call explicit constructors using
+[`idempotently()`](/develop/idempotency) external to a Reboot
+application (i.e., using an `ExternalContext`):
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```python
+account, response = await Account.idempotently().open(
+    context,
+    customer_name=request.customer_name,
+)
+```
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```typescript
+const [account, response] = await Account.idempotently().open(context, {
+  customerName: request.customerName,
+});
+```
+  </TabItem>
+</Tabs>

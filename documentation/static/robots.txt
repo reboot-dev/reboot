@@ -1,0 +1,3 @@
+# An empty robots.txt files tells crawlers they are allowed to crawl the
+# entire site.
+# developers.google.com/search/docs/crawling-indexing/robots/create-robots-txt

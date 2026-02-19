@@ -1,0 +1,183 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Errors
+
+When a Reboot RPC executes, the result will fall into one of three categories:
+
+1. All operations completed normally. The RPC should return a successful
+   response, and its effects should be persisted.
+2. An expected normal-course-of-business error was encountered and the call
+   aborted with a specified error. The method's effects should not occur,
+   the caller/user should get a clear and helpful error message, and the
+   application should continue processing requests.
+3. An internal error was encountered and some unexpected error was thrown. The
+   application is in trouble and should stop processing requests, and developers
+   should be made aware of the issue.
+
+It's important that a Reboot system be able to identify and differentiate
+between these scenario types. Reboot must know when a call has failed so that
+the method's effects (and potentially the effects of its caller) can be
+canceled. It must also know what communication mechanism is most appropriate for
+reporting the error to RPC developers and clients.
+
+For that reason, Reboot includes a mechanism for methods to enumerate the
+expected errors (class 2) that they may throw in normal-course-of-business.
+Throwing any unexpected error can then be treated as a bug to be reported (class
+3), while returning results indicates successful completion of the method
+(class 1).
+
+### Reporting Expected Errors in Reboot
+
+Reboot methods should enumerate all errors that are expected as part of normal
+business in their proto definitions.
+
+For example, a `Withdraw` method for a bank account might raise an
+`OverdraftError` if the account doesn't have sufficient funds for the requested
+withdrawal:
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/monorepo/api/bank/v1/account.proto&syntax=protobuf&lines=37-42) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/monorepo/api/bank/v1/account.proto -->
+
+```protobuf
+rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {
+  option (rbt.v1alpha1.method) = {
+    writer: {},
+    errors: [ "OverdraftError" ],
+  };
+}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+These errors are themselves defined by proto messages.
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/monorepo/api/bank/v1/errors.proto&syntax=protobuf&lines=12-16) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/monorepo/api/bank/v1/errors.proto -->
+
+```protobuf
+// Error returned when a withdrawal would overdraft the account.
+message OverdraftError {
+  // Amount that we would have overdraft by.
+  uint32 amount = 1;
+}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+:::note
+For a complete enumeration, a method must explicitly list _all_ the errors it
+expects to return, including the errors from all methods it calls.
+:::
+
+Reboot uses the proto-defined error messages to generate raisable
+types for use in code. Each method gets a wrapper type, `MethodNameAborted`, which
+can contain any of the error types listed in the RPC definition. This wrapper
+allows clients to catch all possible errors, even when the server's list of
+error types is incomplete or gets updated.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/monorepo/bank/backend/src/account_servicer.py&lines=57-68) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/monorepo/bank/backend/src/account_servicer.py -->
+
+```py
+async def withdraw(
+    self,
+    context: WriterContext,
+    request: WithdrawRequest,
+) -> WithdrawResponse:
+    updated_balance = self.state.balance - request.amount
+    if updated_balance < 0:
+        raise Account.WithdrawAborted(
+            OverdraftError(amount=-updated_balance)
+        )
+    self.state.balance = updated_balance
+    return WithdrawResponse(updated_balance=updated_balance)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/bank-nodejs/backend/src/account_servicer.ts&lines=42-58) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/bank-nodejs/backend/src/account_servicer.ts -->
+
+```ts
+async withdraw(
+  context: WriterContext,
+  request: Account.WithdrawRequest
+): Promise<Account.WithdrawResponse> {
+  const updatedBalance = this.state.balance - request.amount;
+  if (updatedBalance < 0) {
+    throw new Account.WithdrawAborted(
+      new OverdraftError({
+        amount: Number(-updatedBalance),
+      })
+    );
+  }
+
+  this.state.balance = updatedBalance;
+
+  return new WithdrawResponse({ updatedBalance });
+}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+### Catching Expected Errors in Reboot
+
+Here's an example of how the `OverdraftError` can be caught in a type-safe way:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/monorepo/bank/backend/tests/account_servicer_test.py&lines=51-61) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/monorepo/bank/backend/tests/account_servicer_test.py -->
+
+```py
+try:
+    await account.withdraw(context, amount=65)
+except Account.WithdrawAborted as aborted:
+    match aborted.error:
+        case OverdraftError(amount=amount):
+            report_error_to_user(
+                'Your withdrawal could not be processed due to '
+                'insufficient funds. Your account balance is less '
+                f'than the requested amount by {amount} dollars.'
+            )
+    raise
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/bank-nodejs/backend/tests/test.ts&lines=21-34) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/bank-nodejs/backend/tests/test.ts -->
+
+```ts
+try {
+  await account.withdraw(context, { amount: BigInt(65) });
+} catch (e) {
+  if (e instanceof Account.WithdrawAborted) {
+    if (e.error instanceof OverdraftError) {
+      const { amount } = e.error;
+      reportErrorToUser(
+        `Your withdrawal could not be processed due to insufficient funds. ` +
+          `Your account balance is less than the requested amount by ${amount} dollars.`
+      );
+    }
+  }
+  throw e;
+}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>

@@ -1,0 +1,33 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Methods
+
+Reboot uses **qualified method kinds** to provide better safety
+guarantees for your application. Based on a method kind, you can
+easily answers questions such as:
+
+- Will a method perform any mutations of a state?
+- Will a method perform any mutations on other states?
+- If this method performs mutations on other states, when do those effects become visible?
+- Which other methods can run concurrently with this method?
+
+Enforcing these guarantees naturally creates a safety hierarchy, in which _**methods can only call other methods that enforce similar or stronger guarantees**_. This allows Reboot to:
+
+- Safely maximize the number of operations running in parallel on a state, while still preserving safety guarantees.
+- Take over complicated safety semantics for you, such as locking and transactionality across states.
+- Monitor the call graph, to guarantee that transitive calls don't have unintended side-effects, even as code changes.
+
+## Kinds
+
+<!-- TODO: Insert a callability diagram here.
+This is an existing flow chart about method kinds that we could use as a template: https://docs.google.com/presentation/d/10NpT5dixaa_DLYRtRajYr1heRNpoBkn6pPId0AmlAWw/edit#slide=id.g238161c3009_0_780 -->
+
+The four kinds of methods in Reboot are:
+
+| Kind | |
+| -------- | ------- |
+| `reader` | `reader` methods are allowed to read from but not mutate state. Every `reader` is given a read-only snapshot of the state allowing multiple `readers` to execute concurrently on a given state instance. `readers` can only call other `readers`. |
+| `writer` | `writer` methods can both read from and mutate state. `writer` execution happens serially on a given state, allowing each update to happen atomically. To enforce write atomicity, `writers` can call any `readers`, but they cannot call other `writers`. |
+| `transaction` | `transactions` combine multiple read/write operations into a single atomic action, often across multiple states. All of the reads and writes included in the `transaction` will happen atomically: once a state is involved in a `transaction`, no other RPCs may mutate its state until that `transaction` is complete. If any part of the `transaction` fails, the entire `transaction` will be rolled back. `transactions` may call `readers`, `writers`, and other `transactions`. |
+| `workflow` | `workflow` methods asynchronously combine multiple read/write operations _without_ holding a lock. State updates may be visible to the outside world before the `workflow` completes. If a failure occurs, the workflow is retried from the beginning until it runs to completion.|

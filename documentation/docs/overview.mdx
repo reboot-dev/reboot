@@ -1,0 +1,73 @@
+---
+id: overview
+slug: /
+---
+
+import { CardSection, Card } from "../src/components/Cards";
+import Link from "@docusaurus/Link";
+import TSLogo from "../static/img/ts-logo.svg";
+import PythonLogo from "../static/img/python-logo.svg";
+
+# Welcome! 👋
+
+<div style={{ fontSize: "1.2rem" }}>
+  Your software needs a <span style={{ fontWeight: "bold" }}>Reboot</span>
+</div>
+<div style={{ fontSize: "1.2rem" }}>
+  Today's software is fragile, complex and difficult to scale.
+  Reboot applications are safer, simpler and scalable by design.
+</div>
+<div style={{ fontSize: "1.2rem" }}>
+  Reboot is the next generation of software development — based
+  on the best of what's come before.
+</div>
+
+## Durable reactive backends
+
+### Get started
+
+<CardSection
+  id="quickstarts"
+  description="From zero to deployable app in just a few minutes!"
+>
+  <Card
+    title="TypeScript"
+    icon={<TSLogo />}
+    to="/get_started/typescript_backend"
+  />
+  <Card
+    title="Python"
+    to="/get_started/python_backend"
+    icon={<PythonLogo />}
+  />
+</CardSection>
+
+### Examples
+
+<CardSection
+  id="examples"
+  description="A variety of examples demonstrating Reboot in action."
+>
+  <Card
+    title="TypeScript, Python, and React Examples"
+    to="/get_started/examples"
+  />
+</CardSection>
+
+## Durable MCP
+
+<CardSection
+  id="quickstarts"
+  description="Make your MCP servers survive reboots and failures!"
+>
+  <Card
+    title="TypeScript"
+    icon={<TSLogo />}
+    to="/get_started/typescript_mcp"
+  />
+  <Card
+    title="Python"
+    to="/get_started/python_mcp"
+    icon={<PythonLogo />}
+  />
+</CardSection>

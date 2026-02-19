@@ -1,0 +1,83 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Servicers
+
+For each of your data types you need to implement it's methods. You do
+that by implementing server-side (backend) **servicers** based on the
+data types and methods you defined (e.g., using
+[Zod](/develop/define/zod) or
+[protobuf](/develop/define/protobuf)).
+
+For Python, you'll be creating subclasses of the code generated
+`Servicer` class where you can implement each of the methods you
+defined. For TypeScript you can either create subclasses or you can
+create an object literal.
+
+For example, for a data type called `Account`:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```python
+from bank.v1.bank_rbt import Account
+
+class AccountServicer(Account.Servicer):
+    # ...
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+    <Tabs groupId="typescript-object-class">
+      <TabItem value="object" label="Object literal">
+```ts
+import { Account } from "../../api/bank/v1/account_rbt.js";
+
+const accountServicer = Account.servicer({
+  // ...
+});
+```
+      </TabItem>
+      <TabItem value="class" label="Class">
+```ts
+import { Account } from "../../api/bank/v1/account_rbt.js";
+
+class AccountServicer extends Account.Servicer {
+  // ...
+}
+```
+      </TabItem>
+    </Tabs>
+  </TabItem>
+</Tabs>
+
+Each method gets passed:
+
+- `context`: a subclass of
+[`Context`](/develop/call/from_within_your_app) specific to the
+method kind (e.g., `ReaderContext`)
+- `request`: the type defined in your Zod schema or `.proto`
+
+To read and write the **state** of your data type from within one
+of your methods:
+
+- **Python:** `self.state`
+- **TypeScript w/ _classes_:** `this.state`
+- **TypeScript w/ _object literals_:** `state` argument passed into your method
+
+:::important
+
+When creating a subclasses of `Servicer`, there is a 1-1 mapping
+between an instance of your subclass and an instance of your data type
+that was either implicitly or explicitly created.
+
+When using object literals in TypeScript, a single servicer may
+handles many different instances of your data types differentiated by
+different `state` arguments.
+
+:::
+
+For more details on how to implement your methods see:
+
+- [`reader`](/develop/implement/readers)
+- [`writer`](/develop/implement/writers)
+- [`transaction`](/develop/implement/transactions)
+- [`workflow`](/develop/implement/workflows)
