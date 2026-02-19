@@ -210,7 +210,8 @@ class ExportImportTestCase(unittest.IsolatedAsyncioTestCase):
 
             # And our task should still be pending.
             channel = context.channel_manager.get_channel_to_state(
-                task_id.state_type, StateRef(task_id.state_ref)
+                StateTypeName(task_id.state_type),
+                StateRef(task_id.state_ref),
             )
             tasks_stub = tasks_pb2_grpc.TasksStub(channel)
             list_tasks_response = await tasks_stub.ListTasks(

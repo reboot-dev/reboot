@@ -10,23 +10,13 @@ TEST_API_KEY = "AAAAAAAAAA-AAAAAAAAAAAAAAAAAAAA"
 class RbtDevRunTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
-        # Add reboot directories to the path so that we can import the
-        # rbt binary.
-        # Applicable only for bazel tests.
-        # TODO: See if we can drop that when we move all tests to the
-        # `public/` repo.
-        reboot_public_path = os.path.abspath(
-            os.path.join(
-                os.getcwd(),
-                'external',
-                'com_github_reboot_dev_reboot',
-            )
-        )
+        # Add `reboot` directories to the path so that we can import the
+        # `rbt` binary. Applicable only for bazel tests.
 
         os.environ['PATH'] = os.path.abspath(
-            os.path.join(reboot_public_path, 'reboot')
+            os.path.join(os.getcwd(), 'reboot')
         ) + os.pathsep + os.path.abspath(
-            os.path.join(reboot_public_path, 'reboot', 'cli')
+            os.path.join(os.getcwd(), 'reboot', 'cli')
         ) + os.pathsep + os.environ['PATH']
 
     async def run_rbt(

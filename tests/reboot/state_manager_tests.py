@@ -416,10 +416,10 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
         # has not been marked as complete, but it should not throw (since the
         # task has been created).
         client = DatabaseClient(self.sidecar.address)
-        response_or_error: Optional[tasks_pb2.TaskResponseOrError
-                                   ] = await client.load_task_response(
-                                       task_effect.task_id
-                                   )
+        response_or_error: Optional[tuple[
+            tasks_pb2.TaskResponseOrError,
+            database_pb2.Task,
+        ]] = await client.load_task_response(task_effect.task_id)
         self.assertIsNone(response_or_error)
 
         # Complete the task.
@@ -429,7 +429,8 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
                 WorkflowContext, MyGreeterServicer, state_id
             ),
             task_effect,
-            on_loop_iteration=lambda iteration: None,
+            on_loop_iteration=lambda iteration,
+            _: None,
             validating_effects=False,
         ) as complete:
             await complete(

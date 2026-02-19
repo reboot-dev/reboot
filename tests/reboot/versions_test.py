@@ -20,9 +20,7 @@ class RebootVersionTest(unittest.TestCase):
         """Test that all Reboot related packages are pinned to the same
         version.
         """
-        versions = open(
-            'external/com_github_reboot_dev_reboot/reboot/versions.bzl', 'r'
-        )
+        versions = open('reboot/versions.bzl', 'r')
         lines = versions.readlines()
 
         # Get the package version.

@@ -60,12 +60,9 @@ sh_test_in_working_directory(
         "//rbt/v1alpha1:reboot-dev-reboot-api",
         "//reboot:reboot.dev",
         "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
-        "//tests/reboot/examples/chat-room-nodejs:serve_expected_output.txt",
-        # Use the "local" target to refer so Bazel will put that path in
-        # the proper location in the sandbox, instead of trying to
-        # use it from another repository path.
         "//reboot/containers/reboot-base:dev",
         "//reboot/examples/chat-room-nodejs:everything",
+        "//tests/reboot/examples/chat-room-nodejs:serve_expected_output.txt",
     ],
     env = {
         "EXPECTED_CURL_OUTPUT_FILE": "tests/reboot/examples/chat-room-nodejs/serve_expected_output.txt",

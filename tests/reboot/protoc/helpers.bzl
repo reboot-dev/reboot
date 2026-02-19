@@ -245,6 +245,7 @@ def failure_test(name, expected_error):
 
 def reboot_libraries_for_proto(
         proto,
+        name = None,
         proto_deps = [],
         py_deps = [],
         js_deps = [],
@@ -254,11 +255,15 @@ def reboot_libraries_for_proto(
 
     Args:
         proto: the filename of the proto.
+        name: shouldn't be passed, specified only to pass the
+            `buildifier` check.
         proto_deps: additional deps for Proto library.
         py_deps: additional deps for Python library.
         js_deps: additional deps for JS library.
         react_deps: additional deps for React library.
     """
+    if name != None:
+        fail("Don't pass `name` to `reboot_libraries_for_proto`.")
     name = proto.removesuffix(".proto")
     proto_library(
         name = name + "_proto",
@@ -308,7 +313,7 @@ def reboot_libraries_for_proto(
     js_reboot_react_library(
         name = name + "_js_reboot_react",
         srcs = [":" + name + "_js_proto"],
-        proto = "" + name + ".proto",
+        proto = name + ".proto",
         proto_deps = [
             ":" + name + "_proto",
             "//tests/reboot/protoc:shared_proto",

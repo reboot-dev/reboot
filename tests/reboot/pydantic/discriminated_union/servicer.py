@@ -1,9 +1,5 @@
 from reboot.aio.auth.authorizers import allow
-from reboot.aio.contexts import (
-    ReaderContext,
-    TransactionContext,
-    WriterContext,
-)
+from reboot.aio.contexts import ReaderContext, WriterContext
 from tests.reboot.pydantic.discriminated_union.servicer_api import (
     NestedState,
     NestedTestRequest,

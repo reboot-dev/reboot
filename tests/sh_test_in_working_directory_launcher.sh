@@ -34,17 +34,7 @@ fi
 #   see https://nodejs.org/api/cli.html#cli_preserve_symlinks
 export SANDBOX_ROOT="$(pwd)/"
 
-# Resolve the working directory. It may be in the main repo or in
-# the `public/` external repo's runfiles.
-# TODO: See if we can drop that when we move all tests to the
-# `public/` repo.
 RESOLVED_DIR="${SANDBOX_ROOT}${DIR}"
-if [ ! -d "$RESOLVED_DIR" ]; then
-    EXTERNAL_DIR="${SANDBOX_ROOT}../com_github_reboot_dev_reboot/${DIR}"
-    if [ -d "$EXTERNAL_DIR" ]; then
-        RESOLVED_DIR="$EXTERNAL_DIR"
-    fi
-fi
 
 cd $TEST_TMPDIR
 shopt -s dotglob
