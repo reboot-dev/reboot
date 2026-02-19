@@ -66,7 +66,7 @@ def py_web_test_suite_env(
     data.append(":" + name + "_py_web_test_suite_env")
 
     srcs = srcs or []
-    srcs.append("//tests/reboot/react:py_web_test_suite_env_trampoline.py")
+    srcs.append(Label("//tests/reboot/react:py_web_test_suite_env_trampoline.py"))
 
     # `py_web_test_suite_env()` expects either `tags` to be `None` or
     # `tags` to have "native".
@@ -99,7 +99,7 @@ def py_web_test_suite_env(
 
         # Our indirect `main` which trampolines into the actual `main`
         # after setting up the environment variables.
-        main = "//tests/reboot/react:py_web_test_suite_env_trampoline.py",
+        main = Label("//tests/reboot/react:py_web_test_suite_env_trampoline.py"),
         tags = tags,
         py_test_tags = py_test_tags,
 
