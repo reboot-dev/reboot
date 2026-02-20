@@ -1,4 +1,4 @@
-load("@com_github_reboot_dev_reboot//reboot:rules.bzl", "js_proto_library", "py_reboot_library")
+load("@com_github_reboot_dev_reboot//reboot:rules.bzl", "js_proto_library", "js_reboot_react_library", "py_reboot_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 
 proto_library(
@@ -47,4 +47,14 @@ py_reboot_library(
         "//rbt/cloud/v1alpha1/logs:logs_py_reboot",
     ],
     visibility = ["//visibility:public"],
+)
+
+js_reboot_react_library(
+    name = "application_js_reboot_react",
+    proto = "application.proto",
+    proto_deps = [
+        ":application_proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [":application_js_proto"],
 )

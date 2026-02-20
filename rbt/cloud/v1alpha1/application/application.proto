@@ -62,6 +62,14 @@ message Revision {
 
 //////////////////////////////////////////////////////////////////////
 
+// Aggregated metrics for an application (across all replicas).
+message ApplicationMetrics {
+  double requests_per_second = 1;
+  double p50_latency_ms = 2;
+  double p95_latency_ms = 3;
+  double p99_latency_ms = 4;
+}
+
 message Application {
   option (rbt.v1alpha1.state) = {
   };
@@ -92,6 +100,10 @@ message Application {
   // considered `UP`. Otherwise, if the most recent revision is `FAILED` the
   // application is considered `FAILED`. Otherwise, the application is `DOWN`.
   Status status = 8;
+
+  // Live metrics scraped from Prometheus, updated every 30 seconds while the
+  // application is UP.
+  ApplicationMetrics metrics = 10;
 }
 
 ///////////////////////////////////////////////////////////////////////
@@ -179,9 +191,23 @@ service ApplicationMethods {
     };
   }
 
+  rpc Get(GetRequest) returns (GetResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
   rpc IsAdmin(IsAdminRequest) returns (IsAdminResponse) {
     option (rbt.v1alpha1.method) = {
       reader: {},
+    };
+  }
+
+  // Polls Prometheus for application metrics while the app is UP.
+  rpc MetricsWorkflow(MetricsWorkflowRequest)
+      returns (MetricsWorkflowResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
     };
   }
 }
@@ -332,6 +358,17 @@ message StatusResponse {
 
 //////////////////////////////////////////////////////////////////////
 
+message GetRequest {}
+
+message GetResponse {
+  Status status = 1;
+  repeated Revision revisions = 2;
+  ApplicationMetrics metrics = 3;
+  string application_name = 4;
+}
+
+//////////////////////////////////////////////////////////////////////
+
 message IsAdminRequest {
   string user_id = 1;
 }
@@ -357,3 +394,7 @@ message ConcurrentModificationError {
 message PaymentMethodRequiredError {}
 
 //////////////////////////////////////////////////////////////////////
+
+message MetricsWorkflowRequest {}
+
+message MetricsWorkflowResponse {}
