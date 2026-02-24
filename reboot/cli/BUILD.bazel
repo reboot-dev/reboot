@@ -245,6 +245,7 @@ py_library(
         "//reboot:protoc-gen-reboot_nodejs",
         "//reboot:protoc-gen-reboot_nodejs_boilerplate",
         "//reboot:protoc-gen-reboot_react",
+        "//reboot:protoc-gen-reboot_web",
         "@com_github_reboot_dev_reboot//protoc_gen_mypy_plugin:protoc-gen-mypy",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:protos",
         "@com_github_reboot_dev_reboot//reboot:protoc-gen-es_with_deps",

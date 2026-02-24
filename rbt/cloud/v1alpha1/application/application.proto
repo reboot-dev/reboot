@@ -101,8 +101,7 @@ message Application {
   // application is considered `FAILED`. Otherwise, the application is `DOWN`.
   Status status = 8;
 
-  // Live metrics scraped from Prometheus, updated every 30 seconds while the
-  // application is UP.
+  // Live metrics, updated every 30 seconds while the application is UP.
   ApplicationMetrics metrics = 10;
 }
 
