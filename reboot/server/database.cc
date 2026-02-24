@@ -780,19 +780,50 @@ std::string MakeLegacyTransactionPreparedKey(const UUID& transaction_id) {
 // Idempotent mutations that expire use UUIDv7.
 #define EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX "expiring-idempotent-mutation"
 
+// Workflow-scoped variants. We need both non-expiring and expiring
+// prefixes because `.always()` creates expiring (UUIDv7) idempotency
+// keys, and `.always()` can be called within a workflow.
+#define WORKFLOW_IDEMPOTENT_MUTATION_KEY_PREFIX "workflow-idempotent-mutation"
+#define WORKFLOW_EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX                       \
+  "workflow-expiring-idempotent-mutation"
+
 // Returns a key for storing in rocksdb that represents an idempotent
 // mutation. Originally we used the stringified UUID to make debugging
 // easier, but in practice that hasn't been valuable so for newer,
-// expiring idempotency keys we simply store their bytes directly
+// expiring idempotency keys we simply store their bytes directly.
+//
+// When `workflow_id` is present, the key is prefixed with the
+// workflow-scoped variant so that mutations within a workflow are
+// isolated from mutations outside a workflow.
 expected<std::string> MakeIdempotentMutationKey(
     const std::string& state_ref,
-    const std::string& idempotency_key) {
+    const std::string& idempotency_key,
+    const std::optional<std::string>& workflow_id = std::nullopt) {
   CHECK_EQ(idempotency_key.size(), 16)
       << "Expecting idempotency key to be the raw 16-byte format, "
       << "not the 36-character hex string representation";
 
   int version =
       static_cast<int>((static_cast<uint8_t>(idempotency_key[6]) >> 4) & 0x0F);
+
+  if (workflow_id.has_value()) {
+    CHECK_EQ(workflow_id->size(), 16)
+        << "Expecting workflow id to be the raw 16-byte format";
+
+    if (version == 7) {
+      return fmt::format(
+          WORKFLOW_EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}:{}",
+          state_ref,
+          *workflow_id,
+          idempotency_key);
+    }
+
+    return fmt::format(
+        WORKFLOW_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}:{}",
+        state_ref,
+        *workflow_id,
+        idempotency_key);
+  }
 
   // We interpret UUIDv7 as an expiring idempotency key and use the
   // bytes directly as they are lexicographically ordered and are
@@ -1843,9 +1874,15 @@ grpc::Status DatabaseService::Store(
           LookupOrCreateColumnFamilyHandle(
               request->idempotent_mutation().state_type());
 
+      std::optional<std::string> workflow_id;
+      if (request->idempotent_mutation().has_workflow_id()) {
+        workflow_id = request->idempotent_mutation().workflow_id();
+      }
+
       expected<std::string> idempotent_mutation_key = MakeIdempotentMutationKey(
           request->idempotent_mutation().state_ref(),
-          request->idempotent_mutation().key());
+          request->idempotent_mutation().key(),
+          workflow_id);
 
       if (!idempotent_mutation_key.has_value()) {
         return make_unexpected(idempotent_mutation_key.error());
@@ -2307,7 +2344,10 @@ grpc::Status DatabaseService::Export(
       state_ref = task->task_id().state_ref();
     } else if (
         key_type_prefix == IDEMPOTENT_MUTATION_KEY_PREFIX
-        || key_type_prefix == EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX) {
+        || key_type_prefix == EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX
+        || key_type_prefix == WORKFLOW_IDEMPOTENT_MUTATION_KEY_PREFIX
+        || key_type_prefix
+            == WORKFLOW_EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX) {
       auto* mutation = item.mutable_idempotent_mutation();
       CHECK(mutation->ParseFromArray(it->value().data(), it->value().size()));
       state_ref = mutation->state_ref();
@@ -3377,11 +3417,18 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
     }
   };
 
+  // Extract optional workflow_id for scoping.
+  std::optional<std::string> workflow_id;
+  if (request->has_workflow_id()) {
+    workflow_id = request->workflow_id();
+  }
+
   if (request->has_idempotency_key()) {
     expected<std::string> idempotent_mutation_key_prefix =
         MakeIdempotentMutationKey(
             request->state_ref(),
-            request->idempotency_key());
+            request->idempotency_key(),
+            workflow_id);
 
     if (!idempotent_mutation_key_prefix.has_value()) {
       return grpc::Status(
@@ -3391,7 +3438,47 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
 
     recover(*idempotent_mutation_key_prefix);
 
-    CHECK_EQ(batch_size, 1) << "Only expecting a single idempotency key";
+    CHECK_LE(batch_size, 1)
+        << "Only expecting at most a single idempotency key";
+  } else if (workflow_id.has_value()) {
+    CHECK_EQ(workflow_id->size(), 16)
+        << "Expecting workflow id to be the raw 16-byte format";
+
+    // Recover this workflow's non-expiring mutations.
+    recover(
+        fmt::format(
+            WORKFLOW_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}",
+            request->state_ref(),
+            *workflow_id));
+
+    // Recover this workflow's expiring idempotent mutations that have
+    // an expiration timestamp _after_ the current time (in
+    // milliseconds since Unix epoch).
+    uint64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+
+    std::string timestamp(6, '\0');
+    timestamp[0] = static_cast<char>((now_ms >> 40) & 0xFF);
+    timestamp[1] = static_cast<char>((now_ms >> 32) & 0xFF);
+    timestamp[2] = static_cast<char>((now_ms >> 24) & 0xFF);
+    timestamp[3] = static_cast<char>((now_ms >> 16) & 0xFF);
+    timestamp[4] = static_cast<char>((now_ms >> 8) & 0xFF);
+    timestamp[5] = static_cast<char>(now_ms & 0xFF);
+
+    recover(
+        fmt::format(
+            WORKFLOW_EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}:{}",
+            request->state_ref(),
+            *workflow_id,
+            timestamp),
+        // Don't recover past this workflow's expiring idempotent
+        // mutations, which may have timestamps that are larger than
+        // `timestamp`.
+        fmt::format(
+            WORKFLOW_EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}",
+            request->state_ref(),
+            *workflow_id));
   } else {
     // Recover non-expiring idempotent mutations.
     recover(
@@ -3420,7 +3507,7 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
             EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}",
             request->state_ref(),
             timestamp),
-        // Don't recover past this state refs expiring idempotent
+        // Don't recover past this state ref's expiring idempotent
         // mutations, which may have timestamps that are larger than
         // `timestamp`.
         fmt::format(

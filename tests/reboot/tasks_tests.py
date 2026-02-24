@@ -1,5 +1,6 @@
 import asyncio
 import unittest
+import uuid
 from datetime import datetime, timedelta
 from rbt.v1alpha1 import errors_pb2, tasks_pb2
 from reboot.aio.aborted import SystemAborted
@@ -7,6 +8,7 @@ from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import (
     EffectValidation,
+    ReaderContext,
     TransactionContext,
     WorkflowContext,
     WriterContext,
@@ -27,6 +29,7 @@ from tests.reboot.general_rbt import General, GeneralRequest, GeneralResponse
 from tests.reboot.general_servicer import GeneralServicer
 from tests.reboot.greeter_rbt import Greeter
 from tests.reboot.greeter_servicers import MyGreeterServicer
+from typing import Optional
 from tzlocal import get_localzone
 from unittest import mock
 
@@ -1129,6 +1132,205 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
             self.fail(
                 "When using schedule with a timedelta, the workflow task did not run after the specified time."
             )
+
+    async def test_workflow_id_propagated_to_writer_and_transaction(
+        self,
+    ) -> None:
+        """
+        Test that `context.workflow_id` is correctly set when a workflow
+        calls a writer and a transaction.
+        """
+        writer_workflow_id_future: asyncio.Future[Optional[uuid.UUID]
+                                                 ] = asyncio.Future()
+        transaction_workflow_id_future: asyncio.Future[Optional[uuid.UUID]
+                                                      ] = asyncio.Future()
+
+        class TestServicer(GeneralServicer):
+
+            def authorizer(self):
+                return allow()
+
+            async def constructor_writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse()
+
+            async def writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                writer_workflow_id_future.set_result(context.workflow_id)
+                return GeneralResponse()
+
+            async def transaction(
+                self,
+                context: TransactionContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                transaction_workflow_id_future.set_result(context.workflow_id)
+                return GeneralResponse()
+
+            @classmethod
+            async def workflow(
+                cls,
+                context: WorkflowContext,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                g = General.ref()
+                await g.writer(context)
+                await g.transaction(context)
+                return GeneralResponse()
+
+        await self.rbt.up(Application(servicers=[TestServicer]))
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        # Construct.
+        g, _ = await General.constructor_writer(context)
+
+        # Run the workflow.
+        await g.workflow(context)
+
+        writer_workflow_id = await asyncio.wait_for(
+            writer_workflow_id_future, timeout=10
+        )
+        transaction_workflow_id = await asyncio.wait_for(
+            transaction_workflow_id_future, timeout=10
+        )
+
+        self.assertIsNotNone(writer_workflow_id)
+        self.assertIsNotNone(transaction_workflow_id)
+
+        # Both should have the same workflow ID since they were
+        # called from the same workflow.
+        self.assertEqual(writer_workflow_id, transaction_workflow_id)
+
+    async def test_workflow_idempotent_writer_and_transaction_survive_recovery(
+        self,
+    ) -> None:
+        """Test that a workflow's idempotent writer and transaction
+        mutations are not re-executed after recovery via
+        rbt.down() / rbt.up().
+        """
+        writer_and_transaction_called = asyncio.Event()
+        proceed_after_down = asyncio.Event()
+
+        writer_call_count = 0
+        transaction_call_count = 0
+
+        class TestServicer(GeneralServicer):
+
+            def authorizer(self):
+                return allow()
+
+            async def constructor_writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse()
+
+            async def writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                nonlocal writer_call_count
+                writer_call_count += 1
+                return GeneralResponse()
+
+            async def transaction(
+                self,
+                context: TransactionContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                nonlocal transaction_call_count
+                transaction_call_count += 1
+                return GeneralResponse()
+
+            async def reader(
+                self,
+                context: ReaderContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse()
+
+            @classmethod
+            async def workflow(
+                cls,
+                context: WorkflowContext,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                g = General.ref()
+
+                # Make writer and transaction calls which are
+                # idempotent by default.
+                await g.writer(context)
+                await g.transaction(context)
+
+                # Signal that both have been called.
+                writer_and_transaction_called.set()
+
+                # Wait until the test tells us to proceed (after
+                # `rbt.down()`/`rbt.up()`).
+                await proceed_after_down.wait()
+
+                return GeneralResponse()
+
+        revision = await self.rbt.up(
+            Application(servicers=[TestServicer]),
+            # Need to disable effect validation because this test
+            # relies on setting some nonlocal variables.
+            effect_validation=EffectValidation.DISABLED,
+        )
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        # Construct.
+        g, _ = await General.constructor_writer(context)
+
+        # Spawn the workflow.
+        task = await g.spawn().workflow(context)
+
+        # Wait for both mutations to be called.
+        await writer_and_transaction_called.wait()
+
+        # Expecting only one call since effect validation is disabled.
+        self.assertEqual(writer_call_count, 1)
+        self.assertEqual(transaction_call_count, 1)
+
+        # Simulate failure.
+        await self.rbt.down()
+
+        # Reset events for the re-run after recovery.
+        writer_and_transaction_called.clear()
+
+        await self.rbt.up(revision=revision)
+
+        # Let the workflow proceed to completion.
+        proceed_after_down.set()
+
+        await task
+
+        # We should have tried to call both mutations again.
+        await writer_and_transaction_called.wait()
+
+        # But they still should only have been called once (since
+        # we've disabled effect validation) even after recovery
+        # because we should properly recover workflow idempotent
+        # mutations and thus not run them again.
+        self.assertEqual(writer_call_count, 1)
+        self.assertEqual(transaction_call_count, 1)
 
 
 if __name__ == '__main__':

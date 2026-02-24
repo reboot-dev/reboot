@@ -1008,6 +1008,22 @@ class ScalableBloomFilter:
 class IdempotentMutations:
     """
     Tracks idempotent mutations for a specific state.
+
+    Uses a bloom filter to avoid unnecessary database lookups.
+    The bloom filter is populated in two phases:
+
+    1. Initial recovery (per `state_ref`): recovers non-expiring
+       and unexpired expiring mutations (no workflow-scoped ones).
+
+    2. On-demand workflow recovery: the first time we look up a
+       mutation with a particular `workflow_id`, we bulk-recover
+       all mutations for that (`state_ref`, `workflow_id`) pair and
+       add them to the bloom filter.
+
+    After both phases, the bloom filter either tells us an idempotent
+    mutation is "definitely not in the set" and thus no database query
+    is needed, or else is "possibly in the set" meaning we need to
+    query the database for the specific key.
     """
 
     def __init__(
@@ -1024,8 +1040,38 @@ class IdempotentMutations:
 
         self._bloom_filter = ScalableBloomFilter()
 
+        # Track which workflow IDs have been bulk-recovered
+        # into the bloom filter so we only do it once per
+        # workflow.
+        self._recovered_workflow_ids: set[uuid.UUID] = set()
+
         for idempotent_mutation in idempotent_mutations:
-            self._bloom_filter.add(idempotent_mutation.key)
+            self._add_to_bloom_filter(idempotent_mutation)
+
+    @staticmethod
+    def _make_bloom_key(
+        idempotency_key_bytes: bytes,
+        workflow_id_bytes: Optional[bytes] = None,
+    ) -> bytes:
+        """
+        Returns a composite bloom filter key that includes the workflow ID
+        bytes (when present) to properly scope per workflow.
+        """
+        if workflow_id_bytes is not None:
+            return workflow_id_bytes + idempotency_key_bytes
+        return idempotency_key_bytes
+
+    def _add_to_bloom_filter(
+        self,
+        idempotent_mutation: database_pb2.IdempotentMutation,
+    ) -> None:
+        """Add an idempotent mutation to the bloom filter."""
+        bloom_key = self._make_bloom_key(
+            idempotent_mutation.key,
+            idempotent_mutation.workflow_id
+            if idempotent_mutation.HasField("workflow_id") else None,
+        )
+        self._bloom_filter.add(bloom_key)
 
     @classmethod
     async def recover(
@@ -1045,22 +1091,62 @@ class IdempotentMutations:
             idempotent_mutations=response.idempotent_mutations,
         )
 
+    async def _recover_workflow(self, workflow_id: uuid.UUID) -> None:
+        """
+        Bulk-recover all idempotent mutations for a specific workflow and
+        add them to the bloom filter. Only done once per
+        `workflow_id`.
+        """
+        if workflow_id in self._recovered_workflow_ids:
+            return
+
+        response = await self._database_client.recover_idempotent_mutations(
+            self._state_type_name,
+            self._state_ref,
+            workflow_id=workflow_id,
+        )
+
+        for idempotent_mutation in response.idempotent_mutations:
+            self._add_to_bloom_filter(idempotent_mutation)
+
+        self._recovered_workflow_ids.add(workflow_id)
+
     async def get(
         self,
         idempotency_key: uuid.UUID,
+        *,
+        workflow_id: Optional[uuid.UUID] = None,
     ) -> Optional[database_pb2.IdempotentMutation]:
-        if idempotency_key.bytes in self._bloom_filter:
+        if workflow_id is not None:
+            # Ensure we've recovered this workflow's mutations
+            # into the bloom filter.
+            await self._recover_workflow(workflow_id)
+
+        # Check bloom filter.
+        bloom_key = self._make_bloom_key(
+            idempotency_key.bytes,
+            workflow_id.bytes if workflow_id is not None else None,
+        )
+
+        if bloom_key in self._bloom_filter:
             response = await self._database_client.recover_idempotent_mutations(
                 self._state_type_name,
                 self._state_ref,
                 idempotency_key=idempotency_key,
+                workflow_id=workflow_id,
             )
 
-            if len(response.idempotent_mutations) == 0:
-                return None
+            if len(response.idempotent_mutations) > 0:
+                # TODO: cache the idempotent mutation.
+                return response.idempotent_mutations[0]
 
-            # TODO: cache the idempotent mutation.
-            return response.idempotent_mutations[0]
+        # Backwards compatibility: mutations stored before
+        # workflow-scoped idempotent mutations were added will be
+        # under a non-workflow key. If this is for a workflow but we
+        # haven't found the idempotent mutation fall back to a
+        # non-workflow lookup.
+        if workflow_id is not None:
+            return await self.get(idempotency_key)
 
         return None
 
@@ -1069,15 +1155,15 @@ class IdempotentMutations:
         idempotency_key: uuid.UUID,
         idempotent_mutation: database_pb2.IdempotentMutation,
     ):
-        self._bloom_filter.add(idempotency_key.bytes)
+        self._add_to_bloom_filter(idempotent_mutation)
         # TODO: cache the idempotent mutation.
 
     def update(
         self,
         idempotent_mutations: dict[uuid.UUID, database_pb2.IdempotentMutation],
     ):
-        for idempotency_key in idempotent_mutations.keys():
-            self._bloom_filter.add(idempotency_key.bytes)
+        for idempotent_mutation in idempotent_mutations.values():
+            self._add_to_bloom_filter(idempotent_mutation)
             # TODO: cache the idempotent mutations.
 
 
@@ -1696,6 +1782,7 @@ class SidecarStateManager(
         task: Optional[database_pb2.Task] = None,
         idempotency_key: Optional[uuid.UUID] = None,
         idempotent_mutation: Optional[database_pb2.IdempotentMutation] = None,
+        workflow_id: Optional[uuid.UUID] = None,
         constructor: bool = False,
         sync: bool = True,
     ) -> None:
@@ -1789,6 +1876,7 @@ class SidecarStateManager(
                     task_effect.task_id for task_effect in
                     ((effects.tasks or []) if effects is not None else [])
                 ],
+                workflow_id=(workflow_id.bytes if workflow_id else None),
             )
 
         if transaction is not None and not transaction._stored:
@@ -2475,6 +2563,7 @@ class SidecarStateManager(
                         state_ref=state_ref,
                         effects=effects,
                         idempotency_key=context.idempotency_key,
+                        workflow_id=context.workflow_id,
                         constructor=context.constructor,
                         sync=context.sync,
                     )
@@ -2494,6 +2583,7 @@ class SidecarStateManager(
                             effects=effects,
                             transaction=transaction,
                             idempotency_key=context.idempotency_key,
+                            workflow_id=context.workflow_id,
                             constructor=context.constructor,
                         )
                         transaction.stored = True
@@ -2750,6 +2840,7 @@ class SidecarStateManager(
                     effects=effects,
                     transaction=transaction,
                     idempotency_key=context.idempotency_key,
+                    workflow_id=context.workflow_id,
                     constructor=context.constructor,
                 )
                 transaction.stored = True
@@ -2951,6 +3042,7 @@ class SidecarStateManager(
         idempotent_mutation: Optional[database_pb2.IdempotentMutation] = (
             await self._idempotent_mutations[state_type_name][state_ref].get(
                 context.idempotency_key,
+                workflow_id=context.workflow_id,
             )
         )
 

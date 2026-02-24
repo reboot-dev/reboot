@@ -154,6 +154,11 @@ message IdempotentMutation {
 
   // Any tasks that were scheduled as part of this mutation.
   repeated TaskId task_ids = 3;
+
+  // Optional workflow ID, when this mutation was performed within
+  // a workflow. Stored in the RocksDB value so recovery can
+  // reconstruct the correct key.
+  optional bytes workflow_id = 6;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -354,6 +359,9 @@ message RecoverIdempotentMutationsRequest {
 
   // Recover an idempotent mutation for the specific key.
   optional bytes idempotency_key = 3;
+
+  // Optional workflow ID for workflow-scoped recovery queries.
+  optional bytes workflow_id = 4;
 }
 
 message RecoverIdempotentMutationsResponse {
