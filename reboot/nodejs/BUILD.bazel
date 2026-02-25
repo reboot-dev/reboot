@@ -213,6 +213,7 @@ ts_project(
         "//:node_modules/esbuild",
         "//:node_modules/express",
         "//:node_modules/toobusy-js",
+        "//:node_modules/uuid",
         "//:node_modules/which-pm-runs",
         "//:node_modules/zod",
         "//reboot/nodejs/secrets:secrets_ts",

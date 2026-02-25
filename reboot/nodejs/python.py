@@ -311,6 +311,10 @@ class NodeAdaptorAuthorizer(Authorizer[Message, Message]):
                             None if context.auth is None else
                             context.auth.to_proto_bytes()
                         ),
+                        workflow_id=(
+                            None if context.workflow_id is None else
+                            str(context.workflow_id)
+                        ),
                     ),
                     state=(
                         None if state is None else state.SerializeToString()
@@ -377,6 +381,10 @@ class NodeAdaptorTokenVerifier(TokenVerifier):
                         caller_bearer_token=context.caller_bearer_token,
                         cookie=context.cookie,
                         app_internal=context.app_internal,
+                        workflow_id=(
+                            None if context.workflow_id is None else
+                            str(context.workflow_id)
+                        ),
                     ),
                     token=token,
                 ).SerializeToString(),

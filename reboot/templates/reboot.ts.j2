@@ -745,6 +745,11 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
           ? reboot.Auth.fromProtoBytes(call.context.auth)
           : null
       ),
+      workflowId: (
+        call.context.workflowId !== undefined
+          ? call.context.workflowId
+          : null
+      ),
       cancelled,
     });
 
@@ -1333,6 +1338,11 @@ export class {{ state.proto.name }}Authorizer extends reboot.Authorizer<{{ state
       auth: (
         call.context.auth !== undefined
           ? reboot.Auth.fromProtoBytes(call.context.auth)
+          : null
+      ),
+      workflowId: (
+        call.context.workflowId !== undefined
+          ? call.context.workflowId
           : null
       ),
       cancelled,

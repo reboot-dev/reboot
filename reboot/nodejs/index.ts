@@ -18,6 +18,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { fork } from "node:child_process";
 import { createRequire } from "node:module";
 import toobusy from "toobusy-js";
+import { v5 as uuidv5 } from "uuid";
 import { z } from "zod/v4";
 import * as reboot_native from "./reboot_native.cjs";
 // Express is a cjs module so we need to separately import the namespace and
@@ -308,6 +309,7 @@ export class Context {
   readonly cookie: string | null;
   readonly appInternal: boolean;
   readonly auth: Auth | null;
+  readonly workflowId: string | null;
 
   constructor({
     external,
@@ -318,6 +320,7 @@ export class Context {
     cookie,
     appInternal,
     auth,
+    workflowId,
     cancelled,
   }: {
     external: any;
@@ -328,6 +331,7 @@ export class Context {
     cookie: string | null;
     appInternal: boolean;
     auth: Auth | null;
+    workflowId: string | null;
     cancelled: Promise<void>;
   }) {
     if (!Context.#isInternalConstructing) {
@@ -344,6 +348,7 @@ export class Context {
     this.cookie = cookie;
     this.appInternal = appInternal;
     this.auth = auth;
+    this.workflowId = workflowId;
     this.cancelled = cancelled;
   }
 
@@ -445,7 +450,28 @@ export class WorkflowContext extends Context {
   constructor(options) {
     super(options);
   }
+
   // TODO: implement workflow specific properties/methods.
+
+  public makeIdempotencyKey({
+    alias,
+    perWorkflow,
+  }: {
+    alias: string;
+    perWorkflow?: boolean;
+  }): string {
+    assert(this.workflowId !== null);
+
+    if (!perWorkflow) {
+      const store = contextStorage.getStore();
+      assert(store !== undefined);
+      if (store.withinLoop) {
+        alias += ` (iteration #${store.loopIteration})`;
+      }
+    }
+
+    return uuidv5(alias, this.workflowId);
+  }
 
   async *loop(
     alias: string,
@@ -619,6 +645,8 @@ export abstract class TokenVerifier {
       cookie: call.context.cookie,
       appInternal: call.context.appInternal,
       auth: null,
+      workflowId:
+        call.context.workflowId !== undefined ? call.context.workflowId : null,
       cancelled,
     }) as ReaderContext;
 

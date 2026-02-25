@@ -7021,6 +7021,10 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
                     None if context.auth is None
                     else context.auth.to_proto_bytes()
                 ),
+                workflow_id=(
+                    None if context.workflow_id is None
+                    else str(context.workflow_id)
+                ),
             ),
             state=state.SerializeToString(),
             request=request.SerializeToString(),
@@ -7130,6 +7134,10 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
                         auth=(
                             None if context.auth is None
                             else context.auth.to_proto_bytes()
+                        ),
+                        workflow_id=(
+                            None if context.workflow_id is None
+                            else str(context.workflow_id)
                         ),
                     ),
                     state=state.SerializeToString(),
@@ -7246,6 +7254,10 @@ class {{ state.proto.name }}ServicerNodeAdaptor({{ state.proto.name }}.singleton
                 auth=(
                     None if context.auth is None
                     else context.auth.to_proto_bytes()
+                ),
+                workflow_id=(
+                    None if context.workflow_id is None
+                    else str(context.workflow_id)
                 ),
             ),
             request=request.SerializeToString(),

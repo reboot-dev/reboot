@@ -1228,6 +1228,29 @@ class WorkflowContext(Context):
         assert self._task is not None
         return uuid.UUID(bytes=self._task.task_id.task_uuid)
 
+    def make_idempotency_key(
+        self,
+        *,
+        alias: str,
+        per_workflow: Optional[bool] = None,
+    ) -> uuid.UUID:
+        """
+        Return a deterministic idempotency key for external API calls
+        within this workflow.
+
+        When called inside a loop the current iteration number is
+        automatically appended to the alias so that each iteration
+        gets its own key.  Pass `per_workflow=True` to suppress this
+        and produce a single key for the entire workflow regardless of
+        iteration.
+        """
+        if self.within_loop() and not per_workflow:
+            alias += f" (iteration #{self.task.iteration})"
+
+        assert self.workflow_id is not None
+
+        return uuid.uuid5(self.workflow_id, alias)
+
     async def wait(self, awaitable: Awaitable[WaitT]) -> WaitT:
         """
         Helper that awaits an awaitable taking into account the possibility that this
