@@ -663,11 +663,11 @@ export abstract class Authorizer<StateType, RequestTypes> {
     request?: RequestTypes
   ): Promise<AuthorizerDecision>;
 
-  _authorize?: (
+  abstract _authorize(
     external: any,
     cancelled: Promise<void>,
     bytesCall: Uint8Array
-  ) => Promise<Uint8Array>;
+  ): Promise<Uint8Array>;
 }
 
 export type AuthorizerCallable<StateType, RequestType> = (args: {
@@ -824,6 +824,7 @@ export function isAppInternal({
 export type NativeLibrary = {
   nativeLibraryModule: string;
   nativeLibraryFunction: string;
+  authorizer?: Authorizer<unknown, unknown>;
 };
 
 export type TypeScriptLibrary = {

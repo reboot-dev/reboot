@@ -782,85 +782,6 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
       return authorizerOrRule;
     })(this.authorizer());
 
-    if (authorizer !== null) {
-      authorizer._authorize = async function(
-        external: any,
-        cancelled: Promise<void>,
-        bytesCall: Uint8Array
-      ): Promise<Uint8Array> {
-        const call = reboot_api.nodejs_pb.AuthorizeCall.fromBinary(bytesCall);
-
-        const context = reboot.Context.fromNativeExternal({
-          external,
-          kind: "reader",
-          stateId: call.context.stateId,
-          method: call.context.method,
-          stateTypeName: call.context.stateTypeName,
-          callerBearerToken: call.context.callerBearerToken,
-          cookie: call.context.cookie,
-          appInternal: call.context.appInternal,
-          auth: (
-            call.context.auth !== undefined
-              ? reboot.Auth.fromProtoBytes(call.context.auth)
-              : null
-          ),
-          cancelled,
-        }) as reboot.ReaderContext;
-
-        const anyRequest = protobuf_es.Any.fromBinary(call.request);
-        {% set ns = namespace(nested_loop_first = true) %}
-        {% for service in state.services %}
-        {% for method in service.methods %}
-        {% if ns.nested_loop_first %}
-        {% set ns.nested_loop_first = false %}
-        if (anyRequest.is({{ method.input_type }})) {
-        {% else %}
-        } else if (anyRequest.is({{ method.input_type }})) {
-        {% endif %}
-          const unpackedRequest = new {{ method.input_type }}();
-          anyRequest.unpackTo(unpackedRequest);
-          try {
-            // NOTE: we are setting `state` within `try` so that any
-            // possible validation errors if using Zod are logged in
-            // the `catch`.
-            const state: {{ state.proto.name }}.State | undefined =
-              call.state && {{ state.proto.name }}FromBinary(
-                call.state,
-                // Don't validate if we're constructing because non-optional
-                // fields that this method might be setting will be invalid.
-                { validate: !(statesBeingConstructed.has(context.stateId)) },
-              );
-            const request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape(unpackedRequest);
-            return protobuf_es.Any.pack(
-              await authorizer.authorize(
-                call.methodName,
-                context,
-                state,
-                request
-              )
-            ).toBinary();
-          } catch (e) {
-            // Ensure we have an `Error` and then `console.error()` it so
-            // that developers see a stack trace of what is going on.
-            const error = ensureError(e);
-            // Write an empty message which includes a newline to make it
-            // easier to identify the stack trace.
-            console.error("");
-            console.error(error);
-            console.error("");
-            console.error(
-              `Unhandled error trying to authorize '{{ state.proto.name }}.{{ method.proto.name | to_lower_camel }}'\n`
-            );
-
-            throw error;
-          }
-        {% endfor %}
-        {% endfor %}
-        } else {
-          throw new Error(`Unexpected type for ${request}: ${anyRequest.typeUrl}.`);
-        }
-      };
-    }
     return authorizer;
   }
 
@@ -1392,6 +1313,84 @@ export class {{ state.proto.name }}Authorizer extends reboot.Authorizer<{{ state
     super();
     this.#rules = { ...rules, _default: rules?._default ?? reboot.allowIf({ all: [ reboot.isAppInternal ] }) };
   }
+
+  async _authorize(
+    external: any,
+    cancelled: Promise<void>,
+    bytesCall: Uint8Array
+  ): Promise<Uint8Array> {
+    const call = reboot_api.nodejs_pb.AuthorizeCall.fromBinary(bytesCall);
+
+    const context = reboot.Context.fromNativeExternal({
+      external,
+      kind: "reader",
+      stateId: call.context.stateId,
+      method: call.context.method,
+      stateTypeName: call.context.stateTypeName,
+      callerBearerToken: call.context.callerBearerToken,
+      cookie: call.context.cookie,
+      appInternal: call.context.appInternal,
+      auth: (
+        call.context.auth !== undefined
+          ? reboot.Auth.fromProtoBytes(call.context.auth)
+          : null
+      ),
+      cancelled,
+    }) as reboot.ReaderContext;
+
+    const anyRequest = protobuf_es.Any.fromBinary(call.request);
+    {% set ns = namespace(nested_loop_first = true) %}
+    {% for service in state.services %}
+    {% for method in service.methods %}
+    {% if ns.nested_loop_first %}
+    {% set ns.nested_loop_first = false %}
+    if (anyRequest.is({{ method.input_type }})) {
+    {% else %}
+    } else if (anyRequest.is({{ method.input_type }})) {
+    {% endif %}
+      const unpackedRequest = new {{ method.input_type }}();
+      anyRequest.unpackTo(unpackedRequest);
+      try {
+        // NOTE: we are setting `state` within `try` so that any
+        // possible validation errors if using Zod are logged in
+        // the `catch`.
+        const state: {{ state.proto.name }}.State | undefined =
+          call.state && {{ state.proto.name }}FromBinary(
+            call.state,
+            // Don't validate if we're constructing because non-optional
+            // fields that this method might be setting will be invalid.
+            { validate: !(statesBeingConstructed.has(context.stateId)) },
+          );
+        const request = {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape(unpackedRequest);
+        return protobuf_es.Any.pack(
+          await this.authorize(
+            call.methodName,
+            context,
+            state,
+            request
+          )
+        ).toBinary();
+      } catch (e) {
+        // Ensure we have an `Error` and then `console.error()` it so
+        // that developers see a stack trace of what is going on.
+        const error = ensureError(e);
+        // Write an empty message which includes a newline to make it
+        // easier to identify the stack trace.
+        console.error("");
+        console.error(error);
+        console.error("");
+        console.error(
+          `Unhandled error trying to authorize '{{ state.proto.name }}.{{ method.proto.name | to_lower_camel }}'\n`
+        );
+
+        throw error;
+      }
+    {% endfor %}
+    {% endfor %}
+    } else {
+      throw new Error(`Unexpected type for ${request}: ${anyRequest.typeUrl}.`);
+    }
+  };
 
   async authorize(
     methodName: string,

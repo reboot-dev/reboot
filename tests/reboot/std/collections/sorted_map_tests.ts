@@ -1,4 +1,5 @@
-import { Application, Reboot } from "@reboot-dev/reboot";
+import { allow, Application, deny, Reboot } from "@reboot-dev/reboot";
+import { errors_pb } from "@reboot-dev/reboot-api";
 import {
   SortedMap,
   sortedMapLibrary,
@@ -17,9 +18,7 @@ test("use std servicer", async (t) => {
   });
 
   await t.test("use std library", async (t) => {
-    const config = await rbt.up(
-      new Application({ libraries: [sortedMapLibrary()] })
-    );
+    await rbt.up(new Application({ libraries: [sortedMapLibrary()] }));
 
     const context = rbt.createExternalContext("test", {
       appInternal: true,
@@ -27,7 +26,7 @@ test("use std servicer", async (t) => {
 
     const myMap = SortedMap.ref("test-id");
 
-    const insertResponse = await myMap.insert(context, {
+    await myMap.insert(context, {
       entries: { foo: new TextEncoder().encode("bar") },
     });
 
@@ -37,5 +36,44 @@ test("use std servicer", async (t) => {
       getResponseValue == "bar",
       `Expected 'bar' but got '${getResponseValue}'`
     );
+  });
+
+  await t.test("use overriding auth", async (t) => {
+    const authorizer = new SortedMap.Authorizer({
+      insert: allow(),
+      get: deny(),
+    });
+
+    await rbt.up(
+      new Application({ libraries: [sortedMapLibrary({ authorizer })] })
+    );
+
+    // Expect to be able to insert even with `appInternal=false`.
+    let context = rbt.createExternalContext("test", {
+      appInternal: false,
+    });
+    let myMap = SortedMap.ref("test-id");
+    await myMap.insert(context, {
+      entries: { foo: new TextEncoder().encode("bar") },
+    });
+
+    // Expect to not be able to get even with `appInternal=true`.
+    context = rbt.createExternalContext("test", {
+      appInternal: true,
+    });
+    myMap = SortedMap.ref("test-id");
+    try {
+      await myMap.get(context, { key: "foo" });
+      assert(false, "Should not have successfully authed.");
+    } catch (e) {
+      assert(
+        e instanceof SortedMap.GetAborted,
+        "Should receive SortedMap.GetAborted error."
+      );
+      assert(
+        e.error instanceof errors_pb.PermissionDenied,
+        "Should receive PermissionDenied error."
+      );
+    }
   });
 });

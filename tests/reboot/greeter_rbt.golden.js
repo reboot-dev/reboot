@@ -1677,461 +1677,6 @@ export class GreeterBaseServicer extends reboot.Servicer {
             }
             return authorizerOrRule;
         })(this.authorizer());
-        if (authorizer !== null) {
-            authorizer._authorize = async function (external, cancelled, bytesCall) {
-                const call = reboot_api.nodejs_pb.AuthorizeCall.fromBinary(bytesCall);
-                const context = reboot.Context.fromNativeExternal({
-                    external,
-                    kind: "reader",
-                    stateId: call.context.stateId,
-                    method: call.context.method,
-                    stateTypeName: call.context.stateTypeName,
-                    callerBearerToken: call.context.callerBearerToken,
-                    cookie: call.context.cookie,
-                    appInternal: call.context.appInternal,
-                    auth: (call.context.auth !== undefined
-                        ? reboot.Auth.fromProtoBytes(call.context.auth)
-                        : null),
-                    cancelled,
-                });
-                const anyRequest = protobuf_es.Any.fromBinary(call.request);
-                if (anyRequest.is(greeter_pb.CreateRequest)) {
-                    const unpackedRequest = new greeter_pb.CreateRequest();
-                    anyRequest.unpackTo(unpackedRequest);
-                    try {
-                        // NOTE: we are setting `state` within `try` so that any
-                        // possible validation errors if using Zod are logged in
-                        // the `catch`.
-                        const state = call.state && GreeterFromBinary(call.state, 
-                        // Don't validate if we're constructing because non-optional
-                        // fields that this method might be setting will be invalid.
-                        { validate: !(statesBeingConstructed.has(context.stateId)) });
-                        const request = GreeterCreateRequestFromProtobufShape(unpackedRequest);
-                        return protobuf_es.Any.pack(await authorizer.authorize(call.methodName, context, state, request)).toBinary();
-                    }
-                    catch (e) {
-                        // Ensure we have an `Error` and then `console.error()` it so
-                        // that developers see a stack trace of what is going on.
-                        const error = ensureError(e);
-                        // Write an empty message which includes a newline to make it
-                        // easier to identify the stack trace.
-                        console.error("");
-                        console.error(error);
-                        console.error("");
-                        console.error(`Unhandled error trying to authorize 'Greeter.create'\n`);
-                        throw error;
-                    }
-                }
-                else if (anyRequest.is(greeter_pb.GreetRequest)) {
-                    const unpackedRequest = new greeter_pb.GreetRequest();
-                    anyRequest.unpackTo(unpackedRequest);
-                    try {
-                        // NOTE: we are setting `state` within `try` so that any
-                        // possible validation errors if using Zod are logged in
-                        // the `catch`.
-                        const state = call.state && GreeterFromBinary(call.state, 
-                        // Don't validate if we're constructing because non-optional
-                        // fields that this method might be setting will be invalid.
-                        { validate: !(statesBeingConstructed.has(context.stateId)) });
-                        const request = GreeterGreetRequestFromProtobufShape(unpackedRequest);
-                        return protobuf_es.Any.pack(await authorizer.authorize(call.methodName, context, state, request)).toBinary();
-                    }
-                    catch (e) {
-                        // Ensure we have an `Error` and then `console.error()` it so
-                        // that developers see a stack trace of what is going on.
-                        const error = ensureError(e);
-                        // Write an empty message which includes a newline to make it
-                        // easier to identify the stack trace.
-                        console.error("");
-                        console.error(error);
-                        console.error("");
-                        console.error(`Unhandled error trying to authorize 'Greeter.greet'\n`);
-                        throw error;
-                    }
-                }
-                else if (anyRequest.is(greeter_pb.SetAdjectiveRequest)) {
-                    const unpackedRequest = new greeter_pb.SetAdjectiveRequest();
-                    anyRequest.unpackTo(unpackedRequest);
-                    try {
-                        // NOTE: we are setting `state` within `try` so that any
-                        // possible validation errors if using Zod are logged in
-                        // the `catch`.
-                        const state = call.state && GreeterFromBinary(call.state, 
-                        // Don't validate if we're constructing because non-optional
-                        // fields that this method might be setting will be invalid.
-                        { validate: !(statesBeingConstructed.has(context.stateId)) });
-                        const request = GreeterSetAdjectiveRequestFromProtobufShape(unpackedRequest);
-                        return protobuf_es.Any.pack(await authorizer.authorize(call.methodName, context, state, request)).toBinary();
-                    }
-                    catch (e) {
-                        // Ensure we have an `Error` and then `console.error()` it so
-                        // that developers see a stack trace of what is going on.
-                        const error = ensureError(e);
-                        // Write an empty message which includes a newline to make it
-                        // easier to identify the stack trace.
-                        console.error("");
-                        console.error(error);
-                        console.error("");
-                        console.error(`Unhandled error trying to authorize 'Greeter.setAdjective'\n`);
-                        throw error;
-                    }
-                }
-                else if (anyRequest.is(greeter_pb.SetAdjectiveRequest)) {
-                    const unpackedRequest = new greeter_pb.SetAdjectiveRequest();
-                    anyRequest.unpackTo(unpackedRequest);
-                    try {
-                        // NOTE: we are setting `state` within `try` so that any
-                        // possible validation errors if using Zod are logged in
-                        // the `catch`.
-                        const state = call.state && GreeterFromBinary(call.state, 
-                        // Don't validate if we're constructing because non-optional
-                        // fields that this method might be setting will be invalid.
-                        { validate: !(statesBeingConstructed.has(context.stateId)) });
-                        const request = GreeterTransactionSetAdjectiveRequestFromProtobufShape(unpackedRequest);
-                        return protobuf_es.Any.pack(await authorizer.authorize(call.methodName, context, state, request)).toBinary();
-                    }
-                    catch (e) {
-                        // Ensure we have an `Error` and then `console.error()` it so
-                        // that developers see a stack trace of what is going on.
-                        const error = ensureError(e);
-                        // Write an empty message which includes a newline to make it
-                        // easier to identify the stack trace.
-                        console.error("");
-                        console.error(error);
-                        console.error("");
-                        console.error(`Unhandled error trying to authorize 'Greeter.transactionSetAdjective'\n`);
-                        throw error;
-                    }
-                }
-                else if (anyRequest.is(Empty)) {
-                    const unpackedRequest = new Empty();
-                    anyRequest.unpackTo(unpackedRequest);
-                    try {
-                        // NOTE: we are setting `state` within `try` so that any
-                        // possible validation errors if using Zod are logged in
-                        // the `catch`.
-                        const state = call.state && GreeterFromBinary(call.state, 
-                        // Don't validate if we're constructing because non-optional
-                        // fields that this method might be setting will be invalid.
-                        { validate: !(statesBeingConstructed.has(context.stateId)) });
-                        const request = GreeterTryToConstructContextRequestFromProtobufShape(unpackedRequest);
-                        return protobuf_es.Any.pack(await authorizer.authorize(call.methodName, context, state, request)).toBinary();
-                    }
-                    catch (e) {
-                        // Ensure we have an `Error` and then `console.error()` it so
-                        // that developers see a stack trace of what is going on.
-                        const error = ensureError(e);
-                        // Write an empty message which includes a newline to make it
-                        // easier to identify the stack trace.
-                        console.error("");
-                        console.error(error);
-                        console.error("");
-                        console.error(`Unhandled error trying to authorize 'Greeter.tryToConstructContext'\n`);
-                        throw error;
-                    }
-                }
-                else if (anyRequest.is(Empty)) {
-                    const unpackedRequest = new Empty();
-                    anyRequest.unpackTo(unpackedRequest);
-                    try {
-                        // NOTE: we are setting `state` within `try` so that any
-                        // possible validation errors if using Zod are logged in
-                        // the `catch`.
-                        const state = call.state && GreeterFromBinary(call.state, 
-                        // Don't validate if we're constructing because non-optional
-                        // fields that this method might be setting will be invalid.
-                        { validate: !(statesBeingConstructed.has(context.stateId)) });
-                        const request = GreeterTryToConstructExternalContextRequestFromProtobufShape(unpackedRequest);
-                        return protobuf_es.Any.pack(await authorizer.authorize(call.methodName, context, state, request)).toBinary();
-                    }
-                    catch (e) {
-                        // Ensure we have an `Error` and then `console.error()` it so
-                        // that developers see a stack trace of what is going on.
-                        const error = ensureError(e);
-                        // Write an empty message which includes a newline to make it
-                        // easier to identify the stack trace.
-                        console.error("");
-                        console.error(error);
-                        console.error("");
-                        console.error(`Unhandled error trying to authorize 'Greeter.tryToConstructExternalContext'\n`);
-                        throw error;
-                    }
-                }
-                else if (anyRequest.is(greeter_pb.TestLongRunningFetchRequest)) {
-                    const unpackedRequest = new greeter_pb.TestLongRunningFetchRequest();
-                    anyRequest.unpackTo(unpackedRequest);
-                    try {
-                        // NOTE: we are setting `state` within `try` so that any
-                        // possible validation errors if using Zod are logged in
-                        // the `catch`.
-                        const state = call.state && GreeterFromBinary(call.state, 
-                        // Don't validate if we're constructing because non-optional
-                        // fields that this method might be setting will be invalid.
-                        { validate: !(statesBeingConstructed.has(context.stateId)) });
-                        const request = GreeterTestLongRunningFetchRequestFromProtobufShape(unpackedRequest);
-                        return protobuf_es.Any.pack(await authorizer.authorize(call.methodName, context, state, request)).toBinary();
-                    }
-                    catch (e) {
-                        // Ensure we have an `Error` and then `console.error()` it so
-                        // that developers see a stack trace of what is going on.
-                        const error = ensureError(e);
-                        // Write an empty message which includes a newline to make it
-                        // easier to identify the stack trace.
-                        console.error("");
-                        console.error(error);
-                        console.error("");
-                        console.error(`Unhandled error trying to authorize 'Greeter.testLongRunningFetch'\n`);
-                        throw error;
-                    }
-                }
-                else if (anyRequest.is(Empty)) {
-                    const unpackedRequest = new Empty();
-                    anyRequest.unpackTo(unpackedRequest);
-                    try {
-                        // NOTE: we are setting `state` within `try` so that any
-                        // possible validation errors if using Zod are logged in
-                        // the `catch`.
-                        const state = call.state && GreeterFromBinary(call.state, 
-                        // Don't validate if we're constructing because non-optional
-                        // fields that this method might be setting will be invalid.
-                        { validate: !(statesBeingConstructed.has(context.stateId)) });
-                        const request = GreeterTestLongRunningWriterRequestFromProtobufShape(unpackedRequest);
-                        return protobuf_es.Any.pack(await authorizer.authorize(call.methodName, context, state, request)).toBinary();
-                    }
-                    catch (e) {
-                        // Ensure we have an `Error` and then `console.error()` it so
-                        // that developers see a stack trace of what is going on.
-                        const error = ensureError(e);
-                        // Write an empty message which includes a newline to make it
-                        // easier to identify the stack trace.
-                        console.error("");
-                        console.error(error);
-                        console.error("");
-                        console.error(`Unhandled error trying to authorize 'Greeter.testLongRunningWriter'\n`);
-                        throw error;
-                    }
-                }
-                else if (anyRequest.is(greeter_pb.GetWholeStateRequest)) {
-                    const unpackedRequest = new greeter_pb.GetWholeStateRequest();
-                    anyRequest.unpackTo(unpackedRequest);
-                    try {
-                        // NOTE: we are setting `state` within `try` so that any
-                        // possible validation errors if using Zod are logged in
-                        // the `catch`.
-                        const state = call.state && GreeterFromBinary(call.state, 
-                        // Don't validate if we're constructing because non-optional
-                        // fields that this method might be setting will be invalid.
-                        { validate: !(statesBeingConstructed.has(context.stateId)) });
-                        const request = GreeterGetWholeStateRequestFromProtobufShape(unpackedRequest);
-                        return protobuf_es.Any.pack(await authorizer.authorize(call.methodName, context, state, request)).toBinary();
-                    }
-                    catch (e) {
-                        // Ensure we have an `Error` and then `console.error()` it so
-                        // that developers see a stack trace of what is going on.
-                        const error = ensureError(e);
-                        // Write an empty message which includes a newline to make it
-                        // easier to identify the stack trace.
-                        console.error("");
-                        console.error(error);
-                        console.error("");
-                        console.error(`Unhandled error trying to authorize 'Greeter.getWholeState'\n`);
-                        throw error;
-                    }
-                }
-                else if (anyRequest.is(Empty)) {
-                    const unpackedRequest = new Empty();
-                    anyRequest.unpackTo(unpackedRequest);
-                    try {
-                        // NOTE: we are setting `state` within `try` so that any
-                        // possible validation errors if using Zod are logged in
-                        // the `catch`.
-                        const state = call.state && GreeterFromBinary(call.state, 
-                        // Don't validate if we're constructing because non-optional
-                        // fields that this method might be setting will be invalid.
-                        { validate: !(statesBeingConstructed.has(context.stateId)) });
-                        const request = GreeterFailWithExceptionRequestFromProtobufShape(unpackedRequest);
-                        return protobuf_es.Any.pack(await authorizer.authorize(call.methodName, context, state, request)).toBinary();
-                    }
-                    catch (e) {
-                        // Ensure we have an `Error` and then `console.error()` it so
-                        // that developers see a stack trace of what is going on.
-                        const error = ensureError(e);
-                        // Write an empty message which includes a newline to make it
-                        // easier to identify the stack trace.
-                        console.error("");
-                        console.error(error);
-                        console.error("");
-                        console.error(`Unhandled error trying to authorize 'Greeter.failWithException'\n`);
-                        throw error;
-                    }
-                }
-                else if (anyRequest.is(Empty)) {
-                    const unpackedRequest = new Empty();
-                    anyRequest.unpackTo(unpackedRequest);
-                    try {
-                        // NOTE: we are setting `state` within `try` so that any
-                        // possible validation errors if using Zod are logged in
-                        // the `catch`.
-                        const state = call.state && GreeterFromBinary(call.state, 
-                        // Don't validate if we're constructing because non-optional
-                        // fields that this method might be setting will be invalid.
-                        { validate: !(statesBeingConstructed.has(context.stateId)) });
-                        const request = GreeterFailWithAbortedRequestFromProtobufShape(unpackedRequest);
-                        return protobuf_es.Any.pack(await authorizer.authorize(call.methodName, context, state, request)).toBinary();
-                    }
-                    catch (e) {
-                        // Ensure we have an `Error` and then `console.error()` it so
-                        // that developers see a stack trace of what is going on.
-                        const error = ensureError(e);
-                        // Write an empty message which includes a newline to make it
-                        // easier to identify the stack trace.
-                        console.error("");
-                        console.error(error);
-                        console.error("");
-                        console.error(`Unhandled error trying to authorize 'Greeter.failWithAborted'\n`);
-                        throw error;
-                    }
-                }
-                else if (anyRequest.is(Empty)) {
-                    const unpackedRequest = new Empty();
-                    anyRequest.unpackTo(unpackedRequest);
-                    try {
-                        // NOTE: we are setting `state` within `try` so that any
-                        // possible validation errors if using Zod are logged in
-                        // the `catch`.
-                        const state = call.state && GreeterFromBinary(call.state, 
-                        // Don't validate if we're constructing because non-optional
-                        // fields that this method might be setting will be invalid.
-                        { validate: !(statesBeingConstructed.has(context.stateId)) });
-                        const request = GreeterWorkflowRequestFromProtobufShape(unpackedRequest);
-                        return protobuf_es.Any.pack(await authorizer.authorize(call.methodName, context, state, request)).toBinary();
-                    }
-                    catch (e) {
-                        // Ensure we have an `Error` and then `console.error()` it so
-                        // that developers see a stack trace of what is going on.
-                        const error = ensureError(e);
-                        // Write an empty message which includes a newline to make it
-                        // easier to identify the stack trace.
-                        console.error("");
-                        console.error(error);
-                        console.error("");
-                        console.error(`Unhandled error trying to authorize 'Greeter.workflow'\n`);
-                        throw error;
-                    }
-                }
-                else if (anyRequest.is(greeter_pb.DangerousFieldsRequest)) {
-                    const unpackedRequest = new greeter_pb.DangerousFieldsRequest();
-                    anyRequest.unpackTo(unpackedRequest);
-                    try {
-                        // NOTE: we are setting `state` within `try` so that any
-                        // possible validation errors if using Zod are logged in
-                        // the `catch`.
-                        const state = call.state && GreeterFromBinary(call.state, 
-                        // Don't validate if we're constructing because non-optional
-                        // fields that this method might be setting will be invalid.
-                        { validate: !(statesBeingConstructed.has(context.stateId)) });
-                        const request = GreeterDangerousFieldsRequestFromProtobufShape(unpackedRequest);
-                        return protobuf_es.Any.pack(await authorizer.authorize(call.methodName, context, state, request)).toBinary();
-                    }
-                    catch (e) {
-                        // Ensure we have an `Error` and then `console.error()` it so
-                        // that developers see a stack trace of what is going on.
-                        const error = ensureError(e);
-                        // Write an empty message which includes a newline to make it
-                        // easier to identify the stack trace.
-                        console.error("");
-                        console.error(error);
-                        console.error("");
-                        console.error(`Unhandled error trying to authorize 'Greeter.dangerousFields'\n`);
-                        throw error;
-                    }
-                }
-                else if (anyRequest.is(greeter_pb.StoreRecursiveMessageRequest)) {
-                    const unpackedRequest = new greeter_pb.StoreRecursiveMessageRequest();
-                    anyRequest.unpackTo(unpackedRequest);
-                    try {
-                        // NOTE: we are setting `state` within `try` so that any
-                        // possible validation errors if using Zod are logged in
-                        // the `catch`.
-                        const state = call.state && GreeterFromBinary(call.state, 
-                        // Don't validate if we're constructing because non-optional
-                        // fields that this method might be setting will be invalid.
-                        { validate: !(statesBeingConstructed.has(context.stateId)) });
-                        const request = GreeterStoreRecursiveMessageRequestFromProtobufShape(unpackedRequest);
-                        return protobuf_es.Any.pack(await authorizer.authorize(call.methodName, context, state, request)).toBinary();
-                    }
-                    catch (e) {
-                        // Ensure we have an `Error` and then `console.error()` it so
-                        // that developers see a stack trace of what is going on.
-                        const error = ensureError(e);
-                        // Write an empty message which includes a newline to make it
-                        // easier to identify the stack trace.
-                        console.error("");
-                        console.error(error);
-                        console.error("");
-                        console.error(`Unhandled error trying to authorize 'Greeter.storeRecursiveMessage'\n`);
-                        throw error;
-                    }
-                }
-                else if (anyRequest.is(greeter_pb.ReadRecursiveMessageRequest)) {
-                    const unpackedRequest = new greeter_pb.ReadRecursiveMessageRequest();
-                    anyRequest.unpackTo(unpackedRequest);
-                    try {
-                        // NOTE: we are setting `state` within `try` so that any
-                        // possible validation errors if using Zod are logged in
-                        // the `catch`.
-                        const state = call.state && GreeterFromBinary(call.state, 
-                        // Don't validate if we're constructing because non-optional
-                        // fields that this method might be setting will be invalid.
-                        { validate: !(statesBeingConstructed.has(context.stateId)) });
-                        const request = GreeterReadRecursiveMessageRequestFromProtobufShape(unpackedRequest);
-                        return protobuf_es.Any.pack(await authorizer.authorize(call.methodName, context, state, request)).toBinary();
-                    }
-                    catch (e) {
-                        // Ensure we have an `Error` and then `console.error()` it so
-                        // that developers see a stack trace of what is going on.
-                        const error = ensureError(e);
-                        // Write an empty message which includes a newline to make it
-                        // easier to identify the stack trace.
-                        console.error("");
-                        console.error(error);
-                        console.error("");
-                        console.error(`Unhandled error trying to authorize 'Greeter.readRecursiveMessage'\n`);
-                        throw error;
-                    }
-                }
-                else if (anyRequest.is(greeter_pb.ConstructAndStoreRecursiveMessageRequest)) {
-                    const unpackedRequest = new greeter_pb.ConstructAndStoreRecursiveMessageRequest();
-                    anyRequest.unpackTo(unpackedRequest);
-                    try {
-                        // NOTE: we are setting `state` within `try` so that any
-                        // possible validation errors if using Zod are logged in
-                        // the `catch`.
-                        const state = call.state && GreeterFromBinary(call.state, 
-                        // Don't validate if we're constructing because non-optional
-                        // fields that this method might be setting will be invalid.
-                        { validate: !(statesBeingConstructed.has(context.stateId)) });
-                        const request = GreeterConstructAndStoreRecursiveMessageRequestFromProtobufShape(unpackedRequest);
-                        return protobuf_es.Any.pack(await authorizer.authorize(call.methodName, context, state, request)).toBinary();
-                    }
-                    catch (e) {
-                        // Ensure we have an `Error` and then `console.error()` it so
-                        // that developers see a stack trace of what is going on.
-                        const error = ensureError(e);
-                        // Write an empty message which includes a newline to make it
-                        // easier to identify the stack trace.
-                        console.error("");
-                        console.error(error);
-                        console.error("");
-                        console.error(`Unhandled error trying to authorize 'Greeter.constructAndStoreRecursiveMessage'\n`);
-                        throw error;
-                    }
-                }
-                else {
-                    throw new Error(`Unexpected type for ${request}: ${anyRequest.typeUrl}.`);
-                }
-            };
-        }
         return authorizer;
     }
 }
@@ -2590,6 +2135,460 @@ export class GreeterAuthorizer extends reboot.Authorizer {
         _GreeterAuthorizer_rules.set(this, void 0);
         __classPrivateFieldSet(this, _GreeterAuthorizer_rules, { ...rules, _default: rules?._default ?? reboot.allowIf({ all: [reboot.isAppInternal] }) }, "f");
     }
+    async _authorize(external, cancelled, bytesCall) {
+        const call = reboot_api.nodejs_pb.AuthorizeCall.fromBinary(bytesCall);
+        const context = reboot.Context.fromNativeExternal({
+            external,
+            kind: "reader",
+            stateId: call.context.stateId,
+            method: call.context.method,
+            stateTypeName: call.context.stateTypeName,
+            callerBearerToken: call.context.callerBearerToken,
+            cookie: call.context.cookie,
+            appInternal: call.context.appInternal,
+            auth: (call.context.auth !== undefined
+                ? reboot.Auth.fromProtoBytes(call.context.auth)
+                : null),
+            cancelled,
+        });
+        const anyRequest = protobuf_es.Any.fromBinary(call.request);
+        if (anyRequest.is(greeter_pb.CreateRequest)) {
+            const unpackedRequest = new greeter_pb.CreateRequest();
+            anyRequest.unpackTo(unpackedRequest);
+            try {
+                // NOTE: we are setting `state` within `try` so that any
+                // possible validation errors if using Zod are logged in
+                // the `catch`.
+                const state = call.state && GreeterFromBinary(call.state, 
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) });
+                const request = GreeterCreateRequestFromProtobufShape(unpackedRequest);
+                return protobuf_es.Any.pack(await this.authorize(call.methodName, context, state, request)).toBinary();
+            }
+            catch (e) {
+                // Ensure we have an `Error` and then `console.error()` it so
+                // that developers see a stack trace of what is going on.
+                const error = ensureError(e);
+                // Write an empty message which includes a newline to make it
+                // easier to identify the stack trace.
+                console.error("");
+                console.error(error);
+                console.error("");
+                console.error(`Unhandled error trying to authorize 'Greeter.create'\n`);
+                throw error;
+            }
+        }
+        else if (anyRequest.is(greeter_pb.GreetRequest)) {
+            const unpackedRequest = new greeter_pb.GreetRequest();
+            anyRequest.unpackTo(unpackedRequest);
+            try {
+                // NOTE: we are setting `state` within `try` so that any
+                // possible validation errors if using Zod are logged in
+                // the `catch`.
+                const state = call.state && GreeterFromBinary(call.state, 
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) });
+                const request = GreeterGreetRequestFromProtobufShape(unpackedRequest);
+                return protobuf_es.Any.pack(await this.authorize(call.methodName, context, state, request)).toBinary();
+            }
+            catch (e) {
+                // Ensure we have an `Error` and then `console.error()` it so
+                // that developers see a stack trace of what is going on.
+                const error = ensureError(e);
+                // Write an empty message which includes a newline to make it
+                // easier to identify the stack trace.
+                console.error("");
+                console.error(error);
+                console.error("");
+                console.error(`Unhandled error trying to authorize 'Greeter.greet'\n`);
+                throw error;
+            }
+        }
+        else if (anyRequest.is(greeter_pb.SetAdjectiveRequest)) {
+            const unpackedRequest = new greeter_pb.SetAdjectiveRequest();
+            anyRequest.unpackTo(unpackedRequest);
+            try {
+                // NOTE: we are setting `state` within `try` so that any
+                // possible validation errors if using Zod are logged in
+                // the `catch`.
+                const state = call.state && GreeterFromBinary(call.state, 
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) });
+                const request = GreeterSetAdjectiveRequestFromProtobufShape(unpackedRequest);
+                return protobuf_es.Any.pack(await this.authorize(call.methodName, context, state, request)).toBinary();
+            }
+            catch (e) {
+                // Ensure we have an `Error` and then `console.error()` it so
+                // that developers see a stack trace of what is going on.
+                const error = ensureError(e);
+                // Write an empty message which includes a newline to make it
+                // easier to identify the stack trace.
+                console.error("");
+                console.error(error);
+                console.error("");
+                console.error(`Unhandled error trying to authorize 'Greeter.setAdjective'\n`);
+                throw error;
+            }
+        }
+        else if (anyRequest.is(greeter_pb.SetAdjectiveRequest)) {
+            const unpackedRequest = new greeter_pb.SetAdjectiveRequest();
+            anyRequest.unpackTo(unpackedRequest);
+            try {
+                // NOTE: we are setting `state` within `try` so that any
+                // possible validation errors if using Zod are logged in
+                // the `catch`.
+                const state = call.state && GreeterFromBinary(call.state, 
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) });
+                const request = GreeterTransactionSetAdjectiveRequestFromProtobufShape(unpackedRequest);
+                return protobuf_es.Any.pack(await this.authorize(call.methodName, context, state, request)).toBinary();
+            }
+            catch (e) {
+                // Ensure we have an `Error` and then `console.error()` it so
+                // that developers see a stack trace of what is going on.
+                const error = ensureError(e);
+                // Write an empty message which includes a newline to make it
+                // easier to identify the stack trace.
+                console.error("");
+                console.error(error);
+                console.error("");
+                console.error(`Unhandled error trying to authorize 'Greeter.transactionSetAdjective'\n`);
+                throw error;
+            }
+        }
+        else if (anyRequest.is(Empty)) {
+            const unpackedRequest = new Empty();
+            anyRequest.unpackTo(unpackedRequest);
+            try {
+                // NOTE: we are setting `state` within `try` so that any
+                // possible validation errors if using Zod are logged in
+                // the `catch`.
+                const state = call.state && GreeterFromBinary(call.state, 
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) });
+                const request = GreeterTryToConstructContextRequestFromProtobufShape(unpackedRequest);
+                return protobuf_es.Any.pack(await this.authorize(call.methodName, context, state, request)).toBinary();
+            }
+            catch (e) {
+                // Ensure we have an `Error` and then `console.error()` it so
+                // that developers see a stack trace of what is going on.
+                const error = ensureError(e);
+                // Write an empty message which includes a newline to make it
+                // easier to identify the stack trace.
+                console.error("");
+                console.error(error);
+                console.error("");
+                console.error(`Unhandled error trying to authorize 'Greeter.tryToConstructContext'\n`);
+                throw error;
+            }
+        }
+        else if (anyRequest.is(Empty)) {
+            const unpackedRequest = new Empty();
+            anyRequest.unpackTo(unpackedRequest);
+            try {
+                // NOTE: we are setting `state` within `try` so that any
+                // possible validation errors if using Zod are logged in
+                // the `catch`.
+                const state = call.state && GreeterFromBinary(call.state, 
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) });
+                const request = GreeterTryToConstructExternalContextRequestFromProtobufShape(unpackedRequest);
+                return protobuf_es.Any.pack(await this.authorize(call.methodName, context, state, request)).toBinary();
+            }
+            catch (e) {
+                // Ensure we have an `Error` and then `console.error()` it so
+                // that developers see a stack trace of what is going on.
+                const error = ensureError(e);
+                // Write an empty message which includes a newline to make it
+                // easier to identify the stack trace.
+                console.error("");
+                console.error(error);
+                console.error("");
+                console.error(`Unhandled error trying to authorize 'Greeter.tryToConstructExternalContext'\n`);
+                throw error;
+            }
+        }
+        else if (anyRequest.is(greeter_pb.TestLongRunningFetchRequest)) {
+            const unpackedRequest = new greeter_pb.TestLongRunningFetchRequest();
+            anyRequest.unpackTo(unpackedRequest);
+            try {
+                // NOTE: we are setting `state` within `try` so that any
+                // possible validation errors if using Zod are logged in
+                // the `catch`.
+                const state = call.state && GreeterFromBinary(call.state, 
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) });
+                const request = GreeterTestLongRunningFetchRequestFromProtobufShape(unpackedRequest);
+                return protobuf_es.Any.pack(await this.authorize(call.methodName, context, state, request)).toBinary();
+            }
+            catch (e) {
+                // Ensure we have an `Error` and then `console.error()` it so
+                // that developers see a stack trace of what is going on.
+                const error = ensureError(e);
+                // Write an empty message which includes a newline to make it
+                // easier to identify the stack trace.
+                console.error("");
+                console.error(error);
+                console.error("");
+                console.error(`Unhandled error trying to authorize 'Greeter.testLongRunningFetch'\n`);
+                throw error;
+            }
+        }
+        else if (anyRequest.is(Empty)) {
+            const unpackedRequest = new Empty();
+            anyRequest.unpackTo(unpackedRequest);
+            try {
+                // NOTE: we are setting `state` within `try` so that any
+                // possible validation errors if using Zod are logged in
+                // the `catch`.
+                const state = call.state && GreeterFromBinary(call.state, 
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) });
+                const request = GreeterTestLongRunningWriterRequestFromProtobufShape(unpackedRequest);
+                return protobuf_es.Any.pack(await this.authorize(call.methodName, context, state, request)).toBinary();
+            }
+            catch (e) {
+                // Ensure we have an `Error` and then `console.error()` it so
+                // that developers see a stack trace of what is going on.
+                const error = ensureError(e);
+                // Write an empty message which includes a newline to make it
+                // easier to identify the stack trace.
+                console.error("");
+                console.error(error);
+                console.error("");
+                console.error(`Unhandled error trying to authorize 'Greeter.testLongRunningWriter'\n`);
+                throw error;
+            }
+        }
+        else if (anyRequest.is(greeter_pb.GetWholeStateRequest)) {
+            const unpackedRequest = new greeter_pb.GetWholeStateRequest();
+            anyRequest.unpackTo(unpackedRequest);
+            try {
+                // NOTE: we are setting `state` within `try` so that any
+                // possible validation errors if using Zod are logged in
+                // the `catch`.
+                const state = call.state && GreeterFromBinary(call.state, 
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) });
+                const request = GreeterGetWholeStateRequestFromProtobufShape(unpackedRequest);
+                return protobuf_es.Any.pack(await this.authorize(call.methodName, context, state, request)).toBinary();
+            }
+            catch (e) {
+                // Ensure we have an `Error` and then `console.error()` it so
+                // that developers see a stack trace of what is going on.
+                const error = ensureError(e);
+                // Write an empty message which includes a newline to make it
+                // easier to identify the stack trace.
+                console.error("");
+                console.error(error);
+                console.error("");
+                console.error(`Unhandled error trying to authorize 'Greeter.getWholeState'\n`);
+                throw error;
+            }
+        }
+        else if (anyRequest.is(Empty)) {
+            const unpackedRequest = new Empty();
+            anyRequest.unpackTo(unpackedRequest);
+            try {
+                // NOTE: we are setting `state` within `try` so that any
+                // possible validation errors if using Zod are logged in
+                // the `catch`.
+                const state = call.state && GreeterFromBinary(call.state, 
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) });
+                const request = GreeterFailWithExceptionRequestFromProtobufShape(unpackedRequest);
+                return protobuf_es.Any.pack(await this.authorize(call.methodName, context, state, request)).toBinary();
+            }
+            catch (e) {
+                // Ensure we have an `Error` and then `console.error()` it so
+                // that developers see a stack trace of what is going on.
+                const error = ensureError(e);
+                // Write an empty message which includes a newline to make it
+                // easier to identify the stack trace.
+                console.error("");
+                console.error(error);
+                console.error("");
+                console.error(`Unhandled error trying to authorize 'Greeter.failWithException'\n`);
+                throw error;
+            }
+        }
+        else if (anyRequest.is(Empty)) {
+            const unpackedRequest = new Empty();
+            anyRequest.unpackTo(unpackedRequest);
+            try {
+                // NOTE: we are setting `state` within `try` so that any
+                // possible validation errors if using Zod are logged in
+                // the `catch`.
+                const state = call.state && GreeterFromBinary(call.state, 
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) });
+                const request = GreeterFailWithAbortedRequestFromProtobufShape(unpackedRequest);
+                return protobuf_es.Any.pack(await this.authorize(call.methodName, context, state, request)).toBinary();
+            }
+            catch (e) {
+                // Ensure we have an `Error` and then `console.error()` it so
+                // that developers see a stack trace of what is going on.
+                const error = ensureError(e);
+                // Write an empty message which includes a newline to make it
+                // easier to identify the stack trace.
+                console.error("");
+                console.error(error);
+                console.error("");
+                console.error(`Unhandled error trying to authorize 'Greeter.failWithAborted'\n`);
+                throw error;
+            }
+        }
+        else if (anyRequest.is(Empty)) {
+            const unpackedRequest = new Empty();
+            anyRequest.unpackTo(unpackedRequest);
+            try {
+                // NOTE: we are setting `state` within `try` so that any
+                // possible validation errors if using Zod are logged in
+                // the `catch`.
+                const state = call.state && GreeterFromBinary(call.state, 
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) });
+                const request = GreeterWorkflowRequestFromProtobufShape(unpackedRequest);
+                return protobuf_es.Any.pack(await this.authorize(call.methodName, context, state, request)).toBinary();
+            }
+            catch (e) {
+                // Ensure we have an `Error` and then `console.error()` it so
+                // that developers see a stack trace of what is going on.
+                const error = ensureError(e);
+                // Write an empty message which includes a newline to make it
+                // easier to identify the stack trace.
+                console.error("");
+                console.error(error);
+                console.error("");
+                console.error(`Unhandled error trying to authorize 'Greeter.workflow'\n`);
+                throw error;
+            }
+        }
+        else if (anyRequest.is(greeter_pb.DangerousFieldsRequest)) {
+            const unpackedRequest = new greeter_pb.DangerousFieldsRequest();
+            anyRequest.unpackTo(unpackedRequest);
+            try {
+                // NOTE: we are setting `state` within `try` so that any
+                // possible validation errors if using Zod are logged in
+                // the `catch`.
+                const state = call.state && GreeterFromBinary(call.state, 
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) });
+                const request = GreeterDangerousFieldsRequestFromProtobufShape(unpackedRequest);
+                return protobuf_es.Any.pack(await this.authorize(call.methodName, context, state, request)).toBinary();
+            }
+            catch (e) {
+                // Ensure we have an `Error` and then `console.error()` it so
+                // that developers see a stack trace of what is going on.
+                const error = ensureError(e);
+                // Write an empty message which includes a newline to make it
+                // easier to identify the stack trace.
+                console.error("");
+                console.error(error);
+                console.error("");
+                console.error(`Unhandled error trying to authorize 'Greeter.dangerousFields'\n`);
+                throw error;
+            }
+        }
+        else if (anyRequest.is(greeter_pb.StoreRecursiveMessageRequest)) {
+            const unpackedRequest = new greeter_pb.StoreRecursiveMessageRequest();
+            anyRequest.unpackTo(unpackedRequest);
+            try {
+                // NOTE: we are setting `state` within `try` so that any
+                // possible validation errors if using Zod are logged in
+                // the `catch`.
+                const state = call.state && GreeterFromBinary(call.state, 
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) });
+                const request = GreeterStoreRecursiveMessageRequestFromProtobufShape(unpackedRequest);
+                return protobuf_es.Any.pack(await this.authorize(call.methodName, context, state, request)).toBinary();
+            }
+            catch (e) {
+                // Ensure we have an `Error` and then `console.error()` it so
+                // that developers see a stack trace of what is going on.
+                const error = ensureError(e);
+                // Write an empty message which includes a newline to make it
+                // easier to identify the stack trace.
+                console.error("");
+                console.error(error);
+                console.error("");
+                console.error(`Unhandled error trying to authorize 'Greeter.storeRecursiveMessage'\n`);
+                throw error;
+            }
+        }
+        else if (anyRequest.is(greeter_pb.ReadRecursiveMessageRequest)) {
+            const unpackedRequest = new greeter_pb.ReadRecursiveMessageRequest();
+            anyRequest.unpackTo(unpackedRequest);
+            try {
+                // NOTE: we are setting `state` within `try` so that any
+                // possible validation errors if using Zod are logged in
+                // the `catch`.
+                const state = call.state && GreeterFromBinary(call.state, 
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) });
+                const request = GreeterReadRecursiveMessageRequestFromProtobufShape(unpackedRequest);
+                return protobuf_es.Any.pack(await this.authorize(call.methodName, context, state, request)).toBinary();
+            }
+            catch (e) {
+                // Ensure we have an `Error` and then `console.error()` it so
+                // that developers see a stack trace of what is going on.
+                const error = ensureError(e);
+                // Write an empty message which includes a newline to make it
+                // easier to identify the stack trace.
+                console.error("");
+                console.error(error);
+                console.error("");
+                console.error(`Unhandled error trying to authorize 'Greeter.readRecursiveMessage'\n`);
+                throw error;
+            }
+        }
+        else if (anyRequest.is(greeter_pb.ConstructAndStoreRecursiveMessageRequest)) {
+            const unpackedRequest = new greeter_pb.ConstructAndStoreRecursiveMessageRequest();
+            anyRequest.unpackTo(unpackedRequest);
+            try {
+                // NOTE: we are setting `state` within `try` so that any
+                // possible validation errors if using Zod are logged in
+                // the `catch`.
+                const state = call.state && GreeterFromBinary(call.state, 
+                // Don't validate if we're constructing because non-optional
+                // fields that this method might be setting will be invalid.
+                { validate: !(statesBeingConstructed.has(context.stateId)) });
+                const request = GreeterConstructAndStoreRecursiveMessageRequestFromProtobufShape(unpackedRequest);
+                return protobuf_es.Any.pack(await this.authorize(call.methodName, context, state, request)).toBinary();
+            }
+            catch (e) {
+                // Ensure we have an `Error` and then `console.error()` it so
+                // that developers see a stack trace of what is going on.
+                const error = ensureError(e);
+                // Write an empty message which includes a newline to make it
+                // easier to identify the stack trace.
+                console.error("");
+                console.error(error);
+                console.error("");
+                console.error(`Unhandled error trying to authorize 'Greeter.constructAndStoreRecursiveMessage'\n`);
+                throw error;
+            }
+        }
+        else {
+            throw new Error(`Unexpected type for ${request}: ${anyRequest.typeUrl}.`);
+        }
+    }
+    ;
     async authorize(methodName, context, state, request) {
         if (methodName == 'tests.reboot.GreeterMethods.Create') {
             return await this.create(context, request);

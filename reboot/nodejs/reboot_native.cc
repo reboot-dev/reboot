@@ -1546,6 +1546,7 @@ struct TypeScriptLibraryDetails {
 struct PythonNativeLibraryDetails {
   std::string py_library_module;
   std::string py_library_function;
+  std::optional<NapiSafeObjectReference> js_authorizer;
 };
 
 using LibraryDetails =
@@ -1564,9 +1565,17 @@ std::vector<std::shared_ptr<LibraryDetails>> make_library_details(
       std::string function = js_library.Get("nativeLibraryFunction")
                                  .As<Napi::String>()
                                  .Utf8Value();
+
+      // Get authorizer.
+      std::optional<NapiSafeObjectReference> js_authorizer;
+      if (!js_library.Get("authorizer").IsUndefined()) {
+        js_authorizer = NapiSafeObjectReference(
+            js_library.Get("authorizer").As<Napi::Object>());
+      }
+
       library_details.push_back(
           std::make_shared<LibraryDetails>(
-              PythonNativeLibraryDetails{module, function}));
+              PythonNativeLibraryDetails{module, function, js_authorizer}));
     } else if (
         !js_library.Get("name").IsUndefined()
         && !js_library.Get("servicers").IsUndefined()) {
@@ -1697,11 +1706,20 @@ py::list make_py_libraries(
     } else if (
         auto python_details =
             std::get_if<PythonNativeLibraryDetails>(details.get())) {
-      // TODO: This just calls the function, but doesn't pass any arguments
-      // from Typescript.
-      py_libraries.append(
-          py::module::import(python_details->py_library_module.c_str())
-              .attr(python_details->py_library_function.c_str())());
+      // Call the library() function with `authorizer` if one is provided.
+      py::object py_library;
+      if (python_details->js_authorizer.has_value()) {
+        py_library =
+            py::module::import(python_details->py_library_module.c_str())
+                .attr(python_details->py_library_function.c_str())(
+                    "authorizer"_a =
+                        make_py_authorizer(*python_details->js_authorizer));
+      } else {
+        py_library =
+            py::module::import(python_details->py_library_module.c_str())
+                .attr(python_details->py_library_function.c_str())();
+      }
+      py_libraries.append(py_library);
     }
   }
 
@@ -1929,8 +1947,8 @@ Napi::Value Reboot_stop(const Napi::CallbackInfo& info) {
   return js_promise;
 }
 
-// NOTE: We block on a promise here, so this method should not be called outside
-// of tests.
+// NOTE: We block on a promise here, so this method should not be called
+// outside of tests.
 Napi::Value Reboot_url(const Napi::CallbackInfo& info) {
   // NOTE: we immediately get a safe reference to the `Napi::External`
   // so that Node will not garbage collect it and the `py::object*` we

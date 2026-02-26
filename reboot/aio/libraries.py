@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from reboot.aio.external import InitializeContext
 from reboot.aio.servicers import Servicer
-from typing import ClassVar
+from typing import ClassVar, Sequence
 
 
 class AbstractLibrary(ABC):
@@ -13,14 +13,14 @@ class AbstractLibrary(ABC):
     """
     name: ClassVar[str]
 
-    def requirements(self) -> list[str]:
+    def requirements(self) -> Sequence[str]:
         """
         Return a list of names of any additional libraries this library requires.
         """
         return []
 
     @abstractmethod
-    def servicers(self) -> list[type[Servicer]]:
+    def servicers(self) -> Sequence[type[Servicer]]:
         """
         Return the list of servicers for this library.
         """
