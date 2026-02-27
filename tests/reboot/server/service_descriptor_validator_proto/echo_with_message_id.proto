@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/server/echo_shared_messages.proto";
+
+package tests.reboot.server.service_descriptor_validator_proto;
+
+message Message {
+  int64 message_id = 1;
+  string message = 2;
+  EmptyMessage timestamp = 3;
+}
+
+message Echo {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated Message messages = 1;
+}
+
+service EchoMethods {
+  // Two RPCs, one writer and one reader.
+
+  rpc Reply(SingleStringField) returns (SingleStringField) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  rpc Replay(EmptyMessage) returns (RepeatedStringField) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+}

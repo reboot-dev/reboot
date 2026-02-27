@@ -1,7 +1,9 @@
 import importlib.metadata
+from enum import Enum
 from google.protobuf.descriptor import (
     Descriptor,
     FieldDescriptor,
+    FileDescriptor,
     MethodDescriptor,
     ServiceDescriptor,
 )
@@ -12,10 +14,23 @@ from google.protobuf.unknown_fields import UnknownFieldSet
 from packaging import version
 from rbt.v1alpha1 import options_pb2
 from reboot.aio.exceptions import InputError
-from reboot.options import get_method_options, is_reboot_state
+from reboot.api import snake_to_camel, to_snake_case
+from reboot.options import (
+    get_file_options,
+    get_method_options,
+    is_reboot_state,
+)
 from typing import Any, Callable, Iterable, Optional
 
 PathDiff = tuple[str, Any, Any]
+
+
+class SchemaType(Enum):
+    """The schema language used to define a Reboot API."""
+    PROTO = 'proto'
+    PYDANTIC = 'pydantic'
+    ZOD = 'zod'
+
 
 DESCRIPTOR_OPTION_TO_STRING = {
     # The constants are defined in google/protobuf/descriptor.proto
@@ -57,6 +72,112 @@ DESCRIPTOR_OPTION_TO_STRING = {
                 "repeated",
         },
 }
+
+
+def _get_schema_type(file: FileDescriptor) -> SchemaType:
+    """Return the `SchemaType` for a file based on its file options."""
+    file_options = get_file_options(file)
+    if file_options.pydantic:
+        return SchemaType.PYDANTIC
+    if file_options.zod:
+        return SchemaType.ZOD
+    return SchemaType.PROTO
+
+
+def _schema_kind_label(schema_type: SchemaType) -> str:
+    """Return the user-facing label for state-level errors.
+
+    When we generate protobuf schema from either Pydantic or Zod, we
+    generate a protobuf message to represent the state of the servicer
+    under different name, and for states the name is determined by the
+    specified "servicer type", so we can't properly reference the
+    state class (if exists, in Zod it could be constructed inplace),
+    and we use "the state of servicer type" as a generic label for
+    states in both Pydantic and Zod.
+    """
+    if schema_type != SchemaType.PROTO:
+        return 'servicer type'
+    return 'message'
+
+
+def _user_field_name(field_name: str, schema_type: SchemaType) -> str:
+    """Convert a proto field name to the user's native name.
+
+    Zod users see `camelCase`; Pydantic and proto users see the
+    `snake_case` name (which is the same for Pydantic and Protobuf field
+    names).
+    """
+    if schema_type == SchemaType.ZOD:
+        return snake_to_camel(field_name)
+    return field_name
+
+
+def _user_method_name(proto_method_name: str, schema_type: SchemaType) -> str:
+    """Convert a `PascalCase` proto RPC name to the user's native name.
+
+    Pydantic users define methods as `snake_case`, Zod as `camelCase`.
+    """
+    if schema_type == SchemaType.ZOD:
+        return snake_to_camel(to_snake_case(proto_method_name))
+    if schema_type == SchemaType.PYDANTIC:
+        return to_snake_case(proto_method_name)
+    return proto_method_name
+
+
+def _state_name_from_service(service_full_name: str) -> str:
+    """Extract the state name from a service full name.
+
+    E.g., `counter.v1.CounterMethods` -> `Counter`.
+    """
+    local = service_full_name.split('.')[-1]
+    if local.endswith('Methods'):
+        return local[:-len('Methods')]
+    if local.endswith('Interface'):  # Legacy variant.
+        return local[:-len('Interface')]
+    return local
+
+
+def _format_schema_ref(
+    name: str,
+    schema_type: SchemaType,
+    file_options: options_pb2.FileOptions,
+) -> str:
+    """Return a formatted schema reference for use in error messages.
+
+    This method should not be called for protobuf schemas.
+
+    For Pydantic: `module.Name`
+    For Zod: `Name` (from `path/to/api.ts`)
+    """
+    assert schema_type != SchemaType.PROTO
+    if schema_type == SchemaType.PYDANTIC:
+        return f'`{file_options.pydantic}.{name}`'
+    return f'`{name}` (from `{file_options.zod}`)'
+
+
+def _user_visible_schema_ref(
+    descriptor: Descriptor,
+    schema_type: SchemaType,
+) -> str:
+    """Return a formatted schema reference for a message descriptor.
+    This method should not be called for protobuf schemas.
+    """
+    assert schema_type != SchemaType.PROTO
+    file_options = get_file_options(descriptor.file)
+    return _format_schema_ref(descriptor.name, schema_type, file_options)
+
+
+def _user_visible_state_ref_from_service(
+    service: ServiceDescriptor,
+    schema_type: SchemaType,
+) -> str:
+    """Return a formatted state reference derived from a service descriptor.
+    This method should not be called for protobuf schemas.
+    """
+    assert schema_type != SchemaType.PROTO
+    state_name = _state_name_from_service(service.full_name)
+    file_options = get_file_options(service.file)
+    return _format_schema_ref(state_name, schema_type, file_options)
 
 
 def dict_diff(
@@ -230,19 +351,31 @@ def validate_descriptor_sets_are_backwards_compatible(
     )
     for state_name, original_state_descriptor in original_states_by_name.items(
     ):
+        schema_type = _get_schema_type(original_state_descriptor.file)
         try:
             updated_state_descriptor = updated_states_by_name[state_name]
         except KeyError:
             # The whole state was deleted.
-            errors.append(f'State `{state_name}` was deleted')
+            if schema_type != SchemaType.PROTO:
+                kind_label = _schema_kind_label(schema_type)
+                schema_ref = _user_visible_schema_ref(
+                    original_state_descriptor, schema_type
+                )
+                errors.append(f'{kind_label} {schema_ref} was deleted')
+            else:
+                errors.append(f'State `{state_name}` was deleted')
             continue
 
         errors += _validate_methods_are_backwards_compatible(
-            original_state_descriptor, updated_state_descriptor
+            original_state_descriptor,
+            updated_state_descriptor,
+            schema_type,
         )
 
         errors += _validate_state_is_backwards_compatible(
-            original_state_descriptor, updated_state_descriptor
+            original_state_descriptor,
+            updated_state_descriptor,
+            schema_type,
         )
 
     if len(errors) > 0:
@@ -290,6 +423,7 @@ def _get_all_reboot_states_by_name(
 def _validate_methods_are_backwards_compatible(
     original_state: Descriptor,
     updated_state: Descriptor,
+    schema_type: SchemaType,
 ) -> list[ProtoValidationErrorMessage]:
     """Validate the given updated Service against the original version to ensure
     that no relevant RPCs have backwards-incompatible changes in the updated
@@ -330,26 +464,44 @@ def _validate_methods_are_backwards_compatible(
         try:
             updated_method = updated.methods_by_name[method.name]
         except KeyError:
-            exceptions.append(
-                f'Method `{original.full_name}.{method.name}` was deleted'
-            )
+            if schema_type != SchemaType.PROTO:
+                method_label = _user_method_name(method.name, schema_type)
+                state_ref = _user_visible_state_ref_from_service(
+                    original, schema_type
+                )
+                kind_label = _schema_kind_label(schema_type)
+                exceptions.append(
+                    f'Method `{method_label}` was deleted from '
+                    f'{kind_label} {state_ref}'
+                )
+            else:
+                exceptions.append(
+                    f'Method `{original.full_name}.{method.name}` was deleted'
+                )
             continue
 
         # Run several validations and collect Exceptions from each.
         exceptions += _validate_reboot_options(
-            original.full_name, method, updated_method
+            original,
+            method,
+            updated_method,
+            schema_type,
         )
         exceptions += _validate_request_response(
-            original.full_name, method, updated_method
+            original.full_name,
+            method,
+            updated_method,
+            schema_type,
         )
 
     return exceptions
 
 
 def _validate_reboot_options(
-    service_name: str,
+    service: ServiceDescriptor,
     original_method: MethodDescriptor,
     updated_method: MethodDescriptor,
+    schema_type: SchemaType,
 ) -> list[ProtoValidationErrorMessage]:
     """Compare the Reboot options for the original and updated methods to be
     sure there are no changes.
@@ -373,9 +525,23 @@ def _validate_reboot_options(
     if len(illegal_diffs) > 0:
         # TODO: Consider rendering each `illegal_diff`, rather than the entire
         #       structure.
+        if schema_type != SchemaType.PROTO:
+            method_label = _user_method_name(original_method.name, schema_type)
+            state_ref = _user_visible_state_ref_from_service(
+                service, schema_type
+            )
+            kind_label = _schema_kind_label(schema_type)
+            method_label = (
+                f'method `{method_label}` of '
+                f'{kind_label} {state_ref}'
+            )
+        else:
+            method_label = (
+                f'method `{service.full_name}.{original_method.name}`'
+            )
+
         return [
-            f'Reboot options for method `{service_name}.{original_method.name}` '
-            'updated from...\n'
+            f'Reboot options for {method_label} updated from...\n'
             '```\n'
             f'{str(original_reboot_options).strip()}\n'
             '```\n'
@@ -391,6 +557,7 @@ def _validate_request_response(
     service_name: str,
     original_method: MethodDescriptor,
     updated_method: MethodDescriptor,
+    schema_type: SchemaType,
 ) -> list[ProtoValidationErrorMessage]:
     """Check that the two MethodDescriptors have the same request and response
     types with the same structures.
@@ -401,10 +568,12 @@ def _validate_request_response(
         original_method.input_type,
         updated_method.input_type,
         f"{service_name}.{original_method.name}",
+        schema_type=schema_type,
     ) + _compare_messages(
         original_method.output_type,
         updated_method.output_type,
         f"{service_name}.{original_method.name}",
+        schema_type=schema_type,
     )
 
 
@@ -413,6 +582,7 @@ def _compare_reserved_field_numbers(
     updated_ranges: Iterable[DescriptorProto.ReservedRange],
     original_message_name: str,
     where_message: str,
+    schema_type: SchemaType,
 ) -> list[ProtoValidationErrorMessage]:
     """
     Compare the reserved field numbers in the two given messages. If the updated
@@ -447,6 +617,10 @@ def _compare_reserved_field_numbers(
                 missing_end_inclusive = min(
                     missing_end_inclusive, updated_range.start - 1
                 )
+
+            # No reserved fields are applicable for non-protobuf schemas
+            # right now.
+            assert schema_type == SchemaType.PROTO
             exceptions.append(
                 f'Field numbers {missing_start} to '
                 f'{missing_end_inclusive} are no longer `reserved` in '
@@ -498,6 +672,7 @@ def _compare_messages(
     # TODO(rjh): make sure the `source_name` is used in all of the error
     # messages produced by this function.
     source_name: str,
+    schema_type: SchemaType,
     processed_field_messages_names: list[str] = [],
 ) -> list[ProtoValidationErrorMessage]:
     """Check that the two messages have the same structure.
@@ -516,9 +691,20 @@ def _compare_messages(
     # What do we call the message(s) we're comparing? If it didn't change names,
     # it's easy. But if it changed names, we should hint the user that any
     # errors are possibly due to the change from one message type to another.
+    if schema_type == SchemaType.PROTO:
+        kind_label = 'message'
+    elif is_reboot_state(original_message):
+        kind_label = 'the state of servicer type'
+    elif schema_type == SchemaType.PYDANTIC:
+        kind_label = 'Pydantic model'
+    else:
+        assert schema_type == SchemaType.ZOD
+        kind_label = 'Zod schema'
     where_message = f'in `{source_name}`'
     if original_message.name != updated_message.name:
-        where_message = f'changed to `{updated_message.name}` {where_message}'
+        where_message = (
+            f'changed to `{updated_message.name}` {where_message}'
+        )
 
     # Check that none of the reserved fields in the original message were
     # removed.
@@ -528,9 +714,14 @@ def _compare_messages(
                         updated_message_proto.reserved_range,
                         original_message_proto.name,
                         where_message,
+                        schema_type,
                     )
     for reserved_name in original_message_proto.reserved_name:
         if reserved_name not in updated_message_proto.reserved_name:
+            field_label = _user_field_name(reserved_name, schema_type)
+            # Reserved field names are only applicable for protobuf
+            # schemas right now.
+            assert schema_type == SchemaType.PROTO
             exceptions.append(
                 f'Field name `{reserved_name}` is no longer `reserved` in '
                 f'message `{original_message.name}` ({where_message}).'
@@ -543,27 +734,40 @@ def _compare_messages(
         except KeyError:
             # This field has been deleted. That's a backwards compatible change,
             # but ONLY if the field number and name have now been `reserved`.
-            field_number_reserved = False
-            for reserved_range in updated_message_proto.reserved_range:
-                field_number_reserved |= (
-                    reserved_range.start <= field_number and
-                    reserved_range.end > field_number
+            field_label = _user_field_name(original_field.name, schema_type)
+            if schema_type != SchemaType.PROTO:
+                schema_ref = _user_visible_schema_ref(
+                    original_message, schema_type
                 )
-            if not field_number_reserved:
                 exceptions.append(
-                    f'Field `{original_field.name}` was deleted from '
-                    f'message `{original_message.name}` ({where_message}), '
-                    'and its field number was not reserved. See: '
-                    'https://protobuf.dev/programming-guides/proto3/#reserved'
+                    f'Field `{field_label}` was removed from {kind_label} '
+                    f'{schema_ref}. '
+                    'Removing fields is a backwards-incompatible change. '
+                    'To continue, restore the field or use `expunge` to '
+                    'clear all existing state data.'
                 )
+            else:
+                field_number_reserved = False
+                for reserved_range in updated_message_proto.reserved_range:
+                    field_number_reserved |= (
+                        reserved_range.start <= field_number and
+                        reserved_range.end > field_number
+                    )
+                if not field_number_reserved:
+                    exceptions.append(
+                        f'Field `{original_field.name}` was deleted from '
+                        f'message `{original_message.name}` ({where_message}), '
+                        'and its field number was not reserved. See: '
+                        'https://protobuf.dev/programming-guides/proto3/#reserved'
+                    )
 
-            if original_field.name not in updated_message_proto.reserved_name:
-                exceptions.append(
-                    f'Field `{original_field.name}` was deleted from '
-                    f'message `{original_message.name}` ({where_message}), '
-                    'and its field name was not reserved. See: '
-                    'https://protobuf.dev/programming-guides/proto3/#reserved'
-                )
+                if original_field.name not in updated_message_proto.reserved_name:
+                    exceptions.append(
+                        f'Field `{original_field.name}` was deleted from '
+                        f'message `{original_message.name}` ({where_message}), '
+                        'and its field name was not reserved. See: '
+                        'https://protobuf.dev/programming-guides/proto3/#reserved'
+                    )
 
             # Since this field doesn't exist anymore, there's nothing more to
             # validate about it. On to the next.
@@ -593,10 +797,13 @@ def _compare_messages(
             ):
                 continue
 
-            hint = (
-                f'(relative to original message `{original_message.name}`) '
-                if original_message.name != updated_message.name else ''
-            )
+            if original_message.name != updated_message.name:
+                hint = (
+                    f'(relative to original {kind_label} '
+                    f'`{original_message.name}`) '
+                )
+            else:
+                hint = ''
 
             original_value_str = DESCRIPTOR_OPTION_TO_STRING[
                 property_name].get(original_value, str(original_value))
@@ -604,8 +811,16 @@ def _compare_messages(
                 updated_value, str(updated_value)
             )
 
+            field_label = _user_field_name(updated_field.name, schema_type)
+            if schema_type != SchemaType.PROTO:
+                schema_ref = _user_visible_schema_ref(
+                    updated_message, schema_type
+                )
+            else:
+                schema_ref = f'`{updated_message.name}`'
             error_message = (
-                f'Field `{updated_field.name}` in message `{updated_message.name}` '
+                f'Field `{field_label}` in {kind_label} '
+                f'{schema_ref} '
                 f'has switched {property_name} '
                 f'{hint}'
                 f'from `{original_value_str}` to `{updated_value_str}`'
@@ -639,6 +854,7 @@ def _compare_messages(
                 original_field.message_type,
                 updated_field.message_type,
                 source_name,
+                schema_type,
                 processed_field_messages_names,
             )
 
@@ -648,12 +864,14 @@ def _compare_messages(
 def _validate_state_is_backwards_compatible(
     original: Descriptor,
     updated: Descriptor,
+    schema_type: SchemaType,
 ) -> list[ProtoValidationErrorMessage]:
     try:
         return _compare_messages(
             original,
             updated,
             original.name,
+            schema_type=schema_type,
         )
     except ValueError as e:
         return [str(e)]

@@ -85,9 +85,9 @@ py_library(
         requirement("protobuf"),
         "//reboot:helpers_py",
         "//reboot/aio:tests_py",
-        "//tests/reboot/server:echo_empty_reserved_input_type_py_proto",
-        "//tests/reboot/server:echo_original_py_proto",
-        "//tests/reboot/server:echo_replay_deleted_py_proto",
+        "//tests/reboot/server/service_descriptor_validator_proto:echo_empty_reserved_input_type_py_proto",
+        "//tests/reboot/server/service_descriptor_validator_proto:echo_original_py_proto",
+        "//tests/reboot/server/service_descriptor_validator_proto:echo_replay_deleted_py_proto",
     ],
 )
 

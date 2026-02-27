@@ -149,6 +149,7 @@ py_library(
     deps = [
         requirement("packaging"),
         requirement("protobuf"),
+        "//reboot:api_py",
         "//reboot:options_py",
         "//reboot/aio:exceptions_py",
     ],
