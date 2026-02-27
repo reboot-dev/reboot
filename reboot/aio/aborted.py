@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import grpc
+import logging
 import rbt.v1alpha1.errors_pb2
 from google.protobuf import any_pb2, text_format
 from google.protobuf.message import Message
@@ -8,6 +9,8 @@ from google.rpc import code_pb2, status_pb2
 from reboot.aio.types import assert_type
 from reboot.api import Model
 from typing import Optional, Sequence, TypeAlias, TypeVar, Union
+
+logger = logging.getLogger(__name__)
 
 
 def is_retryable_status_code(code: grpc.StatusCode):
@@ -314,6 +317,23 @@ class Aborted(Exception):
         cls,
         aio_rpc_error: grpc.aio.AioRpcError,
     ) -> GrpcError:
+        if aio_rpc_error.code() == grpc.StatusCode.UNIMPLEMENTED:
+            # Log detailed diagnostic info to help trace the
+            # source of UNIMPLEMENTED errors. The
+            # `debug_error_string` contains the peer address
+            # (which tells us if the error came from Envoy or
+            # the backend server) and raw C-core error info.
+            logger.warning(
+                "Received UNIMPLEMENTED gRPC error: "
+                "details=%r, "
+                "debug_error_string=%r, "
+                "trailing_metadata=%r, "
+                "initial_metadata=%r",
+                aio_rpc_error.details(),
+                aio_rpc_error.debug_error_string(),
+                aio_rpc_error.trailing_metadata(),
+                aio_rpc_error.initial_metadata(),
+            )
         if aio_rpc_error.code() == grpc.StatusCode.CANCELLED:
             return rbt.v1alpha1.errors_pb2.Cancelled()
 

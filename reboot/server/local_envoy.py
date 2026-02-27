@@ -4,6 +4,7 @@ import asyncio
 import grpc
 import grpc.aio
 import json
+import logging
 import math
 import os
 import reboot.aio.tracing
@@ -29,6 +30,8 @@ from reboot.ssl.localhost import (
     LOCALHOST_KEY,
 )
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 CONFIG_FILENAME = "envoy.yaml"
 CERTIFICATE_FILENAME = "cert.pem"
@@ -139,6 +142,12 @@ class LocalEnvoy(ABC):
 
     @reboot.aio.tracing.function_span()
     async def set_servers(self, servers: list[ServerInfo]):
+        server_ids = [s.server_id for s in servers]
+        logger.debug(
+            "Updating Envoy xDS config with %d server(s): %s",
+            len(servers),
+            server_ids,
+        )
         await self._servicer.set_config(
             clusters=envoy_config.clusters(
                 application_id=self._application_id,
@@ -169,6 +178,7 @@ class LocalEnvoy(ABC):
             # the architecture thus making waiting unnecessary.
             wait_until_at_least_one_client=True,
         )
+        logger.debug("Envoy xDS config acknowledged by Envoy.")
 
     def _get_listeners_from_servers(
         self,
