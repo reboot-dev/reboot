@@ -19,12 +19,11 @@ enum Status {
 //////////////////////////////////////////////////////////////////////
 
 enum ApplicationSize {
-  APPLICATION_SIZE_UNSPECIFIED = 0;
-  XSMALL = 1;
-  SMALL = 2;
-  MEDIUM = 3;
-  LARGE = 4;
-  XLARGE = 5;
+  XSMALL = 0;
+  SMALL = 1;
+  MEDIUM = 2;
+  LARGE = 3;
+  XLARGE = 4;
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -43,14 +42,13 @@ message Revision {
   // Set only if `current_status` is `FAILED`.
   string failure_reason = 4;
 
-  // The number of replicas for this revision. Must be set to a positive
-  // power of 2, with a temporary exception for cases where
-  // `container_image_name` refers to a Reboot application old enough to
-  // not support horizontal scaling; in that case, for backwards
-  // compatibility, the value may be absent.
-  optional uint32 replicas = 5;
+  reserved "replicas";
+  reserved 5;
 
-  // The size tier for this revision, if specified via `--size`.
+  // The size for this revision. This field is optional for cases
+  // where `container_image_name` refers to a Reboot application older
+  // than horizontal scaling; in that case, for backwards
+  // compatibility, the value may be absent.
   optional ApplicationSize size = 6;
 }
 
@@ -219,13 +217,11 @@ message UpRequest {
   // pushed to the Reboot registry using details provided by `PushInfo()`.
   string digest = 2;
 
-  // The number of replicas for this revision. Must be a positive power
-  // of 2 (e.g. 1, 2, 4, ...). If not set, defaults to a
-  // system-determined value.
-  optional uint32 replicas = 3;
+  reserved "replicas";
+  reserved 3;
 
-  // The size tier for this revision. Mutually exclusive with
-  // `replicas`.
+  // The size tier for this revision. If not set, defaults to a
+  // system-determined value.
   optional ApplicationSize size = 4;
 }
 

@@ -151,18 +151,9 @@ def register_cloud(parser: ArgumentParser):
         '--size',
         type=str,
         choices=VALID_SIZES,
-        default=None,
+        default='xsmall',
         help='the size of the application',
     )
-    # Hidden flag for configuring the number of replicas. If not specified,
-    # the backend will use its default.
-    up_subcommand.add_argument(
-        '--replicas',
-        type=int,
-        default=None,
-        help=argparse.SUPPRESS,
-    )
-
     down_subcommand = parser.subcommand('cloud down')
     _add_common_flags(down_subcommand)
 
@@ -491,9 +482,6 @@ async def _parse_common_cloud_args(
 async def cloud_up(args: argparse.Namespace) -> int:
     """Implementation of the 'cloud up' subcommand."""
 
-    if args.size is not None and args.replicas is not None:
-        terminal.fail("Cannot specify both --size and --replicas")
-
     user_id, qualified_application_name, organization_name = (
         await _parse_common_cloud_args(args)
     )
@@ -547,11 +535,7 @@ async def cloud_up(args: argparse.Namespace) -> int:
         up_response = await application.idempotently().Up(
             context,
             digest=digest,
-            replicas=args.replicas,
-            size=(
-                None if args.replicas is not None else
-                SIZE_NAME_TO_ENUM[args.size or 'xsmall']
-            ),
+            size=SIZE_NAME_TO_ENUM[args.size],
         )
 
     except Aborted as aborted:
