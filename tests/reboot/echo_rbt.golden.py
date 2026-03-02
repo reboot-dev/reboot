@@ -28750,6 +28750,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                             None if context.auth is None
                             else context.auth.to_proto_bytes()
                         ),
+                        workflow_id=(
+                            None if context.workflow_id is None
+                            else str(context.workflow_id)
+                        ),
                     ),
                     state=state.SerializeToString(),
                     request=request.SerializeToString(),
@@ -28866,6 +28870,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                 auth=(
                     None if context.auth is None
                     else context.auth.to_proto_bytes()
+                ),
+                workflow_id=(
+                    None if context.workflow_id is None
+                    else str(context.workflow_id)
                 ),
             ),
             state=state.SerializeToString(),
@@ -28999,6 +29007,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                             None if context.auth is None
                             else context.auth.to_proto_bytes()
                         ),
+                        workflow_id=(
+                            None if context.workflow_id is None
+                            else str(context.workflow_id)
+                        ),
                     ),
                     state=state.SerializeToString(),
                     request=request.SerializeToString(),
@@ -29130,6 +29142,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                             None if context.auth is None
                             else context.auth.to_proto_bytes()
                         ),
+                        workflow_id=(
+                            None if context.workflow_id is None
+                            else str(context.workflow_id)
+                        ),
                     ),
                     state=state.SerializeToString(),
                     request=request.SerializeToString(),
@@ -29247,6 +29263,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                     None if context.auth is None
                     else context.auth.to_proto_bytes()
                 ),
+                workflow_id=(
+                    None if context.workflow_id is None
+                    else str(context.workflow_id)
+                ),
             ),
             request=request.SerializeToString(),
         ).SerializeToString()
@@ -29355,6 +29375,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                         auth=(
                             None if context.auth is None
                             else context.auth.to_proto_bytes()
+                        ),
+                        workflow_id=(
+                            None if context.workflow_id is None
+                            else str(context.workflow_id)
                         ),
                     ),
                     state=state.SerializeToString(),
@@ -29473,6 +29497,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                     None if context.auth is None
                     else context.auth.to_proto_bytes()
                 ),
+                workflow_id=(
+                    None if context.workflow_id is None
+                    else str(context.workflow_id)
+                ),
             ),
             request=request.SerializeToString(),
         ).SerializeToString()
@@ -29567,6 +29595,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                 auth=(
                     None if context.auth is None
                     else context.auth.to_proto_bytes()
+                ),
+                workflow_id=(
+                    None if context.workflow_id is None
+                    else str(context.workflow_id)
                 ),
             ),
             request=request.SerializeToString(),
@@ -29663,6 +29695,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                     None if context.auth is None
                     else context.auth.to_proto_bytes()
                 ),
+                workflow_id=(
+                    None if context.workflow_id is None
+                    else str(context.workflow_id)
+                ),
             ),
             request=request.SerializeToString(),
         ).SerializeToString()
@@ -29758,6 +29794,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                     None if context.auth is None
                     else context.auth.to_proto_bytes()
                 ),
+                workflow_id=(
+                    None if context.workflow_id is None
+                    else str(context.workflow_id)
+                ),
             ),
             request=request.SerializeToString(),
         ).SerializeToString()
@@ -29852,6 +29892,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                 auth=(
                     None if context.auth is None
                     else context.auth.to_proto_bytes()
+                ),
+                workflow_id=(
+                    None if context.workflow_id is None
+                    else str(context.workflow_id)
                 ),
             ),
             request=request.SerializeToString(),
@@ -29961,6 +30005,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                         auth=(
                             None if context.auth is None
                             else context.auth.to_proto_bytes()
+                        ),
+                        workflow_id=(
+                            None if context.workflow_id is None
+                            else str(context.workflow_id)
                         ),
                     ),
                     state=state.SerializeToString(),
@@ -30093,6 +30141,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                             None if context.auth is None
                             else context.auth.to_proto_bytes()
                         ),
+                        workflow_id=(
+                            None if context.workflow_id is None
+                            else str(context.workflow_id)
+                        ),
                     ),
                     state=state.SerializeToString(),
                     request=request.SerializeToString(),
@@ -30209,6 +30261,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                 auth=(
                     None if context.auth is None
                     else context.auth.to_proto_bytes()
+                ),
+                workflow_id=(
+                    None if context.workflow_id is None
+                    else str(context.workflow_id)
                 ),
             ),
             request=request.SerializeToString(),
