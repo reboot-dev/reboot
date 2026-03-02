@@ -655,7 +655,8 @@ async def cloud_down(args: argparse.Namespace) -> None:
         terminal.fail(
             "Currently all applications brought down are expunged. "
             "Support for bringing down without expunging will be "
-            "added in a future release."
+            "added in a future release, please see: "
+            "https://github.com/reboot-dev/reboot/issues/71"
         )
 
     user_id, qualified_application_name, organization_name = (
@@ -681,7 +682,7 @@ async def cloud_down(args: argparse.Namespace) -> None:
             #            when their application has in fact terminated.
 
             terminal.info(f"Application '{args.name}' is being terminated...")
-        elif response.status == Status.DOWN:
+        elif response.status in (Status.DOWN, Status.EXPUNGED):
             terminal.info(f"Application '{args.name}' is already terminated.")
     except Aborted as aborted:
         match aborted.error:
