@@ -156,6 +156,13 @@ def register_cloud(parser: ArgumentParser):
     )
     down_subcommand = parser.subcommand('cloud down')
     _add_common_flags(down_subcommand)
+    down_subcommand.add_argument(
+        '--expunge',
+        type=bool,
+        required=True,
+        help='if true, expunge all application state when bringing '
+        'the application down',
+    )
 
     logs_subcommand = parser.subcommand('cloud logs')
     _add_common_flags(logs_subcommand)
@@ -643,6 +650,13 @@ async def cloud_up(args: argparse.Namespace) -> int:
 
 async def cloud_down(args: argparse.Namespace) -> None:
     """Implementation of the 'cloud down' subcommand."""
+
+    if not args.expunge:
+        terminal.fail(
+            "Currently all applications brought down are expunged. "
+            "Support for bringing down without expunging will be "
+            "added in a future release."
+        )
 
     user_id, qualified_application_name, organization_name = (
         await _parse_common_cloud_args(args)

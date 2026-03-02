@@ -42,7 +42,7 @@ dev run --python
 
 # Set the application name for commands that require it.
 cloud up --name=chat-room
-cloud down --name=chat-room
+cloud down --name=chat-room --expunge
 dev expunge --name=chat-room
 dev run --name=chat-room
 serve run --name=chat-room

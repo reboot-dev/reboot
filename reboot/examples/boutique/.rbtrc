@@ -42,7 +42,7 @@ serve run --python
 
 # Set the application name for commands that require it.
 cloud up --name=boutique
-cloud down --name=boutique
+cloud down --name=boutique --expunge
 dev expunge --name=boutique
 dev run --name=boutique
 serve run --name=boutique
