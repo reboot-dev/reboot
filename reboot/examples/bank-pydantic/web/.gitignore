@@ -23,5 +23,5 @@ dist-ssr
 *.sln
 *.sw?
 
-# Reboot generated code
-api/*
+# Reboot generated code (`rbt generate` output)
+api/

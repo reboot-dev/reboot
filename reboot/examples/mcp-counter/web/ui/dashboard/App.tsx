@@ -1,9 +1,9 @@
 import { useEffect, useState, type FC } from "react";
-import type { App as McpApp } from "@modelcontextprotocol/ext-apps/react";
-import { useCounter } from "../../../api/mcp_counter/v1/counter_rbt_react";
+import {
+  type DashboardConfig,
+  useChat,
+} from "@api/mcp_counter/v1/counter_rbt_react";
 import css from "./App.module.css";
-
-const COUNTER_ID = "default";
 
 type Trend = "up" | "down" | "same";
 
@@ -12,18 +12,14 @@ interface HistoryEntry {
   trend: Trend | null;
 }
 
-interface DashboardAppProps {
-  app: McpApp;
-}
-
 /**
  * Hybrid dashboard counter interface.
- * Uses MCP tools for mutations + WebSocket for reactive reads.
+ * Uses generated MCP-aware hook: WebSocket for reads, MCP tools for writes.
  */
-export const DashboardApp: FC<DashboardAppProps> = ({ app }) => {
+export const DashboardApp: FC<DashboardConfig> = ({ personalizedMessage }) => {
   const [isPending, setIsPending] = useState(false);
-  const { useGet } = useCounter({ id: COUNTER_ID });
-  const { response, isLoading } = useGet();
+  const chat = useChat();
+  const { response, isLoading } = chat.useGet();
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 
   const value = response?.value ?? 0;
@@ -47,25 +43,19 @@ export const DashboardApp: FC<DashboardAppProps> = ({ app }) => {
     }
   }, [response?.value]);
 
-  const handleIncrement = async () => {
+  const handleIncrement = async (amount: number) => {
     setIsPending(true);
     try {
-      await app.callServerTool({
-        name: "increment_counter",
-        arguments: {},
-      });
+      await chat.increment({ amount });
     } finally {
       setIsPending(false);
     }
   };
 
-  const handleDecrement = async () => {
+  const handleDecrement = async (amount: number) => {
     setIsPending(true);
     try {
-      await app.callServerTool({
-        name: "decrement_counter",
-        arguments: {},
-      });
+      await chat.decrement({ amount });
     } finally {
       setIsPending(false);
     }
@@ -84,7 +74,12 @@ export const DashboardApp: FC<DashboardAppProps> = ({ app }) => {
   return (
     <div className={css.container}>
       <div className={css.header}>
-        <span className={css.headerTitle}>Counter Dashboard</span>
+        <div className={css.headerTitleGroup}>
+          <span className={css.headerTitle}>Counter Dashboard</span>
+          {personalizedMessage && (
+            <span className={css.headerMessage}>{personalizedMessage}</span>
+          )}
+        </div>
         <span className={isPending ? css.headerSyncing : css.headerStatus}>
           {isPending ? "syncing..." : "live"}
         </span>
@@ -130,18 +125,25 @@ export const DashboardApp: FC<DashboardAppProps> = ({ app }) => {
           <div className={css.label}>Controls</div>
           <div className={css.controls}>
             <button
-              onClick={handleDecrement}
+              onClick={() => handleDecrement(1)}
               disabled={isPending}
               className={css.buttonDecrement}
             >
-              Decrement
+              -1
             </button>
             <button
-              onClick={handleIncrement}
+              onClick={() => handleIncrement(1)}
               disabled={isPending}
               className={css.buttonIncrement}
             >
-              Increment
+              +1
+            </button>
+            <button
+              onClick={() => handleIncrement(2)}
+              disabled={isPending}
+              className={css.buttonIncrement}
+            >
+              +2
             </button>
           </div>
         </div>

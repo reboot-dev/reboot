@@ -18,6 +18,21 @@ import React, {
   useState,
 } from "react";
 import { v4 as uuidv4 } from "uuid";
+{# Check if any methods have MCP tool options for write operations. #}
+{% set mcp_ns = namespace(has_mcp_tools=false) %}
+{% for client in clients %}
+{% for service in client.services %}
+{% for method in service.methods %}
+{% if method.options.proto.mcp and method.options.proto.mcp.tool and method.options.proto.kind in ['writer', 'transaction'] %}
+{% set mcp_ns.has_mcp_tools = true %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% endfor %}
+{% if mcp_ns.has_mcp_tools %}
+import type { App as McpApp } from "@modelcontextprotocol/ext-apps/react";
+import { useMcpApp, useMcpToolData } from "@reboot-dev/reboot-react/internal";
+{% endif %}
 {% if proto.messages_and_enums|length > 0 or states|length > 0 %}
 // NOTE NOTE NOTE
 //
@@ -1337,10 +1352,57 @@ class {{ client.proto.state_name | to_camel }}Instance {
   }
 }
 
+{# Check if this client has any writer/transaction methods with MCP tools. #}
+{% set client_has_mcp = namespace(value=false) %}
+{% for service in client.services %}
+{% for method in service.methods %}
+{% if method.options.proto.mcp and method.options.proto.mcp.tool and method.options.proto.kind in ['writer', 'transaction'] %}
+{% set client_has_mcp.value = true %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+
 export const use{{ client.proto.state_name | to_camel }} = (
+{% if client_has_mcp.value %}
+  { id: providedId }: { id?: string } = {}
+{% else %}
   { id }: { id: string }
+{% endif %}
 ): Use{{ client.proto.state_name | to_camel }}Api => {
-  const stateId = id;
+{% if client_has_mcp.value %}
+  // Get mcpApp and tool input from context (RebootClientProvider).
+  const mcpApp = useMcpApp();
+  const mcpToolData = useMcpToolData();
+
+  // Resolve ID: explicit > URL param (dev) > `ids` mapping.
+  const devId = useMemo(() => {
+    if (typeof window !== "undefined") {
+      return new URLSearchParams(
+        window.location.search
+      ).get("{{ client.proto.state_full_name }}.id");
+    }
+    return null;
+  }, []);
+
+  const idsMap = mcpToolData?.ids as
+    Record<string, string> | undefined;
+  const toolInputId =
+    typeof idsMap?.["{{ client.proto.state_full_name }}"] === "string"
+      ? idsMap["{{ client.proto.state_full_name }}"]
+      : null;
+
+  const resolvedId = providedId ?? devId ?? toolInputId;
+  if (!resolvedId) {
+    throw new Error(
+      "use{{ client.proto.state_name | to_camel }}: no state ID available. " +
+      "Ensure this component is inside <RebootClientProvider>, " +
+      "or pass id explicitly, or use " +
+      "?{{ client.proto.state_full_name }}.id=... URL param."
+    );
+  }
+  const id = resolvedId;
+{% else %}
+{% endif %}
   const stateRef = reboot_api.stateIdToRef(
     "{{ client.proto.state_full_name }}",
     id,
@@ -1353,14 +1415,14 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
   const [instance, setInstance] = useState(() => {
     return {{ client.proto.state_name | to_camel }}Instance.use(
-      stateId, stateRef, url
+      id, stateRef, url
     );
   });
 
-  if (instance.id !== stateId) {
+  if (instance.id !== id) {
     setInstance(
       {{ client.proto.state_name | to_camel }}Instance.use(
-        stateId, stateRef, url
+        id, stateRef, url
       )
     );
   }
@@ -1410,6 +1472,28 @@ export const use{{ client.proto.state_name | to_camel }} = (
         partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name}}Request = {},
         options?: { metadata?: any, key?: string }
       ) => {
+{% if method.options.proto.mcp and method.options.proto.mcp.tool %}
+{% set tool_name = method.options.proto.mcp.name if method.options.proto.mcp.name else (client.proto.state_name | to_snake) + "_" + (method.proto.name | to_snake) %}
+        // MCP mode: use mcpApp.callServerTool() for mutations.
+        // Per MCP spec, tool execution errors return { isError: true } in result,
+        // not as thrown exceptions. Protocol errors (tool not found) may throw.
+        if (mcpApp) {
+          const result = await mcpApp.callServerTool({
+            name: "{{ tool_name }}",
+            arguments: { id, request: partialRequest },
+          });
+          if (result.isError) {
+            const message = result.content?.[0]?.text ?? "MCP tool error";
+            const aborted = new {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
+              new reboot_api.errors_pb.Aborted(), { message }
+            );
+            return { response: undefined, aborted };
+          }
+          // Success - actual state update comes via WebSocket.
+          return { response: {}, aborted: undefined };
+        }
+
+{% endif %}
         const request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
 
         const idempotencyKey = options?.idempotencyKey ?? options?.key ?? reboot_web.makeExpiringIdempotencyKey();
@@ -1429,7 +1513,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
         new Array<Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation>();
 
       return method;
-    }, [bearerToken]);
+    }, [instance, bearerToken{% if method.options.proto.mcp and method.options.proto.mcp.tool %}, mcpApp, id{% endif %}]);
 
     {{ method.proto.name | to_lower_camel }}.pending = pending;
 
@@ -1736,6 +1820,16 @@ export namespace {{ client.state.proto.name }} {
   {{ client.state.proto.name }}.State as a type #}
   export type State = {{ client.state.proto.name }}Proto;
 }
+{% if client.state.proto.uis | length > 0 %}
+{# Re-export UI request types for use as component props.
+   Protobuf-es classes work as both types and values. #}
+{% for ui in client.state.proto.uis %}
+{% if ui.request_message %}
+export type {{ ui.request_message }} = {{ pb_name }}.{{ ui.request_message }};
+{% endif %}
+{% endfor %}
+{% endif %}
 {% endif %}
 
 {% endfor %}
+

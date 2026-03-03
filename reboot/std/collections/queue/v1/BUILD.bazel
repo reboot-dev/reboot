@@ -5,11 +5,11 @@ py_library(
     name = "queue_py",
     srcs = [
         "queue.py",
-        "uuid7.py",
     ],
     visibility = ["//visibility:public"],
     deps = [
         "//reboot:protobuf_py",
+        "//reboot:uuidv7_py",
         "//reboot/aio:contexts_py",
         "//reboot/std/collections/v1:sorted_map_py",
         "//reboot/std/item/v1:item_py",

@@ -7,7 +7,11 @@ import types
 import typing
 from reboot.api import (
     API,
+    UI,
+    MethodModel,
     Model,
+    Resource,
+    Tool,
     UserPydanticError,
     get_field_tag,
     to_pascal_case,
@@ -122,6 +126,8 @@ async def generate(
     # we need to skip the discriminator field generation, since it
     # is represented as a `oneof` in the parent message.
     discriminator: Optional[str] = None,
+    # UIs associated with this state type.
+    uis: Optional[List] = None,
 ):
     origin = get_origin(schema)
     args = get_args(schema)
@@ -132,7 +138,39 @@ async def generate(
         await proto.write(f"message {name} {{\n")
 
         if state:
-            await proto.write("  option (rbt.v1alpha1.state) = {};\n")
+            if uis:
+                # Generate state option with UIs.
+                # Proto text format uses repeated field
+                # names, not array syntax.
+                await proto.write("  option (rbt.v1alpha1.state) = {\n")
+                for ui in uis:
+                    ui_fields = [
+                        f'name: "{ui["name"]}"',
+                        f'title: "{ui["title"]}"',
+                        f'path: "{ui["path"]}"',
+                    ]
+                    if ui.get("request_message"):
+                        ui_fields.append(
+                            f'request_message: '
+                            f'"{ui["request_message"]}"'
+                        )
+                    if ui.get("description"):
+                        ui_fields.append(
+                            f'description: '
+                            f'"{ui["description"]}"'
+                        )
+                    if ui.get("artifact_path"):
+                        ui_fields.append(
+                            f'artifact_path: '
+                            f'"{ui["artifact_path"]}"'
+                        )
+                    await proto.write(
+                        f"    uis: "
+                        f"{{ {', '.join(ui_fields)} }}\n"
+                    )
+                await proto.write("  };\n")
+            else:
+                await proto.write("  option (rbt.v1alpha1.state) = {};\n")
 
         tags: Dict[int, str] = {}
 
@@ -577,19 +615,70 @@ async def generate_proto_file_from_api(
             f"option (rbt.v1alpha1.file).pydantic = "
             f"\"{filename.rsplit('.py', 1)[0].replace(os.sep, '.')}\";\n"
         )
+
         await proto.write('\n')
 
         for type_name, type_obj in api.get_types().items():
+            # Separate UI methods from regular methods.
+            regular_methods = {
+                n: m
+                for n, m in type_obj.methods.items()
+                if isinstance(m, MethodModel)
+            }
+            ui_methods = {
+                n: m for n, m in type_obj.methods.items() if isinstance(m, UI)
+            }
+
+            # Build UIs list from UI methods.
+            uis = []
+            for method_name, ui_method in ui_methods.items():
+                uis.append(
+                    {
+                        'name':
+                            method_name,
+                        'title':
+                            ui_method.title
+                            or method_name.replace('_', ' ').title(),
+                        'description':
+                            ui_method.description,
+                        'path':
+                            ui_method.path,
+                        'request_message':
+                            ui_method.request.__name__
+                            if ui_method.request is not None else None,
+                        'artifact_path':
+                            ui_method.artifact_path,
+                    }
+                )
+
             await generate(
                 proto,
                 type_obj.state,
                 f"api.{type_name}.state",
                 name=type_name,
                 state=True,
+                uis=uis if uis else None,
             )
             await proto.write('\n')
 
-            for method_name, method_spec in type_obj.methods.items():
+            # Generate request messages for UI methods that
+            # have a request type. UI methods with
+            # `request=None` have no input parameters.
+            for method_name, ui_method in ui_methods.items():
+                if ui_method.request is not None:
+                    await generate(
+                        proto,
+                        ui_method.request,
+                        f"api.{type_name}.methods."
+                        f"{method_name}.request",
+                        name=ui_method.request.__name__,
+                        add_type_string_annotation_to_proto=True,
+                    )
+                    await proto.write('\n')
+
+            # Generate request/response messages for
+            # regular methods.
+            for method_name, method_spec in regular_methods.items():
                 if method_spec.request is not None:
                     request_type_name = f"{type_name}{to_pascal_case(method_name)}Request"
 
@@ -613,7 +702,7 @@ async def generate_proto_file_from_api(
                     )
                     await proto.write('\n')
 
-            for method_name, method_spec in type_obj.methods.items():
+            for method_name, method_spec in regular_methods.items():
                 if method_spec.errors:
                     for error_model in method_spec.errors:
                         error_type_name = error_model.__name__
@@ -647,9 +736,11 @@ async def generate_proto_file_from_api(
                         error_tag += 1
                     await proto.write('}}\n\n')
 
+            # Generate RPC service block (regular methods
+            # only — UI methods have no RPC).
             await proto.write(f"service {type_name}Methods {{\n")
 
-            for method_name, method_spec in type_obj.methods.items():
+            for method_name, method_spec in regular_methods.items():
                 if method_spec.request is None:
                     request_type_name = "google.protobuf.Empty"
                 else:
@@ -676,6 +767,30 @@ async def generate_proto_file_from_api(
                     await proto.write(
                         f"      errors: [\"{type_name}{to_pascal_case(method_name)}Errors\"],\n"
                     )
+
+                # MCP options for exposing method as tool/resource.
+                if (
+                    method_spec.mcp is not None and
+                    method_spec.mcp is not False
+                ):
+                    mcp = method_spec.mcp
+                    mcp_fields = []
+                    if isinstance(mcp, Tool):
+                        mcp_fields.append("tool: true")
+                    elif isinstance(mcp, Resource):
+                        mcp_fields.append("resource: true")
+                    if mcp.name is not None:
+                        mcp_fields.append(f'name: "{mcp.name}"')
+                    if method_spec.description is not None:
+                        mcp_fields.append(
+                            f'description: "{method_spec.description}"'
+                        )
+                    if mcp.title is not None:
+                        mcp_fields.append(f'title: "{mcp.title}"')
+                    if mcp_fields:
+                        await proto.write(
+                            f"      mcp: {{ {', '.join(mcp_fields)} }},\n"
+                        )
 
                 await proto.write("    };\n")
                 await proto.write("  }\n")

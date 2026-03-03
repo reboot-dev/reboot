@@ -15,6 +15,8 @@ from reboot.aio.contexts import (
 from reboot.aio.external import InitializeContext
 from reboot.controller.settings import ENVVAR_REBOOT_MODE
 from reboot.ping.ping_api import (
+    CounterIncrementResponse,
+    CounterValueResponse,
     DescribeResponse,
     DoPingPeriodicallyRequest,
     DoPingPeriodicallyResponse,
@@ -23,7 +25,7 @@ from reboot.ping.ping_api import (
     NumPingsResponse,
     NumPongsResponse,
 )
-from reboot.ping.ping_api_rbt import Ping, Pong
+from reboot.ping.ping_api_rbt import Chat, Ping, Pong
 
 logging.basicConfig(level=logging.INFO)
 
@@ -113,6 +115,29 @@ class PongServicer(Pong.Servicer):
         return NumPongsResponse(num_pongs=self.state.num_pongs)
 
 
+class ChatServicer(Chat.Servicer):
+
+    def authorizer(self):
+        return allow()
+
+    async def counter_increment(
+        self,
+        context: WriterContext,
+    ) -> CounterIncrementResponse:
+        self.state.counter_value += 1
+        return CounterIncrementResponse(
+            counter_value=self.state.counter_value,
+        )
+
+    async def counter_value(
+        self,
+        context: ReaderContext,
+    ) -> CounterValueResponse:
+        return CounterValueResponse(
+            counter_value=self.state.counter_value,
+        )
+
+
 async def start_periodic_ping(context: InitializeContext):
     """
     Initializes a long-running 'DoPingPeriodically' task.
@@ -145,7 +170,7 @@ async def main():
     )
 
     application = Application(
-        servicers=[PingServicer, PongServicer],
+        servicers=[PingServicer, PongServicer, ChatServicer],
         # We choose to not call the initialization method
         # `initialize`, to exercise that that is allowed.
         initialize=start_periodic_ping,

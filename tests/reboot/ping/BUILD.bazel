@@ -1,3 +1,4 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
@@ -11,7 +12,10 @@ py_test(
         # We use the "local" Bazel targets to refer here to avoid
         # dealing with cross-repository paths in Bazel during
         # `Pydantic-to-proto` generation.
+        "//reboot:api_py",
+        "//reboot/aio:applications_py",
         "//reboot/ping:ping_py",
         "//reboot/aio:tests_py",
+        requirement("httpx"),
     ],
 )

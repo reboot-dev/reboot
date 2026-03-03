@@ -34,6 +34,7 @@ class NestedSubcommandsTestCase(unittest.IsolatedAsyncioTestCase):
             dict(
                 subcommand='cloud up',
                 config=None,
+                default_config=None,
                 this_is_fine=True,
                 this_is_great=['yes'],
             )

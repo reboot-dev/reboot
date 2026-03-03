@@ -8,7 +8,9 @@ py_test(
     deps = [
         "//reboot/aio:applications_py",
         "//reboot/aio:external_py",
+        "//reboot/aio:servicers_py",
         "//reboot/aio:tests_py",
+        "//reboot/aio:types_py",
         "//reboot/std/collections/v1:sorted_map_py",
         "//tests/reboot:greeter_servicers_py",
     ],

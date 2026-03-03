@@ -59,6 +59,7 @@ from reboot.settings import (
     ENVVAR_RBT_CLOUD_URL,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_EFFECT_VALIDATION,
+    ENVVAR_RBT_MCP_FRONTEND_HOST,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
     ENVVAR_RBT_SECRETS_DIRECTORY,
@@ -173,6 +174,19 @@ def _register_dev_run(parser: ArgumentParser):
         help=
         'command(s) to execute in the background (multiple instances of this '
         'flag are supported)',
+    )
+
+    parser.subcommand('dev run').add_argument(
+        '--mcp-frontend-host',
+        type=str,
+        help=(
+            'URL of the MCP frontend dev server '
+            '(e.g., http://localhost:4444). When set, '
+            'Envoy routes `/__/web/**` paths to this '
+            'host for Hot Module Replacement. Pass an '
+            'empty string to explicitly disable and '
+            'serve pre-built artifacts from disk.'
+        ),
     )
 
     parser.subcommand('dev run').add_argument(
@@ -1232,6 +1246,10 @@ async def __dev_run(
             subprocesses,
         )
 
+        # With the flat web/ layout, user source files live
+        # directly in web/ui/ where Vite watches them. No
+        # separate file watcher needed for frontend sources.
+
     # Set all the environment variables that
     # 'reboot.aio.Application' will be looking for.
     #
@@ -1252,6 +1270,9 @@ async def __dev_run(
 
     if args.secrets_directory is not None:
         env[ENVVAR_RBT_SECRETS_DIRECTORY] = args.secrets_directory
+
+    if args.mcp_frontend_host:
+        env[ENVVAR_RBT_MCP_FRONTEND_HOST] = args.mcp_frontend_host
 
     health_check_task: Optional[asyncio.Task] = None
 
@@ -1608,8 +1629,7 @@ async def __dev_run(
                         rc_file_event_task,
                     )
 
-                    # Cancel tasks regardless of what completed
-                    # first as we won't ever wait on them.
+                    # Cancel chaos tasks.
                     induce_chaos_task.cancel()
                     if chaos_task:
                         chaos_task.cancel()

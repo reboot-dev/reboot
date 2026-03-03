@@ -1,5 +1,6 @@
 import enum
 import math
+import os
 import rbt.v1alpha1.database_pb2 as database_pb2
 from dataclasses import dataclass
 from envoy.config.cluster.v3 import circuit_breaker_pb2, cluster_pb2
@@ -45,7 +46,13 @@ from reboot.routing.filters.lua import (
     render_lua_template,
 )
 from reboot.run_environments import on_cloud
-from reboot.settings import MAX_GRPC_RESPONSE_SIZE_BYTES
+from reboot.settings import (
+    ENVVAR_LOCAL_ENVOY_MODE,
+    ENVVAR_RBT_DEV,
+    ENVVAR_RBT_MCP_FRONTEND_HOST,
+    MAX_GRPC_RESPONSE_SIZE_BYTES,
+)
+from urllib.parse import urlparse
 
 
 @dataclass
@@ -73,6 +80,56 @@ class ClusterKind(enum.Enum):
 
 ZERO_SECONDS = Duration()
 ZERO_SECONDS.FromSeconds(0)
+
+# MCP frontend routing configuration.
+MCP_FRONTEND_CLUSTER_NAME = "mcp_frontend"
+
+
+@dataclass
+class McpFrontendConfig:
+    """Configuration for MCP frontend host routing."""
+    host: str
+    port: int
+
+
+def _get_mcp_frontend_config() -> McpFrontendConfig | None:
+    """Get MCP frontend host configuration from environment.
+
+    Parses `RBT_MCP_FRONTEND_HOST` env var (e.g., "http://localhost:4444")
+    to extract port for Envoy routing to web dev server.
+
+    Returns None if not configured or not in dev mode.
+    """
+    if os.environ.get(ENVVAR_RBT_DEV) != "true":
+        return None
+    frontend_url = os.environ.get(ENVVAR_RBT_MCP_FRONTEND_HOST)
+    if not frontend_url:
+        return None
+
+    parsed = urlparse(frontend_url)
+    if not parsed.port:
+        raise ValueError(
+            f"RBT_MCP_FRONTEND_HOST must include a port; got '{frontend_url}'"
+        )
+    if not parsed.hostname:
+        raise ValueError(
+            f"RBT_MCP_FRONTEND_HOST must include a hostname; got '{frontend_url}'"
+        )
+    port = parsed.port
+    host = parsed.hostname
+
+    # For localhost-like hostnames, use the appropriate address based on
+    # Envoy mode. Docker Envoy needs `host.docker.internal` to reach the
+    # host machine; executable Envoy can use `localhost` directly.
+    localhost_aliases = ("localhost", "127.0.0.1", "0.0.0.0")
+    if host in localhost_aliases:
+        envoy_mode = os.environ.get(ENVVAR_LOCAL_ENVOY_MODE, "docker")
+        if envoy_mode == "docker":
+            host = "host.docker.internal"
+        else:
+            host = "localhost"
+
+    return McpFrontendConfig(host=host, port=port)
 
 
 # Helper for packing an `Any`.
@@ -438,6 +495,78 @@ def _routes_for_server(
     ]
 
 
+def _mcp_frontend_routes() -> list[route_components_pb2.Route]:
+    """Routes for web dev server assets ("/__/web/**").
+
+    MCP Apps use a double iframe: the outer `srcdoc` contains an inner
+    `<iframe src="/__/web/ui/...">`. This route proxies those requests
+    to the web dev server. Envoy handles WebSocket upgrades (for Hot Module Replacement)
+    transparently.
+
+    Returns empty list if MCP frontend is not configured.
+    """
+    config = _get_mcp_frontend_config()
+    if config is None:
+        return []
+
+    # Route for web dev server assets: "/__/web/**".
+    # Dev server is configured with `base: "/__/web/"` so paths match directly.
+    web_route = route_components_pb2.Route(
+        match=route_components_pb2.RouteMatch(
+            prefix="/__/web/",
+        ),
+        route=route_components_pb2.RouteAction(
+            cluster=MCP_FRONTEND_CLUSTER_NAME,
+        ),
+        typed_per_filter_config={
+            GRPC_JSON_TRANSCODER_HTTP_FILTER_NAME:
+                EMPTY_GRPC_JSON_TRANSCODER_CONFIG,
+        },
+    )
+
+    return [web_route]
+
+
+def _mcp_frontend_cluster() -> cluster_pb2.Cluster | None:
+    """Cluster for MCP frontend host (web dev server).
+
+    Returns None if MCP frontend is not configured.
+    """
+    config = _get_mcp_frontend_config()
+    if config is None:
+        return None
+
+    return cluster_pb2.Cluster(
+        name=MCP_FRONTEND_CLUSTER_NAME,
+        type=cluster_pb2.Cluster.STRICT_DNS,
+        lb_policy=cluster_pb2.Cluster.ROUND_ROBIN,
+        common_http_protocol_options=protocol_pb2.HttpProtocolOptions(
+            idle_timeout=ZERO_SECONDS,
+        ),
+        dns_lookup_family=cluster_pb2.Cluster.V4_ONLY,
+        # Frontend is HTTP/1.1 (WebSockets not compatible with HTTP/2).
+        load_assignment=endpoint_pb2.ClusterLoadAssignment(
+            cluster_name=MCP_FRONTEND_CLUSTER_NAME,
+            endpoints=[
+                endpoint_components_pb2.LocalityLbEndpoints(
+                    lb_endpoints=[
+                        endpoint_components_pb2.LbEndpoint(
+                            endpoint=endpoint_components_pb2.Endpoint(
+                                address=address_pb2.Address(
+                                    socket_address=address_pb2.SocketAddress(
+                                        address=config.host,
+                                        port_value=config.port,
+                                    )
+                                )
+                            )
+                        )
+                    ],
+                )
+            ],
+        ),
+    )
+
+
 def _filter_http_connection_manager(
     application_id: ApplicationId,
     servers: list[ServerInfo],
@@ -490,21 +619,25 @@ def _filter_http_connection_manager(
                         max_age="1728000",
                         expose_headers="grpc-status,grpc-message",
                     ),
-                    routes=[
-                        route for server in servers for kind in [
-                            # Always list the route for the websocket first,
-                            # since its matching is more specific.
-                            ClusterKind.WEBSOCKET,
-                            ClusterKind.GRPC,
-                            ClusterKind.HTTP,
-                        ] for route in _routes_for_server(
-                            application_id=application_id,
-                            server=server,
-                            kind=kind,
-                            file_descriptor_set=file_descriptor_set,
-                            trust_caller_id=trust_caller_id,
-                        )
-                    ],
+                    routes=(
+                        # MCP frontend routes (if configured) must come
+                        # first since they match specific prefixes.
+                        _mcp_frontend_routes() + [
+                            route for server in servers for kind in [
+                                # Always list the route for the websocket
+                                # first, since its matching is more specific.
+                                ClusterKind.WEBSOCKET,
+                                ClusterKind.GRPC,
+                                ClusterKind.HTTP,
+                            ] for route in _routes_for_server(
+                                application_id=application_id,
+                                server=server,
+                                kind=kind,
+                                file_descriptor_set=file_descriptor_set,
+                                trust_caller_id=trust_caller_id,
+                            )
+                        ]
+                    ),
                 ),
             ],
         ),
@@ -754,6 +887,11 @@ def clusters(
     servers: list[ServerInfo],
 ) -> list[cluster_pb2.Cluster]:
     result: list[cluster_pb2.Cluster] = []
+
+    # Add MCP frontend cluster if configured.
+    frontend_cluster = _mcp_frontend_cluster()
+    if frontend_cluster is not None:
+        result.append(frontend_cluster)
 
     for server in servers:
         # Every server serves both a gRPC and a WebSocket endpoint, on

@@ -12,7 +12,6 @@ Python 3.14's implementation is monotonic.
 Differences
 * `int.from_bytes` needs a byteorder='big' which is set as the default as of Python 3.11
   (https://docs.python.org/3/library/stdtypes.html#int.from_bytes)
-* This returns it as a string as a workaround to copying over the entirety of uuid.py
 """
 import os
 import time
@@ -39,7 +38,7 @@ def uuid7():
 
     UUIDv7 objects feature monotonicity within a millisecond.
 
-    Returns UUIDv7 formatted as a string.
+    Returns a UUID object. Not safe for use from multiple threads.
     """
     # --- 48 ---   -- 4 --   --- 12 ---   -- 2 --   --- 30 ---   - 32 -
     # unix_ts_ms | version | counter_hi | variant | counter_lo | random
@@ -97,13 +96,8 @@ def uuid7():
     _last_timestamp_v7 = timestamp_ms
     _last_counter_v7 = counter
 
-    # Convert to string directly rather than wrapping as a UUID object.
-    # x = int_uuid_7.to_bytes(16, byteorder='big').hex()  # big endian
-    # return f'{x[:8]}-{x[8:12]}-{x[12:16]}-{x[16:20]}-{x[20:]}'
-
-    # Copied from `UUID._from_int` which is how UUIDs are made internally in
-    # 3.14. Also, the 3.10 version of UUID checks versioning but doesn't handle
-    # uuid7.
+    # Construct UUID via `_from_int` (the internal path used by
+    # 3.14). The 3.10 `UUID()` constructor rejects version=7.
     assert 0 <= int_uuid_7 <= _UINT_128_MAX, repr(int_uuid_7)
     res = object.__new__(UUID)
     object.__setattr__(res, 'int', int_uuid_7)

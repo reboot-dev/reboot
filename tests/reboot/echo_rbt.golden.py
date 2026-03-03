@@ -81,6 +81,9 @@ import rbt.v1alpha1 as IMPORT_rbt_v1alpha1
 import rbt.v1alpha1.nodejs_pb2 as IMPORT_rbt_v1alpha1_nodejs_pb2
 import google.protobuf.any_pb2 as IMPORT_google_protobuf_any_pb2
 import sys as IMPORT_sys
+import mcp.server.fastmcp as IMPORT_mcp_server_fastmcp
+import reboot.mcp.context as IMPORT_reboot_mcp_context
+import reboot.mcp.ui as IMPORT_reboot_mcp_ui
 
 # Additionally re-export all messages and enums from the pb2 module.
 from tests.reboot.echo_pb2 import (
@@ -13242,6 +13245,11 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
     def token_verifier(self) -> IMPORT_typing.Optional[IMPORT_reboot_aio_auth_token_verifiers.TokenVerifier]:
         return None
+
+    _is_auto_construct = False
+
+
+
 
     def ref(
         self,
@@ -30604,5 +30612,6 @@ class EchoWeakReferenceNodeAdaptor(Echo.WeakReference[Echo.WeakReference._Schedu
             request_type=request_type,
             json_request=json_request,
         )
+
 
 # yapf: enable

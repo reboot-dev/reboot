@@ -210,6 +210,7 @@ class RcTestCase(unittest.IsolatedAsyncioTestCase):
                     'subcommand': 'cloud up',
                     'test': 'something',
                     'config': None,
+                    'default_config': None,
                 },
             )
 

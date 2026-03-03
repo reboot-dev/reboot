@@ -6,6 +6,7 @@ import typing
 from enum import Enum
 from google.protobuf.message import Message
 from pydantic.fields import FieldInfo
+from reboot.settings import AUTO_CONSTRUCT_METHOD, AUTO_CONSTRUCT_STATE_TYPE
 from typing import (
     Any,
     Dict,
@@ -833,16 +834,70 @@ class MethodKind(str, Enum):
     WORKFLOW = "workflow"
 
 
+class Tool(pydantic.BaseModel):
+    """
+    Expose a method as an MCP tool.
+    """
+    name: Optional[str] = None
+    title: Optional[str] = None
+
+
+class Resource(pydantic.BaseModel):
+    """
+    Expose a method as an MCP resource.
+    """
+    name: Optional[str] = None
+    title: Optional[str] = None
+
+
+class UI(pydantic.BaseModel):
+    """UI method type.
+
+    Generates an MCP tool that triggers UI display, and
+    an MCP resource that serves the UI's HTML. Unlike
+    Reader/Writer, UI methods have no backend servicer.
+
+    The `request` type defines the React component's
+    props. There is no `response` -- the tool triggers
+    UI display and the React component handles rendering.
+    """
+    request: Optional[typing.Type[Model]]
+    path: str
+    artifact_path: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+
+
 class MethodModel(pydantic.BaseModel):
     """
     Base class for method type definitions in Reboot API.
-    Contains common fields for all method types (Reader, Writer, Transaction, Workflow).
+    Contains common fields for all method types
+    (Reader, Writer, Transaction, Workflow).
     """
     request: Optional[typing.Type[Model]]
     response: Optional[typing.Type[Model]]
     errors: list[typing.Type[Model]] = []
+    description: Optional[str] = None
     factory: bool = False
     kind: MethodKind
+    mcp: Union[Tool, Literal[False], None] = None
+
+    # TODO(rjh): we need more experience with resources
+    #            in the context of AI Chat apps before
+    #            officially supporting them in Reboot. It
+    #            seems that many (most? all?) LLMs do not
+    #            use available resources in responses to
+    #            end-user requests, which would make them
+    #            essentially useless.
+    @pydantic.model_validator(mode='before')
+    @classmethod
+    def _reject_resource(cls, values):
+        if isinstance(values.get('mcp'), Resource):
+            raise ValueError(
+                "'Resource()' is not yet supported; "
+                "use 'Tool()' instead"
+            )
+        return values
 
 
 class Writer(MethodModel):
@@ -861,7 +916,7 @@ class Workflow(MethodModel):
     kind: MethodKind = MethodKind.WORKFLOW
 
 
-MethodType = Union[Writer, Reader, Transaction, Workflow]
+MethodType = Union[Writer, Reader, Transaction, Workflow, UI]
 
 
 def is_snake_case(input: str) -> bool:
@@ -1039,26 +1094,34 @@ class Type(pydantic.BaseModel):
         )
 
         for method_name, method in methods.items():
-            if not isinstance(method, MethodModel):
+            if isinstance(method, UI):
+                # UI methods only have a request type.
+                if method.request is not None:
+                    validate_all_fields_are_reboot_base_classes(
+                        method.request,
+                        method_name,
+                    )
+            elif isinstance(method, MethodModel):
+                if method.request is not None:
+                    validate_all_fields_are_reboot_base_classes(
+                        method.request,
+                        method_name,
+                    )
+                if method.response is not None:
+                    validate_all_fields_are_reboot_base_classes(
+                        method.response,
+                        method_name,
+                    )
+                for error in method.errors:
+                    validate_all_fields_are_reboot_base_classes(
+                        error,
+                        method_name,
+                    )
+            else:
                 raise UserPydanticError(
                     f"Method '{method_name}' must be an instance of "
-                    f"'Writer', 'Reader', 'Transaction', 'Workflow'."
-                )
-
-            if method.request is not None:
-                validate_all_fields_are_reboot_base_classes(
-                    method.request,
-                    method_name,
-                )
-            if method.response is not None:
-                validate_all_fields_are_reboot_base_classes(
-                    method.response,
-                    method_name,
-                )
-            for error in method.errors:
-                validate_all_fields_are_reboot_base_classes(
-                    error,
-                    method_name,
+                    f"'Writer', 'Reader', 'Transaction', "
+                    f"'Workflow', or 'UI'."
                 )
 
         super().__init__(
@@ -1078,15 +1141,99 @@ class API(pydantic.BaseModel):
     # fields in '__init__(**types)'.
     model_config = pydantic.ConfigDict(extra='allow')
 
-    def __init__(self, **types: Type):
+    def __init__(self, **types: Optional[Type]):
         for type_name, data_type in types.items():
+            if data_type is None:
+                continue
+
             if not isinstance(data_type, Type):
                 raise UserPydanticError(
                     f"Data type '{type_name}' must be a 'Type' instance, "
                     f"got '{data_type.__class__.__name__}'"
                 )
 
-        super().__init__(**types)
+            # The auto-constructed state type, if present, is
+            # special: it will be auto-constructed by Reboot as
+            # needed. To support that, we inject a `create`
+            # constructor method. The name was picked to be
+            # self-explanatory, and to avoid the word "new" which
+            # is a reserved keyword in TypeScript. If the customer
+            # has defined their own `create` method we give a
+            # helpful error explaining that that's not allowed,
+            # but they can override the default implementation
+            # with custom initialization logic in their servicer.
+            if type_name == AUTO_CONSTRUCT_STATE_TYPE:
+                # Validate that all state fields have defaults,
+                # or are optional — auto-constructed state
+                # instances are created without arguments, which
+                # must produce a valid state.
+                for field_name, field_info in (
+                    data_type.state.model_fields.items()
+                ):
+                    has_default = (
+                        field_info.default
+                        is not pydantic_core.PydanticUndefined or
+                        field_info.default_factory is not None
+                    )
+                    # Optional fields are also acceptable: they
+                    # default to `None` during
+                    # auto-construction.
+                    args = get_args(field_info.annotation)
+                    is_optional = any(a is type(None) for a in args)
+                    if not has_default and not is_optional:
+                        raise UserPydanticError(
+                            f"Field `{field_name}` in "
+                            f"{AUTO_CONSTRUCT_STATE_TYPE} "
+                            "state model "
+                            f"`{data_type.state.__name__}` "
+                            "must have a default value, or "
+                            "be optional. "
+                            f"{AUTO_CONSTRUCT_STATE_TYPE} "
+                            "instances are auto-constructed, "
+                            "in their default (empty) state, "
+                            "for every new AI chat connecting "
+                            "to the application, and such a "
+                            "fresh state must be valid."
+                        )
+
+                if AUTO_CONSTRUCT_METHOD in data_type.methods:
+                    raise UserPydanticError(
+                        f"'{AUTO_CONSTRUCT_METHOD}' is a reserved "
+                        f"method name for "
+                        f"{AUTO_CONSTRUCT_STATE_TYPE} types. If "
+                        "you want custom initialization logic, "
+                        "override the default "
+                        f"'{AUTO_CONSTRUCT_METHOD}' Writer in "
+                        "your servicer implementation instead of "
+                        "declaring it in the API definition. "
+                        "You may also declare alternative "
+                        "factory methods for your own use, but "
+                        "note the system will always use "
+                        f"'{AUTO_CONSTRUCT_METHOD}' when "
+                        "automatically constructing a "
+                        f"'{AUTO_CONSTRUCT_STATE_TYPE}' for a "
+                        "new AI chat."
+                    )
+                data_type.methods[AUTO_CONSTRUCT_METHOD] = Writer(
+                    request=None,
+                    response=None,
+                    factory=True,
+                )
+
+                # Auto-enable MCP for the auto-constructed state
+                # type's methods that don't explicitly opt out.
+                # The auto-constructor is never exposed over MCP.
+                # UI methods are already MCP-only; skip them.
+                for method_name, method in (data_type.methods.items()):
+                    if method_name == AUTO_CONSTRUCT_METHOD:
+                        continue
+                    if isinstance(method, UI):
+                        continue
+                    if method.mcp is None:
+                        method.mcp = Tool()
+
+        # Only pass non-None types to Pydantic.
+        super().__init__(**{k: v for k, v in types.items() if v is not None})
 
     def get_types(self) -> Dict[str, Type]:
         """Get all Reboot data types defined in this API."""

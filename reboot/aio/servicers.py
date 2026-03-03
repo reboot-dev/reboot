@@ -7,7 +7,9 @@ from abc import ABC, abstractmethod
 from functools import total_ordering
 from google.protobuf.descriptor import FileDescriptor
 from google.protobuf.message import Message
+from mcp.server.fastmcp import FastMCP
 from rbt.v1alpha1.application_config_pb2 import ApplicationConfig
+from reboot.aio.external import ExternalContext
 from reboot.aio.types import ServiceName, StateTypeName
 from typing import Callable, Optional
 
@@ -27,6 +29,34 @@ class Servicer(ABC):
     __state_type_name__: StateTypeName
     __state_type__: type[Message]
     __file_descriptor__: FileDescriptor
+
+    # Whether this servicer is for an auto-constructed state type.
+    _is_auto_construct: bool
+
+    # Naming: has a leading underscore to ensure it doesn't collide with
+    # customer-API-defined methods; those can't use leading underscores.
+    @staticmethod
+    def _add_mcp(
+        mcp: FastMCP,
+        auto_construct_state_type_full_name: Optional[str] = None,
+    ) -> None:
+        """
+        Register any MCP tools/resources on `mcp`.
+
+        Overridden by generated code for states with MCP annotations.
+        """
+        pass
+
+    # Naming: has a leading underscore to ensure it doesn't collide with
+    # customer-API-defined methods; those can't use leading underscores.
+    @staticmethod
+    async def _auto_construct(context: ExternalContext, state_id: str) -> None:
+        """
+        Auto-construct a state with the given ID, if auto-constructable.
+
+        Overridden by generated code for auto-constructable state types.
+        """
+        pass
 
 
 class ConfigServicer(config_mode_pb2_grpc.ConfigServicer):

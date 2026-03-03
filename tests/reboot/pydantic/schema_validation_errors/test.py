@@ -313,7 +313,7 @@ class TypeValidationErrorsTest(unittest.TestCase):
         )
 
     def test_invalid_method_type(self):
-        """Methods must be Writer, Reader, Transaction, or Workflow."""
+        """Methods must be Writer, Reader, Transaction, Workflow, or UI."""
 
         class State(Model):
             value: str = Field(tag=1)
@@ -329,7 +329,7 @@ class TypeValidationErrorsTest(unittest.TestCase):
         self.assertEqual(
             str(error.exception),
             "Method 'bad_method' must be an instance of "
-            "'Writer', 'Reader', 'Transaction', 'Workflow'.",
+            "'Writer', 'Reader', 'Transaction', 'Workflow', or 'UI'.",
         )
 
 
@@ -346,6 +346,63 @@ class APIValidationErrorsTest(unittest.TestCase):
         self.assertEqual(
             str(error.exception),
             "Data type 'BadType' must be a 'Type' instance, got 'str'",
+        )
+
+
+class ChatStateValidationErrorsTest(unittest.TestCase):
+    """Test that Chat state must be default-constructible."""
+
+    def test_chat_state_without_defaults_raises_error(self):
+        """Chat state fields must all have defaults."""
+
+        class BadChatState(Model):
+            value: int = Field(tag=1)  # No default!
+
+        with self.assertRaises(UserPydanticError) as error:
+            API(
+                Chat=Type(
+                    state=BadChatState,
+                    methods=Methods(),
+                ),
+            )
+
+        self.assertEqual(
+            str(error.exception),
+            "Field `value` in Chat state model "
+            "`BadChatState` must have a default "
+            "value, or be optional. Chat instances "
+            "are auto-constructed, in their default "
+            "(empty) state, for every new AI chat "
+            "connecting to the application, and such "
+            "a fresh state must be valid.",
+        )
+
+    def test_chat_state_with_defaults_is_valid(self):
+        """Chat state with all defaults should be accepted."""
+
+        class GoodChatState(Model):
+            value: int = Field(tag=1, default=0)
+
+        # Should not raise.
+        API(
+            Chat=Type(
+                state=GoodChatState,
+                methods=Methods(),
+            ),
+        )
+
+    def test_chat_state_with_optional_field_is_valid(self):
+        """Chat state with Optional fields is accepted."""
+
+        class GoodChatState(Model):
+            value: Optional[str] = Field(tag=1)
+
+        # Should not raise: Optional fields default to None.
+        API(
+            Chat=Type(
+                state=GoodChatState,
+                methods=Methods(),
+            ),
         )
 
 

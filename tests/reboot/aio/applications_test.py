@@ -2,11 +2,27 @@ import unittest
 from log.log import get_logger
 from reboot.aio.applications import Application
 from reboot.aio.external import InitializeContext
+from reboot.aio.servicers import Servicer
 from reboot.aio.tests import Reboot
+from reboot.aio.types import ServiceName, StateTypeName
 from reboot.std.collections.v1.sorted_map import SortedMap, sorted_map_library
 from tests.reboot.greeter_servicers import MyClockServicer, MyGreeterServicer
 
 logger = get_logger(__name__)
+
+
+# Minimal `Servicer` stubs for testing `_mount_mcp` behavior.
+# Only the attributes accessed by `_mount_mcp` need real values.
+class _StubAutoConstructA(Servicer):
+    __service_names__ = [ServiceName("test.v1.ServiceA")]
+    __state_type_name__ = StateTypeName("test.v1.StateA")
+    _is_auto_construct = True
+
+
+class _StubAutoConstructB(Servicer):
+    __service_names__ = [ServiceName("test.v1.ServiceB")]
+    __state_type_name__ = StateTypeName("test.v1.StateB")
+    _is_auto_construct = True
 
 
 class TestCase(unittest.IsolatedAsyncioTestCase):
@@ -95,6 +111,19 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
             "parameter instead",
             str(e.exception),
         )
+
+    async def test_multiple_auto_construct_types_raises(self) -> None:
+        """Tests that having multiple servicers with
+        `_is_auto_construct = True` raises a `ValueError`."""
+        with self.assertRaises(ValueError) as e:
+            Application(servicers=[
+                _StubAutoConstructA,
+                _StubAutoConstructB,
+            ])
+        msg = str(e.exception)
+        self.assertIn("Multiple auto-construct state types", msg)
+        self.assertIn("test.v1.StateA", msg)
+        self.assertIn("test.v1.StateB", msg)
 
 
 if __name__ == "__main__":

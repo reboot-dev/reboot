@@ -19,6 +19,12 @@
   justify-content: center;
 }
 
+.headerTitleGroup {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
 .headerTitle {
   color: var(--color-green);
 }
@@ -73,11 +79,6 @@
 
 .value.pending {
   opacity: 0.7;
-}
-
-.syncStatus {
-  color: var(--color-yellow);
-  margin-top: 8px;
 }
 
 .historyList {
@@ -139,4 +140,11 @@
 
 .loading {
   color: var(--color-text-muted);
+}
+
+/* Personalized message in header */
+.headerMessage {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-style: italic;
 }

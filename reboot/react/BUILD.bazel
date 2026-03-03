@@ -48,7 +48,7 @@ genrule(
         working_folder=$$(dirname $(location :react))
         pushd $$working_folder
         mkdir -p build && cd build
-        cp ../react/* .
+        cp -r -L ../react/* .
         $$npm_binary_path pack --pack-destination .
         path=$$(realpath reboot-dev-reboot-react-{reboot_version}.tgz)
         popd
@@ -67,10 +67,14 @@ ts_project(
     name = "package_ts",
     srcs = [
         ":index.tsx",
+        ":internal/McpConnector.tsx",
+        ":internal/index.ts",
+        ":internal/useAppSafe.ts",
     ],
     declaration = True,
     tsconfig = ":tsconfig",
     deps = [
+        "//:node_modules/@modelcontextprotocol/ext-apps",
         "//:node_modules/@reboot-dev/reboot-api",
         "//:node_modules/@reboot-dev/reboot-web",
         "//:node_modules/@types/node",

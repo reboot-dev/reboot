@@ -4,6 +4,7 @@ grpcio-health-checking==1.64.3  # Matching `grpcio`
 grpcio-reflection==1.64.3  # Matching `grpcio`.
 grpcio-status==1.64.3  # Matching `grpcio`.
 grpcio-tools==1.64.3 # Matching `grpcio`.
+httpx==0.28.1  # Matching `public/reboot/requirements_lock.txt`.
 kubernetes-asyncio==31.1.0  # Latest as of 2024/09/16.
 protobuf==5.28.3  # Matching `public/reboot/requirements.in`.
 pyyaml==6.0.2  # Latest as of 2024/09/02.

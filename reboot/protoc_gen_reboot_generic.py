@@ -30,6 +30,10 @@ from reboot.options import (
     has_service_options,
     is_reboot_state,
 )
+from reboot.settings import (
+    AUTO_CONSTRUCT_PROTO_METHOD,
+    AUTO_CONSTRUCT_STATE_TYPE,
+)
 from reboot.version import REBOOT_VERSION
 from typing import Any, Literal, Optional, Sequence
 
@@ -101,11 +105,22 @@ def asdict_omit_private_fields(name: str, obj: Any) -> Any:
 
 
 @dataclass
+class ProtoMcpOptions:
+    """MCP options for exposing a method as a tool or resource."""
+    tool: bool
+    resource: bool
+    name: Optional[str]
+    description: Optional[str]
+    title: Optional[str]
+
+
+@dataclass
 class ProtoMethodOptions:
     kind: str
     constructor: bool
     state_streaming: bool
     has_errors: bool
+    mcp: Optional[ProtoMcpOptions]
 
 
 @dataclass
@@ -184,10 +199,22 @@ class BaseLegacyGrpcService:
 
 
 @dataclass
+class ProtoUI:
+    """UI definition from a UI() method."""
+    name: str
+    title: str
+    description: Optional[str]
+    path: str
+    request_message: Optional[str]
+    artifact_path: Optional[str]
+
+
+@dataclass
 class ProtoState:
     name: str  # Relative name as written in proto, e.g. "Greeter"
     full_name: str  # Name including package.
     implements: list[str]  # Full names of services.
+    uis: list[ProtoUI]  # UIs from UI() methods.
 
 
 @dataclass
@@ -626,7 +653,8 @@ class RebootProtocPlugin(ProtocPlugin):
         )
 
     def _proto_state(self, state: Descriptor) -> ProtoState:
-        implements = get_state_options(state).implements
+        state_options = get_state_options(state)
+        implements = state_options.implements
         if len(implements) == 0:
             # The user didn't say explicitly, so assume the default.
             implements = [
@@ -645,10 +673,27 @@ class RebootProtocPlugin(ProtocPlugin):
             make_full_name(service_name) for service_name in implements
         ]
 
+        # Extract UIs if present.
+        uis: list[ProtoUI] = []
+        for ui in state_options.uis:
+            uis.append(
+                ProtoUI(
+                    name=ui.name,
+                    title=ui.title,
+                    description=ui.description if ui.description else None,
+                    path=ui.path,
+                    request_message=ui.request_message
+                    if ui.HasField('request_message') else None,
+                    artifact_path=ui.artifact_path
+                    if ui.HasField('artifact_path') else None,
+                )
+            )
+
         return ProtoState(
             name=state.name,
             full_name=state.full_name,
             implements=implements,
+            uis=uis,
         )
 
     @staticmethod
@@ -789,11 +834,25 @@ class RebootProtocPlugin(ProtocPlugin):
             ):
                 state_streaming = False
 
+        # Extract MCP options if present.
+        mcp_options: Optional[ProtoMcpOptions] = None
+        if method_options.HasField('mcp'):
+            mcp = method_options.mcp
+            mcp_options = ProtoMcpOptions(
+                tool=mcp.tool,
+                resource=mcp.resource,
+                name=mcp.name if mcp.HasField('name') else None,
+                description=mcp.description
+                if mcp.HasField('description') else None,
+                title=mcp.title if mcp.HasField('title') else None,
+            )
+
         return ProtoMethodOptions(
             kind=kind,
             constructor=self._is_method_constructor(method),
             state_streaming=state_streaming,
             has_errors=len(method_options.errors) > 0,
+            mcp=mcp_options,
         )
 
     def _base_service(self, service: ServiceDescriptor) -> BaseService:
@@ -841,6 +900,25 @@ class RebootProtocPlugin(ProtocPlugin):
 
             # Note: duplicate methods between services are checked for during
             #       client generation.
+
+        # Validate that auto-constructed states have the auto-constructor.
+        if proto_state.name == AUTO_CONSTRUCT_STATE_TYPE:
+            has_auto_construct = any(
+                method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD
+                for service in base_services
+                for method in service.methods
+            )
+            if not has_auto_construct:
+                raise UserProtoError(
+                    f"State type '{AUTO_CONSTRUCT_STATE_TYPE}' requires a "
+                    f"'{AUTO_CONSTRUCT_PROTO_METHOD}' Writer method. Add to "
+                    "your service:\n"
+                    f"  rpc {AUTO_CONSTRUCT_PROTO_METHOD}"
+                    "(google.protobuf.Empty) returns (google.protobuf.Empty) "
+                    "{\n"
+                    "    option (rbt.v1alpha1.method) = { writer: {} };\n"
+                    "  }"
+                )
 
         return base_services
 

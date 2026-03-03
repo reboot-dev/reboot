@@ -26,7 +26,6 @@ py_library(
         requirement("grpcio"),
         "//reboot/aio:aborted_py",
         "//reboot/aio:resolvers_py",
-        "//reboot/aio:servicers_py",
         "//reboot/aio:tracing_py",
         "//reboot/aio:types_py",
         "//reboot/ssl:localhost_py",

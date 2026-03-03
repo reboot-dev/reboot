@@ -3836,16 +3836,15 @@ class GreeterInstance {
 }
 GreeterInstance.instances = {};
 export const useGreeter = ({ id }) => {
-    const stateId = id;
     const stateRef = reboot_api.stateIdToRef("tests.reboot.Greeter", id);
     const rebootClient = reboot_react.useRebootClient();
     const url = rebootClient.url;
     const bearerToken = rebootClient.bearerToken;
     const [instance, setInstance] = useState(() => {
-        return GreeterInstance.use(stateId, stateRef, url);
+        return GreeterInstance.use(id, stateRef, url);
     });
-    if (instance.id !== stateId) {
-        setInstance(GreeterInstance.use(stateId, stateRef, url));
+    if (instance.id !== id) {
+        setInstance(GreeterInstance.use(id, stateRef, url));
     }
     useEffect(() => {
         return () => {
@@ -3889,7 +3888,7 @@ export const useGreeter = ({ id }) => {
             method.pending =
                 new Array();
             return method;
-        }, [bearerToken]);
+        }, [instance, bearerToken]);
         create.pending = pending;
         return create;
     }
@@ -4081,7 +4080,7 @@ export const useGreeter = ({ id }) => {
             method.pending =
                 new Array();
             return method;
-        }, [bearerToken]);
+        }, [instance, bearerToken]);
         setAdjective.pending = pending;
         return setAdjective;
     }
@@ -4114,7 +4113,7 @@ export const useGreeter = ({ id }) => {
             method.pending =
                 new Array();
             return method;
-        }, [bearerToken]);
+        }, [instance, bearerToken]);
         transactionSetAdjective.pending = pending;
         return transactionSetAdjective;
     }
@@ -4624,7 +4623,7 @@ export const useGreeter = ({ id }) => {
             method.pending =
                 new Array();
             return method;
-        }, [bearerToken]);
+        }, [instance, bearerToken]);
         testLongRunningWriter.pending = pending;
         return testLongRunningWriter;
     }
@@ -5134,7 +5133,7 @@ export const useGreeter = ({ id }) => {
             method.pending =
                 new Array();
             return method;
-        }, [bearerToken]);
+        }, [instance, bearerToken]);
         dangerousFields.pending = pending;
         return dangerousFields;
     }
@@ -5167,7 +5166,7 @@ export const useGreeter = ({ id }) => {
             method.pending =
                 new Array();
             return method;
-        }, [bearerToken]);
+        }, [instance, bearerToken]);
         storeRecursiveMessage.pending = pending;
         return storeRecursiveMessage;
     }
@@ -5359,7 +5358,7 @@ export const useGreeter = ({ id }) => {
             method.pending =
                 new Array();
             return method;
-        }, [bearerToken]);
+        }, [instance, bearerToken]);
         constructAndStoreRecursiveMessage.pending = pending;
         return constructAndStoreRecursiveMessage;
     }

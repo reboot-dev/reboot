@@ -15,7 +15,11 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@api/*": ["./api/*"]
+    }
   },
-  "include": ["src"]
+  "include": ["ui"]
 }

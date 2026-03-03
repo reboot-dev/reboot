@@ -1,40 +1,35 @@
 """Counter servicer implementation."""
 
-from mcp_counter.v1.counter_rbt import Counter
+from mcp_counter.v1.counter_rbt import Chat
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import ReaderContext, WriterContext
 
 
-class CounterServicer(Counter.Servicer):
-    """Servicer for the Counter state machine."""
+class ChatServicer(Chat.Servicer):
+    """Servicer for the Chat state machine."""
 
     def authorizer(self):
         return allow()
 
-    async def create(
-        self,
-        context: WriterContext,
-    ) -> None:
-        """Create a new counter initialized to 0."""
-        self.state.value = 0
-
     async def increment(
         self,
         context: WriterContext,
+        request: Chat.IncrementRequest,
     ) -> None:
-        """Increment the counter by 1."""
-        self.state.value += 1
+        """Increment the counter by the specified amount."""
+        self.state.value += request.amount
 
     async def decrement(
         self,
         context: WriterContext,
+        request: Chat.DecrementRequest,
     ) -> None:
-        """Decrement the counter by 1."""
-        self.state.value -= 1
+        """Decrement the counter by the specified amount."""
+        self.state.value -= request.amount
 
     async def get(
         self,
         context: ReaderContext,
-    ) -> Counter.GetResponse:
+    ) -> Chat.GetResponse:
         """Get the current counter value."""
-        return Counter.GetResponse(value=self.state.value)
+        return Chat.GetResponse(value=self.state.value)

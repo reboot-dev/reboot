@@ -100,6 +100,9 @@ def py_reboot_library(
             "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
             "@com_github_reboot_dev_reboot//log:log_py",
             "//reboot:versioning_py",
+            "//reboot/mcp:context_py",
+            "//reboot/mcp:helpers_py",
+            "//reboot/mcp:ui_py",
             "@com_github_reboot_dev_reboot//reboot/aio:call_py",
             "@com_github_reboot_dev_reboot//reboot/aio:caller_id_py",
             "@com_github_reboot_dev_reboot//reboot/aio:contexts_py",
@@ -155,6 +158,11 @@ def js_reboot_react_library(
                 "declaration": True,
                 "module": "es2015",
                 "moduleResolution": "node",
+                # Skip type-checking third-party `.d.ts`
+                # files; they may have peer-dependency or
+                # cross-package type mismatches that are
+                # outside our control.
+                "skipLibCheck": True,
                 "target": "es2018",
             },
         },

@@ -8,6 +8,7 @@ import reboot.aio.workflows
 import sys
 import traceback
 from log.log import get_logger
+from mcp.server.fastmcp import FastMCP
 from pathlib import Path
 from reboot.aio.auth.token_verifiers import TokenVerifier
 from reboot.aio.exceptions import InputError
@@ -26,6 +27,7 @@ from reboot.controller.server_managers import (
     run_python_server_process,
 )
 from reboot.controller.settings import ENVVAR_REBOOT_MODE, REBOOT_MODE_CONFIG
+from reboot.mcp.factories import create_mcp_factory
 from reboot.nodejs.python import should_print_stacktrace
 from reboot.run_environments import (
     InvalidRunEnvironment,
@@ -186,7 +188,7 @@ class Application:
         :param initialize: will be called after the Application's servicers have
                        started for the first time, so that it can perform
                        initialization logic (e.g., creating some well-known
-                       actors, loading some data, etc. It must do so in the
+                       actors, loading some data, etc.). It must do so in the
                        context of the given InitializeContext.
 
         :param initialize_bearer_token: a Bearer token that will be used to construct
@@ -295,6 +297,9 @@ class Application:
         # NOTE: we override with `NodeWebFramework` in `NodeApplication`.
         self._web_framework: WebFramework = PythonWebFramework()
 
+        # Mount MCP.
+        self._mount_mcp(self._servicers or [])
+
         self._rbt: Optional[Reboot] = None
 
         self._directory: Optional[Path] = None
@@ -391,6 +396,62 @@ class Application:
 
     def has_http_routes_or_mounts(self) -> bool:
         return len(self.http._api_routes) > 0 or len(self.http._mounts) > 0
+
+    def _mount_mcp(
+        self,
+        servicers: list[type[Servicer]],
+    ) -> None:
+        """Mount MCP from servicers.
+
+        Called from `__init__` after the web framework is
+        created. Auto-registers MCP from servicers that have
+        MCP tools defined. Always mounts `/mcp` even if no
+        servicers have tools — the server will accept
+        connections and explain what's missing.
+        """
+        auto_construct_state_type_full_names: list[str] = []
+        new_session_hooks = []
+
+        # Find auto-construct info.
+        for servicer_cls in servicers:
+            if servicer_cls._is_auto_construct:
+                auto_construct_state_type_full_names.append(
+                    servicer_cls.__state_type_name__
+                )
+                new_session_hooks.append(servicer_cls._auto_construct)
+
+        if len(auto_construct_state_type_full_names) > 1:
+            state_type_names = (
+                "'" + "', '".join(auto_construct_state_type_full_names) + "'"
+            )
+            raise ValueError(
+                f"Multiple auto-construct state types ({state_type_names}) are "
+                "defined in this application's API. Only one auto-constructed "
+                "state type per application is currently supported."
+            )
+
+        auto_construct_state_type_full_name = (
+            auto_construct_state_type_full_names[0]
+            if len(auto_construct_state_type_full_names) == 1 else None
+        )
+
+        # Create MCP server and register all servicers'
+        # tools/resources.
+        server = FastMCP(name="reboot-mcp")
+        for servicer_cls in servicers:
+            servicer_cls._add_mcp(server, auto_construct_state_type_full_name)
+
+        # The `type: ignore` is needed because `create_mcp_factory`
+        # returns a closure, and mypy can't verify Protocol conformance
+        # on closures (the closure is structurally compatible with
+        # `HTTPASGIApp` at runtime).
+        self.http.mount(
+            "/mcp",
+            factory=create_mcp_factory(  # type: ignore[arg-type]
+                server=server,
+                new_session_hooks=new_session_hooks,
+            ),
+        )
 
     @function_span()
     async def _rbt_start_and_up_and_initialize(self) -> None:
@@ -595,6 +656,13 @@ class NodeApplication(Application):
             start=web_framework_start,
             stop=web_framework_stop,
         )
+
+    def _mount_mcp(
+        self,
+        servicers: list[type[Servicer]],
+    ) -> None:
+        # MCP is not supported for Node.js applications.
+        pass
 
     @property
     def http(self) -> NoReturn:

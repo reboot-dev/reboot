@@ -565,6 +565,19 @@ class ArgumentParser(_Parser):
                 f"on lines in the '{filename}' that start with '{subcommand}:foo'",
             )
 
+            # Add the `--default-config` parameter to set a
+            # default config.
+            subparser.add_argument(
+                '--default-config',
+                type=str,
+                help=f"Default config to use if --config is "
+                f"not specified, e.g., "
+                f"'rbt {subcommand} --default-config=foo' "
+                f"in '{filename}' means "
+                f"'rbt {subcommand}' will automatically "
+                f"use --config=foo",
+            )
+
         argv = argv or list(sys.argv)
 
         self._help = '-h' in argv or '--help' in argv
@@ -958,6 +971,11 @@ class ArgumentParser(_Parser):
         # Now expand config flags.
         configs = namespace.config or []
 
+        # Apply default config if no explicit --config was
+        # specified.
+        if not configs and getattr(namespace, 'default_config', None):
+            configs = [namespace.default_config]
+
         common_config_flags: dict[Config, list[Flag]] = {}
         subcommand_config_flags: dict[Config, list[Flag]] = {}
 
@@ -1019,7 +1037,7 @@ class ArgumentParser(_Parser):
             assert subcommand == self._update_subcommand_in_namespace(
                 namespace
             )
-            configs = namespace.config
+            configs = namespace.config or []
 
         if terminal.is_verbose() and (
             len(common_flags) > 0 or len(subcommand_flags) > 0 or

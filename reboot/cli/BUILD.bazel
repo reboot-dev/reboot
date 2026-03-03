@@ -140,7 +140,6 @@ py_library(
         # block the event loop, so we use 'aiofiles' instead.
         requirement("aiofiles"),
         requirement("grpcio-health-checking"),
-        "@com_github_reboot_dev_reboot//reboot:version_py",
         ":directories_py",
         ":rc_py",
         ":subprocesses_py",
@@ -150,6 +149,7 @@ py_library(
         "@com_github_reboot_dev_reboot//reboot:pydantic_schema_to_zod_py",
         "@com_github_reboot_dev_reboot//reboot:settings_py",
         "@com_github_reboot_dev_reboot//reboot/aio:tracing_py",
+        "//reboot:version_py",
     ],
 )
 

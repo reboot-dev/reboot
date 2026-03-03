@@ -11,6 +11,15 @@ features:
   (`bazel run //infrastructure/clusters/local:cluster up`), since it is
   installed on those by default.
 
+## Using MCPJam
+
+The application contains MCP functionality. Test it using MCPJam:
+
+```
+# From the root of the Bazel repo:
+npx @mcpjam/inspector@v2.0.4 --config reboot/ping/mcp_servers.json --server ping-server
+```
+
 ## On the local cluster
 
 To test that `ping` on the local cluster is working as it should, here

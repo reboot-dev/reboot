@@ -1,6 +1,99 @@
 "use client";
 import { react_pb, Event, Status } from "@reboot-dev/reboot-api";
-import { createContext, ReactNode, useContext, useState } from "react";
+import {
+  createContext,
+  lazy,
+  ReactNode,
+  Suspense,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
+
+// ---------------------------------------------------------------------------
+// Globals injected by the Reboot server for remote access.
+// ---------------------------------------------------------------------------
+
+declare global {
+  interface Window {
+    REBOOT_URL?: string;
+    REBOOT_MCP_UI_TITLE?: string;
+  }
+}
+
+// Re-export internal hooks and context so existing imports
+// don't break.
+export {
+  McpAppContext,
+  type McpAppContextValue,
+  useMcpApp,
+  useMcpToolData,
+} from "./internal/index.js";
+
+// ---------------------------------------------------------------------------
+// URL and MCP title auto-detection.
+// ---------------------------------------------------------------------------
+
+/**
+ * Auto-detect the Reboot server URL.
+ *
+ * Priority:
+ * 1. `window.REBOOT_URL` (injected by server)
+ * 2. `rebootUrl` query parameter (dev iframe mode)
+ * 3. `window.location.origin` (if valid HTTP)
+ */
+function detectRebootUrl(): string {
+  // Server-injected URL (for remote MCP Apps).
+  const injectedUrl = window.REBOOT_URL;
+  if (injectedUrl) return injectedUrl;
+
+  // Query param URL (for iframe-based loading).
+  const queryUrl = new URLSearchParams(window.location.search).get("rebootUrl");
+  if (queryUrl) return queryUrl;
+
+  // Same-origin deployment.
+  const origin = window.location.origin;
+  if (origin && origin !== "null" && origin.startsWith("http")) {
+    return origin;
+  }
+
+  throw new Error(
+    "Could not detect Reboot server URL. " +
+      "Ensure the page is served from the Reboot server."
+  );
+}
+
+/**
+ * Detect MCP properties. Returns non-null when the app
+ * should operate in MCP mode.
+ *
+ * Sources (any triggers MCP mode):
+ * 1. Explicit `mcpUiTitle` prop
+ * 2. `window.REBOOT_MCP_UI_TITLE` (production injection)
+ * 3. `mcpUiTitle` query parameter (dev iframe mode)
+ */
+function detectMcpProperties(
+  explicitTitle?: string
+): { uiTitle: string } | null {
+  if (explicitTitle) return { uiTitle: explicitTitle };
+
+  const injectedTitle = window.REBOOT_MCP_UI_TITLE;
+  if (injectedTitle) return { uiTitle: injectedTitle };
+
+  const queryTitle = new URLSearchParams(window.location.search).get(
+    "mcpUiTitle"
+  );
+  if (queryTitle) return { uiTitle: queryTitle };
+
+  return null;
+}
+
+// Lazy-loaded McpConnector. Kept in `internal/` so that
+// the ext-apps import doesn't appear in `index.d.ts`,
+// which would break consumers using `moduleResolution:
+// "node"` or that don't have ext-apps installed.
+
+const LazyMcpConnector = lazy(() => import("./internal/McpConnector.js"));
 
 export class RebootClient {
   readonly url: string;
@@ -74,11 +167,17 @@ export class RebootClient {
   }
 }
 
+// ---------------------------------------------------------------------------
+// RebootClientProvider: unified provider for both MCP and
+// non-MCP apps.
+// ---------------------------------------------------------------------------
+
 const RebootClientContext = createContext<RebootClient | undefined>(undefined);
 
 interface RebootClientProviderWithClientProps {
   children: ReactNode;
   url?: undefined;
+  mcpUiTitle?: string;
   token?: string;
   client: RebootClient;
   offlineCacheEnabled?: boolean;
@@ -87,6 +186,16 @@ interface RebootClientProviderWithClientProps {
 interface RebootClientProviderWithURLProps {
   children: ReactNode;
   url: string;
+  mcpUiTitle?: string;
+  token?: string;
+  client?: undefined;
+  offlineCacheEnabled?: boolean;
+}
+
+interface RebootClientProviderAutoProps {
+  children: ReactNode;
+  url?: undefined;
+  mcpUiTitle?: string;
   token?: string;
   client?: undefined;
   offlineCacheEnabled?: boolean;
@@ -94,24 +203,28 @@ interface RebootClientProviderWithURLProps {
 
 type RebootClientProviderProps =
   | RebootClientProviderWithClientProps
-  | RebootClientProviderWithURLProps;
+  | RebootClientProviderWithURLProps
+  | RebootClientProviderAutoProps;
 
 export const RebootClientProvider = ({
   children,
-  url,
+  url: explicitUrl,
+  mcpUiTitle: explicitUiTitle,
   token,
   client,
   offlineCacheEnabled = false,
 }: RebootClientProviderProps) => {
   const [bearerToken, setBearerToken] = useState<string | undefined>(token);
 
-  const rebootUrl = url || client?.url;
+  const rebootUrl = useMemo(
+    () => explicitUrl || client?.url || detectRebootUrl(),
+    [explicitUrl, client?.url]
+  );
 
-  if (!rebootUrl) {
-    throw new Error(
-      "You must pass either a 'url' or a 'client' to RebootClientProvider"
-    );
-  }
+  const mcpTitle = useMemo(
+    () => detectMcpProperties(explicitUiTitle),
+    [explicitUiTitle]
+  );
 
   const rebootClient = new RebootClient({
     url: rebootUrl,
@@ -120,6 +233,22 @@ export const RebootClientProvider = ({
     bearerToken,
     offlineCacheEnabled,
   });
+
+  if (mcpTitle) {
+    return (
+      <RebootClientContext.Provider value={rebootClient}>
+        <Suspense
+          fallback={
+            <div style={{ padding: "1rem", opacity: 0.7 }}>Loading MCP...</div>
+          }
+        >
+          <LazyMcpConnector appName={mcpTitle.uiTitle}>
+            {children}
+          </LazyMcpConnector>
+        </Suspense>
+      </RebootClientContext.Provider>
+    );
+  }
 
   return (
     <RebootClientContext.Provider value={rebootClient}>
@@ -173,7 +302,7 @@ export interface Reader<ResponseType> {
   // Functions to dispatch to listeners.
   setResponse: (response: ResponseType, options?: { cache: boolean }) => void;
   setIsLoading: (isLoading: boolean) => void;
-  setStatuse: (status: Status) => void;
+  setStatus: (status: Status) => void;
 }
 
 export interface Observers {

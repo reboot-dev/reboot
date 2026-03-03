@@ -11,6 +11,9 @@ reported in user code. #}
 
 {# Constants we use throughout template. #}
 {% set constants = namespace(has_read=false, has_write=false) %}
+{% set AUTO_CONSTRUCT_STATE_TYPE = "Chat" %}
+{% set AUTO_CONSTRUCT_PROTO_METHOD = "Create" %}
+{% set AUTO_CONSTRUCT_METHOD = "create" %}
 
 {# Determine whether or not we'll be overriding 'Read'/'Write'. #}
 {% for client in clients %}
@@ -101,6 +104,9 @@ import rbt.v1alpha1 as IMPORT_rbt_v1alpha1
 import rbt.v1alpha1.nodejs_pb2 as IMPORT_rbt_v1alpha1_nodejs_pb2
 import google.protobuf.any_pb2 as IMPORT_google_protobuf_any_pb2
 import sys as IMPORT_sys
+import mcp.server.fastmcp as IMPORT_mcp_server_fastmcp
+import reboot.mcp.context as IMPORT_reboot_mcp_context
+import reboot.mcp.ui as IMPORT_reboot_mcp_ui
 
 {% if not options.proto.pydantic and proto.messages_and_enums | length > 0 %}
 # Additionally re-export all messages and enums from the pb2 module.
@@ -2541,6 +2547,277 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
     def token_verifier(self) -> IMPORT_typing.Optional[IMPORT_reboot_aio_auth_token_verifiers.TokenVerifier]:
         return None
 
+{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+    _is_auto_construct = True
+{% else %}
+    _is_auto_construct = False
+{% endif %}
+
+{% set state_has_mcp = namespace(value=false) %}
+{% for service in state.services %}
+{% for method in service.methods %}
+{% if method.options.proto.mcp %}
+{% set state_has_mcp.value = true %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+
+{% if state_has_mcp.value or state.proto.uis | length > 0 %}
+    @staticmethod
+    def _add_mcp(
+        mcp: IMPORT_mcp_server_fastmcp.FastMCP,
+        auto_construct_state_type_full_name: IMPORT_typing.Optional[str] = None,
+    ) -> None:
+        """Register MCP tools and resources for {{ state.proto.name }}."""
+{% for service in state.services %}
+{% for method in service.methods %}
+{% if method.options.proto.mcp and method.options.proto.mcp.tool %}
+{% set tool_name = method.options.proto.mcp.name if method.options.proto.mcp.name else (state.proto.name | to_snake) + "_" + (method.proto.name | to_snake) %}
+{% set tool_title = method.options.proto.mcp.title if method.options.proto.mcp.title else method.proto.name %}
+{% set tool_description = method.options.proto.mcp.description if method.options.proto.mcp.description else "Invoke " + method.proto.name + " on " + state.proto.name + "." %}
+{% set request_type = state.proto.name + "." + method.proto.name + "Request" %}
+
+        # Tool for '{{ method.proto.full_name }}'.
+        @mcp.tool(
+            name="{{ tool_name }}",
+            title="{{ tool_title }}",
+            description="{{ tool_description }}",
+        )
+        async def {{ tool_name }}_tool(
+            ctx: IMPORT_mcp_server_fastmcp.Context,
+{% if state.proto.name != AUTO_CONSTRUCT_STATE_TYPE %}
+            id: str,
+{% endif %}
+{% if method.input_type_fields %}
+            *,
+            request: {{ request_type }},
+{% endif %}
+        ):
+            reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
+{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+            id = IMPORT_reboot_mcp_context.get_mcp_session_id(ctx)
+            # State is auto-constructed on session init;
+            # see `_auto_construct`.
+{% endif %}
+{% if method.options.proto.constructor %}
+{% if method.input_type_fields %}
+            _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, id, request)
+{% else %}
+            _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, id)
+{% endif %}
+            return response
+{% else %}
+            ref = {{ state.proto.name }}.ref(id)
+{% if method.input_type_fields %}
+            return await ref.{{ method.proto.name | to_snake }}(reboot_context, request)
+{% else %}
+            return await ref.{{ method.proto.name | to_snake }}(reboot_context)
+{% endif %}
+{% endif %}
+
+{% endif %}
+{% if method.options.proto.mcp and method.options.proto.mcp.resource %}
+{% set state_scheme = state.proto.name | to_snake %}
+{% set method_path = method.proto.name | to_snake %}
+{% set resource_name = method.options.proto.mcp.name if method.options.proto.mcp.name else state_scheme + "_" + method_path %}
+{% set resource_title = method.options.proto.mcp.title if method.options.proto.mcp.title else state.proto.name %}
+{% set resource_description = method.options.proto.mcp.description if method.options.proto.mcp.description else state.proto.name + " state." %}
+{% set request_type = state.proto.name + "." + method.proto.name + "Request" %}
+
+        # Resource for '{{ method.proto.full_name }}'.
+{% if method.input_type_fields %}
+        @mcp.resource(
+{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+            "{{ state_scheme }}:///{{ method_path }}{% for name in method.input_type_fields.keys() %}/{{'{'}}{{ name }}{{'}'}}{% endfor %}",
+{% else %}
+            "{{ state_scheme }}://{id}/{{ method_path }}{% for name in method.input_type_fields.keys() %}/{{'{'}}{{ name }}{{'}'}}{% endfor %}",
+{% endif %}
+            name="{{ resource_name }}",
+            title="{{ resource_title }}",
+            description="{{ resource_description }}",
+            mime_type="application/json",
+        )
+        async def {{ resource_name }}_resource(
+            ctx: IMPORT_mcp_server_fastmcp.Context,
+{% if state.proto.name != AUTO_CONSTRUCT_STATE_TYPE %}
+            id: str,
+{% endif %}
+            *,
+{% for name, type_str in method.input_type_fields.items() %}
+            {{ name }}: str,
+{% endfor %}
+        ):
+            reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
+{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+            # State is auto-constructed on session init; see `_auto_construct`.
+            id = IMPORT_reboot_mcp_context.get_mcp_session_id(ctx)
+{% endif %}
+            # Construct request from URI params, coercing types
+            # as needed.
+            request = {{ request_type }}(
+{% for name, type_str in method.input_type_fields.items() %}
+{% if type_str == 'int' %}
+                {{ name }}=int({{ name }}),
+{% elif type_str == 'bool' %}
+                {{ name }}={{ name }}.lower() in ('true', '1', 'yes'),
+{% elif type_str == 'float' %}
+                {{ name }}=float({{ name }}),
+{% else %}
+                {{ name }}={{ name }},
+{% endif %}
+{% endfor %}
+            )
+{% if method.options.proto.constructor %}
+            _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, id, request)
+            return response
+{% else %}
+            ref = {{ state.proto.name }}.ref(id)
+            return await ref.{{ method.proto.name | to_snake }}(reboot_context, request)
+{% endif %}
+{% else %}
+        @mcp.resource(
+{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+            "{{ state_scheme }}://",
+{% else %}
+            "{{ state_scheme }}://{id}",
+{% endif %}
+            name="{{ resource_name }}",
+            title="{{ resource_title }}",
+            description="{{ resource_description }}",
+            mime_type="application/json",
+        )
+{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+        async def {{ resource_name }}_resource(ctx: IMPORT_mcp_server_fastmcp.Context):
+{% else %}
+        async def {{ resource_name }}_resource(ctx: IMPORT_mcp_server_fastmcp.Context, id: str):
+{% endif %}
+            reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
+{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+            # State is auto-constructed on session init; see `_auto_construct`.
+            id = IMPORT_reboot_mcp_context.get_mcp_session_id(ctx)
+{% endif %}
+{% if method.options.proto.constructor %}
+            _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, id)
+{% else %}
+            response = await {{ state.proto.name }}.ref(id).{{ method.proto.name | to_snake }}(reboot_context)
+{% endif %}
+            return response
+{% endif %}
+
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% if state.proto.uis | length > 0 %}
+
+        # UI tools — allow AI to trigger loading of UIs.
+{% for ui in state.proto.uis %}
+        @mcp.tool(
+            name="{{ ui.name }}",
+            title="Show {{ ui.title }}",
+            description="{{ ui.description if ui.description else 'Opens the ' + ui.name + ' interface.' }}",
+            meta={"ui/resourceUri": "ui://{{ state.proto.name | to_snake }}/{{ ui.name }}"},
+        )
+{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+        async def {{ ui.name }}_tool(
+            ctx: IMPORT_mcp_server_fastmcp.Context,
+        ) -> dict:
+            return {
+                "ids": {
+                    "{{ state.proto.full_name }}":
+                        IMPORT_reboot_mcp_context.get_mcp_session_id(ctx),
+                },
+            }
+{% else %}
+        async def {{ ui.name }}_tool(
+            ctx: IMPORT_mcp_server_fastmcp.Context,
+            id: str,
+        ) -> dict:
+            _ids: dict[str, str | None] = {
+                "{{ state.proto.full_name }}": id,
+            }
+            if auto_construct_state_type_full_name is not None:
+                _ids[auto_construct_state_type_full_name] = (
+                    IMPORT_reboot_mcp_context.get_mcp_session_id(ctx))
+            return {"ids": _ids}
+{% endif %}
+
+{% endfor %}
+        # Map UI method names to web app paths.
+        _ui_app_paths: dict[str, str] = {
+{% for ui in state.proto.uis %}
+            "{{ ui.name }}": "{{ ui.path }}",
+{% endfor %}
+        }
+
+        # Optional artifact path overrides (only populated
+        # when `artifact_path` is explicitly set).
+        _ui_artifact_paths: dict[str, str] = {
+{% for ui in state.proto.uis %}
+{% if ui.artifact_path %}
+            "{{ ui.name }}": "{{ ui.artifact_path }}",
+{% endif %}
+{% endfor %}
+        }
+
+        def _get_reboot_url_from_request(
+            ctx: IMPORT_mcp_server_fastmcp.Context,
+        ) -> str:
+            """Extract Reboot URL from request headers."""
+            request = ctx.request_context.request
+            if request is None:
+                raise RuntimeError(
+                    "No HTTP request in MCP context"
+                )
+            host = (
+                request.headers.get("x-forwarded-host")
+                or request.headers.get("host")
+            )
+            if not host:
+                raise RuntimeError(
+                    "No host header in request"
+                )
+            scheme = (
+                request.headers.get("x-forwarded-proto")
+                or ("https" if request.url.scheme == "https"
+                    else "http")
+            )
+            return f"{scheme}://{host}"
+
+        @mcp.resource(
+            "ui://{{ state.proto.name | to_snake }}/{ui}",
+            name="{{ state.proto.name | to_snake }}-ui",
+            title="{{ state.proto.name }} UI",
+            description="{{ state.proto.name }} UIs.",
+            mime_type="text/html;profile=mcp-app",
+        )
+        def {{ state.proto.name | to_snake }}_ui_resource(
+            ctx: IMPORT_mcp_server_fastmcp.Context,
+            ui: str,
+        ) -> str:
+            reboot_url = _get_reboot_url_from_request(ctx)
+            if ui not in _ui_app_paths:
+                raise ValueError(f"Unknown UI: {ui}")
+            return IMPORT_reboot_mcp_ui.ui_html(
+                _ui_app_paths[ui],
+                reboot_url,
+                ui_name=ui,
+                artifact_path=_ui_artifact_paths.get(ui),
+            )
+
+{% endif %}
+        pass  # End of _add_mcp.
+{% endif %}
+
+{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+    @staticmethod
+    async def _auto_construct(
+        context: IMPORT_reboot_aio_external.ExternalContext,
+        session_id: str,
+    ) -> None:
+        """Construct an empty `{{ AUTO_CONSTRUCT_STATE_TYPE }}` state"""
+        await {{ state.proto.name }}.{{ AUTO_CONSTRUCT_METHOD }}(context, session_id)
+{% endif %}
+
     def ref(
         self,
         *,
@@ -3104,6 +3381,18 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         yield  # Necessary for type checking.
         {% endif %}
     {% elif method.options.proto.kind == 'writer' %}
+    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+    # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`.
+    # Override in your Servicer to run custom initialization
+    # on new {{ AUTO_CONSTRUCT_STATE_TYPE }} sessions.
+    async def _{{ method.proto.name }}(
+        self,
+        context: IMPORT_reboot_aio_contexts.WriterContext,
+        state: {{ state.proto.name }}.State,
+        request: {{ method.input_type }},
+    ) -> {{ method.output_type }}:
+        pass
+    {% else %}
     @IMPORT_abc_abstractmethod
     async def _{{ method.proto.name }}(
         self,
@@ -3112,6 +3401,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
         raise NotImplementedError
+    {% endif %}
     {% elif method.options.proto.kind == 'transaction' %}
     @IMPORT_abc_abstractmethod
     async def _{{ method.proto.name }}(
@@ -3225,6 +3515,30 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         yield  # Necessary for type checking.
         {% endif %}
     {% elif method.options.proto.kind == 'writer' %}
+    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+    # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`.
+    # Override in your Servicer to run custom initialization
+    # on new {{ AUTO_CONSTRUCT_STATE_TYPE }} sessions.
+    async def {{ method.proto.name }}(
+        self,
+        context: IMPORT_reboot_aio_contexts.WriterContext,
+        state: {{ state.proto.name }}.State,
+        {% if method.has_non_none_request %}
+        request: {{ state.proto.name}}.{{ method.proto.name }}Request,
+        {% endif %}
+    ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
+        pass
+
+    async def {{ method.proto.name | to_snake }}(
+        self,
+        context: IMPORT_reboot_aio_contexts.WriterContext,
+        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        {% if method.has_non_none_request %}
+        request: {{ state.proto.name}}.{{ method.proto.name }}Request,
+        {% endif %}
+    ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
+        pass
+    {% else %}
     # To be backwards compatible during the renaming don't make this
     # method to be 'abstractmethod', so that new code that
     # doesn't implement it continues to work.
@@ -3263,6 +3577,7 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         {% endif %}
     ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
         raise NotImplementedError
+    {% endif %}
     {% elif method.options.proto.kind == 'transaction' %}
     # To be backwards compatible during the renaming don't make this
     # method to be 'abstractmethod', so that new code that
@@ -3534,6 +3849,33 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
     {% for service in state.services %}
     {% for method in service.methods %}
     # For '{{ method.proto.full_name }}'.
+    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+    # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`.
+    # Override in your Servicer to run custom initialization
+    # on new {{ AUTO_CONSTRUCT_STATE_TYPE }} sessions.
+    async def {{ method.proto.name }}(
+        self,
+        context: IMPORT_reboot_aio_contexts.WriterContext,
+        {% if method.has_non_none_request %}
+        request: {{ state.proto.name }}.{{ method.proto.name }}Request,
+        {% endif %}
+    ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
+        return await self.{{ method.proto.name | to_snake }}(
+            context,
+            {% if method.has_non_none_request %}
+            request,
+            {% endif %}
+        )
+
+    async def {{ method.proto.name | to_snake }}(
+        self,
+        context: IMPORT_reboot_aio_contexts.WriterContext,
+        {% if method.has_non_none_request %}
+        request: {{ state.proto.name }}.{{ method.proto.name }}Request,
+        {% endif %}
+    ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
+        pass
+    {% else %}
     # To be backwards compatible during the renaming don't make this
     # method to be 'abstractmethod', so that new code that
     # doesn't implement it continues to work.
@@ -3603,6 +3945,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         {% endif %}
     ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
         raise NotImplementedError
+    {% endif %}
 
     {% endfor %}
     {% endfor %}
@@ -7605,4 +7948,5 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
         )
 
 {% endfor %}
+
 # yapf: enable

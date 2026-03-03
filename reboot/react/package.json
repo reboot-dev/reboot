@@ -4,6 +4,16 @@
   "description": "npm package for Reboot React",
   "main": "index.js",
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    },
+    "./internal": {
+      "types": "./internal/index.d.ts",
+      "import": "./internal/index.js"
+    }
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc"
@@ -17,6 +27,8 @@
     "tslib": "^2.6.2",
     "typescript": "4.8.4",
     "uuid": "11.1.0",
+    "@modelcontextprotocol/ext-apps": "^1.0.1",
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "@scarf/scarf": "1.4.0"
   },
   "license": "Apache-2.0",

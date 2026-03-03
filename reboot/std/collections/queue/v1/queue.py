@@ -14,10 +14,10 @@ from reboot.aio.contexts import (
     WorkflowContext,
 )
 from reboot.aio.workflows import until
-from reboot.std.collections.queue.v1.uuid7 import uuid7
 from reboot.std.collections.v1 import sorted_map
 from reboot.std.collections.v1.sorted_map import SortedMap
 from reboot.std.item.v1.item import Item
+from reboot.uuidv7 import uuid7
 from uuid import uuid4
 
 # The number of items a bulk `Dequeue` without an `at_most` number set

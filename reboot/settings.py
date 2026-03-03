@@ -115,6 +115,11 @@ ENVVAR_RBT_STATE_DIRECTORY = 'RBT_STATE_DIRECTORY'
 ENVVAR_RBT_NODEJS = 'RBT_NODEJS'
 ENVVAR_RBT_SERVERS = 'RBT_SERVERS'
 
+# URL of the MCP frontend dev server for HMR support.
+# Format: "http://host:port" (e.g., "http://localhost:4444").
+# When set, Envoy routes "/__/web/**" to this server.
+ENVVAR_RBT_MCP_FRONTEND_HOST = 'RBT_MCP_FRONTEND_HOST'
+
 # Environment variable indicating that `rbt` is being invoked from
 # Node.js.
 ENVVAR_RBT_FROM_NODEJS = 'RBT_FROM_NODEJS'
@@ -261,3 +266,11 @@ ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG = 'REBOOT_ENABLE_EVENT_LOOP_BLO
 
 REBOOT_DISCORD_URL = 'https://discord.gg/cRbdcS94Nr'
 REBOOT_GITHUB_ISSUES_URL = 'https://github.com/reboot-dev/reboot/issues'
+
+# State type name that triggers auto-construction for every MCP session.
+AUTO_CONSTRUCT_STATE_TYPE = "Chat"
+
+# Name of the method injected for auto-construction on the
+# above state type.
+AUTO_CONSTRUCT_METHOD = "create"  # As used in Python.
+AUTO_CONSTRUCT_PROTO_METHOD = "Create"  # As used in protobuf.

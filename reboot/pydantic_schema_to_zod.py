@@ -11,6 +11,7 @@ from reboot.api import (
     API,
     COLLECTION_TYPE,
     PRIMITIVE_TYPE,
+    MethodModel,
     Model,
     UserPydanticError,
     get_field_tag,
@@ -54,6 +55,8 @@ def collect_all_error_models(
 
         for type_obj in api.get_types().values():
             for method_spec in type_obj.methods.values():
+                if not isinstance(method_spec, MethodModel):
+                    continue
                 for error_model in method_spec.errors:
                     error_models.add(
                         (error_model.__module__, error_model.__name__)
@@ -483,6 +486,8 @@ async def generate_zod_file_from_api(
                 visited,
             )
             for method_spec in type_obj.methods.values():
+                if not isinstance(method_spec, MethodModel):
+                    continue
                 if method_spec.request is not None:
                     _collect_external_references(
                         method_spec.request,
@@ -616,6 +621,8 @@ async def _generate_api_schemas(
     # generated above. Response `None` types are inlined as `z.void()`.
     for type_name, type_obj in api.get_types().items():
         for method_name, method_spec in type_obj.methods.items():
+            if not isinstance(method_spec, MethodModel):
+                continue
             if method_spec.request is None:
                 # Generate a named schema for empty request object.
                 camel_method_name = snake_to_camel(method_name)
@@ -646,6 +653,8 @@ async def _generate_api_schemas(
         await zod.write('    methods: {\n')
 
         for method_name, method_spec in type_obj.methods.items():
+            if not isinstance(method_spec, MethodModel):
+                continue
             camel_method_name = snake_to_camel(method_name)
             method_kind = method_spec.kind.value
 
