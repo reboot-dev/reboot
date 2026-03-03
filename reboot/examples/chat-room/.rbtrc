@@ -1,0 +1,63 @@
+########################################################################
+# To expand flags or positional arguments for a specific subcommand    #
+# you can include a line such as:                                      #
+#                                                                      #
+# subcommand --flag1 --flag2=value argument                            #
+#                                                                      #
+# You can also include one flag or argument per line:                  #
+#                                                                      #
+# subcommand --flag1                                                   #
+# subcommand --flag2=value                                             #
+# subcommand argument                                                  #
+#                                                                      #
+# To only expand flags or arguments if a specific config is used with  #
+# a subcommand include lines that include 'subcommand:config', for     #
+# example:                                                             #
+#                                                                      #
+# subcommand:use-foo --flag3=foo                                       #
+#                                                                      #
+# Then you can expand that config on the command line via:             #
+#                                                                      #
+# rbt subcommand --config=use-foo`                                     #
+########################################################################
+
+# Find '.proto' files in 'api/'.
+generate api/
+
+# Put boilerplate files in 'boilerplate/'.
+generate --boilerplate=boilerplate/
+
+# Tell `rbt` where to output its generated files.
+# The paths are different for backend and frontend code.
+generate --python=backend/api/
+generate --react=web/src/api
+generate --web=web/src/api
+
+# Watch if any generated or source files are modified.
+dev run --watch=backend/api/**/*.py
+dev run --watch=backend/src/**/*.py
+
+# Tell `rbt` that this is a Python application.
+dev run --python
+
+# Set the application name for commands that require it.
+cloud up --name=chat-room
+cloud down --name=chat-room --expunge
+dev expunge --name=chat-room
+dev run --name=chat-room
+serve run --name=chat-room
+
+# Run the application!
+dev run --application=backend/src/main.py
+
+# Tell `rbt serve` that this is a Python application.
+serve run --python
+
+# Leave TLS termination to the external load balancer; expose a non-SSL port to
+# that loadbalancer.
+serve run --tls=external
+
+# Run the application!
+serve run --application=backend/src/main.py
+
+cloud logs --name=chat-room

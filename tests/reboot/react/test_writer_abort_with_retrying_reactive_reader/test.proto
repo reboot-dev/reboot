@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package tests.reboot.react.test_writer_abort_with_retrying_reactive_reader;
+
+import "rbt/v1alpha1/options.proto";
+import "google/protobuf/empty.proto";
+
+message Test {
+  option (rbt.v1alpha1.state) = {
+  };
+}
+
+message CreateRequest {}
+
+message CreateResponse {}
+
+message ReturnResponseOrRaiseRequest {}
+
+message ReturnResponseOrRaiseResponse {
+  string message = 1;
+}
+
+service TestMethods {
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {}
+    };
+  }
+
+  rpc ReturnResponseOrRaise(ReturnResponseOrRaiseRequest)
+      returns (ReturnResponseOrRaiseResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc FailWithAborted(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}

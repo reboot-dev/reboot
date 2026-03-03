@@ -1,0 +1,20 @@
+load("@rules_python//python:pip.bzl", "compile_pip_requirements")
+
+exports_files([
+    "boutique_README.md.yaml",
+    "counter_README.md.yaml",
+    "bank_README.md.yaml",
+    "chat_room_README.md.yaml",
+    "monorepo_README.md.yaml",
+    "docubot_README.md.yaml",
+    "bank_pydantic_README.md.yaml",
+    "README.j2.md",
+    "templater.py",
+])
+
+# Run 'bazel run reboot/examples:requirements.update' to update the lock file.
+compile_pip_requirements(
+    name = "requirements",
+    src = ":requirements.in",
+    requirements_txt = ":requirements_lock.txt",
+)

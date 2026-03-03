@@ -1,0 +1,29 @@
+# This file is generated from a template in `reboot/ci/templates/`.
+# Do not edit it directly.
+# Run `bazel run //:ci_workflows` to regenerate it after editing the template.
+
+name: Development Containers - Build and Test
+
+on:
+  # On every PR, do a build and test. We do NOT push the containers;
+  # that is done only when the `release_part_1.yml` workflow is invoked
+  # manually. We also do NOT test on pushes to `main`, only on PRs:
+  # `main` can only change via PR, and PRs must pass all checks to
+  # merge, so checks on `main` are redundant.
+  pull_request:
+  merge_group:
+    # Required if we want to use GitHub's Merge Queue feature. See:
+    #   https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue#triggering-merge-group-checks-with-github-actions
+
+jobs:
+  build-test-development-containers:
+    name: Build and Test Development Containers
+    uses: ./.github/workflows/development_containers_build_test_push.yml
+    permissions:
+      # The workflow we're about to run requires the following permissions,
+      # which means this job also needs them.
+      contents: read
+      packages: write
+    secrets: inherit
+    with:
+      push: false

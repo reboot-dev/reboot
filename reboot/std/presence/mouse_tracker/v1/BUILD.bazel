@@ -1,0 +1,26 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+
+ts_project(
+    name = "presence_mouse_tracker_ts",
+    srcs = [
+        "index.ts",
+        "package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@reboot-dev/reboot-std-api",
+        "//:node_modules/@types/node",
+    ],
+)

@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package docubot.assistant.v1;
+
+import "google/protobuf/empty.proto";
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service AssistantMethods {
+  // Constructor to initialize the state machine.
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: { constructor: {} },
+    };
+  }
+
+  rpc EnsureOpenAIResourcesCreated(google.protobuf.Empty)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  rpc CrawlControlLoop(CrawlControlLoopRequest)
+      returns (CrawlControlLoopResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  rpc Status(StatusRequest) returns (StatusResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+}
+
+message Assistant {
+  option (rbt.v1alpha1.state) = {
+  };
+  string name = 1;
+  string openai_assistant_id = 2;
+  string openai_vector_store_id = 3;
+}
+
+message CreateRequest {
+  string name = 1;
+
+  // URL to crawl.
+  string url = 2;
+}
+
+message CreateResponse {}
+
+message CrawlControlLoopRequest {
+  // URL to crawl.
+  string url = 1;
+}
+
+message CrawlControlLoopResponse {}
+
+message StatusRequest {}
+
+message StatusResponse {
+  string openai_assistant_id = 1;
+}

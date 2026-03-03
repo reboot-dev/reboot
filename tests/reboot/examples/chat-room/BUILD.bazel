@@ -1,0 +1,128 @@
+load("//reboot:versions.bzl", "REBOOT_VERSION")
+load("//tests:sh_test_in_working_directory.bzl", "sh_test_in_working_directory")
+
+# The following package paths are relative to the working directory of
+# the test script.
+shared_env = {
+    "EXPECTED_RBT_DEV_OUTPUT_FILE": "tests/reboot/examples/chat-room/expected_output.txt",
+}
+
+devcontainer_env = dict(shared_env)
+
+devcontainer_env.update({
+    # Our workstations must use the "development" version of the wheel,
+    # since they cannot build the release version.
+    "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+})
+
+osx_env = dict(devcontainer_env)
+
+osx_env.update({
+    # Our OSX CI machines don't have Docker.
+    "REBOOT_LOCAL_ENVOY_MODE": "executable",
+})
+
+manylinux_env = dict(shared_env)
+
+manylinux_env.update({
+    # Our `manylinux-runner` containers don't have Docker.
+    "REBOOT_LOCAL_ENVOY_MODE": "executable",
+    # Our `manylinux-runner` containers can build the release target of
+    # the wheel file.
+    "REBOOT_WHL_FILE": "$(location //reboot:reboot)",
+})
+
+sh_test_in_working_directory(
+    name = "test",
+    data = [
+        "//reboot:reboot.dev",
+        # The actual test script will be given access to all of the files in
+        # the example.
+        "//reboot/examples/chat-room:everything",
+        "expected_output.txt",
+    ],
+    env = select({
+        "@platforms//os:linux": devcontainer_env,
+        "@platforms//os:osx": osx_env,
+    }),
+    # The following path is relative to the working directory.
+    script = ".tests/test.sh",
+    # TODO: Rye has issues with concurrent bootstrap.
+    # https://github.com/astral-sh/rye/issues/960
+    # Additionally, in all our example tests, we initiate LocalEnvoy on the
+    # default secure port 9991. We require 'exclusive' to not run multiple
+    # tests, that use the same port, concurrently.
+    tags = ["exclusive"],
+    working_directory = "reboot/examples/chat-room/",
+)
+
+sh_test_in_working_directory(
+    # Identical to `test` above, except it uses a wheel built exactly as
+    # it will be released. That means this test can only run on
+    # `manylinux` containers.
+    name = "release_test",
+    data = [
+        # The release test is run against the to-be-released wheel package.
+        "//reboot",
+        # The actual test script will be given access to all of the files in
+        # the example.
+        "//reboot/examples/chat-room:everything",
+        "expected_output.txt",
+    ],
+    env = manylinux_env,
+    # The following path is relative to the working directory.
+    script = ".tests/test.sh",
+    # TODO: Rye has issues with concurrent bootstrap.
+    # https://github.com/astral-sh/rye/issues/960
+    # Additionally, in all our example tests, we initiate LocalEnvoy on the
+    # default secure port 9991. We require 'exclusive' to not run multiple
+    # tests, that use the same port, concurrently.
+    #
+    # We need to set "manual", because the `//reboot:reboot` target
+    # cannot be built on normal workstations - this test should only be
+    # run in "manylinux" containers.
+    tags = [
+        "exclusive",
+        "manual",
+    ],
+    working_directory = "reboot/examples/chat-room/",
+)
+
+sh_test_in_working_directory(
+    name = "serve_test",
+    size = "large",
+    data = [
+        "//rbt/v1alpha1:reboot-dev-reboot-api",
+        "//reboot:reboot.dev",
+        "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+        "//reboot/containers/reboot-base:dev",
+        # The actual test script will be given access to all of the files in
+        # the example.
+        "//reboot/examples/chat-room:everything",
+        "//tests/reboot/examples/chat-room:serve_expected_output.txt",
+    ],
+    env = {
+        "EXPECTED_CURL_OUTPUT_FILE": "tests/reboot/examples/chat-room/serve_expected_output.txt",
+        "PUSH_REBOOT_BASE": "false",
+        # We have to repeat the same ENV variables as in the `reboot-base:dev`
+        # script.
+        "REBOOT_API_NPM_PACKAGE": "$(location //rbt/v1alpha1:reboot-dev-reboot-api)",
+        "REBOOT_NPM_PACKAGE": "$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
+        "REBOOT_VERSION": REBOOT_VERSION,
+        "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+    },
+    # The following path is relative to the working directory.
+    script = ".tests/serve_test.sh",
+    # The following path is relative to the bazel sandbox directory.
+    setup_script = "reboot/containers/reboot-base/dev",
+    # TODO: Rye has issues with concurrent bootstrap.
+    # https://github.com/astral-sh/rye/issues/960
+    # Additionally, in all our example tests, we initiate LocalEnvoy on the
+    # default secure port 9991. We require 'exclusive' to not run multiple
+    # tests, that use the same port, concurrently.
+    tags = [
+        "exclusive",
+        "requires-docker",
+    ],
+    working_directory = "reboot/examples/chat-room/",
+)

@@ -1,0 +1,37 @@
+// This is the `devcontainer.json` used to build our Dev Container image. Think
+// of it as a combination of a `Dockerfile` plus additional building
+// instructions (notably the `features` section adds additional layers to the
+// built image that would be hard to reproduce in the `Dockerfile`).
+//
+// Using our GitHub Actions this `devcontainer.json` will get built into a
+// Docker image, which is what we release to our users to do development. Users
+// themselves use use a simpler `devcontainer.json` that only specifies that
+// built image; see `README.md` for an example of such an end-user
+// `.devcontainer.json`.
+
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/docker-existing-dockerfile
+{
+  "name": "Reboot Devcontainer",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": "../",
+    "cacheFrom": "ghcr.io/reboot-dev/reboot-devcontainer"
+  },
+  "remoteUser": "dev",
+
+  // Features to add to the dev container. More info: https://containers.dev/features.
+  "features": {
+    // Since several parts of Reboot rely on Docker, and since Dev Containers
+    // don't run Docker-on-Docker, we need to be able to run Docker-in-Docker.
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest"
+    },
+    // GitHub no longer installs sshd by default. See:
+    //   https://github.com/cli/cli/issues/5739.
+    // We now need to add it in explicitly.
+    "ghcr.io/devcontainers/features/sshd:1": {
+      "version": "latest"
+    }
+  }
+}

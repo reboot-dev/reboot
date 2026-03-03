@@ -1,0 +1,26 @@
+# This file is generated from a template in `reboot/ci/templates/`.
+# Do not edit it directly.
+# Run `bazel run //:ci_workflows` to regenerate it after editing the template.
+
+name: Debug and Cancel on Failure
+description: Provides tmate debugging on failure and cancels workflow if configured
+
+inputs:
+  cancel-workflow-on-failure:
+    description: Whether to cancel the workflow on failure
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Debug using tmate (if failure)
+      uses: mxschmitt/action-tmate@v3
+      # Optionally enable tmate debugging if the workflow was
+      # manually-triggered with `debug_enabled` set to `true`.
+      # https://github.com/mxschmitt/action-tmate#manually-triggered-debug
+      if: ${{ failure() && github.event_name == 'workflow_dispatch' && github.event.inputs.debug_enabled }}
+
+    # Always try and cancel the workflow on failure so we don't waste
+    # resources given we'll have to re-run!
+    - if: ${{ failure() && inputs.cancel-workflow-on-failure == 'true' }}
+      uses: andymckay/cancel-action@0.4

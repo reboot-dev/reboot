@@ -1,0 +1,89 @@
+{
+  "dependencies": {
+    "@bufbuild/protoplugin": "1.10.1",
+    "@bufbuild/protoc-gen-es": "1.10.1",
+    "@reboot-dev/reboot-api": "0.44.0",
+    "chalk": "^4.1.2",
+    "node-addon-api": "^7.0.0",
+    "node-gyp": ">=10.2.0",
+    "uuid": "11.1.0",
+    "which-pm-runs": "^1.1.0",
+    "extensionless": "^1.9.9",
+    "esbuild": "^0.24.0",
+    "express": "^5.1.0",
+    "@scarf/scarf": "1.4.0",
+    "tsx": "^4.19.2",
+    "zod": "^3.25.51",
+    "toobusy-js": "^0.5.1",
+    "@standard-schema/spec": "1.0.0"
+  },
+  "peerDependencies": {
+    "@bufbuild/protobuf": "1.10.1"
+  },
+  "type": "module",
+  "name": "@reboot-dev/reboot",
+  "version": "0.44.0",
+  "description": "npm package for Reboot",
+  "scripts": {
+    "preinstall": "node preinstall.cjs",
+    "install": "node install.cjs",
+    "postinstall": "rbt || exit 0",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepack": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "5.4.5",
+    "@types/express": "^5.0.1",
+    "@types/node": "20.11.5",
+    "@types/express-serve-static-core": "^5.0.6"
+  },
+  "bin": {
+    "rbt": "./rbt.js",
+    "rbt-esbuild": "./rbt-esbuild.js",
+    "zod-to-proto": "./zod-to-proto.js",
+    "protoc-gen-es": "./protoc-gen-es.js"
+  },
+  "engines": {
+    "node": ">=20.10.0"
+  },
+  "engineStrict": true,
+  "gypfile": true,
+  "author": "reboot-dev",
+  "license": "Apache-2.0",
+  "files": [
+    "binding.gyp",
+    "include",
+    "internal",
+    "package.json",
+    "protoc-gen-es.d.ts",
+    "protoc-gen-es.js",
+    "rbt.d.ts",
+    "rbt-esbuild.d.ts",
+    "rbt-esbuild.js",
+    "zod-to-proto.d.ts",
+    "zod-to-proto.js",
+    "rbt.js",
+    "index.d.ts",
+    "index.js",
+    "reboot_native.cc",
+    "reboot_native.cjs",
+    "reboot_native.d.ts",
+    "secrets",
+    "utils",
+    "venv.d.ts",
+    "venv.js",
+    "version.d.ts",
+    "version.js",
+    "workspaces.js",
+    "prepare_environment.sh",
+    "dummy.cc",
+    "preinstall.cjs",
+    "install.cjs"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./index.js",
+    "./secrets": "./secrets/index.js",
+    "./utils": "./utils/index.js"
+  }
+}

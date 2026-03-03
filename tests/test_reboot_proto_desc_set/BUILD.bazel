@@ -1,0 +1,49 @@
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//reboot:rules.bzl", "py_reboot_library")
+
+proto_library(
+    name = "tests_proto",
+    srcs = [
+        ":beans.proto",
+        ":tests.proto",
+    ],
+)
+
+proto_library(
+    name = "beans_proto",
+    srcs = [
+        ":beans.proto",
+    ],
+)
+
+proto_library(
+    name = "greeter_proto",
+    srcs = [
+        ":beans.proto",
+        ":greeter.proto",
+        ":tests.proto",
+    ],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:wrappers_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "greeter_py_reboot",
+    proto = "greeter.proto",
+    proto_library = ":greeter_proto",
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test",
+    srcs = ["greeter_proto_desc_set_test.py"],
+    main = "greeter_proto_desc_set_test.py",
+    deps = [
+        ":greeter_py_reboot",
+        "//reboot:helpers_py",
+    ],
+)

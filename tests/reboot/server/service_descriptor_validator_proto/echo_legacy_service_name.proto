@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/server/echo_shared_messages.proto";
+
+package tests.reboot.server.service_descriptor_validator_proto;
+
+message Echo {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated string messages = 1;
+}
+
+// Before our services were called "[...]Methods", they were called
+// "[...]Interface". For a time period, we permit that rename without backwards
+// compatibility errors.
+//
+// TODO(rjh): remove this when the rest of
+//            https://github.com/reboot-dev/mono/issues/3802 is complete.
+service EchoInterface {
+  rpc Reply(SingleStringField) returns (SingleStringField) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  rpc Replay(EmptyMessage) returns (RepeatedStringField) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+}

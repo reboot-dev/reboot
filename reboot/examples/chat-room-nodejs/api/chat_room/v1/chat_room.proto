@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package chat_room.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+message ChatRoom {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated string messages = 1;
+}
+
+service ChatRoomMethods {
+  // Returns the current list of recorded messages.
+  rpc Messages(MessagesRequest) returns (MessagesResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  // Adds a new message to the list of recorded messages.
+  rpc Send(SendRequest) returns (SendResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
+
+message MessagesRequest {}
+
+message MessagesResponse {
+  repeated string messages = 1;
+}
+
+message SendRequest {
+  string message = 1;  // E.g. "Hello, World".
+}
+
+message SendResponse {}

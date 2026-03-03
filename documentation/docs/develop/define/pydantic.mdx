@@ -1,0 +1,81 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Pydantic
+
+You can use [Pydantic](https://docs.pydantic.dev/) to define your API for
+Python backends.
+
+To declare a data type called `ChatRoom`, put the following in a `.py` file:
+
+```python
+from typing import Optional
+from reboot.api import (
+    API,
+    Field,
+    Methods,
+    Reader,
+    Model,
+    Writer,
+    Type,
+)
+
+class ChatRoomState(Model):
+    messages: Optional[list[str]] = Field(tag=1)
+
+class MessagesResponse(Model):
+    messages: list[str] = Field(tag=1)
+
+class SendRequest(Model):
+    message: str = Field(tag=1)
+
+ChatRoomMethods = Methods(
+    messages=Reader(
+        request=None,
+        response=MessagesResponse,
+    ),
+    send=Writer(
+        request=SendRequest,
+        response=None,
+    ),
+)
+
+api = API(
+    ChatRoom=Type(
+        state=ChatRoomState,
+        methods=ChatRoomMethods,
+    ),
+)
+```
+
+Reboot uses standard
+[Pydantic BaseModel](https://docs.pydantic.dev/latest/concepts/models/),
+with `Model` as the base class for your durable state types,
+request and response types.
+
+In addition to defining the data type, you'll also need to define operations
+for that type. In the example above, `ChatRoomMethods` defines the
+operations for the `ChatRoom` type.
+
+:::info Naming conventions
+Your state class should end in `State`, e.g., `ChatRoomState`. Your
+`Methods` variable should end in `Methods`, e.g., `ChatRoomMethods`. Your
+API types are composed of `state` and `methods` and should be
+descriptive of the interface, e.g., `ChatRoom`.
+:::
+
+Depending on its [kind](/develop/define/methods), a method
+might be able to only read (e.g., `Reader`) or both read and write
+(e.g., `Writer`) the state.
+
+In the example above, `ChatRoom` has just one `Reader` and one `Writer`
+method, but it can have any number of `Reader`, `Writer`,
+`Transaction`, and `Workflow` methods.
+
+:::important
+All Pydantic fields must include a `tag` parameter using
+`Field(tag=N)`. This is required for safe backwards compatibility.
+:::
+
+To learn more about how you implement each data type's methods see
+[Implement your API](/develop/implement/servicers).

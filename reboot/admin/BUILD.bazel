@@ -1,0 +1,45 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "export_import_converters_py",
+    srcs = ["export_import_converters.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot/aio:types_py",
+        "//reboot/server:database_py",
+    ],
+)
+
+py_library(
+    name = "export_import_servicer_py",
+    srcs = ["export_import_servicer.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":export_import_converters_py",
+        "//reboot/aio:aborted_py",
+        "//reboot/aio:headers_py",
+        "//reboot/aio:state_managers_py",
+        "//reboot/aio:stubs_py",
+        "//reboot/aio/auth:admin_auth_py",
+        "//reboot/aio/internals:middleware_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:export_import_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:export_import_py_proto",
+    ],
+)
+
+py_library(
+    name = "export_import_client_py",
+    srcs = ["export_import_client.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("aiofiles"),
+        "//reboot/aio:headers_py",
+        "//reboot/aio:types_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:export_import_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:export_import_py_proto",
+    ],
+)

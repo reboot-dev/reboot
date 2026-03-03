@@ -1,0 +1,70 @@
+// This is the `devcontainer.json` used to build our Dev Container image. Think
+// of it as a combination of a `Dockerfile` plus additional building
+// instructions (notably the `features` section adds additional layers to the
+// built image that would be hard to reproduce in the `Dockerfile`).
+//
+// Using our GitHub Actions this `devcontainer.json` will get built into a
+// Docker image, which is what we release to our users to do development. Users
+// themselves use use a simpler `devcontainer.json` that only specifies that
+// built image; see `README.md` for an example of such an end-user
+// `.devcontainer.json`.
+
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/docker-existing-dockerfile
+{
+  "name": "Reboot arm64 builder",
+  "build": {
+    "dockerfile": "../../../../Dockerfile",
+    "target": "codespace-workstation",
+    "args": {
+      "ARCH": "arm64"
+    }
+  },
+  // Mount the full repo root (GITHUB_WORKSPACE) into the container.
+  // `WORKSPACE_FOLDER` is set by the GitHub Actions workflow to either
+  // `/workspaces/reboot` (public repo) or `/workspaces/mono` (mono repo).
+  "workspaceMount": "source=${localEnv:GITHUB_WORKSPACE},target=${localEnv:WORKSPACE_FOLDER},type=bind,consistency=cached",
+  "workspaceFolder": "${localEnv:WORKSPACE_FOLDER}",
+  "remoteUser": "vscode",
+  // Features to add to the dev container. More info: https://containers.dev/features.
+  "features": {
+    // Since several parts of Reboot rely on Docker, and since Dev Containers
+    // don't run Docker-on-Docker, we need to be able to run Docker-in-Docker.
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest"
+    },
+    // GitHub no longer installs sshd by default. See:
+    //   https://github.com/cli/cli/issues/5739.
+    // We now need to add it in explicitly.
+    "ghcr.io/devcontainers/features/sshd:1": {
+      "version": "latest"
+    }
+  },
+  "containerEnv": {
+    // Pass on variable 'RESPECT_DEVCONTAINER_YML' so that
+    // we can skip steps that we intend only when using Codespaces.
+    "RESPECT_DEVCONTAINER_YML": "${localEnv:RESPECT_DEVCONTAINER_YML:false}",
+    // Pass on 'GCP_REMOTE_CACHE_CREDENTIALS_BASE64' so that we
+    // can run any builds that might need the remote cache.
+    "GCP_REMOTE_CACHE_CREDENTIALS_BASE64": "${localEnv:GCP_REMOTE_CACHE_CREDENTIALS_BASE64}",
+    // Export a file path that contains credentials that can be used to
+    // access a Google Cloud Storage bucket which we use as a remote
+    // `bazel` cache to speed up builds.
+    // The credentials file will be populated using a combination of secrets
+    // and the `updateContentCommand` below.
+    // As it turns out, we can not export this variable inside the script
+    // or on the "command line", so we do it here.
+    "GOOGLE_APPLICATION_CREDENTIALS": "/home/vscode/google_application_credentials.json"
+  },
+  // The below lifecycle hooks refer to lifecycle events documented here:
+  //   https://code.visualstudio.com/docs/remote/devcontainerjson-reference#_lifecycle-scripts
+  //   https://docs.github.com/en/codespaces/developing-in-codespaces/codespaces-lifecycle
+  //   https://docs.github.com/en/codespaces/prebuilding-your-codespaces/configuring-prebuilds#configuring-time-consuming-tasks-to-be-included-in-the-prebuild
+  // oncreateCommand runs inside the container after the Codespace template
+  // is created: this happens only once, well before a user is assigned.
+  "onCreateCommand": ".devcontainer/on_create.sh",
+  // updateContent runs inside the container after repo content is updated
+  // with new commits. We use it to build new content so users' builds are
+  // mostly incremental.
+  "updateContentCommand": ".devcontainer/update_content.sh"
+}

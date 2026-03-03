@@ -1,0 +1,45 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//reboot/nodejs:rules.bzl", "js_reboot_test")
+
+py_test(
+    name = "presence_tests_py",
+    srcs = [":presence_tests.py"],
+    main = "presence_tests.py",
+    deps = [
+        "//reboot/aio:tests_py",
+        "//reboot/std/presence/v1:presence_py",
+    ],
+)
+
+ts_project(
+    name = "presence_tests_ts",
+    srcs = [
+        "presence_tests.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-std",
+        "//:node_modules/@types/node",
+    ],
+)
+
+js_reboot_test(
+    name = "test_presence_tests_ts",
+    data = [
+        ":presence_tests_ts",
+    ],
+    entry_point = "presence_tests.js",
+    visibility = ["//visibility:public"],
+)

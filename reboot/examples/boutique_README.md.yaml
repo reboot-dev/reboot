@@ -1,0 +1,25 @@
+name: Boutique
+repo_name: reboot-boutique
+overview: |
+  This repository contains an example online store application written using Reboot.
+
+  It was originally forked from
+  [GoogleCloudPlatform/microservices-demo](https://github.com/GoogleCloudPlatform/microservices-demo),
+  and demonstrates how Reboot makes it simple to write correct microservice applications.
+backend_locations: "`backend/`"
+backend_language: python
+has_frontend: true
+has_non_react_frontend: false
+has_tests: true
+has_cloud: true
+extra_setup: |
+  #### (optional) Setup secrets
+
+  To demonstrate sending emails in the boutique you'll need to export your Mailgun
+  API key as an environment variable.
+
+  Replace `MY_MAILGUN_API_KEY` with your own mailgun API key, which you can get
+  from [your Mailgun account](https://www.mailgun.com):
+  ```shell
+  export RBT_SECRET_MAILGUN_API_KEY="MY_MAILGUN_API_KEY"
+  ```

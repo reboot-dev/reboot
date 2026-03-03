@@ -1,0 +1,225 @@
+name: Reusable Workflow for Devcontainer
+
+# example:
+#   name: Example job with multiple commands
+#   uses: ./.github/workflows/devcontainer.yml
+#   # The nested job needs write permissions, which means this job also needs them.
+#   permissions:
+#     packages: write
+#   secrets: inherit
+#   with:
+#     runs-on: depot-ubuntu-24.04-32
+#     run: |
+#       # Command 1:
+#       bazel build //...
+#       # Command 2:
+#       bazel test //...
+
+on:
+  workflow_call:
+    inputs:
+      arch:
+        required: false
+        type: string
+        default: amd64
+      cancel-workflow-on-failure:
+        required: true
+        type: boolean
+      runs-on:
+        required: true
+        type: string
+      run:
+        required: true
+        type: string
+      artifact-name:
+        required: false
+        type: string
+      artifact-path:
+        required: false
+        type: string
+  workflow_dispatch:
+    inputs:
+      arch:
+        required: false
+        type: string
+        default: amd64
+      cancel-workflow-on-failure:
+        required: true
+        type: boolean
+      runs-on:
+        required: true
+        type: string
+      run:
+        required: true
+        type: string
+      artifact-name:
+        required: false
+        type: string
+      artifact-path:
+        required: false
+        type: string
+      # Live debug failures using tmate by toggling input parameter
+      # 'debug_enabled':
+      # https://github.com/mxschmitt/action-tmate#manually-triggered-debug
+      # When manually running this workflow:
+      # https://docs.github.com/en/actions/managing-workflow-runs/manually-running-a-workflow
+      debug_enabled:
+        description: "Enable tmate debugging"
+        type: boolean
+        default: false
+
+env:
+  AMD64_IMAGE_NAME: ghcr.io/reboot-dev/reboot/workstation
+  ARM64_IMAGE_NAME: ghcr.io/reboot-dev/reboot/arm64_builder
+
+jobs:
+  # Helper job that we run before any other jobs to ensure that we
+  # have all of the secrets that we need.
+  #
+  # Based off of the examples on GitHub at
+  # 'https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#example-using-secrets'.
+  check-secrets:
+    name: Check Secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if GCP_REMOTE_CACHE_CREDENTIALS_BASE64 secret is missing
+        env:
+          secret: ${{ secrets.GCP_REMOTE_CACHE_CREDENTIALS_BASE64 }}
+        if: ${{ env.secret == '' }}
+        run: echo "Missing secret 'GCP_REMOTE_CACHE_CREDENTIALS_BASE64'"; exit 1
+{% if is_mono %}
+
+      - name: Fail if PRIVATE_REPO_ACCESS_AS_REBOT_TOKEN secret is missing
+        env:
+          secret: ${{ secrets.PRIVATE_REPO_ACCESS_AS_REBOT_TOKEN }}
+        if: ${{ env.secret == '' }}
+        run: echo "Missing secret 'PRIVATE_REPO_ACCESS_AS_REBOT_TOKEN'"; exit 1
+
+      - name: Fail if PYPI_RELEASE_TWINE_PASSWORD secret is missing
+        env:
+          secret: ${{ secrets.PYPI_RELEASE_TWINE_PASSWORD }}
+        if: ${{ env.secret == '' }}
+        run: echo "Missing secret'PYPI_RELEASE_TWINE_PASSWORD'"; exit 1
+{% endif %}
+
+  run:
+    name: GitHub-hosted Runner
+    needs: check-secrets
+    runs-on: ${{ inputs.runs-on }}
+    permissions:
+      # Enable pushing newly built images to our cache.
+      packages: write
+    steps:
+      # ATTENTION: the following steps run on the _runner_, which runs a plain
+      #            GitHub-provided Ubuntu image. Only the `Run` step (below)
+      #            executes its commands inside our devcontainer.
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+{% if is_mono %}
+          token: ${{ secrets.PRIVATE_REPO_ACCESS_AS_REBOT_TOKEN }}
+{% endif %}
+          submodules: recursive
+          show-progress: false
+
+      # Needed to be able to push the latest Devcontainer image to the
+      # registry as a cache.
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: ./.github/actions/setup-bazel-remote-cache
+        with:
+          include-devcontainer-json: "true"
+
+      - name: Run
+        uses: devcontainers/ci@v0.3
+        env:
+          # NOTE: the following environment variables are _not_ passed through
+          #       to the devcontainer when it runs, but are available ONLY to
+          #       its `devcontainer.json` (the build step). The
+          #       `devcontainer.json` forwards some of them on to the runtime
+          #       environment of the devcontainer, but that is not a given.
+          #       If you would like to pass environment variables to the
+          #       run-time of the devcontainer, use the `env` section inside the
+          #       `with`; see:
+          #         https://github.com/devcontainers/ci/blob/main/docs/github-action.md#environment-variables
+
+          # NOTE: while there does exist an 'env' input to
+          # 'devcontainers/ci', that _only_ changes the environment for
+          # the 'runCmd', not for the building and creating of the
+          # devcontainer itself. In contrast, this 'env' section also influences
+          # the build, as it should.
+          GCP_REMOTE_CACHE_CREDENTIALS_BASE64: ${{ secrets.GCP_REMOTE_CACHE_CREDENTIALS_BASE64 }}
+          # Tell `devcontainer.json` where to mount the workspace. The default
+          # `workspaceMount` would only bind-mount the `subFolder` (the
+          # "arm64-builder" subdirectory), not the full repo root. We override
+          # it to mount `GITHUB_WORKSPACE` (the full repo root) to a
+          # well-known container path. See the `workspaceMount` field in
+          # `devcontainer.json` for details.
+          WORKSPACE_FOLDER: /workspaces/{% if is_mono %}mono{% else %}reboot{% endif %}
+
+        with:
+          # The Docker image of the runner will get built based on the
+          # `.devcontainer/devcontainer.json`, which in our case means it's
+          # mostly based on the `Dockerfile`.
+          imageName: ${{ inputs.arch == 'amd64' && env.AMD64_IMAGE_NAME || env.ARM64_IMAGE_NAME }}
+          imageTag: latest
+
+          # We explicitly use the workstation's Docker image as a
+          # cache as we want to try and abstain from doing re-builds
+          # of the devcontainer as much as possible.
+          #
+          # It's safe to use a cache because the
+          # `devcontainer.json`/`Dockerfile` that we have checked out
+          # locally will override anything that's in the cache:
+          # there's no way for the cache to change the outcome of the
+          # build.
+          cacheFrom: ${{ inputs.arch == 'amd64' && env.AMD64_IMAGE_NAME || env.ARM64_IMAGE_NAME }}
+
+          # If (and only if) the build is successful on the 'main' branch (so
+          # not when doing a PR to `main`, or when pushing to any other branch),
+          # push the newly built image to the registry, thereby updating the
+          # cache for future builds by this Action, and for our workstations. We
+          # only push from `main` so that we don't push an image that's
+          # associated with a PR that may never be approved. Once again, though,
+          # the cache only changes the _speed_ of future builds, it can't change
+          # the _outcome_ of future builds.
+          refFilterForPush: refs/heads/main
+
+          subFolder: ${{ inputs.arch == 'arm64' && '{% if is_mono %}public/{% endif %}reboot/containers/arm64-builder' || '.' }}
+
+          env: |
+{% if is_mono %}
+            # The 'secrets' available only in the 'steps' part in a workflow, so
+            # need to set TWINE_PASSWORD here to be able to push to PyPI in case
+            # that is something the commands running inside the dev container want
+            # to do.
+            TWINE_PASSWORD=${{ secrets.PYPI_RELEASE_TWINE_PASSWORD }}
+{% endif %}
+            # For the same reason, propagate the token and actor, which can then
+            # be used by the runCmd, e.g. to `docker login  ghcr.io`.
+            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+            GITHUB_ACTOR=${{ github.actor }}
+            # The `EXCLUDE_FLAKY` variable is set to `true` if the
+            # `reboot-release` label is present on the PR.
+            EXCLUDE_FLAKY=${{ contains(github.event.pull_request.labels.*.name, 'reboot-release') }}
+          # Run the user-specified commands in the devcontainer.
+          runCmd: |
+            ${{ inputs.run }}
+
+      - name: Upload artifacts (if any)
+        if: ${{ inputs.artifact-name != '' && inputs.artifact-path != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ inputs.artifact-path }}
+
+      - uses: ./.github/actions/debug-and-cancel
+        if: failure()
+        with:
+          cancel-workflow-on-failure: ${{ inputs.cancel-workflow-on-failure }}

@@ -1,0 +1,23 @@
+load("@com_github_reboot_dev_reboot//reboot:rules.bzl", "py_reboot_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+
+proto_library(
+    name = "logs_proto",
+    srcs = ["logs.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//rbt/cloud/v1alpha1/auth:auth_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:timestamp_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@googleapis//google/api:http_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "logs_py_reboot",
+    proto = "logs.proto",
+    proto_library = ":logs_proto",
+    visibility = ["//visibility:public"],
+)

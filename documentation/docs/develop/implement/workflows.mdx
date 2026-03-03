@@ -1,0 +1,415 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Workflows
+
+Workflows are a flexible building block for performing long-running operations
+and/or operations that have side-effects on state outside of Reboot.
+
+Workflow methods have several important differences from the other kinds of
+methods in Reboot:
+
+* _Workflows are not atomic_. For example, state updates made by a workflow may
+  be visible to other Reboot methods before the workflow completes. Similarly, a
+  workflow can obtain multiple read snapshots over the course of its
+  execution. We discuss below how to
+  [read](/develop/implement/workflows#reading-state) and
+  [write](/develop/implement/workflows#writing-state) state.
+* Workflows can only be run as [tasks](/develop/tasks). This means that
+  workflows execute asynchronously and independently from the request/response
+  flow associated with normal Reboot method execution.
+
+## Retries and idempotency
+
+Unlike other kinds of methods, a `workflow` can only be run as a task, which will
+be retried until it completes successfully (or [aborts with a declared
+error](/develop/errors)).
+
+:::note
+
+You _want_ your workflow to be retried because you may be performing
+**side-effects** outside of your Reboot application and you want to
+retry in order to try and _converge_ on your desired outcome.
+
+:::
+
+To ensure retries are _safe_, Reboot performs all calls with
+_implicit_ idempotency (for `writer`, `transaction`, and `workflow`)
+and with _implicit_ memoization (for `reader`).
+
+Here is an example of a `workflow` that is calling one of its own
+methods using _implicit_ idempotency:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+  await self.ref().load_s3_blob(context);
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+  await this.ref().loadS3Blob(context);
+```
+  </TabItem>
+</Tabs>
+
+By default, calls are made as though you had explicitly used
+`.per_workflow()` (Python) / `.perWorkflow()` (TypeScript), which
+means the call will happen only once for each workflow.
+
+Note that you are welcome to be explicit if you like; the _implicit_
+calls are equivalent to doing the following _explicitly_:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+  await self.ref().per_workflow().load_s3_blob(context);
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+  await this.ref().perWorkflow().loadS3Blob(context);
+```
+  </TabItem>
+</Tabs>
+
+If you want to make the call _every time_, use `.always()`:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+  await self.ref().always().load_s3_blob(context);
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+  await this.ref().always().loadS3Blob(context);
+```
+  </TabItem>
+</Tabs>
+
+Learn more about idempotency when calling a method
+[here](/develop/idempotency).
+
+## Reading `state`
+
+Unlike other kinds of methods, `state` is not passed as an argument to
+`workflow` methods. Instead, if you need to read state you must fetch a current
+_snapshot_:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.py&lines=63-63) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.py -->
+
+```py
+snapshot = await TestTask.ref().read(context)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=62-62) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.ts -->
+
+```ts
+const snapshot = await TestTask.ref().read(context);
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+  </TabItem>
+</Tabs>
+
+A workflow method might fetch a snapshot of state multiple times during the
+course of its execution. The contents of these snapshots may differ.
+
+## Writing state
+
+Any `state` snapshots you fetch within your `workflow` are
+read-only. If you want to modify state, you must do so explicitly:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.py&lines=75-83) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.py -->
+
+```py
+async def increment(state):
+    state.iteration += 1
+
+await TestTask.ref().idempotently(
+    "Finally, increment the number of iterations",
+).write(
+    context,
+    increment,
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=84-88) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.ts -->
+
+```ts
+await TestTask.ref()
+  .idempotently("Finally, increment the number of iterations")
+  .write(context, async (state) => {
+    state.iteration++;
+  });
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+  </TabItem>
+</Tabs>
+
+You can think of the function or lambda you pass to `write()` as a
+kind of _inline_ `writer`. Most importantly this means that your
+function or lambda will be executed _atomically_ with respect to any
+other `writer` or `transaction` methods.
+
+In the same way that calling a `writer` or `transaction` is done so
+idempotently within a `workflow`, your inline writer is also executed
+idempotently. The first argument to `write()` acts as an idempotency
+alias for that write.
+
+:::tip
+
+Use a self-documenting string as the idempotency alias, e.g.,
+`"Increment the total students count"`. This makes the code more
+readable and also makes it more likely that human-written aliases
+won't conflict.
+
+:::
+
+:::note
+
+If you want your inline writer to execute _every time_, use
+`.always()`, e.g., in TypeScript `this.state.always().write(context, ...)`.
+
+:::
+
+## Waiting `until` a condition
+
+A `workflow` is the right place to write code that needs to wait
+_until_ a condition has occurred. Reboot leverages _reactivity_ for
+this, a built-in primitive of the framework, enabling you to
+re-execute a block of code to check for conditions _only_ when state
+has changed.
+
+Here's an example of an `until` block that waits until `state.messages` is
+non-empty:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.py&lines=93-97) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.py -->
+
+```py
+async def have_messages():
+    state = await TestTask.ref().read(context)
+    return len(state.messages) > 0
+
+await until("Have messages", context, have_messages)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=156-159) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.ts -->
+
+```ts
+await until("Have messages", context, async () => {
+  const { messages } = await TestTask.ref().read(context);
+  return messages.length > 0;
+});
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+  </TabItem>
+</Tabs>
+
+:::caution
+
+Reboot does not currently _suspend_ your tasks while they are waiting
+in an `until`, but that is on the roadmap! Please reach out to us to
+talk about your use case if you would like us to prioritize this
+feature.
+
+:::
+
+`until` will re-execute reactively not only for your own `state`, but
+also for all other states you may call into.
+
+`until` will re-execute reactively until a _non-falsy_ value is
+returned, and then it will return that value if it is not a
+boolean. For example, you can wait for a specific key to be set in a
+`SortedMap` and return the value:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.py&lines=99-109) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.py -->
+
+```py
+async def value_is_stored():
+    map = SortedMap.ref("someId")
+    response = await map.get(context, key="someKey")
+    return response.value if response.HasField("value") else False
+
+value = await until(
+    "Value is stored",
+    context,
+    value_is_stored,
+    type=bytes,
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=161-170) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.ts -->
+
+```ts
+const value = await until(
+  "Value is stored",
+  context,
+  async () => {
+    const index = OrderedMap.ref("someId");
+    const { value } = await index.search(context, { key: "someKey" });
+    return value.toJson();
+  },
+  { schema: z.json() }
+);
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+  </TabItem>
+</Tabs>
+
+:::important
+
+An `until` block _memoizes_ its result so that once you have
+converged on some condition it won't try to converge again. The first
+argument to an `until` block acts as an idempotency alias, just like
+calling `.idempotently()` or `state.write(...)`.
+
+In Python, Reboot will _serialize_ and _deserialize_ the result using
+pickle. However, to ensure that you don't make mistakes, you must also
+pass the keyword argument `type`.
+
+In TypeScript, Reboot will _serialize_ and _deserialize_ the result as
+part of the memoization using `JSON.stringify` and `JSON.parse`, but
+since these are not type safe, you must pass an options object with a
+`validate` property as the last argument. If instead you would prefer
+to serialize and deserialize a different way you can specify the
+`stringify` and `parse` options instead of `validate`.
+
+:::
+
+## At _least_ or at _most_ once
+
+When making calls to other states within a `workflow`, e.g., to a
+`SortedMap`, you can ensure that the call is performed once by using
+`.idempotently()`, as discussed above. To call _outside_ of your
+Reboot application, you can use helpers that execute a block of code
+"at least once" or "at most once". Here is an example of "at most
+once":
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+async def remit_to_provider():
+  return requests.post(
+      REMITTANCE_PROVIDER_URL,
+      json=request.toAccountDetails,
+  )
+
+await at_most_once("Remit to provider”, context, remit_to_provider)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+await atMostOnce("Remit to provider”, context, async () => {
+  return http.post(REMITTANCE_PROVIDER_URL, {
+    toAccountDetails: request.toAccountDetails
+  });
+});
+```
+  </TabItem>
+</Tabs>
+
+:::important
+
+If the code executed using `at_most_once` (Python) or `atMostOnce` (TypeScript)
+raises an exception, _the code will not be re-executed_ the next time the
+workflow runs. Depending on the nature of the external service you are
+interacting with, this might result in a partial state update or otherwise
+problematic situation. When possible, third-party services that provide support
+safe retries should be preferred. If the external API supports safe retries
+(e.g., via some notion of an "idempotency key" or a similar concept),
+`at_least_once` (Python) or `atLeastOnce` (TypeScript) can be used in Reboot.
+
+:::
+
+:::tip
+
+You can return a result from the function or lambda you pass as an
+argument just like with `until`, and in TypeScript that means you'll
+also either need to pass a `validate` or your own `stringify` and
+`parse`. See the `until` example above for more details.
+
+:::
+
+By combining these helper functions, you can create robust workflows that handle
+various scenarios and ensure reliable task execution.
+
+## Control loops
+
+Within a `workflow` you can run a control loop by calling
+`context.loop(...)`, which provides an asynchronous iterator that you
+must explicit break or return from within:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+async for iteration in context.loop("Some control loop"):
+    ...
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+for await (const iteration of context.loop("Some control loop")) {
+  ...
+}
+```
+  </TabItem>
+</Tabs>
+
+Code in loops, like any other code, may experience errors or
+failures. In that case, as with any other failure, Reboot will restart
+the workflow. The loop will resume at the iteration that failed,
+skipping over any previously completed iterations.
+
+Reboot performs all calls within a loop _implicitly_ with
+`.per_iteration()` (Python) / `.perIteration()` (TypeScript) instead
+of `.per_workflow()` / `.perWorkflow()`, which means the call will
+happen *once per iteration of the loop*. If you instead want to
+execute the call for every run (including retries) you can explicitly
+use `.always()`. Or if you want to execute a call within a loop but
+only once per workflow you must explicitly write `.per_workflow()` /
+`.perWorkflow()`.

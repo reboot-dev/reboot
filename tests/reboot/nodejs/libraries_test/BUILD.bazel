@@ -1,0 +1,73 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("//reboot:rules.bzl", "js_proto_library", "js_reboot_library")
+load("//reboot/nodejs:rules.bzl", "js_reboot_test")
+
+proto_library(
+    name = "library_proto",
+    srcs = [":library.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:empty_proto",
+    ],
+)
+
+js_proto_library(
+    name = "library_js_proto",
+    package_json = ":package.json",
+    proto = "library.proto",
+    proto_deps = [
+        ":library_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
+        "@com_google_protobuf//:empty_proto",
+    ],
+)
+
+js_reboot_library(
+    name = "library_js_reboot",
+    srcs = [
+        ":library_proto",
+    ],
+    proto = "library.proto",
+    deps = [
+        ":library_js_proto",
+    ],
+)
+
+ts_project(
+    name = "test_ts",
+    srcs = [
+        "test.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        ":library_js_proto",
+        ":library_js_reboot",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@types/node",
+    ],
+)
+
+js_reboot_test(
+    name = "test",
+    data = [
+        ":test_ts",
+    ],
+    entry_point = "test.js",
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/server/echo_shared_messages.proto";
+
+package tests.reboot.server.service_descriptor_validator_proto;
+
+message Echo {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated string messages = 1;
+}
+
+service EchoMethods {
+  // Echo input type switched - single string to enum with two options.
+
+  rpc Reply(EnumTwoOptionsField) returns (SingleStringField) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  rpc Replay(EmptyMessage) returns (RepeatedStringField) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+}

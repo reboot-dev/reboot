@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/protoc/shared.proto";
+
+package tests.reboot.protoc.subpackage;
+
+service EchoMoreMethods {
+  option (rbt.v1alpha1.service) = {
+    // TESTS: there are two services that supply methods to
+    // "tests.reboot.protoc.Echo", and this service is in a different package!
+    state: "tests.reboot.protoc.Echo"
+  };
+
+  rpc LastMessage(Empty) returns (Text) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}

@@ -1,0 +1,40 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+    visibility = ["//tests:__subpackages__"],
+)
+
+py_library(
+    name = "web_driver_runner",
+    testonly = True,
+    srcs = ["web_driver_runner.py"],
+    data = [
+        "//tests/reboot:index.html.j2",
+    ],
+    visibility = ["//tests:__subpackages__"],
+    deps = [
+        "//reboot/templates:tools_py",
+        "@io_bazel_rules_webtesting//testing/web",
+    ],
+)
+
+exports_files(["py_web_test_suite_env_trampoline.py"])
+
+py_library(
+    name = "test_against_local_envoy_py",
+    testonly = True,
+    srcs = ["test_against_local_envoy.py"],
+    visibility = ["//tests:__subpackages__"],
+    deps = [
+        requirement("urllib3"),
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:health_check_py",
+        "//reboot/aio:servicers_py",
+        "//reboot/aio:tests_py",
+    ],
+)

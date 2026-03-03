@@ -1,0 +1,135 @@
+name: Reusable Workflow for Manylinux
+
+# This workflow runs commands inside a manylinux container, which has an
+# older glibc for maximum compatibility with Linux distributions.
+#
+# Two container types are available:
+#   - builder: For building pip packages with native binaries (includes
+#              `TWINE_PASSWORD` for PyPI publishing on mono; public builds
+#              do not receive `TWINE_PASSWORD`).
+#   - runner: Like the builder, but omits `TWINE_PASSWORD` and installs
+#             an Envoy binary for testing.
+on:
+  workflow_call:
+    inputs:
+      arch:
+        required: true
+        type: string
+      cancel-workflow-on-failure:
+        required: true
+        type: boolean
+      runs-on:
+        required: true
+        type: string
+      run:
+        required: true
+        type: string
+      container-type:
+        description: "Container type: 'builder' or 'runner'"
+        required: true
+        type: string
+
+jobs:
+  check-secrets:
+    name: Check Secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if GCP_REMOTE_CACHE_CREDENTIALS_BASE64 secret is missing
+        env:
+          secret: ${{ secrets.GCP_REMOTE_CACHE_CREDENTIALS_BASE64 }}
+        if: ${{ env.secret == '' }}
+        run: echo "Missing secret 'GCP_REMOTE_CACHE_CREDENTIALS_BASE64'"; exit 1
+{% if is_mono %}
+
+      - name: Fail if PRIVATE_REPO_ACCESS_AS_REBOT_TOKEN secret is missing
+        env:
+          secret: ${{ secrets.PRIVATE_REPO_ACCESS_AS_REBOT_TOKEN }}
+        if: ${{ env.secret == '' }}
+        run: echo "Missing secret 'PRIVATE_REPO_ACCESS_AS_REBOT_TOKEN'"; exit 1
+
+      # Only check for PYPI token when using builder container.
+      - name: Fail if PYPI_RELEASE_TWINE_PASSWORD secret is missing (builder only)
+        if: ${{ inputs.container-type == 'builder' }}
+        env:
+          secret: ${{ secrets.PYPI_RELEASE_TWINE_PASSWORD }}
+        run: |
+          if [ -z "$secret" ]; then
+            echo "Missing secret 'PYPI_RELEASE_TWINE_PASSWORD'"
+            exit 1
+          fi
+{% endif %}
+
+  run:
+    name: Manylinux ${{ inputs.container-type }}
+    needs: check-secrets
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Checkout reboot-dev/mono
+        uses: actions/checkout@v4
+        with:
+{% if is_mono %}
+          token: ${{ secrets.PRIVATE_REPO_ACCESS_AS_REBOT_TOKEN }}
+{% endif %}
+          submodules: recursive
+          show-progress: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build manylinux image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          target: manylinux-${{ inputs.container-type }}
+          tags: manylinux-${{ inputs.container-type }}:latest
+          load: true
+          # Use GitHub Actions cache for faster builds.
+          cache-from: type=gha,scope=manylinux-${{ inputs.container-type }}-${{ inputs.arch }}
+          cache-to: type=gha,mode=max,scope=manylinux-${{ inputs.container-type }}-${{ inputs.arch }}
+          build-args: |
+            TARGETARCH=${{ inputs.arch }}
+
+      - uses: ./.github/actions/setup-bazel-remote-cache
+        with:
+          environment-id: manylinux-${{ inputs.container-type }}
+
+      - name: Set up GCP credentials for remote cache
+        run: |
+          # Decode the base64-encoded credentials and write to a file that
+          # will be mounted into the container.
+          echo "${{ secrets.GCP_REMOTE_CACHE_CREDENTIALS_BASE64 }}" | base64 -d > gcp-credentials.json
+          # Create a home directory for the container. This must be done on
+          # host since the container user may not have permission to create
+          # it. We make it world-writable so the container's `builder` user
+          # (UID 1000) can write to it regardless of host UID.
+          mkdir -p .manylinux-home
+          chmod 777 .manylinux-home
+
+      - name: Run in manylinux container
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            -v "${{ github.workspace }}/gcp-credentials.json:/gcp-credentials.json:ro" \
+            -w /workspace \
+            -e GOOGLE_APPLICATION_CREDENTIALS=/gcp-credentials.json \
+            -e GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}" \
+            -e GITHUB_ACTOR="${{ github.actor }}" \
+            -e HOME=/workspace/.manylinux-home \
+{% if is_mono %}
+            ${{ inputs.container-type == 'builder' && format('-e TWINE_PASSWORD="{0}"', secrets.PYPI_RELEASE_TWINE_PASSWORD) || '' }} \
+{% endif %}
+            manylinux-${{ inputs.container-type }}:latest \
+            bash -c "
+              set -ex
+              ${{ inputs.run }}
+            "
+
+      - name: Clean up credentials
+        if: always()
+        run: rm -f gcp-credentials.json
+
+      - uses: ./.github/actions/debug-and-cancel
+        if: failure()
+        with:
+          cancel-workflow-on-failure: ${{ inputs.cancel-workflow-on-failure }}

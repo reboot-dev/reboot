@@ -1,0 +1,15 @@
+.loading {
+  min-height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.error {
+  composes: loading;
+  color: var(--color-pink);
+}

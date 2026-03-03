@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    // Don't emit any output files, since we just want to type-check
+    // and then we will run the test with `npx tsx`.
+    "noEmit": true,
+    "moduleResolution": "node",
+    "target": "ES2020",
+    "rootDir": ".",
+    "incremental": true
+  }
+}

@@ -1,0 +1,43 @@
+# Directories that we want to exclude from all `ruff` operations.
+exclude = [
+    # Submodules are responsible for their own linting.
+    "submodules",
+    "reboot/server/sha1",
+    "examples",
+
+    # A variety of commonly excluded directories, copied from `ruff`'s default
+    # config; see: https://docs.astral.sh/ruff/configuration/.
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+]
+
+[lint]
+# Linting error codes that we want to ignore.
+ignore = [
+  # Ignore bare excepts; there are too many legitimate uses for these in our code.
+  "E722"
+]

@@ -1,0 +1,289 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "terminal_py",
+    srcs = ["terminal.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("colorama"),
+        "@com_github_reboot_dev_reboot//reboot/aio:once_py",
+    ],
+)
+
+py_library(
+    name = "cloud_py",
+    srcs = ["cloud.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":commands_py",
+        ":rc_py",
+        ":terminal_py",
+        "//reboot:api_keys_py",
+        "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/application:application_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/auth:auth_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/organizations:organizations_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot:time_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:aborted_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+        "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
+    ],
+)
+
+py_library(
+    name = "commands_py",
+    srcs = ["commands.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("colorama"),
+        ":terminal_py",
+    ],
+)
+
+py_library(
+    name = "detect_cores_py",
+    srcs = ["detect_cores.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("psutil"),
+        ":terminal_py",
+    ],
+)
+
+py_library(
+    name = "dev_py",
+    srcs = ["dev.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("aiofiles"),
+        requirement("pyprctl"),
+        requirement("cryptography"),
+        ":cloud_py",
+        ":directories_py",
+        ":generate_py",
+        ":monkeys_py",
+        ":subprocesses_py",
+        ":terminal_py",
+        ":transpile_py",
+        ":watch_py",
+        "//reboot/controller:plan_makers_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
+        "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
+        "@com_github_reboot_dev_reboot//reboot/ssl:localhost_py",
+    ],
+)
+
+py_library(
+    name = "transpile_py",
+    srcs = ["transpile.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":subprocesses_py",
+        ":terminal_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+    ],
+)
+
+py_library(
+    name = "export_import_py",
+    srcs = ["export_import.py"],
+    srcs_version = "PY3",
+    deps = [
+        ":rc_py",
+        ":terminal_py",
+        "//reboot/admin:export_import_client_py",
+        "//reboot/aio/auth:admin_auth_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:export_import_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:export_import_py_proto",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+    ],
+)
+
+py_library(
+    name = "serve_py",
+    srcs = ["serve.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("aiofiles"),
+        ":detect_cores_py",
+        ":dev_py",
+        ":directories_py",
+        ":subprocesses_py",
+        ":terminal_py",
+        ":transpile_py",
+        "//reboot/controller:plan_makers_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
+    ],
+)
+
+py_library(
+    name = "generate_py",
+    srcs = ["generate.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio-tools"),
+        # The original 'os' module's functions that interact with the disk will
+        # block the event loop, so we use 'aiofiles' instead.
+        requirement("aiofiles"),
+        requirement("grpcio-health-checking"),
+        "@com_github_reboot_dev_reboot//reboot:version_py",
+        ":directories_py",
+        ":rc_py",
+        ":subprocesses_py",
+        ":terminal_py",
+        ":watch_py",
+        "@com_github_reboot_dev_reboot//reboot:pydantic_schema_to_proto_py",
+        "@com_github_reboot_dev_reboot//reboot:pydantic_schema_to_zod_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:tracing_py",
+    ],
+)
+
+py_library(
+    name = "secret_py",
+    srcs = ["secret.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cloud_py",
+        ":rc_py",
+        ":terminal_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+    ],
+)
+
+py_library(
+    name = "watch_py",
+    srcs = ["watch.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("pathspec"),
+        requirement("watchdog"),
+        ":terminal_py",
+    ],
+)
+
+py_library(
+    name = "subprocesses_py",
+    srcs = ["subprocesses.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("psutil"),
+        ":terminal_py",
+    ],
+)
+
+py_library(
+    name = "directories_py",
+    srcs = ["directories.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":rc_py",
+        ":terminal_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:directories_py",
+    ],
+)
+
+py_library(
+    name = "monkeys_py",
+    srcs = ["monkeys.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "rc_py",
+    srcs = ["rc.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":terminal_py",
+    ],
+)
+
+py_library(
+    name = "task_py",
+    srcs = ["task.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio"),
+        requirement("tabulate"),
+        ":rc_py",
+        ":terminal_py",
+        "//reboot/aio/auth:admin_auth_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+    ],
+)
+
+py_library(
+    # We have to name that `cli.py` instead of `rbt.py`, because we keep protos
+    # in `rbt/` and it will be a name conflict with the `rbt` package.
+    name = "cli_py",
+    srcs = ["cli.py"],
+    data = [
+        "//reboot:protoc-gen-reboot_nodejs",
+        "//reboot:protoc-gen-reboot_nodejs_boilerplate",
+        "//reboot:protoc-gen-reboot_react",
+        "@com_github_reboot_dev_reboot//protoc_gen_mypy_plugin:protoc-gen-mypy",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:protos",
+        "@com_github_reboot_dev_reboot//reboot:protoc-gen-es_with_deps",
+        "@com_github_reboot_dev_reboot//reboot:protoc-gen-reboot_python",
+        "@com_github_reboot_dev_reboot//reboot:protoc-gen-reboot_python_boilerplate",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cloud_py",
+        ":dev_py",
+        ":export_import_py",
+        ":generate_py",
+        ":rc_py",
+        ":secret_py",
+        ":serve_py",
+        ":task_py",
+        "//reboot/cli/init:init_py",
+    ],
+)
+
+py_library(
+    name = "rbt_main_py",
+    srcs = ["rbt_main.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cli_py",
+    ],
+)
+
+py_binary(
+    name = "rbt",
+    srcs = [
+        "rbt_main.py",
+    ],
+    main = "rbt_main.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cli_py",
+    ],
+)

@@ -1,0 +1,46 @@
+load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//bazel:rules.bzl", "py_generated_file")
+
+py_generated_file(
+    name = "sorted_envoy_yaml",
+    main = "generate_sorted_envoy_yaml.py",
+    outfile = "envoy.sorted.yaml",
+    deps = [
+        requirement("protobuf"),
+        requirement("pyyaml"),
+        "//reboot:helpers_py",
+        "//reboot/server:local_envoy_py",
+        "//tests/reboot:greeter_servicers_py",
+    ],
+)
+
+diff_test(
+    name = "envoy_config_diff_test",
+    file1 = "envoy.sorted.golden.yaml",
+    file2 = "envoy.sorted.yaml",
+    tags = [
+        # For reasons that are unclear, this test fails to build on MacOS with
+        # Bazel errors along the lines of "The C compiler is not able to compile
+        # a simple test program". Instead of fighting the toolchains, we'll just
+        # skip this test on MacOS - it's enough for just the Linux CI to run it.
+        "macos_not_supported",
+    ],
+)
+
+py_test(
+    name = "xds_server_test_py",
+    timeout = "short",
+    srcs = ["xds_server_test.py"],
+    main = "xds_server_test.py",
+    deps = [
+        requirement("grpcio"),
+        "//envoy/config/cluster/v3:clusterv3_py_proto",
+        "//envoy/config/core/v3:corev3_py_proto",
+        "//envoy/config/listener/v3:listenerv3_py_proto",
+        "//envoy/service/discovery/v3:discoveryv3_py_grpc",
+        "//envoy/service/discovery/v3:discoveryv3_py_proto",
+        "//reboot/routing:xds_server_py",
+    ],
+)

@@ -1,0 +1,23 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "mcp_py",
+    srcs = ["mcp.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot/aio:applications_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+        # Note: 'mcp', 'anyio', and 'starlette' are runtime dependencies
+        # only - not declared in Bazel deps since they're user-provided.
+    ],
+)
+
+py_library(
+    name = "python",
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":mcp_py",
+    ],
+)

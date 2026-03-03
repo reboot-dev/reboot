@@ -1,0 +1,21 @@
+# This `BUILD.bazel` file allows a `bazel` system (configured outside of this
+# repository) to use code in this directory and its subdirectories.
+
+filegroup(
+    name = "everything",
+    srcs = glob(
+        ["**/*"],
+        exclude = [
+            # Files that may be created by activity in this directory, such
+            # as manually following the steps of the `README.md` file, but which
+            # are not part of the "source code" of this repository.
+            "backend/.rbt/**/*",
+            ".yarn/**/*",
+            "web/.next/**/*",
+            "api/**/*.ts",
+            "node_modules/**/*",
+            "web/lib/api/**/*.ts",
+        ],
+    ),
+    visibility = ["//visibility:public"],
+)

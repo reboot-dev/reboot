@@ -1,0 +1,24 @@
+load("@com_github_reboot_dev_reboot//reboot:rules.bzl", "py_reboot_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+
+proto_library(
+    name = "mailgun_proto",
+    srcs = [
+        ":mailgun.proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:descriptor_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "mailgun_py_reboot",
+    proto = "mailgun.proto",
+    proto_library = ":mailgun_proto",
+    visibility = ["//visibility:public"],
+)

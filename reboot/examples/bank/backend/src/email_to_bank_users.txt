@@ -1,0 +1,27 @@
+--------------------------------------------------------------------------------
+
+Thank you for your interest in Reboot!
+
+We'd love to take this opportunity to give you more information about how to get
+started.
+
+Reboot is in Alpha, which means that you may encounter bugs and rough edges.
+If you see something you think is wrong, have questions about how to do
+something, or if you want to give feedback (whether constructive or positive),
+please drop in on our Discord server https://discord.gg/cRbdcS94Nr - we'd love
+to hear from you!
+
+To get started with Reboot, we suggest you look at our Quick Start page
+https://docs.reboot.dev/, which will get you started with
+editing an example application, and explain how to run it locally on your own
+machine or on cloud workstations like a GitHub Codespace.
+
+Start Building! https://docs.reboot.dev/
+
+We're looking forward to seeing what you build!
+
+- The Reboot Team.
+
+--------------------------------------------------------------------------------
+
+Reboot, Planet Earth

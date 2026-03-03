@@ -1,0 +1,233 @@
+syntax = "proto3";
+
+package tests.reboot;
+
+import "rbt/v1alpha1/options.proto";
+import "rbt/v1alpha1/tasks.proto";
+
+// The proto message used as the state message for the reboot service.
+message Echo {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated string messages = 1;
+}
+
+message ReplyRequest {
+  // A string to "echo".
+  string message = 1;
+}
+
+message ReplyResponse {
+  // The message from the request.
+  string message = 1;
+}
+
+message ReplayRequest {}
+
+message ReplayResponse {
+  repeated string messages = 1;
+}
+
+message WaitForRequest {
+  string message = 1;
+}
+
+message WaitForResponse {}
+
+message StreamRequest {}
+
+message StreamResponse {
+  string message = 1;
+}
+
+message RegexStreamRequest {
+  string regex = 1;
+}
+
+message RegexStreamResponse {
+  string message = 1;
+}
+
+message SearchAndReplaceRequest {
+  string search = 1;
+  string replace = 2;
+}
+
+message SearchAndReplaceResponse {
+  uint32 replacements = 1;
+}
+
+message FailOnceShouldBeRetriedRequest {
+  string message = 1;
+}
+
+message FailOnceShouldBeRetriedResponse {
+  .rbt.v1alpha1.TaskId task_id = 1;
+}
+
+message FailOnceShouldBeRetriedWorkflowRequest {
+  string message = 1;
+}
+
+message FailOnceShouldBeRetriedWorkflowResponse {
+  string message = 1;
+}
+
+message TooManyTasksRequest {}
+
+message TooManyTasksResponse {}
+
+message HangingRequest {}
+
+message HangingResponse {}
+
+message ReactiveWorkflowRequest {}
+
+message ReactiveWorkflowResponse {}
+
+message ControlLoopRequest {}
+
+message ControlLoopResponse {}
+
+message AtMostOnceWorkflowRequest {}
+
+message AtMostOnceWorkflowResponse {}
+
+message WorkflowCallingWorkflowRequest {
+  bool call_workflow = 1;
+}
+
+message WorkflowCallingWorkflowResponse {
+  string value = 1;
+}
+
+message RaiseValueErrorRequest {}
+
+message RaiseValueErrorResponse {}
+
+message RaiseSpecifiedErrorRequest {}
+
+message RaiseSpecifiedErrorResponse {}
+
+message SpecifiedError {
+  string error = 1;
+}
+
+message FailingWorkflowRequest {
+  string failure_message = 1;
+}
+
+message FailingWorkflowResponse {}
+
+service EchoMethods {
+  rpc Reply(ReplyRequest) returns (ReplyResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc Replay(ReplayRequest) returns (ReplayResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc WaitFor(WaitForRequest) returns (WaitForResponse) {
+    option (rbt.v1alpha1.method).reader = {
+      state: STREAMING,
+    };
+  }
+
+  rpc Stream(StreamRequest) returns (stream StreamResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc RegexStream(stream RegexStreamRequest)
+      returns (stream RegexStreamResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc SearchAndReplace(SearchAndReplaceRequest)
+      returns (SearchAndReplaceResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  rpc FailOnceShouldBeRetried(FailOnceShouldBeRetriedRequest)
+      returns (FailOnceShouldBeRetriedResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc FailOnceShouldBeRetriedWorkflow(FailOnceShouldBeRetriedWorkflowRequest)
+      returns (FailOnceShouldBeRetriedWorkflowResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  rpc TooManyTasks(TooManyTasksRequest) returns (TooManyTasksResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc Hanging(HangingRequest) returns (HangingResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  rpc ReactiveWorkflow(ReactiveWorkflowRequest)
+      returns (ReactiveWorkflowResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  rpc ControlLoop(ControlLoopRequest) returns (ControlLoopResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  rpc AtMostOnceWorkflow(AtMostOnceWorkflowRequest)
+      returns (AtMostOnceWorkflowResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  rpc WorkflowCallingWorkflow(WorkflowCallingWorkflowRequest)
+      returns (WorkflowCallingWorkflowResponse) {
+    option (.rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  rpc RaiseValueError(RaiseValueErrorRequest)
+      returns (RaiseValueErrorResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc RaiseSpecifiedError(RaiseSpecifiedErrorRequest)
+      returns (RaiseSpecifiedErrorResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      errors: [ "SpecifiedError" ],
+    };
+  }
+
+  rpc FailingWorkflow(FailingWorkflowRequest)
+      returns (FailingWorkflowResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+      errors: [ "SpecifiedError" ],
+    };
+  }
+
+  // TODO(benh): also test that we can't create too many tasks in a
+  // task itself. Can't do that right now because the tasks are
+  // retried forever! Revisit once we can pause tasks.
+}

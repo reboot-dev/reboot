@@ -1,0 +1,231 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config", "ts_project")
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load(
+    "//reboot:rules.bzl",
+    "js_proto_library",
+    "js_reboot_library",
+)
+load(":helpers.bzl", "failure_test", "success_echo_test")
+
+###### Combined tests ######
+# Each of the rules below gets a (set of) `.proto` file(s) that (together)
+# describe an identical `Echo` state + methods. For each it creates a set of
+# tests that confirm that the given way of describing `Echo` works in every
+# language we support.
+#
+# A test named "foobar" expects to find a "foobar.proto" and generates test
+# targets named:
+#   * `foobar_test_py`
+#   * `foobar_test_ts`
+#   * `foobar_test_react`
+
+success_echo_test(
+    name = "default_state_annotations",
+    tags = ["flaky"],
+)
+
+success_echo_test(name = "explicit_state_annotations_full")
+
+success_echo_test(
+    name = "explicit_state_annotations_relative",
+)
+
+success_echo_test(name = "multiple_services")
+
+success_echo_test(
+    name = "multiple_services_across_packages",
+    last_message_client_rbt_module = "tests.reboot.protoc.subpackage.multiple_services_across_packages_rbt",
+    tags = ["flaky"],
+    deps = ["//tests/reboot/protoc/subpackage:multiple_services_across_packages"],
+)
+
+success_echo_test(
+    name = "all_services_in_different_package",
+    last_message_client_rbt_module = "tests.reboot.protoc.subpackage.all_services_in_different_package_rbt",
+    reply_client_rbt_module = "tests.reboot.protoc.subpackage.all_services_in_different_package_rbt",
+    deps = ["//tests/reboot/protoc/subpackage:all_services_in_different_package"],
+)
+
+###### Failure tests ######
+# These are run only against the Python protoc plugin, since the error detection
+# logic is shared between all languages.
+
+failure_test(
+    name = "incorrect_implements",
+    expected_error = """
+        Error processing 'tests/reboot/protoc/incorrect_implements.proto':
+        Missing Reboot service named 'tests.reboot.protoc.NonExistentMethods';
+        expected by state message 'tests.reboot.protoc.Echo' defined in
+        'tests/reboot/protoc/incorrect_implements.proto'.
+    """,
+)
+
+failure_test(
+    name = "incorrect_state",
+    expected_error = """
+        Error processing 'tests/reboot/protoc/incorrect_state.proto': Reboot
+        state message 'tests.reboot.protoc.Echo' is expecting to get methods
+        from service 'tests.reboot.protoc.EchoMethods', but that service is
+        providing methods for a state message named
+        'tests.reboot.protoc.SomeDifferentStateType' instead.
+    """,
+)
+
+failure_test(
+    name = "duplicate_method",
+    expected_error = """
+        Error processing 'tests/reboot/protoc/duplicate_method.proto': Reboot
+        state 'tests.reboot.protoc.Echo' has conflicting methods named 'Reply':
+        one from 'tests.reboot.protoc.EchoMethods.Reply', another from
+        'tests.reboot.protoc.EchoMoreMethods.Reply'. Each method name may only
+        be used once per state type.
+    """,
+)
+
+failure_test(
+    name = "unimplemented_methods",
+    expected_error = """
+        Error processing 'tests/reboot/protoc/unimplemented_methods.proto':
+        Service 'tests.reboot.protoc.EchoMoreMethods' supplies methods to state
+        message 'tests.reboot.protoc.Echo', but that state does not implement
+        those methods - it only implements methods from the following services:
+        ['tests.reboot.protoc.EchoMethods']
+    """,
+)
+
+failure_test(
+    name = "illegal_service_name",
+    expected_error = """
+        Error processing 'tests/reboot/protoc/illegal_service_name.proto':
+        Reboot service 'tests.reboot.protoc.SomePoorlyNamedService' has illegal
+        name: all Reboot service names must end in 'Methods', since (unlike
+        basic gRPC) they provide methods to Reboot states
+    """,
+)
+
+failure_test(
+    name = "missing_method_annotation",
+    expected_error = """
+        Error processing 'tests/reboot/protoc/missing_method_annotation.proto':
+        Missing Reboot method annotation for
+        'tests.reboot.protoc.EchoMethods/Reply'
+    """,
+)
+
+failure_test(
+    name = "missing_state_annotation",
+    expected_error = """
+        Error processing 'tests/reboot/protoc/missing_state_annotation.proto':
+        Reboot service 'tests.reboot.protoc.EchoMethods' is linked to state
+        message 'tests.reboot.protoc.Echo', but that message is not annotated as
+        a Reboot state; all Reboot states must have the 'rbt.v1alpha1.state'
+        annotation.
+    """,
+)
+
+failure_test(
+    name = "double_underscored_field_name",
+    expected_error = """
+        Error processing 'tests/reboot/protoc/double_underscored_field_name.proto':
+        Field name '__double_underscored_field_name' is forbidden. Field names must
+        be snake_case and lowercase and not start with more than one underscore.
+    """,
+)
+
+failure_test(
+    name = "non_snake_case_field_name",
+    expected_error = """
+        Error processing 'tests/reboot/protoc/non_snake_case_field_name.proto':
+        Field name 'nonSnakeCase' is forbidden. Field names must
+        be snake_case and lowercase and not start with more than one underscore.
+    """,
+)
+
+failure_test(
+    name = "capital_letter_in_field_name",
+    expected_error = """
+        Error processing 'tests/reboot/protoc/capital_letter_in_field_name.proto':
+        Field name 'has_Capital_letter' is forbidden. Field names must
+        be snake_case and lowercase and not start with more than one underscore.
+    """,
+)
+###### Targets expected by `./helpers.bzl` to support the above ######
+
+proto_library(
+    name = "shared_proto",
+    srcs = [
+        "shared.proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_proto_library(
+    name = "shared_py_proto",
+    deps = [":shared_proto"],
+)
+
+js_proto_library(
+    name = "shared_js_proto",
+    package_json = ":package.json",
+    proto = ":shared.proto",
+    proto_deps = [
+        ":shared_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+js_reboot_library(
+    name = "shared_js_reboot",
+    srcs = [
+        ":shared_proto",
+    ],
+    proto = "shared.proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":shared_js_proto",
+    ],
+)
+
+js_library(
+    name = "package_json",
+    srcs = [":package.json"],
+)
+
+ts_project(
+    name = "test_ts",
+    srcs = [
+        "test.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        ":package_json",
+        ":shared_js_proto",
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@reboot-dev/reboot-web",
+        "//:node_modules/@types/node",
+    ],
+)
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+    visibility = ["//tests:__subpackages__"],
+)

@@ -1,0 +1,63 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "__init___py",
+    srcs = ["__init__.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("protobuf"),
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:auth_py_proto",
+    ],
+)
+
+py_library(
+    name = "admin_auth_py",
+    srcs = ["admin_auth.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot:run_environments_py",
+        "//reboot/aio:aborted_py",
+        "//reboot/aio:headers_py",
+        "//reboot/aio:secrets_py",
+        "//reboot/controller:settings_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:auth_py_reboot",
+    ],
+)
+
+py_library(
+    name = "authorizers_py",
+    srcs = ["authorizers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot:api_py",
+        "//reboot:run_environments_py",
+        "//reboot:settings_py",
+        "//reboot/aio:contexts_py",
+    ],
+)
+
+py_library(
+    name = "token_verifiers_py",
+    srcs = ["token_verifiers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":__init___py",
+        "//reboot/aio:contexts_py",
+    ],
+)
+
+py_library(
+    name = "python",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":__init___py",
+        ":admin_auth_py",
+        ":authorizers_py",
+        ":token_verifiers_py",
+    ],
+)

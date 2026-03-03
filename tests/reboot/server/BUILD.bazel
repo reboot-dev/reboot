@@ -1,0 +1,79 @@
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+proto_library(
+    name = "echo_shared_messages_proto",
+    srcs = [":echo_shared_messages.proto"],
+    visibility = ["//tests/reboot/server:__subpackages__"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+    ],
+)
+
+py_library(
+    name = "local_envoy_test_lib",
+    srcs = ["local_envoy_test.py"],
+    deps = [
+        requirement("protobuf"),
+        requirement("h2"),
+        "//reboot/aio:tests_py",
+        "//reboot/ssl:localhost_py",
+        "//tests/reboot:general_boilerplate_py_reboot",
+        "//tests/reboot:test_helpers_py",
+    ],
+)
+
+py_test(
+    name = "docker_local_envoy_test_py",
+    timeout = "short",
+    srcs = ["docker_local_envoy_runner.py"],
+    main = "docker_local_envoy_runner.py",
+    tags = ["requires-docker"],
+    deps = [
+        ":local_envoy_test_lib",
+        requirement("protobuf"),
+        requirement("h2"),
+        "//reboot/aio:tests_py",
+        "//reboot/ssl:localhost_py",
+        "//tests/reboot:general_boilerplate_py_reboot",
+        "//tests/reboot:test_helpers_py",
+    ],
+)
+
+py_test(
+    name = "executable_local_envoy_test_py",
+    timeout = "short",
+    srcs = ["executable_local_envoy_runner.py"],
+    main = "executable_local_envoy_runner.py",
+    deps = [
+        ":local_envoy_test_lib",
+        requirement("protobuf"),
+        requirement("h2"),
+        "//reboot/aio:tests_py",
+        "//reboot/ssl:localhost_py",
+        "//tests/reboot:general_boilerplate_py_reboot",
+        "//tests/reboot:test_helpers_py",
+    ],
+)
+
+cc_test(
+    name = "database_tests",
+    srcs = [
+        "database_tests.cc",
+        "uuidv7.h",
+    ],
+    deps = [
+        "//reboot/server:database_cc",
+        "@com_github_3rdparty_stout//:stout",
+        "@com_github_google_googletest//:gtest_main",
+    ] + select(
+        {
+            "@platforms//os:linux": [
+                "@com_github_3rdparty_bazel_rules_backward_cpp_stacktrace//:backward-stacktrace",
+            ],
+            "//conditions:default": [],
+        },
+    ),
+)

@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package tests.reboot.protoc;
+
+message Text {
+  string content = 1;
+}
+
+message Empty {}

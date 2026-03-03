@@ -1,0 +1,370 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# SortedMap
+
+If you're just getting started, consider using the newer [`OrderedMap`](./ordered_map)
+instead.
+
+A larger than memory map / dictionary, sorted by its keys. It supports batch
+insertion, batch removal, sorted range queries, and point-lookup queries.
+
+Keys are `string`s and values are `bytes`. `SortedMap`s are frequently used to
+create indexes of other state types, but can also be used to efficiently store
+large collections of primitive values.
+
+For example:
+  * To index a data type in its natural state-ID order, you can create a
+    `SortedMap` with the type's ID as keys and empty values. This is effectively
+    a sorted set.
+  * To index a data type by creation time, you can use time-ordered UUIDs
+    (such as UUIDv1 or UUIDv7) as keys and the data type's state-ID as
+    values.
+  * To index a large collection of Protobuf message types, you can use a
+    key of your choice and the serialized value of each Protobuf message
+    as a value.
+
+To use a `SortedMap` in your application, you typically want to choose an ID for
+the map and store it somewhere (e.g., as a field in the appropriate state data
+type). To use the map, first get a `ref()` to the map using its ID and then invoke
+the appropriate operations. The map will be implicitly constructed when the first
+writer method is invoked (e.g., `Insert()`).
+
+## Imports and set up
+
+To use a `SortedMap`, import the library where you would like to use it.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.py&lines=22-22) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.py -->
+
+```py
+from reboot.std.collections.v1.sorted_map import SortedMap
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.ts&lines=3-6) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.ts -->
+
+```ts
+import {
+  SortedMap,
+  sortedMapLibrary,
+} from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+Also make sure to include the `SortedMap` library when starting up your `Application`.
+(Note: this import is different from above.)
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from reboot.std.collections.v1.sorted_map import sorted_map_library
+
+async def main():
+    application = Application(
+        servicers=[MyServicer],
+        libraries=[sorted_map_library()],
+    ).run()
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import sortedMap from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
+
+new Application({
+  servicers: [MyServicer],
+  libraries: [sortedMapLibrary()]
+  initialize,
+}).run();
+```
+  </TabItem>
+</Tabs>
+
+## SortedMap
+
+Each `SortedMap` you create will need a unique ID. Using a reference to that
+`SortedMap`, you will be able to perform operations on keys and associated values.
+
+### Referencing SortedMaps
+
+This creates a reference to a `SortedMap` with ID `"my-map"`.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+my_map = SortedMap.ref("my-map")
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const myMap = SortedMap.ref("my-map");
+```
+  </TabItem>
+</Tabs>
+
+## Methods
+
+### Insert
+
+Insert a batch of entries into the `SortedMap`.
+
+Keys which are already in the map will be overwritten.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+await my_map.insert(
+    context, entries={
+        "key-a": b"value-1",
+        "key-b": b"value-2",
+        "key-c": b"value-3",
+    }
+)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+await myMap.insert(context, {
+  entries: {
+    "key-a": new TextEncoder().encode("value-1"),
+    "key-b": new TextEncoder().encode("value-2"),
+    "key-c": new TextEncoder().encode("value-3"),
+  },
+});
+```
+  </TabItem>
+</Tabs>
+
+
+### Get
+
+Fetch a single key's value.
+
+If the key does not exist, the `GetResponse` leaves the `value` field
+unset.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+# Get key that has a value.
+response = await my_map.get(context, key="key-a")
+print(response.value)
+
+# Get key that has no associated value.
+missing_response = await my_map.get(context, key="missing-key")
+# missing_response.HasField("value") == False
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+// Get key that has a value.
+const response = await myMap.get(context, { key: "key-a" });
+console.log(new TextDecoder().decode(response.value));
+
+// Get key that has no associated value.
+const missingResponse = await myMap.get(context, { key: "missing-key" });
+// missingResponse.hasOwnProperty("value") === false
+```
+  </TabItem>
+</Tabs>
+
+
+### Remove
+
+Remove a batch of keys from the `SortedMap`.
+
+Any keys in the batch that are not present in the map will be ignored.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+await my_map.remove(context, keys=["key-a", "key-b"])
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+await myMap.remove(context, {
+  keys: ["key-a", "key-b"],
+});
+```
+  </TabItem>
+</Tabs>
+
+
+
+### Range
+
+Read a range of data in ascending order from the `SortedMap`.
+
+The `start_key` must be less than the `end_key` (if both are specified),
+and the results are returned in ascending key order.
+
+The `start_key` is inclusive and the `end_key` is exclusive. If the start
+or end are unset, then the range is unbounded in that direction. If both
+the start and end keys are unset, the `limit` smallest keys in the map are
+returned.
+
+The `limit` argument is required, to avoid exhausting memory in the client
+or server.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+range1 = await my_map.range(
+    context,
+    start_key="key-b",
+    end_key="key-z",
+    limit=2,
+)
+
+for entry in range1.entries:
+    print(entry.key, entry.value)
+
+# Returns entries associated with the 3 smallest keys.
+range2 = await my_map.range(context, limit=3)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const range1 = await myMap.range(context, {
+  startKey: "key-b",
+  endKey: "key-z",
+  limit: 2,
+});
+
+for (const entry of range1.entries) {
+  console.log(entry.key, new TextDecoder().decode(entry.value));
+}
+
+// Returns entries associated with the 3 smallest keys.
+const range2 = await myMap.range(context, {
+  limit: 3,
+});
+```
+  </TabItem>
+</Tabs>
+
+If you have an error in your range request (i.e. you don't specify a `limit`
+or you specify an `end_key` smaller than your `start_key`), you'll receive an
+[`InvalidRangeError`](#invalidrangeerror) explaining why your range is not valid.
+
+
+### ReverseRange
+
+Read a range of data in descending order from the `SortedMap`.
+
+This is similar to `Range` but reads data in reverse order: the `start_key`
+must be greater than the `end_key` (if both are specified), and the results
+are returned in descending key order.
+
+The `start_key` is inclusive and the `end_key` is exclusive. If the start
+or end are unset, then the range is unbounded in that direction. If both
+the start and end keys are unset, the `limit` largest keys in the map are
+returned.
+
+The `limit` argument is required, to avoid exhausting memory in the client
+or server
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+range1 = await my_map.reverse_range(
+    context,
+    start_key="key-z",
+    end_key="key-b",
+    limit=2,
+)
+
+for entry in range1.entries:
+    print(entry.key, entry.value)
+
+# Returns entries associated with the 3 largest keys.
+range2 = await my_map.reverse_range(context, limit=3)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const range1 = await myMap.reverseRange(context, {
+  startKey: "key-z",
+  endKey: "key-b",
+  limit: 2,
+});
+
+for (const entry of range1.entries) {
+  console.log(entry.key, new TextDecoder().decode(entry.value));
+}
+
+// Returns entries associated with the 3 largest keys.
+const range2 = await myMap.reverseRange(context, {
+  limit: 3,
+});
+```
+  </TabItem>
+</Tabs>
+
+If you have an error in your range request (i.e. you don't specify a `limit`
+or you specify an `end_key` smaller than your `start_key`), you'll receive an
+[`InvalidRangeError`](#invalidrangeerror) explaining why your range is not valid.
+
+
+## Errors
+
+### InvalidRangeError {#invalidrangeerror}
+See [`Range`](#range) and [`ReverseRange`](#reverserange). Raised when the
+requested range is not valid.
+
+The `message` field of the error contains the string explaining why the range
+is not valid.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from reboot.std.collections.v1.sorted_map import (
+    InvalidRangeError,
+    SortedMap,
+)
+
+try:
+    await my_map.range(
+        context,
+        start_key="zero",
+        end_key="one",
+    )
+except SortedMap.RangeAborted as e:
+    # isinstance(e.error, InvalidRangeError) == True
+    print(e.error.message)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import {
+  InvalidRangeError,
+  SortedMap,
+} from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
+
+try {
+  await myMap.range(context, {
+    startKey: "zero",
+    endKey: "one",
+  });
+} catch (e) {
+  if (
+    e instanceof SortedMap.RangeAborted &&
+    e.error instanceof InvalidRangeError
+  ) {
+    console.error(e.error.message);
+  }
+}
+```
+  </TabItem>
+</Tabs>

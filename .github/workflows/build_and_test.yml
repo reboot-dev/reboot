@@ -1,0 +1,224 @@
+# This file is generated from a template in `reboot/ci/templates/`.
+# Do not edit it directly.
+# Run `bazel run //:ci_workflows` to regenerate it after editing the template.
+
+name: Build and Test
+
+on:
+  # We don't run CI on our main branch, only on pull requests to the
+  # main branch. The main branch can only change via pull requests, and
+  # checks on those pull requests must pass before merging to main, so
+  # checks on main are redundant.
+  pull_request:
+    # Run CI on pull requests. Passing checks will be required to merge.
+    branches:
+      - "**"
+  merge_group:
+    # Required if we want to use GitHub's Merge Queue feature. See:
+    #   https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue#triggering-merge-group-checks-with-github-actions
+
+concurrency:
+  # Have at most one of these workflows running per branch, cancelling older
+  # runs that haven't completed yet when they become obsolete.
+  #
+  # When pushing new commits to a PR, each one of those commits triggers a new
+  # workflow run that would normally run to completion, even when subsequent
+  # pushes to the PR make their result obsolete. This consumes resources for no
+  # benefit. We override that default behavior to save resources, cancelling any
+  # older still-running workflows when a new workflow starts.
+  #
+  # See documentation about the `github` context variables here:
+  #   https://docs.github.com/en/actions/learn-github-actions/contexts#github-context
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Do not cancel runs on the main branch. On the main branch we want every
+  # commit to be tested.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check-ci-consistency:
+    name: Check CI Consistency
+    uses: ./.github/workflows/devcontainer.yml
+    # The nested job needs write permissions, which means this job also needs
+    # them.
+    permissions:
+      packages: write
+    secrets: inherit
+    with:
+      cancel-workflow-on-failure: true
+      runs-on: depot-ubuntu-24.04-4
+      run: |
+        # Fail if CI workflow files don't match templates.
+        bazel test //:ci_workflows_test
+
+  check-code-style:
+    name: Check Code Style
+    needs: [check-ci-consistency]
+    uses: ./.github/workflows/devcontainer.yml
+    # The nested job needs write permissions, which means this job also needs
+    # them.
+    permissions:
+      packages: write
+    secrets: inherit
+    with:
+      cancel-workflow-on-failure: true
+      runs-on: 4_core_GitHub_hosted
+      run: |
+        # Run check code style from dev-tools on all of our files using our
+        # codespace image. This ensures that the version of code checking tools
+        # match the versions that we currently use in our code spaces.
+        # If the code check fails, error handling and cancellation will be taken
+        # care of by the workflow in `devcontainer.yml`.
+        ./submodules/dev-tools/check-style.sh --full
+
+  build-reboot-linux-x86_x64-public:
+    name: Build public repo for Linux x86_64
+    needs: [check-ci-consistency]
+    uses: ./.github/workflows/devcontainer.yml
+    # The nested job needs write permissions, which means this job also needs
+    # them.
+    permissions:
+      packages: write
+    secrets: inherit
+    with:
+      cancel-workflow-on-failure: false
+      runs-on: depot-ubuntu-24.04-32
+      run: |
+        # Fail if any part of this workflow fails.
+        set -eux
+
+        # First do a build to catch any "obvious" mistakes quickly; this
+        # must be a separate step from the test run to also cover targets
+        # that don't have test coverage.
+        bazel build //...
+        bazel test \
+          --test_tag_filters=-requires-docker,-flaky,-manual \
+          //tests/...
+
+  build-reboot-linux-arm64:
+    name: Build public repo for Linux arm64
+    needs: [check-ci-consistency]
+    uses: ./.github/workflows/devcontainer.yml
+    permissions:
+      packages: write
+    secrets: inherit
+    with:
+      cancel-workflow-on-failure: false
+      arch: arm64
+      runs-on: depot-ubuntu-24.04-arm-16
+      run: |
+        # Fail if any part of this workflow fails.
+        set -eux
+
+        # We do not install 'Pulumi' on the arm64 runners, so skip a couple
+        # of tests, which use it.
+        # The 'io_bazel_rules_webtesting' doesn't support Linux arm64 yet,
+        # so skip those tests too.
+        # https://github.com/bazelbuild/rules_webtesting/blob/master/common/conditions/BUILD.bazel
+        #
+
+        # 1) Build up the base query.
+        QUERY='tests(//tests/...)'
+
+        # 2) Exclude these tags by default for arm64.
+        QUERY="$QUERY \
+        except attr(\"tags\",\"requires-pulumi\",//tests/...) \
+        except attr(\"tags\",\"requires-linux-x86\",//tests/...) \
+        except attr(\"tags\",\"manual\",//tests/...)"
+
+        # 3) If this is a PR labelled "reboot-release", also drop flaky
+        # tests.
+        if [ "$EXCLUDE_FLAKY" = "true" ]; then
+          echo "NOTE: reboot-release label found — excluding flaky tests"
+          QUERY="$QUERY except attr(\"tags\",\"flaky\",//tests/...)"
+        fi
+
+        # 4) Run the query and pipe into bazel test.
+        echo "▶ bazel query: $QUERY"
+        bazel query "$QUERY" \
+          | xargs bazel test
+
+  build-reboot-documentation:
+    name: Build Reboot documentation
+    needs: [check-ci-consistency]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          show-progress: false
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+      - name: Install dependencies
+        working-directory: ./documentation
+        run: npm install
+      - name: Build with Docusaurus
+        working-directory: ./documentation
+        run: npm run build
+
+  test-manylinux-x86_64:
+    name: Test Manylinux x86_64
+    needs: [check-ci-consistency]
+    uses: ./.github/workflows/manylinux.yml
+    secrets: inherit
+    with:
+      cancel-workflow-on-failure: false
+      arch: amd64
+      runs-on: depot-ubuntu-24.04-32
+      container-type: runner
+      run: |
+        # Run a representative test to verify the manylinux-built wheel
+        # works.
+        bazel test tests/reboot/examples/chat-room:release_test
+
+  test-manylinux-arm64:
+    name: Test Manylinux arm64
+    needs: [check-ci-consistency]
+    uses: ./.github/workflows/manylinux.yml
+    secrets: inherit
+    with:
+      cancel-workflow-on-failure: false
+      arch: arm64
+      runs-on: depot-ubuntu-24.04-arm-16
+      container-type: runner
+      run: |
+        # Run a representative test to verify the manylinux-built wheel
+        # works.
+        bazel test tests/reboot/examples/chat-room:release_test
+
+  build-reboot-MacOS-arm64:
+    name: Build public repo for MacOS arm64
+    needs: [check-ci-consistency]
+    uses: ./.github/workflows/reboot_macos_environment.yml
+    secrets: inherit
+    with:
+      runs-on: depot-macos-14
+      # TODO: Make "LocalEnvoy" tests work on MacOS.
+      # See https://github.com/reboot-dev/mono/issues/2345
+      run: |
+        # Fail if any part of this workflow fails.
+        set -eux
+
+        # 1) Build up the base query.
+        QUERY='tests(//tests/...)'
+
+        # 2) Exclude these tags by default for MacOS.
+        QUERY="$QUERY \
+        except attr(\"tags\",\"requires-docker\",//tests/...) \
+        except attr(\"tags\",\"macos_not_supported\",//tests/...) \
+        except attr(\"tags\",\"manual\",//tests/...)"
+
+        # 3) If this is a PR labelled "reboot-release", also drop flaky
+        # tests.
+        if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && \
+          jq -r '.pull_request.labels[].name' "$GITHUB_EVENT_PATH" \
+            | grep -qx reboot-release; then
+          echo "NOTE: reboot-release label found — excluding flaky tests"
+          QUERY="$QUERY except attr(\"tags\",\"flaky\",//tests/...)"
+        fi
+
+        # 4) Run the query and pipe into bazel test.
+        echo "▶ bazel query: $QUERY"
+        bazel query "$QUERY" \
+          | xargs bazel test

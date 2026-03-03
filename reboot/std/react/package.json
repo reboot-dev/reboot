@@ -1,0 +1,28 @@
+{
+  "name": "@reboot-dev/reboot-std-react",
+  "version": "0.44.0",
+  "description": "Reboot standard library for React.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc"
+  },
+  "author": "reboot-dev",
+  "dependencies": {
+    "@reboot-dev/reboot-api": "0.44.0",
+    "@reboot-dev/reboot-react": "0.44.0",
+    "@reboot-dev/reboot-std-api": "0.44.0",
+    "@reboot-dev/reboot-web": "0.44.0",
+    "@scarf/scarf": "1.4.0"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^22.7.4"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./index.js",
+    "./presence": "./presence/index.js"
+  }
+}

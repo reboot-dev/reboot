@@ -1,0 +1,78 @@
+load("@com_github_reboot_dev_reboot//bazel:oci_image.bzl", "py_oci_image")
+load(
+    "@com_github_reboot_dev_reboot//reboot:pydantic_to_proto.bzl",
+    "py_reboot_library_from_pydantic",
+)
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "ping_api_py",
+    srcs = ["ping_api.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//reboot:api_py",
+    ],
+)
+
+py_reboot_library_from_pydantic(
+    name = "ping_py_reboot",
+    py_deps = [
+        ":ping_api_py",
+    ],
+    pydantic = ":ping_api.py",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "ping_py",
+    srcs = ["ping.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":ping_py_reboot",
+        "//reboot/aio:applications_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:tasks_py",
+    ],
+)
+
+py_oci_image(
+    name = "ping",
+    srcs = [
+        "ping.py",
+    ],
+    base = "//:envoy_base_image",
+    env = {
+        # Don't buffer stdout/stderr so we can better distinguish when
+        # a pod failed to start vs when it crashed after starting.
+        "PYTHONUNBUFFERED": "1",
+    },
+    main = "ping.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":ping_py",
+    ],
+)
+
+# The following binary target is particularly useful with `ibazel` for
+# iterative development on a live Reboot app! Run:
+#   ibazel run //reboot/ping:ping_py_bin
+# Then access the app at e.g.:
+#   http://localhost:9991/__/inspect
+py_binary(
+    name = "ping_py_bin",
+    srcs = ["ping.py"],
+    env = {
+        # Pretend that we're running `rbt dev`.
+        "RBT_DEV": "true",
+        "RBT_NAME": "ping",
+        "RBT_SERVERS": "2",
+        "RBT_STATE_DIRECTORY": "/tmp/ping",
+        "REBOOT_LOCAL_ENVOY": "true",
+        "REBOOT_LOCAL_ENVOY_PORT": "9991",
+        "REBOOT_LOCAL_ENVOY_USE_TLS": "False",
+    },
+    main = "ping.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":ping_py",
+    ],
+)

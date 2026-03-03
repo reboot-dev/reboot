@@ -1,0 +1,127 @@
+syntax = "proto3";
+
+package rbt.std.presence.subscriber.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+message Subscriber {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  // Incremented after subscriber is successfully connected and decremented
+  // after subscriber is successfully disconnected.
+  uint32 toggles = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+/**
+ * Used to manage a "subscriber", e.g., a user in a browser tab.
+ */
+service SubscriberMethods {
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  /**
+   * Used to initiate a subscription, this method runs indefinitely in
+   * order to detect when the subscriber is not longer present due
+   * to the method call (RPC) being cancelled, e.g., when a user closes
+   * the browser tab.
+   */
+  rpc Connect(ConnectRequest) returns (ConnectResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  /**
+   * Increments `toggles` by 1 if `Connect()` was successful. Raises an error if
+   * `Connect()` has not yet been called.
+   *
+   * If `toggles` is successfully incremented, the `WaitForDisconnect` workflow
+   * is also scheduled.
+   */
+  rpc Toggle(ToggleRequest) returns (ToggleResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  /**
+   * Waits indefinitely until connection is closed, i.e., the
+   * subscriber is not longer present.
+   *
+   * Decrements `toggles` by 1 once it declares that the connection
+   * has been closed.
+   */
+  rpc WaitForDisconnect(WaitForDisconnectRequest)
+      returns (WaitForDisconnectResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  /**
+   * Returns whether the subscriber is still present.
+   */
+  rpc Status(StatusRequest) returns (StatusResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// See `Create`.
+message CreateRequest {}
+
+// See `Create`.
+message CreateResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+// See `Connect`.
+message ConnectRequest {
+  // Should be different for every connection request.
+  // Used to create a unique key.
+  string nonce = 1;
+}
+
+// See `Connect`.
+message ConnectResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+// See `Toggle`.
+message ToggleRequest {
+  // The same nonce used for the initial connection request.
+  string nonce = 1;
+}
+
+// See `Toggle`.
+message ToggleResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+// See `WaitForDisconnect`.
+message WaitForDisconnectRequest {
+  // The same nonce used for the initial connection request.
+  string nonce = 1;
+}
+
+// See `WaitForDisconnect`.
+message WaitForDisconnectResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+// See `Status`.
+message StatusRequest {}
+
+// See `Status`.
+message StatusResponse {
+  // Indicates whether the connection is still active.
+  bool present = 2;
+}
+
+////////////////////////////////////////////////////////////////////////

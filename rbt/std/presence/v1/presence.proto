@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package rbt.std.presence.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+message Presence {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  // List of subscribers, i.e., are currently "present".
+  repeated string subscriber_ids = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+/**
+ * Tracks subscribers that are "present".
+ *
+ * Called by the subscriber _after_ first becoming a
+ * `Subscriber` using the API described there.
+ */
+service PresenceMethods {
+  /**
+   * Registers a subscriber as present.
+   *
+   * The `Watch` workflow is also scheduled to detect when this
+   * subscriber is no longer present.
+   */
+  rpc Subscribe(SubscribeRequest) returns (SubscribeResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  /**
+   * Returns a list of subscriber ids for subscribers that are present.
+   */
+  rpc List(ListRequest) returns (ListResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  /**
+   * Waits until the subscriber is no longer present.
+   */
+  rpc Watch(WatchRequest) returns (WatchResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// See `Subscribe`.
+message SubscribeRequest {
+  // The subscriber to register as present.
+  string subscriber_id = 1;
+}
+
+// See `Subscribe`.
+message SubscribeResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+// See `List`.
+message ListRequest {}
+
+// See `List`.
+message ListResponse {
+  // List of subscriber ids for subscribers that are present.
+  repeated string subscriber_ids = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// See `Watch`.
+message WatchRequest {
+  // The subscriber to watch and remove when no longer present.
+  string subscriber_id = 1;
+}
+
+// See `Watch`.
+message WatchResponse {}
+
+////////////////////////////////////////////////////////////////////////

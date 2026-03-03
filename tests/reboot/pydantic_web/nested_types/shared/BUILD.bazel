@@ -1,0 +1,29 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load(
+    "//reboot:pydantic_to_proto.bzl",
+    "pydantic_to_zod",
+)
+
+py_library(
+    name = "models_py",
+    srcs = ["models.py"],
+    visibility = ["//tests/reboot/pydantic_web/nested_types:__subpackages__"],
+    deps = [
+        "//reboot:api_py",
+        "//tests/reboot/pydantic_web/nested_types/base_models:models_py",
+    ],
+)
+
+pydantic_to_zod(
+    name = "models_zod_file",
+    py_deps = [
+        "//tests/reboot/pydantic_web/nested_types/base_models:models_py",
+    ],
+    pydantic = ":models.py",
+    # Scan the API file to discover that `InvalidPhoneError` is used as an
+    # error, so it gets the proper `type` discriminator field.
+    scan_pydantic = [
+        "//tests/reboot/pydantic_web/nested_types:servicer_api.py",
+    ],
+    visibility = ["//tests/reboot/pydantic_web/nested_types:__subpackages__"],
+)

@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package bank.v1.proto;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+message Customer {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated string account_ids = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+service CustomerMethods {
+  rpc SignUp(SignUpRequest) returns (SignUpResponse) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {}
+    };
+  }
+
+  rpc OpenAccount(OpenAccountRequest) returns (OpenAccountResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  rpc Balances(BalancesRequest) returns (BalancesResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message SignUpRequest {
+  string name = 1;
+}
+
+message SignUpResponse {}
+
+message OpenAccountRequest {
+  double initial_deposit = 2;
+}
+
+message OpenAccountResponse {
+  string account_id = 1;
+}
+
+message BalancesRequest {}
+
+message Balance {
+  string account_id = 1;
+  double balance = 2;
+}
+
+message BalancesResponse {
+  repeated Balance balances = 1;
+}
