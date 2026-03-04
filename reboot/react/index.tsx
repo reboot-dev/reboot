@@ -226,13 +226,17 @@ export const RebootClientProvider = ({
     [explicitUiTitle]
   );
 
-  const rebootClient = new RebootClient({
-    url: rebootUrl,
-    setBearerToken,
-    setAuthorizationBearer: setBearerToken,
-    bearerToken,
-    offlineCacheEnabled,
-  });
+  const rebootClient = useMemo(
+    () =>
+      new RebootClient({
+        url: rebootUrl,
+        setBearerToken,
+        setAuthorizationBearer: setBearerToken,
+        bearerToken,
+        offlineCacheEnabled,
+      }),
+    [rebootUrl, offlineCacheEnabled, bearerToken]
+  );
 
   if (mcpTitle) {
     return (
