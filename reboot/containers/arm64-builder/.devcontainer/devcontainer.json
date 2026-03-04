@@ -20,7 +20,11 @@
       "ARCH": "arm64"
     }
   },
-  "workspaceFolder": "/workspaces/mono",
+  // Mount the full repo root (GITHUB_WORKSPACE) into the container.
+  // `WORKSPACE_FOLDER` is set by the GitHub Actions workflow to either
+  // `/workspaces/reboot` (public repo) or `/workspaces/mono` (mono repo).
+  "workspaceMount": "source=${localEnv:GITHUB_WORKSPACE},target=${localEnv:WORKSPACE_FOLDER},type=bind,consistency=cached",
+  "workspaceFolder": "${localEnv:WORKSPACE_FOLDER}",
   "remoteUser": "vscode",
   // Features to add to the dev container. More info: https://containers.dev/features.
   "features": {

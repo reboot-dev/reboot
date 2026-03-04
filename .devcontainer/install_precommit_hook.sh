@@ -2,9 +2,15 @@
 #
 function install_precommit_hook() {
     local repo_top_level="$(git rev-parse --show-toplevel)"
-    local dev_tools_commit_hook_path="${repo_top_level}/public/submodules/dev-tools/pre-commit";
+    # In the mono repo, submodules live under `public/`; in the standalone
+    # public repo they live directly at the top level.
+    local prefix=""
+    if [[ -d "${repo_top_level}/public" ]]; then
+        prefix="public/"
+    fi
+    local dev_tools_commit_hook_path="${repo_top_level}/${prefix}submodules/dev-tools/pre-commit";
     local local_dev_tools_commit_hook_path="${repo_top_level}/.git/hooks/dev-tools-pre-commit";
-    local rbt_documentation_commit_hook_path="${repo_top_level}/public/documentation/pre-commit";
+    local rbt_documentation_commit_hook_path="${repo_top_level}/${prefix}documentation/pre-commit";
     local local_rbt_documentation_commit_hook_path="${repo_top_level}/.git/hooks/rbt-documentation-pre-commit";
     local local_combined_commit_hook_path="${repo_top_level}/.git/hooks/pre-commit";
 

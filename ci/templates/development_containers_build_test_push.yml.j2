@@ -1,0 +1,245 @@
+name: Development Containers - Build, Test, and Push
+on:
+  # This file is a reusable workflow (only). It runs when called.
+  workflow_call:
+    inputs:
+      push:
+        required: false
+        type: boolean
+        default: false
+
+env:
+  REBOOT_LIBRARY_ARTIFACT_NAME: reboot-${{ github.sha }}
+
+jobs:
+  # Like all code in this repo, the containers are to be tested against the
+  # latest (HEAD, unreleased) Reboot library - not the latest _released_
+  # library. To do so, we must first have a build of that latest (HEAD,
+  # unreleased) library.
+  build-library:
+    name: Build the latest Reboot Library
+    uses: ./.github/workflows/devcontainer.yml
+    permissions:
+      # The workflow we're about to run needs 'packages: write' permissions, which
+      # means this job also needs them.
+      packages: write
+    secrets: inherit
+    with:
+      cancel-workflow-on-failure: false
+      runs-on: depot-ubuntu-24.04-32
+      run: |
+        # Fail if any of the commands below fail.
+        set -e
+
+        bazel build //reboot:reboot.dev
+        bazel build //reboot/nodejs:reboot-dev-reboot
+        bazel build //rbt/v1alpha1:reboot-dev-reboot-api
+        bazel build //reboot/react:reboot-dev-reboot-react
+        bazel build //reboot/web:reboot-dev-reboot-web
+        bazel build //reboot/std:reboot-dev-reboot-std
+        bazel build //rbt/std:reboot-dev-reboot-std-api
+        # Since this 'run' section is being run in a workstation Dev Container
+        # (see `devcontainer.yml`), and since that container is about to terminate,
+        # we must copy the produced files to a directory that we can
+        # access from outside the container. The working directory will do,
+        # since that's a mounted volume. Note that even though the '.whl' file
+        # is currently located in './bazel-bin/' (a child of the working
+        # directory), that's merely a symlink to '/home/vscode/.cache', which is
+        # not accessible from outside the container.
+        # In the same place we will also save the 'reboot-base' image.
+        mkdir -p artifacts
+        cp ./bazel-bin/reboot/*linux_*.whl ./artifacts/
+        cp ./bazel-bin/reboot/nodejs/reboot-dev-reboot-*.tgz ./artifacts/
+        cp ./bazel-bin/rbt/v1alpha1/reboot-dev-reboot-api-*.tgz ./artifacts/
+        cp ./bazel-bin/reboot/react/reboot-dev-reboot-react-*.tgz ./artifacts/
+        cp ./bazel-bin/reboot/web/reboot-dev-reboot-web-*.tgz ./artifacts/
+        cp ./bazel-bin/reboot/std/reboot-dev-reboot-std-*.tgz ./artifacts/
+        cp ./bazel-bin/rbt/std/reboot-dev-reboot-std-api-*.tgz ./artifacts/
+
+        # Build the 'reboot-base' image in the same devcontainer, so that we
+        # don't build the Reboot library again.
+        export REBOOT_BASE_IMAGE_NAME=ghcr.io/reboot-dev/reboot-base
+        export REBOOT_BASE_IMAGE_VERSION=$(grep 'REBOOT_VERSION' <% if is_mono %>public/<% endif %>reboot/versions.bzl | awk -F '"' '{print $2}')
+        bazel run //reboot/containers/reboot-base:dev
+        docker save "$REBOOT_BASE_IMAGE_NAME:$REBOOT_BASE_IMAGE_VERSION" -o ./artifacts/reboot-base.tar
+        # Save the Reboot version that was built.
+        echo "$REBOOT_BASE_IMAGE_VERSION" > ./artifacts/reboot-version.env
+        # For debugging, record which artifacts we've made available.
+        echo "#### Produced the following artifacts ####"
+        ls -l ./artifacts/
+        echo "#### End of artifact list ####"
+
+      # After the above 'run' section completes, we'll have a '.whl' file and
+      # '.tar' saved image in the working directory. We want to make that file
+      # available to the next job in the workflow, so we'll upload it as an
+      # artifact.
+      artifact-name: $REBOOT_LIBRARY_ARTIFACT_NAME
+      artifact-path: ./artifacts
+
+  # With the library built, we can test our containers against it.
+  build-test-push:
+    name: Container - Build, Test, and (maybe) Push
+    needs: build-library
+    runs-on: 16_core_GitHub_hosted
+
+    permissions:
+      # Permission to check out this repository.
+      contents: read
+      # Permission to push packages; necessary to do pushes.
+      packages: write
+
+    env:
+      # The published name of the standalone image is defined here, since it is
+      # used in multiple steps.
+      #
+      # The name of the Dev Container's image is defined in the single step that
+      # builds and pushes it.
+      REBOOT_STANDALONE_IMAGE_NAME: "ghcr.io/reboot-dev/reboot-standalone:latest"
+
+    steps:
+      - name: Checkout (GitHub)
+        uses: actions/checkout@v4
+        with:
+          show-progress: false
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch the latest Reboot Library
+        uses: actions/download-artifact@v4
+        with:
+          name: $REBOOT_LIBRARY_ARTIFACT_NAME
+          # We need to place the *.whl file somewhere where our upcoming `docker
+          # run` can access it. The only mounted directory will be
+          # `<% if is_mono %>public/<% endif %>reboot/examples`.
+          path: <% if is_mono %>public/<% endif %>reboot/examples/
+
+      # TODO(rjh): set things up so that our UID and GID are NOT 1000, so that
+      #            we test the container's UID/GID switching ability.
+      - name: Build and Test Standalone Docker Container
+        run: |
+          # Echo commands, for debugging.
+          # Error out if any step fails.
+          # Consider an unbound variable an error.
+          set -xeu
+          # Determine the name of the .whl file that was built above.
+          export REBOOT_WHL_FILENAME=$(basename $(ls <% if is_mono %>public/<% endif %>reboot/examples/*.whl))
+          # Determine the names of *.tgz files that were built above.
+          export REBOOT_VERSION=$(cat <% if is_mono %>public/<% endif %>reboot/examples/reboot-version.env)
+          export REBOOT_NPM_FILENAME=$(basename $(ls <% if is_mono %>public/<% endif %>reboot/examples/reboot-dev-reboot-$REBOOT_VERSION.tgz))
+          export REBOOT_API_NPM_FILENAME=$(basename $(ls <% if is_mono %>public/<% endif %>reboot/examples/reboot-dev-reboot-api-$REBOOT_VERSION.tgz))
+          export REBOOT_WEB_NPM_FILENAME=$(basename $(ls <% if is_mono %>public/<% endif %>reboot/examples/reboot-dev-reboot-web-$REBOOT_VERSION.tgz))
+          export REBOOT_REACT_NPM_FILENAME=$(basename $(ls <% if is_mono %>public/<% endif %>reboot/examples/reboot-dev-reboot-react-$REBOOT_VERSION.tgz))
+          export REBOOT_STD_NPM_FILENAME=$(basename $(ls <% if is_mono %>public/<% endif %>reboot/examples/reboot-dev-reboot-std-$REBOOT_VERSION.tgz))
+          export REBOOT_STD_API_NPM_FILENAME=$(basename $(ls <% if is_mono %>public/<% endif %>reboot/examples/reboot-dev-reboot-std-api-$REBOOT_VERSION.tgz))
+
+          # Load the 'reboot-base' image that we built in the previous job.
+          docker load -i <% if is_mono %>public/<% endif %>reboot/examples/reboot-base.tar
+          # ISSUE(2461): on larger runners we don't have the luxury of NOT being
+          # UID 1000, revisit what we want to do here.
+          #
+          # # Confirm that our UID and GID are NOT 1000, so that we're testing the
+          # # container's UID/GID switching ability.
+          # id -u | grep -v 1000
+          # id -g | grep -v 1000
+          # Pull the image, so that we can use it as a cache while building.
+          docker pull $REBOOT_STANDALONE_IMAGE_NAME || echo "Unknown image; building from scratch"
+          # Build the image in such a way that it can be used as a cache, while
+          # also using the cache that we already have.
+          DOCKER_BUILDKIT=1 docker build \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            --cache-from "$REBOOT_STANDALONE_IMAGE_NAME" \
+            -t $REBOOT_STANDALONE_IMAGE_NAME \
+            ./<% if is_mono %>public/<% endif %>reboot/containers/development
+          # Mount the examples folder so we can run our tests against it.
+          # Use an absolute path for the package files so that the tests
+          # can't get confused as we change directories.
+          docker run \
+            --mount type=bind,source="$(pwd)/<% if is_mono %>public/<% endif %>reboot/examples",target=/workspace/examples \
+            --workdir /workspace/examples \
+            --env "HOST_UID=$(id -u)" \
+            --env "HOST_GID=$(id -g)" \
+            --env "REBOOT_WHL_FILE=/workspace/examples/$REBOOT_WHL_FILENAME" \
+            --env "REBOOT_NPM_PACKAGE=/workspace/examples/$REBOOT_NPM_FILENAME" \
+            --env "REBOOT_API_NPM_PACKAGE=/workspace/examples/$REBOOT_API_NPM_FILENAME" \
+            --env "REBOOT_WEB_NPM_PACKAGE=/workspace/examples/$REBOOT_WEB_NPM_FILENAME" \
+            --env "REBOOT_REACT_NPM_PACKAGE=/workspace/examples/$REBOOT_REACT_NPM_FILENAME" \
+            --env "REBOOT_STD_NPM_PACKAGE=/workspace/examples/$REBOOT_STD_NPM_FILENAME" \
+            --env "REBOOT_STD_API_PACKAGE=/workspace/examples/$REBOOT_STD_API_NPM_FILENAME" \
+            --privileged \
+            "$REBOOT_STANDALONE_IMAGE_NAME" \
+            ./all_tests.sh
+
+      - name: Push Standalone Docker Container
+        # We only push if explicitly asked to.
+        if: ${{ inputs.push }}
+        run: |
+          docker push $REBOOT_STANDALONE_IMAGE_NAME
+
+      # The `devcontainers/ci` action used below has a shortcoming: it does not
+      # allow us to mount paths located outside the `subFolder` where it looks
+      # for its `.devcontainer/devcontainer.json`. That means that if we want to
+      # test our examples inside the Dev Container, we must copy them into that
+      # `subFolder`.
+      - name: Copy examples into Dev Container working directory
+        run: |
+          # Echo commands, for debugging.
+          # Error out if any step fails.
+          # Consider an unbound variable an error.
+          set -xeu
+          # Clean up any stale state left behind by the `standalone` run, so that
+          # it cannot influence the execution of the next run.
+          find <% if is_mono %>public/<% endif %>reboot/examples -name "node_modules" -type d -prune -exec rm -rf {} +
+          # Make it so that the `*` glob includes hidden files.
+          shopt -s dotglob
+          # Copy the examples into the Dev Container's working directory, so that
+          # they can be used as a cache while building.
+          cp -r <% if is_mono %>public/<% endif %>reboot/examples <% if is_mono %>public/<% endif %>reboot/containers/development/examples
+
+      - name: Build, Test, and (maybe) Push Dev Container
+        uses: devcontainers/ci@v0.3
+        with:
+          subFolder: "<% if is_mono %>public/<% endif %>reboot/containers/development"
+          # This is the name of the image that we'll push to. It acts as both
+          # a cache (in case nothing has changed) and as our push target (in
+          # case it gets to that).
+          imageName: ghcr.io/reboot-dev/reboot-devcontainer
+          # Push the built Docker image to the registry when explicitly asked to.
+          push: ${{ inputs.push && 'always' || 'never' }}
+<% if is_mono %>
+          # Give the test access to private repos, so it can pull our examples.
+          # TODO(rjh): once our examples are public we can remove this.
+          env: |
+            PRIVATE_REPO_ACCESS_AS_REBOT_TOKEN=${{ secrets.PRIVATE_REPO_ACCESS_AS_REBOT_TOKEN }}
+<% endif %>
+          # Run our test before we declare success.
+          runCmd: |
+            # Echo commands, for debugging.
+            # Error out if any step fails.
+            # Consider an unbound variable an error.
+            set -xeu
+            cd examples
+            # Determine the name of the .whl file that was built above.
+            export REBOOT_WHL_FILENAME=$(basename $(ls ./*.whl))
+            # Determine the names of *.tgz files that were built above.
+            export REBOOT_VERSION=$(cat reboot-version.env)
+            export REBOOT_NPM_FILENAME=$(basename $(ls reboot-dev-reboot-$REBOOT_VERSION.tgz))
+            export REBOOT_API_NPM_FILENAME=$(basename $(ls reboot-dev-reboot-api-$REBOOT_VERSION.tgz))
+            export REBOOT_REACT_NPM_FILENAME=$(basename $(ls reboot-dev-reboot-react-$REBOOT_VERSION.tgz))
+            export REBOOT_WEB_NPM_FILENAME=$(basename $(ls reboot-dev-reboot-web-$REBOOT_VERSION.tgz))
+            export REBOOT_STD_NPM_FILENAME=$(basename $(ls reboot-dev-reboot-std-$REBOOT_VERSION.tgz))
+            export REBOOT_STD_API_NPM_FILENAME=$(basename $(ls reboot-dev-reboot-std-api-$REBOOT_VERSION.tgz))
+            # Give the tests an absolute path for the package files, so they can't
+            # get confused as we change directories.
+            export REBOOT_WHL_FILE=$(pwd)/$REBOOT_WHL_FILENAME
+            export REBOOT_NPM_PACKAGE=$(pwd)/$REBOOT_NPM_FILENAME
+            export REBOOT_API_NPM_PACKAGE=$(pwd)/$REBOOT_API_NPM_FILENAME
+            export REBOOT_REACT_NPM_PACKAGE=$(pwd)/$REBOOT_REACT_NPM_FILENAME
+            export REBOOT_WEB_NPM_PACKAGE=$(pwd)/$REBOOT_WEB_NPM_FILENAME
+            export REBOOT_STD_NPM_PACKAGE=$(pwd)/$REBOOT_STD_NPM_FILENAME
+            export REBOOT_STD_API_PACKAGE=$(pwd)/$REBOOT_STD_API_NPM_FILENAME
+            ./all_tests.sh

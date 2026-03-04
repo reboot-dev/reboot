@@ -22,9 +22,9 @@ def write_templated_source_file(name, dest, src, input_yaml, diff_test = True):
     py_binary(
         name = name + "_templater",
         srcs = [
-            "//reboot/examples:templater.py",
+            "//ci:templater.py",
         ],
-        main = "//reboot/examples:templater.py",
+        main = "//ci:templater.py",
         deps = [
             requirement("pyyaml"),
             "//reboot/templates:tools_py",

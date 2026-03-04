@@ -1,0 +1,35 @@
+---
+# Based on Google style with project-specific overrides.
+#
+# Matches the formatting style of `dev-tools`, but with an 80-character
+# column limit, required for sane output by clang 20.
+#
+# TODO(rjh): update the `dev-tools/.clang-format`, and go back to
+#            sharing that.
+
+Language: Cpp
+BasedOnStyle: Google
+AlignAfterOpenBracket: AlwaysBreak
+AlignEscapedNewlines: Right
+AlignOperands: DontAlign
+AlignTrailingComments: false
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowShortBlocksOnASingleLine: Empty
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+BinPackArguments: false
+BinPackParameters: false
+BreakBeforeBinaryOperators: NonAssignment
+ConstructorInitializerIndentWidth: 2
+DerivePointerAlignment: false
+MaxEmptyLinesToKeep: 2
+SpaceAfterCStyleCast: true
+Standard: c++17
+
+---
+# Proto files use default Google style.
+Language: Proto
+BasedOnStyle: Google

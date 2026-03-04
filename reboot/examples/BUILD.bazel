@@ -9,7 +9,6 @@ exports_files([
     "docubot_README.md.yaml",
     "bank_pydantic_README.md.yaml",
     "README.j2.md",
-    "templater.py",
 ])
 
 # Run 'bazel run reboot/examples:requirements.update' to update the lock file.
