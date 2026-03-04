@@ -532,7 +532,7 @@ pip_package(
     description = "The Reboot library",
     license = "Apache-2.0",
     license_txt = ":LICENSE.txt",
-    readme_md = ":README.public.md",
+    readme_md = ":README.md",
     requirements_txt = "//reboot:requirements.in",
     scripts = {
         # NOTE: the protoc compiler insists that the name of a plugin must(!!!!) start with
