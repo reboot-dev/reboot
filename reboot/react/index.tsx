@@ -7,7 +7,6 @@ import {
   Suspense,
   useContext,
   useMemo,
-  useRef,
   useState,
 } from "react";
 
@@ -98,29 +97,20 @@ const LazyMcpConnector = lazy(() => import("./internal/McpConnector.js"));
 
 export class RebootClient {
   readonly url: string;
+  readonly bearerToken: string | undefined;
+  readonly setBearerToken: (token?: string) => void;
+  readonly setAuthorizationBearer: (token?: string) => void;
   readonly offlineCacheEnabled: boolean = false;
-
-  // Private mutable token — no React state involved.
-  private _bearerToken: string | undefined = undefined;
-
-  get bearerToken(): string | undefined {
-    return this._bearerToken;
-  }
-
-  // Arrow function so it's stable and can be passed around.
-  setBearerToken = (token?: string): void => {
-    this._bearerToken = token;
-  };
-
-  // Deprecated alias.
-  setAuthorizationBearer = this.setBearerToken;
 
   constructor(
     constructorArgs:
       | string
       | {
           url: string;
-          initialToken?: string;
+          bearerToken: string | undefined;
+          setBearerToken?: (token?: string) => void;
+          // TODO: Remove after a deprecation cycle.
+          setAuthorizationBearer?: (token?: string) => void;
           offlineCacheEnabled?: boolean;
         }
   ) {
@@ -135,9 +125,25 @@ export class RebootClient {
         the same object you passed into the 'client' prop.`
       );
       this.url = constructorArgs;
+
+      // We can be sure that setBearerToken is correctly set
+      // because, if we are passed a client directly with only a `url` we will
+      // reconstruct a client using the new, non-deprecated constructor.
+      // See `RebootClientProvider` in reboot/react/index.tsx for more context.
+      // This prevents people from having to call
+      // setBearerToken?.(rebootToken) instead of
+      // setBearerToken(rebootToken)
+      this.setBearerToken = () => {};
+      this.setAuthorizationBearer = () => {};
     } else {
       this.url = constructorArgs.url;
-      this._bearerToken = constructorArgs.initialToken;
+      this.bearerToken = constructorArgs.bearerToken;
+      this.setBearerToken =
+        constructorArgs.setBearerToken ||
+        // TODO: Remove after a deprecation cycle.
+        constructorArgs.setAuthorizationBearer ||
+        (() => {});
+      this.setAuthorizationBearer = this.setBearerToken;
       this.offlineCacheEnabled = constructorArgs.offlineCacheEnabled ?? false;
     }
 
@@ -220,24 +226,13 @@ export const RebootClientProvider = ({
     [explicitUiTitle]
   );
 
-  // Create client once — stable reference.
-  const rebootClient = useMemo(
-    () =>
-      new RebootClient({
-        url: rebootUrl,
-        initialToken: token,
-        offlineCacheEnabled,
-      }),
-    [rebootUrl, offlineCacheEnabled]
-  );
-
-  // If `token` prop changes externally, update the client
-  // without triggering a re-render.
-  const prevTokenRef = useRef(token);
-  if (token !== prevTokenRef.current) {
-    prevTokenRef.current = token;
-    rebootClient.setBearerToken(token);
-  }
+  const rebootClient = new RebootClient({
+    url: rebootUrl,
+    setBearerToken,
+    setAuthorizationBearer: setBearerToken,
+    bearerToken,
+    offlineCacheEnabled,
+  });
 
   if (mcpTitle) {
     return (
