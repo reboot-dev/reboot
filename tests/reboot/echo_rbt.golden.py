@@ -10615,6 +10615,7 @@ class EchoWriterStub(_EchoStub):
                 aborted_type=Echo.ReplyAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -10754,6 +10755,7 @@ class EchoWriterStub(_EchoStub):
                 aborted_type=Echo.SearchAndReplaceAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -10793,6 +10795,7 @@ class EchoWriterStub(_EchoStub):
                 aborted_type=Echo.FailOnceShouldBeRetriedAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -10833,6 +10836,7 @@ class EchoWriterStub(_EchoStub):
                 aborted_type=Echo.TooManyTasksAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -10877,6 +10881,7 @@ class EchoWriterStub(_EchoStub):
                 aborted_type=Echo.RaiseValueErrorAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -10916,6 +10921,7 @@ class EchoWriterStub(_EchoStub):
                 aborted_type=Echo.RaiseSpecifiedErrorAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -10976,6 +10982,7 @@ class EchoWorkflowStub(_EchoStub):
                 aborted_type=Echo.ReplyAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11117,6 +11124,7 @@ class EchoWorkflowStub(_EchoStub):
                 aborted_type=Echo.SearchAndReplaceAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11158,6 +11166,7 @@ class EchoWorkflowStub(_EchoStub):
                 aborted_type=Echo.FailOnceShouldBeRetriedAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11200,6 +11209,7 @@ class EchoWorkflowStub(_EchoStub):
                 aborted_type=Echo.TooManyTasksAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11246,6 +11256,7 @@ class EchoWorkflowStub(_EchoStub):
                 aborted_type=Echo.RaiseValueErrorAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11287,6 +11298,7 @@ class EchoWorkflowStub(_EchoStub):
                 aborted_type=Echo.RaiseSpecifiedErrorAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11348,6 +11360,7 @@ class EchoTasksStub(_EchoStub):
                 aborted_type=Echo.ReplyAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11399,6 +11412,7 @@ class EchoTasksStub(_EchoStub):
                 aborted_type=Echo.ReplayAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11450,6 +11464,7 @@ class EchoTasksStub(_EchoStub):
                 aborted_type=Echo.WaitForAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11501,6 +11516,7 @@ class EchoTasksStub(_EchoStub):
                 aborted_type=Echo.SearchAndReplaceAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11552,6 +11568,7 @@ class EchoTasksStub(_EchoStub):
                 aborted_type=Echo.FailOnceShouldBeRetriedAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11603,6 +11620,7 @@ class EchoTasksStub(_EchoStub):
                 aborted_type=Echo.FailOnceShouldBeRetriedWorkflowAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11654,6 +11672,7 @@ class EchoTasksStub(_EchoStub):
                 aborted_type=Echo.TooManyTasksAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11705,6 +11724,7 @@ class EchoTasksStub(_EchoStub):
                 aborted_type=Echo.HangingAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11756,6 +11776,7 @@ class EchoTasksStub(_EchoStub):
                 aborted_type=Echo.ReactiveWorkflowAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11807,6 +11828,7 @@ class EchoTasksStub(_EchoStub):
                 aborted_type=Echo.ControlLoopAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11858,6 +11880,7 @@ class EchoTasksStub(_EchoStub):
                 aborted_type=Echo.AtMostOnceWorkflowAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11909,6 +11932,7 @@ class EchoTasksStub(_EchoStub):
                 aborted_type=Echo.WorkflowCallingWorkflowAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11960,6 +11984,7 @@ class EchoTasksStub(_EchoStub):
                 aborted_type=Echo.RaiseValueErrorAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12011,6 +12036,7 @@ class EchoTasksStub(_EchoStub):
                 aborted_type=Echo.RaiseSpecifiedErrorAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12062,6 +12088,7 @@ class EchoTasksStub(_EchoStub):
                 aborted_type=Echo.FailingWorkflowAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -13488,10 +13515,10 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                     self._servicer,
                     context.idempotency(
                         key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
-                        generated=True,
+                        how=IMPORT_reboot_aio_idempotency.ALWAYS,
                     ) if self._how == IMPORT_reboot_aio_workflows.ALWAYS else context.idempotency(
                         alias=self._alias,
-                        each_iteration=self._how == IMPORT_reboot_aio_workflows.PER_ITERATION
+                        how=self._how,
                     ),
                     context,
                 )
@@ -13614,10 +13641,10 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 idempotency = (
                     context.idempotency(
                         key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
-                        generated=True,
+                        how=IMPORT_reboot_aio_idempotency.ALWAYS,
                     ) if unidempotently else context.idempotency(
                         alias=self._alias,
-                        each_iteration=self._how == IMPORT_reboot_aio_workflows.PER_ITERATION
+                        how=self._how,
                     )
                 )
 
@@ -13649,10 +13676,6 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 checkpoint: IMPORT_reboot_aio_idempotency.Checkpoint,
             ) -> EchoBaseServicer.InlineWriterCallableResult:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
 
                 IMPORT_reboot_aio_types.assert_type(context, [IMPORT_reboot_aio_contexts.WorkflowContext])
 
@@ -20702,23 +20725,12 @@ class Echo:
                         message=message,
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.Reply(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -20776,23 +20788,12 @@ class Echo:
                     __request__ = EchoReplayRequestFromInputFields(
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.Replay(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -20856,23 +20857,12 @@ class Echo:
                         message=message,
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.WaitFor(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -20940,23 +20930,12 @@ class Echo:
                         replace=replace,
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.SearchAndReplace(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -21020,23 +20999,12 @@ class Echo:
                         message=message,
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.FailOnceShouldBeRetried(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -21180,23 +21148,12 @@ class Echo:
                     __request__ = EchoTooManyTasksRequestFromInputFields(
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.TooManyTasks(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -21660,23 +21617,12 @@ class Echo:
                     __request__ = EchoRaiseValueErrorRequestFromInputFields(
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.RaiseValueError(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -21734,23 +21680,12 @@ class Echo:
                     __request__ = EchoRaiseSpecifiedErrorRequestFromInputFields(
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.RaiseSpecifiedError(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -21845,11 +21780,11 @@ class Echo:
             failing_workflow = FailingWorkflow
 
         @IMPORT_typing.overload
-        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, each_iteration: bool = False) -> Echo.WeakReference._Idempotently[Echo_ScheduleTypeVar]:
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Echo.WeakReference._Idempotently[Echo_ScheduleTypeVar]:
             ...
 
         @IMPORT_typing.overload
-        def idempotently(self, *, key: IMPORT_uuid.UUID, generated: bool = False) -> Echo.WeakReference._Idempotently[Echo_ScheduleTypeVar]:
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Echo.WeakReference._Idempotently[Echo_ScheduleTypeVar]:
             ...
 
         def idempotently(
@@ -21857,16 +21792,14 @@ class Echo:
             alias: IMPORT_typing.Optional[str] = None,
             *,
             key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
-            each_iteration: IMPORT_typing.Optional[bool] = None,
-            generated: bool = False,
+            how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
         ) -> Echo.WeakReference._Idempotently[Echo_ScheduleTypeVar]:
             return Echo.WeakReference._Idempotently(
                 weak_reference=self,
                 idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
                     alias=alias,
                     key=key,
-                    each_iteration=each_iteration,
-                    generated=generated,
+                    how=how,
                 )
             )
 
@@ -21874,12 +21807,15 @@ class Echo:
             return self.idempotently(alias)
 
         def per_iteration(self, alias: IMPORT_typing.Optional[str] = None):
-            return self.idempotently(alias, each_iteration=True)
+            return self.idempotently(
+                alias,
+                how=IMPORT_reboot_aio_idempotency.PER_ITERATION,
+            )
 
         def always(self):
             return self.idempotently(
                 key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
-                generated=True,
+                how=IMPORT_reboot_aio_idempotency.ALWAYS,
             )
 
         class _UntilChangesSatisfies(IMPORT_typing.Generic[Echo_UntilCallableType]):
@@ -22195,12 +22131,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -22281,12 +22211,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -22373,12 +22297,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -22469,12 +22387,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -22561,12 +22473,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -22653,12 +22559,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -22739,12 +22639,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -22825,12 +22719,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -22911,12 +22799,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -22997,12 +22879,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -23083,12 +22959,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -23175,12 +23045,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -23261,12 +23125,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -23347,12 +23205,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -23439,12 +23291,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -23566,12 +23412,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -23662,12 +23502,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -23764,12 +23598,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -23870,12 +23698,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -23972,12 +23794,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -24074,12 +23890,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -24170,12 +23980,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -24266,12 +24070,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -24362,12 +24160,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -24458,12 +24250,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -24554,12 +24340,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -24656,12 +24436,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -24752,12 +24526,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -24848,12 +24616,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -24950,12 +24712,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25080,12 +24836,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25169,12 +24919,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25264,12 +25008,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25363,12 +25101,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25458,12 +25190,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25553,12 +25279,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25642,12 +25362,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25731,12 +25445,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25820,12 +25528,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25909,12 +25611,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25998,12 +25694,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -26093,12 +25783,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -26182,12 +25866,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -26271,12 +25949,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -26366,12 +26038,6 @@ class Echo:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -26459,6 +26125,8 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Echo.ReplyRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Echo.ReplyResponse:
             ...
 
@@ -26468,6 +26136,7 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             message: IMPORT_typing.Optional[str] | Unset = UNSET,
         ) -> Echo.ReplyResponse:
             ...
@@ -26478,6 +26147,7 @@ class Echo:
             __request_or_options__: IMPORT_typing.Optional[Echo.ReplyRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             message: IMPORT_typing.Optional[str] | Unset = UNSET,
         ) -> Echo.ReplyResponse:
             # UX improvement: check that neither positional argument was accidentally
@@ -26506,7 +26176,7 @@ class Echo:
             # `per_workflow()` calls, unless we're within a control
             # loop, in which case they are syntactic sugar for
             # `per_iteration()`.
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.per_iteration() if __context__.within_loop()
@@ -26523,13 +26193,10 @@ class Echo:
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
 
-            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None
             __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
             __bearer_token__: IMPORT_typing.Optional[str] = None
             if __options__ is not None:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    __idempotency__ = __options__.idempotency
                 if __options__.metadata is not None:
                     __metadata__ = __options__.metadata
                 if __options__.bearer_token is not None:
@@ -26554,6 +26221,8 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Echo.ReplayRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Echo.ReplayResponse:
             ...
 
@@ -26562,6 +26231,8 @@ class Echo:
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Echo.ReplayResponse:
             ...
 
@@ -26570,6 +26241,8 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Echo.ReplayRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Echo.ReplayResponse:
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
@@ -26599,7 +26272,7 @@ class Echo:
             #
             # Unless we are "within until" in which case all "bare"
             # calls are `.always().
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.always() if __context__.within_until()
@@ -26632,7 +26305,7 @@ class Echo:
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
-                    idempotency=__options__.idempotency if __options__ is not None else None,
+                    idempotency=__idempotency__,
                 )
             )
         # Keep the original functions on the client, so old code will
@@ -26645,6 +26318,8 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Echo.WaitForRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Echo.WaitForResponse:
             ...
 
@@ -26654,6 +26329,7 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             message: IMPORT_typing.Optional[str] | Unset = UNSET,
         ) -> Echo.WaitForResponse:
             ...
@@ -26664,6 +26340,7 @@ class Echo:
             __request_or_options__: IMPORT_typing.Optional[Echo.WaitForRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             message: IMPORT_typing.Optional[str] | Unset = UNSET,
         ) -> Echo.WaitForResponse:
             # UX improvement: check that neither positional argument was accidentally
@@ -26696,7 +26373,7 @@ class Echo:
             #
             # Unless we are "within until" in which case all "bare"
             # calls are `.always().
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.always() if __context__.within_until()
@@ -26729,7 +26406,7 @@ class Echo:
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
-                    idempotency=__options__.idempotency if __options__ is not None else None,
+                    idempotency=__idempotency__,
                 )
             )
         # Keep the original functions on the client, so old code will
@@ -26742,6 +26419,8 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Echo.StreamRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> IMPORT_typing.AsyncIterable[Echo.StreamResponse]:
             ...
 
@@ -26750,6 +26429,8 @@ class Echo:
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> IMPORT_typing.AsyncIterable[Echo.StreamResponse]:
             ...
 
@@ -26758,6 +26439,8 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Echo.StreamRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> IMPORT_typing.AsyncIterable[Echo.StreamResponse]:
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
@@ -26805,6 +26488,8 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Echo.RegexStreamRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> IMPORT_typing.AsyncIterable[Echo.RegexStreamResponse]:
             ...
 
@@ -26814,6 +26499,7 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             __requests__: IMPORT_typing.AsyncIterable[tests.reboot.echo_pb2.RegexStreamRequest],
         ) -> IMPORT_typing.AsyncIterable[Echo.RegexStreamResponse]:
             ...
@@ -26824,6 +26510,7 @@ class Echo:
             __request_or_options__: IMPORT_typing.Optional[Echo.RegexStreamRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             __requests__: IMPORT_typing.Optional[IMPORT_typing.AsyncIterable[tests.reboot.echo_pb2.RegexStreamRequest]] = None,
         ) -> IMPORT_typing.AsyncIterable[Echo.RegexStreamResponse]:
             # UX improvement: check that neither positional argument was accidentally
@@ -26861,6 +26548,8 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Echo.SearchAndReplaceRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Echo.SearchAndReplaceResponse:
             ...
 
@@ -26870,6 +26559,7 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             search: IMPORT_typing.Optional[str] | Unset = UNSET,
             replace: IMPORT_typing.Optional[str] | Unset = UNSET,
         ) -> Echo.SearchAndReplaceResponse:
@@ -26881,6 +26571,7 @@ class Echo:
             __request_or_options__: IMPORT_typing.Optional[Echo.SearchAndReplaceRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             search: IMPORT_typing.Optional[str] | Unset = UNSET,
             replace: IMPORT_typing.Optional[str] | Unset = UNSET,
         ) -> Echo.SearchAndReplaceResponse:
@@ -26912,7 +26603,7 @@ class Echo:
             # `per_workflow()` calls, unless we're within a control
             # loop, in which case they are syntactic sugar for
             # `per_iteration()`.
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.per_iteration() if __context__.within_loop()
@@ -26929,13 +26620,10 @@ class Echo:
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
 
-            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None
             __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
             __bearer_token__: IMPORT_typing.Optional[str] = None
             if __options__ is not None:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    __idempotency__ = __options__.idempotency
                 if __options__.metadata is not None:
                     __metadata__ = __options__.metadata
                 if __options__.bearer_token is not None:
@@ -26960,6 +26648,8 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Echo.FailOnceShouldBeRetriedRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Echo.FailOnceShouldBeRetriedResponse:
             ...
 
@@ -26969,6 +26659,7 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             message: IMPORT_typing.Optional[str] | Unset = UNSET,
         ) -> Echo.FailOnceShouldBeRetriedResponse:
             ...
@@ -26979,6 +26670,7 @@ class Echo:
             __request_or_options__: IMPORT_typing.Optional[Echo.FailOnceShouldBeRetriedRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             message: IMPORT_typing.Optional[str] | Unset = UNSET,
         ) -> Echo.FailOnceShouldBeRetriedResponse:
             # UX improvement: check that neither positional argument was accidentally
@@ -27007,7 +26699,7 @@ class Echo:
             # `per_workflow()` calls, unless we're within a control
             # loop, in which case they are syntactic sugar for
             # `per_iteration()`.
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.per_iteration() if __context__.within_loop()
@@ -27024,13 +26716,10 @@ class Echo:
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
 
-            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None
             __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
             __bearer_token__: IMPORT_typing.Optional[str] = None
             if __options__ is not None:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    __idempotency__ = __options__.idempotency
                 if __options__.metadata is not None:
                     __metadata__ = __options__.metadata
                 if __options__.bearer_token is not None:
@@ -27139,6 +26828,8 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Echo.TooManyTasksRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Echo.TooManyTasksResponse:
             ...
 
@@ -27147,6 +26838,8 @@ class Echo:
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Echo.TooManyTasksResponse:
             ...
 
@@ -27155,6 +26848,8 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Echo.TooManyTasksRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Echo.TooManyTasksResponse:
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
@@ -27180,7 +26875,7 @@ class Echo:
             # `per_workflow()` calls, unless we're within a control
             # loop, in which case they are syntactic sugar for
             # `per_iteration()`.
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.per_iteration() if __context__.within_loop()
@@ -27197,13 +26892,10 @@ class Echo:
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
 
-            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None
             __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
             __bearer_token__: IMPORT_typing.Optional[str] = None
             if __options__ is not None:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    __idempotency__ = __options__.idempotency
                 if __options__.metadata is not None:
                     __metadata__ = __options__.metadata
                 if __options__.bearer_token is not None:
@@ -27624,6 +27316,8 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Echo.RaiseValueErrorRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Echo.RaiseValueErrorResponse:
             ...
 
@@ -27632,6 +27326,8 @@ class Echo:
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Echo.RaiseValueErrorResponse:
             ...
 
@@ -27640,6 +27336,8 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Echo.RaiseValueErrorRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Echo.RaiseValueErrorResponse:
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
@@ -27665,7 +27363,7 @@ class Echo:
             # `per_workflow()` calls, unless we're within a control
             # loop, in which case they are syntactic sugar for
             # `per_iteration()`.
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.per_iteration() if __context__.within_loop()
@@ -27682,13 +27380,10 @@ class Echo:
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
 
-            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None
             __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
             __bearer_token__: IMPORT_typing.Optional[str] = None
             if __options__ is not None:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    __idempotency__ = __options__.idempotency
                 if __options__.metadata is not None:
                     __metadata__ = __options__.metadata
                 if __options__.bearer_token is not None:
@@ -27713,6 +27408,8 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Echo.RaiseSpecifiedErrorRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Echo.RaiseSpecifiedErrorResponse:
             ...
 
@@ -27721,6 +27418,8 @@ class Echo:
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Echo.RaiseSpecifiedErrorResponse:
             ...
 
@@ -27729,6 +27428,8 @@ class Echo:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Echo.RaiseSpecifiedErrorRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Echo.RaiseSpecifiedErrorResponse:
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
@@ -27754,7 +27455,7 @@ class Echo:
             # `per_workflow()` calls, unless we're within a control
             # loop, in which case they are syntactic sugar for
             # `per_iteration()`.
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.per_iteration() if __context__.within_loop()
@@ -27771,13 +27472,10 @@ class Echo:
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
 
-            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None
             __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
             __bearer_token__: IMPORT_typing.Optional[str] = None
             if __options__ is not None:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    __idempotency__ = __options__.idempotency
                 if __options__.metadata is not None:
                     __metadata__ = __options__.metadata
                 if __options__.bearer_token is not None:
@@ -28531,12 +28229,12 @@ class Echo:
 
     @IMPORT_typing.overload
     @classmethod
-    def idempotently(cls, alias: IMPORT_typing.Optional[str] = None, *, each_iteration: bool = False) -> Echo._ConstructIdempotently:
+    def idempotently(cls, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Echo._ConstructIdempotently:
         ...
 
     @IMPORT_typing.overload
     @classmethod
-    def idempotently(cls, *, key: IMPORT_uuid.UUID, generated: bool = False) -> Echo._ConstructIdempotently:
+    def idempotently(cls, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Echo._ConstructIdempotently:
         ...
 
     @classmethod
@@ -28545,15 +28243,13 @@ class Echo:
         alias: IMPORT_typing.Optional[str] = None,
         *,
         key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
-        each_iteration: IMPORT_typing.Optional[bool] = None,
-        generated: bool = False,
+        how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
     ) -> Echo._ConstructIdempotently:
         return Echo._ConstructIdempotently(
             _idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
                 alias=alias,
                 key=key,
-                each_iteration=each_iteration,
-                generated=generated,
+                how=how,
             ),
         )
 
@@ -28569,13 +28265,16 @@ class Echo:
         cls,
         alias: IMPORT_typing.Optional[str] = None,
     ):
-        return cls.idempotently(alias, each_iteration=True)
+        return cls.idempotently(
+            alias,
+            how=IMPORT_reboot_aio_idempotency.PER_ITERATION,
+        )
 
     @classmethod
     def always(cls):
         return cls.idempotently(
             key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
-            generated=True,
+            how=IMPORT_reboot_aio_idempotency.ALWAYS,
         )
 
     @IMPORT_dataclasses.dataclass(frozen=True)
@@ -30469,8 +30168,13 @@ class EchoWeakReferenceNodeAdaptor(Echo.WeakReference[Echo.WeakReference._Schedu
             idempotency = IMPORT_reboot_aio_contexts.Context.idempotency(
                 alias=options['idempotency'].get('alias'),
                 key=options['idempotency'].get('key'),
-                each_iteration=options['idempotency'].get('eachIteration'),
-                generated=options['idempotency'].get('generated', False),
+                how=(
+                    IMPORT_reboot_aio_idempotency.ALWAYS
+                    if options['idempotency'].get('always', False)
+                    else IMPORT_reboot_aio_idempotency.PER_ITERATION
+                    if options['idempotency'].get('perIteration')
+                    else None
+                ),
             )
 
         method_handle = IMPORT_functools.partial(
@@ -30503,8 +30207,13 @@ class EchoWeakReferenceNodeAdaptor(Echo.WeakReference[Echo.WeakReference._Schedu
             idempotency = IMPORT_reboot_aio_contexts.Context.idempotency(
                 alias=options['idempotency'].get('alias'),
                 key=options['idempotency'].get('key'),
-                each_iteration=options['idempotency'].get('eachIteration'),
-                generated=options['idempotency'].get('generated', False),
+                how=(
+                    IMPORT_reboot_aio_idempotency.ALWAYS
+                    if options['idempotency'].get('always', False)
+                    else IMPORT_reboot_aio_idempotency.PER_ITERATION
+                    if options['idempotency'].get('perIteration')
+                    else None
+                ),
             )
 
         if 'schedule' in options:
@@ -30549,8 +30258,13 @@ class EchoWeakReferenceNodeAdaptor(Echo.WeakReference[Echo.WeakReference._Schedu
             idempotency = IMPORT_reboot_aio_contexts.Context.idempotency(
                 alias=options['idempotency'].get('alias'),
                 key=options['idempotency'].get('key'),
-                each_iteration=options['idempotency'].get('eachIteration'),
-                generated=options['idempotency'].get('generated', False),
+                how=(
+                    IMPORT_reboot_aio_idempotency.ALWAYS
+                    if options['idempotency'].get('always', False)
+                    else IMPORT_reboot_aio_idempotency.PER_ITERATION
+                    if options['idempotency'].get('perIteration')
+                    else None
+                ),
             )
 
         if 'schedule' in options:
@@ -30595,8 +30309,13 @@ class EchoWeakReferenceNodeAdaptor(Echo.WeakReference[Echo.WeakReference._Schedu
             idempotency = IMPORT_reboot_aio_contexts.Context.idempotency(
                 alias=options['idempotency'].get('alias'),
                 key=options['idempotency'].get('key'),
-                each_iteration=options['idempotency'].get('eachIteration'),
-                generated=options['idempotency'].get('generated', False),
+                how=(
+                    IMPORT_reboot_aio_idempotency.ALWAYS
+                    if options['idempotency'].get('always', False)
+                    else IMPORT_reboot_aio_idempotency.PER_ITERATION
+                    if options['idempotency'].get('perIteration')
+                    else None
+                ),
             )
 
         assert 'schedule' in options

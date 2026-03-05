@@ -11487,6 +11487,7 @@ class GreeterWriterStub(_GreeterStub):
                 aborted_type=Greeter.CreateAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11551,6 +11552,7 @@ class GreeterWriterStub(_GreeterStub):
                 aborted_type=Greeter.SetAdjectiveAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11666,6 +11668,7 @@ class GreeterWriterStub(_GreeterStub):
                 aborted_type=Greeter.TestLongRunningWriterAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11781,6 +11784,7 @@ class GreeterWriterStub(_GreeterStub):
                 aborted_type=Greeter.DangerousFieldsAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11820,6 +11824,7 @@ class GreeterWriterStub(_GreeterStub):
                 aborted_type=Greeter.StoreRecursiveMessageAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11905,6 +11910,7 @@ class GreeterWorkflowStub(_GreeterStub):
                 aborted_type=Greeter.CreateAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11971,6 +11977,7 @@ class GreeterWorkflowStub(_GreeterStub):
                 aborted_type=Greeter.SetAdjectiveAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12012,6 +12019,7 @@ class GreeterWorkflowStub(_GreeterStub):
                 aborted_type=Greeter.TransactionSetAdjectiveAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12128,6 +12136,7 @@ class GreeterWorkflowStub(_GreeterStub):
                 aborted_type=Greeter.TestLongRunningWriterAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12245,6 +12254,7 @@ class GreeterWorkflowStub(_GreeterStub):
                 aborted_type=Greeter.DangerousFieldsAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12286,6 +12296,7 @@ class GreeterWorkflowStub(_GreeterStub):
                 aborted_type=Greeter.StoreRecursiveMessageAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12352,6 +12363,7 @@ class GreeterWorkflowStub(_GreeterStub):
                 aborted_type=Greeter.ConstructAndStoreRecursiveMessageAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12412,6 +12424,7 @@ class GreeterTasksStub(_GreeterStub):
                 aborted_type=Greeter.GreetAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12463,6 +12476,7 @@ class GreeterTasksStub(_GreeterStub):
                 aborted_type=Greeter.SetAdjectiveAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12514,6 +12528,7 @@ class GreeterTasksStub(_GreeterStub):
                 aborted_type=Greeter.TransactionSetAdjectiveAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12565,6 +12580,7 @@ class GreeterTasksStub(_GreeterStub):
                 aborted_type=Greeter.TryToConstructContextAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12616,6 +12632,7 @@ class GreeterTasksStub(_GreeterStub):
                 aborted_type=Greeter.TryToConstructExternalContextAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12667,6 +12684,7 @@ class GreeterTasksStub(_GreeterStub):
                 aborted_type=Greeter.TestLongRunningFetchAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12718,6 +12736,7 @@ class GreeterTasksStub(_GreeterStub):
                 aborted_type=Greeter.TestLongRunningWriterAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12769,6 +12788,7 @@ class GreeterTasksStub(_GreeterStub):
                 aborted_type=Greeter.GetWholeStateAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12820,6 +12840,7 @@ class GreeterTasksStub(_GreeterStub):
                 aborted_type=Greeter.FailWithExceptionAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12871,6 +12892,7 @@ class GreeterTasksStub(_GreeterStub):
                 aborted_type=Greeter.FailWithAbortedAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12922,6 +12944,7 @@ class GreeterTasksStub(_GreeterStub):
                 aborted_type=Greeter.WorkflowAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12973,6 +12996,7 @@ class GreeterTasksStub(_GreeterStub):
                 aborted_type=Greeter.DangerousFieldsAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -13024,6 +13048,7 @@ class GreeterTasksStub(_GreeterStub):
                 aborted_type=Greeter.StoreRecursiveMessageAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -13075,6 +13100,7 @@ class GreeterTasksStub(_GreeterStub):
                 aborted_type=Greeter.ReadRecursiveMessageAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -13126,6 +13152,7 @@ class GreeterTasksStub(_GreeterStub):
                 aborted_type=Greeter.ConstructAndStoreRecursiveMessageAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -14466,10 +14493,10 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                     self._servicer,
                     context.idempotency(
                         key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
-                        generated=True,
+                        how=IMPORT_reboot_aio_idempotency.ALWAYS,
                     ) if self._how == IMPORT_reboot_aio_workflows.ALWAYS else context.idempotency(
                         alias=self._alias,
-                        each_iteration=self._how == IMPORT_reboot_aio_workflows.PER_ITERATION
+                        how=self._how,
                     ),
                     context,
                 )
@@ -14592,10 +14619,10 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 idempotency = (
                     context.idempotency(
                         key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
-                        generated=True,
+                        how=IMPORT_reboot_aio_idempotency.ALWAYS,
                     ) if unidempotently else context.idempotency(
                         alias=self._alias,
-                        each_iteration=self._how == IMPORT_reboot_aio_workflows.PER_ITERATION
+                        how=self._how,
                     )
                 )
 
@@ -14627,10 +14654,6 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 checkpoint: IMPORT_reboot_aio_idempotency.Checkpoint,
             ) -> GreeterBaseServicer.InlineWriterCallableResult:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
 
                 IMPORT_reboot_aio_types.assert_type(context, [IMPORT_reboot_aio_contexts.WorkflowContext])
 
@@ -22478,23 +22501,12 @@ class Greeter:
                         metadata=metadata,
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.Greet(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -22566,23 +22578,12 @@ class Greeter:
                         revert_after_1_second=revert_after_1_second,
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.SetAdjective(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -22654,23 +22655,12 @@ class Greeter:
                         revert_after_1_second=revert_after_1_second,
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.TransactionSetAdjective(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -22728,23 +22718,12 @@ class Greeter:
                     __request__ = GreeterTryToConstructContextRequestFromInputFields(
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.TryToConstructContext(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -22802,23 +22781,12 @@ class Greeter:
                     __request__ = GreeterTryToConstructExternalContextRequestFromInputFields(
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.TryToConstructExternalContext(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -22882,23 +22850,12 @@ class Greeter:
                         sleep_time_seconds=sleep_time_seconds,
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.TestLongRunningFetch(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -22956,23 +22913,12 @@ class Greeter:
                     __request__ = GreeterTestLongRunningWriterRequestFromInputFields(
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.TestLongRunningWriter(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -23030,23 +22976,12 @@ class Greeter:
                     __request__ = GreeterGetWholeStateRequestFromInputFields(
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.GetWholeState(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -23104,23 +23039,12 @@ class Greeter:
                     __request__ = GreeterFailWithExceptionRequestFromInputFields(
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.FailWithException(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -23178,23 +23102,12 @@ class Greeter:
                     __request__ = GreeterFailWithAbortedRequestFromInputFields(
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.FailWithAborted(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -23378,23 +23291,12 @@ class Greeter:
                         state_id=state_id,
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.DangerousFields(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -23458,23 +23360,12 @@ class Greeter:
                         message=message,
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.StoreRecursiveMessage(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -23532,23 +23423,12 @@ class Greeter:
                     __request__ = GreeterReadRecursiveMessageRequestFromInputFields(
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.ReadRecursiveMessage(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -23612,23 +23492,12 @@ class Greeter:
                         depth=depth,
                     )
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.ConstructAndStoreRecursiveMessage(
                     __context__,
                     __request__,
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -23637,11 +23506,11 @@ class Greeter:
             construct_and_store_recursive_message = ConstructAndStoreRecursiveMessage
 
         @IMPORT_typing.overload
-        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, each_iteration: bool = False) -> Greeter.WeakReference._Idempotently[Greeter_ScheduleTypeVar]:
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Greeter.WeakReference._Idempotently[Greeter_ScheduleTypeVar]:
             ...
 
         @IMPORT_typing.overload
-        def idempotently(self, *, key: IMPORT_uuid.UUID, generated: bool = False) -> Greeter.WeakReference._Idempotently[Greeter_ScheduleTypeVar]:
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Greeter.WeakReference._Idempotently[Greeter_ScheduleTypeVar]:
             ...
 
         def idempotently(
@@ -23649,16 +23518,14 @@ class Greeter:
             alias: IMPORT_typing.Optional[str] = None,
             *,
             key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
-            each_iteration: IMPORT_typing.Optional[bool] = None,
-            generated: bool = False,
+            how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
         ) -> Greeter.WeakReference._Idempotently[Greeter_ScheduleTypeVar]:
             return Greeter.WeakReference._Idempotently(
                 weak_reference=self,
                 idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
                     alias=alias,
                     key=key,
-                    each_iteration=each_iteration,
-                    generated=generated,
+                    how=how,
                 )
             )
 
@@ -23666,12 +23533,15 @@ class Greeter:
             return self.idempotently(alias)
 
         def per_iteration(self, alias: IMPORT_typing.Optional[str] = None):
-            return self.idempotently(alias, each_iteration=True)
+            return self.idempotently(
+                alias,
+                how=IMPORT_reboot_aio_idempotency.PER_ITERATION,
+            )
 
         def always(self):
             return self.idempotently(
                 key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
-                generated=True,
+                how=IMPORT_reboot_aio_idempotency.ALWAYS,
             )
 
         class _UntilChangesSatisfies(IMPORT_typing.Generic[Greeter_UntilCallableType]):
@@ -24415,12 +24285,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -24515,12 +24379,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -24615,12 +24473,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -24701,12 +24553,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -24787,12 +24633,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -24879,12 +24719,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -24965,12 +24799,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25051,12 +24879,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25137,12 +24959,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25223,12 +25039,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25309,12 +25119,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25441,12 +25245,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25533,12 +25331,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25619,12 +25411,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25711,12 +25497,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25842,12 +25622,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -25952,12 +25726,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -26062,12 +25830,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -26158,12 +25920,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -26254,12 +26010,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -26356,12 +26106,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -26452,12 +26196,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -26548,12 +26286,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -26644,12 +26376,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -26740,12 +26466,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -26836,12 +26556,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -26978,12 +26692,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -27080,12 +26788,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -27176,12 +26878,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -27278,12 +26974,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -27412,12 +27102,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -27515,12 +27199,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -27618,12 +27296,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -27707,12 +27379,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -27796,12 +27462,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -27891,12 +27551,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -27980,12 +27634,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -28069,12 +27717,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -28158,12 +27800,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -28247,12 +27883,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -28336,12 +27966,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -28471,12 +28095,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -28566,12 +28184,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -28655,12 +28267,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -28750,12 +28356,6 @@ class Greeter:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -28843,6 +28443,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Greeter.GreetRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.GreetResponse:
             ...
 
@@ -28852,6 +28454,7 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             name: IMPORT_typing.Optional[str] | Unset = UNSET,
             metadata: IMPORT_typing.Optional[dict[str, str]] | Unset = UNSET,
         ) -> Greeter.GreetResponse:
@@ -28863,6 +28466,7 @@ class Greeter:
             __request_or_options__: IMPORT_typing.Optional[Greeter.GreetRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             name: IMPORT_typing.Optional[str] | Unset = UNSET,
             metadata: IMPORT_typing.Optional[dict[str, str]] | Unset = UNSET,
         ) -> Greeter.GreetResponse:
@@ -28898,7 +28502,7 @@ class Greeter:
             #
             # Unless we are "within until" in which case all "bare"
             # calls are `.always().
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.always() if __context__.within_until()
@@ -28931,7 +28535,7 @@ class Greeter:
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
-                    idempotency=__options__.idempotency if __options__ is not None else None,
+                    idempotency=__idempotency__,
                 )
             )
         # Keep the original functions on the client, so old code will
@@ -28944,6 +28548,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Greeter.SetAdjectiveRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.SetAdjectiveResponse:
             ...
 
@@ -28953,6 +28559,7 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             adjective: IMPORT_typing.Optional[str] | Unset = UNSET,
             arbitrary_message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.SetAdjectiveRequest.NestedMessage] | Unset = UNSET,
             revert_after_1_second: IMPORT_typing.Optional[bool] | Unset = UNSET,
@@ -28965,6 +28572,7 @@ class Greeter:
             __request_or_options__: IMPORT_typing.Optional[Greeter.SetAdjectiveRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             adjective: IMPORT_typing.Optional[str] | Unset = UNSET,
             arbitrary_message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.SetAdjectiveRequest.NestedMessage] | Unset = UNSET,
             revert_after_1_second: IMPORT_typing.Optional[bool] | Unset = UNSET,
@@ -28999,7 +28607,7 @@ class Greeter:
             # `per_workflow()` calls, unless we're within a control
             # loop, in which case they are syntactic sugar for
             # `per_iteration()`.
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.per_iteration() if __context__.within_loop()
@@ -29016,13 +28624,10 @@ class Greeter:
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
 
-            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None
             __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
             __bearer_token__: IMPORT_typing.Optional[str] = None
             if __options__ is not None:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    __idempotency__ = __options__.idempotency
                 if __options__.metadata is not None:
                     __metadata__ = __options__.metadata
                 if __options__.bearer_token is not None:
@@ -29047,6 +28652,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Greeter.TransactionSetAdjectiveRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.TransactionSetAdjectiveResponse:
             ...
 
@@ -29056,6 +28663,7 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             adjective: IMPORT_typing.Optional[str] | Unset = UNSET,
             arbitrary_message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.SetAdjectiveRequest.NestedMessage] | Unset = UNSET,
             revert_after_1_second: IMPORT_typing.Optional[bool] | Unset = UNSET,
@@ -29068,6 +28676,7 @@ class Greeter:
             __request_or_options__: IMPORT_typing.Optional[Greeter.TransactionSetAdjectiveRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             adjective: IMPORT_typing.Optional[str] | Unset = UNSET,
             arbitrary_message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.SetAdjectiveRequest.NestedMessage] | Unset = UNSET,
             revert_after_1_second: IMPORT_typing.Optional[bool] | Unset = UNSET,
@@ -29102,7 +28711,7 @@ class Greeter:
             # `per_workflow()` calls, unless we're within a control
             # loop, in which case they are syntactic sugar for
             # `per_iteration()`.
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.per_iteration() if __context__.within_loop()
@@ -29119,13 +28728,10 @@ class Greeter:
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
 
-            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None
             __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
             __bearer_token__: IMPORT_typing.Optional[str] = None
             if __options__ is not None:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    __idempotency__ = __options__.idempotency
                 if __options__.metadata is not None:
                     __metadata__ = __options__.metadata
                 if __options__.bearer_token is not None:
@@ -29150,6 +28756,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Greeter.TryToConstructContextRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.TryToConstructContextResponse:
             ...
 
@@ -29158,6 +28766,8 @@ class Greeter:
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.TryToConstructContextResponse:
             ...
 
@@ -29166,6 +28776,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructContextRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.TryToConstructContextResponse:
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
@@ -29195,7 +28807,7 @@ class Greeter:
             #
             # Unless we are "within until" in which case all "bare"
             # calls are `.always().
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.always() if __context__.within_until()
@@ -29228,7 +28840,7 @@ class Greeter:
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
-                    idempotency=__options__.idempotency if __options__ is not None else None,
+                    idempotency=__idempotency__,
                 )
             )
         # Keep the original functions on the client, so old code will
@@ -29241,6 +28853,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Greeter.TryToConstructExternalContextRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.TryToConstructExternalContextResponse:
             ...
 
@@ -29249,6 +28863,8 @@ class Greeter:
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.TryToConstructExternalContextResponse:
             ...
 
@@ -29257,6 +28873,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.TryToConstructExternalContextRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.TryToConstructExternalContextResponse:
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
@@ -29286,7 +28904,7 @@ class Greeter:
             #
             # Unless we are "within until" in which case all "bare"
             # calls are `.always().
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.always() if __context__.within_until()
@@ -29319,7 +28937,7 @@ class Greeter:
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
-                    idempotency=__options__.idempotency if __options__ is not None else None,
+                    idempotency=__idempotency__,
                 )
             )
         # Keep the original functions on the client, so old code will
@@ -29332,6 +28950,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Greeter.TestLongRunningFetchRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.TestLongRunningFetchResponse:
             ...
 
@@ -29341,6 +28961,7 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             sleep_time_seconds: IMPORT_typing.Optional[int] | Unset = UNSET,
         ) -> Greeter.TestLongRunningFetchResponse:
             ...
@@ -29351,6 +28972,7 @@ class Greeter:
             __request_or_options__: IMPORT_typing.Optional[Greeter.TestLongRunningFetchRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             sleep_time_seconds: IMPORT_typing.Optional[int] | Unset = UNSET,
         ) -> Greeter.TestLongRunningFetchResponse:
             # UX improvement: check that neither positional argument was accidentally
@@ -29383,7 +29005,7 @@ class Greeter:
             #
             # Unless we are "within until" in which case all "bare"
             # calls are `.always().
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.always() if __context__.within_until()
@@ -29416,7 +29038,7 @@ class Greeter:
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
-                    idempotency=__options__.idempotency if __options__ is not None else None,
+                    idempotency=__idempotency__,
                 )
             )
         # Keep the original functions on the client, so old code will
@@ -29429,6 +29051,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Greeter.TestLongRunningWriterRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.TestLongRunningWriterResponse:
             ...
 
@@ -29437,6 +29061,8 @@ class Greeter:
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.TestLongRunningWriterResponse:
             ...
 
@@ -29445,6 +29071,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.TestLongRunningWriterRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.TestLongRunningWriterResponse:
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
@@ -29470,7 +29098,7 @@ class Greeter:
             # `per_workflow()` calls, unless we're within a control
             # loop, in which case they are syntactic sugar for
             # `per_iteration()`.
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.per_iteration() if __context__.within_loop()
@@ -29487,13 +29115,10 @@ class Greeter:
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
 
-            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None
             __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
             __bearer_token__: IMPORT_typing.Optional[str] = None
             if __options__ is not None:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    __idempotency__ = __options__.idempotency
                 if __options__.metadata is not None:
                     __metadata__ = __options__.metadata
                 if __options__.bearer_token is not None:
@@ -29518,6 +29143,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Greeter.GetWholeStateRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.GetWholeStateResponse:
             ...
 
@@ -29526,6 +29153,8 @@ class Greeter:
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.GetWholeStateResponse:
             ...
 
@@ -29534,6 +29163,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.GetWholeStateRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.GetWholeStateResponse:
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
@@ -29563,7 +29194,7 @@ class Greeter:
             #
             # Unless we are "within until" in which case all "bare"
             # calls are `.always().
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.always() if __context__.within_until()
@@ -29596,7 +29227,7 @@ class Greeter:
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
-                    idempotency=__options__.idempotency if __options__ is not None else None,
+                    idempotency=__idempotency__,
                 )
             )
         # Keep the original functions on the client, so old code will
@@ -29609,6 +29240,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Greeter.FailWithExceptionRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.FailWithExceptionResponse:
             ...
 
@@ -29617,6 +29250,8 @@ class Greeter:
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.FailWithExceptionResponse:
             ...
 
@@ -29625,6 +29260,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithExceptionRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.FailWithExceptionResponse:
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
@@ -29654,7 +29291,7 @@ class Greeter:
             #
             # Unless we are "within until" in which case all "bare"
             # calls are `.always().
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.always() if __context__.within_until()
@@ -29687,7 +29324,7 @@ class Greeter:
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
-                    idempotency=__options__.idempotency if __options__ is not None else None,
+                    idempotency=__idempotency__,
                 )
             )
         # Keep the original functions on the client, so old code will
@@ -29700,6 +29337,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Greeter.FailWithAbortedRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.FailWithAbortedResponse:
             ...
 
@@ -29708,6 +29347,8 @@ class Greeter:
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.FailWithAbortedResponse:
             ...
 
@@ -29716,6 +29357,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.FailWithAbortedRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.FailWithAbortedResponse:
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
@@ -29745,7 +29388,7 @@ class Greeter:
             #
             # Unless we are "within until" in which case all "bare"
             # calls are `.always().
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.always() if __context__.within_until()
@@ -29778,7 +29421,7 @@ class Greeter:
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
-                    idempotency=__options__.idempotency if __options__ is not None else None,
+                    idempotency=__idempotency__,
                 )
             )
         # Keep the original functions on the client, so old code will
@@ -29869,6 +29512,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Greeter.DangerousFieldsRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.DangerousFieldsResponse:
             ...
 
@@ -29878,6 +29523,7 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             metadata: IMPORT_typing.Optional[int] | Unset = UNSET,
             request: IMPORT_typing.Optional[int] | Unset = UNSET,
             response: IMPORT_typing.Optional[int] | Unset = UNSET,
@@ -29898,6 +29544,7 @@ class Greeter:
             __request_or_options__: IMPORT_typing.Optional[Greeter.DangerousFieldsRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             metadata: IMPORT_typing.Optional[int] | Unset = UNSET,
             request: IMPORT_typing.Optional[int] | Unset = UNSET,
             response: IMPORT_typing.Optional[int] | Unset = UNSET,
@@ -29956,7 +29603,7 @@ class Greeter:
             # `per_workflow()` calls, unless we're within a control
             # loop, in which case they are syntactic sugar for
             # `per_iteration()`.
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.per_iteration() if __context__.within_loop()
@@ -29973,13 +29620,10 @@ class Greeter:
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
 
-            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None
             __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
             __bearer_token__: IMPORT_typing.Optional[str] = None
             if __options__ is not None:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    __idempotency__ = __options__.idempotency
                 if __options__.metadata is not None:
                     __metadata__ = __options__.metadata
                 if __options__.bearer_token is not None:
@@ -30004,6 +29648,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Greeter.StoreRecursiveMessageRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.StoreRecursiveMessageResponse:
             ...
 
@@ -30013,6 +29659,7 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.RecursiveMessage] | Unset = UNSET,
         ) -> Greeter.StoreRecursiveMessageResponse:
             ...
@@ -30023,6 +29670,7 @@ class Greeter:
             __request_or_options__: IMPORT_typing.Optional[Greeter.StoreRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             message: IMPORT_typing.Optional[tests.reboot.greeter_pb2.RecursiveMessage] | Unset = UNSET,
         ) -> Greeter.StoreRecursiveMessageResponse:
             # UX improvement: check that neither positional argument was accidentally
@@ -30051,7 +29699,7 @@ class Greeter:
             # `per_workflow()` calls, unless we're within a control
             # loop, in which case they are syntactic sugar for
             # `per_iteration()`.
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.per_iteration() if __context__.within_loop()
@@ -30068,13 +29716,10 @@ class Greeter:
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
 
-            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None
             __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
             __bearer_token__: IMPORT_typing.Optional[str] = None
             if __options__ is not None:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    __idempotency__ = __options__.idempotency
                 if __options__.metadata is not None:
                     __metadata__ = __options__.metadata
                 if __options__.bearer_token is not None:
@@ -30099,6 +29744,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Greeter.ReadRecursiveMessageRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.ReadRecursiveMessageResponse:
             ...
 
@@ -30107,6 +29754,8 @@ class Greeter:
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.ReadRecursiveMessageResponse:
             ...
 
@@ -30115,6 +29764,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[Greeter.ReadRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.ReadRecursiveMessageResponse:
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
@@ -30144,7 +29795,7 @@ class Greeter:
             #
             # Unless we are "within until" in which case all "bare"
             # calls are `.always().
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.always() if __context__.within_until()
@@ -30177,7 +29828,7 @@ class Greeter:
                     __request__,
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
-                    idempotency=__options__.idempotency if __options__ is not None else None,
+                    idempotency=__idempotency__,
                 )
             )
         # Keep the original functions on the client, so old code will
@@ -30190,6 +29841,8 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: Greeter.ConstructAndStoreRecursiveMessageRequest,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> Greeter.ConstructAndStoreRecursiveMessageResponse:
             ...
 
@@ -30199,6 +29852,7 @@ class Greeter:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             depth: IMPORT_typing.Optional[int] | Unset = UNSET,
         ) -> Greeter.ConstructAndStoreRecursiveMessageResponse:
             ...
@@ -30209,6 +29863,7 @@ class Greeter:
             __request_or_options__: IMPORT_typing.Optional[Greeter.ConstructAndStoreRecursiveMessageRequest | IMPORT_reboot_aio_call.Options] = None,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             depth: IMPORT_typing.Optional[int] | Unset = UNSET,
         ) -> Greeter.ConstructAndStoreRecursiveMessageResponse:
             # UX improvement: check that neither positional argument was accidentally
@@ -30237,7 +29892,7 @@ class Greeter:
             # `per_workflow()` calls, unless we're within a control
             # loop, in which case they are syntactic sugar for
             # `per_iteration()`.
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.per_iteration() if __context__.within_loop()
@@ -30254,13 +29909,10 @@ class Greeter:
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
 
-            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None
             __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
             __bearer_token__: IMPORT_typing.Optional[str] = None
             if __options__ is not None:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    __idempotency__ = __options__.idempotency
                 if __options__.metadata is not None:
                     __metadata__ = __options__.metadata
                 if __options__.bearer_token is not None:
@@ -31539,12 +31191,6 @@ class Greeter:
 
         if __options__ is not None:
             IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-            if __options__.idempotency is not None:
-                if __idempotency__ is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-                __idempotency__ = __options__.idempotency
             if __options__.metadata is not None:
                 __metadata__ = __options__.metadata
             if __options__.bearer_token is not None:
@@ -31584,12 +31230,12 @@ class Greeter:
 
     @IMPORT_typing.overload
     @classmethod
-    def idempotently(cls, alias: IMPORT_typing.Optional[str] = None, *, each_iteration: bool = False) -> Greeter._ConstructIdempotently:
+    def idempotently(cls, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Greeter._ConstructIdempotently:
         ...
 
     @IMPORT_typing.overload
     @classmethod
-    def idempotently(cls, *, key: IMPORT_uuid.UUID, generated: bool = False) -> Greeter._ConstructIdempotently:
+    def idempotently(cls, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Greeter._ConstructIdempotently:
         ...
 
     @classmethod
@@ -31598,15 +31244,13 @@ class Greeter:
         alias: IMPORT_typing.Optional[str] = None,
         *,
         key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
-        each_iteration: IMPORT_typing.Optional[bool] = None,
-        generated: bool = False,
+        how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
     ) -> Greeter._ConstructIdempotently:
         return Greeter._ConstructIdempotently(
             _idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
                 alias=alias,
                 key=key,
-                each_iteration=each_iteration,
-                generated=generated,
+                how=how,
             ),
         )
 
@@ -31622,13 +31266,16 @@ class Greeter:
         cls,
         alias: IMPORT_typing.Optional[str] = None,
     ):
-        return cls.idempotently(alias, each_iteration=True)
+        return cls.idempotently(
+            alias,
+            how=IMPORT_reboot_aio_idempotency.PER_ITERATION,
+        )
 
     @classmethod
     def always(cls):
         return cls.idempotently(
             key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
-            generated=True,
+            how=IMPORT_reboot_aio_idempotency.ALWAYS,
         )
 
     @IMPORT_dataclasses.dataclass(frozen=True)
@@ -33791,8 +33438,13 @@ class GreeterWeakReferenceNodeAdaptor(Greeter.WeakReference[Greeter.WeakReferenc
             idempotency = IMPORT_reboot_aio_contexts.Context.idempotency(
                 alias=options['idempotency'].get('alias'),
                 key=options['idempotency'].get('key'),
-                each_iteration=options['idempotency'].get('eachIteration'),
-                generated=options['idempotency'].get('generated', False),
+                how=(
+                    IMPORT_reboot_aio_idempotency.ALWAYS
+                    if options['idempotency'].get('always', False)
+                    else IMPORT_reboot_aio_idempotency.PER_ITERATION
+                    if options['idempotency'].get('perIteration')
+                    else None
+                ),
             )
 
         method_handle = IMPORT_functools.partial(
@@ -33825,8 +33477,13 @@ class GreeterWeakReferenceNodeAdaptor(Greeter.WeakReference[Greeter.WeakReferenc
             idempotency = IMPORT_reboot_aio_contexts.Context.idempotency(
                 alias=options['idempotency'].get('alias'),
                 key=options['idempotency'].get('key'),
-                each_iteration=options['idempotency'].get('eachIteration'),
-                generated=options['idempotency'].get('generated', False),
+                how=(
+                    IMPORT_reboot_aio_idempotency.ALWAYS
+                    if options['idempotency'].get('always', False)
+                    else IMPORT_reboot_aio_idempotency.PER_ITERATION
+                    if options['idempotency'].get('perIteration')
+                    else None
+                ),
             )
 
         if 'schedule' in options:
@@ -33871,8 +33528,13 @@ class GreeterWeakReferenceNodeAdaptor(Greeter.WeakReference[Greeter.WeakReferenc
             idempotency = IMPORT_reboot_aio_contexts.Context.idempotency(
                 alias=options['idempotency'].get('alias'),
                 key=options['idempotency'].get('key'),
-                each_iteration=options['idempotency'].get('eachIteration'),
-                generated=options['idempotency'].get('generated', False),
+                how=(
+                    IMPORT_reboot_aio_idempotency.ALWAYS
+                    if options['idempotency'].get('always', False)
+                    else IMPORT_reboot_aio_idempotency.PER_ITERATION
+                    if options['idempotency'].get('perIteration')
+                    else None
+                ),
             )
 
         if 'schedule' in options:
@@ -33917,8 +33579,13 @@ class GreeterWeakReferenceNodeAdaptor(Greeter.WeakReference[Greeter.WeakReferenc
             idempotency = IMPORT_reboot_aio_contexts.Context.idempotency(
                 alias=options['idempotency'].get('alias'),
                 key=options['idempotency'].get('key'),
-                each_iteration=options['idempotency'].get('eachIteration'),
-                generated=options['idempotency'].get('generated', False),
+                how=(
+                    IMPORT_reboot_aio_idempotency.ALWAYS
+                    if options['idempotency'].get('always', False)
+                    else IMPORT_reboot_aio_idempotency.PER_ITERATION
+                    if options['idempotency'].get('perIteration')
+                    else None
+                ),
             )
 
         assert 'schedule' in options
