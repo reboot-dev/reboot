@@ -1478,9 +1478,15 @@ export const use{{ client.proto.state_name | to_camel }} = (
         // Per MCP spec, tool execution errors return { isError: true } in result,
         // not as thrown exceptions. Protocol errors (tool not found) may throw.
         if (mcpApp) {
+          // Convert camelCase field names to snake_case for the
+          // Python MCP tool handler (pydantic models use
+          // snake_case).
+          const snakeCaseRequest = reboot_api.keysToSnakeCase(
+            partialRequest || {}
+          );
           const result = await mcpApp.callServerTool({
             name: "{{ tool_name }}",
-            arguments: { id, request: partialRequest },
+            arguments: { id, request: snakeCaseRequest },
           });
           if (result.isError) {
             const message = result.content?.[0]?.text ?? "MCP tool error";

@@ -1025,6 +1025,23 @@ export const toCamelCase = (s: string): string => {
   return pascal.charAt(0).toLowerCase() + pascal.slice(1);
 };
 
+// Recursively convert all object keys from camelCase to
+// snake_case. Used at the MCP boundary where React sends
+// camelCase but Python pydantic models expect snake_case.
+export const keysToSnakeCase = (obj: unknown): unknown => {
+  if (Array.isArray(obj)) {
+    return obj.map(keysToSnakeCase);
+  }
+  if (obj !== null && typeof obj === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[toSnakeCase(key)] = keysToSnakeCase(value);
+    }
+    return result;
+  }
+  return obj;
+};
+
 export function validate<T>(
   what: string,
   schema: z.ZodObject | z.ZodVoid | Record<string, z.ZodType>,
