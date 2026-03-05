@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FC } from "react";
-import { useChat } from "@api/mcp_counter/v1/counter_rbt_react";
+import { useCounter } from "@api/mcp_counter/v1/counter_rbt_react";
 import css from "./App.module.css";
 
 /**
@@ -9,8 +9,8 @@ import css from "./App.module.css";
  */
 export const ClickerApp: FC = () => {
   const [isPending, setIsPending] = useState(false);
-  const chat = useChat();
-  const { response, isLoading } = chat.useGet();
+  const counter = useCounter();
+  const { response, isLoading } = counter.useGet();
 
   const prevValueRef = useRef<number | null>(null);
   const [trend, setTrend] = useState<"up" | "down" | "same" | null>(null);
@@ -36,7 +36,7 @@ export const ClickerApp: FC = () => {
   const handleIncrement = async () => {
     setIsPending(true);
     try {
-      await chat.increment({ amount: 1 });
+      await counter.increment({ amount: 1 });
     } finally {
       setIsPending(false);
     }
@@ -45,7 +45,7 @@ export const ClickerApp: FC = () => {
   const handleDecrement = async () => {
     setIsPending(true);
     try {
-      await chat.decrement({ amount: 1 });
+      await counter.decrement({ amount: 1 });
     } finally {
       setIsPending(false);
     }

@@ -15,17 +15,18 @@ from reboot.aio.contexts import (
 from reboot.aio.external import InitializeContext
 from reboot.controller.settings import ENVVAR_REBOOT_MODE
 from reboot.ping.ping_api import (
-    CounterIncrementResponse,
-    CounterValueResponse,
+    CreateCounterResponse,
     DescribeResponse,
     DoPingPeriodicallyRequest,
     DoPingPeriodicallyResponse,
     DoPingResponse,
     DoPongResponse,
+    IncrementResponse,
     NumPingsResponse,
     NumPongsResponse,
+    ValueResponse,
 )
-from reboot.ping.ping_api_rbt import Chat, Ping, Pong
+from reboot.ping.ping_api_rbt import Chat, Counter, Ping, Pong
 
 logging.basicConfig(level=logging.INFO)
 
@@ -120,22 +121,36 @@ class ChatServicer(Chat.Servicer):
     def authorizer(self):
         return allow()
 
-    async def counter_increment(
+    async def create_counter(
+        self,
+        context: TransactionContext,
+    ) -> CreateCounterResponse:
+        counter, _ = await Counter.create(context)
+        return CreateCounterResponse(counter_id=counter.state_id)
+
+
+class CounterServicer(Counter.Servicer):
+
+    def authorizer(self):
+        return allow()
+
+    async def create(self, context) -> None:
+        # We don't need any non-default values in our state; it just
+        # needs to exist.
+        pass
+
+    async def increment(
         self,
         context: WriterContext,
-    ) -> CounterIncrementResponse:
-        self.state.counter_value += 1
-        return CounterIncrementResponse(
-            counter_value=self.state.counter_value,
-        )
+    ) -> IncrementResponse:
+        self.state.value += 1
+        return IncrementResponse(value=self.state.value)
 
-    async def counter_value(
+    async def value(
         self,
         context: ReaderContext,
-    ) -> CounterValueResponse:
-        return CounterValueResponse(
-            counter_value=self.state.counter_value,
-        )
+    ) -> ValueResponse:
+        return ValueResponse(value=self.state.value)
 
 
 async def start_periodic_ping(context: InitializeContext):
@@ -170,7 +185,12 @@ async def main():
     )
 
     application = Application(
-        servicers=[PingServicer, PongServicer, ChatServicer],
+        servicers=[
+            PingServicer,
+            PongServicer,
+            ChatServicer,
+            CounterServicer,
+        ],
         # We choose to not call the initialization method
         # `initialize`, to exercise that that is allowed.
         initialize=start_periodic_ping,

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FC } from "react";
 import {
   type DashboardConfig,
-  useChat,
+  useCounter,
 } from "@api/mcp_counter/v1/counter_rbt_react";
 import css from "./App.module.css";
 
@@ -18,8 +18,8 @@ interface HistoryEntry {
  */
 export const DashboardApp: FC<DashboardConfig> = ({ personalizedMessage }) => {
   const [isPending, setIsPending] = useState(false);
-  const chat = useChat();
-  const { response, isLoading } = chat.useGet();
+  const counter = useCounter();
+  const { response, isLoading } = counter.useGet();
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 
   const value = response?.value ?? 0;
@@ -46,7 +46,7 @@ export const DashboardApp: FC<DashboardConfig> = ({ personalizedMessage }) => {
   const handleIncrement = async (amount: number) => {
     setIsPending(true);
     try {
-      await chat.increment({ amount });
+      await counter.increment({ amount });
     } finally {
       setIsPending(false);
     }
@@ -55,7 +55,7 @@ export const DashboardApp: FC<DashboardConfig> = ({ personalizedMessage }) => {
   const handleDecrement = async (amount: number) => {
     setIsPending(true);
     try {
-      await chat.decrement({ amount });
+      await counter.decrement({ amount });
     } finally {
       setIsPending(false);
     }

@@ -3,14 +3,14 @@
 A simple counter with MCP tools and React MCP App UIs.
 
 All MCP tools are auto-generated from the API definition
-in counter.py. Chat methods are automatically exposed as
-MCP tools, and `UI()` methods open React MCP App UIs.
+in counter.py. Counter methods are automatically exposed
+as MCP tools, and `UI()` methods open React MCP App UIs.
 """
 
 import asyncio
 import logging
 from reboot.aio.applications import Application
-from servicers.counter import ChatServicer
+from servicers.counter import ChatServicer, CounterServicer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,7 +20,7 @@ logging.basicConfig(
 
 async def main() -> None:
     application = Application(
-        servicers=[ChatServicer],
+        servicers=[ChatServicer, CounterServicer],
     )
     await application.run()
 

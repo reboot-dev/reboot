@@ -52,19 +52,30 @@ class PongState(Model):
     num_pongs: int = Field(tag=1, default=0)
 
 
-# -- Chat models (simple counter). --
+# -- Chat models. --
 
 
-class CounterIncrementResponse(Model):
-    counter_value: int = Field(tag=1)
-
-
-class CounterValueResponse(Model):
-    counter_value: int = Field(tag=1)
+class CreateCounterResponse(Model):
+    counter_id: str = Field(tag=1)
 
 
 class ChatState(Model):
-    counter_value: int = Field(tag=1, default=0)
+    pass
+
+
+# -- Counter models (simple counter). --
+
+
+class IncrementResponse(Model):
+    value: int = Field(tag=1)
+
+
+class ValueResponse(Model):
+    value: int = Field(tag=1)
+
+
+class CounterState(Model):
+    value: int = Field(tag=1, default=0)
 
 
 api = API(
@@ -113,21 +124,40 @@ api = API(
     Chat=Type(
         state=ChatState,
         methods=Methods(
+            create_counter=Transaction(
+                request=None,
+                response=CreateCounterResponse,
+                description="Create a new Counter. Returns the ID of the new "
+                "counter. That ID is not human-readable; pass it to future tool "
+                "calls where needed, but no need to tell the human what it is.",
+            ),
+        ),
+    ),
+    Counter=Type(
+        state=CounterState,
+        methods=Methods(
             show_clicker=UI(
                 request=None,
                 path="web/ui/clicker",
-                title="Chat Clicker",
-                description="Interactive clicker for the Chat's counter.",
+                title="Counter Clicker",
+                description=("Interactive clicker for the Counter."),
             ),
-            counter_increment=Writer(
+            create=Writer(
                 request=None,
-                response=CounterIncrementResponse,
+                response=None,
+                factory=True,
+            ),
+            increment=Writer(
+                request=None,
+                response=IncrementResponse,
                 description="Increment the counter.",
+                mcp=Tool(),
             ),
-            counter_value=Reader(
+            value=Reader(
                 request=None,
-                response=CounterValueResponse,
+                response=ValueResponse,
                 description="Get the current counter value.",
+                mcp=Tool(),
             ),
         ),
     ),
