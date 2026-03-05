@@ -5,8 +5,13 @@ from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot
-from reboot.ping.ping import ChatServicer, PingServicer, PongServicer
-from reboot.ping.ping_api_rbt import Chat, Ping, Pong
+from reboot.ping.ping import (
+    ChatServicer,
+    CounterServicer,
+    PingServicer,
+    PongServicer,
+)
+from reboot.ping.ping_api_rbt import Counter, Ping, Pong
 
 
 class PingTest(unittest.IsolatedAsyncioTestCase):
@@ -21,7 +26,12 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
     async def test_ping_periodically(self):
         await self.rbt.up(
             Application(
-                servicers=[PingServicer, PongServicer, ChatServicer],
+                servicers=[
+                    PingServicer,
+                    PongServicer,
+                    ChatServicer,
+                    CounterServicer,
+                ],
             ),
         )
 
@@ -45,33 +55,39 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         pong_response = await pong.num_pongs(context)
         self.assertEqual(pong_response.num_pongs, num_pings)
 
-    async def test_chat_counter(self):
-        await self.rbt.up(
-            Application(
-                servicers=[PingServicer, PongServicer, ChatServicer],
-            ),
-        )
-
-        context = self.rbt.create_external_context(name=f"test-{self.id()}")
-
-        chat, _ = await Chat.create(context)
-
-        response = await chat.counter_increment(context)
-        self.assertEqual(response.counter_value, 1)
-
-        response = await chat.counter_increment(context)
-        self.assertEqual(response.counter_value, 2)
-
-        value_response = await chat.counter_value(context)
-        self.assertEqual(value_response.counter_value, 2)
-
-    async def test_chat_counter_over_mcp(self):
+    async def test_counter(self):
         await self.rbt.up(
             Application(
                 servicers=[
                     PingServicer,
                     PongServicer,
                     ChatServicer,
+                    CounterServicer,
+                ],
+            ),
+        )
+
+        context = self.rbt.create_external_context(name=f"test-{self.id()}")
+
+        counter, _ = await Counter.create(context)
+
+        response = await counter.increment(context)
+        self.assertEqual(response.value, 1)
+
+        response = await counter.increment(context)
+        self.assertEqual(response.value, 2)
+
+        value_response = await counter.value(context)
+        self.assertEqual(value_response.value, 2)
+
+    async def test_counter_over_mcp(self):
+        await self.rbt.up(
+            Application(
+                servicers=[
+                    PingServicer,
+                    PongServicer,
+                    ChatServicer,
+                    CounterServicer,
                 ],
             ),
         )
@@ -92,18 +108,32 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                 # Verify tools are listed.
                 tools = await session.list_tools()
                 tool_names = [t.name for t in tools.tools]
-                self.assertIn("chat_counter_increment", tool_names)
-                self.assertIn("chat_counter_value", tool_names)
+                self.assertIn("create_counter", tool_names)
+                self.assertIn("counter_increment", tool_names)
+                self.assertIn("counter_value", tool_names)
 
-                # Increment twice. Note that to call a method from
-                # `Chat`, no ID needs to be passed.
-                await session.call_tool("chat_counter_increment", {})
-                await session.call_tool("chat_counter_increment", {})
+                # Create a counter via the Chat session tool.
+                result = await session.call_tool("create_counter", {})
+                data = json.loads(result.content[0].text)
+                counter_id = data["counter_id"]
+
+                # Increment twice, passing the counter ID.
+                await session.call_tool(
+                    "counter_increment",
+                    {"counter_id": counter_id},
+                )
+                await session.call_tool(
+                    "counter_increment",
+                    {"counter_id": counter_id},
+                )
 
                 # Read value via tool and verify count.
-                result = await session.call_tool("chat_counter_value", {})
+                result = await session.call_tool(
+                    "counter_value",
+                    {"counter_id": counter_id},
+                )
                 data = json.loads(result.content[0].text)
-                self.assertEqual(data["counter_value"], 2)
+                self.assertEqual(data["value"], 2)
 
     async def test_ui_tool_ids_mapping(self):
         await self.rbt.up(
@@ -112,6 +142,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                     PingServicer,
                     PongServicer,
                     ChatServicer,
+                    CounterServicer,
                 ],
             ),
         )
@@ -131,15 +162,15 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
 
                 tools = await session.list_tools()
                 tool_names = [t.name for t in tools.tools]
-                self.assertIn("show_pinger", tool_names)
-                self.assertIn("show_clicker", tool_names)
+                self.assertIn("ping_show_pinger", tool_names)
+                self.assertIn("counter_show_clicker", tool_names)
 
                 # The `show_pinger` UI tool should return an `ids`
                 # mapping that includes both the Ping ID (passed
                 # explicitly) and the Chat session ID
                 # (auto-constructed).
                 result = await session.call_tool(
-                    "show_pinger", {"id": "my-ping"}
+                    "ping_show_pinger", {"ping_id": "my-ping"}
                 )
                 data = json.loads(result.content[0].text)
                 ids = data["ids"]
@@ -148,14 +179,20 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                 self.assertIsInstance(chat_session_id, str)
                 self.assertGreater(len(chat_session_id), 0)
 
-                # The `show_clicker` UI tool should return an `ids`
-                # mapping with just the Chat session ID.
-                result = await session.call_tool("show_clicker", {})
+                # Create a counter so we can show its clicker.
+                result = await session.call_tool("create_counter", {})
+                data = json.loads(result.content[0].text)
+                counter_id = data["counter_id"]
+
+                # The `counter_show_clicker` UI tool should
+                # return an `ids` mapping with the Counter ID.
+                result = await session.call_tool(
+                    "counter_show_clicker",
+                    {"counter_id": counter_id},
+                )
                 data = json.loads(result.content[0].text)
                 ids = data["ids"]
-                # The Chat session ID should be the same across UI tools
-                # within the same MCP session.
-                self.assertEqual(ids["reboot.ping.Chat"], chat_session_id)
+                self.assertEqual(ids["reboot.ping.Counter"], counter_id)
 
     async def test_ui_resource_metadata(self):
         """Verify UI resources include CSP metadata.
@@ -171,6 +208,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                     PingServicer,
                     PongServicer,
                     ChatServicer,
+                    CounterServicer,
                 ],
             ),
         )
@@ -189,7 +227,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                 await session.initialize()
 
                 # UI resources use URI templates (e.g.,
-                # `ui://chat/{ui}`), so they appear in
+                # `ui://counter/{ui}`), so they appear in
                 # `list_resource_templates`, not
                 # `list_resources`.
                 templates = (await session.list_resource_templates())
@@ -203,7 +241,9 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                 )
 
                 # Read the clicker UI resource.
-                result = await session.read_resource("ui://chat/show_clicker")
+                result = await session.read_resource(
+                    "ui://counter/show_clicker"
+                )
                 self.assertEqual(len(result.contents), 1)
 
                 content = result.contents[0]
