@@ -24,6 +24,10 @@ from typing import Any, Awaitable, Callable, Sequence
 
 logger = logging.getLogger(__name__)
 
+# Silence chatty INFO-level logs from the MCP library
+# (e.g. "Terminating session: ...").
+logging.getLogger("mcp.server").setLevel(logging.WARNING)
+
 # ---------------------------------------------------------------------------
 # Patch `FastMCP.read_resource` for dynamic CSP metadata.
 #
@@ -102,7 +106,7 @@ def create_mcp_factory(
     ) -> Callable[[Scope, Receive, Send], Any]:
         """Create ASGI app with MCP tools."""
         ui_id = server.name or "mcp"
-        logger.info(f"[{ui_id}] Creating MCP ASGI app")
+        logger.debug(f"[{ui_id}] Creating MCP ASGI app")
 
         has_mcp_tools = len(server._tool_manager.list_tools()) > 0
 

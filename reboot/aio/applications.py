@@ -334,9 +334,6 @@ class Application:
             # We don't need to bring up a Reboot cluster when running a
             # Node.js or Python server; this process is one server in the
             # cluster!
-            print(
-                "Running in server mode; skipping Reboot cluster initialization"
-            )
             return
 
         self._name: Optional[str] = os.environ.get(ENVVAR_RBT_NAME)
