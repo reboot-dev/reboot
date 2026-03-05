@@ -97,7 +97,7 @@ const LazyMcpConnector = lazy(() => import("./internal/McpConnector.js"));
 
 export class RebootClient {
   readonly url: string;
-  bearerToken: string | undefined;
+  readonly bearerToken: string | undefined;
   readonly setBearerToken: (token?: string) => void;
   readonly setAuthorizationBearer: (token?: string) => void;
   readonly offlineCacheEnabled: boolean = false;
@@ -253,14 +253,6 @@ export const RebootClientProvider = ({
       </RebootClientContext.Provider>
     );
   }
-
-  // `bearerToken` is intentionally excluded from the
-  // `useMemo` deps so that a token change doesn't recreate
-  // the client (which would re-render all consumers).
-  // Instead we mutate in place here, which also ensures the
-  // initial `bearerToken` (often `undefined` at construction
-  // time) is set once the auth flow completes.
-  rebootClient.bearerToken = bearerToken;
 
   return (
     <RebootClientContext.Provider value={rebootClient}>
