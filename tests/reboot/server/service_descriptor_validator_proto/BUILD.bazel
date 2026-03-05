@@ -363,6 +363,36 @@ py_proto_library(
     deps = [":echo_errors_added_proto"],
 )
 
+proto_library(
+    name = "echo_mcp_added_proto",
+    srcs = ["echo_mcp_added.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_mcp_added_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_mcp_added_proto"],
+)
+
+proto_library(
+    name = "echo_mcp_changed_proto",
+    srcs = ["echo_mcp_changed.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_mcp_changed_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_mcp_changed_proto"],
+)
+
 py_test(
     name = "service_descriptor_validator_proto_test_py",
     srcs = ["test.py"],
@@ -376,6 +406,8 @@ py_test(
         ":echo_errors_added_py_proto",
         ":echo_hello_added_py_proto",
         ":echo_legacy_service_name_py_proto",
+        ":echo_mcp_added_py_proto",
+        ":echo_mcp_changed_py_proto",
         ":echo_nested_repeated_string_input_type_py_proto",
         ":echo_nested_single_string_input_type_py_proto",
         ":echo_original_py_proto",

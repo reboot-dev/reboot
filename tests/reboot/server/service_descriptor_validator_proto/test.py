@@ -52,6 +52,8 @@ class ServiceDescriptorValidatorProtoTestCase(unittest.TestCase):
     reply_writer_constructor: FileDescriptorSet
     reply_transaction_constructor: FileDescriptorSet
     errors_added: FileDescriptorSet
+    mcp_added: FileDescriptorSet
+    mcp_changed: FileDescriptorSet
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -115,6 +117,8 @@ class ServiceDescriptorValidatorProtoTestCase(unittest.TestCase):
             'echo_reply_transaction_constructor_pb2'
         )
         cls.errors_added = get_descriptor_set('echo_errors_added_pb2')
+        cls.mcp_added = get_descriptor_set('echo_mcp_added_pb2')
+        cls.mcp_changed = get_descriptor_set('echo_mcp_changed_pb2')
 
     def test_no_change(self):
         """Test that an unchanged ServiceDescriptor has no errors."""
@@ -733,6 +737,27 @@ class ServiceDescriptorValidatorProtoTestCase(unittest.TestCase):
         validate_descriptor_sets_are_backwards_compatible(
             self.errors_added,
             self.original,
+        )
+
+    def test_mcp_added(self):
+        """Test that adding MCP options to a method is allowed."""
+        validate_descriptor_sets_are_backwards_compatible(
+            self.original,
+            self.mcp_added,
+        )
+
+    def test_mcp_removed(self):
+        """Test that removing MCP options from a method is allowed."""
+        validate_descriptor_sets_are_backwards_compatible(
+            self.mcp_added,
+            self.original,
+        )
+
+    def test_mcp_changed(self):
+        """Test that changing MCP options on a method is allowed."""
+        validate_descriptor_sets_are_backwards_compatible(
+            self.mcp_added,
+            self.mcp_changed,
         )
 
 

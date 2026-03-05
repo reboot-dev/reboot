@@ -300,6 +300,24 @@ def legal_diff_errors_change(
     return path == "errors"
 
 
+def legal_diff_mcp_change(
+    diff: PathDiff,
+    old: options_pb2.MethodOptions,
+    new: options_pb2.MethodOptions,
+) -> bool:
+    """
+    Changing MCP options is always allowed.
+    
+    MCP clients are short-lived; they reconnect frequently and will
+    discover any changes to the MCP schema as soon as they do. They are
+    therefore very robust to changes in the MCP schema and don't need to
+    be protected against changes that would be backwards incompatible
+    for clients that carry a built-in schema that can be stale.
+    """
+    path, _, _ = diff
+    return path == "mcp" or path.startswith("mcp.")
+
+
 LegalMethodOptionDiffPredicate = Callable[
     [PathDiff, options_pb2.MethodOptions, options_pb2.MethodOptions], bool]
 
@@ -308,6 +326,7 @@ _LEGAL_REBOOT_METHOD_OPTION_DIFFS: list[LegalMethodOptionDiffPredicate] = [
     legal_diff_task_to_message,
     legal_diff_method_type_change,
     legal_diff_errors_change,
+    legal_diff_mcp_change,
 ]
 
 ProtoValidationErrorMessage = str
