@@ -936,14 +936,14 @@ export type IdempotencyOptions =
   | {
       alias?: string;
       key?: undefined;
-      eachIteration?: boolean;
-      generated?: boolean;
+      perIteration?: boolean;
+      always?: undefined;
     }
   | {
       alias?: undefined;
       key: string;
-      eachIteration?: undefined;
-      generated?: boolean;
+      perIteration?: undefined;
+      always?: boolean;
     };
 
 export type ScheduleOptions = { when: Date };

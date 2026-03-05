@@ -2970,10 +2970,10 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                     self._servicer,
                     context.idempotency(
                         key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
-                        generated=True,
+                        how=IMPORT_reboot_aio_idempotency.ALWAYS,
                     ) if self._how == IMPORT_reboot_aio_workflows.ALWAYS else context.idempotency(
                         alias=self._alias,
-                        each_iteration=self._how == IMPORT_reboot_aio_workflows.PER_ITERATION
+                        how=self._how,
                     ),
                     context,
                 )
@@ -3096,10 +3096,10 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 idempotency = (
                     context.idempotency(
                         key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
-                        generated=True,
+                        how=IMPORT_reboot_aio_idempotency.ALWAYS,
                     ) if unidempotently else context.idempotency(
                         alias=self._alias,
-                        each_iteration=self._how == IMPORT_reboot_aio_workflows.PER_ITERATION
+                        how=self._how,
                     )
                 )
 
@@ -3131,10 +3131,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 checkpoint: IMPORT_reboot_aio_idempotency.Checkpoint,
             ) -> {{ state.proto.name }}BaseServicer.InlineWriterCallableResult:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
 
                 IMPORT_reboot_aio_types.assert_type(context, [IMPORT_reboot_aio_contexts.WorkflowContext])
 
@@ -5253,18 +5249,6 @@ class {{ client.proto.state_name }}:
                 __options__ = __options__ or IMPORT_reboot_aio_call.Options()
                 {% endif %}
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-
-                __options__ = IMPORT_dataclasses.replace(
-                    __options__,
-                    idempotency_key=__this__._idempotency.key,
-                    idempotency_alias=__this__._idempotency.alias,
-                    generate_idempotency=__this__._idempotency.generate,
-                    generated_idempotency=__this__._idempotency.generated,
-                )
 
                 return await __this__._weak_reference.{{ method.proto.name }}(
                     __context__,
@@ -5272,6 +5256,7 @@ class {{ client.proto.state_name }}:
                     __request__,
                     {% endif %}
                     __options__,
+                    __idempotency__=__this__._idempotency,
                 )
 
             # Keep the original functions on the client, so old code will
@@ -5284,11 +5269,11 @@ class {{ client.proto.state_name }}:
             {% endfor %}
 
         @IMPORT_typing.overload
-        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, each_iteration: bool = False) -> {{ client.proto.state_name }}.WeakReference._Idempotently[{{ client.proto.state_name }}_ScheduleTypeVar]:
+        def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> {{ client.proto.state_name }}.WeakReference._Idempotently[{{ client.proto.state_name }}_ScheduleTypeVar]:
             ...
 
         @IMPORT_typing.overload
-        def idempotently(self, *, key: IMPORT_uuid.UUID, generated: bool = False) -> {{ client.proto.state_name }}.WeakReference._Idempotently[{{ client.proto.state_name }}_ScheduleTypeVar]:
+        def idempotently(self, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> {{ client.proto.state_name }}.WeakReference._Idempotently[{{ client.proto.state_name }}_ScheduleTypeVar]:
             ...
 
         def idempotently(
@@ -5296,16 +5281,14 @@ class {{ client.proto.state_name }}:
             alias: IMPORT_typing.Optional[str] = None,
             *,
             key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
-            each_iteration: IMPORT_typing.Optional[bool] = None,
-            generated: bool = False,
+            how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
         ) -> {{ client.proto.state_name }}.WeakReference._Idempotently[{{ client.proto.state_name }}_ScheduleTypeVar]:
             return {{ client.proto.state_name }}.WeakReference._Idempotently(
                 weak_reference=self,
                 idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
                     alias=alias,
                     key=key,
-                    each_iteration=each_iteration,
-                    generated=generated,
+                    how=how,
                 )
             )
 
@@ -5313,12 +5296,15 @@ class {{ client.proto.state_name }}:
             return self.idempotently(alias)
 
         def per_iteration(self, alias: IMPORT_typing.Optional[str] = None):
-            return self.idempotently(alias, each_iteration=True)
+            return self.idempotently(
+                alias,
+                how=IMPORT_reboot_aio_idempotency.PER_ITERATION,
+            )
 
         def always(self):
             return self.idempotently(
                 key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
-                generated=True,
+                how=IMPORT_reboot_aio_idempotency.ALWAYS,
             )
 
         class _UntilChangesSatisfies(IMPORT_typing.Generic[{{ client.proto.state_name }}_UntilCallableType]):
@@ -5643,12 +5629,6 @@ class {{ client.proto.state_name }}:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -5812,12 +5792,6 @@ class {{ client.proto.state_name }}:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency is not None:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -5982,12 +5956,6 @@ class {{ client.proto.state_name }}:
 
                 if __options__ is not None:
                     IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                    if __options__.idempotency:
-                        if __idempotency__ is not None:
-                            raise RuntimeError(
-                                'Found redundant idempotency in `Options`'
-                            )
-                        __idempotency__ = __options__.idempotency
                     if __options__.metadata is not None:
                         __metadata__ = __options__.metadata
                     if __options__.bearer_token is not None:
@@ -6221,6 +6189,8 @@ class {{ client.proto.state_name }}:
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         {% if not method.proto.server_streaming %}
         ) -> {% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
         {% else %}
@@ -6241,11 +6211,10 @@ class {{ client.proto.state_name }}:
             __this__,
             __context__: IMPORT_reboot_aio_contexts.ReaderContext | IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             {% if not method.proto.client_streaming %}
             {% for name, type in method.input_type_fields.items() %}
-            {% if loop.first %}
-            *,
-            {% endif %}
             {% if options.proto.pydantic %}
             {{ name }}: {{ type }} | Unset = UNSET,
             {% else %}
@@ -6253,7 +6222,6 @@ class {{ client.proto.state_name }}:
             {% endif %}
             {% endfor %}
             {% else %}
-            *,
             __requests__: IMPORT_typing.AsyncIterable[{{ method.input_type }}],
             {% endif %}
         {% if not method.proto.server_streaming %}
@@ -6271,11 +6239,10 @@ class {{ client.proto.state_name }}:
             __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
             {% endif %}
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
             {% if not method.proto.client_streaming %}
             {% for name, type in method.input_type_fields.items() %}
-            {% if loop.first %}
-            *,
-            {% endif %}
             {% if options.proto.pydantic %}
             {{ name }}: {{ type }} | Unset = UNSET,
             {% else %}
@@ -6283,7 +6250,6 @@ class {{ client.proto.state_name }}:
             {% endif %}
             {% endfor %}
             {% else %}
-            *,
             __requests__: IMPORT_typing.Optional[IMPORT_typing.AsyncIterable[{{ method.input_type }}]] = None,
             {% endif %}
         {% if not method.proto.server_streaming %}
@@ -6338,7 +6304,7 @@ class {{ client.proto.state_name }}:
             #
             # Unless we are "within until" in which case all "bare"
             # calls are `.always().
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.always() if __context__.within_until()
@@ -6379,7 +6345,7 @@ class {{ client.proto.state_name }}:
                     {% endif %}
                     metadata=__metadata__,
                     bearer_token=__bearer_token__,
-                    idempotency=__options__.idempotency if __options__ is not None else None,
+                    idempotency=__idempotency__,
                 )
             )
             {% else %}
@@ -6406,6 +6372,8 @@ class {{ client.proto.state_name }}:
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: {{ client.proto.state_name }}.{{ method.proto.name }}Request,
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         ) -> {% if method.has_non_none_response %}{{ client.proto.state_name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
             ...
 
@@ -6414,10 +6382,9 @@ class {{ client.proto.state_name }}:
             __this__,
             __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            {% for name, type in method.input_type_fields.items() %}
-            {% if loop.first %}
             *,
-            {% endif %}
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
+            {% for name, type in method.input_type_fields.items() %}
             {% if options.proto.pydantic %}
             {{ name }}: {{ type }} | Unset = UNSET,
             {% else %}
@@ -6435,10 +6402,9 @@ class {{ client.proto.state_name }}:
             __request_or_options__: IMPORT_typing.Optional[{{ client.proto.state_name }}.{{ method.proto.name }}Request | IMPORT_reboot_aio_call.Options] = None,
             {% endif %}
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
-            {% for name, type in method.input_type_fields.items() %}
-            {% if loop.first %}
             *,
-            {% endif %}
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
+            {% for name, type in method.input_type_fields.items() %}
             {% if options.proto.pydantic %}
             {{ name }}: {{ type }} | Unset = UNSET,
             {% else %}
@@ -6481,7 +6447,7 @@ class {{ client.proto.state_name }}:
             # `per_workflow()` calls, unless we're within a control
             # loop, in which case they are syntactic sugar for
             # `per_iteration()`.
-            if __options__ is None or __options__.idempotency is None:
+            if __idempotency__ is None:
                 if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                     return await (
                         __this__.per_iteration() if __context__.within_loop()
@@ -6502,13 +6468,10 @@ class {{ client.proto.state_name }}:
                         __options__ or IMPORT_reboot_aio_call.Options(),
                     )
 
-            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None
             __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
             __bearer_token__: IMPORT_typing.Optional[str] = None
             if __options__ is not None:
                 IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-                if __options__.idempotency is not None:
-                    __idempotency__ = __options__.idempotency
                 if __options__.metadata is not None:
                     __metadata__ = __options__.metadata
                 if __options__.bearer_token is not None:
@@ -6923,12 +6886,6 @@ class {{ client.proto.state_name }}:
 
         if __options__ is not None:
             IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-            if __options__.idempotency is not None:
-                if __idempotency__ is not None:
-                    raise RuntimeError(
-                        'Found redundant idempotency in `Options`'
-                    )
-                __idempotency__ = __options__.idempotency
             if __options__.metadata is not None:
                 __metadata__ = __options__.metadata
             if __options__.bearer_token is not None:
@@ -6978,12 +6935,12 @@ class {{ client.proto.state_name }}:
 
     @IMPORT_typing.overload
     @classmethod
-    def idempotently(cls, alias: IMPORT_typing.Optional[str] = None, *, each_iteration: bool = False) -> {{ client.proto.state_name }}._ConstructIdempotently:
+    def idempotently(cls, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> {{ client.proto.state_name }}._ConstructIdempotently:
         ...
 
     @IMPORT_typing.overload
     @classmethod
-    def idempotently(cls, *, key: IMPORT_uuid.UUID, generated: bool = False) -> {{ client.proto.state_name }}._ConstructIdempotently:
+    def idempotently(cls, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> {{ client.proto.state_name }}._ConstructIdempotently:
         ...
 
     @classmethod
@@ -6992,15 +6949,13 @@ class {{ client.proto.state_name }}:
         alias: IMPORT_typing.Optional[str] = None,
         *,
         key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
-        each_iteration: IMPORT_typing.Optional[bool] = None,
-        generated: bool = False,
+        how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
     ) -> {{ client.proto.state_name }}._ConstructIdempotently:
         return {{ client.proto.state_name }}._ConstructIdempotently(
             _idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
                 alias=alias,
                 key=key,
-                each_iteration=each_iteration,
-                generated=generated,
+                how=how,
             ),
         )
 
@@ -7016,13 +6971,16 @@ class {{ client.proto.state_name }}:
         cls,
         alias: IMPORT_typing.Optional[str] = None,
     ):
-        return cls.idempotently(alias, each_iteration=True)
+        return cls.idempotently(
+            alias,
+            how=IMPORT_reboot_aio_idempotency.PER_ITERATION,
+        )
 
     @classmethod
     def always(cls):
         return cls.idempotently(
             key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
-            generated=True,
+            how=IMPORT_reboot_aio_idempotency.ALWAYS,
         )
 
     @IMPORT_dataclasses.dataclass(frozen=True)
@@ -7803,8 +7761,13 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
             idempotency = IMPORT_reboot_aio_contexts.Context.idempotency(
                 alias=options['idempotency'].get('alias'),
                 key=options['idempotency'].get('key'),
-                each_iteration=options['idempotency'].get('eachIteration'),
-                generated=options['idempotency'].get('generated', False),
+                how=(
+                    IMPORT_reboot_aio_idempotency.ALWAYS
+                    if options['idempotency'].get('always', False)
+                    else IMPORT_reboot_aio_idempotency.PER_ITERATION
+                    if options['idempotency'].get('perIteration')
+                    else None
+                ),
             )
 
         method_handle = IMPORT_functools.partial(
@@ -7837,8 +7800,13 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
             idempotency = IMPORT_reboot_aio_contexts.Context.idempotency(
                 alias=options['idempotency'].get('alias'),
                 key=options['idempotency'].get('key'),
-                each_iteration=options['idempotency'].get('eachIteration'),
-                generated=options['idempotency'].get('generated', False),
+                how=(
+                    IMPORT_reboot_aio_idempotency.ALWAYS
+                    if options['idempotency'].get('always', False)
+                    else IMPORT_reboot_aio_idempotency.PER_ITERATION
+                    if options['idempotency'].get('perIteration')
+                    else None
+                ),
             )
 
         if 'schedule' in options:
@@ -7883,8 +7851,13 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
             idempotency = IMPORT_reboot_aio_contexts.Context.idempotency(
                 alias=options['idempotency'].get('alias'),
                 key=options['idempotency'].get('key'),
-                each_iteration=options['idempotency'].get('eachIteration'),
-                generated=options['idempotency'].get('generated', False),
+                how=(
+                    IMPORT_reboot_aio_idempotency.ALWAYS
+                    if options['idempotency'].get('always', False)
+                    else IMPORT_reboot_aio_idempotency.PER_ITERATION
+                    if options['idempotency'].get('perIteration')
+                    else None
+                ),
             )
 
         if 'schedule' in options:
@@ -7929,8 +7902,13 @@ class {{ client.proto.state_name }}WeakReferenceNodeAdaptor({{ client.proto.stat
             idempotency = IMPORT_reboot_aio_contexts.Context.idempotency(
                 alias=options['idempotency'].get('alias'),
                 key=options['idempotency'].get('key'),
-                each_iteration=options['idempotency'].get('eachIteration'),
-                generated=options['idempotency'].get('generated', False),
+                how=(
+                    IMPORT_reboot_aio_idempotency.ALWAYS
+                    if options['idempotency'].get('always', False)
+                    else IMPORT_reboot_aio_idempotency.PER_ITERATION
+                    if options['idempotency'].get('perIteration')
+                    else None
+                ),
             )
 
         assert 'schedule' in options

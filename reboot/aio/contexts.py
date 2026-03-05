@@ -22,7 +22,12 @@ from reboot.aio.headers import (
     TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER,
     Headers,
 )
-from reboot.aio.idempotency import Idempotency, IdempotencyManager
+from reboot.aio.idempotency import (
+    PER_ITERATION,
+    How,
+    Idempotency,
+    IdempotencyManager,
+)
 from reboot.aio.internals.channel_manager import (
     LegacyGrpcChannel,
     _ChannelManager,
@@ -981,41 +986,36 @@ class Context(ABC, IdempotencyManager):
         *,
         alias: Optional[str] = None,
         key: Optional[uuid.UUID | str] = None,
-        each_iteration: Optional[bool] = None,
-        generated: bool = False,
+        how: Optional[How] = None,
     ) -> Idempotency:
-        """Helper to create an `Idempotency` instance, or raise if being used
-        incorrectly.
+        """Helper to create an `Idempotency` instance, or raise
+        if being used incorrectly.
         """
-        if each_iteration is not None and key is not None:
+        if how == PER_ITERATION and key is not None:
             raise TypeError(
-                'Passing `each_iteration` is invalid when passing `key`'
+                'Passing `how=PER_ITERATION` is invalid '
+                'when passing `key`'
             )
 
-        # Update or create an `alias` with iteration information if we
-        # don't have a `key` and are running from within a `workflow`.
-        if key is None:
+        iteration: Optional[int] = None
+
+        if how == PER_ITERATION:
             context = Context.get()
 
-            if (
-                each_iteration is not None and each_iteration and
-                context is not None and isinstance(context, WorkflowContext)
-            ):
-                # If no alias was given than consider this idempotency
-                # to be generated. This is important for treating
-                # multiple calls without an alias as an error.
-                if alias is None:
-                    alias = "-"
-                    generated = True
-
-                alias += f' (iteration #{context.task.iteration})'
-
-            if each_iteration is not None and context is None:
+            if context is not None and isinstance(context, WorkflowContext):
+                iteration = context.task.iteration
+            else:
                 raise TypeError(
-                    f'Passing `each_iteration={each_iteration}` is only valid within a `workflow` {context}'
+                    'Passing `how=PER_ITERATION` is only valid '
+                    'within a `workflow`'
                 )
 
-        return Idempotency(alias=alias, key=key, generated=generated)
+        return Idempotency(
+            key=key,
+            alias=alias,
+            how=how,
+            iteration=iteration,
+        )
 
 
 class ReaderContext(Context):

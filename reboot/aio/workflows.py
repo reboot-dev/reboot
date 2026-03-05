@@ -1,5 +1,11 @@
 import sys
 from reboot.aio.contexts import WorkflowContext, retry_reactively_until
+from reboot.aio.idempotency import (  # noqa: F401
+    ALWAYS,
+    PER_ITERATION,
+    PER_WORKFLOW,
+    How,
+)
 from typing import (
     Awaitable,
     Callable,
@@ -9,16 +15,6 @@ from typing import (
     TypeAlias,
     TypeVar,
     overload,
-)
-
-# NOTE: we're not using an enum because the values that can be used in
-# `at_most_once` and `at_least_once` are different than `until`.
-ALWAYS: Literal["ALWAYS"] = "ALWAYS"
-PER_WORKFLOW: Literal["PER_WORKFLOW"] = "PER_WORKFLOW"
-PER_ITERATION: Literal["PER_ITERATION"] = "PER_ITERATION"
-
-How: TypeAlias = (
-    Literal["ALWAYS"] | Literal["PER_WORKFLOW"] | Literal["PER_ITERATION"]
 )
 
 T = TypeVar('T')

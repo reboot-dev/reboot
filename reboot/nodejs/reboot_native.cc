@@ -2489,10 +2489,10 @@ Napi::Value Context_generateIdempotentStateId(const Napi::CallbackInfo& info) {
   if (js_alias.IsString()) {
     alias = js_alias.As<Napi::String>().Utf8Value();
   }
-  auto js_each_iteration = idempotency_options.Get("eachIteration");
-  std::optional<bool> each_iteration;
-  if (js_each_iteration.IsBoolean()) {
-    each_iteration = js_each_iteration.As<Napi::Boolean>();
+  auto js_per_iteration = idempotency_options.Get("perIteration");
+  std::optional<bool> per_iteration;
+  if (js_per_iteration.IsBoolean()) {
+    per_iteration = js_per_iteration.As<Napi::Boolean>();
   }
 
   return NodePromiseFromPythonCallback(
@@ -2504,7 +2504,7 @@ Napi::Value Context_generateIdempotentStateId(const Napi::CallbackInfo& info) {
        method = std::move(method),
        key = std::move(key),
        alias = std::move(alias),
-       each_iteration = std::move(each_iteration)]() {
+       per_iteration = std::move(per_iteration)]() {
         // Need to use `call_with_context` to ensure that we have
         // `py_context` as a valid asyncio context variable.
         py::object py_idempotency =
@@ -2519,16 +2519,17 @@ Napi::Value Context_generateIdempotentStateId(const Napi::CallbackInfo& info) {
                       if (alias.has_value()) {
                         py_alias = py::cast(*alias);
                       }
-                      py::object py_each_iteration = py::none();
-                      if (each_iteration.has_value()) {
-                        py_each_iteration = py::cast(*each_iteration);
+                      py::object py_how = py::none();
+                      if (per_iteration.has_value() && *per_iteration) {
+                        py_how = py::module::import("reboot.aio.idempotency")
+                                     .attr("PER_ITERATION");
                       }
                       return py::module::import("reboot.aio.contexts")
                           .attr("Context")
                           .attr("idempotency")(
                               "key"_a = py_key,
                               "alias"_a = py_alias,
-                              "each_iteration"_a = py_each_iteration);
+                              "how"_a = py_how);
                     }),
                     py_context);
 

@@ -1949,7 +1949,7 @@ export class {{ client.proto.state_name }}WeakReference {
       let how: reboot.How = (
         () => {
           if (this.#options.idempotency.key !== undefined) {
-            if (!this.#options.idempotency.generated) {
+            if (!this.#options.idempotency.always) {
               throw new Error(
                 "`.read()` must be called with one of `.perWorkflow()`, " +
                   "`.perIteration()`, or `.always()`; `.idempotently()` is not " +
@@ -1958,7 +1958,7 @@ export class {{ client.proto.state_name }}WeakReference {
             }
             return reboot.ALWAYS;
           }
-          return this.#options.idempotency.eachIteration
+          return this.#options.idempotency.perIteration
             ? reboot.PER_ITERATION
             : reboot.PER_WORKFLOW;
         }
@@ -2003,7 +2003,7 @@ export class {{ client.proto.state_name }}WeakReference {
       let how: reboot.How = (
         () => {
           if (this.#options.idempotency.key !== undefined) {
-            if (!this.#options.idempotency.generated) {
+            if (!this.#options.idempotency.always) {
               throw new Error(
                 "`.write()` must be called with one of `.perWorkflow()`, " +
                   "`.perIteration()`, or `.always()`; `.idempotently()` is not " +
@@ -2012,7 +2012,7 @@ export class {{ client.proto.state_name }}WeakReference {
             }
             return reboot.ALWAYS;
           }
-          return this.#options.idempotency.eachIteration
+          return this.#options.idempotency.perIteration
             ? reboot.PER_ITERATION
             : reboot.PER_WORKFLOW;
         }
@@ -2101,11 +2101,11 @@ export class {{ client.proto.state_name }}WeakReference {
   }
 
   public perIteration(alias?: string) {
-    return this.idempotently({ alias, eachIteration: true });
+    return this.idempotently({ alias, perIteration: true });
   }
 
   public always() {
-    return this.idempotently({ key: uuid.v4(), generated: true });
+    return this.idempotently({ key: uuid.v4(), always: true });
   }
 
   static _Schedule = class {
@@ -2422,12 +2422,12 @@ export class {{ client.proto.state_name }} {
 
   public static perIteration(alias?: string) {
     return {{ client.proto.state_name }}
-      .idempotently({ alias, eachIteration: true });
+      .idempotently({ alias, perIteration: true });
   }
 
   public static always() {
     return {{ client.proto.state_name }}
-      .idempotently({ key: uuid.v4(), generated: true });
+      .idempotently({ key: uuid.v4(), always: true });
   }
 
   static _ConstructIdempotently = class {

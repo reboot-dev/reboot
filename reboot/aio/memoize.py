@@ -73,14 +73,14 @@ async def memoize(
     # that handles `PER_ITERATION` correctly.
     idempotency = context.idempotency(
         alias=idempotency_alias_or_tuple,
-        each_iteration=context.within_loop(),
+        how=PER_ITERATION if context.within_loop() else None,
     ) if isinstance(idempotency_alias_or_tuple, str) else (
         context.idempotency(
             alias=f"{idempotency_alias_or_tuple[0]} - {uuid.uuid4()}",
         ) if idempotency_alias_or_tuple[1] == ALWAYS else (
             context.idempotency(
                 alias=idempotency_alias_or_tuple[0],
-                each_iteration=idempotency_alias_or_tuple[1] == PER_ITERATION,
+                how=idempotency_alias_or_tuple[1],
             )
         )
     )
@@ -98,9 +98,8 @@ async def memoize(
 
     await memoize.idempotently(
         f'{idempotency.alias} initial reset',
-        # Don't mangle idempotency alias; any loop iterations should
-        # already be accounted for in `idempotency`.
-        each_iteration=False,
+        # Don't mangle idempotency alias; any loop iterations
+        # should already be accounted for in `idempotency`.
     ).Reset(context)
 
     status = await memoize.always().Status(context)
@@ -202,9 +201,9 @@ async def memoize(
 
             await memoize.idempotently(
                 f'{idempotency.alias} fail',
-                # Don't mangle idempotency alias; any loop iterations
-                # should already be accounted for in `idempotency`.
-                each_iteration=False,
+                # Don't mangle idempotency alias; any loop
+                # iterations should already be accounted for
+                # in `idempotency`.
             ).Fail(
                 context,
                 failure=failure,
@@ -240,7 +239,6 @@ async def memoize(
             f'{idempotency.alias} store',
             # Don't mangle idempotency alias; any loop iterations
             # should already be accounted for in `idempotency`.
-            each_iteration=False,
         ).Store(
             context,
             data=pickle.dumps(t),

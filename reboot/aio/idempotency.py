@@ -15,8 +15,19 @@ from reboot.aio.types import (
     validate_ascii,
 )
 from reboot.settings import DOCS_BASE_URL, MAX_IDEMPOTENCY_KEY_LENGTH
-from typing import Iterator, Optional
+from typing import Iterator, Literal, Optional, TypeAlias
 from uuid7 import create as uuid7  # type: ignore[import]
+
+# NOTE: we're not using an enum because the values that can be
+# used in `at_most_once` and `at_least_once` are different than
+# `until`.
+ALWAYS: Literal["ALWAYS"] = "ALWAYS"
+PER_WORKFLOW: Literal["PER_WORKFLOW"] = "PER_WORKFLOW"
+PER_ITERATION: Literal["PER_ITERATION"] = "PER_ITERATION"
+
+How: TypeAlias = (
+    Literal["ALWAYS"] | Literal["PER_WORKFLOW"] | Literal["PER_ITERATION"]
+)
 
 
 def make_expiring_idempotency_key(
@@ -48,21 +59,28 @@ class Idempotency:
         *,
         alias: Optional[str] = None,
         key: Optional[uuid.UUID | str] = None,
-        generated: bool = False,
+        how: Optional[How] = None,
+        iteration: Optional[int] = None,
     ):
-        """Constructs an idempotency instance. At most one of 'alias' or
-        'key' should be specified. If neither is specified, a idempotency
-        key will be `generated`.
+        """Constructs an idempotency instance. At most one of
+        'alias' or 'key' should be specified. If neither is
+        specified, an idempotency key will be generated.
 
         :param alias: human readable alias, e.g., 'Charge credit
         card', that _must_ be unique within the lifetime of the
         current context.
 
-        :param key: idempotency key. It might accept a string which is forwarded
-            from the Typescript code, but will try convert it to a UUID.
+        :param key: idempotency key. It might accept a string which
+            is forwarded from the Typescript code, but will try
+            convert it to a UUID.
 
-        :param generated: whether or not something has already
-            generated the alias or key.
+        :param how: how idempotency is applied — one of
+            `PER_WORKFLOW`, `PER_ITERATION`, or `ALWAYS`,
+            or `None` when not within a workflow.
+
+        :param iteration: current iteration number when `how`
+            is `PER_ITERATION`, used to scope the idempotency
+            key to the current loop iteration.
         """
         if alias is not None and key is not None:
             raise ValueError(
@@ -92,7 +110,8 @@ class Idempotency:
 
         self._alias = alias
 
-        self._generated = generated
+        self._how = how
+        self._iteration = iteration
 
     @property
     def alias(self) -> Optional[str]:
@@ -105,33 +124,30 @@ class Idempotency:
         return self._key
 
     @property
-    def generated(self) -> bool:
-        """Returns whether or not a key or alias has already been generated."""
-        return self._generated
+    def how(self) -> Optional[How]:
+        """Returns how idempotency is applied, or `None` if not
+        within a workflow."""
+        return self._how
 
     @property
     def per_workflow(self) -> bool:
         """Returns whether this is from `.per_workflow()`."""
-        # TODO: pass along this intent rather than deducing it here,
-        # which technically we could get wrong if someone passes
-        # `generated` incorrectly.
-        return self._key is None and not self._generated
+        return self._how == PER_WORKFLOW
 
     @property
     def per_iteration(self) -> bool:
         """Returns whether this is from `.per_iteration()`."""
-        # TODO: pass along this intent rather than deducing it here,
-        # which technically we could get wrong if someone passes
-        # `generated` incorrectly.
-        return self._alias is not None and self._generated
+        return self._how == PER_ITERATION
 
     @property
     def always(self) -> bool:
         """Returns whether this is from `.always()`."""
-        # TODO: pass along this intent rather than deducing it here,
-        # which technically we could get wrong if someone passes
-        # `generated` incorrectly.
-        return self._key is not None and self._generated
+        return self._how == ALWAYS
+
+    @property
+    def iteration(self) -> Optional[int]:
+        """Returns the iteration number, if any."""
+        return self._iteration
 
     @property
     def generate(self) -> bool:
@@ -414,34 +430,25 @@ class IdempotencyManager:
         rpc = self._rpcs[idempotency_key]
 
         # If we're seeing an RPC that maps to this idempotency key
-        # _again_ and the idempotency _key_ was generated that means
-        # someone has made more than one empty `.idempotently()` (or
-        # `.per_workflow()` or `.per_iteration()` and we need
-        # to error out asking them to explicitly use an idempotency
-        # alias or key.
+        # _again_ and the user didn't provide an explicit alias or
+        # key, that means someone has called the same method more
+        # than once without distinguishing the calls. Error out
+        # asking them to explicitly use an idempotency alias or
+        # key.
         #
-        # NOTE: we distinguish when we need to "generate", i.e.,
-        # `idempotency.generate` is true, from when idempotency has
-        # already been "generated", i.e., `idempotency.generated` is
-        # true. We need to "generate" idempotency from calls to
-        # `.idempotently()`, `.per_workflow()` where no key or alias
-        # is passed. We have "generated" idempotency in the following
-        # two cases:
+        # `generate` is True when the user didn't provide an
+        # alias or key, which covers:
         #
-        # (1) Calling `.always()`, where we generate an idempotency
-        #     key for each call.
+        # - Bare `.idempotently()` / `.per_workflow()` calls.
         #
-        # (2) Calling `.per_iteration()` specifically without
-        #     any alias where we create an alias based on the current
-        #     iteration number.
+        # - Bare `.per_iteration()` calls (alias is None
+        #   because iteration scoping is handled via
+        #   `Idempotency.iteration`).
         #
-        # We want to raise an error about (2) but we don't care about
-        # (1), and so the invariant here is (2) only creates an
-        # `idempotency.alias` not an `idempotency.key` so we can
-        # distinguish between the two.
-        if idempotency.generate or (
-            idempotency.generated and idempotency.key is None
-        ):
+        # `.always()` has an explicit key so `generate` is
+        # False. `.per_iteration("alias")` has an explicit
+        # alias so `generate` is also False.
+        if idempotency.generate:
             raise ValueError(
                 "To call "
                 f"{self._rpc_name(state_type_name, service_name, method, mutation)} "
@@ -520,6 +527,9 @@ class IdempotencyManager:
 
         if idempotency.alias is not None:
             alias += f": {idempotency.alias}"
+
+        if idempotency.iteration is not None:
+            alias += f" (iteration #{idempotency.iteration})"
 
         key = (state_ref, alias)
 
