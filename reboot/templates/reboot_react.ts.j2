@@ -1352,24 +1352,20 @@ class {{ client.proto.state_name | to_camel }}Instance {
   }
 }
 
-{# Check if this client has any writer/transaction methods with MCP tools. #}
-{% set client_has_mcp = namespace(value=false) %}
-{% for service in client.services %}
-{% for method in service.methods %}
-{% if method.options.proto.mcp and method.options.proto.mcp.tool and method.options.proto.kind in ['writer', 'transaction'] %}
-{% set client_has_mcp.value = true %}
+{# Check if this client has any MCP-based UI methods. #}
+{% set client_has_mcp_ui = namespace(value=false) %}
+{% if client.state.proto.uis | length > 0 %}
+{% set client_has_mcp_ui.value = true %}
 {% endif %}
-{% endfor %}
-{% endfor %}
 
 export const use{{ client.proto.state_name | to_camel }} = (
-{% if client_has_mcp.value %}
+{% if client_has_mcp_ui.value %}
   { id: providedId }: { id?: string } = {}
 {% else %}
   { id }: { id: string }
 {% endif %}
 ): Use{{ client.proto.state_name | to_camel }}Api => {
-{% if client_has_mcp.value %}
+{% if client_has_mcp_ui.value %}
   // Get mcpApp and tool input from context (RebootClientProvider).
   const mcpApp = useMcpApp();
   const mcpToolData = useMcpToolData();
