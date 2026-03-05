@@ -2572,12 +2572,14 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         auto_construct_state_type_full_name: IMPORT_typing.Optional[str] = None,
     ) -> None:
         """Register MCP tools and resources for {{ state.proto.name }}."""
+{% set mcp_name_prefix = "" if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE else (state.proto.name | to_snake) + "_" %}
 {% for service in state.services %}
 {% for method in service.methods %}
 {% if method.options.proto.mcp and method.options.proto.mcp.tool %}
-{% set tool_name = method.options.proto.mcp.name if method.options.proto.mcp.name else (state.proto.name | to_snake) + "_" + (method.proto.name | to_snake) %}
+{% set tool_name = method.options.proto.mcp.name if method.options.proto.mcp.name else mcp_name_prefix + (method.proto.name | to_snake) %}
 {% set tool_title = method.options.proto.mcp.title if method.options.proto.mcp.title else method.proto.name %}
-{% set tool_description = method.options.proto.mcp.description if method.options.proto.mcp.description else "Invoke " + method.proto.name + " on " + state.proto.name + "." %}
+{% set tool_description_suffix = "" if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE else " on " + state.proto.name %}
+{% set tool_description = method.options.proto.mcp.description if method.options.proto.mcp.description else "Invoke " + method.proto.name + tool_description_suffix + "." %}
 {% set request_type = state.proto.name + "." + method.proto.name + "Request" %}
 
         # Tool for '{{ method.proto.full_name }}'.
@@ -2589,7 +2591,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         async def {{ tool_name }}_tool(
             ctx: IMPORT_mcp_server_fastmcp.Context,
 {% if state.proto.name != AUTO_CONSTRUCT_STATE_TYPE %}
-            id: str,
+            {{ mcp_name_prefix }}id: str,
 {% endif %}
 {% if method.input_type_fields %}
             *,
@@ -2598,19 +2600,19 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         ):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
 {% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
-            id = IMPORT_reboot_mcp_context.get_mcp_session_id(ctx)
+            {{ mcp_name_prefix }}id = IMPORT_reboot_mcp_context.get_mcp_session_id(ctx)
             # State is auto-constructed on session init;
             # see `_auto_construct`.
 {% endif %}
 {% if method.options.proto.constructor %}
 {% if method.input_type_fields %}
-            _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, id, request)
+            _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, {{ mcp_name_prefix }}id, request)
 {% else %}
-            _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, id)
+            _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, {{ mcp_name_prefix }}id)
 {% endif %}
             return response
 {% else %}
-            ref = {{ state.proto.name }}.ref(id)
+            ref = {{ state.proto.name }}.ref({{ mcp_name_prefix }}id)
 {% if method.input_type_fields %}
             return await ref.{{ method.proto.name | to_snake }}(reboot_context, request)
 {% else %}
@@ -2622,8 +2624,8 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% if method.options.proto.mcp and method.options.proto.mcp.resource %}
 {% set state_scheme = state.proto.name | to_snake %}
 {% set method_path = method.proto.name | to_snake %}
-{% set resource_name = method.options.proto.mcp.name if method.options.proto.mcp.name else state_scheme + "_" + method_path %}
-{% set resource_title = method.options.proto.mcp.title if method.options.proto.mcp.title else state.proto.name %}
+{% set resource_name = method.options.proto.mcp.name if method.options.proto.mcp.name else mcp_name_prefix + method_path %}
+{% set resource_title = method.options.proto.mcp.title if method.options.proto.mcp.title else method.proto.name %}
 {% set resource_description = method.options.proto.mcp.description if method.options.proto.mcp.description else state.proto.name + " state." %}
 {% set request_type = state.proto.name + "." + method.proto.name + "Request" %}
 
@@ -2633,7 +2635,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
             "{{ state_scheme }}:///{{ method_path }}{% for name in method.input_type_fields.keys() %}/{{'{'}}{{ name }}{{'}'}}{% endfor %}",
 {% else %}
-            "{{ state_scheme }}://{id}/{{ method_path }}{% for name in method.input_type_fields.keys() %}/{{'{'}}{{ name }}{{'}'}}{% endfor %}",
+            "{{ state_scheme }}://{{ '{' }}{{ mcp_name_prefix }}id{{ '}' }}/{{ method_path }}{% for name in method.input_type_fields.keys() %}/{{'{'}}{{ name }}{{'}'}}{% endfor %}",
 {% endif %}
             name="{{ resource_name }}",
             title="{{ resource_title }}",
@@ -2643,7 +2645,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         async def {{ resource_name }}_resource(
             ctx: IMPORT_mcp_server_fastmcp.Context,
 {% if state.proto.name != AUTO_CONSTRUCT_STATE_TYPE %}
-            id: str,
+            {{ mcp_name_prefix }}id: str,
 {% endif %}
             *,
 {% for name, type_str in method.input_type_fields.items() %}
@@ -2653,7 +2655,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
 {% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
             # State is auto-constructed on session init; see `_auto_construct`.
-            id = IMPORT_reboot_mcp_context.get_mcp_session_id(ctx)
+            {{ mcp_name_prefix }}id = IMPORT_reboot_mcp_context.get_mcp_session_id(ctx)
 {% endif %}
             # Construct request from URI params, coercing types
             # as needed.
@@ -2671,10 +2673,10 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endfor %}
             )
 {% if method.options.proto.constructor %}
-            _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, id, request)
+            _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, {{ mcp_name_prefix }}id, request)
             return response
 {% else %}
-            ref = {{ state.proto.name }}.ref(id)
+            ref = {{ state.proto.name }}.ref({{ mcp_name_prefix }}id)
             return await ref.{{ method.proto.name | to_snake }}(reboot_context, request)
 {% endif %}
 {% else %}
@@ -2682,7 +2684,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
             "{{ state_scheme }}://",
 {% else %}
-            "{{ state_scheme }}://{id}",
+            "{{ state_scheme }}://{{ '{' }}{{ mcp_name_prefix }}id{{ '}' }}",
 {% endif %}
             name="{{ resource_name }}",
             title="{{ resource_title }}",
@@ -2692,17 +2694,17 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
         async def {{ resource_name }}_resource(ctx: IMPORT_mcp_server_fastmcp.Context):
 {% else %}
-        async def {{ resource_name }}_resource(ctx: IMPORT_mcp_server_fastmcp.Context, id: str):
+        async def {{ resource_name }}_resource(ctx: IMPORT_mcp_server_fastmcp.Context, {{ mcp_name_prefix }}id: str):
 {% endif %}
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
 {% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
             # State is auto-constructed on session init; see `_auto_construct`.
-            id = IMPORT_reboot_mcp_context.get_mcp_session_id(ctx)
+            {{ mcp_name_prefix }}id = IMPORT_reboot_mcp_context.get_mcp_session_id(ctx)
 {% endif %}
 {% if method.options.proto.constructor %}
-            _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, id)
+            _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, {{ mcp_name_prefix }}id)
 {% else %}
-            response = await {{ state.proto.name }}.ref(id).{{ method.proto.name | to_snake }}(reboot_context)
+            response = await {{ state.proto.name }}.ref({{ mcp_name_prefix }}id).{{ method.proto.name | to_snake }}(reboot_context)
 {% endif %}
             return response
 {% endif %}
@@ -2713,15 +2715,16 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% if state.proto.uis | length > 0 %}
 
         # UI tools — allow AI to trigger loading of UIs.
+{% set ui_suffix = "" if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE else " for " + state.proto.name %}
 {% for ui in state.proto.uis %}
         @mcp.tool(
-            name="{{ ui.name }}",
+            name="{{ mcp_name_prefix }}{{ ui.name }}",
             title="Show {{ ui.title }}",
-            description="{{ ui.description if ui.description else 'Opens the ' + ui.name + ' interface.' }}",
+            description="{{ ui.description if ui.description else 'Opens the ' + ui.name + ' interface' + ui_suffix + '.' }}",
             meta={"ui/resourceUri": "ui://{{ state.proto.name | to_snake }}/{{ ui.name }}"},
         )
 {% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
-        async def {{ ui.name }}_tool(
+        async def {{ mcp_name_prefix }}{{ ui.name }}_tool(
             ctx: IMPORT_mcp_server_fastmcp.Context,
         ) -> dict:
             return {
@@ -2731,12 +2734,12 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 },
             }
 {% else %}
-        async def {{ ui.name }}_tool(
+        async def {{ mcp_name_prefix }}{{ ui.name }}_tool(
             ctx: IMPORT_mcp_server_fastmcp.Context,
-            id: str,
+            {{ mcp_name_prefix }}id: str,
         ) -> dict:
             _ids: dict[str, str | None] = {
-                "{{ state.proto.full_name }}": id,
+                "{{ state.proto.full_name }}": {{ mcp_name_prefix }}id,
             }
             if auto_construct_state_type_full_name is not None:
                 _ids[auto_construct_state_type_full_name] = (
