@@ -534,6 +534,7 @@ class DatabaseClient:
         *,
         idempotency_key: Optional[uuid.UUID] = None,
         workflow_id: Optional[uuid.UUID] = None,
+        workflow_iteration: Optional[int] = None,
     ) -> database_pb2.RecoverIdempotentMutationsResponse:
         """Attempt to recover idempotent mutations for a specific state ref
         after a restart.
@@ -553,6 +554,9 @@ class DatabaseClient:
                 None if idempotency_key is None else idempotency_key.bytes
             ),
             workflow_id=None if workflow_id is None else workflow_id.bytes,
+            workflow_iteration=(
+                None if workflow_iteration is None else workflow_iteration
+            ),
         )
         response = database_pb2.RecoverIdempotentMutationsResponse()
         async for partial in stub.RecoverIdempotentMutations(request):

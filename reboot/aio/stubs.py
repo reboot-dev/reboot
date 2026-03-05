@@ -180,6 +180,8 @@ class Stub:
         transaction_coordinator_state_type: Optional[StateTypeName] = None
         transaction_coordinator_state_ref: Optional[StateRef] = None
 
+        workflow_iteration: Optional[int] = None
+
         if context is not None:
             caller_id = CallerID(application_id=context.application_id)
 
@@ -189,6 +191,7 @@ class Stub:
             application_id = context.application_id
 
             workflow_id = context.workflow_id
+            workflow_iteration = context.workflow_iteration
             transaction_ids = context.transaction_ids
             transaction_coordinator_state_type = context.transaction_coordinator_state_type
             transaction_coordinator_state_ref = context.transaction_coordinator_state_ref
@@ -205,6 +208,7 @@ class Stub:
             application_id=application_id,
             state_ref=state_ref,
             workflow_id=workflow_id,
+            workflow_iteration=workflow_iteration,
             transaction_ids=transaction_ids,
             transaction_coordinator_state_type=
             transaction_coordinator_state_type,
@@ -272,6 +276,7 @@ class Stub:
         aborted_type: type[Aborted],
         metadata: Optional[GrpcMetadata] = None,
         idempotency_key: Optional[uuid.UUID] = None,
+        per_iteration: bool = False,
         bearer_token: Optional[str] = None,
     ) -> AsyncIterator[Awaitable[ResponseT] | AsyncIterable[ResponseT]]:
         """Helper for making an RPC, handling any user-defined errors, and
@@ -315,6 +320,19 @@ class Stub:
             metadata += ((IDEMPOTENCY_KEY_HEADER, str(idempotency_key)),)
 
         headers = self._headers
+
+        # If this is a workflow, refresh `workflow_iteration` because
+        # it may change dynamically as the workflow progresses through
+        # control loop iterations and thus `self._headers` is stale.
+        # Only set it for `per_iteration` calls so that the server
+        # stores/recovers the mutation with iteration scoping.
+        if isinstance(self._context, WorkflowContext):
+            headers = dataclasses.replace(
+                headers,
+                workflow_iteration=(
+                    self._context.workflow_iteration if per_iteration else None
+                ),
+            )
 
         if bearer_token is not None:
             headers = dataclasses.replace(

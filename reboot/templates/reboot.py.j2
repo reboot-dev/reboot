@@ -2072,6 +2072,7 @@ class {{ client.proto.state_name }}WriterStub(_{{ client.proto.state_name }}Stub
                 aborted_type={{ client.proto.state_name }}.{{ method.proto.name }}Aborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -2188,6 +2189,7 @@ class {{ client.proto.state_name }}WorkflowStub(_{{ client.proto.state_name }}St
                 aborted_type={{ client.proto.state_name }}.{{ method.proto.name }}Aborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -2258,6 +2260,7 @@ class {{ client.proto.state_name }}TasksStub(_{{ client.proto.state_name }}Stub)
                 aborted_type={{ client.proto.state_name }}.{{ method.proto.name }}Aborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)

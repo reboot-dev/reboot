@@ -1477,6 +1477,318 @@ TEST_F(TwoShardDatabaseTest, RecoverIdempotentMutationsSpecificUuidV7Key) {
 
 ////////////////////////////////////////////////////////////////////////
 
+TEST_F(TwoShardDatabaseTest, RecoverWorkflowIdempotentMutation) {
+  // Test that a non-expiring idempotent mutation stored at the
+  // workflow scope is recovered when querying by workflow ID.
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("test_workflow");
+  const UUID workflow_id = UUID::random();
+  const UUID idempotency_key = UUID::random();
+
+  v1alpha1::IdempotentMutation mutation;
+  mutation.set_state_type(state_type);
+  mutation.set_state_ref(state_ref);
+  mutation.set_key(idempotency_key.toBytes());
+  mutation.set_workflow_id(workflow_id.toBytes());
+  mutation.set_response("workflow_response");
+  store({}, {}, std::nullopt, std::move(mutation));
+
+  // Recover with workflow scope.
+  v1alpha1::RecoverIdempotentMutationsRequest request;
+  request.set_state_type(state_type);
+  request.set_state_ref(state_ref);
+  request.set_workflow_id(workflow_id.toBytes());
+
+  grpc::ClientContext context;
+  std::unique_ptr<
+      grpc::ClientReader<v1alpha1::RecoverIdempotentMutationsResponse>>
+      reader(stub->RecoverIdempotentMutations(&context, request));
+
+  v1alpha1::RecoverIdempotentMutationsResponse response;
+  v1alpha1::RecoverIdempotentMutationsResponse partial;
+  while (reader->Read(&partial)) {
+    response.MergeFrom(partial);
+  }
+  grpc::Status status = reader->Finish();
+  ASSERT_TRUE(status.ok()) << status.error_message();
+
+  ASSERT_EQ(1, response.idempotent_mutations().size());
+  EXPECT_EQ(idempotency_key.toBytes(), response.idempotent_mutations(0).key());
+  EXPECT_EQ("workflow_response", response.idempotent_mutations(0).response());
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(TwoShardDatabaseTest, RecoverWorkflowExpiringIdempotentMutation) {
+  // Test that an expiring (UUIDv7) idempotent mutation stored at the
+  // workflow scope is recovered when it has not yet expired.
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("test_workflow_expiring");
+  const UUID workflow_id = UUID::random();
+
+  // Create a UUIDv7 1 hour in the future (not expired).
+  const uint64_t future_ms = now_ms() + (60 * 60 * 1000);
+  const std::string uuidv7 = make_uuidv7(future_ms);
+
+  v1alpha1::IdempotentMutation mutation;
+  mutation.set_state_type(state_type);
+  mutation.set_state_ref(state_ref);
+  mutation.set_key(uuidv7);
+  mutation.set_workflow_id(workflow_id.toBytes());
+  mutation.set_response("workflow_expiring_response");
+  store({}, {}, std::nullopt, std::move(mutation));
+
+  // Recover with workflow scope.
+  v1alpha1::RecoverIdempotentMutationsRequest request;
+  request.set_state_type(state_type);
+  request.set_state_ref(state_ref);
+  request.set_workflow_id(workflow_id.toBytes());
+
+  grpc::ClientContext context;
+  std::unique_ptr<
+      grpc::ClientReader<v1alpha1::RecoverIdempotentMutationsResponse>>
+      reader(stub->RecoverIdempotentMutations(&context, request));
+
+  v1alpha1::RecoverIdempotentMutationsResponse response;
+  v1alpha1::RecoverIdempotentMutationsResponse partial;
+  while (reader->Read(&partial)) {
+    response.MergeFrom(partial);
+  }
+  grpc::Status status = reader->Finish();
+  ASSERT_TRUE(status.ok()) << status.error_message();
+
+  ASSERT_EQ(1, response.idempotent_mutations().size());
+  EXPECT_EQ(uuidv7, response.idempotent_mutations(0).key());
+  EXPECT_EQ(
+      "workflow_expiring_response",
+      response.idempotent_mutations(0).response());
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(TwoShardDatabaseTest, RecoverWorkflowExpiredIdempotentMutation) {
+  // Test that an expired UUIDv7 idempotent mutation at the workflow
+  // scope is NOT recovered.
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("test_workflow_expired");
+  const UUID workflow_id = UUID::random();
+
+  // Create a UUIDv7 1 hour in the past (expired).
+  const uint64_t past_ms = now_ms() - (60 * 60 * 1000);
+  const std::string expired_uuidv7 = make_uuidv7(past_ms);
+
+  v1alpha1::IdempotentMutation mutation;
+  mutation.set_state_type(state_type);
+  mutation.set_state_ref(state_ref);
+  mutation.set_key(expired_uuidv7);
+  mutation.set_workflow_id(workflow_id.toBytes());
+  mutation.set_response("expired_workflow_response");
+  store({}, {}, std::nullopt, std::move(mutation));
+
+  // Recover with workflow scope.
+  v1alpha1::RecoverIdempotentMutationsRequest request;
+  request.set_state_type(state_type);
+  request.set_state_ref(state_ref);
+  request.set_workflow_id(workflow_id.toBytes());
+
+  grpc::ClientContext context;
+  std::unique_ptr<
+      grpc::ClientReader<v1alpha1::RecoverIdempotentMutationsResponse>>
+      reader(stub->RecoverIdempotentMutations(&context, request));
+
+  v1alpha1::RecoverIdempotentMutationsResponse response;
+  v1alpha1::RecoverIdempotentMutationsResponse partial;
+  while (reader->Read(&partial)) {
+    response.MergeFrom(partial);
+  }
+  grpc::Status status = reader->Finish();
+  ASSERT_TRUE(status.ok()) << status.error_message();
+
+  // Expired workflow-scoped mutation should not be recovered.
+  EXPECT_EQ(0, response.idempotent_mutations().size());
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(TwoShardDatabaseTest, RecoverWorkflowMixedExpiringIdempotentMutations) {
+  // Test that workflow-scoped recovery returns non-expiring and
+  // non-expired expiring mutations, but not expired ones.
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("test_workflow_mixed");
+  const UUID workflow_id = UUID::random();
+
+  // 1. Non-expiring (UUIDv4).
+  const UUID uuidv4 = UUID::random();
+  v1alpha1::IdempotentMutation mutation_v4;
+  mutation_v4.set_state_type(state_type);
+  mutation_v4.set_state_ref(state_ref);
+  mutation_v4.set_key(uuidv4.toBytes());
+  mutation_v4.set_workflow_id(workflow_id.toBytes());
+  mutation_v4.set_response("v4_response");
+  store({}, {}, std::nullopt, std::move(mutation_v4));
+
+  // 2. Non-expired UUIDv7 (1 hour in future).
+  const uint64_t future_ms = now_ms() + (60 * 60 * 1000);
+  const std::string future_uuidv7 = make_uuidv7(future_ms);
+  v1alpha1::IdempotentMutation mutation_v7_future;
+  mutation_v7_future.set_state_type(state_type);
+  mutation_v7_future.set_state_ref(state_ref);
+  mutation_v7_future.set_key(future_uuidv7);
+  mutation_v7_future.set_workflow_id(workflow_id.toBytes());
+  mutation_v7_future.set_response("v7_future_response");
+  store({}, {}, std::nullopt, std::move(mutation_v7_future));
+
+  // 3. Expired UUIDv7 (1 hour in past).
+  const uint64_t past_ms = now_ms() - (60 * 60 * 1000);
+  const std::string past_uuidv7 = make_uuidv7(past_ms);
+  v1alpha1::IdempotentMutation mutation_v7_past;
+  mutation_v7_past.set_state_type(state_type);
+  mutation_v7_past.set_state_ref(state_ref);
+  mutation_v7_past.set_key(past_uuidv7);
+  mutation_v7_past.set_workflow_id(workflow_id.toBytes());
+  mutation_v7_past.set_response("v7_past_response");
+  store({}, {}, std::nullopt, std::move(mutation_v7_past));
+
+  // Recover with workflow scope.
+  v1alpha1::RecoverIdempotentMutationsRequest request;
+  request.set_state_type(state_type);
+  request.set_state_ref(state_ref);
+  request.set_workflow_id(workflow_id.toBytes());
+
+  grpc::ClientContext context;
+  std::unique_ptr<
+      grpc::ClientReader<v1alpha1::RecoverIdempotentMutationsResponse>>
+      reader(stub->RecoverIdempotentMutations(&context, request));
+
+  v1alpha1::RecoverIdempotentMutationsResponse response;
+  v1alpha1::RecoverIdempotentMutationsResponse partial;
+  while (reader->Read(&partial)) {
+    response.MergeFrom(partial);
+  }
+  grpc::Status status = reader->Finish();
+  ASSERT_TRUE(status.ok()) << status.error_message();
+
+  // Should recover UUIDv4 and non-expired UUIDv7 only.
+  ASSERT_EQ(2, response.idempotent_mutations().size());
+
+  std::set<std::string> recovered_keys;
+  for (const auto& m : response.idempotent_mutations()) {
+    recovered_keys.insert(m.key());
+  }
+
+  EXPECT_TRUE(recovered_keys.count(uuidv4.toBytes()) > 0)
+      << "UUIDv4 should be recovered";
+  EXPECT_TRUE(recovered_keys.count(future_uuidv7) > 0)
+      << "Non-expired UUIDv7 should be recovered";
+  EXPECT_TRUE(recovered_keys.count(past_uuidv7) == 0)
+      << "Expired UUIDv7 should NOT be recovered";
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(TwoShardDatabaseTest, RecoverWorkflowIterationIdempotentMutation) {
+  // Test that a non-expiring idempotent mutation stored at the
+  // workflow-iteration scope is recovered correctly.
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("test_workflow_iteration");
+  const UUID workflow_id = UUID::random();
+  const uint64_t iteration = 42;
+  const UUID idempotency_key = UUID::random();
+
+  v1alpha1::IdempotentMutation mutation;
+  mutation.set_state_type(state_type);
+  mutation.set_state_ref(state_ref);
+  mutation.set_key(idempotency_key.toBytes());
+  mutation.set_workflow_id(workflow_id.toBytes());
+  mutation.set_workflow_iteration(iteration);
+  mutation.set_response("iteration_response");
+  store({}, {}, std::nullopt, std::move(mutation));
+
+  // Recover with workflow + iteration scope.
+  v1alpha1::RecoverIdempotentMutationsRequest request;
+  request.set_state_type(state_type);
+  request.set_state_ref(state_ref);
+  request.set_workflow_id(workflow_id.toBytes());
+  request.set_workflow_iteration(iteration);
+
+  grpc::ClientContext context;
+  std::unique_ptr<
+      grpc::ClientReader<v1alpha1::RecoverIdempotentMutationsResponse>>
+      reader(stub->RecoverIdempotentMutations(&context, request));
+
+  v1alpha1::RecoverIdempotentMutationsResponse response;
+  v1alpha1::RecoverIdempotentMutationsResponse partial;
+  while (reader->Read(&partial)) {
+    response.MergeFrom(partial);
+  }
+  grpc::Status status = reader->Finish();
+  ASSERT_TRUE(status.ok()) << status.error_message();
+
+  ASSERT_EQ(1, response.idempotent_mutations().size());
+  EXPECT_EQ(idempotency_key.toBytes(), response.idempotent_mutations(0).key());
+  EXPECT_EQ("iteration_response", response.idempotent_mutations(0).response());
+}
+
+////////////////////////////////////////////////////////////////////////
+
+TEST_F(TwoShardDatabaseTest, RecoverWorkflowIterationIsolation) {
+  // Test that iteration-scoped mutations are isolated per
+  // iteration: recovering iteration 1 does not return mutations
+  // stored for iteration 2.
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("test_iteration_isolation");
+  const UUID workflow_id = UUID::random();
+
+  // Store mutation for iteration 1.
+  const UUID key_iteration1 = UUID::random();
+  v1alpha1::IdempotentMutation mutation1;
+  mutation1.set_state_type(state_type);
+  mutation1.set_state_ref(state_ref);
+  mutation1.set_key(key_iteration1.toBytes());
+  mutation1.set_workflow_id(workflow_id.toBytes());
+  mutation1.set_workflow_iteration(1);
+  mutation1.set_response("iteration1_response");
+  store({}, {}, std::nullopt, std::move(mutation1));
+
+  // Store mutation for iteration 2.
+  const UUID key_iteration2 = UUID::random();
+  v1alpha1::IdempotentMutation mutation2;
+  mutation2.set_state_type(state_type);
+  mutation2.set_state_ref(state_ref);
+  mutation2.set_key(key_iteration2.toBytes());
+  mutation2.set_workflow_id(workflow_id.toBytes());
+  mutation2.set_workflow_iteration(2);
+  mutation2.set_response("iteration2_response");
+  store({}, {}, std::nullopt, std::move(mutation2));
+
+  // Recover iteration 1 only.
+  v1alpha1::RecoverIdempotentMutationsRequest request;
+  request.set_state_type(state_type);
+  request.set_state_ref(state_ref);
+  request.set_workflow_id(workflow_id.toBytes());
+  request.set_workflow_iteration(1);
+
+  grpc::ClientContext context;
+  std::unique_ptr<
+      grpc::ClientReader<v1alpha1::RecoverIdempotentMutationsResponse>>
+      reader(stub->RecoverIdempotentMutations(&context, request));
+
+  v1alpha1::RecoverIdempotentMutationsResponse response;
+  v1alpha1::RecoverIdempotentMutationsResponse partial;
+  while (reader->Read(&partial)) {
+    response.MergeFrom(partial);
+  }
+  grpc::Status status = reader->Finish();
+  ASSERT_TRUE(status.ok()) << status.error_message();
+
+  // Should only get iteration 1's mutation.
+  ASSERT_EQ(1, response.idempotent_mutations().size());
+  EXPECT_EQ(key_iteration1.toBytes(), response.idempotent_mutations(0).key());
+  EXPECT_EQ("iteration1_response", response.idempotent_mutations(0).response());
+}
+
+////////////////////////////////////////////////////////////////////////
+
 TEST_F(TwoShardDatabaseTest, RecoverNoTasks) {
   v1alpha1::RecoverResponse response = recover_all_shards();
 

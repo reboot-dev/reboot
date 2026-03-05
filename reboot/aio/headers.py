@@ -51,6 +51,9 @@ SERVER_ID_HEADER = 'x-reboot-server-id'
 # The id of the workflow being executed, if any.
 WORKFLOW_ID_HEADER = 'x-reboot-workflow-id'
 
+# The iteration of the workflow control loop, if any.
+WORKFLOW_ITERATION_HEADER = 'x-reboot-workflow-iteration'
+
 # Transaction related headers.
 TRANSACTION_IDS_HEADER = 'x-reboot-transaction-ids'
 TRANSACTION_COORDINATOR_STATE_TYPE_HEADER = 'x-reboot-transaction-coordinator-state-type'
@@ -103,6 +106,7 @@ class Headers:
     application_id: Optional[ApplicationId]
     state_ref: StateRef
     workflow_id: Optional[uuid.UUID] = None
+    workflow_iteration: Optional[int] = None
 
     # Transaction IDs that make up the path from root and nested
     # transactions to the current transaction.
@@ -242,6 +246,11 @@ class Headers:
             convert=lambda value: uuid.UUID(value),
         )
 
+        workflow_iteration: Optional[int] = extract_maybe(
+            WORKFLOW_ITERATION_HEADER,
+            convert=lambda value: int(value),
+        )
+
         transaction_ids: Optional[list[uuid.UUID]] = extract_maybe(
             TRANSACTION_IDS_HEADER,
             convert=lambda value: [
@@ -298,6 +307,7 @@ class Headers:
             server_id=server_id,
             state_ref=state_ref,
             workflow_id=workflow_id,
+            workflow_iteration=workflow_iteration,
             transaction_ids=transaction_ids,
             transaction_coordinator_state_type=
             transaction_coordinator_state_type,
@@ -342,9 +352,17 @@ class Headers:
             return ()
 
         def maybe_add_workflow_headers() -> GrpcMetadata | tuple[()]:
+            headers: GrpcMetadata = ()
             if self.workflow_id is not None:
-                return ((WORKFLOW_ID_HEADER, str(self.workflow_id)),)
-            return ()
+                headers += ((WORKFLOW_ID_HEADER, str(self.workflow_id)),)
+            if self.workflow_iteration is not None:
+                headers += (
+                    (
+                        WORKFLOW_ITERATION_HEADER,
+                        str(self.workflow_iteration),
+                    ),
+                )
+            return headers
 
         def maybe_add_transaction_headers() -> GrpcMetadata | tuple[()]:
             if self.transaction_ids is not None:

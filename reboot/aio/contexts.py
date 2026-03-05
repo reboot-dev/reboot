@@ -922,6 +922,12 @@ class Context(ABC, IdempotencyManager):
         return self._headers.workflow_id
 
     @property
+    def workflow_iteration(self) -> Optional[int]:
+        """Return workflow iteration, if any.
+        """
+        return self._headers.workflow_iteration
+
+    @property
     def transaction_coordinator_state_type(self) -> Optional[StateTypeName]:
         """Return transaction coordinator state type.
         """
@@ -1250,6 +1256,14 @@ class WorkflowContext(Context):
         assert self.workflow_id is not None
 
         return uuid.uuid5(self.workflow_id, alias)
+
+    @property
+    def workflow_iteration(self) -> Optional[int]:
+        """
+        Return the current loop iteration when within a control loop, or
+        `None` if not currently within a control loop.
+        """
+        return self.task.iteration if self.within_loop() else None
 
     async def wait(self, awaitable: Awaitable[WaitT]) -> WaitT:
         """

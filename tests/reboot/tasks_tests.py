@@ -1332,6 +1332,139 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(writer_call_count, 1)
         self.assertEqual(transaction_call_count, 1)
 
+    async def test_control_loop_per_iteration_idempotency_survives_recovery(
+        self,
+    ) -> None:
+        """
+        Test that within a workflow control loop, per-iteration idempotent
+        mutations are called exactly once per iteration even after a
+        failure/recovery mid-iteration.
+
+        The test runs a 2-iteration control loop where each iteration
+        calls a writer. We bring the service down in the middle of
+        iteration 0, bring it back up, and verify that:
+
+        1. The writer from iteration 0 is NOT called again after
+           recovery (idempotent).
+        2. The writer for iteration 1 IS called (different
+           iteration means a fresh idempotency scope).
+        3. Each iteration's writer is called exactly once total.
+
+        """
+        # Track which iterations have called the writer and how
+        # many times.
+        iteration_0_call_count = 0
+        iteration_1_call_count = 0
+
+        iteration_0_writer_called = asyncio.Event()
+        proceed_after_recovery = asyncio.Event()
+
+        class TestServicer(GeneralServicer):
+
+            def authorizer(self):
+                return allow()
+
+            async def constructor_writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse()
+
+            async def writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                nonlocal iteration_0_call_count
+                nonlocal iteration_1_call_count
+                if context.workflow_iteration == 0:
+                    iteration_0_call_count += 1
+                elif context.workflow_iteration == 1:
+                    iteration_1_call_count += 1
+                return GeneralResponse()
+
+            @classmethod
+            async def workflow(
+                cls,
+                context: WorkflowContext,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                g = General.ref()
+
+                async for iteration in context.loop("Test loop"):
+                    # Within a control loop the generated code
+                    # defaults to `per_iteration()` semantics, so each
+                    # iteration gets a fresh idempotency key.
+                    await g.writer(context)
+
+                    if iteration == 0:
+                        # Signal that iteration 0's writer has
+                        # been called.
+                        iteration_0_writer_called.set()
+
+                        # Block until the test tells us to
+                        # proceed (after recovery).
+                        await proceed_after_recovery.wait()
+
+                        # Move on to iteration 1.
+                        continue
+
+                    # Iteration 1: we're done.
+                    break
+
+                return GeneralResponse()
+
+        revision = await self.rbt.up(
+            Application(servicers=[TestServicer]),
+            # Need to disable effect validation because this test
+            # relies on setting some nonlocal variables.
+            effect_validation=EffectValidation.DISABLED,
+        )
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        # Construct.
+        g, _ = await General.constructor_writer(context)
+
+        # Spawn the workflow.
+        task = await g.spawn().workflow(context)
+
+        # Wait for iteration 0's writer to be called.
+        await iteration_0_writer_called.wait()
+
+        self.assertEqual(iteration_0_call_count, 1)
+        self.assertEqual(iteration_1_call_count, 0)
+
+        # Simulate failure mid-iteration 0.
+        await self.rbt.down()
+
+        # Reset the event so we can detect the re-run.
+        iteration_0_writer_called.clear()
+
+        await self.rbt.up(revision=revision)
+
+        # Let the workflow proceed past the recovery point.
+        proceed_after_recovery.set()
+
+        # Wait for the workflow to complete.
+        await task
+
+        # We should have re-executed iteration 0 because we failed in
+        # the middle of it.
+        await iteration_0_writer_called.wait()
+
+        # But iteration 0's writer should not have been called again:
+        # the recovery should have found the existing idempotent
+        # mutation within the iteration and thus not re-executed it.
+        self.assertEqual(iteration_0_call_count, 1)
+
+        # Iteration 1's writer should now have been called exactly
+        # once: it has a different per-iteration idempotency key.
+        self.assertEqual(iteration_1_call_count, 1)
+
 
 if __name__ == '__main__':
     unittest.main()

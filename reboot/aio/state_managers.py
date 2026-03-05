@@ -1045,6 +1045,10 @@ class IdempotentMutations:
         # workflow.
         self._recovered_workflow_ids: set[uuid.UUID] = set()
 
+        # Track which (workflow_id, iteration) pairs have been
+        # bulk-recovered so we only do it once per pair.
+        self._recovered_workflow_iterations: set[tuple[uuid.UUID, int]] = set()
+
         for idempotent_mutation in idempotent_mutations:
             self._add_to_bloom_filter(idempotent_mutation)
 
@@ -1052,14 +1056,19 @@ class IdempotentMutations:
     def _make_bloom_key(
         idempotency_key_bytes: bytes,
         workflow_id_bytes: Optional[bytes] = None,
+        workflow_iteration: Optional[int] = None,
     ) -> bytes:
         """
         Returns a composite bloom filter key that includes the workflow ID
-        bytes (when present) to properly scope per workflow.
+        bytes and optional iteration (as bytes, when present) to
+        properly scope per workflow/iteration.
         """
+        key = idempotency_key_bytes
         if workflow_id_bytes is not None:
-            return workflow_id_bytes + idempotency_key_bytes
-        return idempotency_key_bytes
+            key = workflow_id_bytes + key
+        if workflow_iteration is not None:
+            key = workflow_iteration.to_bytes(8, byteorder="big") + key
+        return key
 
     def _add_to_bloom_filter(
         self,
@@ -1070,6 +1079,8 @@ class IdempotentMutations:
             idempotent_mutation.key,
             idempotent_mutation.workflow_id
             if idempotent_mutation.HasField("workflow_id") else None,
+            idempotent_mutation.workflow_iteration
+            if idempotent_mutation.HasField("workflow_iteration") else None,
         )
         self._bloom_filter.add(bloom_key)
 
@@ -1111,13 +1122,47 @@ class IdempotentMutations:
 
         self._recovered_workflow_ids.add(workflow_id)
 
+    async def _recover_workflow_iteration(
+        self,
+        workflow_id: uuid.UUID,
+        workflow_iteration: int,
+    ) -> None:
+        """
+        Bulk-recover all idempotent mutations for a specific
+        (workflow, iteration) pair and add them to the bloom filter.
+        Only done once per pair.
+        """
+        key = (workflow_id, workflow_iteration)
+        if key in self._recovered_workflow_iterations:
+            return
+
+        response = await self._database_client.recover_idempotent_mutations(
+            self._state_type_name,
+            self._state_ref,
+            workflow_id=workflow_id,
+            workflow_iteration=workflow_iteration,
+        )
+
+        for idempotent_mutation in response.idempotent_mutations:
+            self._add_to_bloom_filter(idempotent_mutation)
+
+        self._recovered_workflow_iterations.add(key)
+
     async def get(
         self,
         idempotency_key: uuid.UUID,
         *,
         workflow_id: Optional[uuid.UUID] = None,
+        workflow_iteration: Optional[int] = None,
     ) -> Optional[database_pb2.IdempotentMutation]:
-        if workflow_id is not None:
+        if workflow_id is not None and workflow_iteration is not None:
+            # Ensure we've recovered this iteration's mutations
+            # into the bloom filter.
+            await self._recover_workflow_iteration(
+                workflow_id,
+                workflow_iteration,
+            )
+        elif workflow_id is not None:
             # Ensure we've recovered this workflow's mutations
             # into the bloom filter.
             await self._recover_workflow(workflow_id)
@@ -1126,6 +1171,7 @@ class IdempotentMutations:
         bloom_key = self._make_bloom_key(
             idempotency_key.bytes,
             workflow_id.bytes if workflow_id is not None else None,
+            workflow_iteration,
         )
 
         if bloom_key in self._bloom_filter:
@@ -1134,9 +1180,11 @@ class IdempotentMutations:
                 self._state_ref,
                 idempotency_key=idempotency_key,
                 workflow_id=workflow_id,
+                workflow_iteration=workflow_iteration,
             )
 
             if len(response.idempotent_mutations) > 0:
+                assert len(response.idempotent_mutations) == 1
                 # TODO: cache the idempotent mutation.
                 return response.idempotent_mutations[0]
 
@@ -1783,6 +1831,7 @@ class SidecarStateManager(
         idempotency_key: Optional[uuid.UUID] = None,
         idempotent_mutation: Optional[database_pb2.IdempotentMutation] = None,
         workflow_id: Optional[uuid.UUID] = None,
+        workflow_iteration: Optional[int] = None,
         constructor: bool = False,
         sync: bool = True,
     ) -> None:
@@ -1877,6 +1926,10 @@ class SidecarStateManager(
                     ((effects.tasks or []) if effects is not None else [])
                 ],
                 workflow_id=(workflow_id.bytes if workflow_id else None),
+                workflow_iteration=(
+                    workflow_iteration
+                    if workflow_iteration is not None else None
+                ),
             )
 
         if transaction is not None and not transaction._stored:
@@ -2564,6 +2617,7 @@ class SidecarStateManager(
                         effects=effects,
                         idempotency_key=context.idempotency_key,
                         workflow_id=context.workflow_id,
+                        workflow_iteration=context.workflow_iteration,
                         constructor=context.constructor,
                         sync=context.sync,
                     )
@@ -2584,6 +2638,7 @@ class SidecarStateManager(
                             transaction=transaction,
                             idempotency_key=context.idempotency_key,
                             workflow_id=context.workflow_id,
+                            workflow_iteration=context.workflow_iteration,
                             constructor=context.constructor,
                         )
                         transaction.stored = True
@@ -2841,6 +2896,7 @@ class SidecarStateManager(
                     transaction=transaction,
                     idempotency_key=context.idempotency_key,
                     workflow_id=context.workflow_id,
+                    workflow_iteration=context.workflow_iteration,
                     constructor=context.constructor,
                 )
                 transaction.stored = True
@@ -3043,6 +3099,7 @@ class SidecarStateManager(
             await self._idempotent_mutations[state_type_name][state_ref].get(
                 context.idempotency_key,
                 workflow_id=context.workflow_id,
+                workflow_iteration=context.workflow_iteration,
             )
         )
 

@@ -159,6 +159,11 @@ message IdempotentMutation {
   // a workflow. Stored in the RocksDB value so recovery can
   // reconstruct the correct key.
   optional bytes workflow_id = 6;
+
+  // Optional workflow iteration, when this mutation was performed
+  // within a workflow control loop. Used together with
+  // `workflow_id` to scope recovery to a specific iteration.
+  optional uint64 workflow_iteration = 7;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -362,6 +367,9 @@ message RecoverIdempotentMutationsRequest {
 
   // Optional workflow ID for workflow-scoped recovery queries.
   optional bytes workflow_id = 4;
+
+  // Optional workflow iteration for iteration-scoped recovery.
+  optional uint64 workflow_iteration = 5;
 }
 
 message RecoverIdempotentMutationsResponse {
