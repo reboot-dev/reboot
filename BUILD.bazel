@@ -1,5 +1,7 @@
 load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_python//python:pip.bzl", "compile_pip_requirements")
+load("//ci:rules.bzl", "write_ci_template_source_file")
 
 # Run 'bazel run mypy-requirements.update' to update the lock file.
 # If the lock file is empty, need to turn off mypy-integration for bazel
@@ -13,9 +15,64 @@ compile_pip_requirements(
 
 npm_link_all_packages()
 
+oci_image(
+    name = "respect_base_image",
+    base = "@respect_base_image//:image",
+    visibility = ["//visibility:public"],
+)
+
+oci_image(
+    name = "envoy_base_image",
+    base = "@envoy_base_image//:image",
+    visibility = ["//visibility:public"],
+)
+
 # Make mypy config available to the `mypy_integration` for Bazel, to configure
 # its mypy type checking.
 exports_files([
     "mypy.ini",
     "mypy-requirements_lock.txt",
 ])
+
+write_ci_template_source_file(
+    name = "ci_workflows",
+    templates = {
+        ".github/actions/debug-and-cancel/action.yml": [
+            "//ci/templates:debug-and-cancel.action.yml",
+            "//ci/templates:public_ci.yaml",
+        ],
+        ".github/actions/setup-bazel-remote-cache/action.yml": [
+            "//ci/templates:setup-bazel-remote-cache.action.yml",
+            "//ci/templates:public_ci.yaml",
+        ],
+        ".github/workflows/build_and_test.yml": [
+            "//ci/templates:build_and_test.yml.j2",
+            "//ci/templates:public_ci.yaml",
+        ],
+        ".github/workflows/devcontainer.yml": [
+            "//ci/templates:devcontainer.yml.j2",
+            "//ci/templates:public_ci.yaml",
+        ],
+        ".github/workflows/development_containers_build_test.yml": [
+            "//ci/templates:development_containers_build_test.yml",
+            "//ci/templates:public_ci.yaml",
+        ],
+        ".github/workflows/development_containers_build_test_push.yml": [
+            "//ci/templates:development_containers_build_test_push.yml.j2",
+            "//ci/templates:public_ci.yaml",
+        ],
+        ".github/workflows/manylinux.yml": [
+            "//ci/templates:manylinux.yml.j2",
+            "//ci/templates:public_ci.yaml",
+        ],
+        ".github/workflows/reboot_macos_environment.yml": [
+            "//ci/templates:reboot_macos_environment.yml.j2",
+            "//ci/templates:public_ci.yaml",
+        ],
+    },
+)
+
+test_suite(
+    name = "ci_workflows_test",
+    tests = [":ci_workflows_tests"],
+)

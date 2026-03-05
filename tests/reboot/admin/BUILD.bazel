@@ -1,0 +1,24 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "export_import_tests_py",
+    srcs = [
+        ":export_import_tests.py",
+    ],
+    main = "export_import_tests.py",
+    deps = [
+        # Even though `grpcio` is not a direct dependency, we _must_ have this
+        # "requirement" here listed first, or the PYTHONPATH will point at the
+        # wrong `grpcio` path first (i.e. it'll use the one from the outdated
+        # `com_github_grpc_grpc`).
+        requirement("grpcio"),
+        "//reboot/admin:export_import_client_py",
+        "//reboot/aio:secrets_py",
+        "//reboot/aio:tests_py",
+        "//tests/reboot:echo_servicers_py",
+        "//reboot:settings_py",
+        "//reboot/aio:exceptions_py",
+        "//reboot/ssl:localhost_py",
+    ],
+)

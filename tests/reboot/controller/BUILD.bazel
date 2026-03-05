@@ -1,0 +1,99 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "placement_planner_test_py",
+    size = "small",
+    srcs = ["placement_planner_test.py"],
+    main = "placement_planner_test.py",
+    deps = [
+        requirement("grpcio"),
+        requirement("kubernetes_asyncio"),
+        requirement("protobuf"),
+        "//rbt/v1alpha1:application_config_py_proto",
+        "//rbt/v1alpha1:placement_planner_py_grpc",
+        "//rbt/v1alpha1:placement_planner_py_proto",
+        "//reboot:helpers_py",
+        "//reboot/aio:exceptions_py",
+        "//reboot/aio:resolvers_py",
+        "//reboot/controller:application_config_py",
+        "//reboot/controller:application_config_trackers_py",
+        "//reboot/controller:placement_planner_py",
+        "//reboot/controller:server_managers_py",
+        "//tests/reboot:settings_py",
+        "//tests/reboot:test_helpers_py",
+    ],
+)
+
+py_test(
+    name = "application_config_trackers_test_py",
+    srcs = ["application_config_trackers_test.py"],
+    main = "application_config_trackers_test.py",
+    deps = [
+        "//reboot/controller:application_config_py",
+        "//reboot/controller:application_config_trackers_py",
+    ],
+)
+
+py_test(
+    name = "server_managers_test_py",
+    srcs = ["server_managers_test.py"],
+    main = "server_managers_test.py",
+    deps = [
+        requirement("protobuf"),
+        "//rbt/v1alpha1:placement_planner_py_proto",
+        "//reboot/controller:server_managers_py",
+        "//tests/reboot:settings_py",
+    ],
+)
+
+py_test(
+    name = "config_server_test_py",
+    srcs = ["config_server_test.py"],
+    main = "config_server_test.py",
+    deps = [
+        # We should add all deps after the 'grpcio' requirement, to
+        # make sure 'grpcio' path will be before any other dependency on a
+        # PYTHONPATH, while generating a bootstrap python for the 'py_binary'.
+        # We had an issue about using two versions of the 'cygrpc.so' which
+        # are coming from 'grpcio' and the 'com_github_grpc_grpc' repo.
+        # See https://github.com/reboot-dev/mono/issues/2347
+        requirement("grpcio"),
+        requirement("protobuf"),
+        "//reboot/aio:servers_py",
+        "//tests/reboot:echo_servicers_py",
+        "//tests/reboot:greeter_servicers_py",
+        "//reboot:helpers_py",
+        "//reboot:version_py",
+        "//reboot/grpc:options_py",
+    ],
+)
+
+py_test(
+    name = "config_extractor_test_py",
+    srcs = ["config_extractor_test.py"],
+    main = "config_extractor_test.py",
+    deps = [
+        # We should add all deps after the 'grpcio' requirement, to
+        # make sure 'grpcio' path will be before any other dependency on a
+        # PYTHONPATH, while generating a bootstrap python for the 'py_binary'.
+        # We had an issue about using two versions of the 'cygrpc.so' which
+        # are coming from 'grpcio' and the 'com_github_grpc_grpc' repo.
+        # See https://github.com/reboot-dev/mono/issues/2347
+        requirement("grpcio"),
+        requirement("protobuf"),
+        "//reboot:naming_py",
+        "//reboot/controller:config_extractor_py",
+        "//tests/reboot:greeter_servicers_py",
+        "//reboot/aio:servicers_py",
+    ],
+)
+
+py_test(
+    name = "shards_test_py",
+    srcs = ["shards_test.py"],
+    main = "shards_test.py",
+    deps = [
+        "//reboot/controller:shards_py",
+    ],
+)

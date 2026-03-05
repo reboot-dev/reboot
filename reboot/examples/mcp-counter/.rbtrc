@@ -1,0 +1,38 @@
+# Find '.proto' files in 'api/'.
+generate api/
+
+# Tell `rbt generate` where to put generated files.
+generate --python=backend/api/
+
+# Generate React bindings for web apps (into "web/api/").
+generate --react=web/api
+generate --react-extensions
+
+# Watch if any source files are modified.
+dev run --watch=backend/**/*.py
+
+# Tell `rbt` that this is a Python application.
+dev run --python
+
+# Save state between restarts.
+dev run --name=mcp-counter
+
+# Run the application!
+dev run --application=backend/src/main.py
+
+# Default to HMR mode when no --config is specified.
+dev run --default-config=hmr
+
+# Hot Module Replacement (HMR): Vite dev server proxied through Envoy.
+# Run Vite in a separate terminal: cd web && npm run dev
+# Envoy routes "/__/web/**" to Vite for HMR support.
+dev run:hmr --mcp-frontend-host=http://localhost:4444
+
+# Dist mode: serve pre-built artifacts from "web/dist/" (no Vite HMR).
+# Use this to test the production build locally before deploying.
+# Usage: uv run rbt dev run --config=dist
+# Requires: cd web && npm run build
+dev run:dist --mcp-frontend-host=""
+
+# When expunging, expunge that state we've saved.
+dev expunge --name=mcp-counter

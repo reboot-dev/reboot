@@ -1,0 +1,229 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Run your application
+
+Reboot applications are defined using an instance of `Application`, and launched from the file
+configured as your `--application` in [`.rbtrc`](/develop_locally#rbtrc-and-flags).
+
+## Application
+
+Your entrypoint will construct an `Application` and then `run` it:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/chat-room/backend/src/main.py&lines=25-33) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/backend/src/main.py -->
+
+```py
+async def main():
+    await Application(
+        servicers=[ChatRoomServicer],
+        initialize=initialize,
+    ).run()
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/chat-room-nodejs/backend/src/main.ts&lines=10-13) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room-nodejs/backend/src/main.ts -->
+
+```ts
+new Application({
+  servicers: [ChatRoomServicer],
+  initialize,
+}).run();
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+### `initialize` functions
+
+The optional `initialize` argument to the `Application` constructor is a function that
+runs every time your application starts up.
+
+Initializers can be used to create any initial state that your
+application needs. In particular, they are usually where any singleton
+instances used by your application are created.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/chat-room/backend/src/main.py&lines=13-20) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/backend/src/main.py -->
+
+```py
+async def initialize(context: InitializeContext):
+    chat_room = ChatRoom.ref(EXAMPLE_STATE_MACHINE_ID)
+
+    # Implicitly construct state machine upon first write.
+    await chat_room.send(
+        context,
+        message="Hello, World!",
+    )
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/chat-room-nodejs/backend/src/main.ts&lines=5-8) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room-nodejs/backend/src/main.ts -->
+
+```ts
+const initialize = async (context) => {
+  const chatRoom = ChatRoom.ref("chat-room-nodejs");
+  await chatRoom.send(context, { message: "Hello, World!" });
+};
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+If you have declared an `initialize` function, then you can additionally pass an
+`initialize_bearer_token` (`initializeBearerToken` in TypeScript) which the `initialize` method
+should use to [authenticate](/develop/auth) itself to your application.
+
+## HTTP custom routes
+
+Using a Reboot `Application` you can not only run your Reboot
+[servicers](/develop/implement/servicers) but you can also
+provide custom HTTP route handlers for circumstances where you can't
+just call one of your data type's methods.
+
+For Python, this is implemented using
+[FastAPI](https://fastapi.tiangolo.com/). For TypeScript, this is
+implemented with [Express.js](https://expressjs.com/).
+
+:::important
+
+**Limitations of custom HTTP routes**
+
+* Currently only `GET` and `POST` methods are supported.
+
+* The `/` route is currently used by Reboot itself to
+show a helpful page explaining that this is a Reboot
+application.
+
+Please reach out to us at team@reboot.dev if you run into use cases
+for fixing these!
+
+:::
+
+Here is an example of implementing a handler for an HTTP `GET`:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/test_http.py&lines=14-17) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/test_http.py -->
+
+```py
+@application.http.get("/hello_world")
+def hello_world():
+    return {"message": "Hello, world!"}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/test_http.ts&lines=10-14) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/test_http.ts -->
+
+```ts
+const application = new Application({ servicers: [GreeterServicer] });
+
+application.http.get("/hello_world", async (context, req, res) => {
+  res.json({ message: `Hello, world!` });
+});
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+To simplify calling directly into your Reboot application from your
+`application.http.get` and `application.http.post` handlers we provide
+a `context` of type
+[`ExternalContext`](/develop/call/from_outside_your_app) because
+you are still "external" to your application from an authorization
+perspective.
+
+This `context` includes any bearer token from
+`Authorization: Bearer <token>` so that any calls into your Reboot application
+will be properly authorized. In TypeScript, we inject the context for every
+handler. In Python, we follow the FastAPI dependency injection strategy.
+If you want the `context`, you must explicitly add it to your arguments as shown in
+the following example:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/test_http.py&lines=19-34) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/test_http.py -->
+
+```py
+@application.http.post("/hello_greeter")
+async def hello_greeter(
+    request: Request,
+    context: ExternalContext = InjectExternalContext,
+):
+    body = await request.json()
+    greeter, _ = await Greeter.create(
+        context,
+        title=body['title'],
+        name=body['name'],
+        adjective=body['adjective'],
+    )
+
+    response = await greeter.greet(context, name="You")
+
+    return {"message": response.message}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/test_http.ts&lines=52-69) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/test_http.ts -->
+
+```ts
+const application = new Application({ servicers: [GreeterServicer] });
+
+application.http.post("/hello_greeter", async (context, req, res) => {
+  const { title, name, adjective } = req.body as {
+    title: string;
+    name: string;
+    adjective: string;
+  };
+  const [greeter] = await Greeter.create(context, {
+    title,
+    name,
+    adjective,
+  });
+
+  const { message } = await greeter.greet(context, { name: "You" });
+
+  res.json({ message });
+});
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>

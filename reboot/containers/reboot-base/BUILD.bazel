@@ -1,0 +1,45 @@
+load("@com_github_reboot_dev_reboot//reboot:versions.bzl", "REBOOT_VERSION")
+
+# TODO: This `sh_library` is a necessary indirection until Bazel 6, because a `sh_binary`
+# does not actually force a `data` attribute to build, but a `sh_library` does. We can
+# remove the indirection once we upgrade. See https://github.com/bazelbuild/bazel/issues/12348
+test_packages = [
+    "@com_github_reboot_dev_reboot//rbt/v1alpha1:reboot-dev-reboot-api",
+    "//reboot:reboot.dev",
+    "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+]
+
+sh_library(
+    name = "test_packages",
+    data = test_packages,
+)
+
+sh_binary(
+    name = "dev",
+    srcs = ["build.sh"],
+    data = test_packages + [
+        ":Dockerfile",
+        ":test_packages",
+    ],
+    env = {
+        # We never want to push the dev image to the registry.
+        "PUSH_REBOOT_BASE": "false",
+        "REBOOT_API_NPM_PACKAGE": "$(location @com_github_reboot_dev_reboot//rbt/v1alpha1:reboot-dev-reboot-api)",
+        "REBOOT_NPM_PACKAGE": "$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
+        "REBOOT_VERSION": REBOOT_VERSION,
+        "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+    },
+    visibility = ["//visibility:public"],
+)
+
+sh_binary(
+    name = "release",
+    srcs = ["build.sh"],
+    data = [
+        ":Dockerfile",
+    ],
+    env = {
+        "REBOOT_VERSION": REBOOT_VERSION,
+    },
+    visibility = ["//visibility:public"],
+)

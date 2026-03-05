@@ -1,0 +1,20 @@
+[project]
+name = "kcdc-2025"
+version = "0.1.0"
+requires-python = ">= 3.10"
+dependencies = [
+    "langchain>=0.3.27",
+    "langchain-anthropic>=0.3.18",
+    "reboot==0.44.0",
+]
+[tool.rye]
+dev-dependencies = [
+    "mypy==1.18.1",
+    "types-protobuf>=4.24.0.20240129",
+    "reboot==0.44.0",
+]
+
+# This project only uses `rye` to provide `python` and its dependencies, so
+# these settings remove the need to name or version the project.
+virtual = true
+managed = true

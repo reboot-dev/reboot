@@ -1,0 +1,15 @@
+# Directories created from using the 'rbt' CLI tool in project directories.
+.rbt/
+
+# The recommended virtualenv directory.
+/.venv/
+
+# Generated code.
+bank/backend/api
+hello-constructors/backend/api
+hello-legacy-grpc/backend/api
+hello-tasks/backend/api
+
+# Temporary directories produced by `pytest`.
+__pycache__/
+.pytest_cache/

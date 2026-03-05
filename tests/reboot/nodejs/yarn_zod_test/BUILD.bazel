@@ -1,0 +1,70 @@
+load("//reboot:versions.bzl", "REBOOT_VERSION")
+load("//tests:sh_test_in_working_directory.bzl", "sh_test_in_working_directory")
+
+# TODO: This `sh_library` is a necessary indirection until Bazel 6, because a `sh_binary`
+# does not actually force a `data` attribute to build, but a `sh_library` does. We can
+# remove the indirection once we upgrade. See https://github.com/bazelbuild/bazel/issues/12348
+test_packages = [
+    "//rbt/v1alpha1:reboot-dev-reboot-api",
+    "//rbt/std:reboot-dev-reboot-std-api",
+    "//reboot:reboot.dev",
+    "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+    "//reboot/std:reboot-dev-reboot-std",
+]
+
+sh_library(
+    name = "test_packages",
+    data = test_packages,
+)
+
+general_env = {
+    "REBOOT_API_NPM_PACKAGE": "$(location //rbt/v1alpha1:reboot-dev-reboot-api)",
+    "REBOOT_NPM_PACKAGE": "$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
+    "REBOOT_STD_API_NPM_PACKAGE": "$(location //rbt/std:reboot-dev-reboot-std-api)",
+    "REBOOT_STD_NPM_PACKAGE": "$(location //reboot/std:reboot-dev-reboot-std)",
+    "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+}
+
+osx_env = dict(general_env)
+
+osx_env.update({
+    "REBOOT_LOCAL_ENVOY_MODE": "executable",
+})
+
+filegroup(
+    name = "everything",
+    srcs = glob(
+        ["**/*"],
+        exclude = [
+            # Files that may be created by activity in this directory, such
+            # as manually following the steps of the `README.md` file, but which
+            # are not part of the "source code" of this repository.
+            "backend/.rbt/**/*",
+            ".yarn/**/*",
+            "node_modules/**/*",
+        ],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+sh_test_in_working_directory(
+    name = "test",
+    size = "large",
+    data = test_packages + [
+        ":everything",
+        ":test_packages",
+    ],
+    env = select({
+        "@platforms//os:linux": general_env,
+        "@platforms//os:osx": osx_env,
+    }),
+    # The following path is relative to the working directory.
+    script = ".tests/test.sh",
+    # Additionally, in all our example tests, we initiate LocalEnvoy on the
+    # default secure port 9991. We require 'exclusive' to not run multiple
+    # tests, that use the same port, concurrently.
+    tags = [
+        "exclusive",
+    ],
+    working_directory = "tests/reboot/nodejs/yarn_zod_test",  # Adjusted to match the context
+)

@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/protoc/shared.proto";
+
+package tests.reboot.protoc;
+
+message Echo {
+  option (rbt.v1alpha1.state) = {
+  };
+  Text last_message = 1;
+}
+
+service EchoMethods {
+  rpc Reply(ReplyRequest) returns (Text) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc LastMessage(Empty) returns (Text) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}
+
+message ReplyRequest {
+  // TESTS: proto message field name would be rejected if it has a capital
+  // letter.
+  int32 has_Capital_letter = 1;
+}

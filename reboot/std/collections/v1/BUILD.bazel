@@ -1,0 +1,44 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "sorted_map_py",
+    srcs = [
+        "sorted_map.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("aiohttp"),
+        "//reboot/aio:applications_py",
+        "//reboot/aio:contexts_py",
+        "//reboot/aio:secrets_py",
+        "//reboot/aio/auth:authorizers_py",
+        "@com_github_reboot_dev_reboot//rbt/std/collections/v1:sorted_map_py_reboot",
+        "@com_github_reboot_dev_reboot//reboot:run_environments_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:tasks_py",
+    ],
+)
+
+ts_project(
+    name = "sorted_map_ts",
+    srcs = [
+        "package.json",
+        "sorted_map.ts",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-std-api",
+        "//:node_modules/@types/node",
+    ],
+)

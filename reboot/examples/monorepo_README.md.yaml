@@ -1,0 +1,29 @@
+name: Monorepo Example
+repo_name: reboot-examples
+overview: |
+  This repository contains example applications written using Reboot. The
+  examples are structured in the style of a monorepo: all proto files can be found
+  in the `api/` directory, grouped into subdirectories by proto package, while
+  application code is broken into top-level directories by application name.
+backend_locations: "top-level directories by application name"
+backend_language: python
+has_frontend: false
+has_non_react_frontend: false
+has_tests: true
+has_cloud: false
+extra_setup: |
+  #### Pick your application directory
+
+  The `rbt` tool can load its flags from an `.rbtrc` file, which is a convenient
+  way of keeping the options you have to type (and remember!) to a minimum. We
+  provide a different `.rbtrc` for every application in this repository, and by
+  selecting an application directory you select the `.rbtrc` that will be used:
+
+  <!-- MARKDOWN-AUTO-DOCS:START (CODE:src=./.tests/readme_test.sh&lines=24-24) -->
+  <!-- The below code snippet is automatically added from ./.tests/readme_test.sh -->
+
+  ```sh
+  cd hello-constructors
+  ```
+
+  <!-- MARKDOWN-AUTO-DOCS:END -->

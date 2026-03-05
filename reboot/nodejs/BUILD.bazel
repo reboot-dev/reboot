@@ -1,0 +1,222 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_js//npm:defs.bzl", "npm_package")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config", "ts_project")
+load("@com_github_reboot_dev_reboot//reboot:rules.bzl", "generate_version_ts")
+load("@com_github_reboot_dev_reboot//reboot:versions.bzl", "REBOOT_VERSION")
+load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@rules_python//python:defs.bzl", "py_library")
+
+npm_link_all_packages()
+
+exports_files([
+    "zod-to-proto.ts",
+])
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+filegroup(
+    name = "include",
+    srcs = glob([
+        "include/**/*",
+    ]),
+)
+
+npm_package(
+    name = "nodejs",
+    srcs = [
+        "binding.gyp",
+        "package.json",
+        ":dummy.cc",
+        ":include",
+        ":install.cjs",
+        ":nodejs_ts",
+        ":preinstall.cjs",
+        ":prepare_environment.sh",
+    ],
+    # NOTE: the package name does not need to be specified via:
+    #
+    # package = "@reboot-dev/reboot",
+    #
+    # For this rule to work correctly, it relies on a number of invariants.
+    # 1. This rule refers to a local `package.json` with the name you want to
+    #    give the package.
+    # 2. There is a top level `package.json` with the same name and a version
+    #    matching this pattern: "workspace:*"
+    # 3. You then manually run `bazel run -- @pnpm//:pnpm --dir $PWD install --lockfile-only' from the top
+    #    level.
+    #    Source: https://docs.aspect.build/rulesets/aspect_rules_js/docs/pnpm/
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "reboot-dev-reboot",
+    srcs = [
+        "binding.gyp",
+        ":include",
+        "package.json",
+        "protoc-gen-es.ts",
+        "reboot_native.cc",
+        "reboot_native.cjs",
+        "reboot_native.d.ts",
+        "index.ts",
+        "rbt.ts",
+        "rbt-esbuild.ts",
+        "zod-to-proto.ts",
+        "venv.ts",
+        "workspaces.ts",
+        ":version.ts",
+        "tsconfig.json",
+        ":prepare_environment.sh",
+        ":dummy.cc",
+        ":preinstall.cjs",
+        ":install.cjs",
+        "//reboot/nodejs/secrets:secrets_srcs",
+        "//reboot/nodejs/utils:utils_srcs",
+        "//:node_modules/@reboot-dev/reboot-api/dir",
+        "//:node_modules/which-pm-runs/dir",
+        "//:node_modules/@types/node",
+        "//:node_modules/@bufbuild/protobuf",
+    ],
+    outs = [
+        "build/Release/reboot_native.node",
+        "reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+    ],
+    # We use an explicit RBT_PYTHON3_USE location here for two reasons:
+    #  1. it avoids abusing `github`'s release infrastructure in our CI.
+    #  2. this gen rule produces a `reboot_native.node` file which is treated
+    #     as portable, and moved around to sandboxes. That doesn't match the
+    #     production usage, where the `.node` file is produced within the
+    #     `node_modules` directory, and then stable for the life of the install.
+    # TODO: This used to use `@rules_python//python:current_py_toolchain`, but
+    # that Python actually mismatches the one used later in Python and TypeScript
+    # unit tests, which caused subtle failures.
+    cmd = """
+        set -eu
+        export PYTHON3=$$(readlink -f $$(which python3))
+        # See note above.
+        export RBT_PYTHON3_USE=$$PYTHON3
+
+        cp $(execpath :version.ts) $$(dirname $(execpath :rbt.ts))
+        export PATH=$$(realpath $$(dirname $$PYTHON3)):$$PATH
+        npm_binary_path=$$(realpath $(execpath @node//:npm))
+        reboot_pkg_dir="$$(realpath $(execpath //:node_modules/@reboot-dev/reboot-api/dir))"
+        which_pm_runs_pkg_dir="$$(realpath $(execpath //:node_modules/which-pm-runs/dir))"
+        pushd $$(dirname $(execpath :package.json))
+        # Need to ensure we don't overwrite linked file `package.json` in source tree.
+        cp -L package.json copied_package.json
+        rm package.json
+        mv copied_package.json package.json
+
+        $$npm_binary_path --no-save install "$$reboot_pkg_dir" "$$which_pm_runs_pkg_dir"
+        $$npm_binary_path --python=$$PYTHON3 install
+        mkdir dist
+        cp -r -L include dist/include
+        cp binding.gyp dist/binding.gyp
+        cp package.json dist/package.json
+        cp prepare_environment.sh dist/prepare_environment.sh
+        cp dummy.cc dist/dummy.cc
+        cp preinstall.cjs dist/preinstall.cjs
+        cp install.cjs dist/install.cjs
+        cp reboot_native.cc dist/reboot_native.cc
+        cp reboot_native.cjs dist/reboot_native.cjs
+        cp reboot_native.d.ts dist/reboot_native.d.ts
+        cd dist
+        $$npm_binary_path --python=$$PYTHON3 pack --pack-destination .
+        popd
+        mkdir -p $$(dirname $(execpath build/Release/reboot_native.node))
+        cp $$(dirname $(execpath :package.json))/build/Release/reboot_native.node $(execpath build/Release/reboot_native.node)
+        cp $$(dirname $(execpath :package.json))/dist/reboot-dev-reboot-{reboot_version}.tgz $(execpath reboot-dev-reboot-{reboot_version}.tgz)
+    """.format(
+        reboot_version = REBOOT_VERSION,
+    ),
+    tools = [
+        "@node//:npm",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "python_py",
+    srcs = [
+        "python.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot/aio:aborted_py",
+        "//reboot/aio:contexts_py",
+        "//reboot/aio:directories_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio/auth:authorizers_py",
+        "//reboot/aio/auth:token_verifiers_py",
+        "//reboot/aio/internals:contextvars_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:nodejs_py_proto",
+    ],
+)
+
+py_library(
+    name = "python",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":python_py",
+        "//reboot/aio:python",
+    ],
+)
+
+js_library(
+    name = "reboot_native_js",
+    srcs = [
+        "reboot_native.cjs",
+    ],
+    data = [
+        ":build/Release/reboot_native.node",
+    ],
+    declarations = [
+        "reboot_native.d.ts",
+        "reboot_native.cjs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+generate_version_ts(name = "version_source")
+
+ts_project(
+    name = "nodejs_ts",
+    srcs = [
+        "index.ts",
+        "package.json",
+        "protoc-gen-es.ts",
+        "rbt.ts",
+        "rbt-esbuild.ts",
+        "venv.ts",
+        "workspaces.ts",
+        "zod-to-proto.ts",
+        ":version.ts",
+    ],
+    declaration = True,
+    # Note that `out_dir` is set in `tsconfig.json`. Normally, setting `out_dir`
+    # in tsconfig is ignored for when building with Bazel, but it is not ignored
+    # because this package is built differently than normal, due to the
+    # dependency on gyp.
+    visibility = ["//visibility:public"],
+    deps = [
+        ":reboot_native_js",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@standard-schema/spec",
+        "//:node_modules/@types/express",
+        "//:node_modules/@types/express-serve-static-core",
+        "//:node_modules/@types/node",
+        "//:node_modules/chalk",
+        "//:node_modules/esbuild",
+        "//:node_modules/express",
+        "//:node_modules/toobusy-js",
+        "//:node_modules/uuid",
+        "//:node_modules/which-pm-runs",
+        "//:node_modules/zod",
+        "//reboot/nodejs/secrets:secrets_ts",
+        "//reboot/nodejs/utils:utils_ts",
+    ],
+)

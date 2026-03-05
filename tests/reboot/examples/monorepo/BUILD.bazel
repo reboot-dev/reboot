@@ -1,0 +1,65 @@
+load("//tests:sh_test_in_working_directory.bzl", "sh_test_in_working_directory")
+
+test_packages = [
+    "//reboot:reboot.dev",
+]
+
+# TODO: This `sh_library` is a necessary indirection until Bazel 6, because a `sh_binary`
+# does not actually force a `data` attribute to build, but a `sh_library` does. We can
+# remove the indirection once we upgrade. See https://github.com/bazelbuild/bazel/issues/12348
+sh_library(
+    name = "test_packages",
+    data = test_packages,
+)
+
+# The following package paths are relative to the working directory of
+# the test script.
+general_env = {
+    "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+}
+
+sh_test_in_working_directory(
+    name = "readme_test",
+    data = test_packages + [
+        ":test_packages",
+        # The actual test script will be given access to all of the files in
+        # the example.
+        "//reboot/examples/monorepo:everything",
+    ],
+    env = general_env,
+    # The following path is relative to the working directory.
+    script = ".tests/readme_test.sh",
+    # TODO: Rye has issues with concurrent bootstrap.
+    # https://github.com/astral-sh/rye/issues/960
+    # Additionally, in all our example tests, we initiate LocalEnvoy on the
+    # default secure port 9991. We require 'exclusive' to not run multiple
+    # tests, that use the same port, concurrently.
+    tags = [
+        "exclusive",
+        "requires-docker",
+    ],
+    working_directory = "reboot/examples/monorepo/",
+)
+
+sh_test_in_working_directory(
+    name = "all_pytests_test",
+    # Since this runs several `pip install`s, a docker build, [...], this test
+    # can take a while.
+    size = "large",
+    data = test_packages + [
+        ":test_packages",
+        # The actual test script will be given access to all of the files in
+        # the example.
+        "//reboot/examples/monorepo:everything",
+    ],
+    env = general_env,
+    # The following path is relative to the working directory.
+    script = ".tests/all_pytests.sh",
+    # TODO: Rye has issues with concurrent bootstrap.
+    # https://github.com/astral-sh/rye/issues/960
+    # Additionally, in all our example tests, we initiate LocalEnvoy on the
+    # default secure port 9991. We require 'exclusive' to not run multiple
+    # tests, that use the same port, concurrently.
+    tags = ["exclusive"],
+    working_directory = "reboot/examples/monorepo/",
+)

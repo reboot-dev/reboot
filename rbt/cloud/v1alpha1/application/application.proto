@@ -1,0 +1,352 @@
+syntax = "proto3";
+
+package rbt.cloud.v1alpha1.application;
+
+import "rbt/v1alpha1/options.proto";
+import "rbt/cloud/v1alpha1/logs/logs.proto";
+
+/////////////////////////////////////////////////////////////////////////
+
+enum Status {
+  UNKNOWN = 0;
+  UPPING = 1;
+  UP = 2;
+  DOWNING = 3;
+  DOWN = 4;
+  FAILED = 5;
+  EXPUNGED = 6;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+enum ApplicationSize {
+  XSMALL = 0;
+  SMALL = 1;
+  MEDIUM = 2;
+  LARGE = 3;
+  XLARGE = 4;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message Revision {
+  // Revisions have monotonically increasing numbers that are unique within
+  // their app.
+  uint64 number = 1;
+
+  // The image being run by this revision of the application.
+  string container_image_name = 2;
+
+  // The current (actual) status of this revision.
+  Status status = 3;
+
+  // Set only if `current_status` is `FAILED`.
+  string failure_reason = 4;
+
+  reserved "replicas";
+  reserved 5;
+
+  // The size for this revision. This field is optional for cases
+  // where `container_image_name` refers to a Reboot application older
+  // than horizontal scaling; in that case, for backwards
+  // compatibility, the value may be absent.
+  optional ApplicationSize size = 6;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message Application {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  // Organization ID or user ID for old applications.
+  string owner_id = 2;
+  // Organization of this application; exists only if this application
+  // was created after we added organizations.
+  optional string organization_id = 9;
+  string space_name = 3;
+  string space_id = 4;
+  string application_name = 5;
+  string application_id = 6;
+
+  // Deprecated: Permissions permissions = 1;
+  //
+  // Now we check the organization for membership roles.
+  reserved "permissions";
+  reserved 1;
+
+  // The list of revisions this app has gone through, the most recent one last.
+  // The revision's number is its index in this list.
+  repeated Revision revisions = 7;
+
+  // The current _overall_ status of the application. If at least one revision
+  // is `UPPING` or `DOWNING` the application is considered to be in that state.
+  // Otherwise, if the application has at least one revision that's `UP` it is
+  // considered `UP`. Otherwise, if the most recent revision is `FAILED` the
+  // application is considered `FAILED`. Otherwise, the application is `DOWN`.
+  Status status = 8;
+}
+
+///////////////////////////////////////////////////////////////////////
+
+service ApplicationMethods {
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {
+        constructor: {},
+      },
+    };
+  }
+
+  rpc PushInfo(PushInfoRequest) returns (PushInfoResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  rpc Up(UpRequest) returns (UpResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+      errors: [
+        "InvalidInputError",
+        "ConcurrentModificationError",
+        "PaymentMethodRequiredError"
+      ],
+    };
+  }
+
+  // The async part of `Up`. Not part of the public API.
+  rpc UpWorkflow(UpWorkflowRequest) returns (UpWorkflowResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  rpc Down(DownRequest) returns (DownResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+      errors: [ "ConcurrentModificationError" ],
+    };
+  }
+
+  // The async part of `Down`. Not part of the public API.
+  rpc DownWorkflow(DownWorkflowRequest) returns (DownWorkflowResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  rpc RevisionStatus(RevisionStatusRequest) returns (RevisionStatusResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [ "InvalidInputError" ],
+    };
+  }
+
+  /**
+   * Fetches the log records produced by this application so far. If
+   * `follow=true`, will subsequently stream new records as they are logged.
+   *
+   * The server will make an attempt to deliver records in timestamp-order, but
+   * may (particularly when streaming newly-ingested records) send records in
+   * ingestion-order if timestamp-order is infeasible.
+   */
+  rpc Logs(LogsRequest) returns (stream LogsResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {
+        state: UNARY,
+      },
+    };
+  }
+
+  rpc ActiveRevisions(ActiveRevisionsRequest)
+      returns (ActiveRevisionsResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  rpc Status(StatusRequest) returns (StatusResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  rpc IsAdmin(IsAdminRequest) returns (IsAdminResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+}
+
+///////////////////////////////////////////////////////////////////////
+
+message CreateRequest {}
+
+message CreateResponse {}
+
+//////////////////////////////////////////////////////////////////////
+
+message PushInfoRequest {}
+
+message PushInfoResponse {
+  // The URL of the registry to push to; e.g.:
+  //   "https://registry.prod1.rbt.cloud:5000".
+  string registry_url = 1;
+  // The repository within the registry, AKA image name. E.g. "reboot-app".
+  string repository = 2;
+  // The tag (specifically the "tag" part of the image name) to push with, e.g.
+  // ":latest".
+  string tag = 3;
+
+  // Docker registries authenticate with the "Basic" HTTP auth scheme. The
+  // caller should use the following username and password for their upcoming
+  // push to `{registry_url}/{repository}:{tag}`.
+  string username = 4;
+  string password = 5;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message UpRequest {
+  // Previously we permitted the client to specify any image, not just ones
+  // pushed to the Reboot registry. We may allow that again in the future, even.
+  reserved "container_image_name";
+  reserved 1;
+
+  // The SHA256 of the image to pull; an image with this SHA256 must have been
+  // pushed to the Reboot registry using details provided by `PushInfo()`.
+  string digest = 2;
+
+  reserved "replicas";
+  reserved 3;
+
+  // The size tier for this revision. If not set, defaults to a
+  // system-determined value.
+  optional ApplicationSize size = 4;
+}
+
+message UpResponse {
+  // The application ID for this application.
+  string application_id = 2;
+
+  // The number of the revision that was started for this `Up`.
+  uint64 revision_number = 3;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message UpWorkflowRequest {
+  uint64 revision_number = 1;
+}
+message UpWorkflowResponse {}
+
+//////////////////////////////////////////////////////////////////////
+
+message DownRequest {}
+
+message DownResponse {
+  Status status = 1;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message DownWorkflowRequest {}
+
+message DownWorkflowResponse {}
+
+//////////////////////////////////////////////////////////////////////
+
+message RevisionStatusRequest {
+  // The revision number is a required field; it is `optional` so that the
+  // server can validate that it is present.
+  optional uint64 revision_number = 1;
+}
+
+message RevisionStatusResponse {
+  Revision revision = 1;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message LogsRequest {
+  // TODO(rjh): this whole request is a ~copy-pasted duplicate of the
+  //            `rbt.cloud.v1alpha1.logs.LogsRequest`. Deduplicate in
+  //            favor of that request.
+
+  // If set >0, fetch only the last `last` records (that match the
+  // filters below). If set to 0, fetch all records.
+  uint32 last = 3;
+
+  // Whether to keep the connection open and stream additional responses
+  // as new records come in.
+  bool follow = 1;
+
+  // The revision filters to apply. Must specify at least one filter.
+  // TODO: for now, if unset, falls back to `revision_numbers`. In the
+  //       future `revision_numbers` will be removed and requests will
+  //       fail if no `revisions` are set.
+  // check_line_length skip
+  repeated rbt.cloud.v1alpha1.logs.LogsRequest.RevisionFilter revisions = 5;
+
+  // Only relevant if `revisions` is unspecified. The revision
+  // number(s) to fetch logs for. If not specified, fetch logs for all
+  // revisions. DEPRECATED: Use `revisions` instead.
+  repeated uint64 revision_numbers = 2;
+
+  // The sources to fetch logs for. If not specified, fetch logs from
+  // all sources.
+  repeated rbt.cloud.v1alpha1.logs.Source sources = 4;
+
+  // TODO: support for filtering by time range, and so forth. These will
+  //       be implemented as they become relevant to CLIs and/or web
+  //       UIs.
+}
+
+message LogsResponse {
+  repeated rbt.cloud.v1alpha1.logs.LogRecord records = 1;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message ActiveRevisionsRequest {}
+
+message ActiveRevisionsResponse {
+  repeated Revision revisions = 1;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message StatusRequest {}
+
+message StatusResponse {
+  Status status = 1;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message IsAdminRequest {
+  string user_id = 1;
+}
+
+message IsAdminResponse {
+  bool is_admin = 1;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message InvalidInputError {
+  string reason = 1;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message ConcurrentModificationError {
+  string details = 1;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message PaymentMethodRequiredError {}
+
+//////////////////////////////////////////////////////////////////////

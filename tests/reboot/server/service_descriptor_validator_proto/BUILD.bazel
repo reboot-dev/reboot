@@ -1,0 +1,399 @@
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_test")
+
+proto_library(
+    name = "echo_empty_input_type_proto",
+    srcs = ["echo_empty_input_type.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_empty_input_type_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_empty_input_type_proto"],
+)
+
+proto_library(
+    name = "echo_empty_reserved_input_type_proto",
+    srcs = ["echo_empty_reserved_input_type.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_empty_reserved_input_type_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_empty_reserved_input_type_proto"],
+)
+
+proto_library(
+    name = "echo_enum_three_options_input_type_proto",
+    srcs = ["echo_enum_three_options_input_type.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_enum_three_options_input_type_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_enum_three_options_input_type_proto"],
+)
+
+proto_library(
+    name = "echo_enum_two_options_input_type_proto",
+    srcs = ["echo_enum_two_options_input_type.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_enum_two_options_input_type_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_enum_two_options_input_type_proto"],
+)
+
+proto_library(
+    name = "echo_hello_added_proto",
+    srcs = ["echo_hello_added.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_hello_added_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_hello_added_proto"],
+)
+
+proto_library(
+    name = "echo_legacy_service_name_proto",
+    srcs = ["echo_legacy_service_name.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_legacy_service_name_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_legacy_service_name_proto"],
+)
+
+proto_library(
+    name = "echo_nested_repeated_string_input_type_proto",
+    srcs = ["echo_nested_repeated_string_input_type.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_nested_repeated_string_input_type_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_nested_repeated_string_input_type_proto"],
+)
+
+proto_library(
+    name = "echo_nested_single_string_input_type_proto",
+    srcs = ["echo_nested_single_string_input_type.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_nested_single_string_input_type_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_nested_single_string_input_type_proto"],
+)
+
+proto_library(
+    name = "echo_original_proto",
+    srcs = ["echo_original.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_original_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_original_proto"],
+)
+
+proto_library(
+    name = "echo_output_type_changed_proto",
+    srcs = ["echo_output_type_changed.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_output_type_changed_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_output_type_changed_proto"],
+)
+
+proto_library(
+    name = "echo_recursion_proto",
+    srcs = ["echo_recursion.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_recursion_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_recursion_proto"],
+)
+
+proto_library(
+    name = "echo_replay_deleted_proto",
+    srcs = ["echo_replay_deleted.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_replay_deleted_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_replay_deleted_proto"],
+)
+
+proto_library(
+    name = "echo_replay_option_changed_proto",
+    srcs = ["echo_replay_option_changed.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_replay_option_changed_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_replay_option_changed_proto"],
+)
+
+proto_library(
+    name = "echo_replay_type_changed_proto",
+    srcs = ["echo_replay_type_changed.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_replay_type_changed_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_replay_type_changed_proto"],
+)
+
+proto_library(
+    name = "echo_reply_transaction_proto",
+    srcs = ["echo_reply_transaction.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_reply_transaction_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_reply_transaction_proto"],
+)
+
+proto_library(
+    name = "echo_reply_transaction_constructor_proto",
+    srcs = ["echo_reply_transaction_constructor.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_reply_transaction_constructor_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_reply_transaction_constructor_proto"],
+)
+
+proto_library(
+    name = "echo_reply_writer_constructor_proto",
+    srcs = ["echo_reply_writer_constructor.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_reply_writer_constructor_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_reply_writer_constructor_proto"],
+)
+
+proto_library(
+    name = "echo_state_message_changed_proto",
+    srcs = ["echo_state_message_changed.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_state_message_changed_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_state_message_changed_proto"],
+)
+
+proto_library(
+    name = "echo_state_message_name_changed_proto",
+    srcs = ["echo_state_message_name_changed.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_state_message_name_changed_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_state_message_name_changed_proto"],
+)
+
+proto_library(
+    name = "echo_state_message_new_field_proto",
+    srcs = ["echo_state_message_new_field.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_state_message_new_field_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_state_message_new_field_proto"],
+)
+
+proto_library(
+    name = "echo_two_fields_input_type_proto",
+    srcs = ["echo_two_fields_input_type.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_two_fields_input_type_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_two_fields_input_type_proto"],
+)
+
+proto_library(
+    name = "echo_with_message_proto",
+    srcs = ["echo_with_message.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_with_message_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_with_message_proto"],
+)
+
+proto_library(
+    name = "echo_with_message_id_proto",
+    srcs = ["echo_with_message_id.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_with_message_id_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_with_message_id_proto"],
+)
+
+proto_library(
+    name = "echo_errors_added_proto",
+    srcs = ["echo_errors_added.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_errors_added_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_errors_added_proto"],
+)
+
+py_test(
+    name = "service_descriptor_validator_proto_test_py",
+    srcs = ["test.py"],
+    main = "test.py",
+    deps = [
+        requirement("protobuf"),
+        ":echo_empty_input_type_py_proto",
+        ":echo_empty_reserved_input_type_py_proto",
+        ":echo_enum_three_options_input_type_py_proto",
+        ":echo_enum_two_options_input_type_py_proto",
+        ":echo_errors_added_py_proto",
+        ":echo_hello_added_py_proto",
+        ":echo_legacy_service_name_py_proto",
+        ":echo_nested_repeated_string_input_type_py_proto",
+        ":echo_nested_single_string_input_type_py_proto",
+        ":echo_original_py_proto",
+        ":echo_output_type_changed_py_proto",
+        ":echo_recursion_py_proto",
+        ":echo_replay_deleted_py_proto",
+        ":echo_replay_option_changed_py_proto",
+        ":echo_replay_type_changed_py_proto",
+        ":echo_reply_transaction_constructor_py_proto",
+        ":echo_reply_transaction_py_proto",
+        ":echo_reply_writer_constructor_py_proto",
+        ":echo_state_message_changed_py_proto",
+        ":echo_state_message_name_changed_py_proto",
+        ":echo_state_message_new_field_py_proto",
+        ":echo_two_fields_input_type_py_proto",
+        ":echo_with_message_id_py_proto",
+        ":echo_with_message_py_proto",
+        "//reboot/server:service_descriptor_validator_py",
+        "//tests/reboot:test_helpers_py",
+    ],
+)

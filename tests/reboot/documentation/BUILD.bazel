@@ -1,0 +1,151 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rbt_test_pypi//:requirements.bzl", requirement_test = "requirement")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load(
+    "//reboot:rules.bzl",
+    "js_proto_library",
+    "js_reboot_library",
+    "py_reboot_library",
+)
+load("//reboot/nodejs:rules.bzl", "js_reboot_test")
+
+proto_library(
+    name = "task_proto",
+    srcs = [":task.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:descriptor_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "task_py_reboot",
+    proto = "task.proto",
+    proto_library = ":task_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+)
+
+# This `py_library` is needed to trigger the build and `mypy` checks of
+# code which we use in the docs.
+py_library(
+    name = "task_py",
+    srcs = ["task.py"],
+    deps = [":task_py_reboot"],
+)
+
+js_proto_library(
+    name = "task_js_proto",
+    package_json = ":package.json",
+    proto = "task.proto",
+    proto_deps = [
+        ":task_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:timestamp_proto",
+        "@com_google_protobuf//:any_proto",
+    ],
+)
+
+js_reboot_library(
+    name = "task_js_reboot",
+    srcs = [":task_proto"],
+    proto = "task.proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+    deps = [":task_js_proto"],
+)
+
+ts_project(
+    name = "task_ts",
+    srcs = [
+        "task.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        ":task_js_proto",
+        ":task_js_reboot",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-std",
+        "//:node_modules/zod",
+        "//rbt/v1alpha1:tasks_js_proto",
+    ],
+)
+
+js_reboot_test(
+    name = "test_task_ts",
+    data = [
+        ":task_ts",
+    ],
+    entry_point = "task.js",
+    visibility = ["//visibility:public"],
+)
+
+ts_project(
+    name = "test_http_ts",
+    srcs = [
+        "test_http.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//tests/reboot:greeter_js_proto",
+        "//tests/reboot:greeter_js_reboot",
+        "//tests/reboot/nodejs:greeter_ts",
+    ],
+)
+
+js_reboot_test(
+    name = "test_http_ts_reboot",
+    data = [
+        ":test_http_ts",
+    ],
+    entry_point = "test_http.js",
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_http_py",
+    srcs = [
+        ":test_http.py",
+    ],
+    main = "test_http.py",
+    deps = [
+        requirement("fastapi"),
+        requirement_test("requests"),
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:http_py",
+        "//reboot/aio:tests_py",
+        "//tests/reboot:greeter_servicers_py",
+    ],
+)

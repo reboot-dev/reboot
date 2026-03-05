@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package rbt.std.presence.mouse_tracker.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+message MousePosition {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  int32 left = 1;
+  int32 top = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+service MousePositionMethods {
+  /**
+   * Updates the mouse position with the given left and top values.
+   */
+  rpc Update(UpdateRequest) returns (UpdateResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  /**
+   * Returns the current mouse position.
+   */
+  rpc Position(PositionRequest) returns (PositionResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// See `Update`.
+message UpdateRequest {
+  int32 left = 1;
+  int32 top = 2;
+}
+
+// See `Update`.
+message UpdateResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+// See `Position`.
+message PositionRequest {}
+
+// See `Position`.
+message PositionResponse {
+  int32 left = 1;
+  int32 top = 2;
+}
+
+////////////////////////////////////////////////////////////////////////

@@ -1,0 +1,247 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Item
+
+A generic data type used to pass and retrieve your data from Reboot standard libraries.
+For example, `Item` is used to enqueue and dequeue your data from [`Queue`](/library_services/queue)s.
+It is not meant as a stand alone library, but rather a convenience type for marshalling and unmarshalling data.
+
+There are three ways of formatting data for an `Item`.
+  * `Value` represents a dynamically typed value which can be either null, a
+    number, a string, a boolean, a recursive struct value, or a list of values.
+    A producer of value is expected to set one of that variants, absence of any
+    variant indicates an error. This type is meant to represent all possible JSON values.
+  * `bytes` is used to store a string of `bytes`.
+  * `Any` refers to the `Any` protobuf and is the best choice if you are using protobufs
+    to structure your data.
+
+
+## Imports
+
+To use `Item`s in Python, import the library where you would like to use it. In
+Typescript, the type will be inferred.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/item/v1/item_tests.py&lines=19-19) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/item/v1/item_tests.py -->
+
+```py
+from reboot.std.item.v1.item import Item
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+// No import necessary.
+```
+  </TabItem>
+</Tabs>
+
+Since this is a data type that is not stored individually, you do not need a servicer for it.
+
+
+## Value
+
+`Value` is the recommended way to use `Item` if you have structured data that is
+not already a string of `bytes` or a protobuf.
+
+To marshal your data
+* in Python, you can use helper methods from `reboot.protobuf`
+* in TypeScript, you can use [@bufbuild/protobuf](https://www.npmjs.com/package/@bufbuild/protobuf).
+
+You'll need the additional import:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/item/v1/item_tests.py&lines=5-16) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/item/v1/item_tests.py -->
+
+```py
+from reboot.protobuf import (
+    as_bool,
+    as_dict,
+    as_int,
+    as_list,
+    as_str,
+    from_bool,
+    from_dict,
+    from_int,
+    from_list,
+    from_str,
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/item/v1/item_tests.ts&lines=5-5) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/item/v1/item_tests.ts -->
+
+```ts
+import { Value } from "@bufbuild/protobuf";
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+Then you can use it to store and retrieve your data from `Item`s as follows:
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/item/v1/item_tests.py&lines=29-42) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/item/v1/item_tests.py -->
+
+```py
+item = Item(value=from_bool(True))
+print(as_bool(item.value))
+
+item = Item(value=from_int(3))
+print(as_int(item.value))
+
+item = Item(value=from_str("apple"))
+print(as_str(item.value))
+
+item = Item(value=from_list(["a", "b", "c"]))
+print(as_list(item.value))
+
+item = Item(value=from_dict({"details": "details-go-here"}))
+print(as_dict(item.value))
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/item/v1/item_tests.ts&lines=17-30) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/item/v1/item_tests.ts -->
+
+```ts
+item = { value: Value.fromJson(true) };
+console.log(item.value?.toJson());
+
+item = { value: Value.fromJson(1) };
+console.log(item.value?.toJson());
+
+item = { value: Value.fromJson("apple") };
+console.log(item.value?.toJson());
+
+item = { value: Value.fromJson(["a", "b", "c"]) };
+console.log(item.value?.toJson());
+
+item = { value: Value.fromJson({ details: "details-go-here" }) };
+console.log(item.value?.toJson());
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+
+## bytes
+
+If your data is formatted as a string of `bytes`, you can directly store
+that into an `Item`.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/item/v1/item_tests.py&lines=50-51) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/item/v1/item_tests.py -->
+
+```py
+item = Item(bytes=b"some-bytes")
+print(item.bytes)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/item/v1/item_tests.ts&lines=39-40) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/item/v1/item_tests.ts -->
+
+```ts
+const item = { bytes: new TextEncoder().encode("some-bytes") };
+console.log(item.bytes);
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+
+##  Any
+
+If you use protobufs to format your data, you can directly store that
+into an `Item`.
+
+To pack and unpack from an `Any` protobuf,
+* in Python, you can use helper methods from `reboot.protobuf`
+* in TypeScript, you can use [@bufbuild/protobuf](https://www.npmjs.com/package/@bufbuild/protobuf) v1.
+
+You'll need the additional import:
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/item/v1/item_tests.py&lines=17-17) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/item/v1/item_tests.py -->
+
+```py
+from reboot.protobuf import pack, unpack
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/item/v1/item_tests.ts&lines=3-3) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/item/v1/item_tests.ts -->
+
+```ts
+import { Any, createRegistry } from "@bufbuild/protobuf";
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+Then you can use it to store and retrieve your protobufs from `Item`s as follows:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/item/v1/item_tests.py&lines=67-69) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/item/v1/item_tests.py -->
+
+```py
+item = Item(any=pack(message))
+
+unpacked_message = unpack(item.any, SomeMessage)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/item/v1/item_tests.ts&lines=53-58) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/item/v1/item_tests.ts -->
+
+```ts
+const message = new SomeMessage(contents);
+
+const item = { any: Any.pack(message) };
+
+const registry = createRegistry(SomeMessage);
+const unpackedMessage = item.any.unpack(registry) as SomeMessage;
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>

@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package hello.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service HelloMethods {
+  rpc Send(SendRequest) returns (SendResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
+
+message Hello {
+  option (rbt.v1alpha1.state) = {
+  };
+}
+message SendRequest {}
+
+message SendResponse {}

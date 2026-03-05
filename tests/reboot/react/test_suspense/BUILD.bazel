@@ -1,0 +1,70 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tests/reboot/react:py_web_test_suite_env.bzl", "py_web_test_suite_env")
+
+ts_project(
+    name = "index_ts",
+    srcs = [
+        "index.tsx",
+    ],
+    tsconfig = "//tests/reboot/react:tsconfig",
+    deps = [
+        "//:node_modules/@reboot-dev/reboot-react",
+        "//:node_modules/@reboot-dev/reboot-web",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//rbt/v1alpha1:tasks_js_proto",
+        "//tests/reboot:bank_js_reboot_react",
+    ],
+)
+
+esbuild(
+    name = "bundle",
+    srcs = [
+        ":index_ts",
+    ],
+    entry_point = "index.js",
+    format = "esm",
+    platform = "browser",
+)
+
+py_library(
+    name = "test_py",
+    testonly = True,
+    srcs = ["test.py"],
+    data = [
+        ":bundle",
+    ],
+    visibility = ["//tests:__subpackages__"],
+    deps = [
+        "//reboot/aio:external_py",
+        "//reboot/aio:idempotency_py",
+        "//tests/reboot:bank_py",
+        "//tests/reboot/react:web_driver_runner",
+    ],
+)
+
+py_web_test_suite_env(
+    name = "test_against_local_envoy_py",
+    srcs = ["test_against_local_envoy.py"],
+    browsers = [
+        "@io_bazel_rules_webtesting//browsers:chromium-local",
+    ],
+    local = True,
+    main = "test_against_local_envoy.py",
+    # This test is not supported on macOS; see:
+    #   https://github.com/reboot-dev/mono/issues/4067.
+    py_test_tags = [
+        "macos_not_supported",
+        "requires-linux-x86",
+    ],
+    tags = [
+        "macos_not_supported",
+        "requires-linux-x86",
+    ],
+    deps = [
+        ":test_py",
+        "//tests/reboot/react:test_against_local_envoy_py",
+    ],
+)

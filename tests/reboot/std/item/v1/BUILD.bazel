@@ -1,0 +1,50 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//reboot/nodejs:rules.bzl", "js_reboot_test")
+
+py_test(
+    name = "item_tests_py",
+    srcs = [":item_tests.py"],
+    main = "item_tests.py",
+    deps = [
+        "//reboot:protobuf_py",
+        "//reboot/aio:tests_py",
+        "//reboot/std/item/v1:item_py",
+        "//tests/reboot:greeter_py_reboot",
+    ],
+)
+
+ts_project(
+    name = "item_tests_ts",
+    srcs = [
+        "item_tests.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-std",
+        "//:node_modules/@types/node",
+        "//tests/reboot:greeter_js_proto",
+        "//tests/reboot:greeter_js_reboot",
+    ],
+)
+
+js_reboot_test(
+    name = "test_item_tests_ts",
+    data = [
+        ":item_tests_ts",
+    ],
+    entry_point = "item_tests.js",
+    visibility = ["//visibility:public"],
+)

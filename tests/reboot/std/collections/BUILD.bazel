@@ -1,0 +1,61 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//reboot/nodejs:rules.bzl", "js_reboot_test")
+
+py_test(
+    name = "sorted_map_tests_py",
+    srcs = [":sorted_map_tests.py"],
+    main = "sorted_map_tests.py",
+    deps = [
+        # Even though `grpcio` is not a direct dependency, we _must_ have this
+        # "requirement" here listed first, or the PYTHONPATH will point at the
+        # wrong `grpcio` path first (i.e. it'll use the one from the outdated
+        # `com_github_grpc_grpc`).
+        requirement("grpcio"),
+        "//reboot/aio/auth:authorizers_py",
+        "//reboot/admin:export_import_client_py",
+        "//reboot/aio:tests_py",
+        "//reboot/std/collections/v1:sorted_map_py",
+        "//tests/reboot:general_boilerplate_py_reboot",
+        "//reboot/aio:external_py",
+        "//reboot/ssl:localhost_py",
+    ],
+)
+
+ts_project(
+    name = "sorted_map_tests_ts",
+    srcs = [
+        "sorted_map_tests.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-std",
+        "//:node_modules/@types/node",
+        # TODO: Although these dependencies are not used, the test will fail to
+        # build without them, claiming that something hasn't been declared a
+        # module.
+        "//tests/reboot:greeter_js_proto",
+        "//tests/reboot:greeter_js_reboot",
+    ],
+)
+
+js_reboot_test(
+    name = "test_sorted_map_tests_ts",
+    data = [
+        ":sorted_map_tests_ts",
+    ],
+    entry_point = "sorted_map_tests.js",
+    visibility = ["//visibility:public"],
+)

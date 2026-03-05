@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/test_reboot_proto_desc_set/tests.proto";
+import "tests/test_reboot_proto_desc_set/beans.proto";
+
+package tests.test_reboot_proto_desc_set;
+
+// The proto message used as the state message for the reboot service.
+message Greeter {
+  option (rbt.v1alpha1.state) = {
+  };
+  string title = 1;
+  string name = 2;
+  string adjective = 3;
+  repeated string signatures = 4;
+}
+
+message GreetRequest {
+  BeanMessage bean = 1;
+}
+
+message GreetResponse {
+  TestMessage test = 1;
+}
+
+service GreeterMethods {
+  rpc Greet(GreetRequest) returns (GreetResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}

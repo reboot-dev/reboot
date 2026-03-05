@@ -1,0 +1,70 @@
+load(
+    "@com_github_reboot_dev_reboot//reboot:rules.bzl",
+    "js_proto_library",
+    "js_reboot_library",
+    "js_reboot_react_library",
+    "py_reboot_library",
+)
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+
+proto_library(
+    name = "subscriber_proto",
+    srcs = [
+        ":subscriber.proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "subscriber_py_reboot",
+    proto = "subscriber.proto",
+    proto_library = ":subscriber_proto",
+    visibility = ["//visibility:public"],
+)
+
+js_proto_library(
+    name = "subscriber_js_proto",
+    package_json = ":package.json",
+    proto = "subscriber.proto",
+    proto_deps = [
+        ":subscriber_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+js_reboot_library(
+    name = "subscriber_js_reboot",
+    srcs = [
+        ":subscriber_proto",
+    ],
+    proto = "subscriber.proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":subscriber_js_proto",
+    ],
+)
+
+js_reboot_react_library(
+    name = "subscriber_js_reboot_react",
+    srcs = [
+        ":subscriber_js_proto",
+    ],
+    proto = "subscriber.proto",
+    proto_deps = [
+        ":subscriber_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+    visibility = ["//visibility:public"],
+)

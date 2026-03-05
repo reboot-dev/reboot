@@ -1,0 +1,58 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config", "ts_project")
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+ts_project(
+    name = "clicker_ts",
+    srcs = [
+        "App.module.css",
+        "App.tsx",
+        "css-modules.d.ts",
+        "main.tsx",
+    ],
+    tsconfig = ":tsconfig",
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@modelcontextprotocol/ext-apps",
+        "//:node_modules/@modelcontextprotocol/sdk",
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@reboot-dev/reboot-react",
+        "//:node_modules/@reboot-dev/reboot-web",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/uuid",
+        "//:node_modules/zod",
+        "//rbt/v1alpha1:tasks_js_proto",
+        "//reboot/ping:ping_js_reboot_react",
+    ],
+)
+
+# NOTE: `ts_project` copies source `.tsx` files alongside the
+# compiled `.js` outputs. Without an explicit `tsconfig`,
+# esbuild resolves `./App` to `App.tsx` (preferring `.tsx`
+# over `.js`) and re-compiles it with its default *classic*
+# JSX transform (`React.createElement`), causing a runtime
+# `React is not defined` error. Passing the same tsconfig
+# tells esbuild to use the *automatic* JSX runtime
+# (`jsx: "react-jsx"` → `_jsx` from `react/jsx-runtime`).
+esbuild(
+    name = "clicker_bundle",
+    srcs = [":clicker_ts"],
+    bazel_sandbox_plugin = False,
+    entry_point = "main.js",
+    format = "esm",
+    output = "clicker_bundle.js",
+    output_css = "clicker_bundle.css",
+    platform = "browser",
+    tsconfig = "tsconfig.json",
+    visibility = ["//reboot/ping:__pkg__"],
+)
+
+exports_files(
+    ["index.html"],
+    visibility = ["//reboot/ping:__pkg__"],
+)

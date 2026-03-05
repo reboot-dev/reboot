@@ -1,0 +1,10 @@
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "test_py",
+    srcs = ["test.py"],
+    main = "test.py",
+    deps = [
+        "//reboot:api_py",
+    ],
+)

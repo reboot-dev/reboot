@@ -1,0 +1,12 @@
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "tests_py",
+    srcs = [":tests.py"],
+    main = "tests.py",
+    deps = [
+        "//reboot/aio:external_py",
+        "//reboot/aio:tests_py",
+        "//reboot/thirdparty/mailgun:servicers_py",
+    ],
+)

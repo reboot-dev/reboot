@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package tests.reboot.nodejs.nested_messages_test;
+
+import "rbt/v1alpha1/options.proto";
+import "google/protobuf/empty.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service HelloMethods {
+  // Returns the current list of recorded messages.
+  // Also test that we can correctly generate code, that accepts external proto
+  // messages.
+  rpc Messages(google.protobuf.Empty) returns (Base.MessagesResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  // Adds a new message to the list of recorded messages.
+  rpc Send(OtherBase.Inner.SendRequest) returns (OtherBase.Inner.SendResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
+
+message Hello {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated string messages = 2;
+}
+
+message Base {
+  message MessagesResponse {
+    repeated string messages = 1;
+  }
+}
+
+message OtherBase {
+  message Inner {
+    message SendRequest {
+      string message = 1;  // E.g. "Hello, World".
+    }
+
+    message SendResponse {}
+  }
+}

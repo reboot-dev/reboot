@@ -1,0 +1,33 @@
+{
+  "name": "mcp-counter-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build:clicker": "vite build --mode clicker",
+    "build:watch:clicker": "vite build --mode clicker --watch",
+    "build:dashboard": "vite build --mode dashboard",
+    "build:watch:dashboard": "vite build --mode dashboard --watch",
+    "build": "tsc --noEmit && npm run build:clicker && npm run build:dashboard",
+    "build:watch": "concurrently \"npm:build:watch:*\""
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.0.1",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@reboot-dev/reboot-react": "^0.44.0",
+    "@reboot-dev/reboot-api": "^0.44.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.67",
+    "@types/react-dom": "^18.2.22",
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.1.2",
+    "typescript": "^5.9.2",
+    "vite": "^6.3.5",
+    "vite-plugin-singlefile": "^2.0.3"
+  }
+}

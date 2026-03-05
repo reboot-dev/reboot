@@ -1,0 +1,44 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_pkg//:pkg.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:pip.bzl", "compile_pip_requirements")
+
+# Run 'bazel run tests:requirements.update' to update the lock file.
+compile_pip_requirements(
+    name = "requirements",
+    src = ":requirements.in",
+    requirements_txt = ":requirements_lock.txt",
+)
+
+py_library(
+    name = "settings_py",
+    testonly = True,
+    srcs = ["settings.py"],
+    visibility = [
+        "//visibility:public",
+    ],
+)
+
+py_library(
+    name = "grpc_testing",
+    testonly = True,
+    srcs = ["grpc_testing.py"],
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        requirement("grpcio"),
+        "//reboot/grpc:options_py",
+    ],
+)
+
+pkg_tar(
+    name = "py_requirements",
+    srcs = ["requirements_lock.txt"],
+    mode = "0644",
+    package_dir = "/etc",
+)
+
+exports_files(
+    ["sh_test_in_working_directory_launcher.sh"],
+)

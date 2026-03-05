@@ -1,0 +1,167 @@
+load("@com_github_reboot_dev_reboot//bazel:oci_image.bzl", "py_oci_image")
+load(
+    "@com_github_reboot_dev_reboot//reboot:pydantic_to_proto.bzl",
+    "js_reboot_react_library_from_pydantic",
+    "py_reboot_library_from_pydantic",
+)
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "ping_api_py",
+    srcs = ["ping_api.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//reboot:api_py",
+    ],
+)
+
+py_reboot_library_from_pydantic(
+    name = "ping_py_reboot",
+    py_deps = [
+        ":ping_api_py",
+    ],
+    pydantic = ":ping_api.py",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "ping_py",
+    srcs = ["ping.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":ping_py_reboot",
+        "//reboot/aio:applications_py",
+        requirement("mcp"),
+        "@com_github_reboot_dev_reboot//reboot/aio:tasks_py",
+    ],
+)
+
+py_oci_image(
+    name = "ping",
+    srcs = [
+        "ping.py",
+    ],
+    base = "//:envoy_base_image",
+    env = {
+        # Don't buffer stdout/stderr so we can better distinguish
+        # when a pod failed to start vs when it crashed after
+        # starting.
+        "PYTHONUNBUFFERED": "1",
+    },
+    main = "ping.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":ping_py",
+    ],
+)
+
+# --- Frontend (MCP clicker app) ---
+#
+# The TypeScript compilation and bundling live in
+# `//reboot/ping/web/ui/clicker`. The targets below must remain
+# here because they reference files in *this* package:
+#
+# - `js_reboot_react_library_from_pydantic` reads
+#   `ping_api.py` and `package.json`, which both live here.
+#
+# - `clicker_dist` must output to
+#   `web/dist/ui/clicker/index.html` relative to this
+#   package, because the MCP framework's `ui_html()`
+#   discovers that file by walking up from `ping.py` (see
+#   `reboot/mcp/ui.py`). A Bazel `genrule` can
+#   only write outputs within its own package directory.
+
+# Generate React hooks from the Pydantic API definition.
+# These are consumed by `//reboot/ping/web/ui/clicker:clicker_ts`.
+js_reboot_react_library_from_pydantic(
+    name = "ping_js_reboot_react",
+    package_json = ":package.json",
+    pydantic = ":ping_api.py",
+    visibility = [
+        "//reboot/ping/web/ui/clicker:__pkg__",
+        "//reboot/ping/web/ui/pinger:__pkg__",
+    ],
+)
+
+# Inline the JS and CSS bundles into the HTML template to
+# produce a single self-contained file. The MCP framework
+# serves this file directly from
+# `web/dist/apps/{app_name}/index.html` (see
+# `ui_html` in `reboot/mcp/ui.py`) and has
+# no static-file server for separate `.js`/`.css` assets.
+# In the normal (non-Bazel) workflow Vite handles this
+# inlining, but under Bazel we only have the esbuild
+# bundles, so we do it ourselves.
+genrule(
+    name = "clicker_dist",
+    srcs = [
+        "//reboot/ping/web/ui/clicker:clicker_bundle.css",
+        "//reboot/ping/web/ui/clicker:clicker_bundle.js",
+        "//reboot/ping/web/ui/clicker:index.html",
+    ],
+    outs = ["web/dist/ui/clicker/index.html"],
+    cmd = """
+        python3 -c "
+import sys
+html = open(sys.argv[1]).read()
+css = open(sys.argv[2]).read()
+js = open(sys.argv[3]).read()
+style = '<style>' + css + '</style>'
+script = '<script type=\"module\">' + js + '</script>'
+out = html.replace('<!-- BUNDLE_PLACEHOLDER -->', style + script)
+open(sys.argv[4], 'w').write(out)
+" $(location //reboot/ping/web/ui/clicker:index.html) $(location //reboot/ping/web/ui/clicker:clicker_bundle.css) $(location //reboot/ping/web/ui/clicker:clicker_bundle.js) $@
+    """,
+)
+
+genrule(
+    name = "pinger_dist",
+    srcs = [
+        "//reboot/ping/web/ui/pinger:pinger_bundle.css",
+        "//reboot/ping/web/ui/pinger:pinger_bundle.js",
+        "//reboot/ping/web/ui/pinger:index.html",
+    ],
+    outs = ["web/dist/ui/pinger/index.html"],
+    cmd = """
+        python3 -c "
+import sys
+html = open(sys.argv[1]).read()
+css = open(sys.argv[2]).read()
+js = open(sys.argv[3]).read()
+style = '<style>' + css + '</style>'
+script = '<script type=\"module\">' + js + '</script>'
+out = html.replace('<!-- BUNDLE_PLACEHOLDER -->', style + script)
+open(sys.argv[4], 'w').write(out)
+" $(location //reboot/ping/web/ui/pinger:index.html) $(location //reboot/ping/web/ui/pinger:pinger_bundle.css) $(location //reboot/ping/web/ui/pinger:pinger_bundle.js) $@
+    """,
+)
+
+# The following binary target is particularly useful with
+# `ibazel` for iterative development on a live Reboot app! Run:
+#   ibazel run //reboot/ping:ping_py_bin
+# Then access the app at e.g.:
+#   http://localhost:9991/__/inspect
+py_binary(
+    name = "ping_py_bin",
+    srcs = ["ping.py"],
+    data = [
+        ":clicker_dist",
+        ":pinger_dist",
+    ],
+    env = {
+        # Pretend that we're running `rbt dev`.
+        "RBT_DEV": "true",
+        "RBT_NAME": "ping",
+        "RBT_SERVERS": "2",
+        "RBT_STATE_DIRECTORY": "/tmp/ping",
+        "REBOOT_LOCAL_ENVOY": "true",
+        "REBOOT_LOCAL_ENVOY_PORT": "9991",
+        "REBOOT_LOCAL_ENVOY_USE_TLS": "False",
+    },
+    main = "ping.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":ping_py",
+    ],
+)

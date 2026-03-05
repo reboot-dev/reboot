@@ -1,0 +1,59 @@
+load(
+    "@com_github_reboot_dev_reboot//reboot:rules.bzl",
+    "js_proto_library",
+    "js_reboot_library",
+    "py_reboot_library",
+)
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+
+proto_library(
+    name = "pubsub_proto",
+    srcs = [
+        ":pubsub.proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//rbt/std/item/v1:item_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:descriptor_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "pubsub_py_reboot",
+    proto = "pubsub.proto",
+    proto_library = ":pubsub_proto",
+    visibility = ["//visibility:public"],
+)
+
+js_proto_library(
+    name = "pubsub_js_proto",
+    package_json = ":package.json",
+    proto = "pubsub.proto",
+    proto_deps = [
+        ":pubsub_proto",
+        "//rbt/std/item/v1:item_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:descriptor_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+js_reboot_library(
+    name = "pubsub_js_reboot",
+    srcs = [
+        ":pubsub_proto",
+    ],
+    proto = "pubsub.proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pubsub_js_proto",
+    ],
+)

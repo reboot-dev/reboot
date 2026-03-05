@@ -2,6 +2,8 @@
 name: Release Charts
 
 on:
+  # TODO(rjh): we don't want to release our charts on push to main, but
+  #            as part of the release workflow.
   push:
     branches:
       - main

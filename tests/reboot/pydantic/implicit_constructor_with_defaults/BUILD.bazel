@@ -1,0 +1,38 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//reboot:pydantic_to_proto.bzl", "py_reboot_library_from_pydantic")
+
+py_library(
+    name = "servicer_api_py",
+    srcs = ["servicer_api.py"],
+    deps = [
+        "//reboot:api_py",
+    ],
+)
+
+py_reboot_library_from_pydantic(
+    name = "servicer_py_reboot",
+    py_deps = [
+        ":servicer_api_py",
+    ],
+    pydantic = ":servicer_api.py",
+)
+
+py_library(
+    name = "servicer_py",
+    srcs = ["servicer.py"],
+    deps = [
+        ":servicer_api_py",
+        ":servicer_py_reboot",
+    ],
+)
+
+py_test(
+    name = "test_py",
+    srcs = ["test.py"],
+    main = "test.py",
+    deps = [
+        ":servicer_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:tests_py",
+    ],
+)

@@ -13,6 +13,7 @@ message Context {
   optional string cookie = 5;
   bool app_internal = 6;
   optional bytes auth = 7;
+  optional string workflow_id = 8;
 }
 
 ////////////////////////////////////////////////////////////////////////

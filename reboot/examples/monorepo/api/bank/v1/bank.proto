@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package bank.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+import "bank/v1/errors.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service BankMethods {
+  rpc SignUp(SignUpRequest) returns (SignUpResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  rpc Transfer(TransferRequest) returns (TransferResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+      errors: [ "OverdraftError" ],
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Bank {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated string account_ids = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message SignUpRequest {
+  string customer_name = 1;
+}
+
+message SignUpResponse {
+  // The ID of the account that has just been opened for the customer.
+  string account_id = 1;
+}
+
+message TransferRequest {
+  string from_account_id = 1;
+  string to_account_id = 2;
+  int64 amount = 3;
+}
+
+message TransferResponse {}

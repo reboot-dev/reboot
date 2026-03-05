@@ -1,0 +1,1835 @@
+/* eslint-disable */
+// @ts-nocheck
+
+"use client";
+
+import * as protobuf_es from "@bufbuild/protobuf";
+{% if google_protobuf_used_messages is defined and google_protobuf_used_messages|length > 0%}
+import {
+  {{ google_protobuf_used_messages|join(', \n	') }}
+} from "@bufbuild/protobuf";
+{% endif %}
+import * as reboot_react from "@reboot-dev/reboot-react";
+import * as reboot_web from "@reboot-dev/reboot-web";
+import * as reboot_api from "@reboot-dev/reboot-api";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { v4 as uuidv4 } from "uuid";
+{# Check if any methods have MCP tool options for write operations. #}
+{% set mcp_ns = namespace(has_mcp_tools=false) %}
+{% for client in clients %}
+{% for service in client.services %}
+{% for method in service.methods %}
+{% if method.options.proto.mcp and method.options.proto.mcp.tool and method.options.proto.kind in ['writer', 'transaction'] %}
+{% set mcp_ns.has_mcp_tools = true %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% endfor %}
+{% if mcp_ns.has_mcp_tools %}
+import type { App as McpApp } from "@modelcontextprotocol/ext-apps/react";
+import { useMcpApp, useMcpToolData } from "@reboot-dev/reboot-react/internal";
+{% endif %}
+{% if proto.messages_and_enums|length > 0 or states|length > 0 %}
+// NOTE NOTE NOTE
+//
+// If you are reading this comment because you are trying to debug
+// the error:
+//
+// Module not found: Error: Can't resolve './{{ pb_name }}.js'
+//
+// You can resolve this by passing --react-extensions to `rbt
+// generate` (or better put it in your `.rbtrc` file).
+//
+// This is a known issue if you're using `webpack` which uses
+// `ts-loader` (https://github.com/TypeStrong/ts-loader/issues/465).
+import {
+  {# Since we are creating a new class named {{ state.proto.name }}, we
+   cannot import it from {{ pb_name }}.js as it would conflict. Instead
+   we alias it inside this file and export that type as {{
+   state.proto.name }}.State for developers to use. When a user is
+   using Zod {{ state.proto.name }}.State aliases to their Zod type. #}
+  {% for state in states %}
+  {# NOTE: we already rewrite state types that are used in `method.input_type`
+   or `method.output_type` with a `Proto` suffix to not conflict with our
+   new class named {{ state.proto.name }}, so that is what we want to
+   import as. #}
+  {{ state.proto.name }} as {{ state.proto.name }}Proto,
+  {% endfor %}
+} from "./{{ pb_name }}{% if react_extensions %}.js{% endif %}";
+{# We import this because many `method.input_type` or `method.output_type` has
+already been converted to use `pb_name`. #}
+import * as {{ pb_name }} from "./{{ pb_name }}{% if react_extensions %}.js{% endif %}";
+{% if not options.proto.zod %}
+// Additionally re-export all messages_and_enums from the pb module.
+export {
+  {% for message in proto.messages_and_enums | unique | list %}
+  {{ message }},
+  {% endfor %}
+} from "./{{ pb_name }}{% if react_extensions %}.js{% endif %}";
+{% endif %}
+{% endif %}
+
+// It is important that the following is a function, so we can lazily
+// initialize the cache, so users who do not use offline cache do not
+// see any logs about its initialization.
+export const offlineCacheStorageType = (): reboot_web.OfflineCacheStorageType =>
+  reboot_web.offlineCache().offlineCacheStorageType;
+
+reboot_api.check_bufbuild_protobuf_library(protobuf_es.Message);
+
+{% for client in clients %}
+{% for service in client.services %}
+{% for method in service.methods %}
+{% if method.options.proto.kind in ['writer', 'transaction'] %}
+export type Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation = reboot_react.Mutation<{{ client.proto.state_name }}.{{ method.proto.name }}Request>;
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% endfor %}
+
+{% if imports|length > 0%}
+// Include all transitive imports.
+{% for import_path, unique_name in imports.items() %}
+import * as {{ unique_name }} from "{{ import_path }}{% if react_extensions %}.js{% endif %}";
+{% endfor %}
+{% endif %}
+
+{% if options.proto.zod %}
+import { z } from "zod/v4";
+import { api } from "{{ options.proto.zod }}{% if react_extensions %}.js{% endif %}";
+{% endif %}
+
+const ERROR_TYPES = [
+  // gRPC errors.
+  reboot_api.errors_pb.Cancelled,
+  reboot_api.errors_pb.Unknown,
+  reboot_api.errors_pb.InvalidArgument,
+  reboot_api.errors_pb.DeadlineExceeded,
+  reboot_api.errors_pb.NotFound,
+  reboot_api.errors_pb.AlreadyExists,
+  reboot_api.errors_pb.PermissionDenied,
+  reboot_api.errors_pb.ResourceExhausted,
+  reboot_api.errors_pb.FailedPrecondition,
+  reboot_api.errors_pb.Aborted,
+  reboot_api.errors_pb.OutOfRange,
+  reboot_api.errors_pb.Unimplemented,
+  reboot_api.errors_pb.Internal,
+  reboot_api.errors_pb.Unavailable,
+  reboot_api.errors_pb.DataLoss,
+  reboot_api.errors_pb.Unauthenticated,
+  // Reboot errors.
+  //
+  // NOTE: also add any new errors into `rbt/v1alpha1/index.ts`.
+  reboot_api.errors_pb.StateAlreadyConstructed,
+  reboot_api.errors_pb.StateNotConstructed,
+  reboot_api.errors_pb.TransactionParticipantFailedToPrepare,
+  reboot_api.errors_pb.TransactionParticipantFailedToCommit,
+  reboot_api.errors_pb.UnknownService,
+  reboot_api.errors_pb.UnknownTask,
+] as const; // Need `as const` to ensure TypeScript infers this as a tuple!
+
+{% for state in states %}
+{% for service in state.services %}
+{% for method in service.methods %}
+// Helper for getting the expected shape of a request, i.e., either a
+// Zod shape or a protobuf instance, from a protobuf shape.
+const {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape = (
+  partialRequest: protobuf_es.PartialMessage<{{ method.input_type }}>
+): {{ state.proto.name }}.{{ method.proto.name }}Request => {
+  // TOOD: update `protoToZod()` to actually work from
+  // any objects that match the shape, not just protobuf instances,
+  // and then we won't need to first call `fromJson()` here.
+  const request = partialRequest instanceof {{ method.input_type }}
+    ? partialRequest
+    : {{ method.input_type }}.fromJson(partialRequest);
+
+  {% if options.proto.zod %}
+  return reboot_api.validate(
+    "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request",
+    api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
+    reboot_api.protoToZod(
+      api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
+      request
+    )
+  );
+  {% else %}
+  return request;
+  {% endif %}
+};
+
+// Helper for getting the expected shape of a request, i.e., either a
+// Zod shape or a protobuf instance, from a JSON string.
+const {{ state.proto.name }}{{ method.proto.name }}RequestFromJsonString = (
+  jsonRequest: string
+): {{ state.proto.name }}.{{ method.proto.name }}Request => {
+  return {{ state.proto.name }}{{ method.proto.name }}RequestFromProtobufShape(
+    {{ method.input_type }}.fromJsonString(jsonRequest)
+  );
+};
+
+// Helper for getting a protobuf instance for a request from the
+// expected shape, i.e., either a Zod shape or a protobuf shape.
+const {{ state.proto.name }}{{ method.proto.name }}RequestToProtobuf = (
+  partialRequest?: {{ state.proto.name }}.Partial{{ method.proto.name }}Request
+): {{ method.input_type }} => {
+  return partialRequest instanceof {{ method.input_type }}
+    ? partialRequest
+    {% if options.proto.zod %}
+    : new {{ method.input_type }}().fromJson(
+      reboot_api.zodToProtoJson(
+        api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
+        reboot_api.validate(
+          "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request",
+          api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.request,
+          partialRequest || {}
+        )
+      )
+    );
+    {% else %}
+    : new {{ method.input_type }}(
+      partialRequest
+    );
+    {% endif %}
+};
+
+const {{ state.proto.name }}{{ method.proto.name }}ResponseFromProtobufShape = (
+  partialResponse: protobuf_es.PartialMessage<{{ method.output_type }}>
+) => {
+  // TOOD: update `protoToZod()` to actually work from
+  // any objects that match the shape, not just protobuf instances,
+  // and then we won't need to first call `fromJson()` here.
+  const response = partialResponse instanceof {{ method.output_type }}
+    ? partialResponse
+    : {{ method.output_type }}.fromJson(partialResponse);
+
+  {% if options.proto.zod %}
+  return reboot_api.validate(
+    "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response",
+    api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
+    reboot_api.protoToZod(
+      api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
+      response
+    )
+  );
+  {% else %}
+  return response;
+  {% endif %}
+};
+
+const {{ state.proto.name }}{{ method.proto.name }}ResponseToProtobuf = (
+  partialResponse?: {{ state.proto.name }}.Partial{{ method.proto.name }}Response
+): {{ method.output_type }} => {
+  return partialResponse instanceof {{ method.output_type }}
+    ? partialResponse
+    {% if options.proto.zod %}
+    : new {{ method.output_type }}().fromJson(
+      reboot_api.zodToProtoJson(
+        api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
+        reboot_api.validate(
+          "{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response",
+          api.{{ state.proto.name }}.methods.{{ method.proto.name | to_lower_camel }}.response,
+          partialResponse
+        )
+      )
+    );
+    {% else %}
+    : new {{ method.output_type }}(
+      partialResponse
+    );
+    {% endif %}
+};
+
+{% endfor %}
+{% endfor %}
+{% endfor %}
+
+{% for client in clients %}
+
+{% for service in client.services %}
+{% for method in service.methods %}
+export namespace {{ client.proto.state_name }} {
+  export type {{ method.proto.name }}Request =
+  {% if options.proto.zod %}
+  z.infer<
+    reboot_api.EnsureZodObject<
+      typeof api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.request
+      >
+    >;
+  {% else %}
+    {{ method.input_type }};
+  {% endif %}
+
+  export type Partial{{ method.proto.name }}Request =
+  {% if options.proto.zod %}
+  {{ method.proto.name }}Request;
+  {% else %}
+  protobuf_es.PartialMessage<{{ method.input_type }}>;
+  {% endif %}
+
+  export type {{ method.proto.name }}Response =
+  {% if options.proto.zod %}
+  z.infer<
+    reboot_api.EnsureZodObject<
+      typeof api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.response
+      >
+    >;
+  {% else %}
+  {{ method.output_type }};
+  {% endif %}
+
+  export type Partial{{ method.proto.name }}Response =
+  {% if options.proto.zod %}
+  {{ method.proto.name }}Response;
+  {% else %}
+  protobuf_es.PartialMessage<{{ method.output_type }}>;
+  {% endif %}
+}
+{% endfor %}
+{% endfor %}
+
+export interface {{ client.proto.state_name }}Mutators {
+  {% for service in client.services %}
+  {% for method in service.methods %}
+  {% if method.options.proto.kind in ['writer', 'transaction'] %}
+  {{ method.proto.name | to_lower_camel }}: {
+    // Mutators are functions and can be called directly.
+    (partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
+     options?: { metadata?: any, idempotencyKey?: string }
+    ): Promise<
+      reboot_web.ResponseOrAborted<
+        {{ client.proto.state_name }}.{{ method.proto.name }}Response,
+        {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
+      >>;
+
+    pending: Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation[];
+  };
+  {% endif %}
+  {% endfor %}
+  {% endfor %}
+}
+
+export interface {{ client.proto.state_name }}Idempotently {
+  {% for service in client.services %}
+  {% for method in service.methods %}
+  {% if method.options.proto.kind in ['writer', 'transaction'] %}
+  {{ method.proto.name | to_lower_camel }}: {
+    // Idempotent calls are functions and can be called directly.
+    (partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
+     options?: { metadata?: any }
+    ): Promise<
+      reboot_web.ResponseOrAborted<
+        {{ client.proto.state_name }}.{{ method.proto.name }}Response,
+        {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
+      >>;
+
+    pending: Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation[];
+  };
+  {% endif %}
+  {% endfor %}
+  {% endfor %}
+}
+
+{# TODO: do not generate errors in react, nodejs, and web. #}
+{% for service in client.services %}
+{% for method in service.methods %}
+
+{% if options.proto.zod %}
+{% if method.options.errors | length != 0 %}
+const {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema: typeof api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors extends z.ZodDiscriminatedUnion ? typeof api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors : ReturnType<typeof z.discriminatedUnion<typeof api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors>> =
+  api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors instanceof z.ZodDiscriminatedUnion
+    ? api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors
+    // In order to types to properly be exposed
+    // 'api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors' must be defined with `as const`.
+    //
+    // TODO: eliminate this requirement for developers by indexing
+    // all of the errors in the code generation since we can determine
+    // how many there are.
+    : z.discriminatedUnion("type", api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors);
+{% endif %}
+{% endif %}
+
+const {{ client.proto.state_name | to_screaming_snake }}_{{ method.proto.name | to_screaming_snake }}_ERROR_TYPES = [
+  ...ERROR_TYPES,
+
+  // Method errors.
+  {% for type in method.options.errors.values() %}
+  {{ type }},
+  {% endfor %}
+] as const; // Need `as const` to ensure TypeScript infers this as a tuple!
+
+export type {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}AbortedError =
+  reboot_api.InstanceTypeForErrorTypes<
+    typeof {{ client.proto.state_name | to_screaming_snake }}_{{ method.proto.name | to_screaming_snake }}_ERROR_TYPES
+  >[number];
+
+export class {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted extends reboot_api.Aborted {
+  static fromStatus(status: reboot_api.Status) {
+    let error = reboot_api.errorFromGoogleRpcStatusDetails(
+      status,
+      {{ client.proto.state_name | to_screaming_snake }}_{{ method.proto.name | to_screaming_snake }}_ERROR_TYPES,
+    );
+
+    if (error !== undefined) {
+      return new {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
+        error, { message: status.message }
+      );
+    }
+
+    error = reboot_api.errorFromGoogleRpcStatusCode(status);
+
+    // TODO(benh): also consider getting the type names from
+    // `status.details` and including that in `message` to make
+    // debugging easier.
+
+    return new {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
+      error, { message: status.message }
+    );
+  }
+
+  public toStatus(): reboot_api.Status {
+    const isObject = (value: unknown): value is object => {
+      return typeof value === 'object';
+    };
+
+    const isArray = (value: unknown): value is any[]  => {
+      return Array.isArray(value);
+    };
+
+    const error = this.#error.toJson();
+
+    if (!isObject(error) || isArray(error)) {
+      throw new Error("Expecting 'error' to be an object (and not an array)");
+    }
+
+    const detail = { ...error };
+    detail["@type"] = `type.googleapis.com/${this.#error.getType().typeName}`;
+
+    return new reboot_api.Status({
+      code: this.code,
+      message: this.#message,
+      details: [detail]
+    });
+  }
+
+  constructor(
+    error: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}AbortedError{% if options.proto.zod %}{% if method.options.errors | length != 0 %} | z.infer<typeof {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema>{% endif %} | z.infer<typeof reboot_api.ZOD_ERRORS>{% endif %},
+    { message }: { message?: string } = {}
+  ) {
+    super();
+
+    // Set the name of this error for even more information!
+    this.name = this.constructor.name;
+
+    {% if options.proto.zod %}
+    if (error instanceof protobuf_es.Message) {
+      this.#error = error;
+    } else if (!("type" in error)) {
+      throw new Error("Expecting discriminator 'type' in error");
+    } else if (reboot_api.ZOD_ERROR_NAMES.includes(error.type)) {
+      this.#error = reboot_api.errorFromZodError(error);
+    } else {
+      {% if method.options.errors | length != 0 %}
+      this.#error = {{ pb_name }}.{{ client.proto.state_name }}{{ method.proto.name }}Errors.fromJson(
+        reboot_api.zodToProtoJson(
+          {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
+          reboot_api.validate(
+            "api.{{ client.proto.state_name }}.methods.{{ method.proto.name | to_lower_camel }}.errors",
+            {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
+            error
+          )
+        )
+      );
+      {% else %}
+      throw new Error(`Unknown 'type' discriminator '${error.type}' in error`);
+      {% endif %}
+    }
+    {% else %}
+    this.#error = error;
+    {% endif %}
+
+    let code = reboot_api.grpcStatusCodeFromError(this.#error);
+
+    if (code === undefined) {
+      // Must be one of the Reboot specific errors.
+      code = reboot_api.StatusCode.ABORTED;
+    }
+
+    this.code = code;
+
+    this.#message = message;
+  }
+
+  toString(): string {
+    return `${this.name}: ${this.message}`;
+  }
+
+  get message(): string {
+    return `${this.#error.getType().typeName}${this.#message ? ": " + this.#message : ""}`;
+  }
+
+  get error(){% if options.proto.zod %}: {% if method.options.errors | length != 0 %}z.infer<typeof {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema> | {% endif %}z.infer<typeof reboot_api.ZOD_ERRORS>{% endif %} {
+    reboot_api.assert(this.#error instanceof protobuf_es.Message);
+    {% if options.proto.zod %}
+    {% if method.options.errors | length != 0 %}
+    if (this.#error instanceof {{ pb_name }}.{{ client.proto.state_name }}{{ method.proto.name }}Errors) {
+      return reboot_api.protoToZod(
+        {{ client.proto.state_name }}{{ method.proto.name }}ErrorsSchema,
+        this.#error
+      );
+    }
+    {% endif %}
+    // Non-declared errors (e.g., gRPC errors).
+    return reboot_api.zodErrorFromError(this.#error);
+    {% else %}
+    return this.#error;
+    {% endif %}
+  }
+
+  readonly #error: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}AbortedError;
+  readonly code: reboot_api.StatusCode;
+  readonly #message?: string;
+}
+
+{% endfor %}
+{% endfor %}
+
+export interface Use{{ client.proto.state_name }}Api {
+  mutators: {{ client.proto.state_name }}Mutators;
+  idempotently: (args: { key: string }) => {{ client.proto.state_name }}Idempotently;
+  {% for service in client.services %}
+  {% for method in service.methods %}
+  {% if method.options.proto.kind in ["writer", "transaction"] %}
+  {{ method.proto.name | to_lower_camel }}: {
+    // Mutators are functions and can be called directly.
+    (partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
+     options?: { metadata?: any, idempotencyKey?: string }
+    ): Promise<
+      reboot_web.ResponseOrAborted<
+        {{ client.proto.state_name }}.{{ method.proto.name }}Response,
+        {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
+      >>;
+
+    pending: Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation[];
+  };
+  {% endif %}
+  {% if method.options.proto.kind == "reader" %}
+  {% if not method.proto.server_streaming and not method.proto.client_streaming %}
+  use{{ method.proto.name | to_camel }}(
+    partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request
+  ): {
+    response: {{ client.proto.state_name }}.{{ method.proto.name }}Response | undefined;
+    isLoading: boolean;
+    aborted: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted | undefined;
+  };
+  use{{ method.proto.name | to_camel }}(
+    partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
+    options?: { suspense: true }
+  ): {
+    response: {{ client.proto.state_name }}.{{ method.proto.name }}Response;
+    isLoading: boolean;
+    aborted: undefined;
+  } | {
+    response: undefined;
+    isLoading: boolean;
+    aborted: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted;
+  };
+  use{{ method.proto.name | to_camel }}(
+    partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
+    options?: { suspense: false }
+  ): {
+    response: {{ client.proto.state_name }}.{{ method.proto.name }}Response | undefined;
+    isLoading: boolean;
+    aborted: {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted | undefined;
+  };
+  {{ method.proto.name | to_lower_camel }}: (
+    partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
+    options?: { signal?: AbortSignal; retry?: boolean }
+  ) => Promise<
+    reboot_web.ResponseOrAborted<
+    {{ client.proto.state_name }}.{{ method.proto.name }}Response,
+    {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
+    >
+  >;
+  {% endif %}
+  {% endif %}
+  {% endfor %}
+  {% endfor %}
+}
+{% endfor %}
+
+{% for client in clients %}
+export interface SettingsParams {
+  id: string;
+  storeMutationsLocallyInNamespace?: string;
+}
+
+class {{ client.proto.state_name | to_camel }}Instance {
+
+  constructor(id: string, stateRef: string, url: string) {
+    this.id = id;
+    this.stateRef = stateRef;
+    this.url = url;
+    this.refs = 1;
+
+     reboot_web.websockets.connect(this.url, this.stateRef);
+    this.initializeWebSocket();
+  }
+
+  private ref() {
+    this.refs += 1;
+    return this.refs;
+  }
+
+  private unref() {
+    this.refs -= 1;
+
+    if (this.refs === 0 && this.websocket !== undefined) {
+      this.websocket.close();
+       reboot_web.websockets.disconnect(this.url, this.stateRef);
+    }
+
+    return this.refs;
+  }
+
+  readonly id: string;
+  readonly stateRef: string;
+  private url: string;
+  private refs: number;
+  private observers: reboot_react.Observers = {};
+  private loadingReaders = 0;
+  private runningMutates: reboot_react.Mutate[] = [];
+  private queuedMutates: reboot_react.Mutate[] = [];
+  private flushMutates?: reboot_api.Event = undefined;
+  private websocket?: WebSocket = undefined;
+  private backoff: reboot_api.Backoff = new reboot_api.Backoff();
+
+  private hasRunningMutations() {
+    return this.runningMutates.length > 0;
+  }
+
+  private async flushMutations() {
+    if (this.flushMutates === undefined) {
+      this.flushMutates = new reboot_api.Event();
+    }
+    await this.flushMutates.wait();
+  }
+
+  private readersLoadedOrFailed() {
+    this.flushMutates = undefined;
+
+    if (this.queuedMutates.length > 0) {
+      this.runningMutates = this.queuedMutates;
+      this.queuedMutates = [];
+
+      if (this.websocket?.readyState === WebSocket.OPEN) {
+        for (const { request, update } of this.runningMutates) {
+          update({ isLoading: true });
+          try {
+            this.websocket.send(request.toBinary());
+          } catch {
+            // We'll retry since we've stored in `*Mutates`.
+          }
+        }
+      }
+    }
+  }
+
+  private initializeWebSocket() {
+    if (this.websocket === undefined && this.refs > 0) {
+      const url = new URL(`${this.url}/__/reboot/rpc/${this.stateRef}`);
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+
+      this.websocket = reboot_web.websockets.create(url);
+
+      this.websocket.binaryType = "arraybuffer";
+
+      this.websocket.onopen = () => {
+        if (this.websocket?.readyState === WebSocket.OPEN) {
+          for (const { request, update } of this.runningMutates) {
+            update({ isLoading: true });
+            try {
+              this.websocket.send(request.toBinary());
+            } catch {
+              // We'll retry since we've stored in `*Mutates`.
+            }
+          }
+        }
+      };
+
+      this.websocket.onerror = async () => {
+        if (this.websocket !== undefined) {
+          this.websocket = undefined;
+
+          for (const { update } of this.runningMutates) {
+            update({ isLoading: false, error: "WebSocket disconnected" });
+          }
+
+          if (this.refs > 0) {
+            if (this.runningMutates.length > 0) {
+              console.warn(
+                `[Reboot] WebSocket disconnected, ${this.runningMutates.length} outstanding mutations will be retried when we reconnect`
+              );
+            }
+
+            await this.backoff.wait();
+
+            this.initializeWebSocket();
+          }
+        }
+      };
+
+      this.websocket.onclose = async () => {
+        if (this.websocket !== undefined) {
+          this.websocket = undefined;
+
+          for (const { update } of this.runningMutates) {
+            update({ isLoading: false, error: "WebSocket disconnected" });
+          }
+
+          if (this.refs > 0) {
+            await this.backoff.wait();
+
+            this.initializeWebSocket();
+          }
+        }
+      };
+
+      this.websocket.onmessage = async (event) => {
+        const { resolve } = this.runningMutates[0];
+        this.runningMutates.shift();
+
+        const response = reboot_api.react_pb.MutateResponse.fromBinary(
+          new Uint8Array(event.data)
+        );
+
+        resolve(response);
+
+        if (
+          this.flushMutates !== undefined &&
+          this.runningMutates.length === 0
+        ) {
+          this.flushMutates.set();
+        }
+      };
+    }
+  }
+
+  private async mutate(
+    partialRequest: protobuf_es.PartialMessage<reboot_api.react_pb.MutateRequest>,
+    update: (props: { isLoading: boolean; error?: any }) => void
+  ): Promise<reboot_api.react_pb.MutateResponse> {
+    const request = partialRequest instanceof reboot_api.react_pb.MutateRequest
+      ? partialRequest
+      : new reboot_api.react_pb.MutateRequest(partialRequest);
+
+    return new Promise((resolve, _) => {
+      if (this.loadingReaders === 0) {
+        this.runningMutates = this.runningMutates.concat({ request, resolve, update });
+        if (this.websocket?.readyState === WebSocket.OPEN) {
+          update({ isLoading: true });
+          try {
+            this.websocket.send(request.toBinary());
+          } catch {
+            // We'll retry since we've stored in `*Mutates`.
+          }
+        }
+      } else {
+        this.queuedMutates = this.queuedMutates.concat({ request, resolve, update });
+      }
+    });
+  }
+
+  private async read<
+    RequestType extends protobuf_es.Message<RequestType>,
+    ResponseType extends protobuf_es.Message<ResponseType>,
+    >(
+    method: string,
+    serializedRequest: Uint8Array,
+    bearerToken: string | undefined,
+    responseType: protobuf_es.MessageType<ResponseType>,
+    reader: reboot_react.Reader<ResponseType>
+  ) {
+    const queryRequest = new reboot_api.react_pb.QueryRequest({
+      method,
+      request: serializedRequest,
+      ...(bearerToken !== undefined && { bearerToken } || {}),
+    });
+
+    // Expected idempotency key we should observe due to a mutation.
+    interface Expected {
+      // Idempotency key of mutation.
+      idempotencyKey: string;
+
+      // Callback when we've observed this idempotency key.
+      observed: (callback: () => void) => Promise<void>;
+
+      // Callback when we no longer care about observing.
+      aborted: () => void;
+    }
+
+    let expecteds: Expected[] = [];
+
+    // When we disconnect we may not be able to observe
+    // responses due to mutations yet there may still be
+    // some outstanding responses that are expected which
+    // we treat as "orphans" in the sense that we won't
+    // observe their idempotency keys but once we reconnect
+    // we will still have observed their effects and can
+    // call `observed()` on them.
+    let orphans: Expected[] = [];
+
+    const id = `${uuidv4()}`;
+
+    this.observers[id] = {
+      observe: (
+        idempotencyKey: string,
+        observed: (callback: () => void) => Promise<void>,
+        aborted: () => void
+      ) => {
+        expecteds = expecteds.concat({ idempotencyKey, observed, aborted })
+      },
+      unobserve: (idempotencyKey: string) => {
+        expecteds = expecteds.filter(
+          expected => expected.idempotencyKey !== idempotencyKey
+        );
+
+        orphans = orphans.filter(
+          orphan => orphan.idempotencyKey !== idempotencyKey
+        );
+      }
+    };
+
+    try {
+      await reboot_api.retryForever(async () => {
+        let loaded = false;
+        this.loadingReaders += 1;
+
+        // Any mutations started after we've incremented
+        // `this.loadingReaders` will be queued until after
+        // all the readers have loaded and thus (1) we know all
+        // current `expected` are actually `orphans` that
+        // we will haved "observed" once we are (re)connected
+        // because we flush mutations before starting to read
+        // and (2) all queued mutations can stay in `expected`
+        // because we will in fact be able to observe them
+        // since they won't get sent over the websocket
+        // until after we are (re)connected.
+        //
+        // NOTE: we need to concatenate with `orphans`
+        // because we may try to (re)connect multiple times
+        // and between each try more mutations may have been
+        // made (or queued ones will be moved to running).
+        orphans = [...orphans, ...expecteds];
+        expecteds = [];
+
+        try {
+          // Wait for potentially completed mutations to flush
+          // before starting to read so that we read the latest
+          // state including those mutations.
+          if (this.hasRunningMutations()) {
+            await this.flushMutations();
+          }
+
+          reader.setIsLoading(true);
+
+          const queryResponses = reboot_web.reactiveReader({
+            endpoint: `${this.url}/__/reboot/rpc/${this.stateRef}`,
+            request: queryRequest,
+            signal: reader.abortController.signal,
+          });
+
+          for await (const queryResponse of queryResponses) {
+            if (!loaded) {
+              if ((this.loadingReaders -= 1) === 0) {
+                this.readersLoadedOrFailed();
+              }
+              loaded = true;
+            }
+
+            reader.setIsLoading(false);
+
+            const response = queryResponse.responseOrStatus.case === "response"
+              ? responseType.fromBinary(queryResponse.responseOrStatus.value)
+              : undefined;
+
+            // If we were disconnected it must be that we've
+            // observed all `orphans` because we waited
+            // for any mutations to flush before we re-started to
+            // read.
+            const haveOrphans = orphans.length;
+            if (haveOrphans > 0) {
+              // We mark all mutations as observed except the
+              // last one which we also invoke all `setResponse`s.
+              // In this way we effectively create a barrier
+              // for all readers that will synchronize on the last
+              // mutation, but note that this still may lead
+              // to some partial state/response updates because
+              // one reader may have actually received a response
+              // while another reader got disconnected. While this
+              // is likely very rare, it is possible. Mitigating
+              // this issue is non-trivial and for now we have
+              // no plans to address it.
+              for (let i = 0; i < orphans.length - 1; i++) {
+                orphans[i].observed(() => {});
+              }
+              await orphans[orphans.length - 1].observed(() => {
+                if (response !== undefined) {
+                  reader.setResponse(response);
+                }
+              });
+
+              orphans = [];
+            }
+            // We want to check the orphans list AND the expecteds list because
+            // it could be possible that we receive a query response that
+            // contains an idempotency key that we are expecting while having an
+            // orphans list with a length greater than 0. In this case, we don't
+            // want to skip checking the expecteds list just because we have
+            // already checked the orphans list.
+            if (
+              expecteds.length > 0 &&
+              queryResponse.idempotencyKeys.includes(
+                expecteds[0].idempotencyKey
+              )
+            ) {
+              await expecteds[0].observed(() => {
+                if (response !== undefined) {
+                  reader.setResponse(response);
+                }
+                expecteds.shift();
+              });
+            }
+            // If we don't have any orphans to observe and we don't have any expecteds to observe,
+	          // or at least, the first expecteds _is not observed_ by this response, then go ahead and
+	          // pass on the response because it might contain new data that should get shown to the
+	          // user (e.g., in a chat app this could be a new chat message from a different user).
+            else if (response !== undefined && !haveOrphans) {
+              reader.setResponse(response);
+            }
+          }
+
+          throw new Error('Not expecting stream to ever be done');
+        } catch (e: unknown) {
+          if (!loaded) {
+            if ((this.loadingReaders -= 1) === 0) {
+              this.readersLoadedOrFailed();
+            }
+          }
+
+          loaded = false;
+
+          if (reader.abortController.signal.aborted) {
+            for (const { aborted } of [...orphans, ...expecteds]) {
+              aborted();
+            }
+            return;
+          }
+
+          reader.setIsLoading(false);
+
+          if (e instanceof reboot_api.Status) {
+            reader.setStatus(e);
+          } else {
+            console.warn(
+              `[Reboot] Caught unknown exception: ${e instanceof Error ? e.message : JSON.stringify(e)}`
+            );
+          }
+
+          throw e; // This just retries!
+        }
+      });
+    } finally {
+      delete this.observers[id];
+    }
+  }
+
+  {% for service in client.services %}
+  {% for method in service.methods %}
+  {% if method.options.proto.kind in ['writer', 'transaction'] %}
+
+  private use{{ method.proto.name | to_camel }}Mutations: (
+    Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation)[] = [];
+
+  private use{{ method.proto.name | to_camel }}SetPendings: {
+    [id: string]: (mutations: Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation[]) => void
+  } = {};
+
+  async {{ method.proto.name | to_lower_camel }}(
+    mutation: Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation
+  ): Promise<
+    reboot_web.ResponseOrAborted<
+      {{ client.proto.state_name }}.{{ method.proto.name }}Response,
+      {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
+  >> {
+    // We always have at least 1 observer which is this function!
+    let remainingObservers = 1;
+
+    const event = new reboot_api.Event();
+
+    let callbacks: (() => void)[] = [];
+
+    const observed = (callback: () => void) => {
+      callbacks = callbacks.concat(callback);
+      remainingObservers -= 1;
+      if (remainingObservers === 0) {
+        for (const callback of callbacks) {
+          callback();
+        }
+        event.set();
+      }
+      return event.wait();
+    };
+
+    const aborted = () => {
+      observed(() => {});
+    }
+
+    // Tell observers about this pending mutation.
+    for (const id in this.observers) {
+      remainingObservers += 1;
+      this.observers[id].observe(mutation.idempotencyKey, observed, aborted);
+    }
+
+    this.use{{ method.proto.name | to_camel }}Mutations = this.use{{ method.proto.name | to_camel }}Mutations.concat(mutation);
+
+    for (const setPending of Object.values(this.use{{ method.proto.name | to_camel }}SetPendings)) {
+      setPending(this.use{{ method.proto.name | to_camel }}Mutations);
+    }
+
+    return new Promise<
+      reboot_web.ResponseOrAborted<
+        {{ client.proto.state_name }}.{{ method.proto.name }}Response,
+        {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted
+      >>(
+      async (resolve, reject) => {
+        const { responseOrStatus } = await this.mutate(
+          {
+            method: "{{ method.proto.name }}",
+            request: mutation.request.toBinary(),
+            idempotencyKey: mutation.idempotencyKey,
+            bearerToken: mutation.bearerToken,
+          },
+          ({ isLoading, error }: { isLoading: boolean; error?: any }) => {
+            let rerender = false;
+            for (const m of this.use{{ method.proto.name | to_camel }}Mutations) {
+              if (m === mutation) {
+                if (m.isLoading !== isLoading) {
+                  m.isLoading = isLoading;
+                  rerender = true;
+                }
+                if (error !== undefined && m.error !== error) {
+                  m.error = error;
+                  rerender = true;
+                }
+              }
+            }
+
+            if (rerender) {
+              for (const setPending of Object.values(this.use{{ method.proto.name | to_camel }}SetPendings)) {
+                setPending(this.use{{ method.proto.name | to_camel }}Mutations);
+              }
+            }
+          }
+        );
+
+        const removeMutationsAndSetPending = () => {
+          this.use{{ method.proto.name | to_camel }}Mutations =
+            this.use{{ method.proto.name | to_camel }}Mutations.filter(m => m !== mutation);
+
+          for (const setPending of Object.values(this.use{{ method.proto.name | to_camel }}SetPendings)) {
+            setPending(this.use{{ method.proto.name | to_camel }}Mutations);
+          }
+        }
+
+
+        switch (responseOrStatus.case) {
+          case "response": {
+            await observed(() => {
+              removeMutationsAndSetPending();
+              resolve({
+                response:
+                  {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(
+                    {{ method.output_type }}.fromBinary(
+                    responseOrStatus.value
+                  )
+                )
+              });
+            });
+            break;
+          }
+          case "status": {
+            // Let the observers know they no longer should expect to
+            // observe this idempotency key.
+            for (const id in this.observers) {
+              this.observers[id].unobserve(mutation.idempotencyKey);
+            }
+
+            const status = reboot_api.Status.fromJsonString(responseOrStatus.value);
+
+            const aborted = {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(status);
+
+            console.warn(
+              `[Reboot] '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' aborted with ${aborted.message}`
+            );
+
+            removeMutationsAndSetPending();
+            resolve({ aborted });
+
+            break;
+          }
+          default: {
+            // TODO(benh): while this is a _really_ fatal error,
+            // should we still set `aborted` instead of throwing?
+            reject(new Error('Expecting either a response or a status'));
+          }
+        }
+      });
+  }
+
+  use{{ method.proto.name | to_camel }}(
+    id: string,
+    setPending: (mutations: Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation[]) => void
+  ) {
+    this.use{{ method.proto.name | to_camel }}SetPendings[id] = setPending;
+  }
+
+  unuse{{ method.proto.name | to_camel }}(id: string) {
+    delete this.use{{ method.proto.name | to_camel }}SetPendings[id];
+  }
+
+  {% elif method.options.proto.kind == 'reader' %}
+
+  private use{{ method.proto.name | to_camel }}Readers: {
+    [requestBearerTokenHash: string]: reboot_react.Reader<{{ method.output_type }}>
+  } = {};
+
+  private {{ method.proto.name | to_lower_camel }}FinalizationRegistry =
+    new FinalizationRegistry((finalize) => finalize());
+
+  start{{ method.proto.name | to_camel }}(
+    requestBearerTokenHash: string,
+    serializedRequest: Uint8Array,
+    bearerToken: string | undefined,
+    offlineCacheEnabled: boolean,
+    cacheKey: string | null
+  ) {
+    let reader = this.use{{ method.proto.name | to_camel }}Readers[requestBearerTokenHash];
+
+    if (reader === undefined) {
+      const event = new reboot_api.Event();
+
+      const promise = event.wait();
+
+      reader = {
+        abortController: new AbortController(),
+        event,
+        promise,
+        used: false,
+        scheduledUnusedTimeoutsCount: 0,
+        setResponses: {},
+        setIsLoadings: {},
+        setStatuses: {},
+
+        setResponse(
+          response: {{ method.output_type }},
+          { cache }: { cache: boolean } = { cache: true }
+        ) {
+          // Store the response, delete the status.
+          this.response = response;
+          delete this.status;
+
+          // Trigger response or aborted has been received event (if
+          // it wasn't triggered already).
+          this.event.set();
+
+          // Dispatch to all listeners.
+          for (const setResponse of Object.values(this.setResponses)) {
+            setResponse(response);
+          }
+
+          // Cache response if applicable.
+          if (cache && offlineCacheEnabled) {
+            reboot_api.assert(cacheKey !== null);
+            const cachedResponse = response.toJsonString();
+            reboot_web.offlineCache().set(cacheKey, cachedResponse)
+              .catch((error) => {
+                console.warn(
+                  `[Reboot] Setting of offline reader cache entry for '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' errored with ${error}`
+                );
+              });
+          }
+        },
+
+        setIsLoading(isLoading: boolean) {
+          for (const setIsLoading of Object.values(this.setIsLoadings)) {
+            setIsLoading(isLoading);
+          }
+        },
+
+        setStatus(status: reboot_api.Status) {
+          // Store the status, delete the response.
+          this.status = status;
+          delete this.response;
+
+          // Trigger response or aborted has been received event (if
+          // it wasn't triggered already).
+          this.event.set();
+
+          for (const setStatus of Object.values(this.setStatuses)) {
+            setStatus(status);
+          }
+        },
+      };
+
+      this.{{ method.proto.name | to_lower_camel }}FinalizationRegistry.register(
+        promise,
+        () => {
+          if (!reader.used) {
+            delete this.use{{ method.proto.name | to_camel }}Readers[requestBearerTokenHash];
+            reader.abortController.abort();
+          }
+        }
+      );
+
+      // We want to remove the promise so that it can be garbage collected
+      // which is our indication that React is no longer using it. But this
+      // races with calls to `use{{ method.proto.name | to_camel }}(...)`
+      // that might be adding their `setResponse`, `setIsLoading`, etc, so
+      // we delay deleting the promise for at least a second.
+      //
+      // Note that deleting the promise is okay because all subsequent calls
+      // will simply use the `reader.response` since it will no longer be
+      // undefined.
+      reader.promise.then(async () => {
+        // Allow the call to `use{{ method.proto.name | to_camel }}(...)`
+        // at least 5 seconds to indicate that the reader is being used,
+        // afterwhich, once `reader.promise` gets garbage collected
+        // we'll know that it must have been abandoned by React, e.g.,
+        // because the component was suspended and never committed.
+        await reboot_api.sleep({ ms: 5000 });
+
+        delete reader.promise;
+      });
+
+      this.use{{ method.proto.name | to_camel }}Readers[requestBearerTokenHash] = reader;
+
+      // Start fetching from the server.
+      this.read(
+        "{{ method.proto.name }}",
+        serializedRequest,
+        bearerToken,
+        {{ method.output_type }},
+        reader
+      );
+
+      // Check if there is a cached result if applicable.
+      if (offlineCacheEnabled) {
+        reboot_api.assert(cacheKey !== null);
+
+        reboot_web.offlineCache().get(cacheKey).then((cachedResponse) => {
+          if (cachedResponse !== null) {
+            // We only want to set the response if we haven't already
+            // gotten a response from the server as it is the authority
+            // and should take precedence.
+            if (reader.response === undefined) {
+              reader.setResponse(
+                {{ method.output_type }}.fromJsonString(cachedResponse),
+                { cache: false } // Don't re-cache the value!
+              );
+            }
+          }
+        }).catch((error) => {
+          console.warn(
+            `[Reboot] Retrieval of offline reader cache entry for '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' errored with ${error}`
+          );
+        });
+      }
+    }
+
+    reboot_api.assert(reader !== undefined);
+
+    return reader;
+  }
+
+  use{{ method.proto.name | to_camel }}(
+    id: string,
+    requestBearerTokenHash: string,
+    serializedRequest: Uint8Array,
+    bearerToken: string | undefined,
+    offlineCacheEnabled: boolean,
+    cacheKey: string | null,
+    setResponse: (response: {{ method.output_type }}) => void,
+    setIsLoading: (isLoading: boolean) => void,
+    setStatus: (status: reboot_api.Status) => void
+  ) {
+    // We need to call start here because with strict mode the
+    // `useEffect` that calls this method will also call "unuse"
+    // which will mean the next time the `useEffect` calls here
+    // we'll create a new reader in start.
+    const reader = this.start{{ method.proto.name | to_camel }}(
+      requestBearerTokenHash,
+      serializedRequest,
+      bearerToken,
+      offlineCacheEnabled,
+      cacheKey
+    );
+
+    reboot_api.assert(reader !== undefined);
+
+    // Indicate that the reader has properly been used so that we don't
+    // clean it up prematurely.
+    reader.used = true;
+
+    reader.setResponses[id] = setResponse;
+    reader.setIsLoadings[id] = setIsLoading;
+    reader.setStatuses[id] = setStatus;
+
+    // If we already have a `response` or `status` need to set it.
+    if (reader.response) {
+      setResponse(reader.response);
+      setIsLoading(false);
+    } else if (reader.status) {
+      setStatus(reader.status);
+    }
+  }
+
+  unuse{{ method.proto.name | to_camel }}(
+    id: string,
+    requestBearerTokenHash: string,
+  ) {
+    const reader = this.use{{ method.proto.name | to_camel }}Readers[requestBearerTokenHash];
+
+    reboot_api.assert(reader !== undefined);
+
+    delete reader.setResponses[id];
+    delete reader.setIsLoadings[id];
+    delete reader.setStatuses[id];
+
+    // Schedule a timeout to delete and abort this reader if we're the
+    // last user. We need a timeout because, with StrictMode turned on,
+    // we can't remove the reader right away otherwise we won't have a
+    // stable Event and Promise. We use 3 seconds but may need to make
+    // configurable depending on the application.
+    if (Object.values(reader.setResponses).length === 0) {
+      reader.scheduledUnusedTimeoutsCount += 1;
+      setTimeout(() => {
+        reader.scheduledUnusedTimeoutsCount -= 1;
+        if (
+          reader.scheduledUnusedTimeoutsCount === 0 &&
+          Object.values(reader.setResponses).length === 0
+        ) {
+          delete this.use{{ method.proto.name | to_camel }}Readers[requestBearerTokenHash];
+          reader.abortController.abort();
+        }
+      }, 3000);
+    }
+  }
+
+  {% endif %}
+  {% endfor %}
+  {% endfor %}
+
+  private static instances: { [id: string]: {{ client.proto.state_name | to_camel }}Instance } = {};
+
+  static use(id: string, stateRef: string, url: string) {
+    if (!(id in this.instances)) {
+      this.instances[id] = new {{ client.proto.state_name | to_camel }}Instance(id, stateRef, url);
+    } else {
+      this.instances[id].ref();
+    }
+
+    return this.instances[id];
+  }
+
+  unuse() {
+    if (this.unref() === 0) {
+      delete {{ client.proto.state_name | to_camel }}Instance.instances[this.id];
+    }
+  }
+}
+
+{# Check if this client has any writer/transaction methods with MCP tools. #}
+{% set client_has_mcp = namespace(value=false) %}
+{% for service in client.services %}
+{% for method in service.methods %}
+{% if method.options.proto.mcp and method.options.proto.mcp.tool and method.options.proto.kind in ['writer', 'transaction'] %}
+{% set client_has_mcp.value = true %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+
+export const use{{ client.proto.state_name | to_camel }} = (
+{% if client_has_mcp.value %}
+  { id: providedId }: { id?: string } = {}
+{% else %}
+  { id }: { id: string }
+{% endif %}
+): Use{{ client.proto.state_name | to_camel }}Api => {
+{% if client_has_mcp.value %}
+  // Get mcpApp and tool input from context (RebootClientProvider).
+  const mcpApp = useMcpApp();
+  const mcpToolData = useMcpToolData();
+
+  // Resolve ID: explicit > URL param (dev) > `ids` mapping.
+  const devId = useMemo(() => {
+    if (typeof window !== "undefined") {
+      return new URLSearchParams(
+        window.location.search
+      ).get("{{ client.proto.state_full_name }}.id");
+    }
+    return null;
+  }, []);
+
+  const idsMap = mcpToolData?.ids as
+    Record<string, string> | undefined;
+  const toolInputId =
+    typeof idsMap?.["{{ client.proto.state_full_name }}"] === "string"
+      ? idsMap["{{ client.proto.state_full_name }}"]
+      : null;
+
+  const resolvedId = providedId ?? devId ?? toolInputId;
+  if (!resolvedId) {
+    throw new Error(
+      "use{{ client.proto.state_name | to_camel }}: no state ID available. " +
+      "Ensure this component is inside <RebootClientProvider>, " +
+      "or pass id explicitly, or use " +
+      "?{{ client.proto.state_full_name }}.id=... URL param."
+    );
+  }
+  const id = resolvedId;
+{% else %}
+{% endif %}
+  const stateRef = reboot_api.stateIdToRef(
+    "{{ client.proto.state_full_name }}",
+    id,
+  );
+
+  const rebootClient = reboot_react.useRebootClient();
+
+  const url = rebootClient.url;
+  const bearerToken = rebootClient.bearerToken;
+
+  const [instance, setInstance] = useState(() => {
+    return {{ client.proto.state_name | to_camel }}Instance.use(
+      id, stateRef, url
+    );
+  });
+
+  if (instance.id !== id) {
+    setInstance(
+      {{ client.proto.state_name | to_camel }}Instance.use(
+        id, stateRef, url
+      )
+    );
+  }
+
+  useEffect(() => {
+    return () => {
+      instance.unuse();
+    };
+  }, [instance]);
+
+  const headers = useMemo(() => {
+    const headers = new Headers();
+    headers.set("Content-Type", "application/json");
+    headers.append("Connection", "keep-alive");
+
+    if (bearerToken !== undefined) {
+      headers.append("Authorization", `Bearer ${bearerToken}`);
+    }
+
+    return headers;
+  }, [bearerToken]);
+
+  {% for service in client.services %}
+  {% for method in service.methods -%}
+  {%- if method.options.proto.kind in ['writer', 'transaction'] %}
+
+  function use{{ method.proto.name | to_camel }}() {
+    const [
+      pending,
+      setPending
+    ] = useState<Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation[]>([]);
+
+    useEffect(() => {
+      const id = uuidv4();
+      instance.use{{ method.proto.name | to_camel }}(id, setPending);
+      return () => {
+        instance.unuse{{ method.proto.name | to_camel }}(id);
+      };
+    }, []);
+
+    const rebootClient = reboot_react.useRebootClient();
+
+    const bearerToken = rebootClient.bearerToken;
+
+    const {{ method.proto.name | to_lower_camel }} = useMemo(() => {
+      const method = async (
+        partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name}}Request = {},
+        options?: { metadata?: any, key?: string }
+      ) => {
+{% if method.options.proto.mcp and method.options.proto.mcp.tool %}
+{% set tool_name = method.options.proto.mcp.name if method.options.proto.mcp.name else (client.proto.state_name | to_snake) + "_" + (method.proto.name | to_snake) %}
+        // MCP mode: use mcpApp.callServerTool() for mutations.
+        // Per MCP spec, tool execution errors return { isError: true } in result,
+        // not as thrown exceptions. Protocol errors (tool not found) may throw.
+        if (mcpApp) {
+          const result = await mcpApp.callServerTool({
+            name: "{{ tool_name }}",
+            arguments: { id, request: partialRequest },
+          });
+          if (result.isError) {
+            const message = result.content?.[0]?.text ?? "MCP tool error";
+            const aborted = new {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
+              new reboot_api.errors_pb.Aborted(), { message }
+            );
+            return { response: undefined, aborted };
+          }
+          // Success - actual state update comes via WebSocket.
+          return { response: {}, aborted: undefined };
+        }
+
+{% endif %}
+        const request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
+
+        const idempotencyKey = options?.idempotencyKey ?? options?.key ?? reboot_web.makeExpiringIdempotencyKey();
+
+        const mutation = {
+          request,
+          idempotencyKey,
+          bearerToken,
+          metadata: options?.metadata,
+          isLoading: false, // Won't start loading if we're flushing mutations.
+        };
+
+        return instance.{{ method.proto.name | to_lower_camel }}(mutation);
+      };
+
+      method.pending =
+        new Array<Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation>();
+
+      return method;
+    }, [instance, bearerToken{% if method.options.proto.mcp and method.options.proto.mcp.tool %}, mcpApp, id{% endif %}]);
+
+    {{ method.proto.name | to_lower_camel }}.pending = pending;
+
+    return {{ method.proto.name | to_lower_camel }};
+  }
+
+  const {{ method.proto.name | to_lower_camel }} = use{{ method.proto.name | to_camel }}();
+
+  {% elif method.options.proto.kind == 'reader' %}
+
+  {% if not method.proto.server_streaming and not method.proto.client_streaming %}
+
+  function use{{ method.proto.name | to_camel }}(
+    partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name}}Request = {},
+    options: { suspense: boolean } = { suspense: false }
+  ) {
+    const newRequest = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
+
+    const [request, setRequest] = useState(newRequest);
+
+    const [isLoading, setIsLoading] = useState<boolean>(true);
+
+    const rebootClient = reboot_react.useRebootClient();
+
+    const bearerToken = rebootClient.bearerToken;
+
+    const serializedRequest = useMemo(() => request.toBinary(), [request]);
+
+    // To distinguish this call from others when caching responses on
+    // the client we compute a "request hash" using SHA256 from the
+    // `request`.
+    // We memoize this so we don't do it every time.
+    const requestHash: string = useMemo(
+      () => {
+        const hash = reboot_web.calcSha256();
+        hash.add(serializedRequest);
+        return hash.digest().hex();
+      },
+      [serializedRequest]
+    );
+
+    // To create a map of unused readers globally on the client, we
+    // compute a "request hash" using SHA256 from the `request`
+    // including the bearerToken.
+    // We memoize this so we don't do it every time.
+    const requestBearerTokenHash: string = useMemo(
+      () => {
+        const hash = reboot_web.calcSha256();
+        hash.add(serializedRequest);
+        if (bearerToken) {
+          hash.add(bearerToken);
+        }
+        return hash.digest().hex();
+      },
+      [serializedRequest, bearerToken]
+    );
+
+    const offlineCacheEnabled = rebootClient.offlineCacheEnabled;
+
+    const cacheKey: string | null = useMemo(
+      () => {
+        if (offlineCacheEnabled) {
+          return `${stateRef}:{{ method.proto.name | to_camel }}:${requestHash}`;
+        }
+        return null;
+      },
+      [stateRef, offlineCacheEnabled, requestHash]
+    );
+
+    // We start reading here, or if another component already started
+    // the reading then we just get back the reader. We need to do this
+    // before setting up our `useState`s because when using suspense
+    // we need to use the `reader.response` or `reader.status` during
+    // render where one of them will be defined, i.e., after we've
+    // waited for `reader.promise` via `React.use()`.
+    const reader = instance.start{{ method.proto.name | to_camel }}(
+      requestBearerTokenHash,
+      serializedRequest,
+      bearerToken,
+      offlineCacheEnabled,
+      cacheKey
+    );
+
+    const [response, setResponse] = useState<
+      {{ client.proto.state_name }}.{{ method.proto.name}}Response | undefined
+      >(reader.response && {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(reader.response));
+
+    const [aborted, setAborted] = useState<
+      {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted | undefined
+      >(reader.status && {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(reader.status));
+
+    useEffect(() => {
+      const id = uuidv4();
+
+      instance.use{{ method.proto.name | to_camel }}(
+        id,
+        requestBearerTokenHash,
+        serializedRequest,
+        bearerToken,
+        offlineCacheEnabled,
+        cacheKey,
+        (response: {{ method.output_type }}) => {
+          setAborted(undefined);
+          setResponse({{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(response));
+        },
+        setIsLoading,
+        (status: reboot_api.Status) => {
+          const aborted = {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(status);
+
+          console.warn(
+            `[Reboot] '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' aborted with ${aborted.message}`
+          );
+
+          setAborted(aborted);
+          setResponse(undefined);
+        },
+      );
+
+      return () => {
+        instance.unuse{{ method.proto.name | to_camel }}(id, requestBearerTokenHash);
+      };
+    }, [
+      instance,
+      serializedRequest,
+      requestBearerTokenHash,
+      bearerToken,
+      offlineCacheEnabled,
+      cacheKey,
+    ]);
+
+    if (options.suspense) {
+      // Suspend until `reader.event` is set signifying that we have
+      // either a response or aborted.
+      if (!reader.event.isSet()) {
+        // Raise if it doesn't look like we are using React>=19.
+        if (!("use" in React)) {
+          const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
+          console.error(error);
+          throw new Error(error);
+        }
+        // NOTE: this will throw _at least once_, because React will have
+        // to do `.then()`, which is asynchronous, so they'll throw.
+        //
+        // This invariant is what ensures that we'll have either
+        // `response` or `aborted` set via the `useState` calls above
+        // so that we keep our type promise which is that one of them
+        // will be set if passed `suspense: true` before returning.
+        React.use(reader.promise);
+      }
+    }
+
+    if (!request.equals(newRequest)) {
+      setRequest(newRequest);
+      setIsLoading(true);
+
+      return { response, isLoading: true, aborted };
+    }
+
+    return { response, isLoading, aborted };
+  }
+
+  async function {{ method.proto.name | to_lower_camel }}(
+    partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name}}Request = {},
+    options?: { signal?: AbortSignal; retry?: boolean }
+  ) {
+    let retry = true;
+    if (options !== undefined && options.retry !== undefined) {
+      retry = options.retry;
+    }
+
+    const request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
+
+    // Fetch with retry, using a backoff, i.e., if we get disconnected.
+    const { response, aborted } = await (async () => {
+      const backoff = new reboot_api.Backoff();
+
+      while (true) {
+        try {
+          // Invariant here is that we use the '/package.service.method' path and
+          // HTTP 'POST' method (we need 'POST' because we send an HTTP body).
+          //
+          // See also 'reboot/helpers.py'.
+          return {
+            response: await reboot_web.guardedFetch(
+              new Request(
+                `${rebootClient.url}/__/reboot/rpc/${stateRef}/{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}`, {
+                  method: "POST",
+                  headers,
+                  body: request.toJsonString()
+                }
+              ),
+              options
+            )
+          };
+        } catch (e: unknown) {
+          if (options?.signal?.aborted || !retry) {
+            const aborted = new {{ service.options.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
+              new reboot_api.errors_pb.Aborted(), {
+                message: e instanceof Error
+                  ? `${e}`
+                  : `Unknown error: ${JSON.stringify(e)}`
+              }
+            );
+
+            return { aborted };
+          } else if (e instanceof Error) {
+            console.error(e);
+          } else {
+            console.error(`[Reboot] Unknown error: ${JSON.stringify(e)}`);
+          }
+        }
+
+        await backoff.wait(`[Reboot] Retrying call to \`{{ proto.package_name }}.{{ service.proto.name }}.{{ method.proto.name }}\` with backoff...`);
+      }
+    })();
+
+    if (aborted) {
+      return { aborted };
+    } else if (!response.ok) {
+      if (response.headers.get("content-type") === "application/json") {
+        const status = reboot_api.Status.fromJson(await response.json());
+
+        const aborted = {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(status);
+
+        console.warn(
+          `[Reboot] '{{ client.proto.state_name | to_camel }}.{{ method.proto.name | to_camel }}' aborted with ${aborted.message}`
+        );
+
+        return { aborted };
+      } else {
+        const aborted = new {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
+          new reboot_api.errors_pb.Unknown(), {
+            message: `Unknown error with HTTP status ${response.status}`
+          }
+        );
+
+        return { aborted };
+      }
+    } else {
+      return {
+        response:
+          {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(({{ method.output_type }}.fromJson(await response.json())))
+      };
+    }
+  }
+
+  {% endif %}
+  {% endif %}
+  {% endfor %}
+  {% endfor %}
+
+  // Don't re-render if `id` hasn't changed.
+    return useMemo(() => ({
+      mutators: {
+        {% for service in client.services %}
+        {% for method in service.methods %}
+        {% if method.options.proto.kind in ['writer', 'transaction'] %}
+        {{ method.proto.name | to_lower_camel }},
+        {% endif %}
+        {% endfor %}
+        {% endfor %}
+      },
+      idempotently: ({ key }: { key: string }) => {
+      return {
+        {% for service in client.services %}
+        {% for method in service.methods %}
+        {% if method.options.proto.kind in ['writer', 'transaction'] %}
+        {{ method.proto.name | to_lower_camel }}: (
+          partialRequest?:{{ client.proto.state_name }}.Partial{{ method.proto.name}}Request,
+          options?: { metadata?: any }
+        ) => {{ method.proto.name | to_lower_camel }}(partialRequest, { ...options, key }),
+        {% endif %}
+        {% endfor %}
+        {% endfor %}
+      };
+    },
+      {% for service in client.services %}
+      {% for method in service.methods %}
+      {% if method.options.proto.kind in ['writer', 'transaction'] %}
+      {{ method.proto.name | to_lower_camel }},
+      {% endif %}
+      {% if method.options.proto.kind == 'reader' %}
+      {% if not method.proto.server_streaming and not method.proto.client_streaming %}
+      {{ method.proto.name | to_lower_camel }},
+      use{{ method.proto.name | to_camel }},
+      {% endif %}
+      {% endif %}
+      {% endfor %}
+      {% endfor %}
+    }), [id]);
+};
+
+
+{# End of: for every service in services. #}
+
+{% if client.state is not none %}
+export class {{ client.state.proto.name }} {
+  {# We have to define State alias there, to make users be able to create
+  variables with {{ client.state.proto.name }}.State #}
+  static State = {{ client.state.proto.name }}Proto;
+}
+export namespace {{ client.state.proto.name }} {
+  {# That State alias is responsible for allowing users use
+  {{ client.state.proto.name }}.State as a type #}
+  export type State = {{ client.state.proto.name }}Proto;
+}
+{% if client.state.proto.uis | length > 0 %}
+{# Re-export UI request types for use as component props.
+   Protobuf-es classes work as both types and values. #}
+{% for ui in client.state.proto.uis %}
+{% if ui.request_message %}
+export type {{ ui.request_message }} = {{ pb_name }}.{{ ui.request_message }};
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
+
+{% endfor %}
+

@@ -1,0 +1,279 @@
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-centric websites.
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  padding: 40px;
+}
+
+@media screen and (max-width: 767px) {
+  body {
+    padding: 10px;
+  }
+}
+
+.breadcrumbs {
+  display: none;
+}
+
+.menu__link {
+  border-radius: 0;
+}
+
+.clean-btn {
+  border-radius: 0;
+}
+.navbar {
+  border-bottom: 1px solid var(--ifm-menu-color-background-active);
+}
+
+.menu__link:hover {
+  color: var(--ifm-menu-color-active);
+}
+
+.menu__link--active {
+  color: var(--ifm-menu-color-active);
+}
+
+.menu__link--sublist-caret {
+  color: var(--ifm-menu-color-background-active);
+}
+
+.table-of-contents {
+  border-left: 1px solid var(--ifm-menu-color-background-active);
+}
+
+main {
+  border-left: 1px solid white;
+}
+
+.table-of-contents ul li a {
+  color: var(--ifm-menu-color-background-active);
+}
+
+.table-of-contents .toc-highlight {
+  color: var(--ifm-menu-color-background-active);
+}
+
+@media screen and (max-width: 996px) {
+  main {
+    border-left: none;
+  }
+
+  .theme-doc-toc-mobile .clean-btn {
+    color: var(--ifm-menu-color-active);
+  }
+
+  .theme-doc-toc-mobile .clean-btn::after {
+    color: black;
+  }
+
+  .table-of-contents ul li a {
+    color: var(--ifm-menu-color-active);
+  }
+
+  .navbar-sidebar button {
+    background: none;
+  }
+}
+
+/* You can override the default Infima variables here. */
+:root {
+  --ifm-global-radius: 0;
+  --docs-color-text: #000000;
+  --docs-color-text-100: #646464;
+  --ifm-toc-border-color: #103761;
+  --ifm-toc-link-color: #a8deac;
+  /* --ifm-menu-color-background-active */
+
+  --ifm-color-primary: #103761;
+  --ifm-color-primary-dark: #00737a; /* Slightly darker shade of #008282 */
+  --ifm-color-primary-darker: #006472; /* More prominent darker shade */
+  --ifm-color-primary-darkest: #00556a; /* Even darker shade */
+  --ifm-color-primary-light: #00928a; /* Slightly lighter shade of #008282 */
+  --ifm-color-primary-lighter: #00a292; /* More prominent lighter shade */
+  --ifm-color-primary-lightest: #00b39a; /* Even lighter shade */
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: #cde8dd;
+  background-color: #f7f5ee;
+  --ifm-navbar-background-color: #f7f5ee;
+  --ifm-footer-background-color: #f7f5ee;
+  --ifm-menu-color-background-active: #103761;
+  --ifm-menu-color-background-hover: #103761;
+  --ifm-link-color: #008282;
+  --ifm-navbar-link-hover-color: #103761;
+  --ifm-navbar-shadow: none;
+  --ifm-menu-color-active: #a8deac;
+}
+
+/* For readability concerns, you should choose a lighter palette in dark mode. */
+[data-theme="dark"] {
+  --ifm-color-primary: #a8deac;
+  --ifm-toc-border-color: white;
+  --ifm-global-radius: 0;
+  --docs-color-text: white;
+  --docs-color-text-100: #b4b4b4;
+  --ifm-toc-link-color: #103761;
+
+  --ifm-color-primary-dark: #00737a; /* Slightly darker shade of #008282 */
+  --ifm-color-primary-darker: #006472; /* More prominent darker shade */
+  --ifm-color-primary-darkest: #00556a; /* Even darker shade */
+  --ifm-color-primary-light: #00928a; /* Slightly lighter shade of #008282 */
+  --ifm-color-primary-lighter: #00a292; /* More prominent lighter shade */
+  --ifm-color-primary-lightest: #00b39a; /* Even lighter shade */
+  --docusaurus-highlighted-code-line-bg: #097725;
+  background-color: #103761;
+  --ifm-navbar-background-color: #103761;
+  --ifm-footer-background-color: #103761;
+  --ifm-menu-color-background-active: #f7f5ee;
+  --ifm-menu-color-background-hover: #f7f5ee;
+  --ifm-navbar-link-hover-color: #a9e0a4;
+  --ifm-breadcrumb-color-active: #a8deac;
+  --ifm-link-color: #a8deac;
+  --ifm-navbar-shadow: none;
+  --ifm-menu-color-active: #103761;
+  /* --ifm-card-background-color: #f7f5ee; */
+  /* --ifm-footer-background-color: #a9e0a4; */
+}
+
+.section-content {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.two-cols .section-content {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.has-sub-sections > h3 {
+  margin-bottom: 1.5rem;
+}
+
+.has-sub-sections > .section-content {
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+.has-sub-sections > .section-content > .homepage-section {
+  margin-bottom: 1rem;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+.homepage-section {
+  margin-bottom: 3rem;
+}
+
+.homepage-section h3 {
+  font-weight: 600;
+}
+
+.section-description {
+  color: var(--docs-color-text-100);
+  margin: 0rem 0 1.25rem 0;
+  margin-top: -0.5rem;
+}
+
+.has-sub-sections > .section-content .section-description {
+  font-size: 14px;
+}
+
+.homepage-card {
+  align-items: flex-start;
+  gap: 10px;
+  padding: 0.75rem;
+  text-decoration: none;
+  color: var(--docs-color-text);
+  /* background-color: #eae9e3; */
+
+  --ifm-link-hover-decoration: none;
+  --ifm-link-hover-color: inherit;
+  cursor: pointer;
+  @apply flex flex-row items-center;
+  border-width: 1px;
+  transition-property: background-color, color;
+
+  /* border-radius: 8px; */
+  position: relative;
+  overflow: hidden;
+  border-style: solid;
+}
+
+.homepage-card.row {
+  flex-direction: row;
+}
+
+.icon svg {
+  width: auto;
+  height: 100%;
+}
+
+.homepage-card .icon {
+  width: 48px;
+  height: 48px;
+  @apply mx-1;
+}
+
+.card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card-content .title {
+  font-size: 16px;
+  letter-spacing: -0.5px;
+  font-weight: 600;
+}
+
+.card-content .description {
+  font-size: 14px;
+  color: var(--docs-color-text-100);
+  line-height: 1.5;
+}
+
+.homepage-card .tag {
+  font-size: 12px;
+  padding: 0.25rem 0.5rem;
+  /* border-radius: 4px; */
+  font-weight: 500;
+  position: absolute;
+}
+
+/* Config from: https://docusaurus.io/docs/search#styling-your-algolia-search
+   Some edits made:
+     - --docsearch-muted-color
+     - --docsearch-searchbox-background
+*/
+[data-theme="light"] .DocSearch {
+  --docsearch-muted-color: black;
+  --docsearch-container-background: rgba(94, 100, 112, 0.7);
+  --docsearch-modal-background: var(--ifm-color-secondary-lighter);
+  --docsearch-searchbox-background: var(--ifm-background-color);
+  --docsearch-searchbox-focus-background: var(--ifm-color-white);
+  --docsearch-hit-color: var(--ifm-font-color-base);
+  --docsearch-hit-active-color: var(--ifm-color-white);
+  --docsearch-hit-background: var(--ifm-color-white);
+  --docsearch-footer-background: var(--ifm-color-white);
+}
+
+[data-theme="dark"] .DocSearch {
+  --docsearch-text-color: var(--ifm-font-color-base);
+  --docsearch-muted-color: white;
+  --docsearch-container-background: rgba(47, 55, 69, 0.7);
+  --docsearch-modal-background: var(--ifm-background-color);
+  --docsearch-searchbox-background: var(--ifm-background-color);
+  --docsearch-searchbox-focus-background: var(--ifm-color-black);
+  --docsearch-hit-color: var(--ifm-font-color-base);
+  --docsearch-hit-active-color: black;
+  --docsearch-hit-background: var(--ifm-color-emphasis-100);
+  --docsearch-footer-background: var(--ifm-background-surface-color);
+  --docsearch-key-gradient: linear-gradient(
+    -26.5deg,
+    var(--ifm-color-emphasis-200) 0%,
+    var(--ifm-color-emphasis-100) 100%
+  );
+}

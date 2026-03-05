@@ -1,0 +1,123 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//reboot:rules.bzl", "js_proto_library", "js_reboot_react_library")
+load("//tests/reboot/react:py_web_test_suite_env.bzl", "py_web_test_suite_env")
+
+proto_library(
+    name = "test_proto",
+    srcs = [":test.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:wrappers_proto",
+        "@googleapis//google/api:http_proto",
+    ],
+)
+
+js_proto_library(
+    name = "test_js_proto",
+    package_json = ":package.json",
+    proto = ":test.proto",
+    proto_deps = [
+        ":test_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:descriptor_proto",
+        "@com_google_protobuf//:wrappers_proto",
+        "@googleapis//google/api:http_proto",
+    ],
+)
+
+js_reboot_react_library(
+    name = "test_js_reboot_react",
+    srcs = [":test_js_proto"],
+    proto = "test.proto",
+    proto_deps = [
+        ":test_proto",
+    ],
+    visibility = ["//tests:__subpackages__"],
+)
+
+# TODO(benh, riley): this is testing that we can generate valid code
+# for a service that has no mutators, but it's not clear that we
+# actually want to allow that since such services can never be
+# instantiated (until we possibly have singletons, in which case we
+# might want to revisit this).
+build_test(
+    name = "test_build_no_mutations",
+    targets = [":test_js_reboot_react"],
+)
+
+ts_project(
+    name = "index_ts",
+    srcs = [
+        "index.tsx",
+    ],
+    tsconfig = "//tests/reboot/react:tsconfig",
+    deps = [
+        "//:node_modules/@reboot-dev/reboot-react",
+        "//:node_modules/@reboot-dev/reboot-web",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//rbt/v1alpha1:tasks_js_proto",
+        "//tests/reboot:greeter_js_reboot_react",
+    ],
+)
+
+esbuild(
+    name = "bundle",
+    srcs = [
+        ":index_ts",
+    ],
+    entry_point = "index.js",
+    format = "esm",
+    platform = "browser",
+)
+
+py_library(
+    name = "test_py",
+    testonly = True,
+    srcs = ["test.py"],
+    data = [
+        ":bundle",
+    ],
+    visibility = ["//tests:__subpackages__"],
+    deps = [
+        "//reboot/aio:external_py",
+        "//reboot/aio:idempotency_py",
+        "//tests/reboot:greeter_servicers_py",
+        "//tests/reboot/react:web_driver_runner",
+    ],
+)
+
+py_web_test_suite_env(
+    name = "test_against_local_envoy_py",
+    srcs = ["test_against_local_envoy.py"],
+    browsers = [
+        "@io_bazel_rules_webtesting//browsers:chromium-local",
+    ],
+    local = True,
+    main = "test_against_local_envoy.py",
+    # This test is not supported on macOS; see:
+    #   https://github.com/reboot-dev/mono/issues/4067.
+    py_test_tags = [
+        "macos_not_supported",
+        "requires-linux-x86",
+        "flaky",
+    ],
+    tags = [
+        "flaky",
+        "macos_not_supported",
+        "requires-linux-x86",
+    ],
+    deps = [
+        ":test_py",
+        "//tests/reboot/react:test_against_local_envoy_py",
+    ],
+)

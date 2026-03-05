@@ -1,0 +1,25 @@
+# Notifies mono that reboot-dev/reboot has new commits on the
+# `onelxj.copybara-test` branch, triggering a Copybara pull in mono.
+#
+# This file lives in mono at public/.github/workflows/notify_mono.yml
+# and is synced to reboot-dev/reboot as .github/workflows/notify_mono.yml
+# by the Copybara push workflow.
+#
+# Switch branch to `main` (in the `on.push.branches` trigger below)
+# once testing is complete.
+
+name: Notify mono of push (Copybara test)
+
+on:
+  push:
+    branches: [onelxj.copybara-test]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.PRIVATE_REPO_ACCESS_AS_REBOT_TOKEN }}
+          repository: reboot-dev/mono
+          event-type: reboot-pushed-onelxj.copybara-test

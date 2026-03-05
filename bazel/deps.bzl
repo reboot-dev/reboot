@@ -4,18 +4,22 @@ load("@aspect_bazel_lib//lib:repositories.bzl", "aspect_bazel_lib_dependencies")
 load("@bazel_skylib//:workspace.bzl", "bazel_skylib_workspace")
 load("@buildifier_prebuilt//:defs.bzl", "buildifier_prebuilt_register_toolchains")
 load("@buildifier_prebuilt//:deps.bzl", "buildifier_prebuilt_deps")
+load("@com_github_3rdparty_bazel_rules_backward_cpp//bazel:deps.bzl", backward_cpp_deps = "deps")
 load("@com_github_3rdparty_bazel_rules_tl_expected//bazel:deps.bzl", expected_deps = "deps")
 load("@com_github_3rdparty_stout//bazel:deps.bzl", stout_deps = "deps")
 load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
 load("@com_github_reboot_dev_pyprotoc_plugin//bazel:deps.bzl", pyprotoc_plugin_deps = "deps")
 load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
+load("@container_structure_test//:repositories.bzl", "container_structure_test_register_toolchain")
 load("@hermetic_cc_toolchain//toolchain:defs.bzl", zig_toolchains = "toolchains")
 load("@io_bazel_rules_webtesting//web:py_repositories.bzl", web_test_py_repositories = "py_repositories")
 load("@io_bazel_rules_webtesting//web:repositories.bzl", "web_test_repositories")
 load("@io_bazel_rules_webtesting//web/versioned:browsers-0.3.3.bzl", "browser_repositories")
 load("@mypy_integration//repositories:repositories.bzl", mypy_integration_repositories = "repositories")
 load("@mypy_integration_pip_deps//:requirements.bzl", mypy_integration_pypi_deps = "install_deps")
+load("@pip_package_rule_pypi//:requirements.bzl", pip_package_rule_pypi_deps = "install_deps")
 load("@rbt_pypi//:requirements.bzl", rbt_pypi_deps = "install_deps")
+load("@rbt_test_pypi//:requirements.bzl", rbt_test_pypi_deps = "install_deps")
 load("@rules_buf//buf:repositories.bzl", "rules_buf_dependencies", "rules_buf_toolchains")
 load("@rules_foreign_cc//foreign_cc:repositories.bzl", "rules_foreign_cc_dependencies")
 load("@rules_oci//oci:dependencies.bzl", "rules_oci_dependencies")
@@ -43,6 +47,8 @@ def deps():
     rules_oci_dependencies()
 
     rules_pkg_dependencies()
+
+    container_structure_test_register_toolchain(name = "cst")
 
     dockerfile_oci_image(
         name = "respect_base_image",
@@ -72,7 +78,13 @@ def deps():
     mypy_integration_repositories()
     mypy_integration_pypi_deps()
 
+    pip_package_rule_pypi_deps()
+
     rbt_pypi_deps()
+
+    rbt_test_pypi_deps()
+
+    backward_cpp_deps()
 
     rules_buf_dependencies()
     rules_buf_toolchains(

@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "declaration": true,
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "target": "es2020",
+    "outDir": "dist",
+    "sourceMap": true,
+    "composite": true,
+    "paths": {
+      "@reboot-dev/docubot-api": ["../api/*"]
+    },
+    "customConditions": ["production"]
+  },
+  "references": [{ "path": "../api" }]
+}
