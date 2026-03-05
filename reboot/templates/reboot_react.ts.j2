@@ -1472,34 +1472,6 @@ export const use{{ client.proto.state_name | to_camel }} = (
         partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name}}Request = {},
         options?: { metadata?: any, key?: string }
       ) => {
-{% if method.options.proto.mcp and method.options.proto.mcp.tool %}
-{% set tool_name = method.options.proto.mcp.name if method.options.proto.mcp.name else (client.proto.state_name | to_snake) + "_" + (method.proto.name | to_snake) %}
-        // MCP mode: use mcpApp.callServerTool() for mutations.
-        // Per MCP spec, tool execution errors return { isError: true } in result,
-        // not as thrown exceptions. Protocol errors (tool not found) may throw.
-        if (mcpApp) {
-          // Convert camelCase field names to snake_case for the
-          // Python MCP tool handler (pydantic models use
-          // snake_case).
-          const snakeCaseRequest = reboot_api.keysToSnakeCase(
-            partialRequest || {}
-          );
-          const result = await mcpApp.callServerTool({
-            name: "{{ tool_name }}",
-            arguments: { id, request: snakeCaseRequest },
-          });
-          if (result.isError) {
-            const message = result.content?.[0]?.text ?? "MCP tool error";
-            const aborted = new {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
-              new reboot_api.errors_pb.Aborted(), { message }
-            );
-            return { response: undefined, aborted };
-          }
-          // Success - actual state update comes via WebSocket.
-          return { response: {}, aborted: undefined };
-        }
-
-{% endif %}
         const request = {{ client.proto.state_name }}{{ method.proto.name }}RequestToProtobuf(partialRequest);
 
         const idempotencyKey = options?.idempotencyKey ?? options?.key ?? reboot_web.makeExpiringIdempotencyKey();
