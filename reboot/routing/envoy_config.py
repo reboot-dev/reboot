@@ -90,6 +90,7 @@ class McpFrontendConfig:
     """Configuration for MCP frontend host routing."""
     host: str
     port: int
+    original_url: str
 
 
 def _get_mcp_frontend_config() -> McpFrontendConfig | None:
@@ -129,7 +130,7 @@ def _get_mcp_frontend_config() -> McpFrontendConfig | None:
         else:
             host = "localhost"
 
-    return McpFrontendConfig(host=host, port=port)
+    return McpFrontendConfig(host=host, port=port, original_url=frontend_url)
 
 
 # Helper for packing an `Any`.
@@ -567,6 +568,77 @@ def _mcp_frontend_cluster() -> cluster_pb2.Cluster | None:
     )
 
 
+def _mcp_frontend_error_filters(
+) -> list[http_connection_manager_pb2.HttpFilter]:
+    """Lua filter that replaces envoy's raw 503 for the
+    `/__/web/` dev-server route with a friendly HTML page.
+
+    Returns an empty list if MCP frontend is not configured.
+    """
+    config = _get_mcp_frontend_config()
+    if config is None:
+        return []
+
+    # The error page shown when envoy can't reach the Vite
+    # dev server.
+    error_html = (
+        '<!DOCTYPE html>'
+        '<html lang="en"><head><meta charset="UTF-8">'
+        '<meta name="viewport" '
+        'content="width=device-width, initial-scale=1.0">'
+        '<style>'
+        'body{font-family:ui-monospace,SFMono-Regular,Menlo,'
+        'monospace;background:#1a1a2e;color:#eee;display:flex;'
+        'align-items:center;justify-content:center;'
+        'min-height:100vh;margin:0}'
+        '.c{text-align:center;padding:2rem}'
+        'h2{color:#f87171}'
+        'code{background:#0f0f1a;padding:.2rem .5rem;'
+        'border-radius:4px;color:#fbbf24}'
+        '</style></head><body><div class="c">'
+        '<h2>Dev server not reachable</h2>'
+        "<p>Couldn't reach the dev web server at "
+        '<code>__FRONTEND_URL__</code>.</p>'
+        '<p style="margin-top:1rem;opacity:.7">'
+        'Is the dev web server running?</p>'
+        '</div></body></html>'
+    ).replace('__FRONTEND_URL__', config.original_url)
+
+    # Lua filter: tag `/__/web/` requests in `envoy_on_request`
+    # via dynamic metadata, then intercept 503 responses and
+    # replace the body.
+    lua_source = (
+        'function envoy_on_request(request_handle)\n'
+        '  local p = request_handle:headers():get(":path")'
+        ' or ""\n'
+        '  if string.sub(p, 1, 8) == "/__/web/" then\n'
+        '    request_handle:streamInfo():dynamicMetadata()'
+        ':set("reboot", "mcp_frontend_request", "1")\n'
+        '  end\n'
+        'end\n'
+        '\n'
+        'function envoy_on_response(response_handle)\n'
+        '  local md = response_handle:streamInfo()'
+        ':dynamicMetadata():get("reboot")\n'
+        '  if md and md["mcp_frontend_request"] == "1" and\n'
+        '     response_handle:headers():get(":status")'
+        ' == "503" then\n'
+        '    response_handle:headers():replace(\n'
+        '      "content-type", "text/html; charset=utf-8")\n'
+        '    response_handle:body():setBytes([=[\n' + error_html + '\n'
+        '    ]=])\n'
+        '  end\n'
+        'end\n'
+    )
+
+    return [
+        http_connection_manager_pb2.HttpFilter(
+            name="reboot.mcp_frontend_error_page",
+            typed_config=_lua_any(lua_source),
+        )
+    ]
+
+
 def _filter_http_connection_manager(
     application_id: ApplicationId,
     servers: list[ServerInfo],
@@ -662,6 +734,10 @@ def _filter_http_connection_manager(
             _http_filter_grpc_json_transcoder(
                 file_descriptor_set=file_descriptor_set,
             ),
+        ] +
+        # Friendly error page when the MCP web dev server
+        # is unreachable (only active when configured).
+        _mcp_frontend_error_filters() + [
             _http_filter_router(),
         ]
     )

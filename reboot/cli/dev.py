@@ -609,9 +609,9 @@ async def _check_local_envoy_status(
             if is_application_serving:
                 terminal.info("Application is serving traffic ...\n")
                 terminal.info(
-                    f"  Your API is available at the URL {protocol}://{address}\n"
-                    "\n"
-                    f"  You can inspect your state at {protocol}://{address}/__/inspect\n",
+                    f"  Your API is available at:      {protocol}://{address}\n"
+                    f"  MCP clients can connect at:    {protocol}://{address}/mcp\n"
+                    f"  You can inspect your state at: {protocol}://{address}/__/inspect\n",
                     color=Fore.WHITE,
                 )
                 if tracing == Tracing.JAEGER:
