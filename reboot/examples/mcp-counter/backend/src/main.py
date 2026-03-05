@@ -10,7 +10,7 @@ as MCP tools, and `UI()` methods open React MCP App UIs.
 import asyncio
 import logging
 from reboot.aio.applications import Application
-from servicers.counter import ChatServicer, CounterServicer
+from servicers.counter import CounterServicer, SessionServicer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,7 +20,7 @@ logging.basicConfig(
 
 async def main() -> None:
     application = Application(
-        servicers=[ChatServicer, CounterServicer],
+        servicers=[SessionServicer, CounterServicer],
     )
     await application.run()
 

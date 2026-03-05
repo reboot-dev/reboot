@@ -1191,7 +1191,7 @@ class API(pydantic.BaseModel):
                             f"{AUTO_CONSTRUCT_STATE_TYPE} "
                             "instances are auto-constructed, "
                             "in their default (empty) state, "
-                            "for every new AI chat connecting "
+                            "for every new AI session connecting "
                             "to the application, and such a "
                             "fresh state must be valid."
                         )
@@ -1212,7 +1212,7 @@ class API(pydantic.BaseModel):
                         f"'{AUTO_CONSTRUCT_METHOD}' when "
                         "automatically constructing a "
                         f"'{AUTO_CONSTRUCT_STATE_TYPE}' for a "
-                        "new AI chat."
+                        "new AI session."
                     )
                 data_type.methods[AUTO_CONSTRUCT_METHOD] = Writer(
                     request=None,

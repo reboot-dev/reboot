@@ -268,7 +268,7 @@ REBOOT_DISCORD_URL = 'https://discord.gg/cRbdcS94Nr'
 REBOOT_GITHUB_ISSUES_URL = 'https://github.com/reboot-dev/reboot/issues'
 
 # State type name that triggers auto-construction for every MCP session.
-AUTO_CONSTRUCT_STATE_TYPE = "Chat"
+AUTO_CONSTRUCT_STATE_TYPE = "Session"
 
 # Name of the method injected for auto-construction on the
 # above state type.

@@ -349,58 +349,58 @@ class APIValidationErrorsTest(unittest.TestCase):
         )
 
 
-class ChatStateValidationErrorsTest(unittest.TestCase):
-    """Test that Chat state must be default-constructible."""
+class SessionStateValidationErrorsTest(unittest.TestCase):
+    """Test that Session state must be default-constructible."""
 
-    def test_chat_state_without_defaults_raises_error(self):
-        """Chat state fields must all have defaults."""
+    def test_session_state_without_defaults_raises_error(self):
+        """Session state fields must all have defaults."""
 
-        class BadChatState(Model):
+        class BadSessionState(Model):
             value: int = Field(tag=1)  # No default!
 
         with self.assertRaises(UserPydanticError) as error:
             API(
-                Chat=Type(
-                    state=BadChatState,
+                Session=Type(
+                    state=BadSessionState,
                     methods=Methods(),
                 ),
             )
 
         self.assertEqual(
             str(error.exception),
-            "Field `value` in Chat state model "
-            "`BadChatState` must have a default "
-            "value, or be optional. Chat instances "
+            "Field `value` in Session state model "
+            "`BadSessionState` must have a default "
+            "value, or be optional. Session instances "
             "are auto-constructed, in their default "
-            "(empty) state, for every new AI chat "
+            "(empty) state, for every new AI session "
             "connecting to the application, and such "
             "a fresh state must be valid.",
         )
 
-    def test_chat_state_with_defaults_is_valid(self):
-        """Chat state with all defaults should be accepted."""
+    def test_session_state_with_defaults_is_valid(self):
+        """Session state with all defaults should be accepted."""
 
-        class GoodChatState(Model):
+        class GoodSessionState(Model):
             value: int = Field(tag=1, default=0)
 
         # Should not raise.
         API(
-            Chat=Type(
-                state=GoodChatState,
+            Session=Type(
+                state=GoodSessionState,
                 methods=Methods(),
             ),
         )
 
-    def test_chat_state_with_optional_field_is_valid(self):
-        """Chat state with Optional fields is accepted."""
+    def test_session_state_with_optional_field_is_valid(self):
+        """Session state with Optional fields is accepted."""
 
-        class GoodChatState(Model):
+        class GoodSessionState(Model):
             value: Optional[str] = Field(tag=1)
 
         # Should not raise: Optional fields default to None.
         API(
-            Chat=Type(
-                state=GoodChatState,
+            Session=Type(
+                state=GoodSessionState,
                 methods=Methods(),
             ),
         )

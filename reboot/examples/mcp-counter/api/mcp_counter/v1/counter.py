@@ -11,14 +11,14 @@ from reboot.api import (
     Writer,
 )
 
-# -- Chat models. --
+# -- Session models. --
 
 
 class CreateCounterResponse(Model):
     counter_id: str = Field(tag=1)
 
 
-class ChatState(Model):
+class SessionState(Model):
     pass
 
 
@@ -46,8 +46,8 @@ class DashboardConfig(Model):
 
 
 api = API(
-    Chat=Type(
-        state=ChatState,
+    Session=Type(
+        state=SessionState,
         methods=Methods(
             create_counter=Transaction(
                 request=None,

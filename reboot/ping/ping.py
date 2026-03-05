@@ -26,7 +26,7 @@ from reboot.ping.ping_api import (
     NumPongsResponse,
     ValueResponse,
 )
-from reboot.ping.ping_api_rbt import Chat, Counter, Ping, Pong
+from reboot.ping.ping_api_rbt import Counter, Ping, Pong, Session
 
 logging.basicConfig(level=logging.INFO)
 
@@ -116,7 +116,7 @@ class PongServicer(Pong.Servicer):
         return NumPongsResponse(num_pongs=self.state.num_pongs)
 
 
-class ChatServicer(Chat.Servicer):
+class SessionServicer(Session.Servicer):
 
     def authorizer(self):
         return allow()
@@ -188,7 +188,7 @@ async def main():
         servicers=[
             PingServicer,
             PongServicer,
-            ChatServicer,
+            SessionServicer,
             CounterServicer,
         ],
         # We choose to not call the initialization method

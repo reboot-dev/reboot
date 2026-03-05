@@ -52,14 +52,14 @@ class PongState(Model):
     num_pongs: int = Field(tag=1, default=0)
 
 
-# -- Chat models. --
+# -- Session models. --
 
 
 class CreateCounterResponse(Model):
     counter_id: str = Field(tag=1)
 
 
-class ChatState(Model):
+class SessionState(Model):
     pass
 
 
@@ -121,8 +121,8 @@ api = API(
             ),
         ),
     ),
-    Chat=Type(
-        state=ChatState,
+    Session=Type(
+        state=SessionState,
         methods=Methods(
             create_counter=Transaction(
                 request=None,

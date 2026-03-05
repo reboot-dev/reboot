@@ -1,6 +1,6 @@
 """Counter servicer implementation."""
 
-from mcp_counter.v1.counter_rbt import Chat, Counter
+from mcp_counter.v1.counter_rbt import Counter, Session
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import (
     ReaderContext,
@@ -9,8 +9,8 @@ from reboot.aio.contexts import (
 )
 
 
-class ChatServicer(Chat.Servicer):
-    """Servicer for the Chat state machine."""
+class SessionServicer(Session.Servicer):
+    """Servicer for the Session state machine."""
 
     def authorizer(self):
         return allow()
@@ -18,10 +18,10 @@ class ChatServicer(Chat.Servicer):
     async def create_counter(
         self,
         context: TransactionContext,
-    ) -> Chat.CreateCounterResponse:
+    ) -> Session.CreateCounterResponse:
         """Create a new Counter and return its ID."""
         counter, _ = await Counter.create(context)
-        return Chat.CreateCounterResponse(
+        return Session.CreateCounterResponse(
             counter_id=counter.state_id,
         )
 

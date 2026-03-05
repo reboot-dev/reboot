@@ -47,7 +47,7 @@ export default function McpConnector({
         }));
       };
 
-      // Capture tool result — for Chat types the session
+      // Capture tool result — for Session types the session
       // ID is returned here (not in tool input arguments).
       createdMcpApp.ontoolresult = (result: any) => {
         const text = result.content?.find((c: any) => c.type === "text")?.text;
@@ -83,8 +83,8 @@ export default function McpConnector({
   // etc.) delivers IDs by invoking the UI tool, which fires
   // `ontoolinput`/`ontoolresult` events. The `ids` field maps fully
   // qualified state type names to their IDs (e.g. `{"rbt.ping.v1.Ping":
-  // "...", "rbt.ping.v1.Chat": "..."}`). Without IDs the generated
-  // hooks (e.g. `usePing()`, `useChat()`) can't connect to the right
+  // "...", "rbt.ping.v1.Session": "..."}`). Without IDs the generated
+  // hooks (e.g. `usePing()`, `useSession()`) can't connect to the right
   // state instances, so we show a loading state until they arrive.
   const hasIds = toolData?.ids != null && typeof toolData.ids === "object";
   if (!isConnected || !mcpApp || !hasIds) {

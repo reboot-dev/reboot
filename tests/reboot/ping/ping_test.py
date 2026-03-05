@@ -6,10 +6,10 @@ from mcp.client.streamable_http import streamable_http_client
 from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot
 from reboot.ping.ping import (
-    ChatServicer,
     CounterServicer,
     PingServicer,
     PongServicer,
+    SessionServicer,
 )
 from reboot.ping.ping_api_rbt import Counter, Ping, Pong
 
@@ -29,7 +29,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                 servicers=[
                     PingServicer,
                     PongServicer,
-                    ChatServicer,
+                    SessionServicer,
                     CounterServicer,
                 ],
             ),
@@ -61,7 +61,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                 servicers=[
                     PingServicer,
                     PongServicer,
-                    ChatServicer,
+                    SessionServicer,
                     CounterServicer,
                 ],
             ),
@@ -86,7 +86,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                 servicers=[
                     PingServicer,
                     PongServicer,
-                    ChatServicer,
+                    SessionServicer,
                     CounterServicer,
                 ],
             ),
@@ -112,7 +112,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("counter_increment", tool_names)
                 self.assertIn("counter_value", tool_names)
 
-                # Create a counter via the Chat session tool.
+                # Create a counter via the Session tool.
                 result = await session.call_tool("create_counter", {})
                 data = json.loads(result.content[0].text)
                 counter_id = data["counter_id"]
@@ -141,7 +141,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                 servicers=[
                     PingServicer,
                     PongServicer,
-                    ChatServicer,
+                    SessionServicer,
                     CounterServicer,
                 ],
             ),
@@ -167,7 +167,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
 
                 # The `show_pinger` UI tool should return an `ids`
                 # mapping that includes both the Ping ID (passed
-                # explicitly) and the Chat session ID
+                # explicitly) and the Session ID
                 # (auto-constructed).
                 result = await session.call_tool(
                     "ping_show_pinger", {"ping_id": "my-ping"}
@@ -175,9 +175,9 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                 data = json.loads(result.content[0].text)
                 ids = data["ids"]
                 self.assertEqual(ids["reboot.ping.Ping"], "my-ping")
-                chat_session_id = ids["reboot.ping.Chat"]
-                self.assertIsInstance(chat_session_id, str)
-                self.assertGreater(len(chat_session_id), 0)
+                session_id = ids["reboot.ping.Session"]
+                self.assertIsInstance(session_id, str)
+                self.assertGreater(len(session_id), 0)
 
                 # Create a counter so we can show its clicker.
                 result = await session.call_tool("create_counter", {})
@@ -207,7 +207,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                 servicers=[
                     PingServicer,
                     PongServicer,
-                    ChatServicer,
+                    SessionServicer,
                     CounterServicer,
                 ],
             ),

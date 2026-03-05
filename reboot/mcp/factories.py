@@ -119,7 +119,7 @@ def create_mcp_factory(
             # MCP client to do.
             if not has_mcp_tools:
                 NO_TOOLS_MESSAGE = (
-                    "MCP client correctly connected, but no `Chat` type or "
+                    "MCP client correctly connected, but no `Session` type or "
                     "MCP-enabled method was found in the API."
                 )
                 log_at_most_once_per(
