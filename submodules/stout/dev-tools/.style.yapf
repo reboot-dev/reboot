@@ -1,0 +1,8 @@
+[style]
+based_on_style = google
+indent_width = 4
+column_limit = 79
+
+split_arguments_when_comma_terminated = true
+dedent_closing_brackets = true
+split_before_named_assigns = false

@@ -1,0 +1,41 @@
+name: Run pre-merge checks
+on:
+  push:
+    branches:
+      - "main"
+  pull_request:
+    branches:
+      - "**"
+
+jobs:
+  run-tests:
+    name: Run pre-merge checks
+    runs-on: ubuntu-latest
+    env:
+      GOOGLE_APPLICATION_CREDENTIALS: service_account_credentials.json
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+      - name: Set up read+write remote cache credentials (when on main)
+        # With the exception of GITHUB_TOKEN, secrets are not passed to the runner
+        # when a workflow is triggered from a forked repository. We can therefore
+        # only safely assume `GCP_REMOTE_CACHE_CREDENTIALS` to exist once the PR
+        # has been merged to `main`.
+        if: github.ref == 'refs/heads/main'
+        uses: jsdaniell/create-json@1.1.2
+        with:
+          name: ${{ env.GOOGLE_APPLICATION_CREDENTIALS }}
+          json: ${{ secrets.GCP_REMOTE_CACHE_CREDENTIALS }}
+      - name: Set up read+write remote cache (when on main)
+        # Ditto to the reasoning of the step above, we will only use the cache in
+        # read-write mode if we're on `main`.
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "BAZEL_REMOTE_CACHE=--remote_upload_local_results=true \
+            --google_credentials=${{ env.GOOGLE_APPLICATION_CREDENTIALS }}" \
+            >> $GITHUB_ENV
+      - name: Run tests
+        run: |
+          bazel test //... \
+            ${{ env.BAZEL_REMOTE_CACHE }}

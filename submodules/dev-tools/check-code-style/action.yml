@@ -1,0 +1,73 @@
+# The name of this file should be `action.yml` , `action.yaml` or `Dockerfile`.
+# Should be run only on macOS or Ubuntu.
+
+name: "Check Code Style"
+desciption: "Check files for correct code style"
+
+inputs:
+  os:
+    description: "Specify operating system on which this action will run"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install code checking tools if on Ubuntu
+      if: inputs.os == 'ubuntu-latest'
+      run: |
+        # Install Clang (including clang-format) through LLVM's preferred mechanism:
+        #   https://apt.llvm.org/
+        CLANG_VERSION=19
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh ${CLANG_VERSION}
+        rm ./llvm.sh
+        sudo apt-get install -y clang-format-${CLANG_VERSION}
+        sudo rm -rf /var/lib/apt/lists/*
+        # Remove existing symlink to clang-format and replace it.
+        sudo rm /etc/alternatives/clang-format
+        sudo ln -s /usr/bin/clang-format-${CLANG_VERSION} /etc/alternatives/clang-format
+
+        # Install buildifier.
+        BUILDIFIER_VERSION=6.4.0
+        wget https://github.com/bazelbuild/buildtools/releases/download/v${BUILDIFIER_VERSION}/buildifier-linux-amd64
+        chmod +x ./buildifier-linux-amd64
+        sudo mv ./buildifier-linux-amd64 /usr/local/bin/buildifier
+
+        # Install prettier and markdown-autodocs.
+        NODE_VERSION=16
+        NPM_VERSION=8.19.2
+        PRETTIER_VERSION=2.7.1
+        MARKDOWN_AUTODOCS_VERSION=1.0.133
+        curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | sudo bash -
+        sudo apt-get update
+        sudo apt-get install -y nodejs
+        sudo rm -rf /var/lib/apt/lists/*
+        sudo npm install -g npm@${NPM_VERSION}
+        sudo npm install -g prettier@${PRETTIER_VERSION}
+        sudo npm install -g markdown-autodocs@${MARKDOWN_AUTODOCS_VERSION}
+
+      shell: bash
+
+    - name: Warn and fail if on MacOS.
+      if: inputs.os == 'macos-latest'
+      run: |
+        echo "This github action does not support macos."
+        echo "If you need macos support, feel free to contribute the necessary install steps."
+        exit 1
+      shell: bash
+
+    - name: Install python tools
+      run: |
+        pip install \
+          yapf==0.40.2 \
+          mypy==1.18.1 \
+          isort==5.12.0 \
+          ruff==0.1.14
+      shell: bash
+
+    - name: Run code style checks on all code.
+      run: |
+        SCRIPT_PATH=${{ github.action_path }}/../check-style.sh
+        chmod +x ${SCRIPT_PATH}
+        ${SCRIPT_PATH} --full
+      shell: bash

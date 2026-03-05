@@ -1,0 +1,63 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@rules_python//python:defs.bzl", "py_binary")
+load(":cpp_rule.bzl", "cc_generate_library")
+
+py_binary(
+    name = "protoc-gen-headers",
+    srcs = [":protoc-gen-headers.py"],
+    data = [":cpp_template.j2"],
+    srcs_version = "PY3",
+    deps = [
+        "//pyprotoc_plugin",
+    ],
+)
+
+proto_library(
+    name = "sample_service_proto",
+    srcs = ["sample_service.proto"],
+)
+
+proto_library(
+    name = "another_service_proto",
+    srcs = ["another_service.proto"],
+)
+
+cc_generate_library(
+    name = "cc_generated_proto",
+    srcs = [
+        "another_service.proto",
+        "sample_service.proto",
+    ],
+    deps = [
+        ":another_service_proto",
+        ":sample_service_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "sample_service_cc_proto",
+    deps = [":sample_service_proto"],
+)
+
+cc_proto_library(
+    name = "another_service_cc_proto",
+    deps = [":another_service_proto"],
+)
+
+cc_library(
+    name = "cc_library_generated",
+    hdrs = [":cc_generated_proto"],
+    deps = [
+        ":another_service_cc_proto",
+        ":sample_service_cc_proto",
+    ],
+)
+
+cc_binary(
+    name = "cc_test",
+    srcs = ["cc_generated_test.cc"],
+    deps = [
+        ":cc_library_generated",
+    ],
+)

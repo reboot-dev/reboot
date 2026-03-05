@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+import "tests/python/sample_messages.proto";
+
+service SampleService {
+  rpc SampleMethod(SampleInput) returns (SampleOutput) {}
+}

@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+message Input {}
+
+message Output {
+  int32 value = 1;
+}
+
+service AnotherService {
+  rpc AnotherMethod(Input) returns (Output) {}
+}

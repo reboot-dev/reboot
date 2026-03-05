@@ -1,0 +1,19 @@
+#include "{{ include_path }}"
+
+#include <string>
+
+{% for service in services %}
+{% for method in service.methods %}
+{{ method.output_type }} Call{{ service.name }} ({{ method.input_type }}){
+    {% if service.name == 'AnotherService' %}
+    {{method.output_type}} output;
+    output.set_value(100);
+    return output;
+    {% else %}
+    {{method.output_type}} response;
+    response.set_data("hello");
+    return response;
+    {% endif %}
+}
+{% endfor %}
+{% endfor %}

@@ -1,0 +1,72 @@
+load("@com_google_protobuf//:protobuf.bzl", "py_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load(":sample_rule.bzl", "py_sample_library")
+
+py_test(
+    name = "library_tests",
+    srcs = [
+        "library_tests.py",
+    ],
+    deps = [
+        "//pyprotoc_plugin",
+    ],
+)
+
+py_binary(
+    name = "protoc-gen-sample",
+    srcs = ["protoc-gen-sample.py"],
+    data = [":sample_template.j2"],
+    srcs_version = "PY3",
+    deps = [
+        "//pyprotoc_plugin",
+    ],
+)
+
+proto_library(
+    name = "sample_messages_proto",
+    srcs = ["sample_messages.proto"],
+)
+
+py_proto_library(
+    name = "sample_messages_py_proto",
+    srcs = ["sample_messages.proto"],
+)
+
+proto_library(
+    name = "sample_service_proto",
+    srcs = ["sample_service.proto"],
+    deps = [":sample_messages_proto"],
+)
+
+py_proto_library(
+    name = "sample_service_py_proto",
+    srcs = ["sample_service.proto"],
+    deps = [":sample_messages_py_proto"],
+)
+
+py_sample_library(
+    name = "sample_generated_library",
+    srcs = ["sample_service.proto"],
+    deps = [
+        ":sample_messages_proto",
+        ":sample_service_proto",
+    ],
+)
+
+# TODO(CodingCanuck, while-false): Why is this second library needed?
+py_library(
+    name = "sample_generated_library_py",
+    srcs = [":sample_generated_library"],
+)
+
+py_test(
+    name = "sample_generated_library_test",
+    srcs = [
+        "sample_generated_library_test.py",
+    ],
+    deps = [
+        ":sample_generated_library_py",
+        ":sample_service_py_proto",
+    ],
+)

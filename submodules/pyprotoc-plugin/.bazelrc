@@ -1,0 +1,8 @@
+# Use a remote build cache that's world-readable. Don't write unless told otherwise.
+
+build --remote_cache=https://storage.googleapis.com/reboot-dev-bazel-remote-cache-reboot-us
+build --remote_upload_local_results=false
+
+# Print full test logs for failed tests.
+
+test --test_output=errors

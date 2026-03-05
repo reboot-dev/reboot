@@ -1,0 +1,59 @@
+# Checks that our code remains in a healthy state.
+name: Code formatting
+
+on:
+  push:
+    # Run CI (only) on our main branch to show that it is always in a green
+    # state. Don't run it on other branches; if a developer cares about one
+    # of the non-main branches they'll run tests manually.
+    branches:
+      - "main"
+  pull_request:
+    # Run CI on pull requests. Passing checks will be required to merge.
+    branches:
+      - "**"
+
+concurrency:
+  # Have at most one of these workflows running per branch, cancelling older
+  # runs that haven't completed yet when they become obsolete.
+  #
+  # When pushing new commits to a PR, each one of those commits triggers a new
+  # workflow run that would normally run to completion, even when subsequent
+  # pushes to the PR make their result obsolete. This consumes resources for no
+  # benefit. We override that default behavior to save resources, cancelling any
+  # older still-running workflows when a new workflow starts
+  #
+  # See documentation about the `github` context variables here:
+  #   https://docs.github.com/en/actions/learn-github-actions/contexts#github-context
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Do not cancel runs on the main branch. On the main branch we want every
+  # commit to be tested.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check-code-format:
+    name: Code Formatting Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          # We need the submodules in order to pick up the `dev-tools/.style.yapf`.
+          # The private submodules need to get pulled using some credentials.
+          # We can choose between Deploy Keys and Personal Access Tokens.
+          # Deploy Keys only work for one repo, and we can only specify one per
+          # `checkout`, which means we can only pull one submodule per
+          # `checkout` - untenable given our already-large-and-growing nested
+          # tree of submodules. A Personal Access Token (PAT) lets us identify
+          # ourselves as a GitHub user; if we use a dedicated user for that
+          # purpose that's about equally powerful as a large collection of
+          # Deploy Keys would be, but works for all repositories that we need to
+          # pull, allowing us to do a single `checkout` to get our full source
+          # tree. Hence we have our `Rebot` user, and use a PAT for that user.
+          token: ${{ secrets.PRIVATE_REPO_ACCESS_AS_REBOT_TOKEN }}
+          submodules: recursive
+      # Call the composite action to check files
+      # for correct code style. This action (action.yml)
+      # is also used by other repos that submodule this repo.
+      - uses: ./check-code-style
+        with:
+          os: ubuntu-latest

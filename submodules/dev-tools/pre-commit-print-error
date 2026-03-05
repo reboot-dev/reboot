@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# Helper function to print error message to user in case of error.
+# Optionally takes arguments that will be printed in an additional "Hint" line.
+print_error() {
+    local CO='\033[0;31m' # Color, red.
+    local NC='\033[0m' # No color.
+    echo -e "${CO}"
+    echo "WARNING NO FILES WERE COMMITTED: One or more pre-commit checks failed!"
+    echo "Please, carefully check the output above to see what went wrong."
+    if [ $# -gt 0 ]; then
+        echo ""
+        echo "Hint: $@."
+    fi
+    echo -e "${NC}"
+}

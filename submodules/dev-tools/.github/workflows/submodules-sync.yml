@@ -1,0 +1,185 @@
+# This workflow will bring the submodules of this repository in sync with their
+# latest HEAD. If there are changes to be made it will open a new PR (or update
+# an existing PR if one already exists) for those changes, and set that PR up
+# auto-merge as soon as all checks pass.
+#
+# HOW TO TEST CHANGES TO THIS WORKFLOW:
+#   1. Make your changes to this file.
+#   2. Commit your changes to a branch and push them to GitHub.
+#   3. In a repository that uses this workflow, update the line that says e.g.:
+#        ```
+#        uses: 3rdparty/dev-tools/.github/workflows/submodules-sync.yml@main
+#        ```
+#      to instead point to your development branch, e.g.:
+#        ```
+#        uses: 3rdparty/dev-tools/.github/workflows/submodules-sync.yml@YOUR_BRANCH_NAME
+#        ```
+#   4. Commit and push _those_ changes to a branch on GitHub.
+#   5. Manually trigger the workflow on the latter branch by finding the
+#      workflow on GitHub's `Actions` page. For example:
+#      https://github.com/reboot-dev/respect/actions/workflows/submodules_sync.yml
+#      then:
+#      * Find and click the "Run workflow" button.
+#      * Select the branch you just pushed to.
+#      * Click the "Run workflow" button.
+name: Submodules Sync
+
+on:
+  workflow_call:
+    inputs:
+      devtools_directory:
+        required: true
+        type: string
+    secrets:
+      private_repo_access_as_rebot_token:
+        required: true
+
+env:
+  SCRIPTS_DIRECTORY: ${{ inputs.devtools_directory }}/.github/workflows/scripts
+
+jobs:
+  # Since we want to create one PR per each submodule on submodule change
+  # we introduce one more build step to generate matrix of changed submodules paths
+  # in order to pass it to the main Submodules sync job then.
+  build-matrix:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout the repository to the GitHub Actions runner.
+      - name: Checkout repo
+        uses: actions/checkout@v2
+        with:
+          token: ${{ secrets.private_repo_access_as_rebot_token }}
+          submodules: recursive
+      - id: set-matrix
+        name: Set matrix based on modified submodules
+        run: ./per-submodule-build-matrix.sh
+        working-directory: ${{ env.SCRIPTS_DIRECTORY }}
+    outputs:
+      path_matrix: ${{ steps.set-matrix.outputs.path_matrix }}
+
+  sync:
+    name: Submodules Sync
+    needs: build-matrix
+    runs-on: ubuntu-latest
+    # We set a strategy matrix so that each submodule change gets its own PR.
+    # That makes sure that if one submodule becomes un-updatable, it doesn't
+    # block the update of other submodules.
+    strategy:
+      matrix:
+        path: ${{ fromJson(needs.build-matrix.outputs.path_matrix) }}
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v2
+        with:
+          token: ${{ secrets.private_repo_access_as_rebot_token }}
+          submodules: recursive
+
+      # Checkout the repository to the GitHub Actions runner.
+      - name: Checkout reboot-dev/respect
+        uses: actions/checkout@v2
+        with:
+          # The private submodules need to get pulled using some credentials.
+          # We can choose between Deploy Keys and Personal Access Tokens.
+          # Deploy Keys only work for one repo, and we can only specify one per
+          # `checkout`, which means we can only pull one submodule per
+          # `checkout` - untenable given our already-large-and-growing nested
+          # tree of submodules. A Personal Access Token (PAT) lets us identify
+          # ourselves as a GitHub user; if we use a dedicated user for that
+          # purpose that's about equally powerful as a large collection of
+          # Deploy Keys would be, but works for all repositories that we need to
+          # pull, allowing us to do a single `checkout` to get our full source
+          # tree. Hence we have our `Rebot` user, and use a PAT for that user.
+          token: ${{ secrets.private_repo_access_as_rebot_token }}
+          submodules: recursive
+
+      # Update references per each submodule path.
+      - name: Submodule Update
+        run: git submodule update --remote ${{ matrix.path }}
+
+      # The following action will commit all changes to the repo (if any), and
+      # either:
+      #   A) Do nothing, because no changes were committed.
+      #   B) Open a PR per each submodule to merge the changes to `main`,
+      #      because no PR existed yet.
+      #   C) Update an existing PR that was already proposing earlier
+      #      submodule updates to also include these latest changes.
+      #
+      # Since these PRs will only get merged when all checks pass, scenario (C)
+      # is most likely to happen when checks fail. In that case there are two
+      # possible ways forward:
+      #   1. A subsequent update to a submodule fixes the situation, and a later
+      #      run of this workflow will update the previously-broken PR to use
+      #      the fixed submodule, bringing the PR into a healthy state.
+      #   2. The submodule intentionally broke the receiving repo (this should
+      #      be rare) and a human will need to fix to the receiving repo to be
+      #      able to do the submodule update. The human will have to close the
+      #      broken PR after they make the fix, so that Rebot will retry the
+      #      automatic integration on a subsequent run.
+      #
+      # Note that Rebot does not automatically close PRs that have become
+      # obsolete due to human action, although it will happily re-use an
+      # abandoned-but-not-closed PR for later runs that make new updates.
+      - name: Create Pull Request or update existing
+        id: pr
+        uses: peter-evans/create-pull-request@v3
+        with:
+          # To trigger further workflow runs that would usually be triggered by a
+          # PR being opened, we cannot use the standard `GITHUB_TOKEN`, but must
+          # use a Personal Access Token instead. See docs:
+          #   https://github.com/peter-evans/create-pull-request/blob/main/docs/concepts-guidelines.md#triggering-further-workflow-runs
+          # We re-use the one use to pull the repo, above.
+          token: ${{ secrets.private_repo_access_as_rebot_token }}
+          # The following email address is Rebot's GitHub address - see:
+          #   https://github.com/settings/emails
+          committer: Rebot <96078724+reboot-dev-bot@users.noreply.github.com>
+          author: Rebot <96078724+reboot-dev-bot@users.noreply.github.com>
+          commit-message: "[submodule-sync: ${{ matrix.path }}] Update submodule to its latest version"
+          title: "[submodule-sync: ${{ matrix.path }}] Update submodule to its latest version"
+          body: "Automated update of our submodules to their latest version, by the `submodules-sync` workflow."
+          branch: "${{ matrix.path }}-submodule-sync.latest"
+          add-paths: ${{ matrix.path }}
+          # If a previous run had already created the branch like `submodule-sync.latest`,
+          # remove that first, start fresh. This ensures that the PR we
+          # open or update always has exactly one commit in it.
+          delete-branch: true
+
+      - name: Auto-approve PR
+        # We only need to do this when the PR is first created, not on subsequent
+        # updates.
+        if: steps.pr.outputs.pull-request-operation == 'created'
+        uses: juliangruber/approve-pull-request-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          number: ${{ steps.pr.outputs.pull-request-number }}
+
+      # The "mergequeue-failed" label gets added by the Mergequeue bot when it has previously seen
+      # the mergequeue-ready label on a PR but the checks failed and Mergequeue couldn't merge the PR.
+      # When that happens it removes the "mergequeue-ready" label and adds "mergequeue-failed".
+      # Even if we later add the "mergequeue-ready" label to the PR again, Mergequeue won't merge a PR
+      # with a new "mergequeue-ready" label if it still has an (old) "mergequeue-failed" label on it.
+      # So we must remove the mergequeue-failed label before re-adding mergequeue-ready.
+      # The following action removes the "mergequeue-failed" label if it exist.
+      # If it doesn't exist the action returns error but doesn't fail the whole job (by default).
+      # See docs: https://github.com/actions-ecosystem/action-remove-labels
+      - name: Remove label "mergequeue-failed"
+        if: steps.pr.outputs.pull-request-operation == 'created' || steps.pr.outputs.pull-request-operation == 'updated'
+        uses: actions-ecosystem/action-remove-labels@v1
+        with:
+          number: ${{ steps.pr.outputs.pull-request-number }}
+          labels: mergequeue-failed
+
+      # We add "mergequeue-ready" label to the pull request created or updated in the step
+      # "Create Pull Request or update existing" in order to merge the changes in automatic mode.
+      # See docs of the action: https://github.com/actions-ecosystem/action-add-labels
+      - name: Add label "mergequeue-ready"
+        if: steps.pr.outputs.pull-request-operation == 'created' || steps.pr.outputs.pull-request-operation == 'updated'
+        uses: actions-ecosystem/action-add-labels@v1
+        with:
+          number: ${{ steps.pr.outputs.pull-request-number }}
+          labels: mergequeue-ready

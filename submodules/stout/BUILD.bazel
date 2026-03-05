@@ -1,0 +1,103 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "atomic-backoff",
+    hdrs = [
+        "include/stout/atomic-backoff.h",
+        "include/stout/thread.h",
+    ],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "stateful-tally",
+    hdrs = ["include/stout/stateful-tally.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":atomic-backoff",
+        "@com_github_google_glog//:glog",
+    ],
+)
+
+cc_library(
+    name = "borrowed-ptr",
+    hdrs = [
+        "include/stout/borrowable.h",
+        "include/stout/borrowed_ptr.h",
+    ],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":stateful-tally",
+    ],
+)
+
+cc_library(
+    name = "flags",
+    srcs = [
+        "include/stout/flags/flags.cc",
+    ],
+    hdrs = [
+        "include/stout/flags/flags.h",
+    ],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//include/stout/flags/v1:flag",
+        "@com_github_google_glog//:glog",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
+        "@com_google_protobuf//:duration_cc_proto",
+    ],
+)
+
+cc_library(
+    name = "notification",
+    hdrs = ["include/stout/notification.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "stout",
+    hdrs = glob(
+        [
+            "include/stout/*.h",
+            "include/stout/**/*.h",
+        ],
+        [
+            "include/stout/flags/*.h",
+            "atomic-backoff.h",
+            "borrowable.h",
+            "borrowed_ptr.h",
+            "copy.h",
+            "notification.h",
+            "stateful-tally.h",
+            "thread.h",
+        ],
+    ),
+    defines = [
+        # Windows build fails without this define.
+        "GLOG_NO_ABBREVIATED_SEVERITIES",
+    ],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:atomic-backoff",
+        "//:borrowed-ptr",
+        "//:flags",
+        "//:notification",
+        "//:stateful-tally",
+        "@boost//:functional",
+        "@boost//:get_pointer",
+        "@boost//:lexical_cast",
+        "@boost//:uuid",
+        "@boost//:variant",
+        "@com_github_fmtlib_fmt//:fmt",
+        "@com_github_google_glog//:glog",
+        "@com_github_kazuho_picojson//:picojson",
+        "@com_github_tencent_rapidjson//:rapidjson",
+    ],
+)

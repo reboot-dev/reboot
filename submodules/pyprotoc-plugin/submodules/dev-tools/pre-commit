@@ -1,0 +1,33 @@
+#!/bin/bash
+
+SCRIPTPATH="$(dirname -- "$( readlink -f -- "$0"; )")"
+source ${SCRIPTPATH}/pre-commit-print-error
+
+# Run the check-style script from dev-tools as pre-commit hook.
+CHECK_STYLE_SCRIPT="${SCRIPTPATH}/check-style.sh"
+$CHECK_STYLE_SCRIPT --pre-commit
+if [ ! $? -eq 0 ]; then
+    print_error "Code style check failed"
+    exit 1
+fi
+
+# Abort if there are uncommitted changed to staged files. This would indicate
+# that we have saved the file after the initial `git add`. This could happen
+# either because we've fixed formatting of a file of because vscode is sometimes
+# very slow at running it's post save tasks.
+files_in_commit=$(git diff --cached --name-only --diff-filter=ACM HEAD)
+files_with_unstaged_changes=$(git ls-files . -m)
+changed_files=""
+for file in $files_with_unstaged_changes; do
+    if [ ! -z "$(echo $files_in_commit | grep $file)" ]; then
+        changed_files="$file $changed_files"
+    fi
+done
+if [ ! -z "$changed_files" ]; then
+    echo "There are unstaged changes to staged files:"
+    for file in ${changed_files}; do
+        echo "M $file"
+    done
+    print_error "Unstaged changes"
+    exit 1
+fi

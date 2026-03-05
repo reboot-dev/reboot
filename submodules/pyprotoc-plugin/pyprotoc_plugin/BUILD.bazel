@@ -1,0 +1,13 @@
+load("@pyprotoc_plugin_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "pyprotoc_plugin",
+    srcs = glob(["*.py"]),
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("Jinja2"),
+        requirement("protobuf"),
+    ],
+)

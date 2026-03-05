@@ -1,0 +1,17 @@
+workspace(name = "com_github_reboot_dev_pyprotoc_plugin")
+
+load("//bazel:repos.bzl", "repos")
+
+repos(external = False)
+
+load("//bazel:py_toolchains.bzl", "py_toolchains")
+
+py_toolchains()
+
+load("//bazel:pypi_repos.bzl", "pypi_repos")
+
+pypi_repos()
+
+load("//bazel:deps.bzl", "deps")
+
+deps()

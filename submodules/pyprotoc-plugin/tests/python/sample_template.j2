@@ -1,0 +1,10 @@
+{{ message_imports }}
+
+{% for service in services %}
+class {{ service.name }}CustomClient:
+{% for method in service.methods %}
+
+    def Call{{ method.name }}(self, input: {{ method.input_type }}) -> {{ method.output_type }}:
+        pass
+{%- endfor %}
+{%- endfor %}

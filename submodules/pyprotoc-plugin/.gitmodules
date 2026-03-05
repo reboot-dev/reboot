@@ -1,0 +1,4 @@
+[submodule "submodules/dev-tools"]
+	path = submodules/dev-tools
+	url = https://github.com/3rdparty/dev-tools.git
+	branch = main

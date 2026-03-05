@@ -1,0 +1,25 @@
+# The workflow calls another workflow
+# See docs:
+# https://docs.github.com/en/actions/using-workflows/reusing-workflows
+name: Submodules Sync
+
+on:
+  # Run this workflow every 15 minutes.
+  schedule:
+    - cron: "0/15 * * * *"
+  # Allows you to run this workflow manually from the Actions tab or through
+  # the HTTP API.
+  workflow_dispatch:
+
+jobs:
+  submodule-sync:
+    uses: 3rdparty/dev-tools/.github/workflows/submodules-sync.yml@main
+    with:
+      devtools_directory: submodules/dev-tools
+    secrets:
+      # TODO: the name for this secret suggests that this MUST be a credential
+      # for reboot-dev-bot and MUST be able to access private repos, but that
+      # isn't the case for us: we have no private repos to access, so passing
+      # the regular GITHUB_TOKEN is fine. We should send a PR to `dev-tools`
+      # to improve the wording.
+      private_repo_access_as_rebot_token: ${{ GITHUB_TOKEN }}
