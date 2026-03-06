@@ -932,6 +932,18 @@ async def generate_direct(
             # import schema files correctly.
             sys.path.insert(0, directory)
 
+        # Evict cached modules for each pydantic schema file so that
+        # re-imports pick up any changes the user made to source files.
+        # Without this, hot reload keeps using a stale module because
+        # `importlib.import_module` returns the `sys.modules` entry
+        # from the previous dev loop iteration rather than re-reading
+        # the file.
+        for proto_directory, schemas in pydantic_schemas_by_directory.items():
+            for file in schemas:
+                relative = str(Path(file).relative_to(proto_directory))
+                module_path = relative.rsplit('.py', 1)[0].replace(os.sep, '.')
+                sys.modules.pop(module_path, None)
+
         # Pre-scan all pydantic files to collect error models across all
         # APIs. This allows error models defined in separate files to get
         # the proper `type` discriminator field.
