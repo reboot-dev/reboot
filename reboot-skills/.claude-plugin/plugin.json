@@ -1,0 +1,13 @@
+{
+  "name": "reboot-chat-app",
+  "version": "0.1.0",
+  "description": "Use Reboot to build AI Chat Apps (MCP Apps) for ChatGPT, Claude, VSCode, Goose, and others.",
+  "author": {
+    "name": "Reboot",
+    "url": "https://reboot.dev"
+  },
+  "homepage": "https://docs.reboot.dev/",
+  "repository": "https://github.com/reboot-dev/reboot-skills",
+  "license": "Apache-2.0",
+  "keywords": ["reboot", "mcp", "mcp-apps", "ext-apps", "ui"]
+}
