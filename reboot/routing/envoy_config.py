@@ -601,7 +601,18 @@ def _mcp_frontend_error_filters(
         '<code>__FRONTEND_URL__</code>.</p>'
         '<p style="margin-top:1rem;opacity:.7">'
         'Is the dev web server running?</p>'
-        '</div></body></html>'
+        '</div>'
+        '<script>'
+        # Send a `size-changed` postMessage so the
+        # dev-loader relay (proxy.py) resizes the
+        # wrapper to fit this error page.
+        'window.parent.postMessage({'
+        'jsonrpc:"2.0",'
+        'method:"ui/notifications/size-changed",'
+        'params:{height:document.body.scrollHeight}'
+        '},"*");'
+        '</script>'
+        '</body></html>'
     ).replace('__FRONTEND_URL__', config.original_url)
 
     # Lua filter: tag `/__/web/` requests in `envoy_on_request`
