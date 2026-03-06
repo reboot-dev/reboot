@@ -3959,25 +3959,42 @@ export const useGreeter = ({ id }) => {
             offlineCacheEnabled,
             cacheKey,
         ]);
-        if (options.suspense) {
-            // Suspend until `reader.event` is set signifying that we have
-            // either a response or aborted.
-            if (!reader.event.isSet()) {
-                // Raise if it doesn't look like we are using React>=19.
-                if (!("use" in React)) {
-                    const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
-                    console.error(error);
-                    throw new Error(error);
-                }
-                // NOTE: this will throw _at least once_, because React will have
-                // to do `.then()`, which is asynchronous, so they'll throw.
-                //
-                // This invariant is what ensures that we'll have either
-                // `response` or `aborted` set via the `useState` calls above
-                // so that we keep our type promise which is that one of them
-                // will be set if passed `suspense: true` before returning.
-                React.use(reader.promise);
+        // If the user has requested suspense via `options.suspense` then
+        // we need to use `useMemo` to create a stable promise to pass
+        // to `React.use()`. This is important for two reasons:
+        //
+        // 1. `reader.promise` gets deleted after 5 seconds to
+        //    allow GC-based detection of abandoned readers (via
+        //    `FinalizationRegistry`), so we can't pass it directly
+        //    on every render.
+        //
+        // 2. `React.use()` suspends at least once for each new
+        //    promise it sees (to call `.then()`), so we must
+        //    return the same promise across re-renders for a given
+        //    reader.
+        //
+        // When suspense is not requested, or the reader's event is
+        // already set (i.e., we have a response or aborted status),
+        // we return a pre-resolved promise. Note that `React.use()`
+        // will suspend at least once even for a pre-resolved promise
+        // in order to set internal state on it, but on subsequent
+        // renders it will recognize the same promise and return
+        // without suspending.
+        const suspensePromise = useMemo(() => {
+            if (!options.suspense || reader.event.isSet()) {
+                return Promise.resolve();
             }
+            reboot_api.assert(reader.promise !== undefined);
+            return reader.promise.then(() => { });
+        }, [reader, options.suspense]);
+        if (options.suspense) {
+            if (!("use" in React)) {
+                // Raise if it doesn't look like we are using React>=19.
+                const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
+                console.error(error);
+                throw new Error(error);
+            }
+            React.use(suspensePromise);
         }
         if (!request.equals(newRequest)) {
             setRequest(newRequest);
@@ -4184,25 +4201,42 @@ export const useGreeter = ({ id }) => {
             offlineCacheEnabled,
             cacheKey,
         ]);
-        if (options.suspense) {
-            // Suspend until `reader.event` is set signifying that we have
-            // either a response or aborted.
-            if (!reader.event.isSet()) {
-                // Raise if it doesn't look like we are using React>=19.
-                if (!("use" in React)) {
-                    const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
-                    console.error(error);
-                    throw new Error(error);
-                }
-                // NOTE: this will throw _at least once_, because React will have
-                // to do `.then()`, which is asynchronous, so they'll throw.
-                //
-                // This invariant is what ensures that we'll have either
-                // `response` or `aborted` set via the `useState` calls above
-                // so that we keep our type promise which is that one of them
-                // will be set if passed `suspense: true` before returning.
-                React.use(reader.promise);
+        // If the user has requested suspense via `options.suspense` then
+        // we need to use `useMemo` to create a stable promise to pass
+        // to `React.use()`. This is important for two reasons:
+        //
+        // 1. `reader.promise` gets deleted after 5 seconds to
+        //    allow GC-based detection of abandoned readers (via
+        //    `FinalizationRegistry`), so we can't pass it directly
+        //    on every render.
+        //
+        // 2. `React.use()` suspends at least once for each new
+        //    promise it sees (to call `.then()`), so we must
+        //    return the same promise across re-renders for a given
+        //    reader.
+        //
+        // When suspense is not requested, or the reader's event is
+        // already set (i.e., we have a response or aborted status),
+        // we return a pre-resolved promise. Note that `React.use()`
+        // will suspend at least once even for a pre-resolved promise
+        // in order to set internal state on it, but on subsequent
+        // renders it will recognize the same promise and return
+        // without suspending.
+        const suspensePromise = useMemo(() => {
+            if (!options.suspense || reader.event.isSet()) {
+                return Promise.resolve();
             }
+            reboot_api.assert(reader.promise !== undefined);
+            return reader.promise.then(() => { });
+        }, [reader, options.suspense]);
+        if (options.suspense) {
+            if (!("use" in React)) {
+                // Raise if it doesn't look like we are using React>=19.
+                const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
+                console.error(error);
+                throw new Error(error);
+            }
+            React.use(suspensePromise);
         }
         if (!request.equals(newRequest)) {
             setRequest(newRequest);
@@ -4343,25 +4377,42 @@ export const useGreeter = ({ id }) => {
             offlineCacheEnabled,
             cacheKey,
         ]);
-        if (options.suspense) {
-            // Suspend until `reader.event` is set signifying that we have
-            // either a response or aborted.
-            if (!reader.event.isSet()) {
-                // Raise if it doesn't look like we are using React>=19.
-                if (!("use" in React)) {
-                    const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
-                    console.error(error);
-                    throw new Error(error);
-                }
-                // NOTE: this will throw _at least once_, because React will have
-                // to do `.then()`, which is asynchronous, so they'll throw.
-                //
-                // This invariant is what ensures that we'll have either
-                // `response` or `aborted` set via the `useState` calls above
-                // so that we keep our type promise which is that one of them
-                // will be set if passed `suspense: true` before returning.
-                React.use(reader.promise);
+        // If the user has requested suspense via `options.suspense` then
+        // we need to use `useMemo` to create a stable promise to pass
+        // to `React.use()`. This is important for two reasons:
+        //
+        // 1. `reader.promise` gets deleted after 5 seconds to
+        //    allow GC-based detection of abandoned readers (via
+        //    `FinalizationRegistry`), so we can't pass it directly
+        //    on every render.
+        //
+        // 2. `React.use()` suspends at least once for each new
+        //    promise it sees (to call `.then()`), so we must
+        //    return the same promise across re-renders for a given
+        //    reader.
+        //
+        // When suspense is not requested, or the reader's event is
+        // already set (i.e., we have a response or aborted status),
+        // we return a pre-resolved promise. Note that `React.use()`
+        // will suspend at least once even for a pre-resolved promise
+        // in order to set internal state on it, but on subsequent
+        // renders it will recognize the same promise and return
+        // without suspending.
+        const suspensePromise = useMemo(() => {
+            if (!options.suspense || reader.event.isSet()) {
+                return Promise.resolve();
             }
+            reboot_api.assert(reader.promise !== undefined);
+            return reader.promise.then(() => { });
+        }, [reader, options.suspense]);
+        if (options.suspense) {
+            if (!("use" in React)) {
+                // Raise if it doesn't look like we are using React>=19.
+                const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
+                console.error(error);
+                throw new Error(error);
+            }
+            React.use(suspensePromise);
         }
         if (!request.equals(newRequest)) {
             setRequest(newRequest);
@@ -4502,25 +4553,42 @@ export const useGreeter = ({ id }) => {
             offlineCacheEnabled,
             cacheKey,
         ]);
-        if (options.suspense) {
-            // Suspend until `reader.event` is set signifying that we have
-            // either a response or aborted.
-            if (!reader.event.isSet()) {
-                // Raise if it doesn't look like we are using React>=19.
-                if (!("use" in React)) {
-                    const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
-                    console.error(error);
-                    throw new Error(error);
-                }
-                // NOTE: this will throw _at least once_, because React will have
-                // to do `.then()`, which is asynchronous, so they'll throw.
-                //
-                // This invariant is what ensures that we'll have either
-                // `response` or `aborted` set via the `useState` calls above
-                // so that we keep our type promise which is that one of them
-                // will be set if passed `suspense: true` before returning.
-                React.use(reader.promise);
+        // If the user has requested suspense via `options.suspense` then
+        // we need to use `useMemo` to create a stable promise to pass
+        // to `React.use()`. This is important for two reasons:
+        //
+        // 1. `reader.promise` gets deleted after 5 seconds to
+        //    allow GC-based detection of abandoned readers (via
+        //    `FinalizationRegistry`), so we can't pass it directly
+        //    on every render.
+        //
+        // 2. `React.use()` suspends at least once for each new
+        //    promise it sees (to call `.then()`), so we must
+        //    return the same promise across re-renders for a given
+        //    reader.
+        //
+        // When suspense is not requested, or the reader's event is
+        // already set (i.e., we have a response or aborted status),
+        // we return a pre-resolved promise. Note that `React.use()`
+        // will suspend at least once even for a pre-resolved promise
+        // in order to set internal state on it, but on subsequent
+        // renders it will recognize the same promise and return
+        // without suspending.
+        const suspensePromise = useMemo(() => {
+            if (!options.suspense || reader.event.isSet()) {
+                return Promise.resolve();
             }
+            reboot_api.assert(reader.promise !== undefined);
+            return reader.promise.then(() => { });
+        }, [reader, options.suspense]);
+        if (options.suspense) {
+            if (!("use" in React)) {
+                // Raise if it doesn't look like we are using React>=19.
+                const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
+                console.error(error);
+                throw new Error(error);
+            }
+            React.use(suspensePromise);
         }
         if (!request.equals(newRequest)) {
             setRequest(newRequest);
@@ -4694,25 +4762,42 @@ export const useGreeter = ({ id }) => {
             offlineCacheEnabled,
             cacheKey,
         ]);
-        if (options.suspense) {
-            // Suspend until `reader.event` is set signifying that we have
-            // either a response or aborted.
-            if (!reader.event.isSet()) {
-                // Raise if it doesn't look like we are using React>=19.
-                if (!("use" in React)) {
-                    const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
-                    console.error(error);
-                    throw new Error(error);
-                }
-                // NOTE: this will throw _at least once_, because React will have
-                // to do `.then()`, which is asynchronous, so they'll throw.
-                //
-                // This invariant is what ensures that we'll have either
-                // `response` or `aborted` set via the `useState` calls above
-                // so that we keep our type promise which is that one of them
-                // will be set if passed `suspense: true` before returning.
-                React.use(reader.promise);
+        // If the user has requested suspense via `options.suspense` then
+        // we need to use `useMemo` to create a stable promise to pass
+        // to `React.use()`. This is important for two reasons:
+        //
+        // 1. `reader.promise` gets deleted after 5 seconds to
+        //    allow GC-based detection of abandoned readers (via
+        //    `FinalizationRegistry`), so we can't pass it directly
+        //    on every render.
+        //
+        // 2. `React.use()` suspends at least once for each new
+        //    promise it sees (to call `.then()`), so we must
+        //    return the same promise across re-renders for a given
+        //    reader.
+        //
+        // When suspense is not requested, or the reader's event is
+        // already set (i.e., we have a response or aborted status),
+        // we return a pre-resolved promise. Note that `React.use()`
+        // will suspend at least once even for a pre-resolved promise
+        // in order to set internal state on it, but on subsequent
+        // renders it will recognize the same promise and return
+        // without suspending.
+        const suspensePromise = useMemo(() => {
+            if (!options.suspense || reader.event.isSet()) {
+                return Promise.resolve();
             }
+            reboot_api.assert(reader.promise !== undefined);
+            return reader.promise.then(() => { });
+        }, [reader, options.suspense]);
+        if (options.suspense) {
+            if (!("use" in React)) {
+                // Raise if it doesn't look like we are using React>=19.
+                const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
+                console.error(error);
+                throw new Error(error);
+            }
+            React.use(suspensePromise);
         }
         if (!request.equals(newRequest)) {
             setRequest(newRequest);
@@ -4853,25 +4938,42 @@ export const useGreeter = ({ id }) => {
             offlineCacheEnabled,
             cacheKey,
         ]);
-        if (options.suspense) {
-            // Suspend until `reader.event` is set signifying that we have
-            // either a response or aborted.
-            if (!reader.event.isSet()) {
-                // Raise if it doesn't look like we are using React>=19.
-                if (!("use" in React)) {
-                    const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
-                    console.error(error);
-                    throw new Error(error);
-                }
-                // NOTE: this will throw _at least once_, because React will have
-                // to do `.then()`, which is asynchronous, so they'll throw.
-                //
-                // This invariant is what ensures that we'll have either
-                // `response` or `aborted` set via the `useState` calls above
-                // so that we keep our type promise which is that one of them
-                // will be set if passed `suspense: true` before returning.
-                React.use(reader.promise);
+        // If the user has requested suspense via `options.suspense` then
+        // we need to use `useMemo` to create a stable promise to pass
+        // to `React.use()`. This is important for two reasons:
+        //
+        // 1. `reader.promise` gets deleted after 5 seconds to
+        //    allow GC-based detection of abandoned readers (via
+        //    `FinalizationRegistry`), so we can't pass it directly
+        //    on every render.
+        //
+        // 2. `React.use()` suspends at least once for each new
+        //    promise it sees (to call `.then()`), so we must
+        //    return the same promise across re-renders for a given
+        //    reader.
+        //
+        // When suspense is not requested, or the reader's event is
+        // already set (i.e., we have a response or aborted status),
+        // we return a pre-resolved promise. Note that `React.use()`
+        // will suspend at least once even for a pre-resolved promise
+        // in order to set internal state on it, but on subsequent
+        // renders it will recognize the same promise and return
+        // without suspending.
+        const suspensePromise = useMemo(() => {
+            if (!options.suspense || reader.event.isSet()) {
+                return Promise.resolve();
             }
+            reboot_api.assert(reader.promise !== undefined);
+            return reader.promise.then(() => { });
+        }, [reader, options.suspense]);
+        if (options.suspense) {
+            if (!("use" in React)) {
+                // Raise if it doesn't look like we are using React>=19.
+                const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
+                console.error(error);
+                throw new Error(error);
+            }
+            React.use(suspensePromise);
         }
         if (!request.equals(newRequest)) {
             setRequest(newRequest);
@@ -5012,25 +5114,42 @@ export const useGreeter = ({ id }) => {
             offlineCacheEnabled,
             cacheKey,
         ]);
-        if (options.suspense) {
-            // Suspend until `reader.event` is set signifying that we have
-            // either a response or aborted.
-            if (!reader.event.isSet()) {
-                // Raise if it doesn't look like we are using React>=19.
-                if (!("use" in React)) {
-                    const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
-                    console.error(error);
-                    throw new Error(error);
-                }
-                // NOTE: this will throw _at least once_, because React will have
-                // to do `.then()`, which is asynchronous, so they'll throw.
-                //
-                // This invariant is what ensures that we'll have either
-                // `response` or `aborted` set via the `useState` calls above
-                // so that we keep our type promise which is that one of them
-                // will be set if passed `suspense: true` before returning.
-                React.use(reader.promise);
+        // If the user has requested suspense via `options.suspense` then
+        // we need to use `useMemo` to create a stable promise to pass
+        // to `React.use()`. This is important for two reasons:
+        //
+        // 1. `reader.promise` gets deleted after 5 seconds to
+        //    allow GC-based detection of abandoned readers (via
+        //    `FinalizationRegistry`), so we can't pass it directly
+        //    on every render.
+        //
+        // 2. `React.use()` suspends at least once for each new
+        //    promise it sees (to call `.then()`), so we must
+        //    return the same promise across re-renders for a given
+        //    reader.
+        //
+        // When suspense is not requested, or the reader's event is
+        // already set (i.e., we have a response or aborted status),
+        // we return a pre-resolved promise. Note that `React.use()`
+        // will suspend at least once even for a pre-resolved promise
+        // in order to set internal state on it, but on subsequent
+        // renders it will recognize the same promise and return
+        // without suspending.
+        const suspensePromise = useMemo(() => {
+            if (!options.suspense || reader.event.isSet()) {
+                return Promise.resolve();
             }
+            reboot_api.assert(reader.promise !== undefined);
+            return reader.promise.then(() => { });
+        }, [reader, options.suspense]);
+        if (options.suspense) {
+            if (!("use" in React)) {
+                // Raise if it doesn't look like we are using React>=19.
+                const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
+                console.error(error);
+                throw new Error(error);
+            }
+            React.use(suspensePromise);
         }
         if (!request.equals(newRequest)) {
             setRequest(newRequest);
@@ -5237,25 +5356,42 @@ export const useGreeter = ({ id }) => {
             offlineCacheEnabled,
             cacheKey,
         ]);
-        if (options.suspense) {
-            // Suspend until `reader.event` is set signifying that we have
-            // either a response or aborted.
-            if (!reader.event.isSet()) {
-                // Raise if it doesn't look like we are using React>=19.
-                if (!("use" in React)) {
-                    const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
-                    console.error(error);
-                    throw new Error(error);
-                }
-                // NOTE: this will throw _at least once_, because React will have
-                // to do `.then()`, which is asynchronous, so they'll throw.
-                //
-                // This invariant is what ensures that we'll have either
-                // `response` or `aborted` set via the `useState` calls above
-                // so that we keep our type promise which is that one of them
-                // will be set if passed `suspense: true` before returning.
-                React.use(reader.promise);
+        // If the user has requested suspense via `options.suspense` then
+        // we need to use `useMemo` to create a stable promise to pass
+        // to `React.use()`. This is important for two reasons:
+        //
+        // 1. `reader.promise` gets deleted after 5 seconds to
+        //    allow GC-based detection of abandoned readers (via
+        //    `FinalizationRegistry`), so we can't pass it directly
+        //    on every render.
+        //
+        // 2. `React.use()` suspends at least once for each new
+        //    promise it sees (to call `.then()`), so we must
+        //    return the same promise across re-renders for a given
+        //    reader.
+        //
+        // When suspense is not requested, or the reader's event is
+        // already set (i.e., we have a response or aborted status),
+        // we return a pre-resolved promise. Note that `React.use()`
+        // will suspend at least once even for a pre-resolved promise
+        // in order to set internal state on it, but on subsequent
+        // renders it will recognize the same promise and return
+        // without suspending.
+        const suspensePromise = useMemo(() => {
+            if (!options.suspense || reader.event.isSet()) {
+                return Promise.resolve();
             }
+            reboot_api.assert(reader.promise !== undefined);
+            return reader.promise.then(() => { });
+        }, [reader, options.suspense]);
+        if (options.suspense) {
+            if (!("use" in React)) {
+                // Raise if it doesn't look like we are using React>=19.
+                const error = "In order to pass `suspense: true` to a Reboot reactive reader you must be using React>=19 which provides `React.use`";
+                console.error(error);
+                throw new Error(error);
+            }
+            React.use(suspensePromise);
         }
         if (!request.equals(newRequest)) {
             setRequest(newRequest);
