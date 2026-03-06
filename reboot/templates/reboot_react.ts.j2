@@ -1354,7 +1354,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
 
 {# Check if this client has any MCP-based UI methods. #}
 {% set client_has_mcp_ui = namespace(value=false) %}
-{% if client.state.proto.uis | length > 0 %}
+{% if client.state is not none and client.state.proto.uis | length > 0 %}
 {% set client_has_mcp_ui.value = true %}
 {% endif %}
 
