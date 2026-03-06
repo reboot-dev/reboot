@@ -8,9 +8,9 @@
   },
   "dependencies": {
     "@monorepo/api": "workspace:*",
-    "@reboot-dev/reboot": "0.44.0",
-    "@reboot-dev/reboot-api": "0.44.0",
-    "@reboot-dev/reboot-std": "0.44.0",
+    "@reboot-dev/reboot": "0.45.0",
+    "@reboot-dev/reboot-api": "0.45.0",
+    "@reboot-dev/reboot-std": "0.45.0",
     "tsx": "^4.20.3"
   }
 }
