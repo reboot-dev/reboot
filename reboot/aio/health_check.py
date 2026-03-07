@@ -35,12 +35,13 @@ async def do_health_check(
     ) -> bool:
         """Perform a single health check RPC. Returns True if healthy."""
         if application_url.startswith("https://"):
-            # We always use a dev certificate for TLS integration tests.
-            assert 'dev.localhost.direct' in application_url
             channel = grpc.aio.secure_channel(
                 application_url.removeprefix("https://"),
                 grpc.ssl_channel_credentials(
-                    root_certificates=LOCALHOST_CRT_DATA,
+                    root_certificates=(
+                        LOCALHOST_CRT_DATA
+                        if 'dev.localhost.direct' in application_url else None
+                    ),
                 ),
             )
         else:
