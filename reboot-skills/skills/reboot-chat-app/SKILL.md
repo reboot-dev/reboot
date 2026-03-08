@@ -2,40 +2,14 @@
 name: reboot-chat-app
 description: Use Reboot to build AI Chat Apps (MCP Apps) for ChatGPT, Claude, VSCode, Goose, and others.
 argument-hint: [<app-description>]
-# Scaffolding requires file creation, shell commands (uv, bazel,
-# npm, rbt), and code edits across ~15 files.
+# Scaffolding requires file creation, shell commands (uv, npm,
+# rbt), and code edits across ~15 files.
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
 
 # /reboot-chat-app — Build Reboot AI Chat Apps
 
 Build complete Reboot AI Chat Apps from a user description.
-
-<!-- The following section is for the LLM executing this skill. -->
-
-## CRITICAL: Dev Bootstrap Required
-
-`UI()`, `Tool()`, and `mcp=Tool()` DO NOT EXIST in the published
-`reboot` PyPI package. Running `uv sync` alone installs
-`reboot==0.44.0` which WILL FAIL with
-`cannot import name 'UI' from 'reboot.api'`.
-
-The build flow (steps 2-5) installs the dev packages from the
-Reboot monorepo via bazel. These steps MUST run from inside the
-application directory after creating it. Do NOT skip them.
-
-DO NOT:
-
-- Run `uv sync` alone and expect `UI` or `Tool` to be available
-- Remove `UI()` or `Tool()` from the API definition to work
-  around import errors
-- Try `pip install --upgrade reboot` or look for newer versions
-- Use `uv run rbt generate` without `--no-sync` after dev bootstrap
-
-If `rbt generate` fails with `cannot import name 'UI'`, the dev
-bootstrap was not run. Go back to steps 2-5 in the build flow.
-
-<!-- The following section is for humans installing this skill. -->
 
 ## Installation
 
@@ -231,36 +205,26 @@ application directory.**
 
 1. Create `.python-version`, `pyproject.toml`, `.rbtrc`
 2. `uv sync`
-3. `mkdir -p web && cd web && bazel run //reboot:npm_install_local_reboot_react && cd ..`
-4. `rm uv.lock && uv sync`
-5. `bazel run //reboot:force_reinstall_dev_reboot`
-   (this modifies `pyproject.toml`, adding `[tool.uv.sources]`)
-6. Write API definition (`api/<pkg>/v1/<name>.py`)
-7. `uv run --no-sync rbt generate`
-8. Write servicer (`backend/src/servicers/<name>.py`)
-9. Write `main.py`
-10. Scaffold web: `package.json`, tsconfigs, `vite.config.ts`,
-    `index.css`
-11. `cd web && npm install`
-12. `uv run --no-sync rbt generate` (React bindings need
-    `node_modules`)
-13. Write React: `index.html`, `main.tsx`, `App.tsx`,
+3. Write API definition (`api/<pkg>/v1/<name>.py`)
+4. `uv run rbt generate`
+5. Write servicer (`backend/src/servicers/<name>.py`)
+6. Write `main.py`
+7. Scaffold web: `package.json`, tsconfigs, `vite.config.ts`,
+   `index.css`
+8. `cd web && npm install`
+9. `uv run rbt generate` (React bindings need `node_modules`)
+10. Write React: `index.html`, `main.tsx`, `App.tsx`,
     `App.module.css`
-14. `cd web && npm run build`
-15. `uv run rbt dev run`
-16. Tell the user to run `cd web && npm run dev` in a separate
+11. `cd web && npm run build`
+12. `uv run rbt dev run`
+13. Tell the user to run `cd web && npm run dev` in a separate
     terminal. This starts the Vite dev server for HMR — edits
     to React components will hot-reload in the browser without
     a full rebuild. The `.rbtrc` defaults to HMR mode, which
     proxies Vite through Envoy at `/__/web/`.
-17. Test with MCPJam Inspector: create `mcp_servers.json` with
+14. Test with MCPJam Inspector: create `mcp_servers.json` with
     `{"mcpServers":{"<name>":{"type":"streamable-http","url":"http://localhost:9991/mcp"}}}`
     then `npx @mcpjam/inspector@v2.0.4 --config mcp_servers.json --server <name>`
-
-Steps 2-5 are the dev bootstrap. Do NOT skip them. Do NOT
-replace them with just `uv sync`. Use `--no-sync` on all
-`uv run rbt generate` calls (steps 7 and 12) because step 5
-wrote a `[tool.uv.sources]` override to `pyproject.toml`.
 
 ## Inline Patterns
 

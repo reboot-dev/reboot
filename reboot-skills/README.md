@@ -8,16 +8,6 @@ Claude Code plugins for building on [Reboot](https://reboot.dev).
 | -------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | [`reboot-chat-app`](skills/reboot-chat-app/) | Use Reboot to build AI Chat Apps (MCP Apps) for ChatGPT, Claude, VSCode, Goose, and others |
 
-## Prerequisites
-
-AI Chat App features (`UI()`, `Tool()`) require the Reboot monorepo.
-The published `reboot` package does not include them yet. Do NOT
-try to use `uv sync` alone — it will install `reboot==0.44.0`
-which lacks these features.
-
-You need access to the Reboot monorepo to run the bazel commands
-that install the dev packages.
-
 ## Installation
 
 ### From GitHub
@@ -51,45 +41,12 @@ To auto-enable for your team, add to your project's
 }
 ```
 
-### Local (Reboot monorepo dev container)
-
-```bash
-claude --plugin-dir /workspaces/mono/public/reboot-skills
-```
-
-### Local (reboot-skills repo)
+### Local (repo checked out)
 
 ```bash
 git clone https://github.com/reboot-dev/reboot-skills.git
 claude --plugin-dir ./reboot-skills
 ```
-
-## Dev Bootstrap (required)
-
-After creating a project with `.python-version` and
-`pyproject.toml`, run these commands **in order from the
-application directory** (where `pyproject.toml` lives):
-
-```bash
-# Install base dependencies.
-uv sync
-
-# Install local React packages into web/.
-mkdir -p web && cd web && bazel run //reboot:npm_install_local_reboot_react && cd ..
-
-# Re-sync after npm install.
-rm uv.lock && uv sync
-
-# Install dev Python wheel. This MODIFIES pyproject.toml by
-# appending [tool.uv.sources] pointing to the local wheel.
-bazel run //reboot:force_reinstall_dev_reboot
-```
-
-Both bazel commands are required. After this, `pyproject.toml`
-will have a `[tool.uv.sources]` section added automatically.
-
-Use `uv run --no-sync rbt generate` for all subsequent generate
-commands to avoid overwriting the dev install.
 
 ## Usage
 
