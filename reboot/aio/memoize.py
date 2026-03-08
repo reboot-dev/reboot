@@ -99,7 +99,7 @@ async def memoize(
     await memoize.idempotently(
         f'{idempotency.alias} initial reset',
         # Don't mangle idempotency alias; any loop iterations
-        # should already be accounted for in `idempotency`.
+        # are already accounted for in `idempotency.alias`.
     ).Reset(context)
 
     status = await memoize.always().Status(context)
@@ -202,8 +202,8 @@ async def memoize(
             await memoize.idempotently(
                 f'{idempotency.alias} fail',
                 # Don't mangle idempotency alias; any loop
-                # iterations should already be accounted for
-                # in `idempotency`.
+                # iterations are already accounted for in
+                # `idempotency.alias`.
             ).Fail(
                 context,
                 failure=failure,
@@ -238,7 +238,7 @@ async def memoize(
         await memoize.idempotently(
             f'{idempotency.alias} store',
             # Don't mangle idempotency alias; any loop iterations
-            # should already be accounted for in `idempotency`.
+            # are already accounted for in `idempotency.alias`.
         ).Store(
             context,
             data=pickle.dumps(t),

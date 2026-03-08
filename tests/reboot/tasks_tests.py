@@ -1465,6 +1465,168 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
         # once: it has a different per-iteration idempotency key.
         self.assertEqual(iteration_1_call_count, 1)
 
+    async def test_control_loop_per_iteration_inline_write_and_read_idempotency(
+        self,
+    ) -> None:
+        """
+        Test that within a workflow control loop, per-iteration
+        inline writers and readers correctly return memoized
+        values and the writer function is only executed once per
+        iteration, even when the iteration is re-run after
+        recovery.
+
+        The test runs a 2-iteration control loop where each
+        iteration performs an inline write via
+        `General.ref().per_iteration('alias').write(...)` and an
+        inline read via
+        `General.ref().per_iteration('alias').read(...)`. We
+        bring the service down in the middle of iteration 0,
+        bring it back up, and verify that:
+
+        1. The inline writer from iteration 0 is NOT called
+           again after recovery (its return value is memoized).
+        2. The inline writer for iteration 1 IS called (different
+           iteration means a fresh idempotency scope).
+        3. The inline reader returns the state reflecting the
+           write for that iteration.
+        """
+        iteration_0_write_count = 0
+        iteration_1_write_count = 0
+
+        iteration_0_writer_called = asyncio.Event()
+        proceed_after_recovery = asyncio.Event()
+
+        class TestServicer(GeneralServicer):
+
+            def authorizer(self):
+                return allow()
+
+            async def constructor_writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse()
+
+            @classmethod
+            async def workflow(
+                cls,
+                context: WorkflowContext,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                g = General.ref()
+
+                async for iteration in context.loop("Test loop"):
+
+                    def wait_for_ready(state):
+                        nonlocal iteration
+                        return iteration == 0 or "iteration" in state.content
+
+                    state = await g.until(
+                        "Wait for ready",
+                    ).read(context).satisfies(wait_for_ready)
+
+                    if iteration == 0:
+                        assert "iteration" not in state.content
+                    elif iteration == 1:
+                        assert "iteration" in state.content
+                        assert state.content["iteration"] == "0"
+
+                    async def write(state: General.State):
+                        nonlocal iteration_0_write_count
+                        nonlocal iteration_1_write_count
+                        if iteration == 0:
+                            iteration_0_write_count += 1
+                        elif iteration == 1:
+                            iteration_1_write_count += 1
+                        state.content["iteration"] = str(iteration)
+                        return str(iteration)
+
+                    # Per-iteration inline write: should be
+                    # called at most once per iteration.
+                    result = await g.per_iteration("Do write").write(
+                        context, write, type=str
+                    )
+
+                    # The result should match what the writer returned
+                    # (or the memoized value on re-run).
+                    assert result == str(iteration)
+
+                    # Per-iteration inline read: should reflect
+                    # the state after the write.
+                    state = await g.per_iteration("Do read").read(context)
+
+                    assert "iteration" in state.content
+                    assert state.content["iteration"] == str(iteration)
+
+                    if iteration == 0:
+                        # Signal that iteration 0's writer has been
+                        # called.
+                        iteration_0_writer_called.set()
+
+                        # Block until the test tells us to proceed
+                        # (after recovery).
+                        await proceed_after_recovery.wait()
+
+                        # Move on to iteration 1.
+                        continue
+
+                    # Iteration 1: we're done.
+                    break
+
+                return GeneralResponse()
+
+        revision = await self.rbt.up(
+            Application(servicers=[TestServicer]),
+            # Need to disable effect validation because this
+            # test relies on setting some nonlocal variables.
+            effect_validation=EffectValidation.DISABLED,
+        )
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        # Construct.
+        g, _ = await General.constructor_writer(context)
+
+        # Spawn the workflow.
+        task = await g.spawn().workflow(context)
+
+        # Wait for iteration 0's inline writer to be called.
+        await iteration_0_writer_called.wait()
+
+        self.assertEqual(iteration_0_write_count, 1)
+        self.assertEqual(iteration_1_write_count, 0)
+
+        # Simulate failure mid-iteration 0.
+        await self.rbt.down()
+
+        # Reset the event so we can detect the re-run.
+        iteration_0_writer_called.clear()
+
+        await self.rbt.up(revision=revision)
+
+        # Let the workflow proceed past the recovery point.
+        proceed_after_recovery.set()
+
+        # Wait for the workflow to complete.
+        await task
+
+        # We should have re-executed iteration 0 because we
+        # failed in the middle of it.
+        await iteration_0_writer_called.wait()
+
+        # But iteration 0's inline writer should not have been
+        # called again: the recovery should have found the
+        # existing idempotent mutation and returned the memoized
+        # result instead of re-executing the writer function.
+        self.assertEqual(iteration_0_write_count, 1)
+
+        # Iteration 1's inline writer should now have been
+        # called exactly once: it has a different per-iteration
+        # idempotency key.
+        self.assertEqual(iteration_1_write_count, 1)
+
 
 if __name__ == '__main__':
     unittest.main()

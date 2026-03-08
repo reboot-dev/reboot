@@ -13700,6 +13700,15 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                     caller_id=IMPORT_reboot_aio_caller_id.CallerID(
                         application_id=context.application_id,
                     ),
+                    workflow_id=context.workflow_id,
+                    # Only set `workflow_iteration` for
+                    # `per_iteration` calls so that the
+                    # mutation is stored/recovered with
+                    # iteration scoping.
+                    workflow_iteration=(
+                        context.workflow_iteration
+                        if idempotency.per_iteration else None
+                    ),
                 )
 
                 metadata += headers.to_grpc_metadata()

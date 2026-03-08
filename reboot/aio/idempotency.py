@@ -115,7 +115,16 @@ class Idempotency:
 
     @property
     def alias(self) -> Optional[str]:
-        """Returns the alias or None."""
+        """Returns the alias, scoped by iteration when applicable.
+
+        When `how=PER_ITERATION`, the iteration number is appended to
+        the alias so that all consumers (including `memoize()` and
+        `_get_or_create_idempotency_key()`) see an iteration-scoped
+        alias without needing to append it themselves.
+        """
+        if self._iteration is not None:
+            alias = self._alias if self._alias is not None else "-"
+            return f"{alias} (iteration #{self._iteration})"
         return self._alias
 
     @property
@@ -436,14 +445,9 @@ class IdempotencyManager:
         # asking them to explicitly use an idempotency alias or
         # key.
         #
-        # `generate` is True when the user didn't provide an
-        # alias or key, which covers:
-        #
-        # - Bare `.idempotently()` / `.per_workflow()` calls.
-        #
-        # - Bare `.per_iteration()` calls (alias is None
-        #   because iteration scoping is handled via
-        #   `Idempotency.iteration`).
+        # `generate` is True when the user didn't provide an alias or
+        # key, which covers bare `.idempotently()`, `.per_workflow()`,
+        # or `.per_iteration()` calls.
         #
         # `.always()` has an explicit key so `generate` is
         # False. `.per_iteration("alias")` has an explicit
@@ -527,9 +531,6 @@ class IdempotencyManager:
 
         if idempotency.alias is not None:
             alias += f": {idempotency.alias}"
-
-        if idempotency.iteration is not None:
-            alias += f" (iteration #{idempotency.iteration})"
 
         key = (state_ref, alias)
 
