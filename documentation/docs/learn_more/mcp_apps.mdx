@@ -1,0 +1,85 @@
+# MCP Apps
+
+Reboot AI Chat Apps are **MCP apps** — applications that speak
+[MCP (Model Context Protocol)](https://modelcontextprotocol.io),
+the standard that AI clients use to discover and interact with
+external tools and content.
+
+## What is MCP?
+
+MCP is an open protocol that lets AI clients (ChatGPT, Claude,
+VS Code, Goose, and others) connect to external servers. An MCP
+server exposes **tools** (actions the AI can call) and
+**resources** (content the AI can read or display).
+
+## How Reboot uses MCP
+
+When your Reboot API includes a `Session` type, `Application`
+automatically registers an MCP endpoint at `/mcp`. This means:
+
+- **`Session` methods become MCP tools.** All methods on the
+  `Session` type are automatically exposed as MCP tools. The AI
+  calls them without specifying a state ID — the right `Session`
+  is resolved from the MCP session. `Session` typically acts as
+  an entry point, with methods that create other state types.
+- **Non-`Session` methods can be tools too.** Methods on other
+  types (like `Counter`) are exposed with `mcp=Tool()`. The AI
+  receives the state ID when it creates the instance and passes
+  it in subsequent calls.
+- **`UI` methods become MCP tools + resources.** When the AI
+  calls a `UI` tool, it receives metadata pointing to a compiled
+  React app (served as an MCP resource) — that prompts the AI to
+  display that app in the chat.
+
+You do not need to write any MCP protocol code. Reboot handles
+serialization, transport, session management, and state routing.
+
+## Controlling which methods are tools
+
+`Session` methods are MCP tools by default — to opt out, set
+`mcp=False`. Non-`Session` methods are **not** tools by
+default — to opt in, set `mcp=Tool()`.
+
+Not every method should be an MCP tool:
+
+1. **Human-only actions.** Some actions should only be triggered
+   by a human — for example, a "Yes, confirm" button in a React
+   UI. The human clicks it to call the method, but the AI
+   cannot.
+2. **Context bloat.** Every tool you expose is added to the AI's
+   context window. Exposing too many tools can overwhelm the AI
+   and degrade its performance.
+
+For the full API reference and code examples, see
+[Creating tools](/learn_more/define/pydantic#creating-tools-for-the-ai).
+
+## Sessions and `Session` state
+
+When an MCP client begins a new MCP session with your app, Reboot
+automatically creates a `Session` state instance for that session.
+`Session` acts as an entry point: its methods typically create other
+state types (like `Counter`) whose IDs are returned to the AI. The AI
+can then use those IDs to make further calls (like
+`Counter.increment()`) directly to those states. The AI tracks IDs
+in its context window, which is scoped to the chat conversation.
+
+Reboot issues a UUIDv7 session ID for each newly connected
+session. Reboot handles persistence on the server side, so
+state created during a session is durable and can be accessed
+again later.
+
+How long a session is (re)used is up to the MCP client; different
+providers have different behaviors, which are typically not
+well-documented. The most common behaviors we've observed are:
+
+* **Many different conversations reuse the same session** - Claude,
+  VSCode, MCPJam, [...]. Sessions are never shared across users.
+* **Most tool calls get a new session** - ChatGPT.
+
+Note that, despite their encouraging name, sessions do not represent
+conversations.
+
+## Connecting AI clients
+
+To connect an AI client to your Reboot app, see
+[From an MCP client](/learn_more/call/from_mcp_client).

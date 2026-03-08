@@ -16,7 +16,7 @@ The current libraries are:
 
 ## Integrations
 
-Reboot's integrations add clean, surefire APIs to interact with third party services. Because interactions with external services are [isolated as side-effects](/develop/side_effects), you can confidently use an integration's API -- knowing that it will safely compose, and without worrying about whether it might partially fail or retry unsafely.
+Reboot's integrations add clean, surefire APIs to interact with third party services. Because interactions with external services are [isolated as side-effects](/learn_more/side_effects), you can confidently use an integration's API -- knowing that it will safely compose, and without worrying about whether it might partially fail or retry unsafely.
 
 The currently supported integrations are:
 * [Mailgun](./mailgun) - Integration that supports sending email messages using the Mailgun API.

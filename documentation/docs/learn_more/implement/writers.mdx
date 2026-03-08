@@ -1,0 +1,79 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Writers
+
+A `writer` method gets exclusive, atomic access to state in order to
+modify it. Any modifications a `writer` makes to state are persisted
+after the method returns, but before returning to the caller.  If the
+method fails (or if it is part of a `transaction` which aborts), its
+modifications to state are not persisted.
+
+A `writer` method gets passed a context of type `WriterContext`. A
+`WriterContext` can only be used to make calls to `reader`
+methods (**that is not a typo, `writer`'s can only call other
+`reader`'s**).
+
+Here's an example of a `writer` method called `Deposit` on our
+`Account` state that increments the account's current balance by some
+amount in the request:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from bank.v1.bank_rbt import Account
+
+class AccountServicer(Account.Servicer):
+
+    async def deposit(
+        self,
+        context: WriterContext,
+        request: DepositRequest,
+    ) -> DepositResponse:
+        self.state.balance += request.amount
+        return DepositResponse(updated_balance=self.state.balance)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+    <Tabs groupId="typescript-object-class">
+      <TabItem value="object" label="Object literal">
+```ts
+import { Account } from "../../api/bank/v1/account_rbt.js";
+
+const accountServicer = Account.servicer({
+  deposit: async (
+    context: WriterContext,
+    state: Account.State,
+    request: Account.DepositRequest
+  ): Promise<[Account.State, Account.PartialDepositResponse]> => {
+    state.balance += request.amount;
+
+    return [state, { updatedBalance: state.balance }];
+  },
+});
+```
+      </TabItem>
+      <TabItem value="class" label="Class">
+```ts
+import { Account } from "../../api/bank/v1/account_rbt.js";
+
+class AccountServicer extends Account.Servicer {
+  async deposit(
+    context: WriterContext,
+    request: Account.DepositRequest
+  ): Promise<Account.PartialDepositResponse> {
+    this.state.balance += request.amount;
+
+    return { updatedBalance: this.state.balance };
+  }
+}
+```
+      </TabItem>
+    </Tabs>
+  </TabItem>
+</Tabs>
+
+In addition to returning a response and updating state, a `writer` can
+also schedule [async tasks](/learn_more/tasks), which are atomically
+started (or enqueued) if and only if the `writer` completes
+successfully.

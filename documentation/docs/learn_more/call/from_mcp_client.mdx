@@ -1,0 +1,106 @@
+# From an MCP client
+
+Your Reboot app exposes an MCP endpoint at `/mcp`. Any MCP-compatible AI
+client can connect to it.
+
+## Local clients
+
+During development it is easiest to use a local MCP client, since they
+can easily reach applications running on `localhost`.
+
+### MCPJam Inspector (development)
+
+[MCPJam Inspector](https://mcpjam.com) is a browser-based MCP client
+ideal for testing during development.
+
+Add an `mcp_servers.json` file in your project root, and fill it in:
+```json
+{
+  "mcpServers": {
+    "my-app": {
+      "type": "streamable-http",
+      "url": "http://localhost:9991/mcp"
+    }
+  }
+}
+```
+
+Replace `my-app` with a name for your server, and update the URL if your
+app runs on a different port or host.
+
+Then run MCPJam:
+```sh
+npx @mcpjam/inspector@v2.0.4 \
+  --config mcp_servers.json --server my-app
+```
+
+This opens an interface where you can browse your app's tools, call
+them, and see `UI` method React apps rendered inline.
+
+### VS Code (Copilot)
+
+VS Code supports MCP servers through GitHub Copilot. Add a
+`.vscode/mcp.json` file to your workspace:
+
+```json
+{
+  "servers": {
+    "my-app": {
+      "type": "streamable-http",
+      "url": "http://localhost:9991/mcp"
+    }
+  }
+}
+```
+
+Copilot Chat will discover your tools and offer them as available
+actions.
+
+### Goose
+
+<!-- TODO(rjh): test these instructions, and expand them with `ngrok` info -->
+
+[Goose](https://block.github.io/goose/) supports MCP servers. Add your
+server to the Goose configuration:
+
+```yaml
+extensions:
+  my-app:
+    type: streamable-http
+    uri: http://localhost:9991/mcp
+```
+
+
+## On the web
+
+Eventually, you'll likely want to publish your app for popular web-based
+AI platforms. This requires that your app is reachable on the internet.
+During development, you can use `ngrok`. In production we suggest taking
+a look at [Reboot Cloud](/deploy_on_reboot_cloud).
+
+### ChatGPT
+
+ChatGPT supports
+[remote MCP servers](https://developers.openai.com/api/docs/guides/tools-connectors-mcp/).
+To connect your deployed Reboot app:
+
+1. Open [chatgpt.com](https://chatgpt.com).
+2. In the message composer, click the **Tools** icon (hammer).
+3. Select **Add MCP tool**, then enter your MCP server URL
+   (e.g., `https://your-app.prod1.rbt.cloud:9991/mcp`).
+4. ChatGPT will discover your tools and make them available in
+   the conversation.
+
+### Claude (claude.ai)
+
+[Claude.ai](https://claude.ai) supports MCP servers. To connect your
+deployed Reboot app:
+
+1. Open a conversation on claude.ai.
+2. Click the **Integrations** icon (puzzle piece) in the message
+   composer.
+3. Add your MCP server URL (e.g., `https://your-app.prod1.rbt.cloud/mcp`).
+4. Claude will discover your tools and make them available in the
+   conversation.
+
+

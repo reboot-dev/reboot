@@ -14,7 +14,7 @@ Data is exported as one [JSON lines file](https://jsonlines.org/) per database, 
 
 The types of exported data are:
 * The state for each of your data type instances themselves - _Useful for interoperating with OLAP systems._
-* All [tasks](/develop/tasks) executed on behalf of states - _Useful for backups: if you have other use cases for exported tasks, [please let us know!](https://discord.com/invite/cRbdcS94Nr)_
+* All [tasks](/learn_more/tasks) executed on behalf of states - _Useful for backups: if you have other use cases for exported tasks, [please let us know!](https://discord.com/invite/cRbdcS94Nr)_
 * Idempotent mutations - _Useful for backups._
 
 When importing data, any number of files are accepted and automatically partitioned

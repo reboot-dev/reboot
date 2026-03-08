@@ -1,0 +1,51 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Zod
+
+To declare a data type called `ChatRoom` with methods `messages` and
+`send`, put the following in a `.ts` file:
+
+```typescript
+import { z } from "zod/v4";
+import { reader, writer } from "@reboot-dev/reboot-api";
+
+export const ChatRoom = {
+  state: {
+    messages: z.array(z.string()).default(() => []).meta({ tag: 1 }),
+  },
+  methods: {
+    messages: reader({
+        request: {},
+        response: {
+          messages: z.array(z.string()).meta({ tag: 1 }),
+        },
+      }),
+    send: writer({
+      request: {
+        message: z.string().meta({ tag: 1 }),
+      },
+      response: z.void(),
+    }),
+  },
+};
+
+export const api = {
+  ChatRoom,
+};
+```
+
+:::important
+Reboot requires `zod/v4`.
+:::
+
+Depending on its [kind](/learn_more/define/methods), a method
+might be able to only read (e.g., `reader`) or both read and write
+(e.g., `writer`) the state.
+
+In the example above, `ChatRoom` has just one `reader` and one `writer`
+method, but it can have any number of `reader`, `writer`,
+`transaction`, and `workflow` methods.
+
+To learn more about how you implement each data type's methods see
+[Implement your API](/learn_more/implement/servicers).

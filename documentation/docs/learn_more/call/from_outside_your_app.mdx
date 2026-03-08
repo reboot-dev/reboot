@@ -1,0 +1,120 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# From outside your app
+
+By "external" to a Reboot application, we mean from a (micro)service
+(e.g., a gRPC or HTTP based service) or a lambda (e.g., using some
+serverless framework), or even from your laptop! Your tests are
+another example of "external".
+
+In order to call a method on an instance of your state externally,
+you'll need to use an `ExternalContext`, for example:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from reboot.aio.external import ExternalContext
+
+context = ExternalContext(
+    name="send message",
+    url="http://localhost:9991"
+)
+
+chat_room = ChatRoom.ref(id)
+
+response = await chat_room.send(context, message="Hello, World!")
+````
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { ExternalContext } from "@reboot-dev/reboot";
+
+const context = new ExternalContext({
+  name: "send message",
+  url: "http://localhost:9991"
+});
+
+const chat_room = ChatRoom.ref(id);
+
+const response = await chat_room.send(context, { message: "Hello, World!" });
+````
+
+  </TabItem>
+</Tabs>
+
+The `url` argument specifies where your Reboot application is
+running, e.g., on your laptop via `rbt dev`, in a container on
+Kubernetes via `rbt serve` (where `url` will likely route to your
+Kubernetes gateway), or in the cloud via `rbt cloud`.
+
+Because an `ExternalContext` is used outside of Reboot, a series of
+Reboot methods called using an `ExternalContext` don't have any
+atomicity guarantees with regard to one another (although the
+individual methods executing within Reboot will of course still have
+their own atomicity). If you are calling multiple Reboot methods that
+you would like to happen atomically, you can move those calls into a
+[`transaction`](/learn_more/define/methods#kinds), and then
+call that method from your client.
+
+## Making calls idempotently
+
+You can make calls `idempotently()` using an `ExternalContext` so
+that you only perform operations once. You can even pass an
+_idempotency seed_, e.g., a `UUID`, to an `ExternalContext` when
+constructing it so that every time you re-run code using that
+`ExternalContext` it will generate the same idempotency keys so that
+your external code will execute "where it left off" from the last time
+it was running. This is similar to trying to write code that
+_idempotently
+converges_,
+just external to your Reboot application. Here's an example:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+context = ExternalContext(
+    name="send message",
+    url="http://localhost:9991",
+    idempotency_seed=uuid.UUID("123e4567-e89b-12d3-a456-426614174000"),
+)
+````
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const context = new ExternalContext({
+  name: "send message",
+  url: "http://localhost:9991",
+  idempotencySeed="123e4567-e89b-12d3-a456-426614174000",
+});
+````
+
+  </TabItem>
+</Tabs>
+
+## Calling readers reactively
+
+Using an `ExternalContext`, you can also call `reader` methods _reactively_. For example:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/demos/fig/backend/src/many_readers.py&lines=20-22) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/demos/fig/backend/src/many_readers.py -->
+
+```py
+fig = Fig.ref(fig_id)
+async for response in fig.reactively().get_position(context):
+    print(f"{fig_id}: {response}")
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- TODO: use markdown-autodoc to get this from tested code. -->
+```ts
+// COMING SOON!
+```
+  </TabItem>
+</Tabs>

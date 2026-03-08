@@ -1,0 +1,213 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Tasks
+
+A task is a unit of asynchronous work. Tasks run independently of the
+request/response flow that applies to standard Reboot method execution. Tasks
+are typically used for long-running operations, operations whose execution
+should be deferred to a later time, and/or operations that perform side effects
+external to Reboot.
+
+Any Reboot [method](/learn_more/define/methods) can be invoked as a task by using
+`schedule()` or `spawn()`, followed by a call to the method.
+
+## Scheduling and Spawning
+
+### `schedule()`
+
+`schedule()` can be used from within a [`writer`](/learn_more/define/methods#kinds) or
+[`transaction`](/learn_more/define/methods#kinds) method. It returns the ID of a
+task that hasn't been started yet. This is because the creation of a task is an
+_effect_, and effects only occur after the method that invokes `schedule()`
+completes. (If the method's execution fails at any point, its scheduled tasks
+will not be run.)
+
+This means that the method that invokes `schedule()` cannot wait for the
+execution of the scheduled task to complete or obtain the response value
+produced by the task. If you would like to do that, you should use `spawn()`
+inside a `workflow` method instead.
+
+Here's an example:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/monorepo/bank/backend/src/account_servicer.py&lines=38-38) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/monorepo/bank/backend/src/account_servicer.py -->
+
+```py
+task_id = await self.ref().schedule().welcome_email(context)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/bank-nodejs/backend/src/account_servicer.ts&lines=21-21) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/bank-nodejs/backend/src/account_servicer.ts -->
+
+```ts
+const taskId = await this.ref().schedule().welcomeEmail(context);
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+  </TabItem>
+</Tabs>
+
+
+### `spawn()`
+
+`spawn()` can be used from within a [`workflow`](/learn_more/define/methods#kinds)
+method; it can also be invoked from [outside
+Reboot](/learn_more/call/from_outside_your_app) using an
+`ExternalContext`. Calling `spawn()` returns a `[MethodName]Task` object that
+represents the running task. You can use `await` on the task object to get the
+response (i.e., the return value of the method executed by the task).
+
+For example, if `spawn()` is used to run a `workflow` method named
+`WelcomeEmail`, `spawn()` returns an instance of the (generated)
+`WelcomeEmailTask` class.
+
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+task = await self.ref().spawn().welcome_email(context)
+response = await task
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const { task } = await this.ref().spawn().welcomeEmail(context);
+const response = await task;
+```
+  </TabItem>
+</Tabs>
+
+## Task execution
+
+Reboot automatically manages the execution of tasks. If a task encounters an
+unexpected error, Reboot will re-execute the task until it either completes
+successfully or [aborts with a declared error](/learn_more/errors).  As a result,
+task methods should be designed to behave correctly even if they are executed
+multiple times. For example, if a task performs side-effects outside of Reboot,
+the developer should decide whether the side-effect should be re-executed every
+time the task is run ("at least once"), or only the first time ("at most
+once"). Reboot provides several helpers to facilitate this; see the [workflow
+documentation](/learn_more/implement/workflows) for more detail.
+
+## Running a task at a specific time in the future
+
+If no arguments are passed to `schedule()` or `spawn()`, the task will
+be started as soon as possible in the background.
+
+You can alternatively pass the `when` argument to delay the task's execution
+until a specific time in the future.
+
+:::info
+Similar to a browser's `setTimeout`, work isn't guaranteed to start exactly
+`when` time has elapsed but sometime shortly thereafter, when resources are
+available to handle the request.
+:::
+
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/boutique/backend/src/shipping/servicer.py&lines=30-35) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/boutique/backend/src/shipping/servicer.py -->
+
+```py
+await self.ref().schedule(
+    when=timedelta(seconds=request.quote_expiration_seconds),
+).expire_quote(
+    context,
+    quote=quote,
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- TODO: pull this from a real example -->
+```ts
+await this.ref().schedule({
+  when: new Date(Date.now() + request.quoteExpirationSeconds * 1000)
+}).expireQuoteTask(context, { quote })
+```
+  </TabItem>
+</Tabs>
+
+:::tip
+
+In Python, you can pass _either_ a `datetime` to identify a specific point in
+time or a `timedelta` to represent an amount of time in the future.
+
+:::
+
+## Retrieving a task from a task ID
+
+If all you have is a `TaskId`, you can use `retrieve()` to get a
+`[MethodName]Task`. If desired, you can then `await` it to get the response.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/monorepo/bank/backend/tests/account_servicer_test.py&lines=89-92) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/monorepo/bank/backend/tests/account_servicer_test.py -->
+
+```py
+response = await Account.WelcomeEmailTask.retrieve(
+    context,
+    task_id=welcome_email_task_id,
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const response = await Account.WelcomeEmailTask.retrieve(context, { taskId });
+```
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+## Unexpected task errors and hotfixing
+
+If a task encounters an unexpected error, it will be retried until it
+eventually runs to completion.
+[Learn more about expected and unexpected errors](/learn_more/errors).
+
+Tasks that are failing to complete due to errors can be "hotfixed" by deploying
+a new version of the app. The next time the task runs, it will use the fixed
+code.
+
+:::tip
+Hotfix code in development with `⌘s`. Saving a new version rebuilds your app
+automatically. Learn more about [`rbt dev watch`](//develop_locally#rbtrc-and-flags).
+:::
+
+Learn how to hotfix an app in production by
+[deploying a new version](/deploy_operate/where).
+
+
+## `rbt task`
+Task administration, such as listing and canceling tasks, can be done through
+the Reboot CLI.
+
+### `list`
+To get a list of all tasks currently executing, run e.g.
+`rbt task list --application-url=http://localhost:9991`. Note, your
+`application-url` may be different.
+
+To see tasks in production, you will need to pass a few additional flags; see
+`rbt task list -h` for more details.
+
+### `cancel`
+To cancel a specific task, use `rbt task cancel`. To cancel a task, in
+addition to the `--application-url`, you must pass flags to identify
+the task by its `--state-type`, `--state-id`, and `--task-uuid`. These values
+can be found by first running `rbt task list`.
