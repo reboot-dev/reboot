@@ -2384,8 +2384,9 @@ grpc::Status DatabaseService::Export(
         key_type_prefix == IDEMPOTENT_MUTATION_KEY_PREFIX
         || key_type_prefix == EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX
         || key_type_prefix == WORKFLOW_IDEMPOTENT_MUTATION_KEY_PREFIX
+        || key_type_prefix == WORKFLOW_EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX
         || key_type_prefix
-            == WORKFLOW_EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX) {
+            == WORKFLOW_ITERATION_IDEMPOTENT_MUTATION_KEY_PREFIX) {
       auto* mutation = item.mutable_idempotent_mutation();
       CHECK(mutation->ParseFromArray(it->value().data(), it->value().size()));
       state_ref = mutation->state_ref();
