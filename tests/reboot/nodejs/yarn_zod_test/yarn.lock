@@ -431,11 +431,10 @@ __metadata:
   resolution: "@monorepo/backend@workspace:backend"
   dependencies:
     "@monorepo/api": "workspace:*"
-    "@reboot-dev/reboot": "npm:0.44.0"
-    "@reboot-dev/reboot-api": "npm:0.44.0"
-    "@reboot-dev/reboot-std": "npm:0.44.0"
+    "@reboot-dev/reboot": "npm:0.45.1"
+    "@reboot-dev/reboot-api": "npm:0.45.1"
+    "@reboot-dev/reboot-std": "npm:0.45.1"
     tsx: "npm:^4.20.3"
-    uuidv7: "npm:1.0.2"
   languageName: unknown
   linkType: soft
 
@@ -468,46 +467,46 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@reboot-dev/reboot-api@npm:0.44.0":
-  version: 0.44.0
-  resolution: "@reboot-dev/reboot-api@npm:0.44.0"
+"@reboot-dev/reboot-api@npm:0.45.1":
+  version: 0.45.1
+  resolution: "@reboot-dev/reboot-api@npm:0.45.1"
   dependencies:
     "@scarf/scarf": "npm:1.4.0"
     typescript: "npm:5.4.5"
     zod: "npm:^3.25.51"
   peerDependencies:
     "@bufbuild/protobuf": 1.10.1
-  checksum: 10c0/1a5455b549f38558051d9809d74c2fdbc84c1bcc9597a422c51142db3a9db133866f8492997ce87249369335d52ba4dd34865de601da8122417aee837ed3ce94
+  checksum: 10c0/be24c4a4d9bcc67be7295e614d899a549e86bf5a0a74a64d21a72396ba2fe7f954f398e6d24a1d59ca24f4ddc3a999d33e30bca90a013f311b591a540cc93131
   languageName: node
   linkType: hard
 
-"@reboot-dev/reboot-std-api@npm:0.44.0":
-  version: 0.44.0
-  resolution: "@reboot-dev/reboot-std-api@npm:0.44.0"
+"@reboot-dev/reboot-std-api@npm:0.45.1":
+  version: 0.45.1
+  resolution: "@reboot-dev/reboot-std-api@npm:0.45.1"
   dependencies:
     "@scarf/scarf": "npm:1.4.0"
-  checksum: 10c0/ddd21c73317dbdc5edb90d45af1c3c31f6920b9bd7603358a11bdf334bc7b07eb71eebc3e99e547ce5669aeaccc9724be2b498b197d2972f8c8bb2813c413356
+  checksum: 10c0/d935a89829ee6866e03a892e9d545720cd87645333d01545a591c17c937ad5f40cf62ce8263bee6a1b4d868a81d2949e8205c9b654aaf600b2b15186b4dba526
   languageName: node
   linkType: hard
 
-"@reboot-dev/reboot-std@npm:0.44.0":
-  version: 0.44.0
-  resolution: "@reboot-dev/reboot-std@npm:0.44.0"
+"@reboot-dev/reboot-std@npm:0.45.1":
+  version: 0.45.1
+  resolution: "@reboot-dev/reboot-std@npm:0.45.1"
   dependencies:
-    "@reboot-dev/reboot": "npm:0.44.0"
-    "@reboot-dev/reboot-std-api": "npm:0.44.0"
+    "@reboot-dev/reboot": "npm:0.45.1"
+    "@reboot-dev/reboot-std-api": "npm:0.45.1"
     "@scarf/scarf": "npm:1.4.0"
-  checksum: 10c0/728dd22ca740d000bb8b213157a0e634c2aa15fac1322fb2de3141c03428ce69ebce1c38704e4a54db6ccadd120b1d88e4bcfcd46c432aa7c5f62b53c3ab7410
+  checksum: 10c0/04e2b226a31685cf3ee898da3d23e7914cc34e39ab97231b5f13afb14f486c56561b92ea43f98bc26ee1b8bb197514de4582ee96c8ccf1ee0944989624006038
   languageName: node
   linkType: hard
 
-"@reboot-dev/reboot@npm:0.44.0":
-  version: 0.44.0
-  resolution: "@reboot-dev/reboot@npm:0.44.0"
+"@reboot-dev/reboot@npm:0.45.1":
+  version: 0.45.1
+  resolution: "@reboot-dev/reboot@npm:0.45.1"
   dependencies:
     "@bufbuild/protoc-gen-es": "npm:1.10.1"
     "@bufbuild/protoplugin": "npm:1.10.1"
-    "@reboot-dev/reboot-api": "npm:0.44.0"
+    "@reboot-dev/reboot-api": "npm:0.45.1"
     "@scarf/scarf": "npm:1.4.0"
     "@standard-schema/spec": "npm:1.0.0"
     chalk: "npm:^4.1.2"
@@ -518,7 +517,7 @@ __metadata:
     node-gyp: "npm:>=10.2.0"
     toobusy-js: "npm:^0.5.1"
     tsx: "npm:^4.19.2"
-    uuid: "npm:^9.0.1"
+    uuid: "npm:11.1.0"
     which-pm-runs: "npm:^1.1.0"
     zod: "npm:^3.25.51"
   peerDependencies:
@@ -528,7 +527,7 @@ __metadata:
     rbt: rbt.js
     rbt-esbuild: rbt-esbuild.js
     zod-to-proto: zod-to-proto.js
-  checksum: 10c0/34478662f444f74c543e5d49c414c03460b1140800de8e928295ae7bd5e203d4d5179fecc9163cad6822708a4f0f30bfb5da5bc56aa6c0f977c9523feb5db25f
+  checksum: 10c0/5aa7b431bb898480a67c01659009ef3b954aa2e9f53b83843f8e9dc771764baff1374d2170693f0ab668dc8fd6ed99a58b59467306ec1dda697be99e6256948e
   languageName: node
   linkType: hard
 
@@ -2178,21 +2177,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"uuid@npm:^9.0.1":
-  version: 9.0.1
-  resolution: "uuid@npm:9.0.1"
+"uuid@npm:11.1.0":
+  version: 11.1.0
+  resolution: "uuid@npm:11.1.0"
   bin:
-    uuid: dist/bin/uuid
-  checksum: 10c0/1607dd32ac7fc22f2d8f77051e6a64845c9bce5cd3dd8aa0070c074ec73e666a1f63c7b4e0f4bf2bc8b9d59dc85a15e17807446d9d2b17c8485fbc2147b27f9b
-  languageName: node
-  linkType: hard
-
-"uuidv7@npm:1.0.2":
-  version: 1.0.2
-  resolution: "uuidv7@npm:1.0.2"
-  bin:
-    uuidv7: cli.js
-  checksum: 10c0/882187a3b6237068979a1a39912e5c2e3b8c6694321a21070c7f558e4fcf997e8208e30b63819c13758715c407ff5d059d296fcc170f5c7796ca7e0ea45740da
+    uuid: dist/esm/bin/uuid
+  checksum: 10c0/34aa51b9874ae398c2b799c88a127701408cd581ee89ec3baa53509dd8728cbb25826f2a038f9465f8b7be446f0fbf11558862965b18d21c993684297628d4d3
   languageName: node
   linkType: hard
 

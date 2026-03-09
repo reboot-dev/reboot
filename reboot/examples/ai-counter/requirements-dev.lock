@@ -21,6 +21,7 @@ annotated-types==0.7.0
 anyio==4.12.1
     # via httpx
     # via mcp
+    # via reboot
     # via sse-starlette
     # via starlette
 async-timeout==5.0.1
@@ -112,7 +113,8 @@ kubernetes-asyncio==31.1.0
     # via reboot
 markupsafe==3.0.3
     # via jinja2
-mcp==1.25.0
+mcp==1.26.0
+    # via reboot
 multidict==6.7.0
     # via aiohttp
     # via yarl
@@ -191,7 +193,7 @@ python-multipart==0.0.21
 pyyaml==6.0.2
     # via kubernetes-asyncio
     # via reboot
-reboot==0.44.0
+reboot==0.45.1
 referencing==0.37.0
     # via jsonschema
     # via jsonschema-specifications
@@ -203,13 +205,12 @@ setuptools==80.10.1
 six==1.17.0
     # via kubernetes-asyncio
     # via python-dateutil
-sortedcontainers==2.4.0
-    # via reboot
 sse-starlette==3.0.3
     # via mcp
 starlette==0.46.2
     # via fastapi
     # via mcp
+    # via reboot
 tabulate==0.9.0
     # via reboot
 tomli==2.4.0
@@ -227,7 +228,6 @@ typing-extensions==4.15.0
     # via opentelemetry-sdk
     # via pydantic
     # via pydantic-core
-    # via reboot
     # via referencing
     # via typing-inspection
     # via uvicorn
