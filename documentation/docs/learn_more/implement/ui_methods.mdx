@@ -14,8 +14,8 @@ from a browser or backend.
 
 ## Syntax
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-counter-dashboard/api/ai_counter/v1/counter.py&lines=17-31&syntax=python) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-counter-dashboard/api/ai_counter/v1/counter.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py&lines=17-31&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py -->
 
 ```python
 class SessionState(Model):
@@ -48,10 +48,10 @@ class IncrementRequest(Model):
 
 ### Zero-config UI
 
-From the `ai-counter` example:
+From the `ai-chat-counter` example:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-counter/api/ai_counter/v1/counter.py&lines=18-26&syntax=python) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-counter/api/ai_counter/v1/counter.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py&lines=18-26&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py -->
 
 ```python
 class SessionState(Model):
@@ -66,10 +66,10 @@ class CounterState(Model):
 
 ### Parameterized UI
 
-From the `ai-counter-dashboard` example:
+From the `ai-chat-counter-dashboard` example:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-counter-dashboard/api/ai_counter/v1/counter.py&lines=17-31&syntax=python) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-counter-dashboard/api/ai_counter/v1/counter.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py&lines=17-31&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py -->
 
 ```python
 class SessionState(Model):
@@ -92,7 +92,7 @@ class IncrementRequest(Model):
 The React component receives `DashboardConfig` fields as props:
 
 ```tsx
-import { type DashboardConfig, useCounter } from "@api/ai_counter/v1/counter_rbt_react";
+import { type DashboardConfig, useCounter } from "@api/ai_chat_counter/v1/counter_rbt_react";
 
 export const DashboardApp: FC<DashboardConfig> = ({
   personalizedMessage,
@@ -117,7 +117,7 @@ provided by the framework when the UI is opened — you do
 not need to pass it.
 
 ```tsx
-import { useCounter } from "@api/ai_counter/v1/counter_rbt_react";
+import { useCounter } from "@api/ai_chat_counter/v1/counter_rbt_react";
 
 export const ClickerApp: FC = () => {
   const counter = useCounter();

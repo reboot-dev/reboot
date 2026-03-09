@@ -238,7 +238,7 @@ The key differences:
   framework when the UI is opened:
 
 ```tsx
-import { useCounter } from "@api/ai_counter/v1/counter_rbt_react";
+import { useCounter } from "@api/ai_chat_counter/v1/counter_rbt_react";
 
 const counter = useCounter();
 const { response } = counter.useGet();
@@ -250,7 +250,7 @@ await counter.increment({ amount: 1 });
   as props:
 
 ```tsx
-import { type DashboardConfig } from "@api/ai_counter/v1/counter_rbt_react";
+import { type DashboardConfig } from "@api/ai_chat_counter/v1/counter_rbt_react";
 
 export const DashboardApp: FC<DashboardConfig> = ({
   personalizedMessage,
