@@ -19,11 +19,14 @@ Add the Reboot skills marketplace and install the plugin:
 
 ```bash
 # 1. Add the marketplace (one-time).
-/plugin marketplace add reboot-dev/reboot-skills
+claude plugin marketplace add reboot-dev/reboot-skills
 
 # 2. Install the plugin.
-/plugin install reboot-chat-app@reboot-skills
+claude plugin install reboot-chat-app@reboot-skills
 ```
+
+If you install the plugin within claude with /plugin you need to restart for
+the configuration and skill to load correctly.
 
 Or add to your project's `.claude/settings.json` so teammates
 are automatically offered the plugin on first use:
@@ -213,18 +216,29 @@ application directory.**
    `index.css`
 8. `cd web && npm install`
 9. `uv run rbt generate` (React bindings need `node_modules`)
-10. Create `mcp_servers.json` with
-    `{"mcpServers":{"<name>":{"type":"streamable-http","url":"http://localhost:9991/mcp"}}}`
-11. Write React: `index.html`, `main.tsx`, `App.tsx`,
+10. Write React: `index.html`, `main.tsx`, `App.tsx`,
     `App.module.css`
-12. `cd web && npm run build`
-13. Tell the user to run `uv run rbt dev run` to start the backend in the project directory.
-14. Tell the user to run `cd web && npm run dev` in a separate
-    terminal in the project directory. This starts the Vite dev server for HMR — edits
-    to React components will hot-reload in the browser without
-    a full rebuild. The `.rbtrc` defaults to HMR mode, which
-    proxies Vite through Envoy at `/__/web/`.
-15. Tell the user to test with MCPJam Inspector in a separate terminal by running `npx @mcpjam/inspector@v2.0.4 --config mcp_servers.json --server <name>` in the project directory (that is where the `mcp_servers.json` file shoule have been created). Tell the user that they can start a new chat and give them a helpful prompt that will allow them to see the chat app that they just created, for example, if it was a TODO list app the prompt might be something like: "Create a new todo list and show it to me"
+11. `cd web && npm run build`
+12. Create `mcp_servers.json` with
+    `{"mcpServers":{"<name>":{"type":"streamable-http","url":"http://localhost:9991/mcp"}}}`
+13. **STOP.** Do NOT run the app yourself. Print the
+    following run instructions exactly, then wait:
+
+    ```
+    To run (each in a separate terminal, from the project directory):
+
+      uv run rbt dev run          # start backend
+      cd web && npm run dev        # HMR frontend (separate terminal)
+
+    To test with MCP inspector (separate terminal):
+
+      npx @mcpjam/inspector@v2.0.4 --config mcp_servers.json --server <name>
+    ```
+
+    Replace `<name>` with the actual server name from
+    `mcp_servers.json`. Then suggest a first prompt the user
+    can try in the inspector (e.g., "Create a new todo list
+    and show it to me").
 
 ## Inline Patterns
 

@@ -12,15 +12,18 @@ Claude Code plugins for building on [Reboot](https://reboot.dev).
 
 ### From GitHub
 
-In Claude Code, add the marketplace and install:
+Add the Reboot skills marketplace and install the plugin:
 
 ```bash
 # 1. Add the Reboot skills marketplace (one-time).
-/plugin marketplace add reboot-dev/reboot-skills
+claude plugin marketplace add reboot-dev/reboot-skills
 
 # 2. Install a skill.
-/plugin install reboot-chat-app@reboot-skills
+claude plugin install reboot-chat-app@reboot-skills
 ```
+
+If you install the plugin within claude with /plugin you need to restart for
+the configuration and skill to load correctly.
 
 To auto-enable for your team, add to your project's
 `.claude/settings.json`:
