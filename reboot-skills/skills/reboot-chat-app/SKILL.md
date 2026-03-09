@@ -218,13 +218,13 @@ application directory.**
 11. Write React: `index.html`, `main.tsx`, `App.tsx`,
     `App.module.css`
 12. `cd web && npm run build`
-13. Tell the user to run `uv run rbt dev run` to start the backend.
+13. Tell the user to run `uv run rbt dev run` to start the backend in the project directory.
 14. Tell the user to run `cd web && npm run dev` in a separate
-    terminal. This starts the Vite dev server for HMR — edits
+    terminal in the project directory. This starts the Vite dev server for HMR — edits
     to React components will hot-reload in the browser without
     a full rebuild. The `.rbtrc` defaults to HMR mode, which
     proxies Vite through Envoy at `/__/web/`.
-15. Tell the user to test with MCPJam Inspector: run `npx @mcpjam/inspector@v2.0.4 --config mcp_servers.json --server <name>`
+15. Tell the user to test with MCPJam Inspector in a separate terminal by running `npx @mcpjam/inspector@v2.0.4 --config mcp_servers.json --server <name>` in the project directory (that is where the `mcp_servers.json` file shoule have been created).
 
 ## Inline Patterns
 
