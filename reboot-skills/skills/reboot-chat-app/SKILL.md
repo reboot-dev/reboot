@@ -224,7 +224,7 @@ application directory.**
     to React components will hot-reload in the browser without
     a full rebuild. The `.rbtrc` defaults to HMR mode, which
     proxies Vite through Envoy at `/__/web/`.
-15. Tell the user to test with MCPJam Inspector in a separate terminal by running `npx @mcpjam/inspector@v2.0.4 --config mcp_servers.json --server <name>` in the project directory (that is where the `mcp_servers.json` file shoule have been created).
+15. Tell the user to test with MCPJam Inspector in a separate terminal by running `npx @mcpjam/inspector@v2.0.4 --config mcp_servers.json --server <name>` in the project directory (that is where the `mcp_servers.json` file shoule have been created). Tell the user that they can start a new chat and give them a helpful prompt that will allow them to see the chat app that they just created, for example, if it was a TODO list app the prompt might be something like: "Create a new todo list and show it to me"
 
 ## Inline Patterns
 
