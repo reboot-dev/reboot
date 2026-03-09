@@ -19,7 +19,7 @@ Add the Reboot skills marketplace and install the plugin:
 
 ```bash
 # 1. Add the marketplace (one-time).
-/plugin marketplace add github:reboot-dev/reboot-skills
+/plugin marketplace add reboot-dev/reboot-skills
 
 # 2. Install the plugin.
 /plugin install reboot-chat-app@reboot-skills

@@ -16,7 +16,7 @@ In Claude Code, add the marketplace and install:
 
 ```bash
 # 1. Add the Reboot skills marketplace (one-time).
-/plugin marketplace add github:reboot-dev/reboot-skills
+/plugin marketplace add reboot-dev/reboot-skills
 
 # 2. Install a skill.
 /plugin install reboot-chat-app@reboot-skills
@@ -65,6 +65,7 @@ before writing any code.
 ```
 reboot-skills/
 ├── .claude-plugin/
+│   ├── marketplace.json
 │   └── plugin.json
 ├── README.md
 └── skills/
@@ -74,6 +75,7 @@ reboot-skills/
 
 The repository root is the plugin directory. It contains:
 
+- `.claude-plugin/marketplace.json` — marketplace catalog
 - `.claude-plugin/plugin.json` — plugin metadata
 - `skills/<name>/SKILL.md` — skill definition with YAML frontmatter
 
