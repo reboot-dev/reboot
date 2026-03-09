@@ -32,8 +32,8 @@ jobs:
         set -e
         <% if is_mono %>
 
-        # The `mono/reboot` is a symlink to the `mono/public/reboot` folder.
-        # To not confuse `bazel` we should publish from `public`.
+        # The 'mono/reboot' is a symlink to the 'mono/public/reboot' folder.
+        # To not confuse 'bazel' we should publish from 'public'.
         cd public
         <% endif %>
 
