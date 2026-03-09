@@ -65,8 +65,7 @@ before writing any code.
 ```
 reboot-skills/
 ├── .claude-plugin/
-│   ├── marketplace.json
-│   └── plugin.json
+│   └── marketplace.json
 ├── README.md
 └── skills/
     └── reboot-chat-app/
@@ -75,8 +74,7 @@ reboot-skills/
 
 The repository root is the plugin directory. It contains:
 
-- `.claude-plugin/marketplace.json` — marketplace catalog
-- `.claude-plugin/plugin.json` — plugin metadata
+- `.claude-plugin/marketplace.json` — marketplace and plugin definitions
 - `skills/<name>/SKILL.md` — skill definition with YAML frontmatter
 
 ## License
