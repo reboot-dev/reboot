@@ -42,6 +42,7 @@ class RebootVersionTest(unittest.TestCase):
         requirements_txt_file_paths = set()
         dockerfile_paths = set()
         helm_chart_paths = set()
+        skill_md_paths = set()
         for (dirpath, _, filenames) in os.walk(WORKSPACE_DIR):
             # Skip these. Not the source code that we are looking for.
             if any(
@@ -76,6 +77,9 @@ class RebootVersionTest(unittest.TestCase):
 
             if 'charts' in dirpath and 'Chart.yaml' in filenames:
                 helm_chart_paths.add(f'{dirpath}/Chart.yaml')
+
+            if 'SKILL.md' in filenames:
+                skill_md_paths.add(f'{dirpath}/SKILL.md')
 
         for path in package_json_file_paths:
             with open(path) as package_json_file:
@@ -147,6 +151,37 @@ class RebootVersionTest(unittest.TestCase):
                             f'in key `{key}`, '
                             f'which is out of date with version {version}'
                         )
+
+        for path in skill_md_paths:
+            with open(path, 'r') as skill_md_file:
+                skill_md_lines = skill_md_file.readlines()
+                for line in skill_md_lines:
+                    # Only check lines that look like version pins (i.e.
+                    # contain a version specifier such as `>=`, `==`, or
+                    # `^`), so that we won't accidentally check lines
+                    # that just mention the package name without a version,
+                    # since `SKILL.md` files doesn't have a standard
+                    # format and usually are pure text.
+                    if not any(
+                        specifier in line for specifier in (
+                            '>=',
+                            '==',
+                            '^',
+                        )
+                    ):
+                        continue
+                    if any(
+                        [
+                            package_name in line
+                            for package_name in ALL_PACKAGE_NAMES
+                        ]
+                    ):
+                        if version not in line:
+                            self.fail(
+                                f'{path} contains a package version on line: '
+                                f'{line} that is out of date with'
+                                f' version {version}'
+                            )
 
 
 if __name__ == '__main__':

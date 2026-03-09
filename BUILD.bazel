@@ -27,11 +27,13 @@ oci_image(
     visibility = ["//visibility:public"],
 )
 
-# Make mypy config available to the `mypy_integration` for Bazel, to configure
-# its mypy type checking.
 exports_files([
+    # Make mypy config available to the `mypy_integration` for Bazel,
+    # to configure its mypy type checking.
     "mypy.ini",
     "mypy-requirements_lock.txt",
+    # Make the README available to be included in the npm packages.
+    "README.md",
 ])
 
 write_ci_template_source_file(

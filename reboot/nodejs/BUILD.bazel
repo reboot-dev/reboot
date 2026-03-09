@@ -54,6 +54,7 @@ npm_package(
 genrule(
     name = "reboot-dev-reboot",
     srcs = [
+        "//:README.md",
         "binding.gyp",
         ":include",
         "package.json",
@@ -104,6 +105,7 @@ genrule(
         npm_binary_path=$$(realpath $(execpath @node//:npm))
         reboot_pkg_dir="$$(realpath $(execpath //:node_modules/@reboot-dev/reboot-api/dir))"
         which_pm_runs_pkg_dir="$$(realpath $(execpath //:node_modules/which-pm-runs/dir))"
+        readme_path="$$(realpath $(execpath //:README.md))"
         pushd $$(dirname $(execpath :package.json))
         # Need to ensure we don't overwrite linked file `package.json` in source tree.
         cp -L package.json copied_package.json
@@ -120,6 +122,7 @@ genrule(
         cp dummy.cc dist/dummy.cc
         cp preinstall.cjs dist/preinstall.cjs
         cp install.cjs dist/install.cjs
+        cp $$readme_path dist/README.md
         cp reboot_native.cc dist/reboot_native.cc
         cp reboot_native.cjs dist/reboot_native.cjs
         cp reboot_native.d.ts dist/reboot_native.d.ts

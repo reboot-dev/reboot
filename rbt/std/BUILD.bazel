@@ -72,15 +72,18 @@ ts_project(
 genrule(
     name = "reboot-dev-reboot-std-api",
     srcs = [
+        "//:README.md",
         ":std",
     ],
     outs = ["reboot-dev-reboot-std-api-" + REBOOT_VERSION + ".tgz"],
     cmd = """
         npm_binary_path=$$(realpath $(execpath @node//:npm))
+        readme_path="$$(realpath $(execpath //:README.md))"
         working_folder=$$(dirname $(location :std))
         pushd $$working_folder
         mkdir -p build && cd build
         cp -r -L ../std/* .
+        cp $$readme_path README.md
         $$npm_binary_path pack --pack-destination .
         path=$$(realpath reboot-dev-reboot-std-api-{reboot_version}.tgz)
         popd

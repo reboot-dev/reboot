@@ -30,6 +30,12 @@ jobs:
       run: |
         # Fail if any of the commands below fail.
         set -e
+        <% if is_mono %>
+
+        # The `mono/reboot` is a symlink to the `mono/public/reboot` folder.
+        # To not confuse `bazel` we should publish from `public`.
+        cd public
+        <% endif %>
 
         bazel build //reboot:reboot.dev
         bazel build //reboot/nodejs:reboot-dev-reboot
@@ -59,7 +65,7 @@ jobs:
         # Build the 'reboot-base' image in the same devcontainer, so that we
         # don't build the Reboot library again.
         export REBOOT_BASE_IMAGE_NAME=ghcr.io/reboot-dev/reboot-base
-        export REBOOT_BASE_IMAGE_VERSION=$(grep 'REBOOT_VERSION' <% if is_mono %>public/<% endif %>reboot/versions.bzl | awk -F '"' '{print $2}')
+        export REBOOT_BASE_IMAGE_VERSION=$(grep 'REBOOT_VERSION' reboot/versions.bzl | awk -F '"' '{print $2}')
         bazel run //reboot/containers/reboot-base:dev
         docker save "$REBOOT_BASE_IMAGE_NAME:$REBOOT_BASE_IMAGE_VERSION" -o ./artifacts/reboot-base.tar
         # Save the Reboot version that was built.
@@ -74,7 +80,7 @@ jobs:
       # available to the next job in the workflow, so we'll upload it as an
       # artifact.
       artifact-name: $REBOOT_LIBRARY_ARTIFACT_NAME
-      artifact-path: ./artifacts
+      artifact-path: ./<% if is_mono %>public/<% endif %>artifacts
 
   # With the library built, we can test our containers against it.
   build-test-push:

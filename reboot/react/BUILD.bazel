@@ -39,16 +39,19 @@ npm_package(
 genrule(
     name = "reboot-dev-reboot-react",
     srcs = [
+        "//:README.md",
         ":react",
     ],
     outs = ["reboot-dev-reboot-react-" + REBOOT_VERSION + ".tgz"],
     cmd = """
         set -eu
         npm_binary_path=$$(realpath $(execpath @node//:npm))
+        readme_path="$$(realpath $(execpath //:README.md))"
         working_folder=$$(dirname $(location :react))
         pushd $$working_folder
         mkdir -p build && cd build
         cp -r -L ../react/* .
+        cp $$readme_path README.md
         $$npm_binary_path pack --pack-destination .
         path=$$(realpath reboot-dev-reboot-react-{reboot_version}.tgz)
         popd
