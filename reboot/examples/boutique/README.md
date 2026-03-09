@@ -141,7 +141,7 @@ Once you've received an invitation to use Reboot Cloud, you will also receive an
 API key. You can then run this application on Reboot Cloud as follows:
 
 ```console
-rbt cloud up --api-key=YOUR_API_KEY
+rbt cloud up --api-key=YOUR_API_KEY --organization=YOUR_ORG_NAME
 ```
 
 To make calls to the application that just started, find the application's URL
