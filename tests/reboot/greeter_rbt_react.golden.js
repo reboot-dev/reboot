@@ -5544,7 +5544,7 @@ export const useGreeter = ({ id }) => {
         readRecursiveMessage,
         useReadRecursiveMessage,
         constructAndStoreRecursiveMessage,
-    }), [id]);
+    }), [id, bearerToken]);
 };
 export class Greeter {
 }
