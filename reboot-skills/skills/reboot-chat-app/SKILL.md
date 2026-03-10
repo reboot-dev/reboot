@@ -696,10 +696,10 @@ if __name__ == "__main__":
     "build:watch": "concurrently \"npm:build:watch:*\""
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "^1.0.1",
-    "@modelcontextprotocol/sdk": "^1.26.0",
-    "@reboot-dev/reboot-react": "^0.45.2",
-    "@reboot-dev/reboot-api": "^0.45.2",
+    "@modelcontextprotocol/ext-apps": "1.2.0",
+    "@modelcontextprotocol/sdk": "1.27.1",
+    "@reboot-dev/reboot-react": "0.45.2",
+    "@reboot-dev/reboot-api": "0.45.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zod": "^3.25.0"
