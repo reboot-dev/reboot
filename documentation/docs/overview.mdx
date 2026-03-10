@@ -1,0 +1,75 @@
+---
+id: overview
+slug: /
+---
+
+import { CardSection, Card } from "../src/components/Cards";
+import Link from "@docusaurus/Link";
+import TSLogo from "../static/img/ts-logo.svg";
+import PythonLogo from "../static/img/python-logo.svg";
+
+# Build AI Chat Apps with Reboot
+
+<div style={{ fontSize: "1.2rem" }}>
+  <span style={{ fontWeight: "bold" }}>AI's new UI.</span>{" "}
+  Text-only AI is already dated. Enhance AI with reactive, stateful,
+  multiplayer AI chat apps that run inside ChatGPT, Claude, VS Code,
+  Goose, and more.
+</div>
+
+## AI Chat Apps
+
+<CardSection
+  id="ai-chat-apps"
+  description="Build visual, interactive apps that run inside AI chat
+  user interfaces."
+>
+  <Card
+    title="What is an AI Chat App?"
+    to="/ai_chat_apps/what_is"
+  />
+  <Card
+    title="Get Started (Python)"
+    to="/ai_chat_apps/get_started"
+    icon={<PythonLogo />}
+  />
+</CardSection>
+
+## Full-stack apps
+
+Build reactive backends with React frontends. Works great as a full-page
+extension of your AI chat app, or as a standalone web app.
+
+### Get started
+
+<CardSection
+  id="quickstarts"
+  description="From zero to deployable app in just a few minutes!"
+>
+  <Card
+    title="TypeScript"
+    icon={<TSLogo />}
+    to="/full_stack_apps/typescript"
+  />
+  <Card
+    title="Python"
+    to="/full_stack_apps/python"
+    icon={<PythonLogo />}
+  />
+</CardSection>
+
+### Examples
+
+<CardSection
+  id="examples"
+  description="A variety of examples demonstrating Reboot in action."
+>
+  <Card
+    title="AI Chat App Examples"
+    to="/ai_chat_apps/examples"
+  />
+  <Card
+    title="Full-stack Examples"
+    to="/full_stack_apps/examples"
+  />
+</CardSection>

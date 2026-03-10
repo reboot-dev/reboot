@@ -1,0 +1,64 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Readers
+
+A `reader` method is _immutable_, so any modifications you make to
+state are ignored.
+
+A `reader` method is passed a context of type `ReaderContext`. A
+`ReaderContext` can only be used to make calls to other `reader`
+methods.
+
+Here's an example of a `reader` method called `balance` on our
+`Account` state that returns the account's current balance:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from bank.v1.bank_rbt import Account
+
+class AccountServicer(Account.Servicer):
+
+    async def balance(
+        self,
+        context: ReaderContext,
+        request: BalanceRequest,
+    ) -> BalanceResponse:
+        return BalanceResponse(balance=self.state.balance)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+    <Tabs groupId="typescript-object-class">
+      <TabItem value="object" label="Object literal">
+```ts
+import { Account } from "../../api/bank/v1/account_rbt.js";
+
+const accountServicer = Account.servicer({
+  balance: async (
+    context: ReaderContext,
+    state: Account.State,
+    request: Account.BalanceRequest
+  ): Promise<Account.PartialBalanceResponse> => {
+    return { balance: state.balance };
+  },
+});
+```
+      </TabItem>
+      <TabItem value="class" label="Class">
+```ts
+import { Account } from "../../api/bank/v1/account_rbt.js";
+
+class AccountServicer extends Account.Servicer {
+  async balance(
+    context: ReaderContext,
+    request: Account.BalanceRequest
+  ): Promise<Account.PartialBalanceResponse> {
+    return { balance: this.state.balance };
+  }
+}
+```
+      </TabItem>
+    </Tabs>
+  </TabItem>
+</Tabs>

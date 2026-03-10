@@ -1,0 +1,140 @@
+syntax = "proto3";
+
+package fig.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service FigBoardMethods {
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {
+        constructor: {},
+      },
+    };
+  }
+  rpc List(ListRequest) returns (ListResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  rpc Add(AddRequest) returns (AddResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message CreateRequest {}
+
+message CreateResponse {}
+
+message FigBoard {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated string fig_ids = 1;
+}
+
+message ListRequest {}
+
+message ListResponse {
+  repeated string fig_ids = 1;
+}
+
+message AddRequest {
+  string fig_id = 1;
+  string user_id = 2;
+}
+
+message AddResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+service FigMethods {
+  // TODO: make this be a server stream so that we _know_ we've
+  // connected after we receive at least one response.
+
+  rpc Lock(LockRequest) returns (LockResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      // errors: [ "user.v1.MustConnectBeforeToggling" ],
+    };
+  }
+
+  rpc Unlock(UnlockRequest) returns (UnlockResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  rpc WatchPresence(WatchPresenceRequest) returns (WatchPresenceResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  rpc GetPosition(GetPositionRequest) returns (GetPositionResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  rpc UpdatePosition(UpdatePositionRequest) returns (UpdatePositionResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Fig {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  int32 left = 1;
+  int32 top = 2;
+  uint32 width = 3;
+  uint32 height = 4;
+  int32 rotation = 5;
+  string user_id_active = 6;
+  int64 epoch = 7;
+}
+
+message LockRequest {
+  string user_id = 1;
+}
+
+message LockResponse {}
+
+message UnlockRequest {
+  string user_id = 1;
+}
+
+message UnlockResponse {}
+
+message WatchPresenceRequest {
+  string user_id = 1;
+  int64 epoch = 2;
+}
+
+message WatchPresenceResponse {}
+
+message GetPositionRequest {}
+
+message GetPositionResponse {
+  Fig position = 1;
+}
+
+message UpdatePositionRequest {
+  Fig new_fig_state = 1;
+  string user_id = 2;
+}
+
+message UpdatePositionResponse {}
+
+////////////////////////////////////////////////////////////////////////

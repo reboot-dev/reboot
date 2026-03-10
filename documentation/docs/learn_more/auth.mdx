@@ -1,0 +1,406 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Authorization
+
+<!-- TODO: Replace all inline code examples with actual real code! -->
+
+## Overview
+
+Reboot has native support for authorizing calls using the widely used
+`Authorization: Bearer` header, as well as via mechanisms like
+cookies.
+
+Depending on your application's requirements, callers might use API
+keys or access tokens (such as JWTs), produced by your choice of
+provider, e.g., [Auth0](https://auth0.com) or
+[Ory](https://www.ory.sh).
+
+## Setting bearer tokens
+
+### From within your app
+
+To include a bearer token for all calls made to a particular state
+instance, you can specify it in `ref()`:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/bank.py&lines=277-280) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/bank.py -->
+
+```py
+from_account = Account.ref(
+    request.from_account_id,
+    bearer_token=bearer_token,
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const fromAccount = Account.ref(request.fromAccountId, { bearerToken });
+```
+  </TabItem>
+</Tabs>
+
+You can also pass it as an option when doing [explicit
+construction](/learn_more/call/overview#explicit-construction):
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/auth_tests.py&lines=399-403) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/auth_tests.py -->
+
+```py
+bank, _ = await Bank.create(
+    context,
+    SINGLETON_BANK_ID,
+    Options(bearer_token=VALID_JWT),
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const [bank] = await Bank.create(
+  context,
+  SINGLETON_BANK_ID,
+  {},
+  { bearerToken: VALID_JWT }
+);
+```
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+### From React
+
+```tsx
+import { useRebootContext } from "@reboot-dev/reboot-react";
+
+const { setBearerToken } = useRebootContext();
+
+setBearerToken(token);
+```
+
+### Using `ExternalContext`
+
+To include a bearer token on all calls made from an [`ExternalContext`](/learn_more/call/from_outside_your_app),
+or from React generated code, do the following:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+  ```py
+  context = ExternalContext(
+      name='Example',
+      url='http://localhost:9991',
+      bearer_token=token,
+  )
+  ```
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+  ```typescript
+  const context = new ExternalContext({
+    name: "Example",
+    url: "http://localhost:9991",
+    bearerToken: token,
+  });
+  ```
+  </TabItem>
+</Tabs>
+
+<!-- TODO: It would be good to be able to link to generated API docs here: #1079. -->
+
+## Authorizing calls to your application
+
+Authorization in Reboot is done by first performing [_token
+verification_](/learn_more/auth#token-verification) and then calling any
+[_authorizers_](/learn_more/auth#authorizers).
+
+### Token verification
+
+To verify that a provided token is valid you must provide a
+`TokenVerifier`. A `TokenVerifier` is set globally on your Reboot
+[`Application`](/learn_more/applications) (or on `Reboot.up` in the case
+of unit tests):
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+  ```py
+  async def main():
+      application = Application(
+          servicers=[...],
+          token_verifier=MyTokenVerifier(...),
+      )
+      await application.run()
+  ```
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+  ```typescript
+  new Application({
+    servicers: [...],
+    ...,
+    tokenVerifier: new MyTokenVerifier(...),
+  }).run();
+  ```
+  </TabItem>
+
+</Tabs>
+
+The `TokenVerifier` interface has a single method, which receives the `token` from the
+`Authorization: Bearer` header, and which should return an `Auth` object if the token
+was valid:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/aio/auth/token_verifiers.py&lines=15-20) -->
+<!-- The below code snippet is automatically added from ../../../reboot/aio/auth/token_verifiers.py -->
+
+```py
+@abstractmethod
+async def verify_token(
+    self,
+    context: ReaderContext,
+    token: Optional[str],
+) -> Optional[Auth]:
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/nodejs/index.ts&lines=626-629) -->
+<!-- The below code snippet is automatically added from ../../../reboot/nodejs/index.ts -->
+
+```ts
+abstract verifyToken(
+  context: ReaderContext,
+  token?: string
+): Promise<Auth | null>;
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+In addition to being able to set any arbitrary `properties` on the
+returned `Auth` object that authorizers can consume, there is a
+specific `user_id` (Python), `userId` (TypeScript) property meant to
+indicate that this is valid user (and its internally represented ID).
+
+:::tip
+
+**Token verification does not necessarily mean user authentication!**
+
+Depending on where/how tokens are generated they may or may not
+indicate that these tokens represent valid users for _your_
+application, just that this token is valid for a user from a
+particular provider. Read the provider's documentation carefully to
+ensure that you are validating the tokens in such a way that they are
+specific to your application.
+
+:::
+
+### Authorizers
+
+After token verification Reboot will call into any provided
+authorizers. You provide an authorizer by implementing the
+`authorizer()` method on your
+[servicers](/learn_more/implement/servicers):
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+```py
+from reboot.aio.auth.authorizers import allow, allow_if
+
+class AccountServicer(Account.Servicer):
+
+    def authorizer(self):
+        return Account.Authorizer(
+            balance=allow_if(any=[is_admin, is_account_owner]),
+            deposit=allow(),
+            withdraw=allow_if(all=[is_account_owner]),
+            ...
+        )
+
+    ...
+```
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { allow, allowIf } from "@reboot-dev/reboot";
+
+class AccountServicer extends Account.Servicer {
+
+  authorizer() {
+    return new Account.Authorizer({
+      balance: allowIf({ any: [isAdmin, isAccountOwner] }),
+      deposit: allow(),
+      withdraw: allowIf({ all: [isAccountOwner] }),
+      ...
+    });
+  }
+
+  ...
+```
+  </TabItem>
+</Tabs>
+
+When you create an authorizer for a specific state type you provide
+authorizer "rules" for each method, for example,
+[`deny()`](/learn_more/auth#deny), [`allow()`](/learn_more/auth#allow), or
+[`allow_if()`](/learn_more/auth#allow_if).
+
+You can alternatively return a single authorizer rule directly from
+`authorizer()` which will apply to all methods.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+```py
+from reboot.aio.auth.authorizers import allow_if
+
+class AccountServicer(Account.Servicer):
+
+    def authorizer(self):
+        return allow_if(all=[is_admin])
+
+    ...
+```
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { allowIf } from "@reboot-dev/reboot";
+
+class AccountServicer extends Account.Servicer {
+
+  authorizer() {
+    return allowIf({ all: [isAdmin] });
+  }
+
+  ...
+```
+  </TabItem>
+</Tabs>
+
+### Authorizer rules
+
+#### `deny()`
+
+An authorizer rule that will deny all requests.
+
+#### `allow()`
+
+An authorizer rule that will allow all requests.
+
+#### `allow_if()`
+
+An authorizer rule that takes a set of authorizer callables, i.e.,
+functions that will perform the authorization. These functions return
+an `Authorizer.Decision`, which is either `Ok`, `PermissionDenied`, or
+`Unauthenticated`. For example, here is an authorizer callable for
+making sure that the token was verified for a valid user:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
+```py
+from rbt.v1alpha1 import errors_pb2
+
+def is_valid_user(
+    *,
+    context: ReaderContext,
+    state: Optional[Message],
+    request: Optional[Message],
+    **kwargs,
+):
+    if context.auth is None:
+        return errors_pb2.Unauthenticated()
+
+    if await validate_user(context.auth.user_id):
+        return errors_pb2.Ok()
+
+    return errors_pb2.PermissionDenied()
+```
+  </TabItem>
+
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { errors_pb } from "@reboot-dev/reboot-api";
+
+function isValidUser({ context }: {
+  context: ReaderContext;
+  state?: Message;
+  request?: Message;
+}) {
+  if (!context.auth) {
+    return new errors_pb.Unauthenticated();
+  }
+
+  if (await validateUser(context.auth.userId)) {
+    return new errors_pb.Ok();
+  }
+
+  return new errors_pb.PermissionDenied();
+}
+```
+  </TabItem>
+</Tabs>
+
+:::important
+
+If you want to allow a call only when _all_ of your authorizer
+callables decide `Ok`, pass them via `all`. If you want to allow a
+call if _any_ (even just one) of the authorizer callables decide `Ok`,
+pass them via `any`.
+
+:::
+
+:::note
+
+Verifying a token and running authorizers _should not have effects_,
+so they always receive a `ReaderContext` regardless of the [kind of
+method](/learn_more/define/methods) that they are authorizing
+for.
+
+:::
+
+### Default authorizer
+
+By default, if you don't provide an authorizer by overriding
+`authorizer()`, **only _application internal_ calls are allowed**.
+
+:::important
+
+Why am I seeing log messages about **MISSING AUTHORIZATION**?
+
+To streamline development using `rbt dev`, calls missing authorization
+are **allowed**. When running with `rbt serve` or via `rbt cloud`
+those same calls will be **denied** so we emit a log warning to help
+you identify those calls.
+
+Implement the `authorizer()` method on your `Servicer` to silence the
+warning.
+
+:::
+
+## Thirdparty auth providers
+
+Integrating a thirdparty auth provider like [Auth0](https://auth0.com/docs/quickstarts) or
+[Ory](https://www.ory.sh/docs/getting-started/overview) into your application
+usually involves:
+
+1. Implementing a `TokenVerifier` that [validates access tokens](https://auth0.com/docs/secure/tokens/access-tokens/validate-access-tokens),
+   and produces `Auth` objects containing any relevant properties.
+2. Providing authorizer rules for your servicers.
+

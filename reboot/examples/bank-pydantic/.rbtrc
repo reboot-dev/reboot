@@ -1,0 +1,24 @@
+# Find '.proto' files in 'api/'.
+generate api/
+
+# Tell `rbt generate` where to put generated files.
+generate --python=backend/api
+
+generate --react=web/api
+
+generate --react-extensions
+
+# Watch if any generated or source files are modified.
+dev run --watch=backend/**/*.py
+
+# Tell `rbt` that this is a Python application.
+dev run --python
+
+# Save state between chaos restarts.
+dev run --name=bank
+
+# Run the application!
+dev run --application=backend/src/main.py
+
+# When expunging, expunge that state we've saved.
+dev expunge --name=bank

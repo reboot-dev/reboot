@@ -1,0 +1,426 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# OrderedMap
+
+A larger than memory map / dictionary, sorted by its keys. It supports
+insertion, removal, sorted range queries, and point-lookup queries.
+
+Keys are strings and can be associated with a `Value`, `bytes`, or `Any` object
+when inserted into an `OrderedMap`.
+  * `Value` represents a dynamically typed value which can be either null, a
+    number, a string, a boolean, a recursive struct value, or a list of values.
+    A producer of value is expected to set one of that variants, absence of any
+    variant indicates an error. This type is meant to represent all possible JSON values.
+  * `bytes` is used to store a string of `bytes`.
+  * `Any` refers to the `Any` protobuf and is the best choice if you are using protobufs
+    to structure your data.
+
+`OrderedMap`s are frequently used to create indexes of other state types,
+but can also be used to efficiently store large collections of primitive values.
+
+For example:
+  * To index a data type in its natural state-ID order, you can create a
+    `OrderedMap` with the type's ID as keys and empty values. This is effectively
+    a sorted set.
+  * To index a data type by creation time, you can use time-ordered UUIDs
+    (such as UUIDv1 or UUIDv7) as keys and the data type's state-ID as
+    values.
+  * To index a large collection of Protobuf message types, you can use a
+    key of your choice and the serialized value of each Protobuf message
+    as a value.
+
+To use a `OrderedMap` in your application, you typically want to choose an ID for
+the map and store it somewhere (e.g., as a field in the appropriate state data
+type). To use the map, first get a `ref()` to the map using its ID and then invoke
+the appropriate operations. The map will be implicitly constructed when the first
+writer method is invoked (e.g., [`insert()`](#insert)) or can be explicitly
+constructed with [`create()`](#create).
+
+
+## Imports and set up
+
+To use a `OrderedMap`, import the library where you would like to use it.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from reboot.std.collections.ordered_map.v1.ordered_map import OrderedMap
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { OrderedMap } from "@reboot-dev/reboot-std/collections/ordered_map/v1";
+```
+  </TabItem>
+</Tabs>
+
+Also make sure to include the `OrderedMap` library when starting up your `Application`.
+(Note: this import is different from above.)
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from reboot.std.collections.ordered_map.v1 import ordered_map
+
+async def main():
+    application = Application(
+        servicers=[MyServicer],
+        libraries=[ordered_map_library()],
+    ).run()
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import orderedMap from "@reboot-dev/reboot-std/collections/ordered_map/v1";
+
+new Application({
+  servicers: [MyServicer, ...orderedMap.servicers()],
+  initialize,
+}).run();
+```
+  </TabItem>
+</Tabs>
+
+
+## OrderedMap
+
+Each `OrderedMap` you create will need a unique ID. Using a reference to that
+`OrderedMap`, you will be able to perform operations on keys and associated data.
+
+### Referencing OrderedMaps
+
+This creates a reference to a `OrderedMap` with ID `"my-map"`.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+my_map = OrderedMap.ref("my-map")
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const myMap = OrderedMap.ref("my-map");
+```
+  </TabItem>
+</Tabs>
+
+## Methods
+
+### Create
+
+An optional call to create an ordered map with an explicitly specified `degree`.
+`degree` specifies the maximum number of continuously stored items. Increasing
+the `degree` will increase the number of `Item`s loaded into memory at once.
+
+If used, this call must be called prior to any [`Insert`](#insert) operations.
+
+By default, `OrderedMap`s are implicitly created with [`Insert`](#insert)
+operations with a default `degree` of 128. This call is only necessary to
+override the default.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from reboot.protobuf import as_str
+
+await my_map.create(
+    context,
+    degree=128
+)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+await myMap.create(context, {
+  degree: 128,
+});
+```
+  </TabItem>
+</Tabs>
+
+### Insert
+
+Insert a key and its associated data into the `OrderedMap`.
+
+Keys which are already in the map will be overwritten.
+
+Only one of `value`, `bytes`, or `any` can be set.
+
+The examples below show the different ways data can be associated with a key, but
+in practice, we recommend you use a uniform structure for your value.
+For more information on how to format data, check out the [`Value`](/library_services/item#value)
+and [`Any`](/library_services/item#any) docs for `Item`s.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from reboot.protobuf import as_str
+
+await my_map.insert(
+    context,
+    key="key-a",
+    value=from_str("a value!"),
+)
+
+await my_map.insert(
+    context,
+    key="key-b",
+    bytes=b"some bytes",
+)
+
+await my_map.insert(
+    context,
+    key="key-c",
+    any=<Any>,
+)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+await myMap.insert(context, {
+  key: "key-a",
+  value: Value.fromJson("a value!"),
+});
+
+await myMap.insert(context, {
+  key: "key-b",
+  bytes: new TextEncoder().encode("some bytes"),
+});
+
+await myMap.insert(context, {
+  key: "key-c",
+  any: <Any>
+});
+```
+  </TabItem>
+</Tabs>
+
+
+### Search
+
+Search for if a given key is in the `OrderedMap`.
+
+Returns whether or not the key exists. If the key exists, this will also
+return the associated `Value`, `bytes,` or `Any`.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+# Search for key with associated `Value`.
+response = await my_map.search(context, key="key-a")
+print(response.value)
+
+# Search for key with associated `bytes`.
+response = await my_map.search(context, key="key-b")
+print(response.bytes)
+
+# Search for key with associated `Any`.
+response = await my_map.search(context, key="key-c")
+print(response.any)
+
+# Search for key with no associated data.
+missing_response = await my_map.search(context, key="missing-key")
+assert missing_response.found == False
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+// Search for key with associated `Value`.
+const { value } = await myMap.search(context, { key: "key-a" });
+console.log(value?.toJson());
+
+// Search for key with associated `bytes`.
+const { bytes } = await myMap.search(context, { key: "key-b" });
+console.log(new TextDecoder().decode(bytes));
+
+// Search for key with associated `Any`.
+const { any } = await myMap.search(context, { key: "key-c" });
+console.log(any);
+
+// Search for key with no associated data.
+const missingResponse = await myMap.get(context, { key: "missing-key" });
+// missingResponse.found === false
+```
+  </TabItem>
+</Tabs>
+
+
+### Remove
+
+Remove a key and its associated data from the `OrderedMap`.
+
+Any key that is not present will be ignored.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+await my_map.remove(context, key="key-a")
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+await myMap.remove(context, { key: "key-a" });
+```
+  </TabItem>
+</Tabs>
+
+
+
+### Range
+
+Read a range of data in ascending key order from the `OrderedMap`.
+
+You can optionally specify a `start_key` (Python) / `startKey` (TypeScript) to limit the lower bound (inclusive) of
+the returned entries. If `start_key` (Python) / `startKey` (TypeScript) is not set, the range will start from the
+smallest key.
+
+You will receive up to `limit` items in the response. The `limit` argument
+is always required to avoid exhausting memory in the client or server.
+
+This returns `entries` that have a `key` and one of `value`, `bytes,` or `any`
+set dependent on how you inserted the data.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+range1 = await my_map.range(
+    context,
+    start_key="key-b",
+    end_key="key-z",
+    limit=2,
+)
+
+for entry in range1.entries:
+    print(entry.key, entry.value, entry.bytes, entry.any)
+
+# Returns entries associated with the 3 smallest keys.
+range2 = await my_map.range(context, limit=3)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const range1 = await myMap.range(context, {
+  startKey: "key-b",
+  endKey: "key-z",
+  limit: 2,
+});
+
+for (const entry of range1.entries) {
+  console.log(entry.key, entry.value, entry.bytes, entry.any);
+}
+
+// Returns entries associated with the 3 smallest keys.
+const range2 = await myMap.range(context, {
+  limit: 3,
+});
+```
+  </TabItem>
+</Tabs>
+
+If you have an error in your range request (i.e. you don't specify a `limit`),
+you'll receive an [`InvalidRangeError`](#invalidrangeerror) explaining why
+your range is not valid.
+
+
+### ReverseRange
+
+Read a range of data in descending key order from the `OrderedMap`. This is
+similar to `Range` but reads data in reverse order.
+
+You can optionally specify a `start_key` (Python) / `startKey` (TypeScript) to limit the upper bound (inclusive) of
+the returned entries. If `start_key` (Python) / `startKey` (TypeScript) is not set, the range will start from the
+largest key.
+
+You will receive up to `limit` items in the response. The `limit` argument
+is always required to avoid exhausting memory in the client or server.
+
+This returns `entries` that have a `key` and one of `value`, `bytes,` or `any`
+set dependent on how you inserted the data.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+range1 = await my_map.reverse_range(
+    context,
+    start_key="key-z",
+    end_key="key-b",
+    limit=2,
+)
+
+for entry in range1.entries:
+    print(entry.key, entry.value, entry.bytes, entry.any)
+
+# Returns entries associated with the 3 largest keys.
+range2 = await my_map.reverse_range(context, limit=3)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const range1 = await myMap.reverseRange(context, {
+  startKey: "key-z",
+  endKey: "key-b",
+  limit: 2,
+});
+
+for (const entry of range1.entries) {
+  console.log(entry.key, entry.value, entry.bytes, entry.any);
+}
+
+// Returns entries associated with the 3 largest keys.
+const range2 = await myMap.reverseRange(context, {
+  limit: 3,
+});
+```
+  </TabItem>
+</Tabs>
+
+If you have an error in your range request (i.e. you don't specify a `limit`),
+you'll receive an [`InvalidRangeError`](#invalidrangeerror) explaining why
+your range is not valid.
+
+
+## Errors
+
+### InvalidRangeError {#invalidrangeerror}
+See [`Range`](#range) and [`ReverseRange`](#reverserange). Raised when the
+requested range is not valid.
+
+The `message` field of the error contains the string explaining why the range
+is not valid.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from reboot.std.collections.ordered_map.v1.ordered_map import (
+    InvalidRangeError,
+    OrderedMap,
+)
+
+try:
+    await my_map.range(context)
+except OrderedMap.RangeAborted as e:
+    # isinstance(e.error, InvalidRangeError) == True
+    print(e.error.message)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import {
+  InvalidRangeError,
+  OrderedMap,
+} from "@reboot-dev/reboot-std/collections/v1/ordered_map.js";
+
+try {
+  await myMap.range(context);
+} catch (e) {
+  if (
+    e instanceof OrderedMap.RangeAborted &&
+    e.error instanceof InvalidRangeError
+  ) {
+    console.error(e.error.message);
+  }
+}
+```
+  </TabItem>
+</Tabs>

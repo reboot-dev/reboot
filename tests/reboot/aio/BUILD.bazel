@@ -1,0 +1,58 @@
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "applications_test_py",
+    timeout = "short",
+    srcs = [":applications_test.py"],
+    main = "applications_test.py",
+    deps = [
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:servicers_py",
+        "//reboot/aio:tests_py",
+        "//reboot/aio:types_py",
+        "//reboot/std/collections/v1:sorted_map_py",
+        "//tests/reboot:greeter_servicers_py",
+    ],
+)
+
+py_test(
+    name = "initialize_test_py",
+    timeout = "short",
+    srcs = [":initialize_test.py"],
+    main = "initialize_test.py",
+    deps = [
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:tests_py",
+        "//reboot/std/collections/v1:sorted_map_py",
+    ],
+)
+
+py_test(
+    name = "libraries_test_py",
+    timeout = "short",
+    srcs = [":libraries_test.py"],
+    main = "libraries_test.py",
+    deps = [
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:tests_py",
+        "//tests/reboot:greeter_servicers_py",
+    ],
+)
+
+py_test(
+    name = "caller_id_test_py",
+    timeout = "short",
+    srcs = [":caller_id_test.py"],
+    main = "caller_id_test.py",
+    deps = [
+        "//rbt/v1alpha1:errors_py_proto",
+        "//reboot:naming_py",
+        "//reboot/aio:caller_id_auth_py",
+        "//reboot/aio:caller_id_py",
+        "//reboot/aio:headers_py",
+        "//reboot/aio:types_py",
+    ],
+)

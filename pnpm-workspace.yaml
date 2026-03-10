@@ -1,2 +1,9 @@
 packages:
   - "rbt/v1alpha1/"
+  - "rbt/std/"
+  - "reboot/inspect/"
+  - "reboot/nodejs/"
+  - "reboot/react/"
+  - "reboot/std/"
+  - "reboot/std/react/"
+  - "reboot/web/"

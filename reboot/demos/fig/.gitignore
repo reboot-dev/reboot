@@ -1,0 +1,10 @@
+# Directory created from using the 'rbt' CLI tool.
+/.rbt/
+
+dist/
+node_modules/
+
+# Generated code.
+api/**/*.ts
+api/**/*.js
+web/src/api/

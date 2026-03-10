@@ -1,0 +1,74 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Protobuf
+
+You can use [protocol buffers](https://protobuf.dev) (aka protobuf) to
+define your API for either TypeScript or Python backends.
+
+To declare a data type called `ChatRoom`, put the following in a `.proto`
+file:
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto&lines=9-13&syntax=protobuf) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto -->
+
+```protobuf
+message ChatRoom {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated string messages = 1;
+}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+Reboot uses standard [Protobuf definitions](https://protobuf.dev/programming-guides/proto3/), but take note of the `rbt` [options (aka, annotations)](https://protobuf.dev/programming-guides/proto3/#options), which requires you adding `import "rbt/v1alpha1/options.proto";`.
+
+In the above example, `rbt.v1alpha1.state` declares that `message
+ChatRoom` is a Reboot data type.
+
+In addition to defining the data type, you'll also need to define
+operations for that type, for example:
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto&lines=14-27&syntax=protobuf) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto -->
+
+```protobuf
+service ChatRoomMethods {
+  // Returns the current list of recorded messages.
+  rpc Messages(MessagesRequest) returns (MessagesResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  // Adds a new message to the list of recorded messages.
+  rpc Send(SendRequest) returns (SendResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+:::info
+The current convention is that a state's interface has the same name
+as the state with the suffix `Methods`.
+:::
+
+For each of the `rpc` methods that you declare, you use the
+`rbt.v1alpha1.method` annotation to specify the method
+[kind](/learn_more/define/methods).
+
+Depending on its [kind](/learn_more/define/methods), a method
+might be able to only read (e.g., `reader`) or both read and write
+(e.g., `writer`) the state.
+
+In the example above, `ChatRoom` has just one `reader` and one `writer`
+method, but it can have any number of `reader`, `writer`,
+`transaction`, and `workflow` methods.
+
+To learn more about how you implement each data type's methods see
+[Implement your API](/learn_more/implement/servicers).

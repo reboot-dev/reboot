@@ -1,4 +1,5 @@
-load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_grpc_library", "py_proto_library")
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
+load(":py_grpc_filtered.bzl", "py_grpc_library_filtered")
 
 py_proto_library(
     name = "discoveryv3_py_proto",
@@ -8,11 +9,14 @@ py_proto_library(
     ],
 )
 
-py_grpc_library(
+# Use the filtered grpc rule to avoid mixed proto path identities when this
+# package is built as `@com_github_reboot_dev_reboot//...` from the root repo.
+py_grpc_library_filtered(
     name = "discoveryv3_py_grpc",
     srcs = [
         "@buf_deps_envoy//envoy/service/discovery/v3:discoveryv3_proto",
     ],
+    proto_filenames = ["ads.proto"],
     visibility = ["//visibility:public"],
     deps = [
         ":discoveryv3_py_proto",

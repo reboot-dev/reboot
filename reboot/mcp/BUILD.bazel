@@ -1,0 +1,69 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "context_py",
+    srcs = ["context.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":helpers_py",
+        "//reboot:uuidv7_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+        requirement("mcp"),
+        requirement("starlette"),
+    ],
+)
+
+py_library(
+    name = "proxy_py",
+    srcs = ["proxy.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "ui_py",
+    srcs = ["ui.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":proxy_py",
+        "//reboot:settings_py",
+    ],
+)
+
+py_library(
+    name = "factories_py",
+    srcs = ["factories.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":context_py",
+        "@com_github_reboot_dev_reboot//log:log_py",
+        requirement("mcp"),
+        requirement("anyio"),
+        requirement("starlette"),
+    ],
+)
+
+py_library(
+    name = "helpers_py",
+    srcs = ["helpers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+# Aggregates all MCP-related Python libraries.
+py_library(
+    name = "python",
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":context_py",
+        ":factories_py",
+        ":helpers_py",
+        ":proxy_py",
+        ":ui_py",
+    ],
+)

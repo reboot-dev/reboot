@@ -1,0 +1,150 @@
+# What is an AI Chat App?
+
+AI Chat Apps are visual, reactive, stateful apps that run inside AI chat
+user interfaces — ChatGPT, Claude, VS Code, Goose, and more. 
+
+Instead of text-only responses, the AI opens **interactive React
+UIs** directly in the conversation. Your users click buttons,
+fill forms, and see live-updating data — all without leaving the
+chat.
+
+AI Chat Apps are composed of a user interface, backend methods for both
+the AI and UI to call, and durable state types that provide the
+persistent data your app is built around.
+
+## Why AI Chat Apps?
+
+Text-only AI is already dated. Users expect rich, interactive
+experiences. With Reboot, AI Chat Apps let you:
+
+- **Show, don't tell.** Open a visual UI right in your user's chat.
+- **React to state changes.** Your UIs update in real time as
+  backend state changes — whether the user, the AI, or another
+  client made the change.
+- **Persist across sessions.** State is durable. Close the chat,
+  come back later, and everything is still there.
+
+## How it works
+
+In Reboot, you define your chat app with three things:
+
+1. **`UI` methods** — React components that the AI can open in the
+   chat interface. Your React `App.tsx` is the implementation. These
+   connect to business logic and data via...
+2. **Backend Methods** — for your UI and/or your AI to call. In Reboot,
+   these come as [`reader`](/learn_more/implement/readers),
+   [`writer`](/learn_more/implement/writers),
+   [`transaction`](/learn_more/implement/transactions), and
+   [`workflow`](/learn_more/implement/workflows) methods, providing
+   safety and scalability.
+3. **Durable state types** — these are like Python classes, but their
+   state is automatically persisted. Use these to store the data your
+   app needs - no external database. These is also where the backend
+   methods live; they operate on your app's durable state directly.
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py -->
+
+```python
+# api/ai_chat_counter/v1/counter.py
+from reboot.api import (
+    API,
+    UI,
+    Field,
+    Methods,
+    Model,
+    Reader,
+    Tool,
+    Transaction,
+    Type,
+    Writer,
+)
+
+
+class CreateCounterResponse(Model):
+    counter_id: str = Field(tag=1)
+
+
+class SessionState(Model):
+    pass
+
+
+class CounterState(Model):
+    value: int = Field(tag=1, default=0)
+
+
+class GetResponse(Model):
+    value: int = Field(tag=1)
+
+
+class IncrementRequest(Model):
+    """Request with an amount parameter."""
+    amount: int | None = Field(tag=1, default=None)
+
+
+api = API(
+    Session=Type(
+        state=SessionState,
+        methods=Methods(
+            create_counter=Transaction(
+                request=None,
+                response=CreateCounterResponse,
+                description="Create a new Counter. Returns "
+                "the ID of the new counter. That ID is "
+                "not human-readable; pass it to future "
+                "tool calls where needed, but no need to "
+                "tell the human what it is.",
+            ),
+        ),
+    ),
+    Counter=Type(
+        state=CounterState,
+        methods=Methods(
+            show_clicker=UI(
+                request=None,
+                path="web/ui/clicker",
+                title="Counter Clicker",
+                description="Interactive clicker UI "
+                "for the counter.",
+            ),
+            create=Writer(
+                request=None,
+                response=None,
+                factory=True,
+            ),
+            get=Reader(
+                request=None,
+                response=GetResponse,
+                description="Get the current counter "
+                "value.",
+                mcp=Tool(),
+            ),
+            increment=Writer(
+                request=IncrementRequest,
+                response=None,
+                description="Increment the counter by "
+                "the specified amount.",
+                mcp=Tool(),
+            ),
+        ),
+    ),
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+All methods on `Session` are automatically callable by the AI.
+Methods on other types (like `Counter`) are exposed with
+`mcp=Tool()`. The AI receives the state ID when it creates
+a new instance and uses it in subsequent calls.
+
+Under the hood, AI Chat Apps use [MCP (the Model Context
+Protocol)](/learn_more/mcp_apps) — the standard that AI clients use to
+discover and interact with external apps.
+
+
+## Get started
+
+Ready to build one?
+
+**[Build your first AI Chat App →](/ai_chat_apps/get_started)**

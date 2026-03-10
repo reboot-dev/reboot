@@ -1,0 +1,37 @@
+{
+  "name": "reboot-counter",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:web": "echo 'choose between \"npm run dev:web-vite\" and \"npm run dev:web-next\"'",
+    "dev:web-vite": "cd web-vite && vite --port 3000",
+    "dev:web-next": "next dev ./web-next",
+    "dev:backend": "rbt dev run"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "1.10.1",
+    "@reboot-dev/reboot": "0.45.2",
+    "@reboot-dev/reboot-react": "0.45.2",
+    "next": "14.2.13",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.7.4",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@typescript-eslint/eslint-plugin": "^7.15.0",
+    "@typescript-eslint/parser": "^7.15.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "esbuild": "0.24.0",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.2.13",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "eslint-plugin-react-refresh": "^0.4.7",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.2.2",
+    "vite": "^5.3.4"
+  }
+}

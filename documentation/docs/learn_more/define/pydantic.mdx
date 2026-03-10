@@ -1,0 +1,317 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Pydantic
+
+When building AI Chat Apps, your API is defined with
+[Pydantic](https://docs.pydantic.dev/). You can also use Pydantic
+for full-stack apps with Python backends.
+
+## AI Chat App
+
+A Reboot API is centered on _types_, which contain _state_ and
+_methods_. When building an AI Chat App, you define a `Session`
+type (auto-constructed per MCP session) whose methods create
+other state types. Methods become
+[tools the AI can call](/learn_more/mcp_apps):
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py -->
+
+```python
+# api/ai_chat_counter/v1/counter.py
+from reboot.api import (
+    API,
+    UI,
+    Field,
+    Methods,
+    Model,
+    Reader,
+    Tool,
+    Transaction,
+    Type,
+    Writer,
+)
+
+
+class CreateCounterResponse(Model):
+    counter_id: str = Field(tag=1)
+
+
+class SessionState(Model):
+    pass
+
+
+class CounterState(Model):
+    value: int = Field(tag=1, default=0)
+
+
+class GetResponse(Model):
+    value: int = Field(tag=1)
+
+
+class IncrementRequest(Model):
+    """Request with an amount parameter."""
+    amount: int | None = Field(tag=1, default=None)
+
+
+api = API(
+    Session=Type(
+        state=SessionState,
+        methods=Methods(
+            create_counter=Transaction(
+                request=None,
+                response=CreateCounterResponse,
+                description="Create a new Counter. Returns "
+                "the ID of the new counter. That ID is "
+                "not human-readable; pass it to future "
+                "tool calls where needed, but no need to "
+                "tell the human what it is.",
+            ),
+        ),
+    ),
+    Counter=Type(
+        state=CounterState,
+        methods=Methods(
+            show_clicker=UI(
+                request=None,
+                path="web/ui/clicker",
+                title="Counter Clicker",
+                description="Interactive clicker UI "
+                "for the counter.",
+            ),
+            create=Writer(
+                request=None,
+                response=None,
+                factory=True,
+            ),
+            get=Reader(
+                request=None,
+                response=GetResponse,
+                description="Get the current counter "
+                "value.",
+                mcp=Tool(),
+            ),
+            increment=Writer(
+                request=IncrementRequest,
+                response=None,
+                description="Increment the counter by "
+                "the specified amount.",
+                mcp=Tool(),
+            ),
+        ),
+    ),
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+Reboot uses standard
+[Pydantic BaseModel](https://docs.pydantic.dev/latest/concepts/models/),
+with `Model` as the base class for your durable state types,
+request and response types.
+
+:::important
+All Pydantic fields must include a `tag` parameter using
+`Field(tag=N)`. This is required for safe backwards compatibility.
+:::
+
+:::info Naming conventions
+Your state class should end in `State`, e.g., `SessionState`,
+`CounterState`.
+:::
+
+## Special state: `Session`
+
+Naming a type `Session` in your `API(Session=Type(...))`
+definition triggers special behavior:
+
+1. **Auto-construction**: a `Session` instance is automatically
+   created for each new MCP session. You do not need an
+   `initialize` function or manual `create()` calls. All fields
+   on `SessionState` must have default values, since instances
+   are created without arguments.
+2. **Auto-tool-exposure**: all `Session` methods are
+   automatically exposed as tools (unless `mcp=False`).
+3. **Automatic ID resolution**: the AI never needs to specify a
+   state ID for `Session` methods — it is resolved from the
+   MCP session.
+
+`Session` typically acts as an entry point: its methods create or look
+up other state types (like `Counter`) and return their IDs. The AI
+tracks those IDs in its context window and passes them in subsequent
+tool calls.
+
+## Creating tools for the AI
+
+### `Session` methods are AI-callable by default
+
+All methods on the `Session` state type are automatically
+exposed as MCP tools the AI can call. The `description` field
+on each method is what the AI reads to decide when and how to
+call a tool:
+
+```python
+SessionMethods = Methods(
+    create_counter=Transaction(
+        request=None,
+        response=CreateCounterResponse,
+        # Good: tells the AI what the tool does
+        # and when to use it.
+        description="Create a new Counter. Returns "
+        "the ID of the new counter.",
+    ),
+)
+```
+
+### Opting out with `mcp=False`
+
+To prevent a `Session` method from being AI-callable, set
+`mcp=False`:
+
+```python
+SessionMethods = Methods(
+    # AI-callable (default for Session methods).
+    create_counter=Transaction(
+        request=None,
+        response=CreateCounterResponse,
+        description="Create a new Counter.",
+    ),
+    # NOT AI-callable — internal use only.
+    cleanup=Writer(
+        request=None,
+        response=None,
+        description="Clean up old state.",
+        mcp=False,
+    ),
+)
+```
+
+### Exposing non-`Session` methods to the AI
+
+Methods on state types other than `Session` are **not**
+AI-callable by default. To expose them, add `mcp=Tool()`.
+This is how you expose methods on the types that `Session`
+creates:
+
+```python
+from reboot.api import Tool
+
+CounterMethods = Methods(
+    # AI-callable because of `mcp=Tool()`.
+    get=Reader(
+        request=None,
+        response=GetResponse,
+        description="Get the current counter value.",
+        mcp=Tool(),
+    ),
+    # NOT AI-callable (default for non-Session methods).
+    create=Writer(
+        request=None,
+        response=None,
+        factory=True,
+    ),
+)
+
+api = API(
+    Session=Type(
+        state=SessionState,
+        methods=SessionMethods,
+    ),
+    Counter=Type(
+        state=CounterState,
+        methods=CounterMethods,
+    ),
+)
+```
+
+For non-`Session` types, the AI must specify a state ID when
+calling the tool. It receives the ID when it creates the
+instance (e.g., from `create_counter`).
+
+### `Tool()` options
+
+`Tool()` accepts optional overrides:
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `name` | `str` or `None` | Custom tool name. If `None`: defaults to the method name. |
+| `title` | `str` or `None` | Human-readable title. If `None`: defaults to the method name. |
+
+```python
+check_stock=Reader(
+    request=CheckStockRequest,
+    response=StockResponse,
+    description="Check stock for an item.",
+    mcp=Tool(name="inventory_check", title="Check Inventory"),
+),
+```
+
+### Why hide methods from the AI?
+
+Not every method should be an MCP tool:
+
+1. **Human-only actions.** Some actions should only be triggered
+   by a human — for example, a "Yes, confirm" button in a React
+   UI. The human clicks it to call the method, but the AI
+   cannot.
+2. **Context bloat.** Every tool you expose is added to the AI's
+   context window. Exposing too many tools can overwhelm the AI
+   and degrade its performance.
+
+## Method kinds
+
+Depending on its [kind](/learn_more/define/methods), a method
+might be able to only read (e.g., `Reader`) or both read and
+write (e.g., `Writer`) the state. A type can have any number of
+`Reader`, `Writer`, `Transaction`, `Workflow`, and
+[`UI`](/learn_more/implement/ui_methods) methods.
+
+## Full-stack
+
+You can also use Pydantic for full-stack apps that are not AI Chat Apps.
+In that case you do not need the `Session` type, `UI` methods, or
+`description` fields:
+
+```python
+from typing import Optional
+from reboot.api import (
+    API,
+    Field,
+    Methods,
+    Reader,
+    Model,
+    Writer,
+    Type,
+)
+
+class ChatRoomState(Model):
+    messages: Optional[list[str]] = Field(tag=1)
+
+class MessagesResponse(Model):
+    messages: list[str] = Field(tag=1)
+
+class SendRequest(Model):
+    message: str = Field(tag=1)
+
+ChatRoomMethods = Methods(
+    messages=Reader(
+        request=None,
+        response=MessagesResponse,
+    ),
+    send=Writer(
+        request=SendRequest,
+        response=None,
+    ),
+)
+
+api = API(
+    ChatRoom=Type(
+        state=ChatRoomState,
+        methods=ChatRoomMethods,
+    ),
+)
+```
+
+To learn more about how you implement each data type's methods
+see [Implement your API](/learn_more/implement/servicers).

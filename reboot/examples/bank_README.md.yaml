@@ -1,0 +1,21 @@
+name: Bank
+repo_name: reboot-bank
+overview: |
+  This repository contains an example bank written using Reboot.
+backend_locations: "`backend/`"
+backend_language: python
+has_frontend: true
+has_non_react_frontend: false
+has_tests: false
+has_cloud: false
+extra_setup: |
+  #### (optional) Setup secrets
+
+  To demonstrate sending emails in the bank you'll need to export your Mailgun
+  API key as an environment variable.
+
+  Replace `MY_MAILGUN_API_KEY` with your own mailgun API key, which you can get
+  from [your Mailgun account](https://www.mailgun.com):
+  ```shell
+  export RBT_SECRET_MAILGUN_API_KEY="MY_MAILGUN_API_KEY"
+  ```

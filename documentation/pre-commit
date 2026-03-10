@@ -1,0 +1,47 @@
+#!/bin/bash
+#
+# A precommit hook that checks for breaking changes to our docs. It will:
+#  * run markdown-autodocs to make sure there are no changes in linked code
+#    snippets that haven't been ported over to the docs. If there are new
+#    changes after running markdown-autodocs, abort the commit and ask the
+#    user to manually review the changes.
+#  * run an npm build on the documentation to make sure it compiles correctly
+#    (no broken links, etc.)
+
+REPO_TOP_LEVEL="$(git rev-parse --show-toplevel)"
+# In the mono repo, submodules live under `public/`; in the standalone
+# public repo they live directly at the top level.
+PREFIX=""
+if [[ -d "${REPO_TOP_LEVEL}/public" ]]; then
+    PREFIX="public/"
+fi
+source ${REPO_TOP_LEVEL}/${PREFIX}submodules/dev-tools/pre-commit-print-error
+
+# Run a build to check for breaking changes.
+# This step can take a while, and changes outside of the documentation directory
+# shouldn't affect this build, so let's check the commit and only run the build
+# if there are relevant files touched.
+
+# Include renames as well so moving docs paths still triggers docs validation.
+documentation_files_in_commit=$(git diff --cached --name-only --diff-filter=ACMR HEAD | grep "^${PREFIX}documentation/")
+if [ ! -z "$documentation_files_in_commit" ]; then
+    # The install command is noisy; silence its output. If it
+    # fails, it'll send the error to STDERR, which will still appear in the
+    # console to assist in fixing the code.
+    echo "Installing documentation dependencies..."
+    # Use `npm ci` to keep installs deterministic and avoid mutating
+    # package-lock.json during pre-commit runs.
+    npm ci --prefix ${REPO_TOP_LEVEL}/${PREFIX}documentation > /dev/null
+    if [ ! $? -eq 0 ]; then
+        print_error "Documentation dependency installation failed"
+        exit 1
+    fi
+    # Log noisy build command to STDOUT so we know which warnings to safely
+    # ignore.
+    echo "Running documentation build..."
+    npm run build --prefix ${REPO_TOP_LEVEL}/${PREFIX}documentation
+    if [ ! $? -eq 0 ]; then
+        print_error "Documentation build failed"
+        exit 1
+    fi
+fi

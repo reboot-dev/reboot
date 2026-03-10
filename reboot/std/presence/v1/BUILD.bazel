@@ -1,0 +1,42 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "presence_py",
+    srcs = [
+        "presence.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot/aio:contexts_py",
+        "//reboot/aio:memoize_py",
+        "@com_github_reboot_dev_reboot//rbt/std/presence/mouse_tracker/v1:mouse_position_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/std/presence/subscriber/v1:subscriber_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/std/presence/v1:presence_py_reboot",
+    ],
+)
+
+ts_project(
+    name = "presence_ts",
+    srcs = [
+        "index.ts",
+        "package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@reboot-dev/reboot-std-api",
+        "//:node_modules/@types/node",
+    ],
+)

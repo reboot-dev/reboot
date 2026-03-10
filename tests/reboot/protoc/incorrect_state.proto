@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/protoc/shared.proto";
+
+package tests.reboot.protoc;
+
+message Echo {
+  option (rbt.v1alpha1.state) = {
+  };
+  Text last_message = 1;
+}
+
+service EchoMethods {
+  option (rbt.v1alpha1.service) = {
+    // TESTS: "Echo" refers (by default) to "EchoMethods", but "EchoMethods"
+    //        does not refer back to "Echo".
+    state: "SomeDifferentStateType"
+  };
+
+  rpc Reply(Text) returns (Text) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc LastMessage(Empty) returns (Text) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}

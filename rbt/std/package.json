@@ -1,0 +1,19 @@
+{
+  "name": "@reboot-dev/reboot-std-api",
+  "version": "0.45.2",
+  "description": "Reboot standard library API.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc"
+  },
+  "author": "reboot-dev",
+  "dependencies": {
+    "@scarf/scarf": "1.4.0"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^22.7.4"
+  }
+}

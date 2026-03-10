@@ -1,0 +1,10 @@
+# Generated code
+api/**/*.ts
+api/**/*.js
+
+# Zod schemas
+!api/bank/v1/bank.ts
+!api/bank/v1/account.ts
+
+# Yarn 2+ install cache
+.yarn/install-state.gz

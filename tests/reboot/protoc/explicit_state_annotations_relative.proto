@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/protoc/shared.proto";
+
+package tests.reboot.protoc;
+
+message Echo {
+  option (rbt.v1alpha1.state) = {
+    // TESTS: explicitly specifying the default value for `implements` is fine.
+    // TESTS: a relative name, without package, is assumed to refer to the same
+    // package.
+    implements: [ "EchoMethods" ]
+  };
+  Text last_message = 1;
+}
+
+service EchoMethods {
+  option (rbt.v1alpha1.service) = {
+    // TESTS: explicitly specifying the default value for `state` is fine.
+    // TESTS: a relative name, without package, is assumed to refer to the same
+    // package.
+    state: "Echo"
+  };
+
+  rpc Reply(Text) returns (Text) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc LastMessage(Empty) returns (Text) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}

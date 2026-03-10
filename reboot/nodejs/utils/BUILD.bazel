@@ -1,0 +1,33 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+
+filegroup(
+    name = "utils_srcs",
+    srcs = [
+        "errors.ts",
+        "index.ts",
+        "package.json",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+ts_project(
+    name = "utils_ts",
+    srcs = [
+        ":utils_srcs",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "allowSyntheticDefaultImports": True,
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@types/node",
+        "//:node_modules/chalk",
+    ],
+)

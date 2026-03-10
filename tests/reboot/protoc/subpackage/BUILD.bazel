@@ -1,0 +1,17 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//tests/reboot/protoc:helpers.bzl", "reboot_libraries_for_proto")
+
+reboot_libraries_for_proto(
+    proto = "multiple_services_across_packages.proto",
+)
+
+reboot_libraries_for_proto(
+    proto = "all_services_in_different_package.proto",
+)
+
+###### Targets expected by `./helpers.bzl` to support the above ######
+
+js_library(
+    name = "package_json",
+    srcs = [":package.json"],
+)

@@ -1,0 +1,33 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "health_servicer_tests_py",
+    srcs = [":health_servicer_tests.py"],
+    main = "health_servicer_tests.py",
+    deps = [
+        requirement("grpcio"),
+        requirement("grpcio-health-checking"),
+        "//reboot/aio:health_check_py",
+        "//reboot/aio:tests_py",
+        "//reboot/ssl:localhost_py",
+        "//tests/reboot:echo_servicers_py",
+    ],
+)
+
+py_test(
+    name = "tasks_servicer_tests_py",
+    srcs = [":tasks_servicer_tests.py"],
+    main = "tasks_servicer_tests.py",
+    deps = [
+        requirement("grpcio"),
+        "//rbt/v1alpha1:tasks_py_grpc",
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot/aio:secrets_py",
+        "//reboot/aio:tasks_py",
+        "//reboot/aio:tests_py",
+        "//reboot/ssl:localhost_py",
+        "//tests/reboot:echo_servicers_py",
+        "//tests/reboot:general_boilerplate_py_reboot",
+    ],
+)

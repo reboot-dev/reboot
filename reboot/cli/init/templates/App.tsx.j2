@@ -1,0 +1,48 @@
+import css from "./App.module.css";
+import { useHelloWorld } from "{{ reboot_react_path }}";
+import Logo from "./assets/reboot-logo.svg";
+
+const STATE_MACHINE_ID = "reboot-hello-world";
+
+const App = () => {
+  const { useNumGreetings, greet } = useHelloWorld({ id: STATE_MACHINE_ID });
+  const { response } = useNumGreetings();
+
+  const handleClick = async () => {
+    const { aborted } = await greet({});
+    if (aborted !== undefined) {
+      console.warn(aborted.error.getType());
+      console.warn(aborted.message);
+    }
+  };
+
+  return (
+    <div className={css.container}>
+      <header className={css.header}>
+        <img src={Logo} alt="Reboot Logo" className={css.logo} />
+        <p className={css.greeting}>Hello, Reboot!</p>
+        <p className={css.documentation}>
+          Visit our{" "}
+          <a
+            href="https://docs.reboot.dev"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            documentation
+          </a>{" "}
+          to learn more.
+        </p>
+      </header>
+      <button className={css.button} onClick={handleClick}>
+        {response !== undefined
+          ? `Number of greetings is ${response.numberOfGreetings}`
+          : "No greetings yet"}
+      </button>
+      <footer className={css.footer}>
+        <p>Edit src/App.tsx and save to hot reload.</p>
+      </footer>
+    </div>
+  );
+};
+
+export default App;

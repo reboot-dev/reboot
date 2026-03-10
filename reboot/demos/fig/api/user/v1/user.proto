@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package user.v1;
+
+import "google/protobuf/empty.proto";
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service UsersMethods {
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {
+        constructor: {},
+      },
+    };
+  }
+  rpc List(ListRequest) returns (ListResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  rpc Add(AddRequest) returns (AddResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message CreateRequest {}
+
+message CreateResponse {}
+
+message Users {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated string user_ids = 1;
+}
+
+message ListRequest {}
+
+message ListResponse {
+  repeated string user_ids = 1;
+}
+
+message AddRequest {
+  string user_id = 1;
+}
+
+message AddResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+service UserMethods {
+  rpc Create(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message User {
+  option (rbt.v1alpha1.state) = {
+  };
+}
+
+////////////////////////////////////////////////////////////////////////

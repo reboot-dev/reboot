@@ -1,0 +1,405 @@
+import { CodeStepByStep, Step } from "../../src/components/Steps";
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# TypeScript
+
+<CodeStepByStep>
+<Step
+  title="Setup your app folder"
+  description={`
+
+Create a folder where your Reboot app will live and \`cd\` into it.
+
+`}>
+
+```sh
+mkdir reboot-chat-room && cd reboot-chat-room
+```
+
+</Step>
+<Step
+  title="Install Reboot"
+  description={`
+
+Initialize a new NPM project, install the [\`@reboot-dev/reboot\` NPM package](https://www.npmjs.com/package/@reboot-dev/reboot), and initialize TypeScript.
+
+_A compilation step is necessary during package installation. With
+Debian based distributions install build essentials with \`apt install
+build-essential\`._
+
+`}>
+
+```sh
+npm init -y && npm pkg set type="module" && npm install @reboot-dev/reboot zod@^4.0.0 && npx tsc --init --sourceMap --declaration --moduleResolution node --target es2020 --rootDir . --outDir dist
+```
+
+</Step>
+<Step
+  title="Make sure Docker is running:"
+>
+
+```sh
+docker ps
+```
+</Step>
+<Step
+  title={<div>Define your API using Zod</div>}
+  description={`
+
+With Reboot you define your API first, either using
+[Zod](https://zod.dev) or an interface definition language (IDL) like
+[protocol buffers](https://protobuf.dev).
+
+In this quickstart we'll use Zod, so we'll need to create a new
+TypeScript file to define the API.
+
+This is where you will define and annotate your durable state data
+types and their operations.
+
+`}>
+
+```sh
+mkdir -p ./api/chat_room/v1 && touch ./api/chat_room/v1/chat_room.ts
+```
+
+</Step>
+
+<Step
+  title="Define your durable state data types and operations"
+  description={`
+
+First, import Zod via \`import { z } from "zod/v4"\`. Reboot requires
+\`zod/v4\`.
+
+Next, define a durable state data type in Reboot called \`ChatRoom\` with
+\`state\` that includes an array of \`string\` messages.
+
+For brevity we are defining just two operations:
+
+1. \`messages\` returns all of your messages. It is a [\`reader\`](/learn_more/define/methods#kinds) method because all it does is read state.
+1. \`send\` takes a \`message\` and updates state, so it is a [\`writer\`](/learn_more/define/methods#kinds) method.
+
+&nbsp;
+
+:::tip
+Methods of kind [\`reader\`](/learn_more/define/methods#kinds) will safely be executed concurrently!
+:::
+
+`}>
+
+```typescript title=./api/chat_room/v1/chat_room.ts
+// ./api/chat_room/v1/chat_room.ts
+import { reader, writer } from "@reboot-dev/reboot-api";
+import { z } from "zod/v4";
+
+export const ChatRoom = {
+  state: {
+    messages: z
+      .array(z.string())
+      .default(() => [])
+      .meta({ tag: 1 }),
+  },
+  methods: {
+    messages: reader({
+      request: {},
+      response: {
+        messages: z.array(z.string()).meta({ tag: 1 }),
+      },
+    }),
+    send: writer({
+      request: {
+        message: z.string().meta({ tag: 1 }),
+      },
+      response: {},
+    }),
+  },
+};
+
+export const api = {
+  ChatRoom,
+};
+```
+
+</Step>
+
+<Step
+  title={<div>Create <code>.ts</code> implementation file</div>}
+  description={`
+
+For each of the \`types\`'s that we define we need to
+implement [servicers](/learn_more/implement/servicers) - a class containing
+methods that implement the operations of your data type.
+
+`}>
+
+```sh
+mkdir -p ./backend/src && touch ./backend/src/chat_room_servicer.ts
+```
+
+</Step>
+<Step
+  title={<div>Implement <code>ChatServicer</code></div>}
+  description={`
+
+You can implement your servicer using either the class-based syntax or the
+object literal syntax.
+
+If class-based, your servicer must extend \`ChatRoom.Servicer\`.
+
+If using the object literal syntax, set your servicer equal to
+ChatRoom.servicer({ ... }).
+
+If using the class-based syntax, an instance of will be created for every
+instance of the
+\`ChatRoom\` type that you create, and you can access the state of that
+instance via \`this.state\`.
+
+In the object literal syntax, you can access the state via the \`state\` variable
+passed into the function.
+
+Each method expects a \`context\` as the first argument that aligns
+with the kind given in the Zod schema; \`messages\`
+takes a \`ReaderContext\` and \`send\` takes a \`WriterContext\`.
+
+\`send\` can mutate \`this.state\` /\ \`state\` and \`messages\` can only read from
+it.
+
+`}>
+
+  <Tabs groupId="typescript-object-class">
+    <TabItem value="object" label="Object literal" default>
+<!-- prettier-ignore-start -->
+```typescript title=./backend/src/chat_room_servicer.ts
+// ./backend/src/chat_room_servicer.ts
+import { ReaderContext, WriterContext } from "@reboot-dev/reboot";
+import { ChatRoom } from "../../api/chat_room/v1/chat_room_rbt.js";
+
+export const chatRoomServicer = ChatRoom.servicer({
+  messages: async (
+    context: ReaderContext,
+    state: ChatRoom.State,
+    request: ChatRoom.MessagesRequest
+  ): Promise<ChatRoom.MessagesResponse> => {
+    return { messages: state.messages };
+  },
+
+  send: async (
+    context: WriterContext,
+    state: ChatRoom.State,
+    request: ChatRoom.SendRequest
+  ): Promise<[ChatRoom.State, ChatRoom.SendResponse]> => {
+    state.messages.push(request.message);
+    return [state, {}];
+  },
+});
+```
+<!-- prettier-ignore-end -->
+    </TabItem>
+    <TabItem value="class" label="Class">
+<!-- prettier-ignore-start -->
+```typescript title=./backend/src/chat_room_servicer.ts
+// ./backend/src/chat_room_servicer.ts
+import { ReaderContext, WriterContext } from "@reboot-dev/reboot";
+import { ChatRoom } from "../../api/chat_room/v1/chat_room_rbt.js";
+
+export class ChatRoomServicer extends ChatRoom.Servicer {
+  async messages(
+    context: ReaderContext,
+    request: ChatRoom.MessagesRequest
+  ): Promise<ChatRoom.MessagesResponse> {
+    return { messages: this.state.messages };
+  }
+
+  async send(
+    context: WriterContext,
+    request: ChatRoom.SendRequest
+  ): Promise<ChatRoom.SendResponse> {
+    this.state.messages.push(request.message);
+    return {};
+  }
+}
+```
+<!-- prettier-ignore-end -->
+    </TabItem>
+  </Tabs>
+
+</Step>
+
+<Step
+  title={<div>Create a <code>main</code> entrypoint</div>}
+  description={`
+
+Create a \`main.ts\` file as the entrypoint for your app. In
+particular, this is where you'll construct an \`Application\` that
+you'll use to run your app.
+
+`}>
+
+```sh
+touch ./backend/src/main.ts
+```
+
+</Step>
+<Step
+  title={<div>Implement <code>main.ts</code></div>}
+  description={`
+
+\`Application\` takes a list of the TypeScript
+[\`servicers\`](/learn_more/implement/servicers) that you have implemented.
+
+It optionally takes an \`initialize\` function that runs before the app loads,
+which can be used to construct default state.
+
+`}>
+  <Tabs groupId="typescript-object-class">
+    <TabItem value="object" label="Object literal" default>
+```typescript title=./backend/src/main.ts
+// ./backend/src/main.ts
+import { Application, InitializeContext } from "@reboot-dev/reboot";
+import { ChatRoom } from "../../api/chat_room/v1/chat_room_rbt.js";
+import { chatRoomServicer } from "./chat_room_servicer.js";
+
+const initialize = async (context: InitializeContext) => {
+  const chatRoom = ChatRoom.ref("reboot-chat-room");
+
+  await chatRoom.send(context, { message: "Hello, World!" });
+};
+
+new Application({
+  servicers: [chatRoomServicer],
+  initialize,
+}).run();
+```
+    </TabItem>
+    <TabItem value="class" label="Class">
+```typescript title=./backend/src/main.ts
+// ./backend/src/main.ts
+import { Application, InitializeContext } from "@reboot-dev/reboot";
+import { ChatRoom } from "../../api/chat_room/v1/chat_room_rbt.js";
+import { ChatRoomServicer } from "./chat_room_servicer.js";
+
+const initialize = async (context: InitializeContext) => {
+  const chatRoom = ChatRoom.ref("reboot-chat-room");
+
+  await chatRoom.send(context, { message: "Hello, World!" });
+};
+
+new Application({
+  servicers: [ChatRoomServicer],
+  initialize,
+}).run();
+```
+    </TabItem>
+  </Tabs>
+</Step>
+
+<Step
+  title={<div>Create an <code>.rbtrc</code> file</div>}
+  description={`
+
+An [\`.rbtrc\`](/develop_locally#rbtrc-and-flags) file contains the flags
+needed to generate code from your Zod API as well as run your
+app.
+
+`}>
+
+```sh
+touch .rbtrc
+```
+
+</Step>
+
+<Step
+  title={<div>Add necessary flags to your <code>.rbtrc</code> file</div>}
+  description={`
+
+First, tell Reboot where the Zod schemas live, the \`api/\` directory,
+and where to output the generated code, also in \`api/\`.
+
+Next, tell Reboot how to run your app. Give the app a name via
+\`--name=chat-room\` to persist state between app restarts. Finally, tell Reboot
+that it should use Node.js to run
+our app.
+
+:::tip
+If you want to remove all of your changes between app restarts, do not pass the
+\`--name\` flag to \`rbt\`.
+:::
+
+Last, specify the entrypoint for your app.
+
+See a complete list of supported flags by running \`rbt dev run --help\`.
+
+`}>
+
+```bash
+# .rbtrc
+generate api/
+generate --nodejs=api/
+
+dev run --name=chat-room
+dev run --watch=backend/src/**/*.ts
+dev run --nodejs
+dev run --application=backend/src/main.ts
+```
+
+</Step>
+
+<Step
+  title="Run your app"
+  description={`
+
+This command will run your app in
+[\`dev\`](/develop_locally#running-your-app-for-development) mode.
+
+`}>
+
+```sh
+npx rbt dev run
+```
+
+</Step>
+
+<Step
+  title="Query your app"
+  description={`
+
+Your app is up and running! Let's make an HTTP request for the \`Messages\`.
+`}>
+
+```sh
+curl -XPOST http://localhost:9991/chat_room.v1.ChatRoomMethods/Messages \
+  -H "x-reboot-state-ref:chat_room.v1.ChatRoom:reboot-chat-room"
+```
+
+</Step>
+
+</CodeStepByStep>
+
+<!-- TODO: use `## Next steps` instead of `<h1>Next steps</h1>` once
+we figure out to hide the right side navigation/table of contents. -->
+
+<h1>Next steps</h1>
+
+Well done! You made it!
+
+This example is somewhat contrived as we only created one instance of
+your `ChatRoom` data type, but in practice you are free to make as many
+of these as you like!
+
+Check out these links to continue your exploration:
+
+* **[Build a React frontend](/full_stack_apps/react)** - create a
+  React frontend that connects to your backend and displays your
+  messages in real-time.
+* **[Learn about transactions](/learn_more/define/methods#kinds)** - so far,
+  we've covered `reader` and
+  `writer` methods, but Reboot's power
+  extends to `transactions`. [Learn about
+  `transactions` and all of the other method kinds
+  here](/learn_more/define/methods#kinds).
+* **[Join us on Discord](https://discord.gg/cRbdcS94Nr)** - to ask
+  questions and let us know what you think!
+
+Hopefully, your wheels are starting to spin thinking of all of the possibilities!

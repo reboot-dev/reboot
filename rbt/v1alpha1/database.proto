@@ -4,6 +4,7 @@ package rbt.v1alpha1;
 
 import "google/protobuf/any.proto";
 import "google/protobuf/timestamp.proto";
+
 import "rbt/v1alpha1/application_metadata.proto";
 import "rbt/v1alpha1/tasks.proto";
 
@@ -82,7 +83,8 @@ message Task {
   TaskId task_id = 1;
   string method = 2;
   Status status = 3;
-  bytes request = 4;  // Serialized proto message.
+  // Serialized proto message.
+  bytes request = 4;
   optional google.protobuf.Timestamp timestamp = 5;
 
   // Invariant: response_or_error is unset until the Task status is COMPLETED,
@@ -152,6 +154,16 @@ message IdempotentMutation {
 
   // Any tasks that were scheduled as part of this mutation.
   repeated TaskId task_ids = 3;
+
+  // Optional workflow ID, when this mutation was performed within
+  // a workflow. Stored in the RocksDB value so recovery can
+  // reconstruct the correct key.
+  optional bytes workflow_id = 6;
+
+  // Optional workflow iteration, when this mutation was performed
+  // within a workflow control loop. Used together with
+  // `workflow_id` to scope recovery to a specific iteration.
+  optional uint64 workflow_iteration = 7;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -307,7 +319,7 @@ message StoreResponse {}
 
 message RecoverRequest {
   // Mapping from fully qualified state type names to state tags (as
-  // defined in `rebootdev.aio.types`). Used to implement backwards
+  // defined in `reboot.aio.types`). Used to implement backwards
   // compatibility from persistence version 0 to version 1.
   map<string, string> state_tags_by_state_type = 1;
 
@@ -335,8 +347,10 @@ message RecoverResponse {
   //
   // NOTE: because a map key can not be bytes we pass a stringified UUID
   // where as other places we pass the UUID in its bytes form.
+  // clang-format off
   map<string, PreparedTransactionCoordinator>
       prepared_transaction_coordinators = 3;
+  // clang-format on
 
   repeated IdempotentMutation idempotent_mutations = 4;
 }
@@ -350,6 +364,12 @@ message RecoverIdempotentMutationsRequest {
 
   // Recover an idempotent mutation for the specific key.
   optional bytes idempotency_key = 3;
+
+  // Optional workflow ID for workflow-scoped recovery queries.
+  optional bytes workflow_id = 4;
+
+  // Optional workflow iteration for iteration-scoped recovery.
+  optional uint64 workflow_iteration = 5;
 }
 
 message RecoverIdempotentMutationsResponse {

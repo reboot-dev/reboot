@@ -1,0 +1,123 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the README at:
+// https://github.com/microsoft/vscode-dev-containers/tree/v0.209.6/containers/ubuntu
+{
+  "name": "Codespace Workstation",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "target": "codespace-workstation",
+    // NOTE: by using 'cacheFrom' here we will be able to reuse
+    // the Docker layers from previous devcontainer builds!
+    "cacheFrom": "ghcr.io/reboot-dev/mono/workstation"
+  },
+  "customizations": {
+    "vscode": {
+      // Set *default* container specific settings.json values on container create.
+      "settings": {},
+
+      // Add the IDs of extensions you want installed when the container is created.
+      "extensions": [
+        // Bazel makes VS Code aware of BUILD file syntax and tools.
+        "BazelBuild.vscode-bazel",
+        // Make VS Code respect .editorconfig files.
+        "EditorConfig.EditorConfig",
+        // Enable GitHub Copilot.
+        "GitHub.copilot",
+        // GitHub Pull Requests allows PR reviewers and authors to see and reply
+        // to review comment in VS Code.
+        "GitHub.vscode-pull-request-github",
+        // Python support.
+        "ms-python.python",
+        // Python type checking.
+        "ms-python.mypy-type-checker",
+        // Automatically do import sorting in Python.
+        "ms-python.isort",
+        // C++ support.
+        "ms-vscode.cpptools",
+        // Additional C++ support.
+        "ms-vscode.cpptools-extension-pack",
+        // Use clang-format to format files.
+        "xaver.clang-format",
+        // Open in GitHub: provides links to open the current file + line number in GitHub.
+        "ziyasal.vscode-open-in-github",
+        // Protocol buffer support.
+        "zxh404.vscode-proto3",
+        // Spell checker.
+        "streetsidesoftware.code-spell-checker",
+        // Add autotmatic line/comment wrapper.
+        "stkb.rewrap",
+        // Prettier code formatter.
+        "esbenp.prettier-vscode",
+        // YAPF code formatter.
+        "eeyore.yapf"
+      ]
+    }
+  },
+  // Use 'forwardPorts' to make a list of ports inside the container available locally.
+  "forwardPorts": [
+    // The HTTP port exposed by default in examples.
+    3000,
+    // The gRPC backend port exposed by default in examples.
+    9991
+  ],
+  // Comment out to connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
+  "remoteUser": "vscode",
+  "features": {
+    // We need to be able to run docker-in-docker. Docker-on-docker is not enough; that would mean we
+    // need to completely change the paths that we use for volume bindings.
+    //
+    // Keeping this feature here would increase the first boot time of our
+    // Codespaces, but that's not user-visible since this happens during
+    // Codespace Prebuilds: see
+    // https://github.com/reboot-dev/mono/issues/107 . It would be even
+    // better to move this installation functionality to the Dockerfile,
+    // but that's complicated.
+    //   https://github.com/microsoft/vscode-dev-containers/blob/main/script-library/docs/docker-in-docker.md
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest"
+    },
+    // GitHub recently changed their default to no longer install sshd by default.
+    // See: https://github.com/cli/cli/issues/5739. We now need to add it in
+    // explicitly.
+    "ghcr.io/devcontainers/features/sshd:1": {
+      "version": "latest"
+    }
+  },
+  // Specify a minimum machine size for Codespaces to work reasonably:
+  // https://docs.github.com/en/codespaces/setting-up-your-project-for-codespaces/setting-a-minimum-specification-for-codespace-machines#setting-a-minimum-machine-specification
+  "hostRequirements": {
+    // k3d commands easily run out of disk with only 64GB of storage:
+    // request at least 128GB. As of Apr 2022, the only machines with this
+    // much storage are the expensive 16-core machines, but only specify
+    // storage because that's our only hard constraint.
+    // TODO(alexmc): Can we reduce disk usage to reduce machine
+    // requirements? See https://github.com/reboot-dev/mono/issues/134 .
+    "storage": "128gb"
+  },
+  "containerEnv": {
+    // Pass on variable 'RESPECT_DEVCONTAINER_YML' so that
+    // we can skip steps that we intend only when using Codespaces.
+    "RESPECT_DEVCONTAINER_YML": "${localEnv:RESPECT_DEVCONTAINER_YML:false}",
+    // Pass on 'GCP_REMOTE_CACHE_CREDENTIALS_BASE64' so that we
+    // can run any builds that might need the remote cache.
+    "GCP_REMOTE_CACHE_CREDENTIALS_BASE64": "${localEnv:GCP_REMOTE_CACHE_CREDENTIALS_BASE64}",
+    // Export a file path that contains credentials that can be used to
+    // access a Google Cloud Storage bucket which we use as a remote
+    // `bazel` cache to speed up builds.
+    // The credentials file will be populated using a combination of secrets
+    // and the `updateContentCommand` below.
+    // As it turns out, we can not export this variable inside the script
+    // or on the "command line", so we do it here.
+    "GOOGLE_APPLICATION_CREDENTIALS": "/home/vscode/google_application_credentials.json"
+  },
+  // The below lifecycle hooks refer to lifecycle events documented here:
+  //   https://code.visualstudio.com/docs/remote/devcontainerjson-reference#_lifecycle-scripts
+  //   https://docs.github.com/en/codespaces/developing-in-codespaces/codespaces-lifecycle
+  //   https://docs.github.com/en/codespaces/prebuilding-your-codespaces/configuring-prebuilds#configuring-time-consuming-tasks-to-be-included-in-the-prebuild
+  // oncreateCommand runs inside the container after the Codespace template
+  // is created: this happens only once, well before a user is assigned.
+  "onCreateCommand": ".devcontainer/on_create.sh",
+  // updateContent runs inside the container after repo content is updated
+  // with new commits. We use it to build new content so users' builds are
+  // mostly incremental.
+  "updateContentCommand": ".devcontainer/update_content.sh"
+}

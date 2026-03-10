@@ -10,6 +10,14 @@ def pypi_repos():
     pyprotoc_plugin_pypi_repos()
 
     pip_parse(
+        name = "pip_package_rule_pypi",
+        python_interpreter_target = interpreter,
+        # Fully-specified path (including repo) so that this `.bzl` file can
+        # also be imported from other repos.
+        requirements_lock = "@com_github_reboot_dev_reboot//bazel/pip_package_rule:requirements_lock.txt",
+    )
+
+    pip_parse(
         name = "mypy_integration_pip_deps",
         python_interpreter_target = interpreter,
         # Fully-specified path (including repo) so that this `.bzl` file can
@@ -22,5 +30,13 @@ def pypi_repos():
         python_interpreter_target = interpreter,
         # Fully-specified path (including repo) so that this `.bzl` file can
         # also be imported from other repos.
-        requirements_lock = "@com_github_reboot_dev_reboot//rebootdev:requirements_lock.txt",
+        requirements_lock = "@com_github_reboot_dev_reboot//reboot:requirements_lock.txt",
+    )
+
+    pip_parse(
+        name = "rbt_test_pypi",
+        python_interpreter_target = interpreter,
+        # Fully-specified path (including repo) so that this `.bzl` file can
+        # also be imported from other repos.
+        requirements_lock = "@com_github_reboot_dev_reboot//tests:requirements_lock.txt",
     )

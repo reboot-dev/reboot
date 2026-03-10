@@ -1,0 +1,29 @@
+[project]
+name = "{NAME}"
+version = "{VERSION}"
+# TODO: See https://github.com/reboot-dev/mono/issues/4200.
+requires-python = ">=3.10,<3.13"
+dynamic = ["dependencies"]
+readme = "README.md"
+description = "{DESCRIPTION}"
+classifiers = {CLASSIFIERS}
+license = "{LICENSE}"
+
+[tool.setuptools.dynamic]
+dependencies = { file = "requirements.txt" }
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project.scripts]
+{SCRIPTS}
+
+[tool.setuptools]
+# The default settings understand our `src/` layout and will auto-discover the
+# Python packages we've placed there. We don't need to specify them here.
+
+[tool.setuptools.package-data]
+# The default settings don't include any files that aren't `*.py` files, so we
+# must explicitly list any such data dependencies here.
+{PACKAGE_DATA}

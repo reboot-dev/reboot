@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "declaration": true,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2020",
+    "outDir": "dist"
+  },
+  "include": [
+    "index.ts",
+    "protoc-gen-es.ts",
+    "rbt-esbuild.ts",
+    "zod-to-proto.ts",
+    "rbt.ts",
+    "reboot_native.cjs",
+    "reboot_native.d.ts",
+    "secrets",
+    "utils",
+    "venv.ts",
+    "version.ts",
+    "workspaces.ts"
+  ]
+}

@@ -1,0 +1,20 @@
+name: Docubot
+repo_name: reboot-docubot
+overview: |
+  This repository contains code for Docubot, an OpenAI RAG app that ingests
+  help center documents and creates a chatbot that can answer natural language
+  questions about the docs.
+backend_locations: "`backend/`"
+backend_language: typescript
+has_frontend: true
+has_non_react_frontend: false
+has_tests: true
+has_cloud: false
+extra_setup: |
+  #### Set the OpenAI API Key
+
+  Replace `MY_OPENAI_API_KEY` with your own OpenAI API key, which you can get
+  from your [OpenAI Dashboard](https://platform.openai.com/api-keys).
+  ```shell
+  export OPENAI_API_KEY=sk-proj-your_api-key
+  ```

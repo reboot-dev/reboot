@@ -1,0 +1,57 @@
+load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
+load("@container_structure_test//:defs.bzl", "container_structure_test")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//bazel:rules.bzl", "py_generated_file")
+
+filegroup(
+    name = "templates",
+    srcs = glob(["*.j2"]),
+)
+
+py_generated_file(
+    name = "envoy_config",
+    data = [":templates"],
+    main = "generate_envoy_config.py",
+    outfile = "envoy.generated.yaml",
+    deps = [
+        "//reboot/aio:types_py",
+        "//reboot/controller:servers_py",
+        "//reboot/controller:settings_py",
+        "//reboot/routing/filters:routing_filter_generator_py",
+        "//reboot/templates:tools_py",
+        "//tests/reboot:settings_py",
+    ],
+)
+
+diff_test(
+    name = "envoy_config_diff_test",
+    file1 = "envoy.golden.yaml",
+    file2 = "envoy.generated.yaml",
+)
+
+pkg_tar(
+    name = "envoy_test_setup_tar",
+    srcs = [
+        "one_envoy_request.sh",
+        ":envoy.generated.yaml",
+    ],
+    package_dir = "/reboot",
+)
+
+oci_image(
+    name = "envoy_with_test_setup",
+    base = "//:envoy_base_image",
+    tars = [":envoy_test_setup_tar"],
+)
+
+container_structure_test(
+    name = "test",
+    configs = [
+        "test.yaml",
+    ],
+    image = ":envoy_with_test_setup",
+    tags = [
+        "requires-docker",
+    ],
+)

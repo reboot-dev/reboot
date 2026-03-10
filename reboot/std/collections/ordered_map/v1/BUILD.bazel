@@ -1,0 +1,38 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "ordered_map_py",
+    srcs = [
+        "ordered_map.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot/aio:applications_py",
+        "//reboot/aio:contexts_py",
+        "@com_github_reboot_dev_reboot//rbt/std/collections/ordered_map/v1:ordered_map_py_reboot",
+    ],
+)
+
+ts_project(
+    name = "ordered_map_ts",
+    srcs = [
+        "index.ts",
+        "package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-std-api",
+        "//:node_modules/@types/node",
+    ],
+)

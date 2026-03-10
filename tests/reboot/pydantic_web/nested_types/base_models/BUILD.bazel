@@ -1,0 +1,20 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load(
+    "//reboot:pydantic_to_proto.bzl",
+    "pydantic_to_zod",
+)
+
+py_library(
+    name = "models_py",
+    srcs = ["models.py"],
+    visibility = ["//tests/reboot/pydantic_web/nested_types:__subpackages__"],
+    deps = [
+        "//reboot:api_py",
+    ],
+)
+
+pydantic_to_zod(
+    name = "models_zod_file",
+    pydantic = ":models.py",
+    visibility = ["//tests/reboot/pydantic_web/nested_types:__subpackages__"],
+)

@@ -1,0 +1,34 @@
+{
+  "name": "@reboot-dev/docubot",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepack": "tsc"
+  },
+  "dependencies": {
+    "@reboot-dev/docubot-api": "0.1.0",
+    "@reboot-dev/reboot": "0.45.2",
+    "@reboot-dev/reboot-api": "0.45.2",
+    "create-temp-directory": "^2.4.0",
+    "openai": "^4.52.7",
+    "puppeteer": "^22.14.0",
+    "sitemapper": "^3.2.9",
+    "typescript": "^4.9.5",
+    "zod": "^3.25.51"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.4",
+    "typescript": "^5.2.2"
+  },
+  "files": [
+    "src",
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "production": "./dist/src/index.js"
+    }
+  }
+}

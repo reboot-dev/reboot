@@ -1,0 +1,55 @@
+name: Setup Bazel Remote Cache
+description: Creates environment info file and user.bazelrc for Bazel remote caching
+
+inputs:
+  environment-id:
+    description: Identifier to include in environment file (e.g., "manylinux-builder")
+    required: false
+    default: ""
+  include-devcontainer-json:
+    description: Whether to include devcontainer.json in environment hash
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # We need to differentiate between different Linux environments, like
+    # arm64 and x86_64 in the remote cache, so we dump information about the
+    # environment into 'the_environment.txt' and calculate a hash of
+    # that file later.
+    - name: Create environment information file for remote-cache
+      shell: bash
+      run: |
+        # Dump the environment information into a file.
+        if [ -n "${{ inputs.environment-id }}" ]; then
+          echo "${{ inputs.environment-id }}" >> the_environment.txt
+        fi
+        echo $(uname -rsm) >> the_environment.txt
+        echo $(lscpu) >> the_environment.txt
+        if [ "${{ inputs.include-devcontainer-json }}" = "true" ]; then
+          cat .devcontainer/devcontainer.json >> the_environment.txt
+        fi
+
+    - name: Create user.bazelrc for remote cache
+      shell: bash
+      env:
+        # Setting a hash of "the_environment.txt" as an `--action_env`
+        # variable, we force Bazel to reject cached results from other
+        # Linux environments. This is intended to prevent cache
+        # corruptions due to incompatible tooling across Linux runner
+        # versions. See: https://github.com/reboot-dev/mono/issues/1723
+        LINUX_ENVIRONMENT_VERSION: ${{ hashFiles('the_environment.txt') }}
+      run: |
+        # The remote bazel cache saves a LOT of time when building in a
+        # clean environment.
+        echo "build --remote_cache=https://storage.googleapis.com/reboot-dev-bazel-remote-cache-reboot-us-7" > user.bazelrc
+        # The remote cache credentials are provided by environment variable.
+        echo "build --google_default_credentials" >> user.bazelrc
+        # Scope all of the artifacts we'll produce in the remote cache to
+        # this environment version.
+        echo "build --action_env=LINUX_ENVIRONMENT_VERSION=$LINUX_ENVIRONMENT_VERSION" >> user.bazelrc
+        echo "user.bazelrc:"
+        echo "----"
+        cat user.bazelrc
+        echo "----"

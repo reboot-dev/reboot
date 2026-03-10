@@ -1,0 +1,276 @@
+syntax = "proto3";
+
+package tests.reboot;
+
+import "rbt/v1alpha1/options.proto";
+import "rbt/v1alpha1/tasks.proto";
+import "google/protobuf/empty.proto";
+import "google/api/annotations.proto";
+
+// The proto message used as the state message for the Reboot service.
+message Greeter {
+  option (rbt.v1alpha1.state) = {
+  };
+  string title = 1;
+  string name = 2;
+  string adjective = 3;
+  RecursiveMessage recursive_message = 4;
+}
+
+message CreateRequest {
+  string title = 1;
+  string name = 2;
+  string adjective = 3;
+}
+
+message CreateResponse {}
+
+message GreetRequest {
+  // Name of the caller.
+  string name = 1;
+  map<string, string> metadata = 2;
+}
+
+message GreetResponse {
+  // Greeting based on request name.
+  string message = 1;
+}
+
+message SetAdjectiveRequest {
+  // This message is present to test that we can correctly generate code and
+  // typehints involving a nested type.
+  message NestedMessage {
+    string arbitrary_value = 1;
+  }
+
+  string adjective = 1;
+  NestedMessage arbitrary_message = 2;
+
+  bool revert_after_1_second = 3;
+}
+
+message SetAdjectiveResponse {
+  .rbt.v1alpha1.TaskId task_id = 1;
+}
+
+message TestLongRunningFetchRequest {
+  uint32 sleep_time_seconds = 1;
+}
+
+message GetWholeStateRequest {}
+
+message WorkflowResponse {
+  string value = 1;
+}
+
+message ErrorWithValue {
+  string value = 1;
+}
+
+message RecursiveMessage {
+  string message = 1;
+  RecursiveMessage next = 2;
+}
+
+message StoreRecursiveMessageRequest {
+  RecursiveMessage message = 1;
+}
+
+message StoreRecursiveMessageResponse {}
+
+message ReadRecursiveMessageRequest {}
+
+message ReadRecursiveMessageResponse {
+  RecursiveMessage message = 1;
+}
+
+message ConstructAndStoreRecursiveMessageRequest {
+  int32 depth = 1;
+}
+
+message ConstructAndStoreRecursiveMessageResponse {}
+
+message DangerousFieldsRequest {
+  // TESTS: request field names which previously caused invalid generated code
+  // are now supported.
+  int32 metadata = 1;
+  int32 request = 2;
+  int32 response = 3;
+  int32 self = 4;
+  int32 context = 5;
+  int32 bearer_token = 6;
+  int32 reboot = 7;
+  int32 uuid = 8;
+  int32 stub = 9;
+  string idempotency = 10;
+  string state_id = 11;
+}
+
+service GreeterMethods {
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {},
+    };
+  }
+
+  rpc Greet(GreetRequest) returns (GreetResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  // Deliberately using Empty as a response here to exercise
+  // generating code using out-of-package messages.
+  rpc SetAdjective(SetAdjectiveRequest) returns (SetAdjectiveResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc TransactionSetAdjective(SetAdjectiveRequest)
+      returns (SetAdjectiveResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // Method that tests what happens when we try to construct a
+  // `Context` within a servicer.
+  rpc TryToConstructContext(google.protobuf.Empty)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  // Method that tests what happens when we try to construct an
+  // `ExternalContext` within a servicer.
+  rpc TryToConstructExternalContext(google.protobuf.Empty)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc TestLongRunningFetch(TestLongRunningFetchRequest)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc TestLongRunningWriter(google.protobuf.Empty)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc GetWholeState(GetWholeStateRequest) returns (Greeter) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc FailWithException(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc FailWithAborted(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [ "ErrorWithValue" ],
+    };
+  }
+
+  rpc Workflow(google.protobuf.Empty) returns (WorkflowResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+      errors: [ "ErrorWithValue" ],
+    };
+  }
+
+  // Method which uses a request message with previously forbidden field names,
+  // used to pass a type check to guarantee that users can use those field
+  // names.
+  rpc DangerousFields(DangerousFieldsRequest) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc StoreRecursiveMessage(StoreRecursiveMessageRequest)
+      returns (StoreRecursiveMessageResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc ReadRecursiveMessage(ReadRecursiveMessageRequest)
+      returns (ReadRecursiveMessageResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc ConstructAndStoreRecursiveMessage(
+      ConstructAndStoreRecursiveMessageRequest)
+      returns (ConstructAndStoreRecursiveMessageResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+}
+
+// ----------- Legacy gRPC services -------------
+// These are in the same file as `Greeter` to demonstrate that it's possible to
+// mix Reboot and non-Reboot services in the same file.
+
+// This code is here to test that we do not try to generate Reboot code for
+// non-Reboot services and messages.
+service Clock {
+  // Four different ways of asking for the time, to cover the four different
+  // combinations of streaming/unary requests/responses.
+
+  // Return the current time once.
+  rpc CurrentTime(google.protobuf.Empty) returns (Time) {
+    option (google.api.http) = {
+      // Also make this method available via GET, at a custom path.
+      get: "/current_time"
+    };
+  }
+
+  // Return the current time continuously, until the client closes the stream.
+  rpc StreamCurrentTime(google.protobuf.Empty) returns (stream Time) {}
+
+  // Record the time of each request, and return their times as a response once
+  // `stop` is set in the request.
+  rpc Stopwatch(stream StopwatchRequest) returns (StopwatchResponse) {}
+
+  // Same as above, but provide ongoing updates on the recorded times as the
+  // requests come in.
+  rpc StreamStopwatch(stream StopwatchRequest)
+      returns (stream StopwatchResponse) {}
+}
+
+message Time {
+  // Microseconds since the Epoch.
+  int64 micros = 1;
+}
+
+message StopwatchRequest {
+  bool stop = 1;
+}
+
+message StopwatchResponse {
+  repeated Time times = 1;
+}
+
+// A second legacy gRPC servicer; useful to demonstrate that our legacy gRPC
+// channels can handle multiple services.
+service ColorMatcher {
+  rpc MatchColor(MatchColorRequest) returns (MatchColorResponse) {}
+}
+
+enum Color {
+  RED = 0;
+  GREEN = 1;
+  BLUE = 2;
+}
+
+message MatchColorRequest {
+  Color color = 1;
+}
+
+message MatchColorResponse {
+  Color matching_color = 1;
+}

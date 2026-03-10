@@ -1,0 +1,154 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "placement_planner_py",
+    srcs = ["placement_planner.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//log:log_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
+        "@com_github_reboot_dev_reboot//reboot:helpers_py",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:types_py",
+        requirement("grpcio"),
+        ":application_config_trackers_py",
+        ":plan_makers_py",
+        ":server_managers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
+    ],
+)
+
+py_library(
+    name = "config_extractor_py",
+    srcs = ["config_extractor.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":application_config_py",
+        ":settings_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
+        "@com_github_reboot_dev_reboot//reboot/aio:servicers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:types_py",
+    ],
+)
+
+py_library(
+    name = "settings_py",
+    srcs = ["settings.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "server_managers_py",
+    srcs = ["server_managers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        # We should add all deps after the 'grpcio' requirement, to
+        # make sure 'grpcio' path will be before any other dependency on a
+        # PYTHONPATH, while generating a bootstrap python for the 'py_binary'.
+        # We had an issue about using two versions of the 'cygrpc.so' which
+        # are coming from 'grpcio' and the 'com_github_grpc_grpc' repo.
+        # See https://github.com/reboot-dev/mono/issues/2347
+        requirement("grpcio"),
+        requirement("aiofiles"),
+        requirement("psutil"),
+        ":servers_py",
+        ":settings_py",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
+        "//reboot/aio:http_py",
+        "//reboot/aio:monitoring_py",
+        "//reboot/aio:servers_py",
+        "//reboot/aio/internals:application_metadata_py",
+        "//reboot/cli:terminal_py",
+        "//reboot/server:local_envoy_factory_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
+        "@com_github_reboot_dev_reboot//reboot:run_environments_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:resolvers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:servicers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:signals_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:state_managers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:tracing_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:types_py",
+        "@com_github_reboot_dev_reboot//reboot/aio/auth:token_verifiers_py",
+        "@com_github_reboot_dev_reboot//reboot/nodejs:python_py",
+    ],
+)
+
+py_library(
+    name = "application_config_trackers_py",
+    srcs = ["application_config_trackers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":application_config_py",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
+    ],
+)
+
+py_library(
+    name = "application_config_py",
+    srcs = ["application_config.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("kubernetes_asyncio"),
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:application_config_py_proto",
+        "@com_github_reboot_dev_reboot//reboot:helpers_py",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
+        "@com_github_reboot_dev_reboot//reboot:version_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:servicers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:types_py",
+    ],
+)
+
+py_library(
+    name = "shards_py",
+    srcs = ["shards.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
+    ],
+)
+
+py_library(
+    name = "plan_makers_py",
+    srcs = ["plan_makers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        # We should add all deps after the 'grpcio' requirement, to
+        # make sure 'grpcio' path will be before any other dependency on a
+        # PYTHONPATH, while generating a bootstrap python for the 'py_binary'.
+        # We had an issue about using two versions of the 'cygrpc.so' which
+        # are coming from 'grpcio' and the 'com_github_grpc_grpc' repo.
+        # See https://github.com/reboot-dev/mono/issues/2347
+        requirement("grpcio"),
+        ":application_config_py",
+        ":shards_py",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
+        "//reboot/aio:servers_py",
+        "@com_github_reboot_dev_reboot//log:log_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
+        "@com_github_reboot_dev_reboot//reboot:run_environments_py",
+    ],
+)
+
+py_library(
+    name = "servers_py",
+    srcs = ["servers.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("kubernetes_asyncio"),
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
+        "@com_github_reboot_dev_reboot//reboot/aio:types_py",
+    ],
+)

@@ -1,0 +1,104 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "mock_exit_py",
+    srcs = [
+        "mock_exit.py",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "detect_cores_tests_py",
+    srcs = [
+        "detect_cores_tests.py",
+    ],
+    main = "detect_cores_tests.py",
+    deps = [
+        ":mock_exit_py",
+        "//reboot/cli:detect_cores_py",
+        "//reboot/cli:serve_py",
+        "//reboot/controller:plan_makers_py",
+    ],
+)
+
+py_test(
+    name = "dev_tests_py",
+    srcs = [
+        "dev_tests.py",
+    ],
+    main = "dev_tests.py",
+    deps = [
+        ":mock_exit_py",
+        "//reboot/cli:cli_py",
+        "//reboot/cli:rc_py",
+    ],
+)
+
+py_test(
+    name = "serve_tests_py",
+    srcs = [
+        "serve_tests.py",
+    ],
+    main = "serve_tests.py",
+    deps = [
+        ":mock_exit_py",
+        "//reboot/cli:cli_py",
+        "//reboot/cli:rc_py",
+    ],
+)
+
+py_test(
+    name = "subcommand_run_tests_py",
+    srcs = [
+        "subcommand_run_tests.py",
+    ],
+    data = ["//reboot/cli:rbt"],
+    main = "subcommand_run_tests.py",
+)
+
+py_test(
+    name = "rc_tests_py",
+    srcs = [
+        "rc_tests.py",
+    ],
+    main = "rc_tests.py",
+    deps = [
+        "//reboot/cli:rc_py",
+    ],
+)
+
+py_test(
+    name = "rbt_tests_py",
+    srcs = [
+        "rbt_tests.py",
+    ],
+    main = "rbt_tests.py",
+    deps = [
+        ":mock_exit_py",
+        "//reboot/cli:cli_py",
+        "//reboot/cli:rc_py",
+    ],
+)
+
+py_test(
+    name = "nested_subcommand_tests_py",
+    srcs = [
+        "nested_subcommand_tests.py",
+    ],
+    main = "nested_subcommand_tests.py",
+    deps = [
+        "//reboot/cli:rc_py",
+    ],
+)
+
+py_test(
+    name = "watch_tests_py",
+    srcs = [
+        "watch_tests.py",
+    ],
+    main = "watch_tests.py",
+    deps = [
+        "//reboot/cli:watch_py",
+    ],
+)

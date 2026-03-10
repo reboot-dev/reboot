@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package chat.v1;
+
+import "chat/v1/message.proto";
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service ChannelMethods {
+  rpc Create(ChannelCreateRequest) returns (ChannelCreateResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {
+        constructor: {},
+      },
+    };
+  }
+
+  rpc Post(PostRequest) returns (PostResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+    };
+  }
+
+  rpc Messages(MessagesRequest) returns (MessagesResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Channel {
+  option (rbt.v1alpha1.state) = {
+  };
+  uint64 messages = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message ChannelCreateRequest {}
+message ChannelCreateResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message PostRequest {
+  string author = 1;
+  string text = 2;
+}
+
+message PostResponse {
+  string message_id = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message MessagesRequest {
+  uint32 limit = 1;
+}
+
+message MessagesResponse {
+  map<string, Details> messages = 1;
+}
+
+////////////////////////////////////////////////////////////////////////

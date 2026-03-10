@@ -1,0 +1,38 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("//reboot/nodejs:rules.bzl", "js_reboot_test")
+
+ts_project(
+    name = "test_ts",
+    srcs = [
+        "call.ts",
+        "test.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//tests/reboot:greeter_js_proto",
+        "//tests/reboot:greeter_js_reboot",
+        "//tests/reboot:greeter_web_ts_reboot",
+        "//tests/reboot/nodejs:greeter_ts",
+    ],
+)
+
+js_reboot_test(
+    name = "test",
+    data = [
+        ":test_ts",
+    ],
+    entry_point = "test.js",
+    visibility = ["//visibility:public"],
+)

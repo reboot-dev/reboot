@@ -1,0 +1,240 @@
+# This file is generated from a template in `ci/templates/`.
+# Do not edit it directly.
+# Run `bazel run //:ci_workflows` to regenerate it after editing the template.
+
+name: Reusable Workflow for Reboot MacOS
+# example:
+#   name: Example job with multiple commands
+#   uses: ./.github/workflows/reboot_macos_environment.yml
+#   # The nested job needs write permissions, which means this job also needs them.
+#   secrets: inherit
+#   with:
+#     runs-on: depot-macos-14
+#     run: |
+#       # Command 1:
+#       bazel build //...
+#       # Command 2:
+#       bazel test //...
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        required: true
+        type: string
+      run:
+        required: true
+        type: string
+      timezone:
+        required: false
+        type: string
+        default: "UTC"
+  workflow_dispatch:
+    inputs:
+      runs-on:
+        required: true
+        type: string
+      run:
+        required: true
+        type: string
+
+env:
+  TZ: ${{ inputs.timezone }}
+  # There is no Python 3.10.12 available for MacOS.
+  PYTHON_VERSION: 3.10.11
+  # The latest of 02/24/2025.
+  XCODE_VERSION: 15.2
+  AUTOCONF_VERSION: 2.72
+  MYPY_VERSION: 1.18.1
+  LLVM_VERSION: 19
+
+jobs:
+  check-runner:
+    name: Validate runner
+    # There is no reason to run that job on the 'depot-macos-14', which
+    # is a more expensive runner, since we are just checking the arguments
+    # provided to the workflow.
+    runs-on: depot-ubuntu-24.04
+    steps:
+      - name: Fail if runner is not 'depot-macos-14'
+        if: ${{ inputs.runs-on != 'depot-macos-14' }}
+        run: |
+          echo "Error: Unsupported runner. Must be 'depot-macos-14'."; exit 1
+
+  # Helper job that we run before any other jobs to ensure that we
+  # have all of the secrets that we need.
+  #
+  # Based off of the examples on GitHub at
+  # 'https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#example-using-secrets'.
+  check-secrets:
+    name: Check Secrets
+    # There is no reason to run that job on the 'depot-macos-14',
+    # which is a more expensive runner, since we are just checking the secrets.
+    runs-on: depot-ubuntu-24.04
+    steps:
+      - name: Fail if GCP_REMOTE_CACHE_CREDENTIALS_BASE64 secret is missing
+        env:
+          secret: ${{ secrets.GCP_REMOTE_CACHE_CREDENTIALS_BASE64 }}
+        if: ${{ env.secret == '' }}
+        run: echo "Missing secret 'GCP_REMOTE_CACHE_CREDENTIALS_BASE64'"; exit 1
+
+  run:
+    name: Build Reboot for MacOS
+    needs: [check-runner, check-secrets]
+    runs-on: ${{ inputs.runs-on }}
+    env:
+      # Disable the automatic update of Homebrew and the after install
+      # cleanup to save a bunch of time.
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+      HOMEBREW_NO_ENV_HINTS: 1
+    steps:
+      - name: Update Homebrew
+        run: |
+          brew update -q
+
+      - name: Install llvm
+        run: |
+          brew install llvm@$LLVM_VERSION
+          brew link llvm@$LLVM_VERSION --force --overwrite
+          echo 'export PATH="/opt/homebrew/opt/llvm@$LLVM_VERSION/bin:$PATH"' >> $HOME/.bash_profile
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_$XCODE_VERSION.app/Contents/Developer
+
+      - name: Install corepack
+        run: |
+          # Install corepack, to provide `yarn`.
+          npm install -g corepack
+
+      - name: Symlink Node
+        run: |
+          # Our 'examples' tests are bazel 'sh_test', which means they are
+          # configured in another way than the 'py_test' tests.
+          # So we need to provide binaries for the 'sh_test' tests to use from
+          # a place where they can find them.
+          # TODO: See https://github.com/reboot-dev/mono/issues/2652.
+          sudo ln -s $(which npm) /usr/local/bin/npm
+          sudo ln -s $(which node) /usr/local/bin/node
+          sudo ln -s $(which npx) /usr/local/bin/npx
+          sudo ln -s $(which yarn) /usr/local/bin/yarn
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Rye
+        run: |
+          curl -sSf https://raw.githubusercontent.com/astral-sh/rye/main/scripts/install.sh | RYE_VERSION="0.31.0" RYE_INSTALL_OPTION="--yes" bash
+          echo 'source "$HOME/.rye/env"' >> $HOME/.bash_profile
+          source "$HOME/.rye/env"
+          rye config --set-bool behavior.use-uv=true
+          # TODO: See https://github.com/reboot-dev/mono/issues/2652.
+          sudo ln -s $(which rye) /usr/local/bin/rye
+
+        # Our 'examples' tests are bazel 'sh_test', which means they are
+        # configured in another way than the 'py_test' tests.
+        # So we need to provide binaries for the 'sh_test' tests to use from
+        # a place where they can find them.
+        # TODO: See https://github.com/reboot-dev/mono/issues/2652.
+      - name: Symlink Python
+        run: |
+          # Make sure the Python we installed is the one that is used.
+          echo "export PATH="$(dirname $(which python)):$PATH"" >> $HOME/.bash_profile
+          sudo ln -s $(which python) /usr/local/bin/python
+          sudo rm -rf /usr/local/bin/python3
+          sudo ln -s $(which python) /usr/local/bin/python3
+          sudo ln -s $(which pip) /usr/local/bin/pip
+          sudo mkdir -p /usr/local/lib
+          sudo ln -s $(dirname $(dirname $(which python)))/lib/libpython3.10.dylib /usr/local/lib/libpython3.10.dylib
+
+      # We use 'jq' in 'public/reboot/examples/prosemirror*/.tests/test.sh'.
+      - name: Install JQ
+        run: |
+          brew list jq &>/dev/null || brew install jq
+
+      # MacOS runners aren't able to run Docker inside, so we have
+      # to run Envoy as an executable during 'rbt dev run'.
+      - name: Install Envoy executable
+        run: |
+          # We would like to pin the envoy version, but there is no available
+          # brew formula for that.
+          # https://github.com/envoyproxy/envoy/issues/14520
+          brew install envoy
+
+      - name: Symlink executables arm64
+        # Our 'examples' tests are bazel 'sh_test', which means they only have
+        # access to a limited set of PATH entries
+        # TODO: See https://github.com/reboot-dev/mono/issues/2652.
+        run: |
+          sudo ln -s $(which autoconf) /usr/local/bin/autoconf
+          sudo ln -s $(which jq) /usr/local/bin/jq
+          sudo ln -s $(which envoy) /usr/local/bin/envoy
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          show-progress: false
+
+      # We need to differentiate between different MacOS environments, like
+      # arm64 and x86_64 in the remote cache, so we dump information about the
+      # environment into 'mac_os_environment.txt' and calculate a hash of
+      # that file later.
+      - name: Create environment information file for remote-cache
+        run: |
+          # Get the architecture and Release version of the runner.
+          echo $(uname -rsm) >> mac_os_environment.txt
+          # Get the MacOS version of the runner.
+          echo $(sw_vers) >> mac_os_environment.txt
+          # Pin software versions.
+          echo "PYTHON_VERSION=$PYTHON_VERSION" >> mac_os_environment.txt
+          echo "XCODE_VERSION=$XCODE_VERSION" >> mac_os_environment.txt
+          echo "AUTOCONF_VERSION=$AUTOCONF_VERSION" >> mac_os_environment.txt
+          echo "MYPY_VERSION=$MYPY_VERSION" >> mac_os_environment.txt
+          echo "LLVM_VERSION=$LLVM_VERSION" >> mac_os_environment.txt
+
+      - name: Use Bazel remote cache (scoped to this MacOS runner version)
+        env:
+          # Setting a hash of "mac_os_environment.txt" as an `--action_env`
+          # variable, we force Bazel to reject cached results from other
+          # MacOS environments. This is intended to prevent cache
+          # corruptions due to incompatible tooling across MacOS runner versions.
+          # See: https://github.com/reboot-dev/mono/issues/1723
+          MAC_OS_ENVIRONMENT_VERSION: ${{ hashFiles('mac_os_environment.txt') }}
+        run: |
+          # The remote bazel cache saves a LOT of time when building in a clean
+          # environment.
+          echo "build --remote_cache=https://storage.googleapis.com/reboot-dev-bazel-remote-cache-reboot-us-macos-1" >> user.bazelrc
+          # The remote cache credentials are provided by environment variable.
+          echo "build --google_default_credentials" >> user.bazelrc
+          # Scope all of the artifacts we'll produce in the remote cache to this
+          # MacOS runner version by adding an `--action_env` variable. This will
+          # ensure that changes to the MacOS runner (which might produce
+          # incompatible artifacts) don't cause cache corruption.
+          echo "build --action_env=MAC_OS_ENVIRONMENT_VERSION=$MAC_OS_ENVIRONMENT_VERSION" >> user.bazelrc
+          echo "user.bazelrc:"
+          echo "----"
+          cat user.bazelrc
+          echo "----"
+
+      - name: Create google_application_credentials.json
+        env:
+          GCP_REMOTE_CACHE_CREDENTIALS_BASE64: ${{ secrets.GCP_REMOTE_CACHE_CREDENTIALS_BASE64 }}
+        run: |
+          echo "export GOOGLE_APPLICATION_CREDENTIALS=google_application_credentials.json" >> $HOME/.bash_profile
+          source $HOME/.bash_profile
+          echo $GCP_REMOTE_CACHE_CREDENTIALS_BASE64 | base64 --decode > $GOOGLE_APPLICATION_CREDENTIALS
+
+      - name: Run commands
+        run: |
+          # 'pip' installs 'mypy' at /opt/homebrew/bin/mypy, but we need to
+          # access it from 'sh_test', so we need to provide binaries for the
+          # 'sh_test' tests to use from a place where they can find them.
+          source $HOME/.bash_profile
+          pip install mypy==$MYPY_VERSION
+          sudo ln -s $(which mypy) /usr/local/bin/mypy
+          ${{ inputs.run }}

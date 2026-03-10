@@ -1,0 +1,48 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+# This target is in this BUILD file, rather than in a BUILD file in `sha1/src/`
+# because the `sha1` library is a submodule whose contents we don't control.
+filegroup(
+    name = "sha1_lua",
+    srcs = glob(
+        ["sha1/src/**/*"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "lua_py",
+    srcs = [
+        "lua.py",
+    ],
+    data = [
+        ":add_header_x_reboot_application_id.lua.j2",
+        ":compute_header_x_reboot_server_id.lua.j2",
+        ":mangled_http_path.lua",
+        ":remove_json_trailers.lua",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("jinja2"),
+    ],
+)
+
+py_library(
+    name = "routing_filter_generator_py",
+    srcs = [
+        "routing_filter_generator.py",
+    ],
+    data = [
+        "//reboot/templates:routing_filter.lua.j2",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":lua_py",
+        "//reboot/templates:tools_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
+        "@com_github_reboot_dev_reboot//reboot/controller:servers_py",
+    ],
+)

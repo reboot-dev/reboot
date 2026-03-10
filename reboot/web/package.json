@@ -1,0 +1,28 @@
+{
+  "name": "@reboot-dev/reboot-web",
+  "version": "0.45.2",
+  "description": "npm package for Reboot Web",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc"
+  },
+  "author": "reboot-dev",
+  "dependencies": {
+    "@reboot-dev/reboot-api": "0.45.2",
+    "@scarf/scarf": "1.4.0",
+    "js-sha1": "0.7.0",
+    "lru-cache-idb": "^0.5.2",
+    "tslib": "^2.6.2",
+    "typescript": "4.8.4",
+    "uuid": "11.1.0"
+  },
+  "peerDependencies": {
+    "@bufbuild/protobuf": "1.10.1"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^22.7.4"
+  }
+}
