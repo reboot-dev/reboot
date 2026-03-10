@@ -22,7 +22,7 @@ claude plugin marketplace add reboot-dev/reboot-skills
 claude plugin install reboot-chat-app@reboot-skills
 ```
 
-If you install the plugin within claude with /plugin you need to restart for
+If you install the plugin within `claude` with `/plugin` you need to restart for
 the configuration and skill to load correctly.
 
 To auto-enable for your team, add to your project's

@@ -15,16 +15,21 @@ installed.
 
 ## Install the Reboot skill
 
-In Claude Code, add the Reboot skills marketplace and install the
-`reboot-chat-app` skill:
+Add the Reboot skills marketplace and install the
+`reboot-chat-app` skill using Claude Code:
 
 ```
-/plugin marketplace add reboot-dev/reboot-skills
+claude plugin marketplace add reboot-dev/reboot-skills
 ```
 
 ```
-/plugin install reboot-chat-app@reboot-skills
+claude plugin install reboot-chat-app@reboot-skills
 ```
+
+:::note
+If you install the plugin within `claude` with `/plugin` you need to restart for
+the configuration and skill to load correctly.
+:::
 
 Or, to auto-enable the skill for your whole team, add this to your
 project's `.claude/settings.json`:
