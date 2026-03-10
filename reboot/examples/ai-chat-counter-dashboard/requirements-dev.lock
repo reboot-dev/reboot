@@ -193,7 +193,7 @@ python-multipart==0.0.21
 pyyaml==6.0.2
     # via kubernetes-asyncio
     # via reboot
-reboot==0.45.1
+reboot==0.45.2
 referencing==0.37.0
     # via jsonschema
     # via jsonschema-specifications
