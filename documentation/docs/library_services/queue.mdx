@@ -1,0 +1,244 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Queue
+
+A general purpose queue that allows you to enqueue and dequeue [`Item`](/library_services/item)s
+singularly or in bulk to it. It is durable, which means that it will persist across
+restarts or system failures, and transactional, so you can access it safely.
+
+Each `Queue` will need a unique ID and is created implicitly the first time
+you use it. [`Item`](/library_services/item)s can be [`Enqueue`](#enqueue)d as a
+single `Value`, `bytes`, or `Any` object or can be [`Enqueued`](#bulk-enqueue)ed
+in bulk as a list of `Item`s. They can then be [`Dequeue`](#dequeue)d singularly
+in [bulk](#bulk-dequeue) as well. In practice, you will want to use just one of
+these formats in a given `Queue`. Read more about [`Item`](/library_services/item)s
+to determine the best format for your data.
+
+
+## Imports and servicers
+
+To use a `Queue`, import the library where you would like to use it.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from reboot.std.collections.queue.v1.queue import Queue
+from reboot.std.item.v1.item import Item
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { Queue } from "@reboot-dev/reboot-std/collections/queue/v1";
+```
+  </TabItem>
+</Tabs>
+
+Also make sure to include the `Queue` servicers when starting up your `Application`.
+(Note: this import is different from above.)
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from reboot.std.collections.queue.v1 import queue
+
+async def main():
+    application = Application(
+        servicers=[MyServicer] + queue.servicers(),
+    )
+
+    await application.run()
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import queue from "@reboot-dev/reboot-std/collections/queue/v1";
+
+new Application({
+  servicers: [MyServicer, ...queue.servicers()],
+  initialize,
+}).run();
+```
+  </TabItem>
+</Tabs>
+
+## Referencing Queues
+
+This creates references to two `Queue`references with IDs `"my-first-queue"`
+and `"my-second-queue"`. You can then call methods on these references.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+first_queue = Queue.ref("my-first-queue")
+second_queue = Queue.ref("my-second-queue")
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const firstQueue = Queue.ref("my-first-queue");
+const secondQueue = Queue.ref("my-second-queue");
+```
+  </TabItem>
+</Tabs>
+
+
+## Methods
+
+### Enqueue
+
+Enqueues a single [`Item`](/library_services/item) directly from a `Value`, `bytes`, or `Any`.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from reboot.protobuf import from_dict
+
+await first_queue.enqueue(
+    context,
+    value=from_dict({"details": "details-go-here"}),
+)
+
+await second_queue.enqueue(context, bytes=b"my-bytes")
+
+await third_queue.enqueue(context, any=<Any>)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { Value } from "@bufbuild/protobuf";
+
+await firstQueue.enqueue(context, {
+  value: Value.fromJson({ details: "details-go-here" }),
+});
+
+await secondQueue.enqueue(context, {
+  bytes: new TextEncoder().encode("my-bytes"),
+});
+
+await thirdQueue.enqueue(context, {
+  any: <Any>,
+});
+```
+  </TabItem>
+</Tabs>
+
+### Dequeue
+
+Dequeues a single [`Item`](/library_services/item).
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from reboot.protobuf import as_dict
+
+item = await first_queue.dequeue(context)
+print(as_dict(item.value)["details"])
+
+item = await second_queue.dequeue(context)
+print(item.bytes)
+
+item = await third_queue.dequeue(context)
+print(item.any)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const { value } = await firstQueue.dequeue(context);
+console.log(value?.toJson()["details"]);
+
+const { bytes } = await secondQueue.dequeue(context);
+console.log(bytes);
+
+const { any } = await thirdQueue.dequeue(context);
+console.log(any);
+```
+  </TabItem>
+</Tabs>
+
+### Bulk Enqueue
+
+Enqueues a list of [`Item`](/library_services/item)s.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from reboot.protobuf import from_bool, from_dict, from_int, from_list, from_str
+
+await first_queue.enqueue(
+    context,
+    items=[
+        Item(value=from_bool(True)),
+        Item(value=from_int(3)),
+        Item(value=from_str("apple")),
+        Item(value=from_list(["a", "b", "c"])),
+        Item(value=from_dict({"details": "details-go-here"})),
+    ],
+)
+
+await second_queue.enqueue(
+    context,
+    items=[
+        Item(bytes=b"some-bytes"),
+        Item(bytes=b"some-more-bytes"),
+    ],
+)
+
+await third_queue.enqueue(
+    context,
+    items=[
+        Item(any=<Any>),
+        Item(any=<Any>),
+    ],
+)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { Value } from "@bufbuild/protobuf";
+
+await firstQueue.enqueue(context, {
+  items: [
+    { value: Value.fromJson(null) },
+    { value: Value.fromJson(true) },
+    { value: Value.fromJson(3) },
+    { value: Value.fromJson("apple") },
+    { value: Value.fromJson(["a", "b", "c"]) },
+    { value: Value.fromJson({ details: "details-go-here" }) },
+  ],
+});
+
+await secondQueue.enqueue(context, { items: [
+  { bytes: new TextEncoder().encode("some-bytes") },
+  { bytes: new TextEncoder().encode("some-more-bytes") },
+]});
+
+await thirdQueue.enqueue(context, { items: [
+  { any: <Any> },
+  { any: <Any> },
+]});
+```
+  </TabItem>
+</Tabs>
+
+### Bulk Dequeue
+
+By specifying `bulk` and `at_most`/`atMost`, you can also dequeue [`Item`](/library_services/item)s in bulk.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+items = await first_queue.dequeue(context, bulk=True, at_most=5)
+# items.items is a list of Items
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const { items } = await firstQueue.dequeue(context, {
+  bulk: true,
+  atMost: 5,
+})
+// `items` is a list of Items
+```
+  </TabItem>
+</Tabs>

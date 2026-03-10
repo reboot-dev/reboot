@@ -1,0 +1,149 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "tests_helper",
+    srcs = [
+        "tests_helper.py",
+    ],
+    data = [
+        "//rbt/v1alpha1:reboot-dev-reboot-api",
+        "//reboot/cli:rbt",
+        "//reboot/nodejs",
+        "//reboot/nodejs:reboot-dev-reboot",
+        "//reboot/react:reboot-dev-reboot-react",
+        "//reboot/web:reboot-dev-reboot-web",
+    ],
+    deps = [
+        "//reboot:version_py",
+        "//reboot/cli:cli_py",
+        "//reboot/cli:generate_py",
+        "//reboot/cli:rc_py",
+        "//tests/reboot/cli:mock_exit_py",
+    ],
+)
+
+py_test(
+    name = "args_after_dash_dash_tests_py",
+    srcs = ["args_after_dash_dash.py"],
+    main = "args_after_dash_dash.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "requires_input_tests_py",
+    srcs = ["requires_input.py"],
+    main = "requires_input.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "command_line_tests_py",
+    srcs = ["command_line.py"],
+    main = "command_line.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "with_rc_file_tests_py",
+    srcs = ["with_rc_file.py"],
+    main = "with_rc_file.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "react_out_specified_tests_py",
+    srcs = ["react_out_specified.py"],
+    main = "react_out_specified.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "out_directory_specified_tests_py",
+    srcs = ["out_directory_specified.py"],
+    main = "out_directory_specified.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "react_out_rbtrc_specified_tests_py",
+    srcs = ["react_out_rbtrc_specified.py"],
+    main = "react_out_rbtrc_specified.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "out_directory_rbtrc_specified_tests_py",
+    srcs = ["out_directory_rbtrc_specified.py"],
+    main = "out_directory_rbtrc_specified.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "specify_only_es_out_tests_py",
+    srcs = ["specify_only_es_out.py"],
+    main = "specify_only_es_out.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "two_dependent_protos_react_tests_py",
+    srcs = ["two_dependent_protos_react.py"],
+    main = "two_dependent_protos_react.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "wrong_package_specified_tests_py",
+    srcs = ["wrong_package_specified.py"],
+    main = "wrong_package_specified.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "no_generated_languages_specified_tests_py",
+    srcs = ["no_generated_languages_specified.py"],
+    main = "no_generated_languages_specified.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "dash_dash_path_specified_tests_py",
+    srcs = ["dash_dash_path_specified.py"],
+    main = "dash_dash_path_specified.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "empty_file_tests_py",
+    srcs = ["empty_file.py"],
+    main = "empty_file.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "legacy_grpc_tests_py",
+    srcs = ["legacy_grpc.py"],
+    main = "legacy_grpc.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "interface_named_legacy_grpc_tests_py",
+    srcs = ["interface_named_legacy_grpc.py"],
+    main = "interface_named_legacy_grpc.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "space_in_quotes_tests_py",
+    srcs = ["space_in_quotes.py"],
+    main = "space_in_quotes.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
+    name = "wrong_directory_names_tests_py",
+    srcs = ["wrong_directory_names.py"],
+    main = "wrong_directory_names.py",
+    deps = [":tests_helper"],
+)

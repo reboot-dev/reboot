@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package counter.v1;
+
+import "google/protobuf/empty.proto";
+import "rbt/v1alpha1/options.proto";
+
+service CounterMethods {
+  rpc Increment(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc Count(google.protobuf.Empty) returns (Counter) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc Take(TakeRequest) returns (TakeResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+}
+
+message Counter {
+  option (rbt.v1alpha1.state) = {
+  };
+  int32 count = 1;
+}
+
+message TakeRequest {
+  string taker_id = 1;
+  repeated string taken_ids = 2;
+}
+
+message TakeResponse {
+  int32 take_amount = 1;
+}

@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package rbt.thirdparty.prosemirror.v1;
+
+import "google/protobuf/struct.proto";
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service AuthorityMethods {
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  rpc Apply(ApplyRequest) returns (ApplyResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc Changes(ChangesRequest) returns (ChangesResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc Checkpoint(CheckpointRequest) returns (CheckpointResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Authority {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated Change changes = 1;
+  uint32 version = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// A `Change` is a prosemirror `step` from a specific `client`.
+message Change {
+  // See prosemirror `Step` type.
+  google.protobuf.Struct step = 1;
+
+  // The client that authored this change.
+  string client = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message CreateRequest {}
+
+message CreateResponse {
+  // See prosemirror `Node` type which is used to represent a "doc".
+  google.protobuf.Struct doc = 1;
+  uint32 version = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message ApplyRequest {
+  uint32 version = 1;
+  repeated Change changes = 2;
+}
+
+message ApplyResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message ChangesRequest {
+  uint32 since_version = 1;
+}
+
+message ChangesResponse {
+  uint32 version = 1;
+  repeated Change changes = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message CheckpointRequest {}
+
+message CheckpointResponse {}
+
+////////////////////////////////////////////////////////////////////////

@@ -1,0 +1,11 @@
+name: Hello World
+repo_name: reboot-hello
+overview: |
+  This repository contains a simple example application written using Reboot.
+backend_locations: "`backend/`"
+backend_language: python
+has_frontend: true
+has_non_react_frontend: true
+has_tests: true
+has_cloud: true
+extra_setup: null

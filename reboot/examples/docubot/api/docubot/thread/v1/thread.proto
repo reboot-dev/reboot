@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package docubot.thread.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service ThreadMethods {
+  // Returns the current list of recorded messages
+  rpc Messages(MessagesRequest) returns (MessagesResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {}
+    };
+  }
+
+  rpc CreateWorkflow(CreateWorkflowRequest) returns (CreateWorkflowResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  rpc Query(QueryRequest) returns (QueryResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc QueryWorkflow(QueryWorkflowRequest) returns (QueryWorkflowResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+}
+
+message Query {
+  string content = 1;
+  string response = 2;
+  bool started = 3;
+  bool completed = 4;
+}
+
+message Thread {
+  option (rbt.v1alpha1.state) = {
+  };
+  string openai_assistant_id = 4;
+  string openai_thread_id = 1;
+  repeated Query queries = 2;
+  uint32 activeIndex = 3;
+}
+
+message MessagesRequest {}
+
+message MessagesResponse {
+  repeated Query queries = 1;
+}
+
+message CreateRequest {
+  string assistant_id = 1;
+}
+
+message CreateResponse {}
+
+message CreateWorkflowRequest {
+  string assistant_id = 1;
+}
+
+message CreateWorkflowResponse {}
+
+message QueryRequest {
+  string content = 1;
+}
+
+message QueryResponse {}
+
+message QueryWorkflowRequest {
+  uint32 index = 1;
+}
+
+message QueryWorkflowResponse {}

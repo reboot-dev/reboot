@@ -1,0 +1,7 @@
+{
+  "type": "module",
+  "dependencies": {
+    "@testing-library/react": "16.3.0",
+    "fake-indexeddb": "^6.0.1"
+  }
+}

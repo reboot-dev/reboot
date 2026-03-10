@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package tests.reboot.nodejs.tasks_test;
+
+import "rbt/v1alpha1/options.proto";
+import "google/protobuf/empty.proto";
+
+message Task {
+  option (rbt.v1alpha1.state) = {
+  };
+}
+
+service TaskMethods {
+  rpc ConstructorTransaction(google.protobuf.Empty)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+      constructor: {},
+    };
+  }
+
+  rpc Transaction(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  rpc ScheduledWriter(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc ScheduledTransaction(google.protobuf.Empty)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  rpc ScheduledWorkflow(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+}

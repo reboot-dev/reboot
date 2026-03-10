@@ -1,0 +1,19 @@
+{
+  "name": "benchmarks",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@bufbuild/protobuf": "1.10.1",
+    "@reboot-dev/reboot": "0.45.2",
+    "@supercharge/promise-pool": "^3.2.0",
+    "uuid": "11.1.0",
+    "parse-duration": "2.1.3"
+  }
+}

@@ -1,0 +1,68 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Idempotency
+
+## How does Reboot handle idempotency?
+
+Calls from code generated for React will use idempotency keys by
+default. Within Reboot, you only need to manually handle idempotency
+if you're trying to retry things manually in a client (using
+`ExternalContext`) or when writing a `workflow` method (using
+`WorkflowContext`, which is automatically retried).
+
+If you're only trying to call a method of a specific state _once_
+using your context, you can call that method after
+using the fluent `.idempotently()` method, e.g.,
+`foo.idempotently().Method(context)`. If you need to call the same
+method on a state more than once, including when you're doing manual
+retries, then you can specify an idempotency "alias" to
+distinguish each call, for example:
+
+<!-- TODO: this example does not actually use idempotency aliases -->
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/monorepo/bank/backend/src/main.py&lines=15-17) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/monorepo/bank/backend/src/main.py -->
+
+```py
+bank = Bank.ref(SINGLETON_BANK_ID)
+
+await bank.sign_up(context, customer_name="Initial User")
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../reboot/examples/bank-nodejs/backend/src/main.ts&lines=11-13) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/bank-nodejs/backend/src/main.ts -->
+
+```ts
+await Bank.ref(SINGLETON_BANK_ID).signUp(context, {
+  customerName: "Initial User",
+});
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+  </TabItem>
+</Tabs>
+
+When you don't pass anything to `.idempotently()`, or when you just
+pass a string alias, Reboot will deterministically generate an
+idempotency key for you. You can also manually pass an
+idempotency key by calling `.idempotently(key=...)`.
+
+## Why require idempotency?
+
+Idempotency protects your system and your users against insidious distributed
+system bugs. Temporary network and server outages are always a risk when
+coordinating multiple machines, so it is often necessary to
+retry requests - opening up the possibility for a server to receive
+multiple requests when only one call was intended.
+
+Idempotency does come with some storage overhead, but the protection it gives in
+return is a fundamental way in which Reboot keeps your system safe.

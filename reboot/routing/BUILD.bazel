@@ -1,0 +1,54 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "envoy_config_py",
+    srcs = [
+        "envoy_config.py",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio"),
+        requirement("protobuf"),
+        "//envoy/config/cluster/v3:clusterv3_py_proto",
+        "//envoy/config/core/v3:corev3_py_proto",
+        "//envoy/config/endpoint/v3:endpointv3_py_proto",
+        "//envoy/config/listener/v3:listenerv3_py_proto",
+        "//envoy/config/route/v3:routev3_py_proto",
+        "//envoy/extensions/filters/http/cors/v3:corsv3_py_proto",
+        "//envoy/extensions/filters/http/grpc_json_transcoder/v3:grpc_json_transcoderv3_py_proto",
+        "//envoy/extensions/filters/http/lua/v3:luav3_py_proto",
+        "//envoy/extensions/filters/http/router/v3:routerv3_py_proto",
+        "//envoy/extensions/filters/network/http_connection_manager/v3:http_connection_managerv3_py_proto",
+        "//envoy/extensions/transport_sockets/tls/v3:tlsv3_py_proto",
+        "//envoy/extensions/upstreams/http/v3:httpv3_py_proto",
+        "//envoy/type/matcher/v3:matcherv3_py_proto",
+        "//reboot/routing/filters:lua_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
+        "@com_github_reboot_dev_reboot//reboot:helpers_py",
+        "@com_github_reboot_dev_reboot//reboot:run_environments_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:headers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:types_py",
+        "@com_github_reboot_dev_reboot//xds/core/v3:xds_py_proto",
+    ],
+)
+
+py_library(
+    name = "xds_server_py",
+    srcs = [
+        "xds_server.py",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio"),
+        requirement("protobuf"),
+        "//envoy/config/cluster/v3:clusterv3_py_proto",
+        "//envoy/config/listener/v3:listenerv3_py_proto",
+        "//envoy/service/discovery/v3:discoveryv3_py_grpc",
+        "//envoy/service/discovery/v3:discoveryv3_py_proto",
+        "@com_github_reboot_dev_reboot//log:log_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+    ],
+)

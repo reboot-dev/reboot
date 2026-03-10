@@ -44,6 +44,40 @@ message ConstructorMethodOptions {
   // "recallable" constructors, etc.
 }
 
+// MCP (Model Context Protocol) options for exposing methods as
+// tools/resources.
+message McpMethodOptions {
+  // Expose this method as an MCP tool.
+  optional bool tool = 1;
+  // Expose this method as an MCP resource.
+  optional bool resource = 2;
+  // Custom name for the tool/resource (defaults to method name).
+  optional string name = 3;
+  // Description for the tool/resource.
+  optional string description = 4;
+  // Display title for the tool/resource.
+  optional string title = 5;
+}
+
+// UI definition: a UI() method generates an MCP tool + resource
+// but no backend RPC.
+message UI {
+  // Method name (e.g., "show_clicker").
+  string name = 1;
+  // Display title for the UI.
+  string title = 2;
+  // Optional description.
+  optional string description = 3;
+  // Relative path to the web app assets.
+  string path = 4;
+  // Name of the generated request message type (empty if
+  // no request).
+  optional string request_message = 5;
+  // Override for the build artifact path. Defaults to
+  // inserting `dist/` after the first component of `path`.
+  optional string artifact_path = 6;
+}
+
 message MethodOptions {
   reserved 6;
   // The `kind` field specifies what kind of reboot function the method is.
@@ -65,6 +99,9 @@ message MethodOptions {
   // The "task" annotation was deprecated in favour of the new task api.
   reserved "task";
   reserved 8;
+
+  // MCP options for exposing this method as a tool or resource.
+  optional McpMethodOptions mcp = 9;
 }
 
 extend google.protobuf.MethodOptions {
@@ -102,6 +139,9 @@ message StateOptions {
   // convention is acceptable. Each named service must, in turn, have their
   // `state` option set to point at this state.
   repeated string implements = 1;
+
+  // UIs associated with this state type (from UI() methods).
+  repeated UI uis = 2;
 }
 
 extend google.protobuf.MessageOptions {

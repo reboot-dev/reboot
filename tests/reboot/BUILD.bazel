@@ -1,0 +1,820 @@
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//bazel:oci_image.bzl", "py_oci_image")
+load("//bazel:proto_descriptor_set.bzl", "proto_descriptor_set")
+load("//bazel:py_test_with_workspace_dir.bzl", "py_test_with_workspace_dir")
+load(
+    "//reboot:rules.bzl",
+    "js_proto_library",
+    "js_reboot_library",
+    "js_reboot_react_library",
+    "js_reboot_web_library",
+    "py_boilerplate_reboot_library",
+    "py_reboot_library",
+    "ts_reboot_boilerplate_files",
+)
+
+proto_library(
+    name = "greeter_proto",
+    srcs = [":greeter.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:wrappers_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@googleapis//google/api:http_proto",
+    ],
+)
+
+js_reboot_library(
+    name = "greeter_js_reboot",
+    srcs = [
+        ":greeter_proto",
+    ],
+    proto = "greeter.proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+    deps = [
+        "//rbt/v1alpha1:tasks_js_proto",
+        "//tests/reboot:greeter_js_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "greeter_py_reboot",
+    proto = "greeter.proto",
+    proto_library = ":greeter_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+)
+
+proto_descriptor_set(
+    name = "greeter_descriptor_set",
+    deps = [
+        ":greeter_proto",
+    ],
+)
+
+py_test(
+    name = "protoc_gen_reboot_tests_py",
+    srcs = ["protoc_gen_reboot_tests.py"],
+    args = [
+        "./tests/reboot/greeter_descriptor_set.pb",
+    ],
+    data = [
+        ":greeter_descriptor_set",
+    ],
+    main = "protoc_gen_reboot_tests.py",
+    deps = [
+        "//reboot:protoc-gen-reboot_python",
+        "//reboot:protoc_gen_reboot_generic_py",
+        "@googleapis//google/api:annotations_py_proto",
+    ],
+)
+
+py_library(
+    name = "test_helpers_py",
+    # This file is named "tests/reboot/test_helpers.py", rather than
+    # just "tests/reboot/helpers.py", so that it doesn't overlap with
+    # "reboot/helpers.py" - Python would occasionally get confused and
+    # import the wrong file.
+    srcs = [":test_helpers.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("protobuf"),
+        "//reboot:helpers_py",
+        "//reboot/aio:tests_py",
+        "//tests/reboot/server/service_descriptor_validator_proto:echo_empty_reserved_input_type_py_proto",
+        "//tests/reboot/server/service_descriptor_validator_proto:echo_original_py_proto",
+        "//tests/reboot/server/service_descriptor_validator_proto:echo_replay_deleted_py_proto",
+    ],
+)
+
+py_library(
+    name = "test_token_verifier_py",
+    srcs = [":test_token_verifier.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("pyjwt"),
+        "//reboot/aio/auth:token_verifiers_py",
+    ],
+)
+
+# TODO(rjh): can we make `greeter_py_reboot` work in a way that it correctly
+#            declares its output file, so that we can use the following
+#            `diff_test` instead of the hand-rolled diff in
+#            `golden_test.py` below?
+# diff_test(
+#     name = "greeter_golden_file_test",
+#     file1 = "greeter_rbt.golden.py",
+#     file2 = "greeter_rbt.py",
+# )
+
+py_test(
+    name = "greeter_generation_python_tests_py",
+    srcs = [
+        "golden_test.py",
+    ],
+    args = [
+        "--golden_file=greeter_rbt.golden.py",
+        "--generated_file=greeter_rbt.py",
+    ],
+    data = [
+        ":greeter_rbt.golden.py",
+    ],
+    main = "golden_test.py",
+    deps = [
+        ":greeter_py_reboot",
+        ":test_helpers_py",
+    ],
+)
+
+py_test(
+    name = "greeter_generation_nodejs_tests_py",
+    srcs = [
+        "golden_test.py",
+    ],
+    args = [
+        "--golden_file=greeter_rbt.golden.js",
+        "--generated_file=greeter_rbt.js",
+    ],
+    data = [
+        ":greeter_js_reboot",
+        ":greeter_rbt.golden.js",
+    ],
+    main = "golden_test.py",
+    deps = [
+        ":test_helpers_py",
+    ],
+)
+
+py_test(
+    name = "greeter_generation_react_tests_py",
+    srcs = [
+        "golden_test.py",
+    ],
+    args = [
+        "--golden_file=greeter_rbt_react.golden.js",
+        "--generated_file=greeter_rbt_react.js",
+    ],
+    data = [
+        ":greeter_js_reboot_react",
+        ":greeter_rbt_react.golden.js",
+    ],
+    main = "golden_test.py",
+    deps = [
+        ":test_helpers_py",
+    ],
+)
+
+py_test(
+    name = "echo_generation_tests_py",
+    srcs = [
+        "golden_test.py",
+    ],
+    args = [
+        "--golden_file=echo_rbt.golden.py",
+        "--generated_file=echo_rbt.py",
+    ],
+    data = [
+        ":echo_rbt.golden.py",
+    ],
+    main = "golden_test.py",
+    deps = [
+        ":echo_py_reboot",
+        ":test_helpers_py",
+    ],
+)
+
+py_boilerplate_reboot_library(
+    name = "echo_boilerplate_py_reboot",
+    proto = "echo.proto",
+    proto_library = ":echo_proto",
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "echo_boilerplate_generation_tests_py",
+    srcs = [
+        "golden_test.py",
+    ],
+    args = [
+        "--golden_file=echo_servicer.golden.py",
+        "--generated_file=echo_servicer.py",
+    ],
+    data = [
+        ":echo_servicer.golden.py",
+    ],
+    main = "golden_test.py",
+    deps = [
+        ":echo_boilerplate_py_reboot",
+        ":test_helpers_py",
+    ],
+)
+
+py_test(
+    name = "greeter_web_generation_tests_py",
+    srcs = [
+        "golden_test.py",
+    ],
+    args = [
+        "--golden_file=greeter_rbt_web.golden.js",
+        "--generated_file=greeter_rbt_web.js",
+    ],
+    data = [
+        ":greeter_rbt_web.golden.js",
+        ":greeter_web_ts_reboot",
+    ],
+    main = "golden_test.py",
+    deps = [
+        ":test_helpers_py",
+    ],
+)
+
+py_library(
+    name = "greeter_servicers_py",
+    srcs = [
+        "greeter_servicers.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":greeter_py_reboot",
+    ],
+)
+
+py_test(
+    name = "reboot_tests_py",
+    srcs = [
+        ":reboot_tests.py",
+    ],
+    main = "reboot_tests.py",
+    deps = [
+        requirement("grpcio"),
+        ":bank_py",
+        ":echo_servicers_py",
+        ":greeter_servicers_py",
+        "//rbt/v1alpha1:tasks_py_grpc",
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot/aio:exceptions_py",
+        "//reboot/aio:reboot_py",
+        "//reboot/aio:secrets_py",
+        "//reboot/aio:tests_py",
+        "//reboot/server:service_descriptor_validator_py",
+    ],
+)
+
+py_test(
+    name = "invalid_header_tests_py",
+    srcs = [
+        ":invalid_header_tests.py",
+    ],
+    main = "invalid_header_tests.py",
+    deps = [
+        requirement("grpcio"),
+        ":greeter_servicers_py",
+        "//rbt/v1alpha1:tasks_py_grpc",
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot/aio:exceptions_py",
+    ],
+)
+
+proto_library(
+    name = "echo_proto",
+    srcs = [":echo.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "echo_py_reboot",
+    proto = "echo.proto",
+    proto_library = ":echo_proto",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "echo_servicers_py",
+    srcs = [
+        "echo_servicers.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":echo_boilerplate_py_reboot",
+        "//reboot/aio:memoize_py",
+    ],
+)
+
+py_library(
+    name = "greeter_main_py",
+    srcs = [
+        "greeter_main.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":greeter_servicers_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:http_py",
+    ],
+)
+
+py_oci_image(
+    name = "greeter",
+    srcs = [
+        "greeter_main.py",
+    ],
+    base = "//:envoy_base_image",
+    env = {
+        # Don't buffer stdout/stderr so we can better distinguish when
+        # a pod failed to start vs when it crashed after starting.
+        "PYTHONUNBUFFERED": "1",
+    },
+    main = "greeter_main.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":greeter_main_py",
+    ],
+)
+
+py_test(
+    name = "cancellation_tests_py",
+    srcs = [
+        ":cancellation_tests.py",
+    ],
+    main = "cancellation_tests.py",
+    deps = [
+        ":general_boilerplate_py_reboot",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+py_test(
+    name = "context_tests_py",
+    srcs = [
+        ":context_tests.py",
+    ],
+    main = "context_tests.py",
+    deps = [
+        ":greeter_servicers_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+py_test(
+    name = "external_context_tests_py",
+    srcs = [":external_context_tests.py"],
+    env = {
+        # Use `executable` mode for Envoy (i.e.
+        # `ExecutableLocalEnvoy`) to make the test slightly faster than
+        # if we used the default Docker approach.
+        "REBOOT_LOCAL_ENVOY_MODE": "executable",
+        # Uncomment the following variables to get additional gRPC
+        # debugging information if this test is somehow showing that
+        # we're failing to detect a disconnect in a timely manner.
+        # "GRPC_TRACE": "http_keepalive,http2_ping",
+        # "GRPC_VERBOSITY": "debug",
+    },
+    main = "external_context_tests.py",
+    deps = [
+        ":general_boilerplate_py_reboot",
+        ":greeter_servicers_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+py_test(
+    name = "state_manager_tests_py",
+    srcs = [":state_manager_tests.py"],
+    main = "state_manager_tests.py",
+    deps = [
+        ":greeter_servicers_py",
+        ":test_helpers_py",
+        "//reboot/aio:exceptions_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+py_test(
+    name = "writer_tests_py",
+    srcs = [":writer_tests.py"],
+    main = "writer_tests.py",
+    deps = [
+        ":echo_servicers_py",
+        ":greeter_servicers_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+py_test(
+    name = "legacy_grpc_tests_py",
+    srcs = [":legacy_grpc_tests.py"],
+    main = "legacy_grpc_tests.py",
+    deps = [
+        requirement("aiohttp"),
+        ":greeter_servicers_py",
+        "//reboot/aio:tests_py",
+        "//reboot/ssl:localhost_py",
+    ],
+)
+
+py_test(
+    name = "streaming_readers_tests_py",
+    srcs = [":streaming_readers_tests.py"],
+    main = "streaming_readers_tests.py",
+    deps = [
+        ":echo_servicers_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+py_test(
+    name = "tasks_tests_py",
+    timeout = "long",
+    srcs = [":tasks_tests.py"],
+    main = "tasks_tests.py",
+    deps = [
+        ":bank_py",
+        ":bank_py_reboot",
+        ":echo_servicers_py",
+        ":general_boilerplate_py_reboot",
+        ":greeter_py_reboot",
+        ":greeter_servicers_py",
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot/aio:external_py",
+        "//reboot/aio:tests_py",
+        "//reboot/aio/internals:tasks_cache_py",
+    ],
+)
+
+proto_library(
+    name = "bank_proto",
+    srcs = [":bank.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:empty_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "bank_py_reboot",
+    proto = "bank.proto",
+    proto_library = ":bank_proto",
+    visibility = ["//visibility:public"],
+)
+
+js_proto_library(
+    name = "bank_js_proto",
+    package_json = ":package.json",
+    proto = "bank.proto",
+    proto_deps = [
+        ":bank_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:descriptor_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+js_reboot_react_library(
+    name = "bank_js_reboot_react",
+    srcs = [":bank_js_proto"],
+    proto = "bank.proto",
+    proto_deps = [
+        ":bank_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "bank_py",
+    srcs = ["bank.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":bank_py_reboot",
+    ],
+)
+
+py_oci_image(
+    name = "bank",
+    srcs = [
+        "bank_main.py",
+    ],
+    base = "//:envoy_base_image",
+    env = {
+        # Don't buffer stdout/stderr so we can better distinguish when
+        # a pod failed to start vs when it crashed after starting.
+        "PYTHONUNBUFFERED": "1",
+    },
+    main = "bank_main.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":bank_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+    ],
+)
+
+py_library(
+    name = "auth_bank_py",
+    srcs = ["auth_bank.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":bank_py",
+        ":test_token_verifier_py",
+    ],
+)
+
+py_oci_image(
+    name = "auth_bank",
+    srcs = [
+        "auth_bank_main.py",
+    ],
+    base = "//:envoy_base_image",
+    env = {
+        # Don't buffer stdout/stderr so we can better distinguish when
+        # a pod failed to start vs when it crashed after starting.
+        "PYTHONUNBUFFERED": "1",
+    },
+    main = "auth_bank_main.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":auth_bank_py",
+        ":test_token_verifier_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+    ],
+)
+
+py_test(
+    name = "auth_tests_py",
+    srcs = [":auth_tests.py"],
+    main = "auth_tests.py",
+    deps = [
+        ":bank_py",
+        ":test_token_verifier_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+py_oci_image(
+    name = "presence",
+    srcs = [
+        "presence_main.py",
+    ],
+    base = "//:envoy_base_image",
+    env = {
+        # Don't buffer stdout/stderr so we can better distinguish when
+        # a pod failed to start vs when it crashed after starting.
+        "PYTHONUNBUFFERED": "1",
+    },
+    main = "presence_main.py",
+    tags = ["requires-docker"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/std/presence/v1:presence_py",
+    ],
+)
+
+proto_library(
+    name = "general_proto",
+    srcs = [":general.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "general_py_reboot",
+    proto = "general.proto",
+    proto_library = ":general_proto",
+    visibility = ["//visibility:public"],
+)
+
+py_boilerplate_reboot_library(
+    name = "general_boilerplate_py_reboot",
+    proto = "general.proto",
+    proto_library = ":general_proto",
+    visibility = ["//visibility:public"],
+)
+
+ts_reboot_boilerplate_files(
+    name = "general_boilerplate_ts_reboot",
+    proto = "general.proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":general_proto",
+    ],
+)
+
+py_test(
+    name = "general_generation_nodejs_tests_py",
+    srcs = [
+        "golden_test.py",
+    ],
+    args = [
+        "--golden_file=general_servicer.golden.ts",
+        "--generated_file=general_servicer.ts",
+    ],
+    data = [
+        ":general_boilerplate_ts_reboot",
+        ":general_servicer.golden.ts",
+    ],
+    main = "golden_test.py",
+    deps = [
+        ":test_helpers_py",
+    ],
+)
+
+py_test(
+    name = "general_boilerplate_generation_tests_py",
+    srcs = [
+        "golden_test.py",
+    ],
+    args = [
+        "--golden_file=general_servicer.golden.py",
+        "--generated_file=general_servicer.py",
+    ],
+    data = [
+        ":general_servicer.golden.py",
+    ],
+    main = "golden_test.py",
+    deps = [
+        ":general_boilerplate_py_reboot",
+        ":test_helpers_py",
+    ],
+)
+
+py_binary(
+    name = "benchmark_py",
+    srcs = ["benchmark.py"],
+    main = "benchmark.py",
+    deps = [
+        ":general_boilerplate_py_reboot",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+py_test(
+    name = "transaction_tests_py",
+    srcs = [":transaction_tests.py"],
+    main = "transaction_tests.py",
+    deps = [
+        ":bank_py",
+        ":general_boilerplate_py_reboot",
+        "//reboot/aio:tests_py",
+        "//reboot/std/collections/v1:sorted_map_py",
+    ],
+)
+
+py_test(
+    name = "idempotency_tests_py",
+    srcs = [":idempotency_tests.py"],
+    main = "idempotency_tests.py",
+    deps = [
+        ":bank_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+py_test(
+    name = "types_tests_py",
+    srcs = [
+        ":types_tests.py",
+    ],
+    main = "types_tests.py",
+    deps = [
+        "//reboot/aio:types_py",
+    ],
+)
+
+py_test(
+    name = "errors_tests_py",
+    srcs = [":errors_tests.py"],
+    main = "errors_tests.py",
+    deps = [
+        ":bank_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+py_test(
+    name = "effect_validation_tests_py",
+    srcs = [":effect_validation_tests.py"],
+    main = "effect_validation_tests.py",
+    deps = [
+        ":general_boilerplate_py_reboot",
+        "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot/aio:external_py",
+        "//reboot/aio:tests_py",
+        "//reboot/aio/auth:authorizers_py",
+    ],
+)
+
+py_test(
+    name = "reactivity_test_py",
+    timeout = "short",
+    srcs = [":reactivity_test.py"],
+    main = "reactivity_test.py",
+    deps = [
+        ":greeter_py_reboot",
+        ":greeter_servicers_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+py_test_with_workspace_dir(
+    name = "versions_test_py",
+    srcs = [
+        ":versions_test.py",
+    ],
+    data = [
+        "//reboot:versions.bzl",
+    ],
+    main = ":versions_test.py",
+    workspace_dir_py_file_name = "workspace_directory.py",
+    deps = [
+        requirement("pyyaml"),
+    ],
+)
+
+js_proto_library(
+    name = "greeter_js_proto",
+    package_json = ":package.json",
+    proto = "greeter.proto",
+    proto_deps = [
+        ":greeter_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:descriptor_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@googleapis//google/api:http_proto",
+        "@com_google_protobuf//:timestamp_proto",
+    ],
+    visibility = ["//tests/reboot:__subpackages__"],
+)
+
+js_reboot_react_library(
+    name = "greeter_js_reboot_react",
+    srcs = [":greeter_js_proto"],
+    proto = "greeter.proto",
+    proto_deps = [
+        ":greeter_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "log_test_py",
+    srcs = ["log_test.py"],
+    main = "log_test.py",
+    deps = [
+        "//log:log_py",
+    ],
+)
+
+exports_files(["index.html.j2"])
+
+js_reboot_web_library(
+    name = "greeter_web_ts_reboot",
+    proto = "greeter.proto",
+    proto_deps = [
+        ":greeter_proto",
+    ],
+    visibility = ["//tests/reboot:__subpackages__"],
+    deps = [
+        ":greeter_js_proto",
+    ],
+)
+
+py_library(
+    name = "settings_py",
+    srcs = ["settings.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "versioning_test_py",
+    srcs = ["versioning_test.py"],
+    main = "versioning_test.py",
+    deps = [
+        "//reboot:versioning_py",
+    ],
+)

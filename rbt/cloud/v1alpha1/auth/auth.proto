@@ -1,0 +1,128 @@
+syntax = "proto3";
+
+package rbt.cloud.v1alpha1.auth;
+
+import "google/protobuf/timestamp.proto";
+import "rbt/v1alpha1/options.proto";
+
+/////////////////////////////////////////////////////////////////////////
+
+message APIKey {
+  option (rbt.v1alpha1.state) = {
+  };
+  // Knowing an API key's ID and the following secret authenticates the holder
+  // as the user below.
+  string secret = 1;
+
+  // The user that the holder of this API key authenticates as.
+  string user_id = 2;
+
+  // Whether the APIKey has been revoked.
+  bool revoked = 3;
+
+  // Human-readable name for this API key (e.g., "Development", "CI/CD").
+  string name = 4;
+
+  // When this API key was created.
+  google.protobuf.Timestamp created_at = 5;
+
+  // The organization this API key is associated with.
+  string organization_id = 6;
+}
+
+///////////////////////////////////////////////////////////////////////
+
+service APIKeyMethods {
+  // Create a new API Key for any user. The caller must be authenticated as
+  // "root".
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {
+        constructor: {},
+      },
+      errors: [ "InvalidInputError" ],
+    };
+  }
+
+  // Revoke an API key. The caller must be authenticated as
+  // "root".
+  rpc Revoke(RevokeRequest) returns (RevokeResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  // Authenticate that a given secret is the secret for this API Key, returning
+  // the user that the holder of that secret is thereby authenticated as.
+  // Returns a standard `PermissionDenied` error if the given secret is not the
+  // secret for this API Key.
+  rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  // Get metadata about an API key. The caller must be authenticated as
+  // "root" or "app_internal".
+  rpc Get(GetRequest) returns (GetResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+}
+
+///////////////////////////////////////////////////////////////////////
+
+message CreateRequest {
+  // The user that the new API key will authenticate as.
+  string user_id = 2;
+
+  // Human-readable name for this API key.
+  string name = 3;
+
+  // The organization this API key is associated with.
+  string organization_id = 4;
+}
+
+message CreateResponse {
+  // The bearer token that will authenticate a caller with this newly created
+  // API key.
+  string bearer_token = 1;
+}
+
+message RevokeRequest {}
+
+message RevokeResponse {}
+
+message AuthenticateRequest {
+  // The secret needs to match the called API Key's secret to use its user.
+  //
+  // TODO(rjh): consider, instead of communicating the secret via the proto
+  //            request, communicating it via bearer token. We'd need the
+  //            ability to forward tokens Reboot-to-Reboot.
+  string secret = 1;
+}
+
+message AuthenticateResponse {
+  // The user that the caller is authenticated as.
+  string user_id = 1;
+}
+
+message GetRequest {}
+
+message GetResponse {
+  // Human-readable name for this API key.
+  string name = 1;
+
+  // When this API key was created.
+  google.protobuf.Timestamp created_at = 2;
+
+  // The organization this API key is associated with.
+  string organization_id = 3;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message InvalidInputError {
+  string reason = 1;
+}

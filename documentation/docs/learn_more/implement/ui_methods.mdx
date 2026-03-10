@@ -1,0 +1,256 @@
+# UIs for AI Chat Apps
+
+UI methods declare a React component that opens in the AI chat
+interface when the AI calls the associated tool. Unlike `reader`,
+`writer`, `transaction`, and `workflow` methods, UI methods have
+no backend servicer code — the React `App.tsx` component **is**
+the implementation.
+
+:::info MCP only
+UI methods are only callable over MCP — they appear as tools in
+AI chat interfaces. There is no way to invoke a `UI` method
+from a browser or backend.
+:::
+
+## Syntax
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py&lines=17-31&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py -->
+
+```python
+class SessionState(Model):
+    pass
+
+
+class CounterState(Model):
+    value: int = Field(tag=1, default=0)
+
+
+class GetResponse(Model):
+    value: int = Field(tag=1)
+
+
+class IncrementRequest(Model):
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+### Parameters
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `request` | `Model` subclass or `None` | If provided, the AI passes parameters to the React component as props. If `None`, the UI takes no parameters from the AI. |
+| `path` | `str` | Path to the React app directory relative to the project root. Must contain an `index.html`. |
+| `title` | `str` or `None` | Human-readable title shown in tool listings. |
+| `description` | `str` or `None` | Description used by the AI to decide when to open this UI. Write it as instructions to the AI. |
+
+## Examples
+
+### Zero-config UI
+
+From the `ai-chat-counter` example:
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py&lines=18-26&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py -->
+
+```python
+class SessionState(Model):
+    pass
+
+
+class CounterState(Model):
+    value: int = Field(tag=1, default=0)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+### Parameterized UI
+
+From the `ai-chat-counter-dashboard` example:
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py&lines=17-31&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py -->
+
+```python
+class SessionState(Model):
+    pass
+
+
+class CounterState(Model):
+    value: int = Field(tag=1, default=0)
+
+
+class GetResponse(Model):
+    value: int = Field(tag=1)
+
+
+class IncrementRequest(Model):
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+The React component receives `DashboardConfig` fields as props:
+
+```tsx
+import { type DashboardConfig, useCounter } from "@api/ai_chat_counter/v1/counter_rbt_react";
+
+export const DashboardApp: FC<DashboardConfig> = ({
+  personalizedMessage,
+}) => {
+  const counter = useCounter();
+  const { response } = counter.useGet();
+  // ...
+};
+```
+
+## React implementation
+
+Each `UI` method points to a directory containing:
+- `index.html` — the Vite entry point.
+- `main.tsx` — renders the React component wrapped in
+  `RebootClientProvider`.
+- `App.tsx` — the component that implements the UI.
+
+The component uses generated hooks (like `useCounter()`) to
+interact with backend state. The state ID is automatically
+provided by the framework when the UI is opened — you do
+not need to pass it.
+
+```tsx
+import { useCounter } from "@api/ai_chat_counter/v1/counter_rbt_react";
+
+export const ClickerApp: FC = () => {
+  const counter = useCounter();
+  const { response } = counter.useGet();
+
+  const handleIncrement = async () => {
+    await counter.increment({ amount: 1 });
+  };
+
+  return (
+    <div>
+      <span>{response?.value ?? 0}</span>
+      <button onClick={handleIncrement}>+</button>
+    </div>
+  );
+};
+```
+
+## How it works under the hood
+
+When you define a `UI` method, Reboot generates two MCP
+artifacts:
+
+1. **An MCP tool** that the AI calls to open the UI. The tool
+   returns metadata telling the AI client to display the visual
+   interface.
+2. **An MCP resource** that serves the compiled HTML/JS/CSS. The
+   AI client loads this resource in an embedded browser.
+
+The React app communicates with your Reboot backend via
+WebSocket subscriptions (for reads) and the appropriate write
+channel (for mutations).
+
+## Bundling UI methods
+
+<!-- TODO(rjh): replace this whole section with an `npm create` that scaffolds this stuff -->
+
+Each `UI` method's React app must be bundled into a single HTML
+file so that the Reboot server can serve it as an MCP resource.
+Use [Vite](https://vite.dev/) with
+[`vite-plugin-singlefile`](https://www.npmjs.com/package/vite-plugin-singlefile).
+
+### Dependencies
+
+```sh
+npm install -D @vitejs/plugin-react vite vite-plugin-singlefile
+```
+
+### Vite configuration
+
+Create a `vite.config.ts` that auto-discovers UIs from the
+`ui/` directory. Each subdirectory with an `index.html` becomes
+a buildable UI:
+
+```ts title=web/vite.config.ts
+import fs from "fs";
+import path from "path";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+import { viteSingleFile } from "vite-plugin-singlefile";
+
+// Auto-discover UIs from ui/ directory.
+const uiDir = path.resolve(__dirname, "ui");
+const uis: Record<string, { input: string; output: string }> =
+  Object.fromEntries(
+    fs
+      .readdirSync(uiDir)
+      .filter((d) =>
+        fs.existsSync(path.join(uiDir, d, "index.html"))
+      )
+      .map((name) => [
+        name,
+        {
+          input: `ui/${name}/index.html`,
+          output: `${name}.html`,
+        },
+      ])
+  );
+
+export default defineConfig(({ mode }) => {
+  const ui = uis[mode];
+  if (!ui) {
+    const valid = Object.keys(uis).join(", ");
+    throw new Error(
+      `Unknown UI: ${mode}. Use --mode with: ${valid}`
+    );
+  }
+
+  return {
+    plugins: [react(), viteSingleFile()],
+    build: {
+      outDir: "dist",
+      emptyOutDir: false,
+      assetsInlineLimit: 100000000,
+      cssCodeSplit: false,
+      rollupOptions: {
+        input: ui.input,
+        output: {
+          inlineDynamicImports: true,
+          entryFileNames: ui.output.replace(
+            ".html",
+            ".js"
+          ),
+          assetFileNames: ui.output.replace(
+            ".html",
+            ".[ext]"
+          ),
+        },
+      },
+    },
+    resolve: {
+      alias: {
+        "@api": path.resolve(__dirname, "./api"),
+      },
+      dedupe: ["react", "react-dom", "zod"],
+    },
+  };
+});
+```
+
+### Building
+
+Build each UI by name using `--mode`:
+
+```sh
+cd web && npx vite build --mode clicker
+```
+
+The bundled HTML file is written to `web/dist/clicker.html`.
+The Reboot server discovers and serves it as an MCP resource.
+
+## No backend servicer
+
+`UI` methods are skipped in your servicer class. You only
+implement `reader`, `writer`, `transaction`, and `workflow`
+methods in the servicer.

@@ -1,0 +1,35 @@
+/* web/ui/clicker/App.module.css */
+.container {
+  display: flex;
+  align-items: center;
+  width: fit-content;
+  margin: 0 auto;
+  gap: 12px;
+  font-family: system-ui, sans-serif;
+  padding: 16px 24px;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  background: #fafafa;
+}
+
+.value {
+  font-size: 32px;
+  font-weight: 600;
+  min-width: 48px;
+  text-align: center;
+}
+
+.button {
+  font-size: 20px;
+  font-weight: 600;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  background: #f5f5f5;
+  cursor: pointer;
+}
+
+.button:disabled {
+  cursor: default;
+}

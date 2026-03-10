@@ -1,0 +1,104 @@
+load("@rules_python//python:defs.bzl", "py_test")
+load("//bazel:multi_env.bzl", "multi_env_sh_test")
+load("//reboot:versions.bzl", "REBOOT_VERSION")
+
+py_test(
+    name = "init_tests_py",
+    srcs = [
+        "init_tests.py",
+    ],
+    main = "init_tests.py",
+    deps = [
+        "//reboot/cli:cli_py",
+        "//reboot/cli/init:init_py",
+    ],
+)
+
+test_packages = [
+    "//rbt/v1alpha1:reboot-dev-reboot-api",
+    "//reboot:reboot.dev",
+    "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+    "//reboot/react:reboot-dev-reboot-react",
+    "//reboot/web:reboot-dev-reboot-web",
+]
+
+# TODO: This `sh_library` is a necessary indirection until Bazel 6, because a `sh_binary`
+# does not actually force a `data` attribute to build, but a `sh_library` does. We can
+# remove the indirection once we upgrade. See https://github.com/bazelbuild/bazel/issues/12348
+sh_library(
+    name = "test_packages",
+    data = test_packages,
+)
+
+# The following package paths are relative to the working directory of
+# the test script.
+general_env = {
+    # To make it less likely to get surprises late in the development
+    # process, our Linux machines use the same config as the OSX ones:
+    # `executable` Envoy mode.
+    "REBOOT_LOCAL_ENVOY_MODE": "executable",
+    "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+}
+
+nodejs_env = dict(general_env)
+
+nodejs_env.update({
+    "REBOOT_API_NPM_PACKAGE": "$(location //rbt/v1alpha1:reboot-dev-reboot-api)",
+    "REBOOT_NPM_PACKAGE": "$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
+    "REBOOT_REACT_NPM_PACKAGE": "$(location //reboot/react:reboot-dev-reboot-react)",
+    "REBOOT_WEB_NPM_PACKAGE": "$(location //reboot/web:reboot-dev-reboot-web)",
+})
+
+multi_env_sh_test(
+    name = "init_sh_test",
+    srcs = ["//reboot/cli/init:test.sh"],
+    args = [
+        "$(location //reboot/cli/init/templates_for_bazel_test:test.py)",
+    ],
+    data = test_packages + [
+        ":expected_output.txt",
+        ":test_packages",
+        "//reboot/cli/init/templates_for_bazel_test:test.py",
+    ],
+    env = general_env,
+    # NOTE: We test with some future Python versions to provide smoketest-level
+    # coverage of Python >=3.10.
+    multi_env = {
+        "python310": {
+            "PYTHON_VERSION": "3.10.13",
+        },
+        "python311": {
+            "PYTHON_VERSION": "3.11.8",
+        },
+        "python312": {
+            "PYTHON_VERSION": "3.12.2",
+        },
+    },
+    # TODO: Rye has issues with concurrent bootstrap.
+    # https://github.com/astral-sh/rye/issues/960
+    # Additionally, in all our example tests, we initiate LocalEnvoy on the
+    # default secure port 9991. We require 'exclusive' to not run multiple
+    # tests, that use the same port, concurrently.
+    tags = [
+        "exclusive",
+    ],
+)
+
+sh_test(
+    name = "init_nodejs_sh_test",
+    # The test installs 'Reboot' Node.js packages at least twice, it may
+    # take a while, so we set the size to 'long'.
+    timeout = "long",
+    srcs = ["//reboot/cli/init:nodejs_test.sh"],
+    data = test_packages + [
+        ":expected_output.txt",
+        ":test_packages",
+    ],
+    env = nodejs_env,
+    # Additionally, in all our example tests, we initiate LocalEnvoy on the
+    # default secure port 9991. We require 'exclusive' to not run multiple
+    # tests, that use the same port, concurrently.
+    tags = [
+        "exclusive",
+    ],
+)

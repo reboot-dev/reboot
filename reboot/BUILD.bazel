@@ -1,0 +1,725 @@
+load("@com_github_reboot_dev_reboot//bazel/pip_package_rule:pip_package.bzl", "pip_package")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:pip.bzl", "compile_pip_requirements")
+load("//reboot:rules.bzl", "generate_version_py")
+load("//reboot:versions.bzl", "REBOOT_VERSION")
+
+exports_files([
+    "LICENSE.txt",
+    "versions.bzl",
+    "requirements.in",
+])
+
+py_library(
+    name = "api_py",
+    srcs = ["api.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":settings_py",
+        requirement("protobuf"),
+        requirement("pydantic"),
+    ],
+)
+
+py_library(
+    name = "api_keys_py",
+    srcs = ["api_keys.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "fail_py",
+    srcs = ["fail.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "helpers_py",
+    srcs = ["helpers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot/aio:servicers_py",
+        "//reboot/aio:types_py",
+        "//reboot/server:service_descriptor_validator_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "@googleapis//google/api:annotations_py_proto",
+        "@googleapis//google/rpc:error_details_py_proto",
+        requirement("protobuf"),
+    ],
+)
+
+py_library(
+    name = "naming_py",
+    srcs = ["naming.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":settings_py",
+        "//reboot/aio:types_py",
+    ],
+)
+
+py_library(
+    name = "options_py",
+    srcs = ["options.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_py_proto",
+        requirement("protobuf"),
+    ],
+)
+
+py_library(
+    name = "protobuf_py",
+    srcs = ["protobuf.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("protobuf"),
+        requirement("pydantic"),
+    ],
+)
+
+py_library(
+    name = "protoc_gen_es_with_deps_py",
+    srcs = [
+        "protoc_gen_es_with_deps.py",
+    ],
+    data = [
+        ":protoc_gen_es_with_deps.cjs",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    # NOTE: we are breaking with our normal naming convention as the protoc
+    # compiler insists that the name of a plugin must(!!!!) start with
+    # `protoc-gen-`.
+    name = "protoc-gen-es_with_deps",
+    srcs = ["protoc_gen_es_with_deps.py"],
+    data = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@bufbuild/protoc-gen-es",
+        "//:node_modules/@bufbuild/protoplugin",
+        "//:node_modules/@types/node",
+    ],
+    main = "protoc_gen_es_with_deps.py",
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":protoc_gen_es_with_deps_py",
+    ],
+)
+
+py_library(
+    name = "protoc_gen_reboot_generic_py",
+    srcs = ["protoc_gen_reboot_generic.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        # We need the following import to "force" (or maybe accidentally end up)
+        # Bazel to generate a PYTHONPATH that imports the right proto library
+        # first. See: https://github.com/reboot-dev/mono/issues/1165.
+        requirement("protobuf"),
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_py_proto",
+        ":helpers_py",
+        ":options_py",
+        ":settings_py",
+        ":version_py",
+        "@com_github_reboot_dev_pyprotoc_plugin//pyprotoc_plugin",
+        "@googleapis//google/api:annotations_py_proto",
+        requirement("jinja2-strcase"),
+    ],
+)
+
+py_library(
+    name = "protoc_gen_reboot_python_py",
+    srcs = [
+        "protoc_gen_reboot_python.py",
+    ],
+    data = [
+        "//reboot/templates:reboot.py.j2",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":protoc_gen_reboot_generic_py",
+        "//reboot/aio:tracing_py",
+        "@googleapis//google/api:annotations_py_proto",
+    ],
+)
+
+py_binary(
+    # NOTE: we are breaking with our normal naming convention as the protoc
+    # compiler insists that the name of a plugin must(!!!!) start with
+    # `protoc-gen-`.
+    name = "protoc-gen-reboot_python",
+    srcs = [
+        "protoc_gen_reboot_python.py",
+    ],
+    main = "protoc_gen_reboot_python.py",
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":protoc_gen_reboot_python_py",
+        "@googleapis//google/api:annotations_py_proto",
+    ],
+)
+
+py_library(
+    name = "protoc_gen_reboot_python_boilerplate_py",
+    srcs = [
+        "protoc_gen_reboot_python_boilerplate.py",
+    ],
+    data = [
+        "//reboot/templates:servicer_boilerplate.py.j2",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":protoc_gen_reboot_python_py",
+    ],
+)
+
+py_binary(
+    # NOTE: we are breaking with our normal naming convention as the protoc
+    # compiler insists that the name of a plugin must(!!!!) start with
+    # `protoc-gen-`.
+    name = "protoc-gen-reboot_python_boilerplate",
+    srcs = [
+        "protoc_gen_reboot_python_boilerplate.py",
+    ],
+    main = "protoc_gen_reboot_python_boilerplate.py",
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [":protoc_gen_reboot_python_boilerplate_py"],
+)
+
+py_library(
+    name = "uuidv7_py",
+    srcs = ["uuidv7.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "protoc_gen_reboot_typescript_py",
+    srcs = ["protoc_gen_reboot_typescript.py"],
+    srcs_version = "PY3",
+    deps = [
+        ":protoc_gen_reboot_generic_py",
+    ],
+)
+
+py_library(
+    name = "protoc_gen_reboot_nodejs_py",
+    srcs = [
+        "protoc_gen_reboot_nodejs.py",
+    ],
+    data = [
+        "//reboot/templates:reboot.ts.j2",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":protoc_gen_reboot_generic_py",
+        ":protoc_gen_reboot_python_py",
+        ":protoc_gen_reboot_typescript_py",
+        ":settings_py",
+        "//reboot/aio:directories_py",
+        requirement("grpcio-tools"),
+    ],
+)
+
+py_binary(
+    # NOTE: we are breaking with our normal naming convention as the protoc
+    # compiler insists that the name of a plugin must(!!!!) start with
+    # `protoc-gen-`.
+    name = "protoc-gen-reboot_nodejs",
+    srcs = [
+        "protoc_gen_reboot_nodejs.py",
+    ],
+    main = "protoc_gen_reboot_nodejs.py",
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [":protoc_gen_reboot_nodejs_py"],
+)
+
+py_library(
+    name = "protoc_gen_reboot_react_py",
+    srcs = [
+        "protoc_gen_reboot_react.py",
+    ],
+    data = [
+        "//reboot/templates:reboot_react.ts.j2",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":protoc_gen_reboot_generic_py",
+        ":protoc_gen_reboot_typescript_py",
+        ":settings_py",
+        "//reboot/aio:tracing_py",
+    ],
+)
+
+py_binary(
+    # NOTE: we are breaking with our normal naming convention as the protoc
+    # compiler insists that the name of a plugin must(!!!!) start with
+    # `protoc-gen-`.
+    name = "protoc-gen-reboot_react",
+    srcs = [
+        "protoc_gen_reboot_react.py",
+    ],
+    main = "protoc_gen_reboot_react.py",
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [":protoc_gen_reboot_react_py"],
+)
+
+py_library(
+    name = "protoc_gen_reboot_web_py",
+    srcs = [
+        "protoc_gen_reboot_web.py",
+    ],
+    data = [
+        "//reboot/templates:reboot_web.ts.j2",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":protoc_gen_reboot_generic_py",
+        ":protoc_gen_reboot_typescript_py",
+        ":settings_py",
+        "//reboot/aio:tracing_py",
+        "//reboot/cli:terminal_py",
+    ],
+)
+
+py_binary(
+    # NOTE: we are breaking with our normal naming convention as the protoc
+    # compiler insists that the name of a plugin must(!!!!) start with
+    # `protoc-gen-`.
+    name = "protoc-gen-reboot_web",
+    srcs = [
+        "protoc_gen_reboot_web.py",
+    ],
+    main = "protoc_gen_reboot_web.py",
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [":protoc_gen_reboot_web_py"],
+)
+
+py_library(
+    name = "protoc_gen_reboot_nodejs_boilerplate_py",
+    srcs = [
+        "protoc_gen_reboot_nodejs_boilerplate.py",
+    ],
+    data = [
+        "//reboot/templates:servicer_boilerplate.ts.j2",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":protoc_gen_reboot_nodejs_py",
+        ":settings_py",
+    ],
+)
+
+py_binary(
+    # NOTE: we are breaking with our normal naming convention as the protoc
+    # compiler insists that the name of a plugin must(!!!!) start with
+    # `protoc-gen-`.
+    name = "protoc-gen-reboot_nodejs_boilerplate",
+    srcs = [
+        "protoc_gen_reboot_nodejs_boilerplate.py",
+    ],
+    main = "protoc_gen_reboot_nodejs_boilerplate.py",
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [":protoc_gen_reboot_nodejs_boilerplate_py"],
+)
+
+py_library(
+    name = "pydantic_schema_to_proto_py",
+    srcs = ["pydantic_schema_to_proto.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":api_py",
+        ":fail_py",
+        requirement("pydantic"),
+        requirement("aiofiles"),
+    ],
+)
+
+py_library(
+    name = "pydantic_schema_to_zod_py",
+    srcs = ["pydantic_schema_to_zod.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":api_py",
+        ":fail_py",
+        requirement("pydantic"),
+        requirement("aiofiles"),
+    ],
+)
+
+py_binary(
+    name = "pydantic_to_proto",
+    srcs = ["pydantic_to_proto.py"],
+    main = "pydantic_to_proto.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pydantic_schema_to_proto_py",
+    ],
+)
+
+py_binary(
+    name = "pydantic_to_zod",
+    srcs = ["pydantic_to_zod.py"],
+    main = "pydantic_to_zod.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pydantic_schema_to_zod_py",
+    ],
+)
+
+py_library(
+    name = "run_environments_py",
+    srcs = ["run_environments.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":settings_py",
+        "//reboot/aio:types_py",
+    ],
+)
+
+cc_library(
+    name = "settings_cc",
+    hdrs = [
+        "settings.h",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "settings_py",
+    srcs = ["settings.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "time_py",
+    srcs = ["time.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("tzlocal"),
+    ],
+)
+
+generate_version_py(name = "version_source")
+
+py_library(
+    name = "version_py",
+    srcs = [":version_source"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "versioning_py",
+    srcs = ["versioning.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":version_py",
+        "//reboot/aio:exceptions_py",
+    ],
+)
+
+# PEP 561 marker file; tells tools that type information is available.
+genrule(
+    name = "py_typed",
+    srcs = [],
+    outs = ["py.typed"],
+    cmd = "echo '# Marker file for PEP 561.' > $@",
+    visibility = ["//visibility:public"],
+)
+
+# Run 'bazel run reboot:requirements.update' to update the lock file.
+compile_pip_requirements(
+    name = "requirements",
+    src = ":requirements.in",
+    requirements_txt = ":requirements_lock.txt",
+)
+
+py_library(
+    name = "python_std",
+    deps = [
+        "//reboot/std/collections/ordered_map/v1:ordered_map_py",
+        "//reboot/std/collections/queue/v1:queue_py",
+        "//reboot/std/collections/v1:sorted_map_py",
+        "//reboot/std/presence/v1:presence_py",
+        "//reboot/std/pubsub/v1:pubsub_py",
+    ],
+)
+
+py_library(
+    name = "python_thirdparty",
+    # A list of all of the third-party integrations that we'd like to
+    # ship with the Reboot library, even when they aren't themselves
+    # used by the Reboot library.
+    deps = [
+        "//reboot/thirdparty/mailgun:servicers_py",
+    ],
+)
+
+py_library(
+    # This library represents the full Reboot Python library as distributed
+    # to PyPI. If a dependency is (transitively) listed here, it will be in the
+    # distributed library. If it's not, then it won't be.
+    name = "python",
+    data = [
+        ":py_typed",
+        "@com_github_reboot_dev_reboot//rbt:py_typed",
+    ],
+    deps = [
+        ":api_py",
+        ":python_std",
+        ":python_thirdparty",
+        ":protobuf_py",
+        ":protoc_gen_reboot_nodejs_py",
+        ":protoc_gen_reboot_react_py",
+        ":protoc_gen_reboot_nodejs_boilerplate_py",
+        ":protoc_gen_reboot_web_py",
+        "@com_github_reboot_dev_reboot//protoc_gen_mypy_plugin:protoc-gen-mypy",
+        ":protoc_gen_es_with_deps_py",
+        ":protoc_gen_reboot_python_boilerplate_py",
+        ":protoc_gen_reboot_python_py",
+        "//reboot/aio:python",
+        "//reboot/cli:rbt_main_py",
+        "//reboot/mcp:python",
+        "//reboot/nodejs:python",
+        # TODO: This dependency is excluded from the `//reboot/aio:python` target, in order
+        # to avoid creating a cycle with the code generated by:
+        #   `//rbt/cloud/v1alpha1/secrets:secrets_py_reboot`
+        # ... we should likely split out the portion of `//reboot/aio:python` that is actually
+        # required by the stub code.
+        "//reboot/aio:secrets_py",
+    ],
+)
+
+pip_package(
+    # Packages published to PyPI ideally have a normalized name:
+    #   https://packaging.python.org/en/latest/specifications/name-normalization/#normalization
+    # To avoid confusion, our target names use the same normalized form.
+    #
+    # NOTE: this definition also exposes a `reboot.dev` target that can be used
+    #       to build a quicker-to-build-but-not-publishable version of the pip
+    #       package for use during development; the naming `reboot.dev` is a
+    #       coincidence and does not refer to the company name.
+    name = "reboot",
+    description = "The Reboot library",
+    license = "Apache-2.0",
+    license_txt = ":LICENSE.txt",
+    readme_md = "//:README.md",
+    requirements_txt = "//reboot:requirements.in",
+    scripts = {
+        # NOTE: the protoc compiler insists that the name of a plugin must(!!!!) start with
+        # `protoc-gen-`.
+        # TODO(rjh): distribute separate protoc plugins for the different languages;
+        #            currently the plugin builds all supported languages.
+        "protoc-gen-es_with_deps": "reboot.protoc_gen_es_with_deps:main",
+        "protoc-gen-mypy": "protoc_gen_mypy_plugin.protoc_gen_mypy_wrapper:main",
+        "protoc-gen-reboot_nodejs": "reboot.protoc_gen_reboot_nodejs:main",
+        "protoc-gen-reboot_nodejs_boilerplate": "reboot.protoc_gen_reboot_nodejs_boilerplate:main",
+        "protoc-gen-reboot_python": "reboot.protoc_gen_reboot_python:main",
+        "protoc-gen-reboot_python_boilerplate": "reboot.protoc_gen_reboot_python_boilerplate:main",
+        "protoc-gen-reboot_react": "reboot.protoc_gen_reboot_react:main",
+        "protoc-gen-reboot_web": "reboot.protoc_gen_reboot_web:main",
+        "rbt": "reboot.cli.rbt_main:main",
+    },
+    version = REBOOT_VERSION,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":python",
+    ],
+)
+
+# TODO: This `sh_library` is a necessary indirection until Bazel 6, because a `sh_binary`
+# does not actually force a `data` attribute to build, but a `sh_library` does. We can
+# remove the indirection once we upgrade. See https://github.com/bazelbuild/bazel/issues/12348
+sh_library(
+    name = "force_reinstall_dev_reboot_lib",
+    srcs = [
+        "force_reinstall.sh",
+    ],
+    data = [
+        ":reboot.dev",
+    ],
+)
+
+sh_binary(
+    name = "force_reinstall_dev_reboot",
+    srcs = [
+        "force_reinstall.sh",
+    ],
+    args = [
+        "$(location :reboot.dev)",
+    ],
+    data = [
+        ":reboot.dev",
+    ],
+    deps = [":force_reinstall_dev_reboot_lib"],
+)
+
+# TODO: This `sh_library` is a necessary indirection until Bazel 6, because a `sh_binary`
+# does not actually force a `data` attribute to build, but a `sh_library` does. We can
+# remove the indirection once we upgrade. See https://github.com/bazelbuild/bazel/issues/12348
+sh_library(
+    name = "update_lockfiles_lib",
+    srcs = [
+        "update_lockfiles.sh",
+    ],
+    data = [
+        ":reboot.dev",
+    ],
+)
+
+sh_binary(
+    name = "update_lockfiles",
+    srcs = [
+        "update_lockfiles.sh",
+    ],
+    args = [
+        "$(location :reboot.dev)",
+        REBOOT_VERSION,
+    ],
+    data = [
+        ":reboot.dev",
+    ],
+    deps = [":update_lockfiles_lib"],
+)
+
+# TODO: This `sh_library` is a necessary indirection until Bazel 6, because a `sh_binary`
+# does not actually force a `data` attribute to build, but a `sh_library` does. We can
+# remove the indirection once we upgrade. See https://github.com/bazelbuild/bazel/issues/12348
+sh_library(
+    name = "npm_install_local_reboot_lib",
+    srcs = [
+        "npm_install_local_reboot.sh",
+    ],
+    data = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:reboot-dev-reboot-api",
+        "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+        "//reboot:reboot.dev",
+        "//reboot/react:reboot-dev-reboot-react",
+        "//reboot/std:reboot-dev-reboot-std",
+        "//reboot/std/react:reboot-dev-reboot-std-react",
+        "//reboot/web:reboot-dev-reboot-web",
+        "@com_github_reboot_dev_reboot//rbt/std:reboot-dev-reboot-std-api",
+    ],
+)
+
+sh_binary(
+    name = "npm_install_local_reboot",
+    srcs = [
+        "npm_install_local_reboot.sh",
+    ],
+    args = [
+        "$(location @com_github_reboot_dev_reboot//rbt/v1alpha1:reboot-dev-reboot-api)",
+        "$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
+        "$(location //reboot/react:reboot-dev-reboot-react)",
+        "$(location //reboot/web:reboot-dev-reboot-web)",
+        "$(location @com_github_reboot_dev_reboot//rbt/std:reboot-dev-reboot-std-api)",
+        "$(location //reboot/std:reboot-dev-reboot-std)",
+        "$(location //reboot/std/react:reboot-dev-reboot-std-react)",
+    ],
+    data = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:reboot-dev-reboot-api",
+        "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+        "//reboot:reboot.dev",
+        "//reboot/react:reboot-dev-reboot-react",
+        "//reboot/std:reboot-dev-reboot-std",
+        "//reboot/std/react:reboot-dev-reboot-std-react",
+        "//reboot/web:reboot-dev-reboot-web",
+        "@com_github_reboot_dev_reboot//rbt/std:reboot-dev-reboot-std-api",
+    ],
+    env = {
+        "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+    },
+    deps = [":npm_install_local_reboot_lib"],
+)
+
+sh_binary(
+    name = "yarn_install_local_reboot",
+    srcs = [
+        "yarn_install_local_reboot.sh",
+    ],
+    args = [
+        "@reboot-dev/reboot-api,$(location @com_github_reboot_dev_reboot//rbt/v1alpha1:reboot-dev-reboot-api)",
+        "@reboot-dev/reboot,$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
+        "@reboot-dev/reboot-react,$(location //reboot/react:reboot-dev-reboot-react)",
+        "@reboot-dev/reboot-web,$(location //reboot/web:reboot-dev-reboot-web)",
+        "@reboot-dev/reboot-std-api,$(location @com_github_reboot_dev_reboot//rbt/std:reboot-dev-reboot-std-api)",
+        "@reboot-dev/reboot-std,$(location //reboot/std:reboot-dev-reboot-std)",
+        "@reboot-dev/reboot-std-react,$(location //reboot/std/react:reboot-dev-reboot-std-react)",
+    ],
+    data = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:reboot-dev-reboot-api",
+        "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+        "//reboot:reboot.dev",
+        "//reboot/react:reboot-dev-reboot-react",
+        "//reboot/std:reboot-dev-reboot-std",
+        "//reboot/std/react:reboot-dev-reboot-std-react",
+        "//reboot/web:reboot-dev-reboot-web",
+        "@com_github_reboot_dev_reboot//rbt/std:reboot-dev-reboot-std-api",
+    ],
+    env = {
+        "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+    },
+    deps = [":npm_install_local_reboot_lib"],
+)
+
+# TODO: This `sh_library` is a necessary indirection until Bazel 6, because a `sh_binary`
+# does not actually force a `data` attribute to build, but a `sh_library` does. We can
+# remove the indirection once we upgrade. See https://github.com/bazelbuild/bazel/issues/12348
+sh_library(
+    name = "npm_install_local_reboot_react_lib",
+    srcs = [
+        "npm_install_local_reboot_react.sh",
+    ],
+    data = [
+        "//reboot/react:reboot-dev-reboot-react",
+        "//reboot/web:reboot-dev-reboot-web",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:reboot-dev-reboot-api",
+    ],
+)
+
+sh_binary(
+    name = "npm_install_local_reboot_react",
+    srcs = [
+        "npm_install_local_reboot_react.sh",
+    ],
+    args = [
+        "$(location @com_github_reboot_dev_reboot//rbt/v1alpha1:reboot-dev-reboot-api)",
+        "$(location //reboot/react:reboot-dev-reboot-react)",
+        "$(location //reboot/web:reboot-dev-reboot-web)",
+    ],
+    data = [
+        "//reboot/react:reboot-dev-reboot-react",
+        "//reboot/web:reboot-dev-reboot-web",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:reboot-dev-reboot-api",
+    ],
+    deps = [":npm_install_local_reboot_react_lib"],
+)

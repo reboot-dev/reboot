@@ -1,0 +1,570 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# From React
+
+Reboot generates code that allows web or mobile React components to
+easily query and mutate Reboot data types.
+
+## Overview
+
+Consider a `ChatRoom` API definition with one data type, `ChatRoom`, one
+[`reader`](/learn_more/define/methods#kinds), and one
+[`writer`](/learn_more/define/methods#kinds) method.
+
+<Tabs groupId="language">
+  <TabItem value="typescript" label="Zod" default>
+```typescript
+import { reader, writer } from "@reboot-dev/reboot-api";
+import { z } from "zod/v4";
+
+export const ChatRoom = {
+  state: {
+    messages: z.array(z.string()).default([]).meta({ tag: 1 }),
+  },
+  methods: {
+    // Returns the current list of recorded messages.
+    messages: reader({
+      request: {},
+      response: {
+        messages: z.array(z.string()).meta({ tag: 1 }),
+      },
+    }),
+    // Adds a new message to the list of recorded messages.
+    send: writer({
+      request: {
+        message: z.string().meta({ tag: 1 }), // E.g. "Hello, World".
+      },
+      response: z.void(),
+    }),
+  },
+};
+
+export const api = {
+  ChatRoom,
+};
+```
+  </TabItem>
+  <TabItem value="python" label="Pydantic">
+```python
+from typing import Optional
+from reboot.api import (
+  API,
+  Field,
+  Methods,
+  Reader,
+  Model,
+  Type,
+  Writer,
+)
+
+class ChatRoomState(Model):
+    messages: Optional[list[str]] = Field(tag=1)
+
+class MessagesResponse(Model):
+    messages: list[str] = Field(tag=1)
+
+class SendRequest(Model):
+    message: str = Field(tag=1)  # E.g. "Hello, World".
+
+ChatRoomMethods = Methods(
+    # Returns the current list of recorded messages.
+    messages=Reader(
+        request=None,
+        response=MessagesResponse,
+    ),
+    # Adds a new message to the list of recorded messages.
+    send=Writer(
+        request=SendRequest,
+        response=None,
+    ),
+)
+
+api = API(
+    ChatRoom=Type(
+        state=ChatRoomState,
+        methods=ChatRoomMethods,
+    ),
+)
+```
+  </TabItem>
+  <TabItem value="proto" label="Proto">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto&&lines=9-41&syntax=protobuf) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto -->
+
+```protobuf
+message ChatRoom {
+  option (rbt.v1alpha1.state) = {
+  };
+  repeated string messages = 1;
+}
+
+service ChatRoomMethods {
+  // Returns the current list of recorded messages.
+  rpc Messages(MessagesRequest) returns (MessagesResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  // Adds a new message to the list of recorded messages.
+  rpc Send(SendRequest) returns (SendResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
+
+message MessagesRequest {}
+
+message MessagesResponse {
+  repeated string messages = 1;
+}
+
+message SendRequest {
+  string message = 1;  // E.g. "Hello, World".
+}
+
+message SendResponse {}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+The rest of this document will discuss the React code that is generated from
+your API definition.
+
+## Installation
+
+To access Reboot from your React app, add `@reboot-dev/reboot-react`
+to your `package.json`.
+
+```
+npm install -S @reboot-dev/reboot-react
+```
+
+:::info
+To see the complete code referenced in this page, [go to the 'reboot-hello'
+example](https://github.com/reboot-dev/reboot-hello).
+:::
+
+To have the `rbt` command line utility generate React code when running
+`rbt generate`, add the `--react` flag to `.rbtrc`. For AI Chat Apps,
+also add `generate --react-extensions` to enable hooks to work in
+both AI chat and browser contexts. For example:
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/chat-room/.rbtrc&&lines=33-33) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/.rbtrc -->
+
+```
+generate --react=web/src/api
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+This flag specifies where to put the generated React code. It often
+makes sense to have these files written inside the root directory of
+your React app, as shown above, [because many React frameworks prevent
+referencing files outside the root directory](https://stackoverflow.com/questions/44114436/the-create-react-app-imports-restriction-outside-of-src-directory).
+
+## Setup
+
+All calls to Reboot generated code must occur within a Reboot context. This
+context is provided by a `RebootClientProvider`. It takes a
+`url` prop that defines the endpoint the
+generated React code will use to connect to the Reboot backend.
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/counter/web-vite/src/main.tsx&&lines=8-10) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/counter/web-vite/src/main.tsx -->
+
+```tsx
+<RebootClientProvider url={"http://localhost:9991"}>
+  <App />
+</RebootClientProvider>
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+All generated Reboot React Custom Hooks can now be used inside `<App />` or
+any of `App`'s children.
+
+:::tip
+Use a TLS endpoint to take advantage of HTTP/2
+multiplexing, a requirement for any Reboot React app with more than ~100 outstanding RPC calls, e.g., reactive readers or mutations.
+:::
+
+In practice, it is best to use an environment variable for your API endpoint.
+
+For example:
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/chat-room/web/src/index.tsx&&lines=11-12) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/web/src/index.tsx -->
+
+```tsx
+(import.meta.env.VITE_REBOOT_URL as string) || "http://localhost:9991";
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+How environment variables are managed in your codebase depends on the React
+framework or library you use.
+
+:::info
+Reboot generates TypeScript code. [Learn how to use Reboot in a vanilla JS environment.](#vanilla-javascript)
+:::
+
+## AI Chat App context
+
+When building [AI Chat Apps](/ai_chat_apps/get_started), the same
+generated React hooks work in both AI chat and browser contexts.
+The key differences:
+
+- **No `url` prop needed.** In the AI chat context,
+  `RebootClientProvider` automatically detects the environment.
+  You do not pass a `url`:
+
+```tsx
+<RebootClientProvider>
+  <App />
+</RebootClientProvider>
+```
+
+- **Automatic ID resolution.** For `Session` methods, the hook
+  resolves the state ID from the MCP session automatically. For
+  other types (like `Counter`), the ID is provided by the
+  framework when the UI is opened:
+
+```tsx
+import { useCounter } from "@api/ai_chat_counter/v1/counter_rbt_react";
+
+const counter = useCounter();
+const { response } = counter.useGet();
+await counter.increment({ amount: 1 });
+```
+
+- **`UI` method props.** For `UI` methods with a `request`
+  type, the AI-provided fields are passed to the React component
+  as props:
+
+```tsx
+import { type DashboardConfig } from "@api/ai_chat_counter/v1/counter_rbt_react";
+
+export const DashboardApp: FC<DashboardConfig> = ({
+  personalizedMessage,
+}) => {
+  const counter = useCounter();
+  // ...
+};
+```
+
+- **`--react-extensions` required.** Add
+  `generate --react-extensions` to your `.rbtrc` to enable
+  AI Chat App support in the generated hooks.
+
+## Reading state
+
+You can call a `reader` _reactively_ very simply:
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/chat-room/web/src/App.tsx&&lines=33-34) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/web/src/App.tsx -->
+
+```tsx
+const { useMessages, send } = useChatRoom({ id: STATE_MACHINE_ID });
+const { response } = useMessages();
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+Let's break this down.
+
+`useChatRoom` is a generated React custom hook that provides access to all of the methods
+defined on the `ChatRoom` state data type. The `id` that is passed is the ID that uniquely identifies your state.
+
+For every [`reader`](/learn_more/define/methods#kinds) method, a
+React custom hook is generated, e.g., `useMessages`. Any time the `ChatRoom` state
+with the given `id` changes, `response` is updated and the component re-renders.
+
+In this specific case, `useMessages` can be called with no arguments because
+`Messages` takes an empty request.
+
+## Mutating state
+
+Mutators such as [`writer`](/learn_more/define/methods#kinds)
+and [`transaction`](/learn_more/define/methods#kinds) methods
+are both callable from React.
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/chat-room/web/src/App.tsx&&lines=33-33) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/web/src/App.tsx -->
+
+```tsx
+const { useMessages, send } = useChatRoom({ id: STATE_MACHINE_ID });
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+Reboot methods are accessed by their name in lower camel case, e.g.,
+`deleteAllMessages`.
+
+This line calls the
+[`writer`](/learn_more/define/methods#kinds) method, declared
+in the `.proto` as `Send`, using the lower camel case name `send`:
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/chat-room/web/src/App.tsx&&lines=37-37) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/web/src/App.tsx -->
+
+```tsx
+const { aborted } = await send({ message: message });
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+In the example above, `send` is passed a [partial](https://www.typescriptlang.org/docs/handbook/utility-types.html#partialtype)
+but it will also happily take a `SendRequest` as an argument instead.
+
+## Optimistic updates
+
+To provide a snappy user experience, it is common to optimistically
+render the result of a mutation before the result has been committed.
+
+Reboot attaches all in-flight mutations to a `.pending` property of every mutator to
+facilitate this, for example:
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/chat-room/web/src/App.tsx&&lines=81-83) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/web/src/App.tsx -->
+
+```tsx
+{send.pending.map(({ request: { message }, isLoading }) => (
+  <PendingMessage text={message} isLoading={isLoading} key={message} />
+))}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+In this example, all in-flight mutations are rendered using a `PendingMessage`
+wrapper that gives the user an indication that their message has been sent but
+not yet received.
+
+You can be sure that a mutation is either pending, has been applied, or has
+failed (these are mutually exclusive).
+
+:::info
+Assume there is a mutation denoted 'mutation-xy'. As soon as
+`response` sees a version of state that has committed 'mutation-xy',
+'mutation-xy' is atomically removed from `.pending`. No need to worry about
+data races!
+:::
+
+## Errors
+
+Every call to a mutator returns both a `response` and an `aborted`; successful calls will ensure `aborted` is `undefined`.
+
+[Learn more about Reboot errors and error types.](/learn_more/errors)
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/chat-room/web/src/App.tsx&&lines=37-41) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/web/src/App.tsx -->
+
+```tsx
+const { aborted } = await send({ message: message });
+if (aborted !== undefined) {
+  console.warn(aborted.error.getType());
+  console.warn(aborted.message);
+}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+In this case, because the `Send` method in `chat_room.proto` does not define any
+specific error types, the only error that can be returned in the `aborted`
+object will be Reboot system errors such as `StateAlreadyConstructed`.
+
+:::info
+The `aborted` returned is not an exception and the generated React code does not `throw`.
+:::
+
+## Caching reads
+
+Readers can be cached and persisted in the front end for longer
+durations. In case the front end is disconnected from the network or the
+Reboot backend when loading, the response for a reader will be read from an
+_IndexedDB_ or as a fallback from the _localStorage_ of the
+application's browser. This enables PWAs to start up in __disconnected
+mode__ by showing the most recent persisted reader response and keeps your
+application in a readable state if the backend is not available.
+
+Enable reader response caching by setting `offlineCacheEnabled` to _true_
+at the `RebootClientProvider`. Cache entries have no TTL set, that means
+they won't expire as long as the used `OfflineCacheStorageType` can hold
+those entries, which means usually _forever_.
+
+```tsx
+<RebootClientProvider url={"http://localhost:9991"} offlineCacheEnabled>
+  <App />
+</RebootClientProvider>
+```
+
+To determine the auto-detected `OfflineCacheStorageType`, you can check
+on `offlineCacheStorageType`, which is export by your generated React
+hooks file. Possible values are `IndexedDB`, `LocalStorage` and
+`InMemory`.
+
+`InMemory` is ephemeral when the browser tab closes and is only used, if
+the other types are not available.
+
+:::info
+Caching is _disabled_ by default, as data may contain sensitive
+information and the browser's storage is potentially vulnerable to XSS
+attacks. You explicitly need to enabled caching at the
+RebootClientProvider.
+:::
+
+## Next.js and Server Components
+
+Using Reboot-generated TypeScript on the server and Reboot-generated React on
+the client allows you to create high-performance applications that show your users all the
+data they need on first-paint, while also allowing for all of the amazing
+reactive features that come with the Reboot React client-side library.
+
+The Reboot React library is composed of client-side custom hooks
+that provide reactivity whenever Reboot state changes occur. In the case that you
+want to do something server-side with Reboot and React before returning to the client, use the
+Reboot-generated server-side TypeScript.
+
+For instance, you might want to make a call to Reboot state on the
+server first, render HTML with data included and then send it to the client. This
+allows you to send a non-interactive and non-reactive page to the user that then
+becomes interactive and reactive upon [hydration](https://react.dev/reference/react-dom/client/hydrateRoot).
+
+This can be achieved by combining Reboot TypeScript backend-generated
+code and [Next.js Server
+Components](https://nextjs.org/docs/app/building-your-application/rendering/server-components).
+
+:::tip
+To see the complete example, check out the [Reboot Counter example repo](https://github.com/reboot-dev/reboot-counter).
+:::
+
+On the server, the code that is typically generated for TypeScript
+backends can be used to fetch initial data. In this case, we call
+`.count()`, a non-reactive, unary
+[`reader`](/learn_more/define/methods#kinds) method, to supply
+the initial value.
+
+Importantly, we also need to construct an
+[`ExternalContext`](/learn_more/call/from_outside_your_app) to make
+this call safely.
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/counter/web-next/app/page.tsx&&lines=6-19) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/counter/web-next/app/page.tsx -->
+
+```tsx
+export default async function Home() {
+  const context = new ExternalContext({
+    name: "react server context",
+    url: process.env.NEXT_PUBLIC_ENDPOINT,
+  });
+
+  const counts = await Promise.all(
+    COUNTER_IDS.map(async (id: string) => Counter.ref(id).count(context))
+  );
+
+  return COUNTER_IDS.map((id, index) => (
+    <TakeableCounter id={id} key={id} initialCount={counts[index].count} />
+  ));
+}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+The main difference from a client-only component is that `TakeableCounter` now takes
+an `initialCount` prop that the server is expected to provide.
+
+The client-side call is completed as normal, but the data can be rendered immediately
+because it is passed into the component as a prop.
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/counter/web-next/app/TakeableCounter.tsx&&lines=6-11) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/counter/web-next/app/TakeableCounter.tsx -->
+
+```tsx
+const TakeableCounter: FC<{ id: string; initialCount: number }> = ({
+  id,
+  initialCount,
+}) => {
+  const { useCount, increment, take } = useCounter({ id });
+  const { response } = useCount();
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+Now it is easy to render either the `initialCount` that was passed in initially or the
+current reactive value of the `response.count` object.
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/counter/web-next/app/TakeableCounter.tsx&&lines=15-15) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/counter/web-next/app/TakeableCounter.tsx -->
+
+```tsx
+count={response ? response.count : initialCount}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+To learn more about React Server Components, refer to the [React Server
+Components](https://react.dev/reference/rsc/server-components) docs or,
+for information specific to Next.js, [visit Next's page on Server
+Components](https://nextjs.org/docs/app/building-your-application/rendering/server-components).
+
+## Vanilla JavaScript
+
+Reboot automatically transpiles TypeScript into JavaScript by way of `esbuild`.
+If you wish to use a tool other than `esbuild` for transpilation, you can pass a
+command to the `--transpile` flag in your `.rbtrc`.
+
+```
+--transpile=npx tsc
+```
+
+## Programming model
+
+Reboot React provides conveniences beyond querying and mutating
+states, chief among them:
+
+1. Guaranteed local ordering of mutations.
+1. Automatic retries.
+
+<!-- TODO(riley): discuss the impact on the smart / dumb component paradigm -->
+<!-- TODO(riley): discuss the usage of localStorage -->
+<!-- TODO(riley): add a graphic showing the journey of a mutation -->
+
+### Ordering
+
+The order in which the mutations are called on the client is the order in which
+they will be executed on the server. From the client's
+perspective, a 'happens-before' relationship is maintained.
+
+Assume a client performs the following mutations `A -> B -> C`.
+Another client might be performing `D -> E` simultaneously.
+A possible global ordering might be `A -> B -> D -> E -> C` or
+`D -> A -> E -> B -> C`, but never `D -> B -> E -> A -> C`.
+
+State mutations that have occurred while a client's mutations are in-flight won't
+be shown to the client until those mutations have committed or result in an
+error.
+
+### Automatic retries
+
+All calls are retried if they result in any retryable error, such as a temporary network
+outage. These retries are _idempotent_, so this is perfectly safe to do.
+
+An error is considered unretryable if it originates from the application. All
+other errors are retried with an exponential backoff.
+
+<!-- See the section on [errors](#errors) for more details. -->

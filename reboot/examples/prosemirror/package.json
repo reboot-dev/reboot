@@ -1,0 +1,18 @@
+{
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:web": "cd web && yarn dev",
+    "prepare:backend": "cd backend && yarn prepare",
+    "dev:backend": "cd backend && yarn dev",
+    "build:web": "cd backend && yarn build"
+  },
+  "workspaces": [
+    "api",
+    "common",
+    "backend",
+    "web"
+  ],
+  "packageManager": "yarn@4.5.1"
+}

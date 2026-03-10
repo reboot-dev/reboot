@@ -1,0 +1,292 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# From within your app
+
+By "internal" to a Reboot application, we specifically mean within one
+of the methods that you've implemented for your
+[servicers](/learn_more/implement/servicers). Each of those
+methods takes a `context` argument that you can use to make calls:
+
+<!-- TODO: add links to generated API documentation for these types. -->
+
+- `ReaderContext` - Passed to a [`reader`](/learn_more/define/methods#kinds).
+- `WriterContext` - Passed to a [`writer`](/learn_more/define/methods#kinds).
+- `TransactionContext` - Passed to a [`transaction`](/learn_more/define/methods#kinds).
+- `WorkflowContext` - Passed to a [`workflow`](/learn_more/implement/workflows).
+
+The types of these contexts allow Reboot (as well as static type
+checkers like `mypy`, `Pyright`, or `tsc`) to enforce its [safety
+guarantees](/learn_more/define/methods) throughout the call
+graph.
+
+## Making calls to other durable data types
+
+Within your servicer methods, you can call methods on other durable data types
+by first getting a reference to it using `.ref()`, then calling
+the method while passing along the `context` from your servicer method:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/bank-pydantic/backend/src/bank_servicer.py&lines=56-65) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/bank-pydantic/backend/src/bank_servicer.py -->
+
+```py
+async def transfer(
+    self,
+    context: TransactionContext,
+    request: Bank.TransferRequest,
+) -> None:
+    from_account = Account.ref(request.from_account_id)
+    to_account = Account.ref(request.to_account_id)
+
+    await from_account.withdraw(context, amount=request.amount)
+    await to_account.deposit(context, amount=request.amount)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts&lines=46-54) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts -->
+
+```ts
+async transfer(
+  context: TransactionContext,
+  request: Bank.TransferRequest
+): Promise<Bank.PartialTransferResponse> {
+  const fromAccount = Account.ref(request.fromAccountId);
+  const toAccount = Account.ref(request.toAccountId);
+
+  await fromAccount.withdraw(context, { amount: request.amount });
+  await toAccount.deposit(context, { amount: request.amount });
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+## Accessing local state
+
+Within your servicer methods, you can access the state of the current
+instance via `self.state` (Python) or `this.state` (TypeScript class-based).
+
+In TypeScript, if you're using the object literal syntax, `state` is
+passed as a parameter to your method.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/chat-room/backend/src/chat_room_servicer.py&lines=24-32) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/backend/src/chat_room_servicer.py -->
+
+```py
+async def send(
+    self,
+    context: WriterContext,
+    request: SendRequest,
+) -> SendResponse:
+    message = request.message
+    self.state.messages.extend([message])
+    return SendResponse()
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript-class" label="TypeScript Class">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/chat-room-nodejs/backend/src/chat_room_servicer.ts&lines=16-22) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room-nodejs/backend/src/chat_room_servicer.ts -->
+
+```ts
+async send(
+  context: WriterContext,
+  request: ChatRoom.SendRequest
+): Promise<ChatRoom.PartialSendResponse> {
+  this.state.messages.push(request.message);
+  return {};
+}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript-object" label="TypeScript Object Literal">
+```ts
+send: async (
+  context: WriterContext,
+  state: ChatRoom.State,
+  request: ChatRoom.SendRequest
+): Promise<[ChatRoom.State, ChatRoom.PartialSendResponse]> => {
+  state.messages.push(request.message);
+  return [state, {}];
+}
+```
+  </TabItem>
+</Tabs>
+
+:::important
+Only `Writer`, `Transaction`, and `Workflow` methods can modify
+state. `Reader` methods can only read state.
+:::
+
+## Accessing your state ID
+
+You can access the ID of the current state instance via
+`context.state_id` (Python) or `context.stateId` (TypeScript):
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+async def get_id(
+    self,
+    context: ReaderContext,
+    request: GetIdRequest,
+) -> GetIdResponse:
+    current_id = context.state_id
+    return GetIdResponse(id=current_id)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+async getId(
+  context: ReaderContext,
+  request: GetIdRequest
+): Promise<GetIdResponse> {
+  const currentId = context.stateId;
+  return { id: currentId };
+}
+```
+  </TabItem>
+</Tabs>
+
+
+## Making concurrent calls
+
+You can make concurrent calls using
+`asyncio.gather()` (Python) or `Promise.all()` (TypeScript):
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/bank-pydantic/backend/src/bank_servicer.py&lines=105-110) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/bank-pydantic/backend/src/bank_servicer.py -->
+
+```py
+all_customer_balances: list[CustomerAccounts] = await asyncio.gather(
+    *[
+        customer_accounts(entry.value.decode())
+        for entry in customer_ids.entries
+    ]
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/nodejs/yarn_zod_test/backend/src/bank.ts&lines=52-59) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/nodejs/yarn_zod_test/backend/src/bank.ts -->
+
+```ts
+return {
+  balances: await Promise.all(
+    accountIds.map(async (accountId) => {
+      const { amount } = await Account.ref(accountId).balance(context);
+      return { accountId, balance: amount };
+    })
+  ),
+};
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+:::tip
+Using concurrent calls can significantly improve
+performance when gathering data from multiple state instances.
+:::
+
+## Context constraints
+
+Each `context` type constrains what methods you can call, enforcing
+Reboot's safety guarantees:
+
+| Context Type | Can Call | Can Modify State |
+|--------------|----------|------------------|
+| `ReaderContext` | Only `reader` methods | No |
+| `WriterContext` | Only `reader` methods | Yes (own state only) |
+| `TransactionContext` | `reader` and `writer` methods | Yes |
+| `WorkflowContext` | Any method type | Yes |
+
+:::tip
+Type checkers like `mypy`, `Pyright`, and `tsc` will catch violations
+of these constraints at compile time, helping you catch bugs before
+runtime.
+:::
+
+### Calling writers from other writers
+
+Notice that `WriterContext` **cannot call other writer methods
+directly**. This is by design to prevent
+unsafe, partial updates in the case that one of the calls fails.
+
+If you need to call multiple writer methods atomically, use a
+[`transaction`](/learn_more/define/methods#kinds) method instead.
+
+#### Scheduling writers from writers
+
+The one exception to the "writers can't call writers" rule is through
+**scheduled tasks**. A writer can schedule another writer to execute
+later:
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/bank-pydantic/backend/src/account_servicer.py&lines=38-45) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/bank-pydantic/backend/src/account_servicer.py -->
+
+```py
+async def open(
+    self,
+    context: WriterContext,
+) -> None:
+    self.state.balance = 0.0
+    await self.ref().schedule(
+        when=timedelta(seconds=1),
+    ).interest(context)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/bank-nodejs/backend/src/account_servicer.ts&lines=11-24) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/bank-nodejs/backend/src/account_servicer.ts -->
+
+```ts
+async open(
+  context: WriterContext,
+  request: Account.OpenRequest
+): Promise<Account.PartialOpenResponse> {
+  // Since this is a constructor, we are setting the initial state of the
+  // state machine.
+  this.state.customerName = request.customerName;
+
+  // We'd like to send the new customer a welcome email, but that can be
+  // done asynchronously, so we schedule it as a task.
+  const taskId = await this.ref().schedule().welcomeEmail(context);
+
+  return { welcomeEmailTaskId: taskId };
+}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+This works because `.schedule()` creates a separate task that will
+execute independently, not as part of the current writer's execution.
+See [Tasks](/learn_more/tasks) for more details.

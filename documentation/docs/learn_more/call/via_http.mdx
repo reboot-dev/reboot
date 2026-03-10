@@ -1,0 +1,46 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Via HTTP
+
+You can call into a Reboot application directly using HTTP in
+circumstances where you aren't using React or can't use an
+`ExternalContext` because we don't generate code in the language
+you're using.
+
+:::tip
+
+If you're trying to call into a Reboot application using React, go
+[here](/learn_more/call/from_react)!
+
+:::
+
+For example, to call the `reader` method called `Messages` on the
+`ChatRoom` state type (declared in the `chat_room.v1` package):
+
+<!-- TODO: Add to a test, and convert to a snippet. -->
+
+```sh
+curl -XPOST http://localhost:9991/chat_room.v1.ChatRoomMethods/Messages \
+  -H "x-reboot-state-ref:chat_room.v1.ChatRoom:reboot-chat-room"
+```
+
+...incorporates:
+
+- `localhost:9991` - your Reboot application's URL
+- `chat_room.v1.ChatRoomMethods` - `service` name
+- `Messages` - method name
+- `chat_room.v1.ChatRoom` - state `message` name
+- `reboot-chat-room` - state ID
+
+Note that HTTP calls always use `POST`.
+
+Here is another example, calling a `writer` method named `Send` with a "request"
+as JSON:
+
+```sh
+curl -XPOST "http://localhost:9991/chat_room.v1.ChatRoomMethods/Send" \
+  -H "x-reboot-state-ref:chat_room.v1.ChatRoom:reboot-chat-room" \
+  -d '{"message":"Hello, World!"}'
+```
+

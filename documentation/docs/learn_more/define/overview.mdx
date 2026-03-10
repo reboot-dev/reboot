@@ -1,0 +1,44 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Overview
+
+Building an application with Reboot is meant to feel a lot like
+building an application using in-memory data structures: you simply
+define data types and methods on those data types that you can call.
+
+In Reboot, those data types are actually _durable state_, meaning that
+when you update them they get persisted for you. And the methods are
+of a specific [_kind_](/learn_more/define/methods), either a
+`reader`, `writer`, `transaction`, `workflow`, or
+[`ui`](/learn_more/implement/ui_methods).
+
+We call the combination of these data types and methods **durable data
+structures** (think durable objects, but so much more).
+
+## API
+
+With Reboot, you define the API for your durable data structures up
+front:
+
+- [Define your API using Pydantic](/learn_more/define/pydantic) (Python — the only option for AI Chat Apps)
+- [Define your API using Zod](/learn_more/define/zod) (TypeScript only)
+- [Define your API using protobuf](/learn_more/define/protobuf) (TypeScript or Python — for full control)
+
+### Code generation
+
+Reboot generates:
+
+- Type-safe, language-specific code for:
+  - [Python and TypeScript servers](/learn_more/implement/servicers)
+  - [Python and TypeScript clients](/learn_more/call/from_within_your_app)
+  - [React](/learn_more/call/from_react)
+- AI chat tools (from `Session` methods and
+  [`UI`](/learn_more/implement/ui_methods) annotations)
+
+:::note
+
+`rbt dev run` will automatically generate code from your Zod schemas
+or `.proto` files and reload your application when your API changes.
+
+:::

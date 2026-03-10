@@ -1,0 +1,13 @@
+import { Application } from "@reboot-dev/reboot";
+import { HelloWorld } from "../{{ api_directory }}/{{ name }}/v1/hello_world_rbt.js";
+import { HelloWorldServicer } from "./hello_world_servicer.js";
+
+const initialize = async (context) => {
+  const helloWorld = HelloWorld.ref("hello-world-nodejs");
+  const response = await helloWorld.greet(context, {});
+};
+
+new Application({
+  servicers: [HelloWorldServicer],
+  initialize,
+}).run();

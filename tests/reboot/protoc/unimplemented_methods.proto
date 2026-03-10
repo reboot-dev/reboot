@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+import "rbt/v1alpha1/options.proto";
+import "tests/reboot/protoc/shared.proto";
+
+package tests.reboot.protoc;
+
+message Echo {
+  option (rbt.v1alpha1.state) = {
+    // TESTS: "Echo" does not implement `EchoMoreMethods`, but `EchoMoreMethods`
+    //        says that it provides methods to `Echo`.
+  };
+  Text last_message = 1;
+}
+
+service EchoMethods {
+  option (rbt.v1alpha1.service) = {
+  };
+
+  rpc Reply(Text) returns (Text) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
+
+service EchoMoreMethods {
+  option (rbt.v1alpha1.service) = {
+    state: "Echo"
+  };
+
+  rpc LastMessage(Empty) returns (Text) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}

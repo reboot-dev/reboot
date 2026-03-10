@@ -1,0 +1,70 @@
+load(
+    "@com_github_reboot_dev_reboot//reboot:rules.bzl",
+    "js_proto_library",
+    "js_reboot_library",
+    "js_reboot_react_library",
+    "py_reboot_library",
+)
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+
+proto_library(
+    name = "mouse_position_proto",
+    srcs = [
+        ":mouse_position.proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "mouse_position_py_reboot",
+    proto = "mouse_position.proto",
+    proto_library = ":mouse_position_proto",
+    visibility = ["//visibility:public"],
+)
+
+js_proto_library(
+    name = "mouse_position_js_proto",
+    package_json = ":package.json",
+    proto = "mouse_position.proto",
+    proto_deps = [
+        ":mouse_position_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+js_reboot_library(
+    name = "mouse_position_js_reboot",
+    srcs = [
+        ":mouse_position_proto",
+    ],
+    proto = "mouse_position.proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":mouse_position_js_proto",
+    ],
+)
+
+js_reboot_react_library(
+    name = "mouse_position_js_reboot_react",
+    srcs = [
+        ":mouse_position_js_proto",
+    ],
+    proto = "mouse_position.proto",
+    proto_deps = [
+        ":mouse_position_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,15 @@
+{
+  "name": "chat_room_nodejs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@bufbuild/protobuf": "1.10.1",
+    "@reboot-dev/reboot": "0.45.2",
+    "typescript": "5.4.5",
+    "@types/node": "20.11.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.3"
+  }
+}

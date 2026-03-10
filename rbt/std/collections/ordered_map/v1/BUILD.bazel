@@ -1,0 +1,58 @@
+load(
+    "@com_github_reboot_dev_reboot//reboot:rules.bzl",
+    "js_proto_library",
+    "js_reboot_library",
+    "py_reboot_library",
+)
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+
+proto_library(
+    name = "ordered_map_proto",
+    srcs = [
+        ":ordered_map.proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:descriptor_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "ordered_map_py_reboot",
+    proto = "ordered_map.proto",
+    proto_library = ":ordered_map_proto",
+    visibility = ["//visibility:public"],
+)
+
+js_proto_library(
+    name = "ordered_map_js_proto",
+    package_json = ":package.json",
+    proto = "ordered_map.proto",
+    proto_deps = [
+        ":ordered_map_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:struct_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+js_reboot_library(
+    name = "ordered_map_js_reboot",
+    srcs = [
+        ":ordered_map_proto",
+    ],
+    proto = "ordered_map.proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":ordered_map_js_proto",
+    ],
+)

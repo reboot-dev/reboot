@@ -1,0 +1,16 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+exports_files(glob([
+    "*.j2",
+]))
+
+py_library(
+    name = "tools_py",
+    srcs = ["tools.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("jinja2"),
+    ],
+)

@@ -1,0 +1,10 @@
+Using .rbtrc (from .rbtrc) and working directory .
+
+Running `generate ...` (use --verbose to see full command) ✅
+
+Application is serving traffic ...
+
+  Your API is available at:      http://127.0.0.1:9991
+  MCP clients can connect at:    http://127.0.0.1:9991/mcp
+  You can inspect your state at: http://127.0.0.1:9991/__/inspect
+

@@ -1,0 +1,58 @@
+load("//reboot:versions.bzl", "REBOOT_VERSION")
+
+filegroup(
+    name = "application",
+    srcs = [
+        ".rbtrc",
+        "api/hello/v1/hello.proto",
+        "backend/src/main.ts",
+        "package.json",
+        "tsconfig.json",
+    ],
+)
+
+# TODO: This `sh_library` is a necessary indirection until Bazel 6, because a `sh_binary`
+# does not actually force a `data` attribute to build, but a `sh_library` does. We can
+# remove the indirection once we upgrade. See https://github.com/bazelbuild/bazel/issues/12348
+test_packages = [
+    "//rbt/v1alpha1:reboot-dev-reboot-api",
+    "//reboot:reboot.dev",
+    "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+]
+
+sh_library(
+    name = "test_packages",
+    data = test_packages,
+)
+
+# The following package paths are relative to the working directory of
+# the test script.
+general_env = {
+    "REBOOT_API_NPM_PACKAGE": "$(location //rbt/v1alpha1:reboot-dev-reboot-api)",
+    "REBOOT_NPM_PACKAGE": "$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
+    "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+}
+
+osx_env = dict(general_env)
+
+osx_env.update({
+    "REBOOT_LOCAL_ENVOY_MODE": "executable",
+})
+
+sh_test(
+    name = "test",
+    srcs = ["test.sh"],
+    data = test_packages + [
+        ":application",
+        ":test_packages",
+    ],
+    env = select({
+        "@platforms//os:linux": general_env,
+        "@platforms//os:osx": osx_env,
+    }),
+    # We initiate LocalEnvoy on 9991. We require 'exclusive' to not run multiple
+    # tests that use the same port, concurrently.
+    tags = [
+        "exclusive",
+    ],
+)

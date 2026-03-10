@@ -1,0 +1,16 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "servicer_py",
+    srcs = ["servicer.py"],
+    data = [
+        "index.html",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//log:log_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/rootpage:rootpage_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/rootpage:rootpage_py_proto",
+    ],
+)

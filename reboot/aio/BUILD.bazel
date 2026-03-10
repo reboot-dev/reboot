@@ -1,0 +1,583 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "aborted_py",
+    srcs = ["aborted.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":types_py",
+        requirement("protobuf"),
+        requirement("grpcio-status"),
+        "//reboot:api_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+    ],
+)
+
+py_library(
+    name = "applications_py",
+    srcs = ["applications.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("opentelemetry-instrumentation-grpc"),
+        ":exceptions_py",
+        ":external_py",
+        ":http_py",
+        ":idempotency_py",
+        ":libraries_py",
+        ":memoize_py",
+        ":reboot_py",
+        ":servicers_py",
+        ":tracing_py",
+        ":workflows_py",
+        "//reboot:run_environments_py",
+        "//reboot/aio/auth:token_verifiers_py",
+        "//reboot/aio/internals:contextvars_py",
+        "//reboot/cli:terminal_py",
+        "//reboot/controller:server_managers_py",
+        "//reboot/inspect:servicer_py",
+        "//reboot/mcp:factories_py",
+        "//reboot/nodejs:python_py",
+        "@com_github_reboot_dev_reboot//log:log_py",
+        requirement("colorama"),
+        requirement("aiofiles"),
+    ],
+)
+
+py_library(
+    name = "call_py",
+    srcs = ["call.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":idempotency_py",
+        ":types_py",
+        "//reboot:settings_py",
+    ],
+)
+
+py_library(
+    name = "caller_id_py",
+    srcs = ["caller_id.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":types_py",
+        "//reboot:naming_py",
+    ],
+)
+
+py_library(
+    name = "caller_id_auth_py",
+    srcs = ["caller_id_auth.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":caller_id_py",
+        ":contexts_py",
+        ":types_py",
+        "//reboot/aio/auth:__init___py",
+        "//reboot/aio/auth:authorizers_py",
+        "//reboot/aio/auth:token_verifiers_py",
+        "@com_github_reboot_dev_reboot//log:log_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+    ],
+)
+
+py_library(
+    name = "contexts_py",
+    srcs = ["contexts.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio"),
+        ":aborted_py",
+        ":caller_id_py",
+        ":headers_py",
+        ":idempotency_py",
+        ":tasks_py",
+        ":types_py",
+        "//reboot:time_py",
+        "//reboot/aio/auth:__init___py",
+        "//reboot/aio/backoff:python",
+        "//reboot/aio/internals:channel_manager_py",
+        "//reboot/aio/internals:contextvars_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:react_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:react_py_proto",
+    ],
+)
+
+py_library(
+    name = "directories_py",
+    srcs = ["directories.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "exceptions_py",
+    srcs = ["exceptions.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "external_py",
+    srcs = ["external.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio"),
+        ":caller_id_py",
+        ":contexts_py",
+        ":idempotency_py",
+        ":resolvers_py",
+        "//reboot/aio/internals:channel_manager_py",
+        "//reboot/aio/internals:contextvars_py",
+    ],
+)
+
+py_library(
+    name = "headers_py",
+    srcs = ["headers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio"),
+        requirement("opentelemetry-api"),
+        ":call_py",
+        ":caller_id_py",
+        ":types_py",
+        "//reboot:time_py",
+        "//reboot/aio/internals:contextvars_py",
+    ],
+)
+
+py_library(
+    name = "health_check_py",
+    srcs = ["health_check.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio"),
+        requirement("grpcio-health-checking"),
+        ":headers_py",
+        ":types_py",
+        "//reboot/aio/backoff:python",
+        "//reboot/ssl:localhost_py",
+    ],
+)
+
+py_library(
+    name = "http_py",
+    srcs = ["http.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("fastapi"),
+        requirement("uvicorn"),
+        ":external_py",
+        ":types_py",
+        "//reboot/aio/internals:channel_manager_py",
+    ],
+)
+
+py_library(
+    name = "idempotency_py",
+    srcs = ["idempotency.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aborted_py",
+        ":types_py",
+        requirement("uuid7-standard"),
+        ":exceptions_py",
+        "//reboot:settings_py",
+        requirement("protobuf"),
+    ],
+)
+
+py_library(
+    name = "interceptors_py",
+    srcs = ["interceptors.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpc-interceptor"),
+        ":caller_id_py",
+        ":external_py",
+        ":types_py",
+        "//reboot/aio/internals:channel_manager_py",
+        "//reboot/aio/internals:contextvars_py",
+    ],
+)
+
+py_library(
+    name = "libraries_py",
+    srcs = ["libraries.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":external_py",
+        ":servicers_py",
+    ],
+)
+
+py_library(
+    name = "memoize_py",
+    srcs = ["memoize.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":contexts_py",
+        ":workflows_py",
+        "//reboot:settings_py",
+        "//reboot/memoize/v1:memoize_py_reboot",
+    ],
+)
+
+py_library(
+    name = "monitoring_py",
+    srcs = ["monitoring.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio"),
+        "//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//log:log_py",
+    ],
+)
+
+py_library(
+    name = "once_py",
+    srcs = ["once.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "placement_py",
+    srcs = ["placement.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio"),
+        ":aborted_py",
+        ":types_py",
+        "//reboot/aio/backoff:python",
+        "//reboot/grpc:options_py",
+        "@com_github_reboot_dev_reboot//log:log_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
+    ],
+)
+
+py_library(
+    name = "react_py",
+    srcs = ["react.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aborted_py",
+        ":headers_py",
+        ":placement_py",
+        ":types_py",
+        "//reboot:settings_py",
+        "//reboot/aio/internals:contextvars_py",
+        "//reboot/aio/internals:middleware_py",
+        "//reboot/nodejs:python_py",
+        "@com_github_reboot_dev_reboot//log:log_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:react_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:react_py_proto",
+        requirement("grpcio-health-checking"),
+        requirement("websockets"),
+    ],
+)
+
+py_library(
+    name = "reboot_py",
+    srcs = ["reboot.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aborted_py",
+        ":caller_id_py",
+        ":external_py",
+        ":http_py",
+        ":libraries_py",
+        ":monitoring_py",
+        ":resolvers_py",
+        ":servicers_py",
+        ":state_managers_py",
+        ":tracing_py",
+        "//reboot:naming_py",
+        "//reboot:run_environments_py",
+        "//reboot/aio:servers_py",
+        "//reboot/aio/auth:authorizers_py",
+        "//reboot/aio/auth:token_verifiers_py",
+        "//reboot/aio/internals:channel_manager_py",
+        "//reboot/controller:application_config_trackers_py",
+        "//reboot/controller:config_extractor_py",
+        "//reboot/controller:placement_planner_py",
+        "//reboot/controller:server_managers_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
+    ],
+)
+
+py_library(
+    name = "resolvers_py",
+    srcs = ["resolvers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio"),
+        ":aborted_py",
+        ":placement_py",
+        ":tracing_py",
+        ":types_py",
+        "//reboot/aio/backoff:python",
+        "//reboot/grpc:options_py",
+        "@com_github_reboot_dev_reboot//log:log_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
+    ],
+)
+
+py_library(
+    name = "secrets_py",
+    srcs = ["secrets.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot:settings_py",
+    ],
+)
+
+py_library(
+    name = "servers_py",
+    srcs = ["servers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio"),
+        requirement("grpcio-reflection"),
+        requirement("protobuf"),
+        requirement("grpc-interceptor"),
+        requirement("grpcio-health-checking"),
+        ":exceptions_py",
+        ":external_py",
+        ":http_py",
+        ":interceptors_py",
+        ":monitoring_py",
+        ":react_py",
+        ":resolvers_py",
+        ":servicers_py",
+        ":state_managers_py",
+        ":types_py",
+        "//reboot:helpers_py",
+        "//reboot:settings_py",
+        "//reboot/admin:export_import_converters_py",
+        "//reboot/admin:export_import_servicer_py",
+        "//reboot/aio/internals:channel_manager_py",
+        "//reboot/aio/internals:contextvars_py",
+        "//reboot/aio/internals:health_servicer_py",
+        "//reboot/aio/internals:tasks_cache_py",
+        "//reboot/aio/internals:tasks_servicer_py",
+        "//reboot/controller:application_config_py",
+        "//reboot/controller:settings_py",
+        "//reboot/inspect:servicer_py",
+        "//reboot/nodejs:python_py",
+        "//reboot/rootpage:servicer_py",
+        "//reboot/server:database_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:application_config_py_proto",
+    ],
+)
+
+py_library(
+    name = "servicers_py",
+    srcs = ["servicers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":external_py",
+        ":types_py",
+        requirement("mcp"),
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:config_mode_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:config_mode_py_proto",
+    ],
+)
+
+py_library(
+    name = "signals_py",
+    srcs = ["signals.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":once_py",
+        "//reboot:settings_py",
+    ],
+)
+
+py_library(
+    name = "state_managers_py",
+    srcs = ["state_managers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":contexts_py",
+        ":once_py",
+        ":placement_py",
+        ":servicers_py",
+        ":tasks_py",
+        requirement("bitarray"),
+        ":exceptions_py",
+        "//reboot:time_py",
+        "//reboot/admin:export_import_converters_py",
+        "//reboot/aio/internals:channel_manager_py",
+        "//reboot/aio/internals:middleware_py",
+        "//reboot/aio/internals:tasks_dispatcher_py",
+        "//reboot/server:database_py",
+        "//reboot/server:service_descriptor_validator_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:transactions_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:transactions_py_proto",
+    ],
+)
+
+py_library(
+    name = "stubs_py",
+    srcs = ["stubs.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aborted_py",
+        ":caller_id_py",
+        ":contexts_py",
+        ":external_py",
+        ":headers_py",
+        ":idempotency_py",
+        ":servicers_py",
+        ":types_py",
+        requirement("grpcio"),
+        requirement("grpcio-status"),
+        "//reboot/aio/internals:channel_manager_py",
+        "//reboot/aio/internals:contextvars_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
+    ],
+)
+
+py_library(
+    name = "tasks_py",
+    srcs = ["tasks.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("protobuf"),
+        ":types_py",
+        "//reboot:time_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
+    ],
+)
+
+py_library(
+    name = "tests_py",
+    srcs = ["tests.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":applications_py",
+        ":contexts_py",
+        ":external_py",
+        ":http_py",
+        ":libraries_py",
+        ":reboot_py",
+        ":servicers_py",
+    ],
+)
+
+py_library(
+    name = "tracing_py",
+    srcs = ["tracing.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("opentelemetry-api"),
+        requirement("opentelemetry-sdk"),
+        requirement("opentelemetry-exporter-otlp-proto-grpc"),
+        requirement("opentelemetry-instrumentation-grpc"),
+        ":headers_py",
+        ":once_py",
+        ":signals_py",
+        "//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//log:log_py",
+    ],
+)
+
+py_library(
+    name = "types_py",
+    srcs = ["types.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot:settings_py",
+    ],
+)
+
+py_library(
+    name = "workflows_py",
+    srcs = ["workflows.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":contexts_py",
+    ],
+)
+
+py_library(
+    name = "python",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aborted_py",
+        ":applications_py",
+        ":call_py",
+        ":caller_id_auth_py",
+        ":caller_id_py",
+        ":contexts_py",
+        ":directories_py",
+        ":exceptions_py",
+        ":external_py",
+        ":headers_py",
+        ":health_check_py",
+        ":http_py",
+        ":idempotency_py",
+        ":interceptors_py",
+        ":libraries_py",
+        ":memoize_py",
+        ":monitoring_py",
+        ":once_py",
+        ":placement_py",
+        ":react_py",
+        ":reboot_py",
+        ":resolvers_py",
+        ":servers_py",
+        ":servicers_py",
+        ":signals_py",
+        ":state_managers_py",
+        ":stubs_py",
+        ":tasks_py",
+        ":tests_py",
+        ":tracing_py",
+        ":types_py",
+        ":workflows_py",
+        "//reboot:run_environments_py",
+        "//reboot/aio/auth:python",
+        "//reboot/aio/backoff:python",
+        "//reboot/aio/internals:python",
+    ],
+)

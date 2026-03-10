@@ -1,0 +1,10 @@
+import os
+import {ECHO_STATE_RBT_MODULE} as echo_state_rbt_module
+from tests.reboot.protoc.test_against_local_envoy import run_test
+
+if __name__ == "__main__":
+
+    run_test(
+        echo_state_rbt_module=echo_state_rbt_module,
+        bundle_js_path=os.path.join(os.path.dirname(__file__), "{BUNDLE_JS_FILENAME}"),
+    )

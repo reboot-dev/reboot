@@ -1,0 +1,91 @@
+load("//reboot:versions.bzl", "REBOOT_VERSION")
+load("//tests:sh_test_in_working_directory.bzl", "sh_test_in_working_directory")
+
+# TODO: This `sh_library` is a necessary indirection until Bazel 6, because a `sh_binary`
+# does not actually force a `data` attribute to build, but a `sh_library` does. We can
+# remove the indirection once we upgrade. See https://github.com/bazelbuild/bazel/issues/12348
+test_packages = [
+    "//rbt/v1alpha1:reboot-dev-reboot-api",
+    "//reboot:reboot.dev",
+    "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+]
+
+sh_library(
+    name = "test_packages",
+    data = test_packages,
+)
+
+# The following package paths are relative to the working directory of
+# the test script.
+general_env = {
+    "EXPECTED_RBT_DEV_OUTPUT_FILE": "tests/reboot/examples/chat-room-nodejs/expected_output.txt",
+    "REBOOT_API_NPM_PACKAGE": "$(location //rbt/v1alpha1:reboot-dev-reboot-api)",
+    "REBOOT_NPM_PACKAGE": "$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
+    "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+}
+
+osx_env = dict(general_env)
+
+osx_env.update({
+    "REBOOT_LOCAL_ENVOY_MODE": "executable",
+})
+
+sh_test_in_working_directory(
+    name = "test",
+    data = test_packages + [
+        ":test_packages",
+        # The actual test script will be given access to all of the files in
+        # the example.
+        "//reboot/examples/chat-room-nodejs:everything",
+        "expected_output.txt",
+    ],
+    env = select({
+        "@platforms//os:linux": general_env,
+        "@platforms//os:osx": osx_env,
+    }),
+    # The following path is relative to the working directory.
+    script = ".tests/test.sh",
+    # Additionally, in all our example tests, we initiate LocalEnvoy on the
+    # default secure port 9991. We require 'exclusive' to not run multiple
+    # tests, that use the same port, concurrently.
+    tags = [
+        "exclusive",
+    ],
+    working_directory = "reboot/examples/chat-room-nodejs/",
+)
+
+sh_test_in_working_directory(
+    name = "serve_test",
+    data = [
+        "//rbt/v1alpha1:reboot-dev-reboot-api",
+        "//reboot:reboot.dev",
+        "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+        "//reboot/containers/reboot-base:dev",
+        "//reboot/examples/chat-room-nodejs:everything",
+        "//tests/reboot/examples/chat-room-nodejs:serve_expected_output.txt",
+    ],
+    env = {
+        "EXPECTED_CURL_OUTPUT_FILE": "tests/reboot/examples/chat-room-nodejs/serve_expected_output.txt",
+        "PUSH_REBOOT_BASE": "false",
+        # We have to repeat the same ENV variables as in the `reboot-base:dev`
+        # script.
+        "REBOOT_API_NPM_PACKAGE": "$(location //rbt/v1alpha1:reboot-dev-reboot-api)",
+        "REBOOT_NPM_PACKAGE": "$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
+        "REBOOT_VERSION": REBOOT_VERSION,
+        "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+    },
+    # The following path is relative to the working directory.
+    script = ".tests/serve_test.sh",
+    # The following path is relative to the bazel sandbox directory.
+    setup_script = "reboot/containers/reboot-base/dev",
+    # TODO: Rye has issues with concurrent bootstrap.
+    # https://github.com/astral-sh/rye/issues/960
+    # Additionally, in all our example tests, we initiate LocalEnvoy on the
+    # default secure port 9991. We require 'exclusive' to not run multiple
+    # tests, that use the same port, concurrently.
+    tags = [
+        "exclusive",
+        "requires-docker",
+    ],
+    working_directory = "reboot/examples/chat-room-nodejs/",
+)

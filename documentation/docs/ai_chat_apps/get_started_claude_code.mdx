@@ -1,0 +1,144 @@
+# Get Started (with Claude Code)
+
+Build an AI Chat App using
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)
+and the Reboot skill. Claude Code writes the code for you — you
+describe what you want, approve the plan, and it scaffolds the
+entire project.
+
+:::info Prerequisites
+Reboot requires Python >= 3.10 and &lt; 3.13, Docker, and
+Node.js >= 20.10. You also need
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)
+installed.
+:::
+
+## Install the Reboot skill
+
+Add the Reboot skills marketplace and install the
+`reboot-chat-app` skill using Claude Code:
+
+```
+claude plugin marketplace add reboot-dev/reboot-skills
+```
+
+```
+claude plugin install reboot-chat-app@reboot-skills
+```
+
+:::note
+If you install the plugin within `claude` with `/plugin` you need to restart for
+the configuration and skill to load correctly.
+:::
+
+Or, to auto-enable the skill for your whole team, add this to your
+project's `.claude/settings.json`:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "reboot-skills": {
+      "source": {
+        "source": "github",
+        "repo": "reboot-dev/reboot-skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "reboot-chat-app@reboot-skills": true
+  }
+}
+```
+
+## Use the skill
+
+Once installed, invoke the skill with a description of your app:
+
+```
+/reboot-chat-app Build a counter app with an interactive clicker UI
+```
+
+The skill enters **plan mode** first. It will:
+
+1. Analyze your description and propose a state model
+2. Map out which types, methods, and UIs your app needs
+3. Present the plan and wait for your approval
+
+Once you approve, Claude Code scaffolds the full project —
+API definition, backend servicers, React UI, and configuration —
+then builds and runs it.
+
+## What gets created
+
+The skill generates a complete Reboot AI Chat App:
+
+```
+my-app/
+├── api/
+│   └── my_app/v1/
+│       └── app.py           # API definition (Pydantic)
+├── backend/
+│   └── src/
+│       ├── main.py           # Application entrypoint
+│       └── servicers/
+│           └── app.py        # Servicer implementation
+├── web/
+│   └── ui/
+│       └── my-ui/
+│           ├── index.html
+│           ├── main.tsx      # RebootClientProvider entry
+│           ├── App.tsx       # React component
+│           └── App.module.css
+├── .rbtrc                    # Reboot CLI config
+└── pyproject.toml
+```
+
+The API definition uses the same `Session` + application type
+pattern described in the
+[hand-written guide](/ai_chat_apps/get_started): `Session` is the
+auto-constructed entry point whose methods create other state
+types, and those types' methods use `mcp=Tool()` to be callable
+by the AI.
+
+## Test your app
+
+After the skill finishes building, it starts the app with
+`uv run rbt dev run`. You can test it with
+[MCPJam Inspector](https://mcpjam.com):
+
+```sh
+npx @mcpjam/inspector@v2.0.4 \
+  --config mcp_servers.json --server my-app
+```
+
+See the [hand-written guide](/ai_chat_apps/get_started) for details
+on what to try in the inspector.
+
+To connect from other AI clients (VS Code, ChatGPT, Claude,
+Goose), see [From an MCP client](/learn_more/call/from_mcp_client).
+
+## Iterate on your app
+
+You can also use the skill to modify an existing app:
+
+```
+/reboot-chat-app Add a reset button that sets the counter back to zero
+```
+
+The skill reads your current code, plans the changes, and waits
+for approval before editing.
+
+## Next steps
+
+* **[Get Started (hand-written)](/ai_chat_apps/get_started)** —
+  build the same app step by step to understand every file.
+* **[UIs for AI Chat Apps](/learn_more/implement/ui_methods)** —
+  the full reference for `UI` methods.
+* **[Creating tools](/learn_more/define/pydantic#creating-tools-for-the-ai)** —
+  control which methods are callable by the AI.
+* **[AI Chat App Examples](/ai_chat_apps/examples)** — more
+  examples to explore.
+* **[Deploy to Reboot Cloud](/deploy_on_reboot_cloud)** — deploy
+  your app with `rbt cloud up`.
+* **[Join us on Discord](https://discord.gg/cRbdcS94Nr)** — ask
+  questions and share what you're building!

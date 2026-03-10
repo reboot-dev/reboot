@@ -1,0 +1,11 @@
+name: Counter
+repo_name: reboot-counter
+overview: |
+  A very simple (but still reactive and transactional!) counter.
+backend_locations: "`backend/`"
+backend_language: typescript
+has_frontend: true
+has_non_react_frontend: false
+has_tests: false
+has_cloud: false
+extra_setup: null

@@ -1,0 +1,23 @@
+{
+  "name": "@reboot-dev/docubot-api",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepack": "rbt generate && tsc"
+  },
+  "dependencies": {
+    "@reboot-dev/reboot": "0.45.2",
+    "typescript": "^5.2.2"
+  },
+  "files": [
+    "dist",
+    "docubot"
+  ],
+  "exports": {
+    "./*": {
+      "development": "./*",
+      "production": "./dist/*"
+    }
+  }
+}

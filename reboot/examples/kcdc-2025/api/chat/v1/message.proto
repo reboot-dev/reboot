@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package chat.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+service MessageMethods {
+  rpc Edit(EditRequest) returns (EditResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  rpc Get(GetRequest) returns (GetResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  rpc AddReaction(AddReactionRequest) returns (AddReactionResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+    };
+  }
+
+  rpc RemoveReaction(RemoveReactionRequest) returns (RemoveReactionResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Message {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  // User that authored this message.
+  string author = 1;
+
+  // Text of the message.
+  string text = 2;
+
+  // Map from unicode "reaction" to a map from user to reaction ID
+  // (see `Reactions` for more details).
+  map<string, Reactions> reactions = 3;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message Reactions {
+  // Map from user that made this reaction to a UUIDv7 which (a)
+  // uniquely identifies this reaction so we can easily remove it and
+  // (b) can also be used to display when the reaction occurred.
+  map<string, string> users = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// Representation of message details that we share publicly.
+message Details {
+  string id = 4;
+  string author = 1;
+  string text = 2;
+  map<string, Reactions> reactions = 3;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message EditRequest {
+  string author = 1;
+  string text = 2;
+}
+
+message EditResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message GetRequest {}
+
+message GetResponse {
+  Details details = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message AddReactionRequest {
+  string unicode = 1;
+  string user = 2;  // User making reaction.
+}
+
+message AddReactionResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message RemoveReactionRequest {
+  string unicode = 1;
+  string user = 2;  // User removing its already existing reaction.
+}
+
+message RemoveReactionResponse {}
+
+////////////////////////////////////////////////////////////////////////

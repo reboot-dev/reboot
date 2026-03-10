@@ -1,0 +1,164 @@
+load("@com_github_reboot_dev_reboot//bazel:linux_transition.bzl", "cc_binary_linux")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_python//python:defs.bzl", "py_library")
+
+cc_library(
+    name = "database_cc",
+    srcs = ["database.cc"],
+    hdrs = ["database.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot:settings_cc",
+        "@com_github_3rdparty_stout//:stout",
+        "@com_github_facebook_rocksdb//:rocksdb",
+        "@com_github_fmtlib_fmt//:fmt",
+        "@com_github_google_glog//:glog",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_cc_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_cc_proto",
+        "@com_github_tl_expected//:expected",
+    ],
+)
+
+cc_binary(
+    name = "database_native",
+    srcs = ["database_native.cc"],
+    linkshared = True,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":database_cc",
+    ],
+)
+
+# An executable (not `linkshared`) version of the target above.
+cc_binary(
+    name = "database",
+    srcs = ["database_native.cc"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":database_cc",
+    ],
+)
+
+cc_binary(
+    name = "local_envoy_nanny",
+    srcs = [
+        "local_envoy_nanny.cc",
+    ],
+    # Because we bind mount this into a container we can't even rely
+    # on system libraries like libc. Unfortunately, using only
+    # 'linkstatic' is insufficient and we also need to set linkopts.
+    # On macOS, this is not supported ("Apple builds do not support
+    # statically linked binaries."), so this target is disabled.
+    linkopts = [
+        "-static",
+    ],
+    linkstatic = True,
+    target_compatible_with = select({
+        "@platforms//os:osx": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
+
+cc_binary_linux(
+    name = "local_envoy_nanny_linux",
+    data = ":local_envoy_nanny",
+)
+
+py_library(
+    name = "database_py",
+    srcs = ["database.py"],
+    data = [
+        ":database_native",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("cffi"),
+        requirement("grpcio"),
+        requirement("protobuf"),
+        "//reboot:settings_py",
+        "//reboot/aio:contexts_py",
+        "//reboot/grpc:options_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
+    ],
+)
+
+py_library(
+    name = "local_envoy_py",
+    srcs = [
+        "local_envoy.py",
+    ],
+    data = [
+        ":sha1_lua",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio"),
+        requirement("protobuf"),
+        requirement("grpcio-health-checking"),
+        requirement("pyyaml"),
+        "//envoy/config/bootstrap/v3:bootstrapv3_py_proto",
+        "//envoy/service/discovery/v3:discoveryv3_py_grpc",
+        "//envoy/service/discovery/v3:discoveryv3_py_proto",
+        "//reboot/aio:headers_py",
+        "//reboot/aio:tracing_py",
+        "//reboot/aio:types_py",
+        "//reboot/routing:envoy_config_py",
+        "//reboot/routing:xds_server_py",
+        "//reboot/ssl:localhost_py",
+    ],
+)
+
+py_library(
+    name = "local_envoy_factory_py",
+    srcs = [
+        "docker_local_envoy.py",
+        "executable_local_envoy.py",
+        "local_envoy_factory.py",
+    ],
+    data = [
+        ":local_envoy_nanny_linux",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio"),
+        requirement("aiohttp"),
+        requirement("aiofiles"),
+        requirement("protobuf"),
+        ":local_envoy_py",
+        "//reboot:helpers_py",
+        "//reboot:settings_py",
+        "//reboot/aio:headers_py",
+        "//reboot/aio:servicers_py",
+        "//reboot/aio:signals_py",
+        "//reboot/aio:types_py",
+        "//reboot/templates:tools_py",
+        "@com_github_reboot_dev_reboot//log:log_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:react_py_proto",
+    ],
+)
+
+py_library(
+    name = "service_descriptor_validator_py",
+    srcs = ["service_descriptor_validator.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("packaging"),
+        requirement("protobuf"),
+        "//reboot:api_py",
+        "//reboot:options_py",
+        "//reboot/aio:exceptions_py",
+    ],
+)
+
+filegroup(
+    name = "sha1_lua",
+    srcs = glob(
+        ["sha1/src/**/*"],
+    ),
+    visibility = ["//visibility:public"],
+)

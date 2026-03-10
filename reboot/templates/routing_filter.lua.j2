@@ -1,0 +1,82 @@
+function envoy_on_request(request_handle)
+  -- Lua code generated from `routing_filter.lua.j2` template.
+  -- This follows internet wisdom, most notably:
+  --   https://medium.com/gojekengineering/how-not-to-write-an-envoy-lua-filter-51eeec71e9f0
+  -- And from that, most notably:
+  --   * We never use global (= not-explicitly-`local`) variables.
+  --   * We operate only on headers, and avoid reading the whole body of the request.
+  --   * We log only in case of errors.
+  --   * We do not hold references to anything returned by the `request_handle`.
+  -- Follows the following hardcoded (generated) routing table.
+  local server_routing_map = {
+{% for application_id in servers | map(attribute='application_id') | unique %}
+    ["{{ application_id }}"] = {
+{% for server in servers | selectattr('application_id', 'equalto', application_id) %}
+        "{{ server.id }}",
+{% endfor %}
+    },
+{% endfor %}
+  }
+
+  {{ mangled_http_path_filter | indent(2) }}
+
+  local application_id = request_handle:headers():get("x-reboot-application-id")
+  if application_id == nil then
+    -- HTTP/2 mandate use of 'authority' header, but to be
+    -- conservative if it's not present we look for 'host'.
+    local authority = request_handle:headers():get(":authority")
+    if authority == nil then
+      authority = request_handle:headers():get(":host")
+    end
+
+    -- NOTE: relying on `split()` from 'mangled_http_path_filter'
+    -- which we embed above.
+    local values = split(authority, ".")
+
+    -- We expect an application ID as the prefix, but it's not easy
+    -- to determine if someone forgot to send it. At the very least
+    -- we error out if we get something like 'localhost' by ensuring
+    -- our `split()` returned at least two values.
+    if #values < 2 then
+      print("Unable to determine application ID from authority/host: " .. authority)
+      request_handle:respond(
+        {[":status"] = "400"},
+        "ERROR: Unable to determine application ID from authority/host")
+      return
+    end
+
+    application_id = values[1]
+    request_handle:headers():replace("x-reboot-application-id", application_id)
+  end
+
+  local application_servers = server_routing_map[application_id]
+  if application_servers == nil or #application_servers == 0 then
+    -- We don't know this application, so we can't pick a server for
+    -- this request right now. That's OK; this is likely traffic for a
+    -- modern reboot application which expects to receive any traffic
+    -- at any replica and then does its own routing.
+    return
+  end
+
+  -- For now, we only have one server per application, ever. So it doesn't
+  -- matter what service or state ID the request is for. We can blindly forward
+  -- the request to that server.
+  --
+  -- This won't always be the case. In the (near) future we'll support
+  -- partitioning, and the routing logic may look as follows:
+  --  * If we can identify the state ID from the request (e.g. via a header),
+  --    route to the appropriate server for that state.
+  --  * If we can't identify the state ID from the request (e.g. traffic for
+  --    legacy gRPC services), pick _any_ server. The server will then
+  --    either be able to handle the request, forward it, or return an error.
+  if #application_servers > 1 then
+    print("Too many servers for application " .. application_id)
+    request_handle:respond(
+      {[":status"] = "500"},
+      "ERROR: too many servers for application " .. application_id)
+    return
+  end
+
+  local server_id = application_servers[1]
+  request_handle:headers():replace("x-reboot-server-id", server_id)
+end

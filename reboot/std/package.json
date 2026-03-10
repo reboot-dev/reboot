@@ -1,0 +1,35 @@
+{
+  "name": "@reboot-dev/reboot-std",
+  "version": "0.45.2",
+  "description": "Reboot standard library.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc"
+  },
+  "author": "reboot-dev",
+  "dependencies": {
+    "@reboot-dev/reboot-std-api": "0.45.2",
+    "@reboot-dev/reboot": "0.45.2",
+    "@scarf/scarf": "1.4.0"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^22.7.4"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./index.js",
+    "./collections/queue/v1": "./collections/queue/v1/index.js",
+    "./collections/ordered_map/v1": "./collections/ordered_map/v1/index.js",
+    "./collections/v1/sorted_map.js": "./collections/v1/sorted_map.js",
+    "./item/v1": "./item/v1/index.js",
+    "./presence/v1": "./presence/v1/index.js",
+    "./presence/subscriber/v1": "./presence/subscriber/v1/index.js",
+    "./presence/mouse_tracker/v1": "./presence/mouse_tracker/v1/index.js",
+    "./pubsub/v1": "./pubsub/v1/index.js",
+    "./index/v1": "./index/v1/index.js",
+    "./vitest": "./vitest/index.js"
+  }
+}

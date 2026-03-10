@@ -1,0 +1,32 @@
+# Python virtual environment
+.venv/
+
+# Generated API code (from rbt generate)
+backend/api/
+
+# Reboot runtime state
+.rbt/
+
+# uv lockfile (regenerated from pyproject.toml)
+uv.lock
+
+# Byte-compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# mypy cache
+.mypy_cache/
+
+# pytest cache
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp

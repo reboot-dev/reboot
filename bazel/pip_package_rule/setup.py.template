@@ -1,0 +1,34 @@
+from setuptools import Distribution, find_packages, setup
+
+
+class BinaryDistribution(Distribution):
+    """
+    This class (specifically its override of `has_ext_modules` method) is the
+    only way we've found to express to setuptools that we have a
+    platform-dependent binary distribution without having `setuptools` handle
+    the creation of the platform-dependent binary.
+
+    Specifically, we use it to include Bazel-built binary objects (like `.so`
+    files) in our `package_data`. That's not the most common way of building a
+    binary distribution. A more typical setup is to use `setuptools.Extension`
+    to build a binary via `setuptools` itself. In that case this class is not
+    needed.
+
+    If we did find a way to avoid using this class, then we wouldn't need this
+    `setup.py` at all; just a `pyproject.toml` would be sufficient.
+    """
+
+    def has_ext_modules(_):
+        return True
+
+
+setup(
+    # If requested, use our custom class to mark this a Python-ABI-dependent
+    # binary distribution.
+    {DISTCLASS_ARG}
+    options={
+        'bdist_wheel': {
+            'plat_name': {PLATFORM},
+        }
+    }
+)

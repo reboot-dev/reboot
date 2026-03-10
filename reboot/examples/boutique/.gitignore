@@ -1,0 +1,20 @@
+# Directory created from using the 'rbt' CLI tool.
+/.rbt/
+
+# The recommended virtualenv directory.
+/.venv/
+
+# Temporary directories produced by `python`.
+__pycache__/
+.pytest_cache/
+
+# Generated .ts files.
+/web/src/gen/*
+
+# Generated Python files.
+#
+# TODO(rjh): when `--output-directory` has been removed and we don't create an
+# empty `gen/` directory anymore, remove that directory here also.
+/backend/api/
+boilerplate/
+.unpublished-reboot-wheel/
