@@ -6,7 +6,7 @@
   "dependencies": {
     "@bufbuild/protobuf": "1.10.1",
     "@eslint/js": "^9.34.0",
-    "@reboot-dev/reboot-react": "^0.45.2",
+    "@reboot-dev/reboot-react": "0.45.2",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
     "@types/eslint__js": "^8.42.3",
