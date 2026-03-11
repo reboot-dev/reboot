@@ -365,6 +365,7 @@ message GetResponse {
   repeated Revision revisions = 2;
   ApplicationMetrics metrics = 3;
   string application_name = 4;
+  string application_id = 5;
 }
 
 //////////////////////////////////////////////////////////////////////
