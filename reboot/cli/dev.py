@@ -481,6 +481,7 @@ async def _check_local_envoy_status(
     tls_certificate: Optional[str],
     root_certificate: Optional[str],
     tracing: Tracing,
+    nodejs: bool,
 ) -> None:
     """Checks if the application is up and running.
     Optionally exits as soon as the health check has passed.
@@ -608,9 +609,14 @@ async def _check_local_envoy_status(
 
             if is_application_serving:
                 terminal.info("Application is serving traffic ...\n")
+                # MCP server and endpoint is not supported for Nodejs currently.
+                mcp_line = (
+                    "" if nodejs else
+                    f"  MCP clients can connect at:    {protocol}://{address}/mcp\n"
+                )
                 terminal.info(
                     f"  Your API is available at:      {protocol}://{address}\n"
-                    f"  MCP clients can connect at:    {protocol}://{address}/mcp\n"
+                    f"{mcp_line}"
                     f"  You can inspect your state at: {protocol}://{address}/__/inspect\n",
                     color=Fore.WHITE,
                 )
@@ -1292,6 +1298,7 @@ async def __dev_run(
             tls_certificate=args.tls_certificate,
             root_certificate=args.tls_root_certificate,
             tracing=tracing,
+            nodejs=bool(args.nodejs),
         ),
         name=f'_check_local_envoy_status(...) in {__name__}',
     )

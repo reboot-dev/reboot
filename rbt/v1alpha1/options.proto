@@ -173,6 +173,9 @@ message FieldOptions {
   // The fully qualified Pydantic type for this field if the input schema
   // is from Pydantic.
   string pydantic_type = 1;
+  // Whether this field is required (has no default value).
+  // Set when generating proto from Pydantic and Zod.
+  bool required = 2;
 }
 
 extend google.protobuf.FieldOptions {

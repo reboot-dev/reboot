@@ -1,9 +1,9 @@
-"""Variant of `pydantic_original_api.py` with `my_field` removed."""
-from reboot.api import API, Methods, Model, Type, Writer
+"""Variant of `pydantic_state_original_api.py` with `my_field` having a default."""
+from reboot.api import API, Field, Methods, Model, Type, Writer
 
 
 class EchoPydanticState(Model):
-    pass
+    my_field: int = Field(tag=1, default=0)
 
 
 EchoPydanticMethods = Methods(

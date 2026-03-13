@@ -57,7 +57,7 @@ npm init -y
 # order to do `rbt init`.
 npm install --no-save $REBOOT_NPM_PACKAGE $REBOOT_API_NPM_PACKAGE
 
-EXPECTED_RBT_DEV_OUTPUT_FILE=$(rlocation "$(dirname "$0")/expected_output.txt")
+EXPECTED_RBT_DEV_OUTPUT_FILE=$(rlocation "$(dirname "$0")/expected_nodejs_output.txt")
 
 # When running in a Bazel test, our `.rbtrc` file ends up in a very deep
 # directory structure, which can result in "path too long" errors from RocksDB.

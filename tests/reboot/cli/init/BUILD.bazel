@@ -56,7 +56,7 @@ multi_env_sh_test(
         "$(location //reboot/cli/init/templates_for_bazel_test:test.py)",
     ],
     data = test_packages + [
-        ":expected_output.txt",
+        ":expected_multi_env_output.txt",
         ":test_packages",
         "//reboot/cli/init/templates_for_bazel_test:test.py",
     ],
@@ -91,7 +91,7 @@ sh_test(
     timeout = "long",
     srcs = ["//reboot/cli/init:nodejs_test.sh"],
     data = test_packages + [
-        ":expected_output.txt",
+        ":expected_nodejs_output.txt",
         ":test_packages",
     ],
     env = nodejs_env,

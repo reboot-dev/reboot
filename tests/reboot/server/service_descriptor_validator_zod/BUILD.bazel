@@ -5,13 +5,13 @@ load("@rules_python//python:defs.bzl", "py_test")
 load("//tests:zod_to_proto.bzl", "zod_to_proto")
 
 zod_to_proto(
-    name = "zod_original_proto_file",
-    zod = "zod_original_api.ts",
+    name = "zod_state_original_proto_file",
+    zod = "zod_state_original_api.ts",
 )
 
 proto_library(
-    name = "zod_original_proto",
-    srcs = [":zod_original_proto_file"],
+    name = "zod_state_original_proto",
+    srcs = [":zod_state_original_proto_file"],
     deps = [
         "//rbt/v1alpha1:options_proto",
         "//rbt/v1alpha1:tasks_proto",
@@ -21,19 +21,19 @@ proto_library(
 )
 
 py_proto_library(
-    name = "zod_original_py_proto",
+    name = "zod_state_original_py_proto",
     visibility = ["//tests/reboot:__subpackages__"],
-    deps = [":zod_original_proto"],
+    deps = [":zod_state_original_proto"],
 )
 
 zod_to_proto(
-    name = "zod_field_deleted_proto_file",
-    zod = "zod_field_deleted_api.ts",
+    name = "zod_state_field_deleted_proto_file",
+    zod = "zod_state_field_deleted_api.ts",
 )
 
 proto_library(
-    name = "zod_field_deleted_proto",
-    srcs = [":zod_field_deleted_proto_file"],
+    name = "zod_state_field_deleted_proto",
+    srcs = [":zod_state_field_deleted_proto_file"],
     deps = [
         "//rbt/v1alpha1:options_proto",
         "//rbt/v1alpha1:tasks_proto",
@@ -43,9 +43,9 @@ proto_library(
 )
 
 py_proto_library(
-    name = "zod_field_deleted_py_proto",
+    name = "zod_state_field_deleted_py_proto",
     visibility = ["//tests/reboot:__subpackages__"],
-    deps = [":zod_field_deleted_proto"],
+    deps = [":zod_state_field_deleted_proto"],
 )
 
 zod_to_proto(
@@ -115,13 +115,13 @@ py_proto_library(
 )
 
 zod_to_proto(
-    name = "zod_field_type_changed_proto_file",
-    zod = "zod_field_type_changed_api.ts",
+    name = "zod_state_field_type_changed_proto_file",
+    zod = "zod_state_field_type_changed_api.ts",
 )
 
 proto_library(
-    name = "zod_field_type_changed_proto",
-    srcs = [":zod_field_type_changed_proto_file"],
+    name = "zod_state_field_type_changed_proto",
+    srcs = [":zod_state_field_type_changed_proto_file"],
     deps = [
         "//rbt/v1alpha1:options_proto",
         "//rbt/v1alpha1:tasks_proto",
@@ -131,9 +131,9 @@ proto_library(
 )
 
 py_proto_library(
-    name = "zod_field_type_changed_py_proto",
+    name = "zod_state_field_type_changed_py_proto",
     visibility = ["//tests/reboot:__subpackages__"],
-    deps = [":zod_field_type_changed_proto"],
+    deps = [":zod_state_field_type_changed_proto"],
 )
 
 zod_to_proto(
@@ -202,21 +202,113 @@ py_proto_library(
     deps = [":zod_request_field_type_changed_proto"],
 )
 
+zod_to_proto(
+    name = "zod_state_non_required_field_proto_file",
+    zod = "zod_state_non_required_field_api.ts",
+)
+
+proto_library(
+    name = "zod_state_non_required_field_proto",
+    srcs = [":zod_state_non_required_field_proto_file"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_proto_library(
+    name = "zod_state_non_required_field_py_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+    deps = [":zod_state_non_required_field_proto"],
+)
+
+zod_to_proto(
+    name = "zod_state_required_field_added_proto_file",
+    zod = "zod_state_required_field_added_api.ts",
+)
+
+proto_library(
+    name = "zod_state_required_field_added_proto",
+    srcs = [":zod_state_required_field_added_proto_file"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_proto_library(
+    name = "zod_state_required_field_added_py_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+    deps = [":zod_state_required_field_added_proto"],
+)
+
+zod_to_proto(
+    name = "zod_request_non_required_field_proto_file",
+    zod = "zod_request_non_required_field_api.ts",
+)
+
+proto_library(
+    name = "zod_request_non_required_field_proto",
+    srcs = [":zod_request_non_required_field_proto_file"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_proto_library(
+    name = "zod_request_non_required_field_py_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+    deps = [":zod_request_non_required_field_proto"],
+)
+
+zod_to_proto(
+    name = "zod_request_required_field_added_proto_file",
+    zod = "zod_request_required_field_added_api.ts",
+)
+
+proto_library(
+    name = "zod_request_required_field_added_proto",
+    srcs = [":zod_request_required_field_added_proto_file"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_proto_library(
+    name = "zod_request_required_field_added_py_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+    deps = [":zod_request_required_field_added_proto"],
+)
+
 py_test(
     name = "service_descriptor_validator_zod_test_py",
     srcs = ["test.py"],
     main = "test.py",
     deps = [
         requirement("protobuf"),
-        ":zod_field_deleted_py_proto",
-        ":zod_field_type_changed_py_proto",
         ":zod_method_deleted_py_proto",
         ":zod_method_type_changed_py_proto",
-        ":zod_original_py_proto",
         ":zod_request_field_deleted_py_proto",
         ":zod_request_field_type_changed_py_proto",
+        ":zod_request_non_required_field_py_proto",
         ":zod_request_original_py_proto",
+        ":zod_request_required_field_added_py_proto",
+        ":zod_state_field_deleted_py_proto",
+        ":zod_state_field_type_changed_py_proto",
+        ":zod_state_non_required_field_py_proto",
+        ":zod_state_original_py_proto",
         ":zod_state_renamed_py_proto",
+        ":zod_state_required_field_added_py_proto",
         "//reboot/server:service_descriptor_validator_py",
         "//tests/reboot:test_helpers_py",
     ],
