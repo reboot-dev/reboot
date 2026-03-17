@@ -18,7 +18,7 @@ import { Empty } from "@bufbuild/protobuf";
 import * as reboot_react from "@reboot-dev/reboot-react";
 import * as reboot_web from "@reboot-dev/reboot-web";
 import * as reboot_api from "@reboot-dev/reboot-api";
-import React, { useEffect, useMemo, useState, } from "react";
+import React, { useEffect, useMemo, useRef, useState, } from "react";
 import { v4 as uuidv4 } from "uuid";
 // NOTE NOTE NOTE
 //
@@ -3980,13 +3980,28 @@ export const useGreeter = ({ id }) => {
         // in order to set internal state on it, but on subsequent
         // renders it will recognize the same promise and return
         // without suspending.
+        //
+        // We need to store the suspense promise in a `useRef` so
+        // that we can continually return it even if the reader is
+        // changing due to things like the `bearerToken` changing,
+        // however, we don't want to flicker the suspense fallback
+        // when `bearerToken` changes after we've already received
+        // a stable `response` (or `aborted`).
+        const suspensePromiseRef = useRef(undefined);
         const suspensePromise = useMemo(() => {
-            if (!options.suspense || reader.event.isSet()) {
-                return Promise.resolve();
+            if (suspensePromiseRef.current === undefined || (response === undefined && aborted === undefined)) {
+                if (!options.suspense || reader.event.isSet()) {
+                    suspensePromiseRef.current = Promise.resolve();
+                }
+                else {
+                    reboot_api.assert(reader.promise !== undefined);
+                    reboot_api.assert(response === undefined);
+                    reboot_api.assert(aborted === undefined);
+                    suspensePromiseRef.current = reader.promise.then(() => { });
+                }
             }
-            reboot_api.assert(reader.promise !== undefined);
-            return reader.promise.then(() => { });
-        }, [reader, options.suspense]);
+            return suspensePromiseRef.current;
+        }, [options.suspense, reader, response, aborted]);
         if (options.suspense) {
             if (!("use" in React)) {
                 // Raise if it doesn't look like we are using React>=19.
@@ -4222,13 +4237,28 @@ export const useGreeter = ({ id }) => {
         // in order to set internal state on it, but on subsequent
         // renders it will recognize the same promise and return
         // without suspending.
+        //
+        // We need to store the suspense promise in a `useRef` so
+        // that we can continually return it even if the reader is
+        // changing due to things like the `bearerToken` changing,
+        // however, we don't want to flicker the suspense fallback
+        // when `bearerToken` changes after we've already received
+        // a stable `response` (or `aborted`).
+        const suspensePromiseRef = useRef(undefined);
         const suspensePromise = useMemo(() => {
-            if (!options.suspense || reader.event.isSet()) {
-                return Promise.resolve();
+            if (suspensePromiseRef.current === undefined || (response === undefined && aborted === undefined)) {
+                if (!options.suspense || reader.event.isSet()) {
+                    suspensePromiseRef.current = Promise.resolve();
+                }
+                else {
+                    reboot_api.assert(reader.promise !== undefined);
+                    reboot_api.assert(response === undefined);
+                    reboot_api.assert(aborted === undefined);
+                    suspensePromiseRef.current = reader.promise.then(() => { });
+                }
             }
-            reboot_api.assert(reader.promise !== undefined);
-            return reader.promise.then(() => { });
-        }, [reader, options.suspense]);
+            return suspensePromiseRef.current;
+        }, [options.suspense, reader, response, aborted]);
         if (options.suspense) {
             if (!("use" in React)) {
                 // Raise if it doesn't look like we are using React>=19.
@@ -4398,13 +4428,28 @@ export const useGreeter = ({ id }) => {
         // in order to set internal state on it, but on subsequent
         // renders it will recognize the same promise and return
         // without suspending.
+        //
+        // We need to store the suspense promise in a `useRef` so
+        // that we can continually return it even if the reader is
+        // changing due to things like the `bearerToken` changing,
+        // however, we don't want to flicker the suspense fallback
+        // when `bearerToken` changes after we've already received
+        // a stable `response` (or `aborted`).
+        const suspensePromiseRef = useRef(undefined);
         const suspensePromise = useMemo(() => {
-            if (!options.suspense || reader.event.isSet()) {
-                return Promise.resolve();
+            if (suspensePromiseRef.current === undefined || (response === undefined && aborted === undefined)) {
+                if (!options.suspense || reader.event.isSet()) {
+                    suspensePromiseRef.current = Promise.resolve();
+                }
+                else {
+                    reboot_api.assert(reader.promise !== undefined);
+                    reboot_api.assert(response === undefined);
+                    reboot_api.assert(aborted === undefined);
+                    suspensePromiseRef.current = reader.promise.then(() => { });
+                }
             }
-            reboot_api.assert(reader.promise !== undefined);
-            return reader.promise.then(() => { });
-        }, [reader, options.suspense]);
+            return suspensePromiseRef.current;
+        }, [options.suspense, reader, response, aborted]);
         if (options.suspense) {
             if (!("use" in React)) {
                 // Raise if it doesn't look like we are using React>=19.
@@ -4574,13 +4619,28 @@ export const useGreeter = ({ id }) => {
         // in order to set internal state on it, but on subsequent
         // renders it will recognize the same promise and return
         // without suspending.
+        //
+        // We need to store the suspense promise in a `useRef` so
+        // that we can continually return it even if the reader is
+        // changing due to things like the `bearerToken` changing,
+        // however, we don't want to flicker the suspense fallback
+        // when `bearerToken` changes after we've already received
+        // a stable `response` (or `aborted`).
+        const suspensePromiseRef = useRef(undefined);
         const suspensePromise = useMemo(() => {
-            if (!options.suspense || reader.event.isSet()) {
-                return Promise.resolve();
+            if (suspensePromiseRef.current === undefined || (response === undefined && aborted === undefined)) {
+                if (!options.suspense || reader.event.isSet()) {
+                    suspensePromiseRef.current = Promise.resolve();
+                }
+                else {
+                    reboot_api.assert(reader.promise !== undefined);
+                    reboot_api.assert(response === undefined);
+                    reboot_api.assert(aborted === undefined);
+                    suspensePromiseRef.current = reader.promise.then(() => { });
+                }
             }
-            reboot_api.assert(reader.promise !== undefined);
-            return reader.promise.then(() => { });
-        }, [reader, options.suspense]);
+            return suspensePromiseRef.current;
+        }, [options.suspense, reader, response, aborted]);
         if (options.suspense) {
             if (!("use" in React)) {
                 // Raise if it doesn't look like we are using React>=19.
@@ -4783,13 +4843,28 @@ export const useGreeter = ({ id }) => {
         // in order to set internal state on it, but on subsequent
         // renders it will recognize the same promise and return
         // without suspending.
+        //
+        // We need to store the suspense promise in a `useRef` so
+        // that we can continually return it even if the reader is
+        // changing due to things like the `bearerToken` changing,
+        // however, we don't want to flicker the suspense fallback
+        // when `bearerToken` changes after we've already received
+        // a stable `response` (or `aborted`).
+        const suspensePromiseRef = useRef(undefined);
         const suspensePromise = useMemo(() => {
-            if (!options.suspense || reader.event.isSet()) {
-                return Promise.resolve();
+            if (suspensePromiseRef.current === undefined || (response === undefined && aborted === undefined)) {
+                if (!options.suspense || reader.event.isSet()) {
+                    suspensePromiseRef.current = Promise.resolve();
+                }
+                else {
+                    reboot_api.assert(reader.promise !== undefined);
+                    reboot_api.assert(response === undefined);
+                    reboot_api.assert(aborted === undefined);
+                    suspensePromiseRef.current = reader.promise.then(() => { });
+                }
             }
-            reboot_api.assert(reader.promise !== undefined);
-            return reader.promise.then(() => { });
-        }, [reader, options.suspense]);
+            return suspensePromiseRef.current;
+        }, [options.suspense, reader, response, aborted]);
         if (options.suspense) {
             if (!("use" in React)) {
                 // Raise if it doesn't look like we are using React>=19.
@@ -4959,13 +5034,28 @@ export const useGreeter = ({ id }) => {
         // in order to set internal state on it, but on subsequent
         // renders it will recognize the same promise and return
         // without suspending.
+        //
+        // We need to store the suspense promise in a `useRef` so
+        // that we can continually return it even if the reader is
+        // changing due to things like the `bearerToken` changing,
+        // however, we don't want to flicker the suspense fallback
+        // when `bearerToken` changes after we've already received
+        // a stable `response` (or `aborted`).
+        const suspensePromiseRef = useRef(undefined);
         const suspensePromise = useMemo(() => {
-            if (!options.suspense || reader.event.isSet()) {
-                return Promise.resolve();
+            if (suspensePromiseRef.current === undefined || (response === undefined && aborted === undefined)) {
+                if (!options.suspense || reader.event.isSet()) {
+                    suspensePromiseRef.current = Promise.resolve();
+                }
+                else {
+                    reboot_api.assert(reader.promise !== undefined);
+                    reboot_api.assert(response === undefined);
+                    reboot_api.assert(aborted === undefined);
+                    suspensePromiseRef.current = reader.promise.then(() => { });
+                }
             }
-            reboot_api.assert(reader.promise !== undefined);
-            return reader.promise.then(() => { });
-        }, [reader, options.suspense]);
+            return suspensePromiseRef.current;
+        }, [options.suspense, reader, response, aborted]);
         if (options.suspense) {
             if (!("use" in React)) {
                 // Raise if it doesn't look like we are using React>=19.
@@ -5135,13 +5225,28 @@ export const useGreeter = ({ id }) => {
         // in order to set internal state on it, but on subsequent
         // renders it will recognize the same promise and return
         // without suspending.
+        //
+        // We need to store the suspense promise in a `useRef` so
+        // that we can continually return it even if the reader is
+        // changing due to things like the `bearerToken` changing,
+        // however, we don't want to flicker the suspense fallback
+        // when `bearerToken` changes after we've already received
+        // a stable `response` (or `aborted`).
+        const suspensePromiseRef = useRef(undefined);
         const suspensePromise = useMemo(() => {
-            if (!options.suspense || reader.event.isSet()) {
-                return Promise.resolve();
+            if (suspensePromiseRef.current === undefined || (response === undefined && aborted === undefined)) {
+                if (!options.suspense || reader.event.isSet()) {
+                    suspensePromiseRef.current = Promise.resolve();
+                }
+                else {
+                    reboot_api.assert(reader.promise !== undefined);
+                    reboot_api.assert(response === undefined);
+                    reboot_api.assert(aborted === undefined);
+                    suspensePromiseRef.current = reader.promise.then(() => { });
+                }
             }
-            reboot_api.assert(reader.promise !== undefined);
-            return reader.promise.then(() => { });
-        }, [reader, options.suspense]);
+            return suspensePromiseRef.current;
+        }, [options.suspense, reader, response, aborted]);
         if (options.suspense) {
             if (!("use" in React)) {
                 // Raise if it doesn't look like we are using React>=19.
@@ -5377,13 +5482,28 @@ export const useGreeter = ({ id }) => {
         // in order to set internal state on it, but on subsequent
         // renders it will recognize the same promise and return
         // without suspending.
+        //
+        // We need to store the suspense promise in a `useRef` so
+        // that we can continually return it even if the reader is
+        // changing due to things like the `bearerToken` changing,
+        // however, we don't want to flicker the suspense fallback
+        // when `bearerToken` changes after we've already received
+        // a stable `response` (or `aborted`).
+        const suspensePromiseRef = useRef(undefined);
         const suspensePromise = useMemo(() => {
-            if (!options.suspense || reader.event.isSet()) {
-                return Promise.resolve();
+            if (suspensePromiseRef.current === undefined || (response === undefined && aborted === undefined)) {
+                if (!options.suspense || reader.event.isSet()) {
+                    suspensePromiseRef.current = Promise.resolve();
+                }
+                else {
+                    reboot_api.assert(reader.promise !== undefined);
+                    reboot_api.assert(response === undefined);
+                    reboot_api.assert(aborted === undefined);
+                    suspensePromiseRef.current = reader.promise.then(() => { });
+                }
             }
-            reboot_api.assert(reader.promise !== undefined);
-            return reader.promise.then(() => { });
-        }, [reader, options.suspense]);
+            return suspensePromiseRef.current;
+        }, [options.suspense, reader, response, aborted]);
         if (options.suspense) {
             if (!("use" in React)) {
                 // Raise if it doesn't look like we are using React>=19.
