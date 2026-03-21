@@ -141,7 +141,7 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
             servicer_type.__state_type_name__, state_id
         )
         _servicing.set(Servicing.INITIALIZING)
-        context = context_type(
+        kwargs: dict = dict(
             channel_manager=self.channel_manager,
             headers=Headers(
                 application_id=ApplicationId('unused'),
@@ -151,6 +151,10 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
             method="unused",
             effect_validation=EffectValidation.ENABLED,
         )
+        if context_type == WorkflowContext:
+            kwargs['reactively_state_manager'] = self.state_manager
+            kwargs['reactively_state_type'] = servicer_type.__state_type__
+        context = context_type(**kwargs)
         _servicing.set(Servicing.NO)
         return context
 

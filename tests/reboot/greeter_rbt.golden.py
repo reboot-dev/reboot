@@ -2411,6 +2411,14 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     method='Create',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
         elif 'Greet' == task.method_name:
@@ -2477,6 +2485,14 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     method='Greet',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
         elif 'SetAdjective' == task.method_name:
@@ -2546,6 +2562,14 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     method='SetAdjective',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
         elif 'TransactionSetAdjective' == task.method_name:
@@ -2615,6 +2639,14 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     method='TransactionSetAdjective',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
         elif 'TryToConstructContext' == task.method_name:
@@ -2681,6 +2713,14 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     method='TryToConstructContext',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
         elif 'TryToConstructExternalContext' == task.method_name:
@@ -2747,6 +2787,14 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     method='TryToConstructExternalContext',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
         elif 'TestLongRunningFetch' == task.method_name:
@@ -2813,6 +2861,14 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     method='TestLongRunningFetch',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
         elif 'TestLongRunningWriter' == task.method_name:
@@ -2882,6 +2938,14 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     method='TestLongRunningWriter',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
         elif 'GetWholeState' == task.method_name:
@@ -2948,6 +3012,14 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     method='GetWholeState',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
         elif 'FailWithException' == task.method_name:
@@ -3014,6 +3086,14 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     method='FailWithException',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
         elif 'FailWithAborted' == task.method_name:
@@ -3080,6 +3160,14 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     method='FailWithAborted',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
         elif 'Workflow' == task.method_name:
@@ -3134,60 +3222,54 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                         raise
 
             @IMPORT_reboot_aio_internals_middleware.maybe_run_function_twice_to_validate_effects
-            async def run_Workflow_reactively(
+            async def run_Workflow_workflow(
                 validating_effects: bool,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
             ):
-                async with self._state_manager.reactively(
-                    context,
-                    self._servicer.__state_type__,
-                    # Already authorized when we created the task.
-                    authorize=None,
-                ):
-                    try:
-                        # When we're validating effects we
-                        # periodically timeout so that we can log
-                        # that a workflow might be hung, i.e., the
-                        # user has a bug.
-                        task = IMPORT_asyncio.create_task(
-                            run_Workflow(
-                                context,
-                                validating_effects=validating_effects,
-                            )
+                try:
+                    # When we're validating effects we
+                    # periodically timeout so that we can log
+                    # that a workflow might be hung, i.e., the
+                    # user has a bug.
+                    task = IMPORT_asyncio.create_task(
+                        run_Workflow(
+                            context,
+                            validating_effects=validating_effects,
                         )
-                        timeout = None if not validating_effects else 5  # seconds
-                        while True:
-                            done, pending = await IMPORT_asyncio.wait(
-                                [task],
-                                timeout=timeout,
+                    )
+                    timeout = None if not validating_effects else 5  # seconds
+                    while True:
+                        done, pending = await IMPORT_asyncio.wait(
+                            [task],
+                            timeout=timeout,
+                        )
+                        # Check if we've timed out, which
+                        # should only occur if we're
+                        # validating effects.
+                        if len(done) == 0:
+                            assert validating_effects and timeout is not None
+                            logger.warning(
+                                f'Still waiting for method Greeter.Workflow '
+                                'to complete after re-running to validate effects.'
                             )
-                            # Check if we've timed out, which
-                            # should only occur if we're
-                            # validating effects.
-                            if len(done) == 0:
-                                assert validating_effects and timeout is not None
-                                logger.warning(
-                                    f'Still waiting for method Greeter.Workflow '
-                                    'to complete after re-running to validate effects.'
-                                )
-                                timeout += 5  # seconds
-                                continue
-                            return task.result()
-                    finally:
-                        if not task.done():
-                            task.cancel()
-                            # Need to actually await the task so if
-                            # there is an exception we don't get a
-                            # warning logged that the exception was
-                            # never retrieved, but we don't care about
-                            # the exception because we're done with
-                            # the task.
-                            try:
-                                await task
-                            except:
-                                pass
+                            timeout += 5  # seconds
+                            continue
+                        return task.result()
+                finally:
+                    if not task.done():
+                        task.cancel()
+                        # Need to actually await the task so if
+                        # there is an exception we don't get a
+                        # warning logged that the exception was
+                        # never retrieved, but we don't care about
+                        # the exception because we're done with
+                        # the task.
+                        try:
+                            await task
+                        except:
+                            pass
 
-            return await run_Workflow_reactively(
+            return await run_Workflow_workflow(
                 self.create_context(
                     headers=IMPORT_reboot_aio_headers.Headers(
                         application_id=self.application_id,
@@ -3198,6 +3280,14 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     method='Workflow',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
         elif 'DangerousFields' == task.method_name:
@@ -3267,6 +3357,14 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     method='DangerousFields',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
         elif 'StoreRecursiveMessage' == task.method_name:
@@ -3336,6 +3434,14 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     method='StoreRecursiveMessage',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
         elif 'ReadRecursiveMessage' == task.method_name:
@@ -3402,6 +3508,14 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     method='ReadRecursiveMessage',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
         elif 'ConstructAndStoreRecursiveMessage' == task.method_name:
@@ -3471,6 +3585,14 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     method='ConstructAndStoreRecursiveMessage',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
 
@@ -3522,9 +3644,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 tasks=context._tasks,
                 _colocated_upserts=context._colocated_upserts,
             )
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise
@@ -3986,9 +4105,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 context=context,
             )
             return response
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise
@@ -4430,9 +4546,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 tasks=context._tasks,
                 _colocated_upserts=context._colocated_upserts,
             )
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise
@@ -4894,9 +5007,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 context=context,
             )
             return response
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise
@@ -5359,9 +5469,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 context=context,
             )
             return response
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise
@@ -5798,9 +5905,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 context=context,
             )
             return response
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise
@@ -6237,9 +6341,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 context=context,
             )
             return response
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise
@@ -6681,9 +6782,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 tasks=context._tasks,
                 _colocated_upserts=context._colocated_upserts,
             )
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise
@@ -7145,9 +7243,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 context=context,
             )
             return response
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise
@@ -7584,9 +7679,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 context=context,
             )
             return response
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise
@@ -8023,9 +8115,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 context=context,
             )
             return response
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise
@@ -8462,9 +8551,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 context=context,
             )
             return response
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise
@@ -8849,9 +8935,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 tasks=context._tasks,
                 _colocated_upserts=context._colocated_upserts,
             )
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise
@@ -9318,9 +9401,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 tasks=context._tasks,
                 _colocated_upserts=context._colocated_upserts,
             )
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise
@@ -9782,9 +9862,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 context=context,
             )
             return response
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise
@@ -10221,9 +10298,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 context=context,
             )
             return response
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise

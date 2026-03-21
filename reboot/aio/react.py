@@ -25,7 +25,7 @@ from reboot.aio.types import (
 )
 from reboot.nodejs.python import should_print_stacktrace
 from reboot.settings import EVERY_LOCAL_NETWORK_ADDRESS
-from typing import AsyncIterable, AsyncIterator, Optional
+from typing import AsyncIterable, Optional
 
 logger = get_logger(__name__)
 
@@ -311,9 +311,21 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
             bearer_token=request.bearer_token,
         )
 
-        async def consume_heartbeats() -> AsyncIterator[None]:
-            while True:
-                _ = await websocket.recv()
+        # When the WebSocket closes, cancel the query task so that
+        # `reactively()` sessions are cleaned up. Without this,
+        # `_query()` blocks indefinitely waiting for the next state
+        # change, and the `reactively()` session is never cleaned up.
+        query_task = asyncio.current_task()
+        assert query_task is not None
+
+        async def consume_heartbeats():
+            try:
+                while True:
+                    _ = await websocket.recv()
+            except Exception:
+                # WebSocket closed (or errored); cancel the main query
+                # task to unblock `_query()` and trigger cleanup.
+                query_task.cancel()
 
         heartbeats_task = asyncio.create_task(consume_heartbeats())
 
@@ -365,6 +377,26 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
     ) -> AsyncIterable[react_pb2.QueryResponse]:
         """Implements the React.Query RPC that calls into the
         'Middleware.react' method for handling a single request."""
+
+        # gRPC-asyncio does NOT automatically cancel the server-side
+        # asyncio task when the client disconnects from a
+        # server-streaming RPC. Without cancellation, the
+        # `reactively()` session inside `react_query()` hangs forever
+        # waiting for state changes, leaking memory.
+        #
+        # Register a done callback on the gRPC context so that when
+        # the RPC terminates for any reason (client disconnect, server
+        # abort, etc.) we cancel this task, propagating `CancelledError`
+        # into `reactively()` and triggering its `finally` cleanup.
+        #
+        # See https://github.com/grpc/grpc/issues/28999.
+        query_task = asyncio.current_task()
+        assert query_task is not None
+
+        def done_callback(_) -> None:
+            query_task.cancel()
+
+        grpc_context.add_done_callback(done_callback)
 
         # NOTE: we don't need `with use_application_id(...)` like we
         # do for websockets because this is a gRPC method and thus our

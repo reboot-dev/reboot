@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import functools
 import grpc
 import reboot.aio.tracing
@@ -37,6 +39,7 @@ from reboot.aio.types import (
 from reboot.settings import DOCS_BASE_URL
 from reboot.time import DateTimeWithTimeZone
 from typing import (
+    TYPE_CHECKING,
     Any,
     AsyncIterator,
     Callable,
@@ -47,6 +50,12 @@ from typing import (
     ParamSpec,
     TypeVar,
 )
+
+# `StateManager` is only used in type annotations in this module.
+# A runtime import would create a circular dependency: `middleware`
+# imports `state_managers`, and `state_managers` imports `middleware`.
+if TYPE_CHECKING:
+    from reboot.aio.state_managers import StateManager
 
 P = ParamSpec('P')
 SelfT = TypeVar('SelfT')
@@ -131,6 +140,9 @@ class Middleware(ABC):
         method: str,
         context_type: type[ContextT],
         task: Optional[TaskEffect] = None,
+        # These parameters are used in the `WorkflowContext` only.
+        reactively_state_manager: Optional[StateManager] = None,
+        reactively_state_type: Optional[type] = None,
     ) -> ContextT:
         """Create a Context object given the parameters."""
         # Toggle 'servicing' to indicate we are initializing the
@@ -145,7 +157,7 @@ class Middleware(ABC):
                 f"this servicer is of type {self._state_type_name}"
             )
 
-        context = context_type(
+        kwargs: dict = dict(
             channel_manager=self.channel_manager,
             headers=headers,
             state_type_name=state_type_name,
@@ -153,6 +165,17 @@ class Middleware(ABC):
             task=task,
             effect_validation=self._effect_validation,
         )
+        if context_type == WorkflowContext:
+            assert reactively_state_manager is not None, (
+                "`reactively_state_manager` is required for"
+                " `WorkflowContext`"
+            )
+            assert reactively_state_type is not None, (
+                "`reactively_state_type` is required for `WorkflowContext`"
+            )
+            kwargs['reactively_state_manager'] = reactively_state_manager
+            kwargs['reactively_state_type'] = reactively_state_type
+        context = context_type(**kwargs)
 
         # Now toggle 'servicing' to indicate that we are servicing the
         # RPC which will, for example, forbid the construction of a

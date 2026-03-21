@@ -2629,7 +2629,7 @@ Napi::Value WorkflowContext_loop(const Napi::CallbackInfo& info) {
 }
 
 
-Napi::Value retry_reactively_until(const Napi::CallbackInfo& info) {
+Napi::Value workflow_retry_reactively_until(const Napi::CallbackInfo& info) {
   auto js_external_context =
       NapiSafeReference(info[0].As<Napi::External<py::object>>());
 
@@ -2641,7 +2641,7 @@ Napi::Value retry_reactively_until(const Napi::CallbackInfo& info) {
 
   return NodePromiseFromPythonTaskWithContext(
       info.Env(),
-      "retry_reactively_until(...) in nodejs",
+      "workflow_retry_reactively_until(...) in nodejs",
       js_external_context,
       [js_external_context,  // Ensures `py_context` remains valid.
        py_context,
@@ -2663,8 +2663,7 @@ Napi::Value retry_reactively_until(const Napi::CallbackInfo& info) {
                   });
             });
 
-        return py::module::import("reboot.aio.contexts")
-            .attr("retry_reactively_until")(py_context, py_condition);
+        return (*py_context).attr("retry_reactively_until")(py_condition);
       });
 }
 
@@ -2886,8 +2885,8 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
       Napi::Function::New<WorkflowContext_loop>(env));
 
   exports.Set(
-      Napi::String::New(env, "retry_reactively_until"),
-      Napi::Function::New<retry_reactively_until>(env));
+      Napi::String::New(env, "workflow_retry_reactively_until"),
+      Napi::Function::New<workflow_retry_reactively_until>(env));
 
   exports.Set(
       Napi::String::New(env, "memoize"),

@@ -44,6 +44,7 @@ from reboot.aio.types import (
 )
 from reboot.time import DateTimeWithTimeZone
 from typing import (
+    TYPE_CHECKING,
     Any,
     AsyncGenerator,
     Awaitable,
@@ -56,6 +57,12 @@ from typing import (
     Tuple,
     TypeVar,
 )
+
+# `StateManager` is only used in type annotations in this module.
+# A runtime import would create a circular dependency: `contexts`
+# imports `state_managers`, and `state_managers` imports `contexts`.
+if TYPE_CHECKING:
+    from reboot.aio.state_managers import StateManager
 
 ContextT = TypeVar('ContextT', bound='Context')
 ResponseT = TypeVar('ResponseT', bound=Message)
@@ -236,13 +243,6 @@ class Participants:
                         abort=True,
                     )
         return participants
-
-
-class RetryReactively(Exception):
-    """Exception to raise when in a reactive method context and wanting to
-    retry the method after state or reader's responses have changed.
-    """
-    pass
 
 
 class React:
@@ -490,6 +490,15 @@ class React:
                     await task
                 except:
                     pass
+                # Remove all references to the task object and its
+                # associated gRPC call so they can be garbage-collected.
+                # Using `pop` instead of `del`, since it could be a case
+                # when the task is cancelled before it makes a gRPC call
+                # and thus doesn't have an entry in `self._calls`,
+                # `self._responses` and `self._used_response`.
+                self._calls.pop(task, None)
+                self._responses.pop(task, None)
+                self._used_response.pop(task, None)
 
     _channel_manager: _ChannelManager
     _queriers: dict[str, Querier]
@@ -1186,6 +1195,9 @@ _within_until: ContextVar[bool] = ContextVar(
 # Type variable for `Workflow.wait()`.
 WaitT = TypeVar('WaitT')
 
+# Type variable for `WorkflowContext.retry_reactively_until()`.
+RetryReactivelyUntilT = TypeVar('RetryReactivelyUntilT')
+
 
 class WorkflowContext(Context):
     """Call context for a workflow call."""
@@ -1200,6 +1212,13 @@ class WorkflowContext(Context):
     loop: Loop
     within_loop: Callable[[], bool]
 
+    # State manager and state type for this context. Set by the
+    # generated code so that `until()` calls (via
+    # `retry_reactively_until()`) can enter `reactively()` without
+    # knowing the state type or the state manager.
+    _reactively_state_manager: StateManager
+    _reactively_state_type: type
+
     def __init__(
         self,
         *,
@@ -1208,6 +1227,8 @@ class WorkflowContext(Context):
         state_type_name: StateTypeName,
         method: str,
         effect_validation: EffectValidation,
+        reactively_state_manager: StateManager,
+        reactively_state_type: type,
         task: Optional[TaskEffect] = None,
     ):
         super().__init__(
@@ -1220,6 +1241,9 @@ class WorkflowContext(Context):
         )
 
         self._cancelled = None
+
+        self._reactively_state_manager = reactively_state_manager
+        self._reactively_state_type = reactively_state_type
 
     def within_until(self) -> bool:
         return _within_until.get()
@@ -1285,44 +1309,47 @@ class WorkflowContext(Context):
 
         return await awaitable_future
 
+    async def retry_reactively_until(
+        self,
+        condition: Callable[[], Awaitable[RetryReactivelyUntilT]],
+    ) -> RetryReactivelyUntilT:
+        """Helper for waiting for something within a `WorkflowContext` that
+        re-executes the given callable everytime that some reactive state
+        has changed instead of re-executing the entire workflow from the
+        beginning (even though it's safe to do so, it is more expensive).
+        """
+        async with self._reactively_state_manager.reactively(
+            # Pylance resolves `WorkflowContext` as a partially-unresolved
+            # type due to the circular import between `contexts` and
+            # `state_managers` — even though `self` IS a
+            # `WorkflowContext` at runtime.
+            self,  # type: ignore[arg-type]
+            self._reactively_state_type,
+            # Should be already authorized when a task was created.
+            authorize=None,
+        ):
+            assert self.react is not None
+            iteration = self.react.iteration
 
-RetryReactivelyUntilT = TypeVar('RetryReactivelyUntilT')
+            while True:
+                try:
+                    try:
+                        _within_until.set(True)
+                        result = await condition()
+                    finally:
+                        _within_until.set(False)
 
+                    if not isinstance(result, bool):
+                        return result
+                    elif result:
+                        # NOTE: the type system is insufficient to let us
+                        # properly exclude types and declare the correct
+                        # overloads. Thus, we have to return `True` here,
+                        # but tell the type checker to ignore it.
+                        return True  # type: ignore[return-value]
+                except:
+                    raise
 
-async def retry_reactively_until(
-    context: WorkflowContext,
-    condition: Callable[[], Awaitable[RetryReactivelyUntilT]],
-) -> RetryReactivelyUntilT:
-    """Helper for waiting for something within a `WorkflowContext` that
-    re-executes the given callable everytime that some reactive state
-    has changed instead of raising `RetryReactively` and re-executing
-    the entire workflow from the beginning (even though it's safe to
-    do so, it is more expensive).
-    """
-    assert context.react is not None
-    iteration = context.react.iteration
-
-    while True:
-        try:
-            try:
-                _within_until.set(True)
-                result = await condition()
-            finally:
-                _within_until.set(False)
-
-            if not isinstance(result, bool):
-                return result
-            elif result:
-                # NOTE: the type system is insufficient to let us
-                # properly exclude types and declare the correct
-                # overloads. Thus, we have to return `True` here, but
-                # tell the type checker to ignore it.
-                return True  # type: ignore[return-value]
-        except RetryReactively:
-            pass
-        except:
-            raise
-
-        # NOTE: using `context.wait()` so calls through Node.js will
-        # be cancelled.
-        iteration = await context.wait(context.react.iterate(iteration))
+                # NOTE: using `self.wait()` so calls through Node.js will
+                # be cancelled.
+                iteration = await self.wait(self.react.iterate(iteration))

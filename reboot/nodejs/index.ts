@@ -517,6 +517,42 @@ export class WorkflowContext extends Context {
       delete store.loopIteration;
     }
   }
+
+  retryReactivelyUntil(condition: () => Promise<boolean>): Promise<void>;
+
+  retryReactivelyUntil<T>(condition: () => Promise<false | T>): Promise<T>;
+
+  async retryReactivelyUntil<T>(
+    condition: () => Promise<boolean | T>
+  ): Promise<void | T> {
+    let t: T | undefined = undefined;
+
+    await reboot_native.workflow_retry_reactively_until(
+      this.__external,
+      AsyncLocalStorage.bind(async () => {
+        const store = contextStorage.getStore();
+        assert(store !== undefined);
+        store.withinUntil = true;
+        try {
+          const result = await condition();
+          if (typeof result === "boolean") {
+            return result;
+          } else {
+            t = result;
+            return true;
+          }
+        } catch (e) {
+          const error = ensureError(e);
+          console.error(error);
+          throw error;
+        } finally {
+          store.withinUntil = false;
+        }
+      })
+    );
+
+    return t;
+  }
 }
 
 // Helper for clearing a specific field of a protobuf-es message.
@@ -1224,49 +1260,6 @@ export namespace Application {
   }
 }
 
-export async function retryReactivelyUntil(
-  context: WorkflowContext,
-  condition: () => Promise<boolean>
-): Promise<void>;
-
-export async function retryReactivelyUntil<T>(
-  context: WorkflowContext,
-  condition: () => Promise<false | T>
-): Promise<T>;
-
-export async function retryReactivelyUntil<T>(
-  context: WorkflowContext,
-  condition: () => Promise<boolean | T>
-): Promise<void | T> {
-  let t: T | undefined = undefined;
-
-  await reboot_native.retry_reactively_until(
-    context.__external,
-    AsyncLocalStorage.bind(async () => {
-      const store = contextStorage.getStore();
-      assert(store !== undefined);
-      store.withinUntil = true;
-      try {
-        const result = await condition();
-        if (typeof result === "boolean") {
-          return result;
-        } else {
-          t = result;
-          return true;
-        }
-      } catch (e) {
-        const error = ensureError(e);
-        console.error(error);
-        throw error;
-      } finally {
-        store.withinUntil = false;
-      }
-    })
-  );
-
-  return t;
-}
-
 // NOTE: we're not using an enum because the values that can be used in
 // `atMostOnce` and `atLeastOnce` are different than `until`.
 export const ALWAYS = "ALWAYS" as const;
@@ -1369,7 +1362,7 @@ async function memoize<Schema extends StandardSchemaV1>(
       } catch (e) {
         const error = ensureError(e);
         // We handle printing the exception for `until` in
-        // `retryReactivelyUntil`.
+        // `WorkflowContext.retryReactivelyUntil`.
         if (!until) {
           console.error(error);
         }
@@ -1573,7 +1566,7 @@ export async function until<Schema extends StandardSchemaV1>(
   // to appease the TypeScript compiler which otherwise isn't happy
   // with passing on these types.
   const converge = () => {
-    return retryReactivelyUntil(context, callable as () => Promise<boolean>);
+    return context.retryReactivelyUntil(callable as () => Promise<boolean>);
   };
 
   // TODO: should we not memoize if passed `ALWAYS`? There still might
