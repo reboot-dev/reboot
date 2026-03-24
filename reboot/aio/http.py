@@ -262,6 +262,19 @@ class PythonWebFramework(WebFramework):
             log_level="warning",
             reload=False,  # This is handled by Reboot.
             workers=1,
+            # Trust 'X-Forwarded-Proto'/'X-Forwarded-For' from any
+            # source so that redirects (e.g. Starlette's trailing-slash
+            # redirect on mounted apps) use the correct scheme when
+            # behind a reverse proxy such as ngrok.
+            proxy_headers=True,
+            # To trust `X-Forwarded-*` headers coming from Envoy, which
+            # may be running in a Docker container and therefore not on
+            # the `127.0.0.1` IP, we must trust these headers from more
+            # IPs than just `127.0.0.1` (the default). This isn't a
+            # problem in our case: we don't do e.g. IP-based access
+            # control, so spoofing an `X-Forwarded-*` header doesn't get
+            # an attacker anything.
+            forwarded_allow_ips="*",
         )
 
         class Server(uvicorn.Server):

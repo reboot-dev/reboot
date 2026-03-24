@@ -167,6 +167,20 @@ def create_mcp_factory(
                     event_store=None,
                 )
 
+                # Make session validation lenient: return
+                # the session ID in responses (so clients
+                # can send it back) but don't reject
+                # requests that omit it. Some MCP clients
+                # (e.g. "claude.ai") send notifications
+                # from a separate internal service that
+                # doesn't propagate the session ID.
+                async def _lenient_validate_session(request, send):
+                    return True
+
+                transport._validate_session = (  # type: ignore[assignment]
+                    _lenient_validate_session
+                )
+
                 async def run_server(
                     *,
                     task_status: anyio.abc.
