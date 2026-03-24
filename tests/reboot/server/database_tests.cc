@@ -2779,6 +2779,10 @@ TEST_F(TwoShardDatabaseTest, ExportFiltersByShardIds) {
 
     v1alpha1::ExportResponse response;
     grpc::ClientContext context;
+    // This uses `Export` instead of `ExportStreamed` since the code
+    // path is pretty much the same.
+    // TODO: Make these tests use `ExportStreamed` once we deprecate
+    // `Export`.
     grpc::Status status = stub->Export(&context, request, &response);
     ASSERT_TRUE(status.ok()) << status.error_message();
 
@@ -2807,6 +2811,10 @@ TEST_F(TwoShardDatabaseTest, ExportFiltersByShardIds) {
 
     v1alpha1::ExportResponse response;
     grpc::ClientContext context;
+    // This uses `Export` instead of `ExportStreamed` since the code
+    // path is pretty much the same.
+    // TODO: Make these tests use `ExportStreamed` once we deprecate
+    // `Export`.
     grpc::Status status = stub->Export(&context, request, &response);
     ASSERT_TRUE(status.ok()) << status.error_message();
 
@@ -2836,6 +2844,10 @@ TEST_F(TwoShardDatabaseTest, ExportFiltersByShardIds) {
 
     v1alpha1::ExportResponse response;
     grpc::ClientContext context;
+    // This uses `Export` instead of `ExportStreamed` since the code
+    // path is pretty much the same.
+    // TODO: Make these tests use `ExportStreamed` once we deprecate
+    // `Export`.
     grpc::Status status = stub->Export(&context, request, &response);
     ASSERT_TRUE(status.ok()) << status.error_message();
 
@@ -2866,6 +2878,10 @@ TEST_F(TwoShardDatabaseTest, ExportFiltersByShardIds) {
 
     v1alpha1::ExportResponse response;
     grpc::ClientContext context;
+    // This uses `Export` instead of `ExportStreamed` since the code
+    // path is pretty much the same.
+    // TODO: Make these tests use `ExportStreamed` once we deprecate
+    // `Export`.
     grpc::Status status = stub->Export(&context, request, &response);
 
     EXPECT_FALSE(status.ok());

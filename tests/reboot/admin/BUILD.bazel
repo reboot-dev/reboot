@@ -22,3 +22,20 @@ py_test(
         "//reboot/ssl:localhost_py",
     ],
 )
+
+py_test(
+    name = "export_import_large_data_tests_py",
+    srcs = [
+        ":export_import_large_data_tests.py",
+    ],
+    main = "export_import_large_data_tests.py",
+    deps = [
+        requirement("grpcio"),
+        "//reboot:settings_py",
+        "//reboot/admin:export_import_client_py",
+        "//reboot/aio:secrets_py",
+        "//reboot/aio:tests_py",
+        "//reboot/ssl:localhost_py",
+        "//tests/reboot:echo_servicers_py",
+    ],
+)

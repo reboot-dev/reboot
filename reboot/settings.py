@@ -5,9 +5,12 @@
 # gRPC max message size to transmit large state data.
 MAX_DATABASE_GRPC_MESSAGE_LENGTH_BYTES = 100 * 1024 * 1024
 
-# gRPC max response size (our limit; gRPC doesn't specify a limit
-# normally). See: https://github.com/reboot-dev/mono/issues/3944
-MAX_GRPC_RESPONSE_SIZE_BYTES = 4 * 1024 * 1024
+# Envoy per-connection buffer limit for both listeners and clusters.
+# Must be at least as large as `MAX_DATABASE_GRPC_MESSAGE_LENGTH_BYTES`
+# so that large chunks of data (probably for state) transfers will not
+# degrade performance by triggering backpressure too early.
+# See: https://github.com/reboot-dev/mono/issues/3944.
+ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES = 100 * 1024 * 1024
 
 # grpc.keepalive_time_ms: The period (in milliseconds) after which a
 #     keepalive ping is sent on the transport.

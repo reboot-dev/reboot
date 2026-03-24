@@ -215,6 +215,10 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       grpc::ServerContext* context,
       const ExportRequest* request,
       ExportResponse* response) override;
+  grpc::Status ExportStreamed(
+      grpc::ServerContext* context,
+      const ExportRequest* request,
+      grpc::ServerWriter<ExportResponse>* responses) override;
   grpc::Status GetApplicationMetadata(
       grpc::ServerContext* context,
       const GetApplicationMetadataRequest* request,
@@ -316,29 +320,38 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   // Helper function to determine which shard owns a given state_ref.
   std::string GetShardForStateRef(std::string_view state_ref);
 
-  // Helper for sending a response to the client and clearing the batch.
+  // Iterates RocksDB and calls `on_item` for each matching item.
+  // If `on_item` returns `false`, iteration stops early.
+  grpc::Status _Export(
+      const ExportRequest& request,
+      const std::function<bool(ExportItem&&, size_t)>& on_item);
+
+  // Helper for sending a response to the client and clearing
+  // the batch.
   template <typename T>
   void WriteAndClearResponse(
       grpc::ServerWriter<T>& responses,
       T& response,
-      size_t& batch_size) {
-    if (batch_size != 0) {
+      size_t& estimated_batch_bytes) {
+    if (estimated_batch_bytes != 0) {
       responses.Write(response);
       response.Clear();
-      batch_size = 0;
+      estimated_batch_bytes = 0;
     }
   }
 
-  // Helper for sending a response to the client and clearing the batch
-  // if the batch size has reached the maximum batch size.
+  // Helper for sending a response to the client and clearing
+  // the batch once its estimated byte size reaches the flush
+  // threshold.
   template <typename T>
   void MaybeWriteAndClearResponse(
       grpc::ServerWriter<T>& responses,
       T& response,
-      size_t& batch_size,
-      const size_t& max_batch_size) {
-    if (++batch_size == max_batch_size) {
-      WriteAndClearResponse(responses, response, batch_size);
+      size_t& estimated_batch_bytes,
+      size_t estimated_item_bytes) {
+    estimated_batch_bytes += estimated_item_bytes;
+    if (estimated_batch_bytes >= rbt::kBatchFlushBytes) {
+      WriteAndClearResponse(responses, response, estimated_batch_bytes);
     }
   }
 
@@ -2316,16 +2329,138 @@ grpc::Status DatabaseService::TransactionCoordinatorCleanup(
 
 ////////////////////////////////////////////////////////////////////////
 
-grpc::Status DatabaseService::Export(
-    grpc::ServerContext* context,
-    const ExportRequest* request,
-    ExportResponse* response) {
+// Estimate the serialized size of an `Actor` without CPU-expensive
+// protobuf serialization. The dominant "expensive" fields will always
+// be `bytes` fields, so we can just sum the sizes of those and add
+// some metadata size for the other fields.
+// NOTE: it is not a "real" size but the estimation only, but it is fine
+// since we have a batch size threshold as twice lower than the max
+// size we can transport over the wire and we also do not expect the
+// data to be close to the transport limit.
+size_t EstimateActorSize(const Actor& actor) {
+  return actor.state_type().size() + actor.state_ref().size()
+      + actor.state().size();
+}
+
+// Estimate the serialized size of a `Task` without CPU-expensive
+// protobuf serialization. The dominant "expensive" fields will always
+// be `bytes` fields, so we can just sum the sizes of those and add
+// some metadata size for the other fields.
+// NOTE: it is not a "real" size but the estimation only, but it is fine
+// since we have a batch size threshold as twice lower than the max
+// size we can transport over the wire and we also do not expect the
+// data to be close to the transport limit.
+size_t EstimateTaskSize(const Task& task) {
+  // `TaskId` data.
+  size_t size = task.task_id().state_type().size()
+      + task.task_id().state_ref().size() + task.task_id().task_uuid().size();
+
+  // Timestamp field (`int64` + `int32`) + `uint64` for `iteration`.
+  size += 24;
+
+  // `method` and `request` data.
+  size += task.method().size() + task.request().size();
+
+  if (task.has_response()) {
+    size += task.response().value().size() + task.response().type_url().size();
+  }
+  if (task.has_error()) {
+    size += task.error().value().size() + task.error().type_url().size();
+  }
+  return size;
+}
+
+// Estimate the serialized size of a `IdempotentMutation` without
+// CPU-expensive protobuf serialization. The dominant "expensive"
+// fields will always be `bytes` fields, so we can just sum the sizes of
+// those and add some metadata size for the other fields.
+// NOTE: it is not a "real" size but the estimation only, but it is fine
+// since we have a batch size threshold as twice lower than the max
+// size we can transport over the wire and we also do not expect the
+// data to be close to the transport limit.
+size_t EstimateIdempotentMutationSize(const IdempotentMutation& mutation) {
+  // `IdempotentMutation` data fields.
+  size_t size = mutation.state_type().size() + mutation.state_ref().size()
+      + mutation.key().size() + mutation.response().size();
+
+  if (mutation.has_workflow_id()) {
+    size += mutation.workflow_id().size();
+  }
+
+  if (mutation.has_workflow_iteration()) {
+    // `workflow_iteration` is a `uint64`.
+    size += 8;
+  }
+
+  // To avoid for-looping over all task IDs, we can estimate the size of
+  // each `TaskId`, since it has 2 strings (overestimate them as 100
+  // bytes each) and a UUID bytes field (32 bytes).
+  size += mutation.task_ids().size() * 232;
+  return size;
+}
+
+// Estimate the serialized size of a `Transaction` without
+// CPU-expensive protobuf serialization. The dominant "expensive"
+// fields will always be `bytes` fields, so we can just sum the sizes of
+// those and add some metadata size for the other fields.
+// NOTE: it is not a "real" size but the estimation only, but it is fine
+// since we have a batch size threshold as twice lower than the max
+// size we can transport over the wire and we also do not expect the
+// data to be close to the transport limit.
+size_t EstimateTransactionSize(const Transaction& transaction) {
+  size_t size = transaction.state_type().size() + transaction.state_ref().size()
+      + transaction.coordinator_state_type().size()
+      + transaction.coordinator_state_ref().size();
+
+  // To avoid for-looping over all transaction IDs, we can estimate the size
+  // of each transaction ID, since it is a UUID bytes field (32 bytes).
+  size += transaction.transaction_ids().size() * 32;
+
+  for (const auto& task : transaction.uncommitted_tasks()) {
+    // Each task has a serialized `request` and `response_or_error`,
+    // which is tricky to guesstimate, but hopefully we won't have a ton
+    // of uncommitted tasks at a time and this will be good enough.
+    size += EstimateTaskSize(task);
+  }
+  for (const auto& mutation : transaction.uncommitted_idempotent_mutations()) {
+    // Each idempotent mutation has a serialized `response` which is
+    // tricky to guesstimate, but hopefully we won't have a ton of
+    // uncommitted mutations at a time and this will be good enough.
+    size += EstimateIdempotentMutationSize(mutation);
+  }
+  return size;
+}
+
+// Estimate the serialized size of a `PreparedTransactionCoordinator`
+// without CPU-expensive protobuf serialization. The dominant "expensive"
+// fields will always be `bytes` fields, so we can just sum the sizes of
+// those and add some metadata size for the other fields.
+// NOTE: it is not a "real" size but the estimation only, but it is fine
+// since we have a batch size threshold as twice lower than the max
+// size we can transport over the wire and we also do not expect the
+// data to be close to the transport limit.
+size_t EstimatePreparedTransactionCoordinatorSize(
+    const PreparedTransactionCoordinator& coordinator) {
+  size_t size = coordinator.state_ref().size();
+
+  // To avoid for-looping over all participants, we can guesstimate the
+  // size of each participant. Overestimate each `string` field as 100
+  // bytes and each map value is a list of ~50 entries.
+  size += (coordinator.participants().should_commit_size()
+           + coordinator.participants().should_abort_size())
+      * (100 * 50);
+  return size;
+}
+
+grpc::Status DatabaseService::_Export(
+    const ExportRequest& request,
+    const std::function<bool(ExportItem&&, size_t)>& on_item) {
   std::unique_lock lock(mutex_);
 
-  REBOOT_DATABASE_LOG(1) << "Export { " << request->ShortDebugString() << " }";
+  REBOOT_DATABASE_LOG(1) << "Export { " << request.ShortDebugString() << " }";
 
   // Validate that shard_ids are provided.
-  if (request->shard_ids().empty()) {
+  if (request.shard_ids().empty()) {
     return grpc::Status(
         grpc::INVALID_ARGUMENT,
         "shard_ids are required for Export request");
@@ -2333,18 +2468,18 @@ grpc::Status DatabaseService::Export(
 
   // Convert to unordered_set for efficient lookups.
   std::unordered_set<std::string> shard_ids(
-      request->shard_ids().begin(),
-      request->shard_ids().end());
+      request.shard_ids().begin(),
+      request.shard_ids().end());
 
   expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
-      LookupOrCreateColumnFamilyHandle(request->state_type());
+      LookupOrCreateColumnFamilyHandle(request.state_type());
 
   if (!column_family_handle.has_value()) {
     return grpc::Status(
         grpc::UNKNOWN,
         fmt::format(
             "Failed to begin export for '{}': {}",
-            request->state_type(),
+            request.state_type(),
             column_family_handle.error()));
   }
 
@@ -2360,7 +2495,7 @@ grpc::Status DatabaseService::Export(
           grpc::UNKNOWN,
           fmt::format(
               "Unrecognized entry for '{}': {}",
-              request->state_type(),
+              request.state_type(),
               it->key().ToStringView()));
     }
 
@@ -2369,17 +2504,20 @@ grpc::Status DatabaseService::Export(
 
     ExportItem item;
     std::string state_ref;
+    size_t estimated_item_bytes = 0;
     if (key_type_prefix == STATE_KEY_PREFIX) {
       state_ref =
           std::string(GetStateRefFromActorStateKey(it->key().ToStringView()));
       auto* actor = item.mutable_actor();
-      actor->set_state_type(request->state_type());
+      actor->set_state_type(request.state_type());
       actor->set_state_ref(state_ref);
       actor->set_state(it->value().ToString());
+      estimated_item_bytes = EstimateActorSize(*actor);
     } else if (key_type_prefix == TASK_KEY_PREFIX) {
       auto* task = item.mutable_task();
       CHECK(task->ParseFromArray(it->value().data(), it->value().size()));
       state_ref = task->task_id().state_ref();
+      estimated_item_bytes = EstimateTaskSize(*task);
     } else if (
         key_type_prefix == IDEMPOTENT_MUTATION_KEY_PREFIX
         || key_type_prefix == EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX
@@ -2390,21 +2528,28 @@ grpc::Status DatabaseService::Export(
       auto* mutation = item.mutable_idempotent_mutation();
       CHECK(mutation->ParseFromArray(it->value().data(), it->value().size()));
       state_ref = mutation->state_ref();
+      estimated_item_bytes = EstimateIdempotentMutationSize(*mutation);
     } else {
       return grpc::Status(
           grpc::UNKNOWN,
           fmt::format(
               "Unrecognized entry for '{}': {}",
-              request->state_type(),
+              request.state_type(),
               it->key().ToStringView()));
     }
 
-    // If this item doesn't belong to one of the requested shards, skip it.
-    if (!BelongsToShard(request->state_type(), state_ref, shard_ids)) {
+    // If this item doesn't belong to one of the requested shards,
+    // skip it.
+    if (!BelongsToShard(request.state_type(), state_ref, shard_ids)) {
       continue;
     }
 
-    *response->add_items() = std::move(item);
+    if (!on_item(std::move(item), estimated_item_bytes)) {
+      return grpc::Status(
+          grpc::FAILED_PRECONDITION,
+          "Export data exceeds the gRPC message size limit; please "
+          "upgrade Reboot CLI to be compatible with streamed exports.");
+    }
   }
 
   if (!it->status().ok()) {
@@ -2412,10 +2557,62 @@ grpc::Status DatabaseService::Export(
         grpc::UNKNOWN,
         fmt::format(
             "Failed to export '{}': {}",
-            request->state_type(),
+            request.state_type(),
             it->status().ToString()));
   }
 
+  return grpc::Status::OK;
+}
+
+grpc::Status DatabaseService::ExportStreamed(
+    grpc::ServerContext* context,
+    const ExportRequest* request,
+    grpc::ServerWriter<ExportResponse>* responses) {
+  ExportResponse response;
+  size_t estimated_batch_bytes = 0;
+  grpc::Status status = _Export(
+      *request,
+      [responses,
+       &response,
+       &estimated_batch_bytes](ExportItem&& item, size_t estimated_item_bytes) {
+        *response.add_items() = std::move(item);
+        estimated_batch_bytes += estimated_item_bytes;
+        if (estimated_batch_bytes >= rbt::kBatchFlushBytes) {
+          responses->Write(response);
+          response.Clear();
+          estimated_batch_bytes = 0;
+        }
+        // Always return `true` to keep iterating until we've gone
+        // through all items.
+        return true;
+      });
+  if (!status.ok()) {
+    return status;
+  }
+  // Flush any remaining items.
+  if (estimated_batch_bytes != 0) {
+    responses->Write(response);
+  }
+  return grpc::Status::OK;
+}
+
+grpc::Status DatabaseService::Export(
+    grpc::ServerContext* context,
+    const ExportRequest* request,
+    ExportResponse* response) {
+  size_t estimated_batch_bytes = 0;
+  grpc::Status status = _Export(
+      *request,
+      [response,
+       &estimated_batch_bytes](ExportItem&& item, size_t estimated_item_bytes) {
+        *response->add_items() = std::move(item);
+        estimated_batch_bytes += estimated_item_bytes;
+        // Return `false` to stop iteration once over the limit.
+        return estimated_batch_bytes < rbt::kBatchFlushBytes;
+      });
+  if (!status.ok()) {
+    return status;
+  }
   return grpc::Status::OK;
 }
 
@@ -2517,14 +2714,7 @@ void DatabaseService::RecoverTasks(
     const std::unordered_set<std::string>& shard_ids) {
   RecoverResponse response;
 
-  // We don't know what is the best batch size for this, so we
-  // just use a number that is small enough to not cause
-  // performance issues, but large enough to not cause too many
-  // round trips.
-  // TODO: This should be configurable and pick the better value for default.
-  static size_t RECOVER_TASKS_BATCH_SIZE = 256;
-
-  size_t batch_size = 0;
+  size_t estimated_batch_bytes = 0;
 
   for (rocksdb::ColumnFamilyHandle* column_family_handle :
        column_family_handles_) {
@@ -2554,13 +2744,14 @@ void DatabaseService::RecoverTasks(
               task.task_id().state_type(),
               task.task_id().state_ref(),
               shard_ids)) {
+        size_t estimated_task_bytes = EstimateTaskSize(task);
         *response.add_pending_tasks() = std::move(task);
 
         MaybeWriteAndClearResponse(
             responses,
             response,
-            batch_size,
-            RECOVER_TASKS_BATCH_SIZE);
+            estimated_batch_bytes,
+            estimated_task_bytes);
       }
 
       iterator->Next();
@@ -2568,7 +2759,7 @@ void DatabaseService::RecoverTasks(
   }
 
   // Flush any remaining tasks.
-  WriteAndClearResponse(responses, response, batch_size);
+  WriteAndClearResponse(responses, response, estimated_batch_bytes);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -2705,14 +2896,7 @@ expected<void> DatabaseService::RecoverTransactions(
 
   RecoverResponse response;
 
-  // We don't know what is the best batch size for this, so we
-  // just use a number that is small enough to not cause
-  // performance issues, but large enough to not cause too many
-  // round trips.
-  // TODO: This should be configurable and pick the better value for default.
-  static size_t RECOVER_PARTICIPANT_TRANSACTIONS_BATCH_SIZE = 256;
-
-  size_t batch_size = 0;
+  size_t estimated_batch_bytes = 0;
 
   while (
       iterator->Valid()
@@ -2760,19 +2944,20 @@ expected<void> DatabaseService::RecoverTransactions(
       CHECK_EQ((*txn)->GetState(), rocksdb::Transaction::STARTED);
     }
 
+    size_t estimated_transaction_bytes = EstimateTransactionSize(transaction);
     *response.add_participant_transactions() = std::move(transaction);
 
     MaybeWriteAndClearResponse(
         responses,
         response,
-        batch_size,
-        RECOVER_PARTICIPANT_TRANSACTIONS_BATCH_SIZE);
+        estimated_batch_bytes,
+        estimated_transaction_bytes);
 
     iterator->Next();
   }
 
   // Flush any remaining participant transactions.
-  WriteAndClearResponse(responses, response, batch_size);
+  WriteAndClearResponse(responses, response, estimated_batch_bytes);
 
   // Now recover any prepared coordinator transactions.
   //
@@ -2780,13 +2965,6 @@ expected<void> DatabaseService::RecoverTransactions(
   // any participant transaction because the participant may have
   // committed and thus deleted the record of the transaction but we
   // have not yet completed the coordinator's "commit control loop".
-
-  // We don't know what is the best batch size for this, so we
-  // just use a number that is small enough to not cause
-  // performance issues, but large enough to not cause too many
-  // round trips.
-  // TODO: This should be configurable and pick the better value for default.
-  static size_t RECOVER_COORDINATOR_TRANSACTIONS_BATCH_SIZE = 256;
 
   // First, handle legacy coordinator transactions (for backward compatibility).
   //
@@ -2838,11 +3016,14 @@ expected<void> DatabaseService::RecoverTransactions(
 
       *coordinator_entry.mutable_participants() = std::move(participants);
 
+      size_t estimated_prepared_transaction_coordinator_bytes =
+          EstimatePreparedTransactionCoordinatorSize(coordinator_entry);
+
       MaybeWriteAndClearResponse(
           responses,
           response,
-          batch_size,
-          RECOVER_COORDINATOR_TRANSACTIONS_BATCH_SIZE);
+          estimated_batch_bytes,
+          estimated_prepared_transaction_coordinator_bytes);
 
       iterator->Next();
     }
@@ -2899,17 +3080,20 @@ expected<void> DatabaseService::RecoverTransactions(
         iterator->value().data(),
         iterator->value().size()));
 
+    size_t estimated_prepared_transaction_coordinator_bytes =
+        EstimatePreparedTransactionCoordinatorSize(coordinator_entry);
+
     MaybeWriteAndClearResponse(
         responses,
         response,
-        batch_size,
-        RECOVER_COORDINATOR_TRANSACTIONS_BATCH_SIZE);
+        estimated_batch_bytes,
+        estimated_prepared_transaction_coordinator_bytes);
 
     iterator->Next();
   }
 
   // Flush any remaining coordinator transactions.
-  WriteAndClearResponse(responses, response, batch_size);
+  WriteAndClearResponse(responses, response, estimated_batch_bytes);
 
   return {};
 }
@@ -2921,14 +3105,7 @@ void DatabaseService::RecoverShardsIdempotentMutations(
     const std::unordered_set<std::string>& shard_ids) {
   RecoverResponse response;
 
-  // We don't know what is the best batch size for this, so we
-  // just use a number that is small enough to not cause
-  // performance issues, but large enough to not cause too many
-  // round trips.
-  // TODO: This should be configurable and pick the better value for default.
-  static size_t RECOVER_IDEMPOTENT_MUTATIONS_BATCH_SIZE = 256;
-
-  size_t batch_size = 0;
+  size_t estimated_batch_bytes = 0;
 
   for (rocksdb::ColumnFamilyHandle* column_family_handle :
        column_family_handles_) {
@@ -2960,13 +3137,15 @@ void DatabaseService::RecoverShardsIdempotentMutations(
               idempotent_mutation.state_type(),
               idempotent_mutation.state_ref(),
               shard_ids)) {
+        size_t estimated_idempotent_mutation_bytes =
+            EstimateIdempotentMutationSize(idempotent_mutation);
         *response.add_idempotent_mutations() = std::move(idempotent_mutation);
 
         MaybeWriteAndClearResponse(
             responses,
             response,
-            batch_size,
-            RECOVER_IDEMPOTENT_MUTATIONS_BATCH_SIZE);
+            estimated_batch_bytes,
+            estimated_idempotent_mutation_bytes);
       }
 
       iterator->Next();
@@ -2974,7 +3153,7 @@ void DatabaseService::RecoverShardsIdempotentMutations(
   }
 
   // Flush any remaining idempotent mutations.
-  WriteAndClearResponse(responses, response, batch_size);
+  WriteAndClearResponse(responses, response, estimated_batch_bytes);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -3416,14 +3595,7 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
 
   RecoverIdempotentMutationsResponse response;
 
-  // We don't know what is the best batch size for this, so we
-  // just use a number that is small enough to not cause
-  // performance issues, but large enough to not cause too many
-  // round trips.
-  // TODO: This should be configurable and pick the better value for default.
-  static size_t RECOVER_IDEMPOTENT_MUTATIONS_BATCH_SIZE = 256;
-
-  size_t batch_size = 0;
+  size_t estimated_batch_bytes = 0;
 
   // Helper for recovering idempotency keys given a prefix.
   auto recover = [&](const std::string& start_prefix,
@@ -3444,13 +3616,15 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
           iterator->value().data(),
           iterator->value().size()));
 
+      size_t estimated_idempotent_mutation_bytes =
+          EstimateIdempotentMutationSize(idempotent_mutation);
       *response.add_idempotent_mutations() = std::move(idempotent_mutation);
 
       MaybeWriteAndClearResponse(
           *responses,
           response,
-          batch_size,
-          RECOVER_IDEMPOTENT_MUTATIONS_BATCH_SIZE);
+          estimated_batch_bytes,
+          estimated_idempotent_mutation_bytes);
 
       iterator->Next();
     }
@@ -3499,7 +3673,7 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
 
     recover(*idempotent_mutation_key_prefix);
 
-    CHECK_LE(batch_size, 1)
+    CHECK_LE(response.idempotent_mutations_size(), 1)
         << "Only expecting at most a single idempotency key";
   } else if (workflow_id.has_value() && workflow_iteration.has_value()) {
     CHECK_EQ(workflow_id->size(), 16)
@@ -3566,7 +3740,7 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
   }
 
   // Flush any remaining idempotent mutations.
-  WriteAndClearResponse(*responses, response, batch_size);
+  WriteAndClearResponse(*responses, response, estimated_batch_bytes);
 
   return grpc::Status::OK;
 }
@@ -3579,8 +3753,8 @@ expected<std::unique_ptr<DatabaseServer>> DatabaseServer::Instantiate(
     std::string address) {
   grpc::ServerBuilder builder;
 
-  builder.SetMaxReceiveMessageSize(kMaxSidecarGrpcMessageSize.bytes());
-  builder.SetMaxSendMessageSize(kMaxSidecarGrpcMessageSize.bytes());
+  builder.SetMaxReceiveMessageSize(kMaxDatabaseMessageTransportBytes);
+  builder.SetMaxSendMessageSize(kMaxDatabaseMessageTransportBytes);
 
   std::optional<int> port;
 

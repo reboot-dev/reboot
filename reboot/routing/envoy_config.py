@@ -47,10 +47,10 @@ from reboot.routing.filters.lua import (
 )
 from reboot.run_environments import on_cloud
 from reboot.settings import (
+    ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES,
     ENVVAR_LOCAL_ENVOY_MODE,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_MCP_FRONTEND_HOST,
-    MAX_GRPC_RESPONSE_SIZE_BYTES,
 )
 from urllib.parse import urlparse
 
@@ -858,7 +858,7 @@ def listeners(
             ],
             # See: https://github.com/reboot-dev/mono/issues/3944.
             per_connection_buffer_limit_bytes=UInt32Value(
-                value=MAX_GRPC_RESPONSE_SIZE_BYTES
+                value=ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES
             ),
         ) for listener in listeners
     ]
@@ -964,7 +964,7 @@ def _cluster(
         ),
         # See: https://github.com/reboot-dev/mono/issues/3944.
         per_connection_buffer_limit_bytes=UInt32Value(
-            value=MAX_GRPC_RESPONSE_SIZE_BYTES
+            value=ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES
         ),
     )
 

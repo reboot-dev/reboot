@@ -4,18 +4,18 @@
 
 #pragma once
 
-#include "stout/bytes.h"
-
 ////////////////////////////////////////////////////////////////////////
 
 namespace rbt {
 
 ////////////////////////////////////////////////////////////////////////
 
-// gRPC max message size to transmit large actor state data.
-// TODO: We have increased this as a short-term workaround for #3411 and
-// #3329.
-constexpr Bytes kMaxSidecarGrpcMessageSize = Megabytes(1024);
+// gRPC max message size to transmit large actor state data, 100 MB.
+constexpr size_t kMaxDatabaseMessageTransportBytes = 1024 * 1024 * 100;
+
+// We will flush the batch when the total "estimated" message size
+// exceeds this threshold.
+constexpr size_t kBatchFlushBytes = kMaxDatabaseMessageTransportBytes / 2;
 
 ////////////////////////////////////////////////////////////////////////
 
