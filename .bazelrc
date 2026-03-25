@@ -11,6 +11,14 @@ try-import submodules/dev-tools/.bazelrc
 # TODO: Remove the need to fallback to local.
 build --spawn_strategy=processwrapper-sandbox,local
 
+# Run exclusive tests in a sandbox rather than with the bare
+# local strategy. Without this, exclusive tests bypass the
+# remote cache entirely (the local spawn runner does not
+# consult the remote cache in Bazel 6.5). This flag defaults
+# to true in Bazel 7, so this line can be removed when we
+# upgrade.
+test --incompatible_exclusive_test_sandboxed
+
 # When we use C++, we use C++17.
 build --cxxopt='-std=c++17'
 build --host_cxxopt='-std=c++17'

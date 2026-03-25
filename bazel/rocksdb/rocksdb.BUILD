@@ -61,7 +61,6 @@ cmake(
     },
     lib_source = ":all",
     out_static_libs = ["librocksdb.a"],
-    tags = ["no-cache"],
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_gflags_gflags//:gflags",
