@@ -2720,7 +2720,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             name="{{ mcp_name_prefix }}{{ ui.name }}",
             title="Show {{ ui.title }}",
             description="{{ ui.description if ui.description else 'Opens the ' + ui.name + ' interface' + ui_suffix + '.' }}",
-            meta={"ui/resourceUri": "ui://{{ state.proto.name | to_snake }}/{{ ui.name }}"},
+            meta={"ui": {"resourceUri": "ui://{{ state.proto.name | to_snake }}/{{ ui.name }}"}},
         )
 {% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
         async def {{ mcp_name_prefix }}{{ ui.name }}_tool(

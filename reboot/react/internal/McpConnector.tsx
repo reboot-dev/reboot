@@ -50,13 +50,35 @@ export default function McpConnector({
       // Capture tool result — for Session types the session
       // ID is returned here (not in tool input arguments).
       createdMcpApp.ontoolresult = (result: any) => {
+        // Try structuredContent first (ChatGPT wraps tool
+        // data here), then fall back to content[].text.
+        const sources: string[] = [];
+
+        // structuredContent may be an object with a `text`
+        // string, or the data itself.
+        const sc = result.structuredContent;
+        if (sc != null) {
+          if (typeof sc === "string") {
+            sources.push(sc);
+          } else if (typeof sc.text === "string") {
+            sources.push(sc.text);
+          } else if (typeof sc === "object") {
+            // Already parsed — merge directly.
+            setToolData((prev) => ({ ...prev, ...sc }));
+            return;
+          }
+        }
+
         const text = result.content?.find((c: any) => c.type === "text")?.text;
-        if (text) {
+        if (text) sources.push(text);
+
+        for (const src of sources) {
           try {
-            const data = JSON.parse(text);
+            const data = JSON.parse(src);
             setToolData((prev) => ({ ...prev, ...data }));
+            return;
           } catch {
-            // Ignore malformed tool results.
+            // Try next source.
           }
         }
       };

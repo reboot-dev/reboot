@@ -690,9 +690,18 @@ def _filter_http_connection_manager(
                             string_pb2.StringMatcher(
                                 safe_regex=regex_pb2.RegexMatcher(
                                     # TODO(rjh): deprecated; can remove?
+                                    # We do not know or control where
+                                    # frontends get hosted, and neither
+                                    # do our customers: depending on the
+                                    # MCP client used, a sandbox may
+                                    # have any origin. Permit all
+                                    # origins. Note that the correct
+                                    # incantation for Envoy is `".*"`,
+                                    # not `"*"` (which only matches a
+                                    # literal star).
                                     google_re2=regex_pb2.RegexMatcher.
                                     GoogleRE2(),
-                                    regex="\\*",
+                                    regex=".*",
                                 ),
                             )
                         ],
