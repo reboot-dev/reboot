@@ -4,6 +4,7 @@
 #include <google/protobuf/repeated_field.h>
 
 #include <filesystem>
+#include <functional>
 #include <string>
 
 #include "glog/logging.h"
@@ -118,6 +119,12 @@ class DatabaseServer final {
 // Function to enable legacy coordinator prepared format for testing.
 // This should only be used in tests.
 void TestOnly_EnableLegacyCoordinatorPrepared(grpc::Service* service);
+
+// Set a hook that is invoked only in tests just before the response is
+// returned from a potentially long-running RPC.
+void SetTestOnlyHookForLongRunningRPC(
+    grpc::Service* service,
+    std::function<void()> hook);
 
 ////////////////////////////////////////////////////////////////////////
 

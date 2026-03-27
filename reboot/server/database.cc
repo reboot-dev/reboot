@@ -253,10 +253,6 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   expected<rocksdb::ColumnFamilyHandle*> LookupOrCreateColumnFamilyHandle(
       const std::string& state_type);
 
-  // Iterate through and return a printable list of all the keys stored in the
-  // database, for debugging purposes.
-  std::string ListDatabaseKeys();
-
   // Lookup an ongoing transaction for the specified state type and actor
   // or fail if no transaction exists.
   expected<stout::borrowed_ref<rocksdb::Transaction>> LookupTransaction(
@@ -280,28 +276,33 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   expected<void> ValidateNonTransactionalStore(const StoreRequest& request);
 
   // Helper for recovering tasks.
-  void RecoverTasks(
+  grpc::Status RecoverTasks(
+      const grpc::ServerContext& context,
       grpc::ServerWriter<RecoverResponse>& responses,
       const std::unordered_set<std::string>& shard_ids);
 
   // Helper for recovering transactions.
   expected<void> RecoverTransactions(
+      const grpc::ServerContext& context,
       grpc::ServerWriter<RecoverResponse>& responses,
       const std::unordered_set<std::string>& shard_ids);
 
   // Helper for recovering uncommitted tasks within a transaction.
-  void RecoverTransactionTasks(
+  grpc::Status RecoverTransactionTasks(
+      const grpc::ServerContext& context,
       Transaction& transaction,
       stout::borrowed_ref<rocksdb::Transaction>& txn);
 
   // Helper for recovering uncommitted idempotent mutations within a
   // transaction.
-  void RecoverTransactionIdempotentMutations(
+  grpc::Status RecoverTransactionIdempotentMutations(
+      const grpc::ServerContext& context,
       Transaction& transaction,
       stout::borrowed_ref<rocksdb::Transaction>& txn);
 
   // Helper for recovering idempotent mutations within some shards.
-  void RecoverShardsIdempotentMutations(
+  grpc::Status RecoverShardsIdempotentMutations(
+      const grpc::ServerContext& context,
       grpc::ServerWriter<RecoverResponse>& responses,
       const std::unordered_set<std::string>& shard_ids);
 
@@ -321,38 +322,52 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   std::string GetShardForStateRef(std::string_view state_ref);
 
   // Iterates RocksDB and calls `on_item` for each matching item.
-  // If `on_item` returns `false`, iteration stops early.
+  // If `on_item` returns a non-OK status, iteration stops early and
+  // that status is returned to the caller.
   grpc::Status _Export(
+      const grpc::ServerContext& context,
       const ExportRequest& request,
-      const std::function<bool(ExportItem&&, size_t)>& on_item);
+      const std::function<grpc::Status(ExportItem&&, size_t)>& on_item);
 
-  // Helper for sending a response to the client and clearing
-  // the batch.
+  // Helper for sending a response to the client and clearing the
+  // batch. Returns `grpc::Status::CANCELLED` if the client has
+  // disconnected; the caller should propagate that status and exit.
   template <typename T>
-  void WriteAndClearResponse(
+  grpc::Status WriteAndClearResponse(
+      const grpc::ServerContext& context,
       grpc::ServerWriter<T>& responses,
       T& response,
       size_t& estimated_batch_bytes) {
     if (estimated_batch_bytes != 0) {
+      if (context.IsCancelled()) {
+        return grpc::Status::CANCELLED;
+      }
       responses.Write(response);
       response.Clear();
       estimated_batch_bytes = 0;
     }
+    return grpc::Status::OK;
   }
 
-  // Helper for sending a response to the client and clearing
-  // the batch once its estimated byte size reaches the flush
-  // threshold.
+  // Helper for sending a response to the client and clearing the
+  // batch once its estimated byte size reaches the flush threshold.
+  // Returns a non-OK status if the client has disconnected.
   template <typename T>
-  void MaybeWriteAndClearResponse(
+  grpc::Status MaybeWriteAndClearResponse(
+      const grpc::ServerContext& context,
       grpc::ServerWriter<T>& responses,
       T& response,
       size_t& estimated_batch_bytes,
       size_t estimated_item_bytes) {
     estimated_batch_bytes += estimated_item_bytes;
     if (estimated_batch_bytes >= rbt::kBatchFlushBytes) {
-      WriteAndClearResponse(responses, response, estimated_batch_bytes);
+      return WriteAndClearResponse(
+          context,
+          responses,
+          response,
+          estimated_batch_bytes);
     }
+    return grpc::Status::OK;
   }
 
   // Mutex owning instance members.
@@ -367,6 +382,12 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   // be a relatively small list and it will be faster to just iterate
   // through it when doing a lookup.
   std::vector<rocksdb::ColumnFamilyHandle*> column_family_handles_;
+  // A separate mutex for `column_family_handles_`. The main `mutex_`
+  // is not acquired during `Find()`, but
+  // `LookupColumnFamilyHandle()` is called from `Find()` and must not
+  // race with `LookupOrCreateColumnFamilyHandle()` which modifies
+  // `column_family_handles_`.
+  std::mutex column_family_handles_mutex_;
 
   std::unique_ptr<rocksdb::TransactionDB> db_;
 
@@ -380,6 +401,13 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   // Cache capacity large enough to be helpful but not so large that
   // it's more than O(10s of MB).
   static const size_t SHARD_FOR_STATE_REF_CAPACITY = 8192;
+  // A separate mutex for `shard_for_state_ref_` cache. The main
+  // `mutex_` is not acquired during `_Export` iteration, but
+  // `GetShardForStateRef` is called from the export loop and must not
+  // race with other RPC threads that also access the cache. `Cache` is
+  // not thread-safe by default so we need to protect it with its own
+  // lock rather than the broader `mutex_`.
+  std::mutex shard_cache_mutex_;
 
   // We track ongoing transactions indexed by 'state_ref' because there should
   // only ever be a single transaction per actor and we want to be able to
@@ -393,6 +421,15 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   // to use the "legacy" format (i.e. not providing a coordinator state ref).
   // This should only be true for tests.
   bool allow_legacy_coordinator_prepared_ = false;
+
+  // Optional hook invoked only in tests just before the response is
+  // returned from a potentially long-running RPC.
+  std::function<void()> testonly_hook_for_long_running_rpc_;
+
+ public:
+  void SetTestOnlyHookForLongRunningRPC(std::function<void()> hook) {
+    testonly_hook_for_long_running_rpc_ = std::move(hook);
+  }
 };
 
 ////////////////////////////////////////////////////////////////////////
@@ -629,32 +666,9 @@ expected<void> ValidateServerInfo(
 
 ////////////////////////////////////////////////////////////////////////
 
-std::string DatabaseService::ListDatabaseKeys() {
-  std::ostringstream stream;
-  stream << "{";
-  for (rocksdb::ColumnFamilyHandle* column_family_handle :
-       column_family_handles_) {
-    stream << "\n  " << column_family_handle->GetName() << ": [";
-    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(db_->NewIterator(
-        NonPrefixIteratorReadOptions(),
-        column_family_handle)));
-
-    iterator->SeekToFirst();
-    while (iterator->Valid()) {
-      stream << "\n    " << iterator->key().ToStringView() << ",";
-      iterator->Next();
-    }
-    stream << "],";
-  }
-  stream << "\n}";
-  return stream.str();
-}
-
-////////////////////////////////////////////////////////////////////////
-
 expected<rocksdb::ColumnFamilyHandle*>
 DatabaseService::LookupColumnFamilyHandle(const std::string& state_type) {
-  // TODO: ensure `mutex_` is currently held by this thread.
+  std::unique_lock lock(column_family_handles_mutex_);
 
   // TODO(benh): make 'column_family_handles_' be a map?
   auto iterator = std::find_if(
@@ -679,7 +693,7 @@ DatabaseService::LookupColumnFamilyHandle(const std::string& state_type) {
 expected<rocksdb::ColumnFamilyHandle*>
 DatabaseService::LookupOrCreateColumnFamilyHandle(
     const std::string& state_type) {
-  // TODO: ensure `mutex_` is currently held by this thread.
+  std::unique_lock lock(column_family_handles_mutex_);
 
   // TODO(benh): make 'column_family_handles_' be a map?
   auto iterator = std::find_if(
@@ -1272,6 +1286,10 @@ grpc::Status DatabaseService::ColocatedRange(
     ColocatedRangeResponse* response) {
   std::unique_lock lock(mutex_);
 
+  if (testonly_hook_for_long_running_rpc_) {
+    testonly_hook_for_long_running_rpc_();
+  }
+
   REBOOT_DATABASE_LOG(1) << "ColocatedRange { " << request->ShortDebugString()
                          << " }";
 
@@ -1301,7 +1319,7 @@ grpc::Status DatabaseService::ColocatedRange(
   rocksdb::ReadOptions read_options = rocksdb::ReadOptions();
   read_options.iterate_upper_bound = &end_key;
 
-  rocksdb::Iterator* it;
+  std::unique_ptr<rocksdb::Iterator> it;
   if (request->has_transaction()) {
     // Invariant: if this call is made within a transaction, the transaction
     // must have already been stored. See:
@@ -1317,9 +1335,9 @@ grpc::Status DatabaseService::ColocatedRange(
               request->transaction().state_type(),
               request->transaction().state_ref()));
     }
-    it = txn.value()->GetIterator(read_options, *column_family_handle);
+    it.reset(txn.value()->GetIterator(read_options, *column_family_handle));
   } else {
-    it = db_->NewIterator(read_options, *column_family_handle);
+    it.reset(db_->NewIterator(read_options, *column_family_handle));
   }
 
   // Seek to the start of the range to scan.
@@ -1340,6 +1358,13 @@ grpc::Status DatabaseService::ColocatedRange(
   }
 
   for (int i = 0; i < request->limit() && it->Valid(); it->Next(), i++) {
+    // Despite the RPC is unary, it may be a "long-running" RPC if the
+    // limit is large, so we want to check is the context is cancelled
+    // so we will return early and release the DB lock.
+    // https://github.com/reboot-dev/mono/issues/5349
+    if (context->IsCancelled()) {
+      return grpc::Status::CANCELLED;
+    }
     auto key = it->key();
     key.remove_prefix(strlen(STATE_KEY_PREFIX) + 1);
     *response->add_keys() = key.ToString();
@@ -1365,6 +1390,10 @@ grpc::Status DatabaseService::ColocatedReverseRange(
     const ColocatedReverseRangeRequest* request,
     ColocatedReverseRangeResponse* response) {
   std::unique_lock lock(mutex_);
+
+  if (testonly_hook_for_long_running_rpc_) {
+    testonly_hook_for_long_running_rpc_();
+  }
 
   REBOOT_DATABASE_LOG(1) << "ColocatedReverseRange { "
                          << request->ShortDebugString() << " }";
@@ -1409,7 +1438,7 @@ grpc::Status DatabaseService::ColocatedReverseRange(
   rocksdb::Slice end_key = rocksdb::Slice(end_key_str);
   read_options.iterate_lower_bound = &end_key;
 
-  rocksdb::Iterator* it;
+  std::unique_ptr<rocksdb::Iterator> it;
   if (request->has_transaction()) {
     // Invariant: if this call is made within a transaction, the transaction
     // must have already been stored. See:
@@ -1425,9 +1454,9 @@ grpc::Status DatabaseService::ColocatedReverseRange(
               request->transaction().state_type(),
               request->transaction().state_ref()));
     }
-    it = txn.value()->GetIterator(read_options, *column_family_handle);
+    it.reset(txn.value()->GetIterator(read_options, *column_family_handle));
   } else {
-    it = db_->NewIterator(read_options, *column_family_handle);
+    it.reset(db_->NewIterator(read_options, *column_family_handle));
   }
 
   // Seek to the start of the range to scan.
@@ -1450,6 +1479,13 @@ grpc::Status DatabaseService::ColocatedReverseRange(
   }
 
   for (int i = 0; i < request->limit() && it->Valid(); it->Prev(), i++) {
+    // Despite the RPC is unary, it may be a "long-running" RPC if the
+    // limit is large, so we want to check is the context is cancelled
+    // so we will return early and release the DB lock.
+    // https://github.com/reboot-dev/mono/issues/5349
+    if (context->IsCancelled()) {
+      return grpc::Status::CANCELLED;
+    }
     auto key = it->key();
     key.remove_prefix(strlen(STATE_KEY_PREFIX) + 1);
     *response->add_keys() = key.ToString();
@@ -1474,7 +1510,6 @@ grpc::Status DatabaseService::Find(
     grpc::ServerContext* context,
     const FindRequest* request,
     FindResponse* response) {
-  std::unique_lock lock(mutex_);
   REBOOT_DATABASE_LOG(1) << "Find { " << request->ShortDebugString() << " }";
 
   // Validate that shard_ids are provided.
@@ -1489,15 +1524,19 @@ grpc::Status DatabaseService::Find(
       request->shard_ids().begin(),
       request->shard_ids().end());
 
+  // `LookupColumnFamilyHandle()` acquires `column_family_handles_mutex_`
+  // internally, so we do not need to hold `mutex_` here. Column family
+  // handles are never deleted once created, so the returned pointer
+  // remains valid for the lifetime of this call.
   expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
       LookupColumnFamilyHandle(request->state_type());
   if (!column_family_handle.has_value()) {
     // Return empty results for unknown state types rather than an error.
     // This is important because callers (like SidecarStateManager.actors())
-    // may query for state types that haven't been created yet. A state type's
-    // column family is only created when the first actor of that type is
-    // stored, so returning an empty result correctly indicates there are no
-    // actors of this type yet.
+    // may query for state types that haven't been created yet. A state
+    // type's column family is only created when the first actor of that
+    // type is stored, so returning an empty result correctly indicates
+    // there are no actors of this type yet.
     return grpc::Status::OK;
   }
 
@@ -1505,6 +1544,13 @@ grpc::Status DatabaseService::Find(
   // in total order. This is necessary because we have a prefix extractor
   // configured, and using the default ReadOptions could cause the iterator
   // to skip keys due to prefix optimization.
+  // `db_->NewIterator()` is thread-safe and captures an implicit
+  // snapshot of the DB state at the moment of iterator creation.
+  // See https://github.com/facebook/rocksdb/wiki/Iterator#consistent-view
+  // https://github.com/facebook/rocksdb/wiki/RocksDB-FAQ
+  // Concurrent writes after that point are invisible to the iterator,
+  // so we get a consistent read without holding `mutex_` across the
+  // iteration.
   rocksdb::ReadOptions read_options = NonPrefixIteratorReadOptions();
   std::unique_ptr<rocksdb::Iterator> it(
       db_->NewIterator(read_options, *column_family_handle));
@@ -1526,6 +1572,13 @@ grpc::Status DatabaseService::Find(
     // Collect up to 'limit' entries going forward.
     uint32_t added_count = 0;
     while (added_count < request->limit() && it->Valid()) {
+      // Despite the RPC is unary, it may be a "long-running" RPC if the
+      // limit is large, so we want to check is the context is cancelled
+      // so we will return early and release the DB lock.
+      // https://github.com/reboot-dev/mono/issues/5349
+      if (context->IsCancelled()) {
+        return grpc::Status::CANCELLED;
+      }
       std::string_view key_view = it->key().ToStringView();
       const std::string prefix = STATE_KEY_PREFIX ":";
       if (key_view.size() < prefix.size()
@@ -1560,6 +1613,13 @@ grpc::Status DatabaseService::Find(
     std::vector<std::string> state_refs;
     uint32_t added_count = 0;
     while (added_count < request->limit() && it->Valid()) {
+      // Despite the RPC is unary, it may be a "long-running" RPC if the
+      // limit is large, so we want to check is the context is cancelled
+      // so we will return early and release the DB lock.
+      // https://github.com/reboot-dev/mono/issues/5349
+      if (context->IsCancelled()) {
+        return grpc::Status::CANCELLED;
+      }
       std::string_view key_view = it->key().ToStringView();
       const std::string prefix = STATE_KEY_PREFIX ":";
       if (key_view.size() < prefix.size()
@@ -2453,10 +2513,9 @@ size_t EstimatePreparedTransactionCoordinatorSize(
 }
 
 grpc::Status DatabaseService::_Export(
+    const grpc::ServerContext& context,
     const ExportRequest& request,
-    const std::function<bool(ExportItem&&, size_t)>& on_item) {
-  std::unique_lock lock(mutex_);
-
+    const std::function<grpc::Status(ExportItem&&, size_t)>& on_item) {
   REBOOT_DATABASE_LOG(1) << "Export { " << request.ShortDebugString() << " }";
 
   // Validate that shard_ids are provided.
@@ -2471,6 +2530,11 @@ grpc::Status DatabaseService::_Export(
       request.shard_ids().begin(),
       request.shard_ids().end());
 
+  // `LookupOrCreateColumnFamilyHandle()` acquires
+  // `column_family_handles_mutex_` internally, so we do not need to
+  // hold `mutex_` here. Column family handles are never deleted once
+  // created, so the returned pointer remains valid for the lifetime of
+  // this call.
   expected<rocksdb::ColumnFamilyHandle*> column_family_handle =
       LookupOrCreateColumnFamilyHandle(request.state_type());
 
@@ -2483,11 +2547,25 @@ grpc::Status DatabaseService::_Export(
             column_family_handle.error()));
   }
 
-  rocksdb::Iterator* it = db_->NewIterator(
-      NonPrefixIteratorReadOptions(),
-      column_family_handle.value());
+  // `db_->NewIterator()` is thread-safe and captures an implicit
+  // snapshot of the DB state at the moment of iterator creation.
+  // See https://github.com/facebook/rocksdb/wiki/Iterator#consistent-view
+  // https://github.com/facebook/rocksdb/wiki/RocksDB-FAQ
+  // Concurrent writes after that point are invisible to the iterator,
+  // so we get a consistent read without holding `mutex_` across the
+  // iteration.
+  rocksdb::ReadOptions read_options = NonPrefixIteratorReadOptions();
+  std::unique_ptr<rocksdb::Iterator> it(
+      db_->NewIterator(read_options, *column_family_handle));
+
+  if (testonly_hook_for_long_running_rpc_) {
+    testonly_hook_for_long_running_rpc_();
+  }
 
   for (it->SeekToFirst(); it->Valid(); it->Next()) {
+    if (context.IsCancelled()) {
+      return grpc::Status::CANCELLED;
+    }
     std::string_view key = it->key().ToStringView();
     size_t colon_position = key.find(":");
     if (colon_position == std::string::npos) {
@@ -2544,11 +2622,9 @@ grpc::Status DatabaseService::_Export(
       continue;
     }
 
-    if (!on_item(std::move(item), estimated_item_bytes)) {
-      return grpc::Status(
-          grpc::FAILED_PRECONDITION,
-          "Export data exceeds the gRPC message size limit; please "
-          "upgrade Reboot CLI to be compatible with streamed exports.");
+    if (grpc::Status status = on_item(std::move(item), estimated_item_bytes);
+        !status.ok()) {
+      return status;
     }
   }
 
@@ -2571,29 +2647,28 @@ grpc::Status DatabaseService::ExportStreamed(
   ExportResponse response;
   size_t estimated_batch_bytes = 0;
   grpc::Status status = _Export(
+      *context,
       *request,
-      [responses,
-       &response,
-       &estimated_batch_bytes](ExportItem&& item, size_t estimated_item_bytes) {
+      [this, context, responses, &response, &estimated_batch_bytes](
+          ExportItem&& item,
+          size_t estimated_item_bytes) -> grpc::Status {
         *response.add_items() = std::move(item);
-        estimated_batch_bytes += estimated_item_bytes;
-        if (estimated_batch_bytes >= rbt::kBatchFlushBytes) {
-          responses->Write(response);
-          response.Clear();
-          estimated_batch_bytes = 0;
-        }
-        // Always return `true` to keep iterating until we've gone
-        // through all items.
-        return true;
+        return MaybeWriteAndClearResponse(
+            *context,
+            *responses,
+            response,
+            estimated_batch_bytes,
+            estimated_item_bytes);
       });
   if (!status.ok()) {
     return status;
   }
   // Flush any remaining items.
-  if (estimated_batch_bytes != 0) {
-    responses->Write(response);
-  }
-  return grpc::Status::OK;
+  return WriteAndClearResponse(
+      *context,
+      *responses,
+      response,
+      estimated_batch_bytes);
 }
 
 grpc::Status DatabaseService::Export(
@@ -2602,13 +2677,23 @@ grpc::Status DatabaseService::Export(
     ExportResponse* response) {
   size_t estimated_batch_bytes = 0;
   grpc::Status status = _Export(
+      *context,
       *request,
-      [response,
-       &estimated_batch_bytes](ExportItem&& item, size_t estimated_item_bytes) {
+      [response, &estimated_batch_bytes](
+          ExportItem&& item,
+          size_t estimated_item_bytes) -> grpc::Status {
         *response->add_items() = std::move(item);
         estimated_batch_bytes += estimated_item_bytes;
-        // Return `false` to stop iteration once over the limit.
-        return estimated_batch_bytes < rbt::kBatchFlushBytes;
+        // Return `FAILED_PRECONDITION` to stop iteration once over
+        // the size limit.
+        if (estimated_batch_bytes >= rbt::kBatchFlushBytes) {
+          return grpc::Status(
+              grpc::FAILED_PRECONDITION,
+              "Export data exceeds the gRPC message size limit; "
+              "please upgrade Reboot CLI to be compatible with "
+              "streamed exports.");
+        }
+        return grpc::Status::OK;
       });
   if (!status.ok()) {
     return status;
@@ -2709,62 +2794,84 @@ grpc::Status DatabaseService::StoreApplicationMetadata(
 
 ////////////////////////////////////////////////////////////////////////
 
-void DatabaseService::RecoverTasks(
+grpc::Status DatabaseService::RecoverTasks(
+    const grpc::ServerContext& context,
     grpc::ServerWriter<RecoverResponse>& responses,
     const std::unordered_set<std::string>& shard_ids) {
   RecoverResponse response;
 
   size_t estimated_batch_bytes = 0;
 
-  for (rocksdb::ColumnFamilyHandle* column_family_handle :
-       column_family_handles_) {
-    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(db_->NewIterator(
-        NonPrefixIteratorReadOptions(),
-        column_family_handle)));
+  if (testonly_hook_for_long_running_rpc_) {
+    testonly_hook_for_long_running_rpc_();
+  }
 
-    // Only want to recover pending tasks!
-    static const std::string& TASK_PENDING_KEY_PREFIX =
-        TASK_KEY_PREFIX ":" + Task::Status_Name(Task::PENDING);
+  {
+    std::unique_lock lock(column_family_handles_mutex_);
+    for (rocksdb::ColumnFamilyHandle* column_family_handle :
+         column_family_handles_) {
+      std::unique_ptr<rocksdb::Iterator> iterator(
+          CHECK_NOTNULL(db_->NewIterator(
+              NonPrefixIteratorReadOptions(),
+              column_family_handle)));
 
-    // TODO: investigate using "prefix seek" for better performance, see:
-    // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
-    iterator->Seek(rocksdb::Slice(TASK_PENDING_KEY_PREFIX));
+      // Only want to recover pending tasks!
+      static const std::string& TASK_PENDING_KEY_PREFIX =
+          TASK_KEY_PREFIX ":" + Task::Status_Name(Task::PENDING);
 
-    while (iterator->Valid()
-           && iterator->key().ToStringView().find(TASK_PENDING_KEY_PREFIX)
-               == 0) {
-      Task task;
-      CHECK(task.ParseFromArray(
-          iterator->value().data(),
-          iterator->value().size()));
+      // TODO: investigate using "prefix seek" for better performance, see:
+      // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
+      iterator->Seek(rocksdb::Slice(TASK_PENDING_KEY_PREFIX));
 
-      CHECK_EQ(task.status(), Task::PENDING);
+      while (iterator->Valid()
+             && iterator->key().ToStringView().find(TASK_PENDING_KEY_PREFIX)
+                 == 0) {
+        if (context.IsCancelled()) {
+          return grpc::Status::CANCELLED;
+        }
 
-      if (BelongsToShard(
-              task.task_id().state_type(),
-              task.task_id().state_ref(),
-              shard_ids)) {
-        size_t estimated_task_bytes = EstimateTaskSize(task);
-        *response.add_pending_tasks() = std::move(task);
+        Task task;
+        CHECK(task.ParseFromArray(
+            iterator->value().data(),
+            iterator->value().size()));
 
-        MaybeWriteAndClearResponse(
-            responses,
-            response,
-            estimated_batch_bytes,
-            estimated_task_bytes);
+        CHECK_EQ(task.status(), Task::PENDING);
+
+        if (BelongsToShard(
+                task.task_id().state_type(),
+                task.task_id().state_ref(),
+                shard_ids)) {
+          size_t estimated_task_bytes = EstimateTaskSize(task);
+          *response.add_pending_tasks() = std::move(task);
+
+          if (grpc::Status status = MaybeWriteAndClearResponse(
+                  context,
+                  responses,
+                  response,
+                  estimated_batch_bytes,
+                  estimated_task_bytes);
+              !status.ok()) {
+            return status;
+          }
+        }
+
+        iterator->Next();
       }
-
-      iterator->Next();
     }
   }
 
   // Flush any remaining tasks.
-  WriteAndClearResponse(responses, response, estimated_batch_bytes);
+  return WriteAndClearResponse(
+      context,
+      responses,
+      response,
+      estimated_batch_bytes);
 }
 
 ////////////////////////////////////////////////////////////////////////
 
-void DatabaseService::RecoverTransactionTasks(
+grpc::Status DatabaseService::RecoverTransactionTasks(
+    const grpc::ServerContext& context,
     Transaction& transaction,
     stout::borrowed_ref<rocksdb::Transaction>& txn) {
   CHECK_EQ(transaction.uncommitted_tasks_size(), 0);
@@ -2791,6 +2898,10 @@ void DatabaseService::RecoverTransactionTasks(
   std::set<std::string> task_ids;
 
   while (iterator->Valid()) {
+    if (context.IsCancelled()) {
+      return grpc::Status::CANCELLED;
+    }
+
     rocksdb::WriteEntry entry = iterator->Entry();
 
     // Make sure this is still a key we care about.
@@ -2819,11 +2930,14 @@ void DatabaseService::RecoverTransactionTasks(
 
     iterator->Next();
   }
+
+  return grpc::Status::OK;
 }
 
 ////////////////////////////////////////////////////////////////////////
 
-void DatabaseService::RecoverTransactionIdempotentMutations(
+grpc::Status DatabaseService::RecoverTransactionIdempotentMutations(
+    const grpc::ServerContext& context,
     Transaction& transaction,
     stout::borrowed_ref<rocksdb::Transaction>& txn) {
   CHECK_EQ(transaction.uncommitted_idempotent_mutations_size(), 0);
@@ -2850,6 +2964,10 @@ void DatabaseService::RecoverTransactionIdempotentMutations(
   std::set<std::string> idempotency_keys;
 
   while (iterator->Valid()) {
+    if (context.IsCancelled()) {
+      return grpc::Status::CANCELLED;
+    }
+
     rocksdb::WriteEntry entry = iterator->Entry();
 
     // Make sure this is still a key we care about.
@@ -2880,11 +2998,14 @@ void DatabaseService::RecoverTransactionIdempotentMutations(
 
     iterator->Next();
   }
+
+  return grpc::Status::OK;
 }
 
 ////////////////////////////////////////////////////////////////////////
 
 expected<void> DatabaseService::RecoverTransactions(
+    const grpc::ServerContext& context,
     grpc::ServerWriter<RecoverResponse>& responses,
     const std::unordered_set<std::string>& shard_ids) {
   std::unique_ptr<rocksdb::Iterator> iterator(
@@ -2902,6 +3023,10 @@ expected<void> DatabaseService::RecoverTransactions(
       iterator->Valid()
       && iterator->key().ToStringView().find(TRANSACTION_PARTICIPANT_KEY_PREFIX)
           == 0) {
+    if (context.IsCancelled()) {
+      return make_unexpected("client disconnected");
+    }
+
     Transaction transaction;
 
     CHECK(transaction.ParseFromArray(
@@ -2933,11 +3058,19 @@ expected<void> DatabaseService::RecoverTransactions(
 
       // Now recover any tasks for our actor that we'll need to dispatch if
       // the transaction gets committed.
-      RecoverTransactionTasks(transaction, *txn);
+      if (grpc::Status status =
+              RecoverTransactionTasks(context, transaction, *txn);
+          !status.ok()) {
+        return make_unexpected(status.error_message());
+      }
 
       // Now recover any idempotent mutations for our actor that are part of
       // the transaction.
-      RecoverTransactionIdempotentMutations(transaction, *txn);
+      if (grpc::Status status =
+              RecoverTransactionIdempotentMutations(context, transaction, *txn);
+          !status.ok()) {
+        return make_unexpected(status.error_message());
+      }
     } else {
       // Transaction just started when we called
       // `LookupOrBeginTransaction()`!
@@ -2947,17 +3080,28 @@ expected<void> DatabaseService::RecoverTransactions(
     size_t estimated_transaction_bytes = EstimateTransactionSize(transaction);
     *response.add_participant_transactions() = std::move(transaction);
 
-    MaybeWriteAndClearResponse(
-        responses,
-        response,
-        estimated_batch_bytes,
-        estimated_transaction_bytes);
+    if (grpc::Status status = MaybeWriteAndClearResponse(
+            context,
+            responses,
+            response,
+            estimated_batch_bytes,
+            estimated_transaction_bytes);
+        !status.ok()) {
+      return make_unexpected(status.error_message());
+    }
 
     iterator->Next();
   }
 
   // Flush any remaining participant transactions.
-  WriteAndClearResponse(responses, response, estimated_batch_bytes);
+  if (grpc::Status status = WriteAndClearResponse(
+          context,
+          responses,
+          response,
+          estimated_batch_bytes);
+      !status.ok()) {
+    return make_unexpected(status.error_message());
+  }
 
   // Now recover any prepared coordinator transactions.
   //
@@ -2990,6 +3134,10 @@ expected<void> DatabaseService::RecoverTransactions(
            && iterator->key().ToStringView().find(
                   LEGACY_PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX)
                == 0) {
+      if (context.IsCancelled()) {
+        return make_unexpected("client disconnected");
+      }
+
       // NOTE: we use the stringified form of the UUID as the index
       // because a protobuf 'map' can not have a bytes key. We also
       // store the stringified version of the transaction UUID in the
@@ -3019,11 +3167,15 @@ expected<void> DatabaseService::RecoverTransactions(
       size_t estimated_prepared_transaction_coordinator_bytes =
           EstimatePreparedTransactionCoordinatorSize(coordinator_entry);
 
-      MaybeWriteAndClearResponse(
-          responses,
-          response,
-          estimated_batch_bytes,
-          estimated_prepared_transaction_coordinator_bytes);
+      if (grpc::Status status = MaybeWriteAndClearResponse(
+              context,
+              responses,
+              response,
+              estimated_batch_bytes,
+              estimated_prepared_transaction_coordinator_bytes);
+          !status.ok()) {
+        return make_unexpected(status.error_message());
+      }
 
       iterator->Next();
     }
@@ -3043,6 +3195,10 @@ expected<void> DatabaseService::RecoverTransactions(
 
   while (iterator->Valid()
          && iterator->key().ToStringView().find(prefix) == 0) {
+    if (context.IsCancelled()) {
+      return make_unexpected("client disconnected");
+    }
+
     // Parse the key format: `prefix:shard_id:transaction_id`.
     std::string_view key_view = iterator->key().ToStringView();
 
@@ -3083,77 +3239,105 @@ expected<void> DatabaseService::RecoverTransactions(
     size_t estimated_prepared_transaction_coordinator_bytes =
         EstimatePreparedTransactionCoordinatorSize(coordinator_entry);
 
-    MaybeWriteAndClearResponse(
-        responses,
-        response,
-        estimated_batch_bytes,
-        estimated_prepared_transaction_coordinator_bytes);
+    if (grpc::Status status = MaybeWriteAndClearResponse(
+            context,
+            responses,
+            response,
+            estimated_batch_bytes,
+            estimated_prepared_transaction_coordinator_bytes);
+        !status.ok()) {
+      return make_unexpected(status.error_message());
+    }
 
     iterator->Next();
   }
 
   // Flush any remaining coordinator transactions.
-  WriteAndClearResponse(responses, response, estimated_batch_bytes);
+  if (grpc::Status status = WriteAndClearResponse(
+          context,
+          responses,
+          response,
+          estimated_batch_bytes);
+      !status.ok()) {
+    return make_unexpected(status.error_message());
+  }
 
   return {};
 }
 
 ////////////////////////////////////////////////////////////////////////
 
-void DatabaseService::RecoverShardsIdempotentMutations(
+grpc::Status DatabaseService::RecoverShardsIdempotentMutations(
+    const grpc::ServerContext& context,
     grpc::ServerWriter<RecoverResponse>& responses,
     const std::unordered_set<std::string>& shard_ids) {
   RecoverResponse response;
 
   size_t estimated_batch_bytes = 0;
 
-  for (rocksdb::ColumnFamilyHandle* column_family_handle :
-       column_family_handles_) {
-    if (column_family_handle->GetName() == "default") {
-      continue;
-    }
-
-    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(db_->NewIterator(
-        NonPrefixIteratorReadOptions(),
-        column_family_handle)));
-
-    // TODO: investigate using "prefix seek" for better performance, see:
-    // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
-    iterator->Seek(rocksdb::Slice(IDEMPOTENT_MUTATION_KEY_PREFIX));
-
-    while (
-        iterator->Valid()
-        && iterator->key().ToStringView().find(IDEMPOTENT_MUTATION_KEY_PREFIX)
-            == 0) {
-      IdempotentMutation idempotent_mutation;
-
-      CHECK(idempotent_mutation.ParseFromArray(
-          iterator->value().data(),
-          iterator->value().size()));
-
-      // Only send this idempotent mutation if its state ref falls within one of
-      // the requested shards.
-      if (BelongsToShard(
-              idempotent_mutation.state_type(),
-              idempotent_mutation.state_ref(),
-              shard_ids)) {
-        size_t estimated_idempotent_mutation_bytes =
-            EstimateIdempotentMutationSize(idempotent_mutation);
-        *response.add_idempotent_mutations() = std::move(idempotent_mutation);
-
-        MaybeWriteAndClearResponse(
-            responses,
-            response,
-            estimated_batch_bytes,
-            estimated_idempotent_mutation_bytes);
+  {
+    std::unique_lock lock(column_family_handles_mutex_);
+    for (rocksdb::ColumnFamilyHandle* column_family_handle :
+         column_family_handles_) {
+      if (column_family_handle->GetName() == "default") {
+        continue;
       }
 
-      iterator->Next();
+      std::unique_ptr<rocksdb::Iterator> iterator(
+          CHECK_NOTNULL(db_->NewIterator(
+              NonPrefixIteratorReadOptions(),
+              column_family_handle)));
+
+      // TODO: investigate using "prefix seek" for better performance, see:
+      // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
+      iterator->Seek(rocksdb::Slice(IDEMPOTENT_MUTATION_KEY_PREFIX));
+
+      while (
+          iterator->Valid()
+          && iterator->key().ToStringView().find(IDEMPOTENT_MUTATION_KEY_PREFIX)
+              == 0) {
+        if (context.IsCancelled()) {
+          return grpc::Status::CANCELLED;
+        }
+
+        IdempotentMutation idempotent_mutation;
+
+        CHECK(idempotent_mutation.ParseFromArray(
+            iterator->value().data(),
+            iterator->value().size()));
+
+        // Only send this idempotent mutation if its state ref falls within one
+        // of the requested shards.
+        if (BelongsToShard(
+                idempotent_mutation.state_type(),
+                idempotent_mutation.state_ref(),
+                shard_ids)) {
+          size_t estimated_idempotent_mutation_bytes =
+              EstimateIdempotentMutationSize(idempotent_mutation);
+          *response.add_idempotent_mutations() = std::move(idempotent_mutation);
+
+          if (grpc::Status status = MaybeWriteAndClearResponse(
+                  context,
+                  responses,
+                  response,
+                  estimated_batch_bytes,
+                  estimated_idempotent_mutation_bytes);
+              !status.ok()) {
+            return status;
+          }
+        }
+
+        iterator->Next();
+      }
     }
   }
 
   // Flush any remaining idempotent mutations.
-  WriteAndClearResponse(responses, response, estimated_batch_bytes);
+  return WriteAndClearResponse(
+      context,
+      responses,
+      response,
+      estimated_batch_bytes);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -3162,37 +3346,41 @@ void DatabaseService::RecoverShardsIdempotentMutations(
 // (i.e. from before #2580).
 expected<void> DatabaseService::MigratePersistence2To3(
     const RecoverRequest& request) {
-  for (rocksdb::ColumnFamilyHandle* column_family_handle :
-       column_family_handles_) {
-    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(db_->NewIterator(
-        NonPrefixIteratorReadOptions(),
-        column_family_handle)));
+  {
+    std::unique_lock lock(column_family_handles_mutex_);
+    for (rocksdb::ColumnFamilyHandle* column_family_handle :
+         column_family_handles_) {
+      std::unique_ptr<rocksdb::Iterator> iterator(
+          CHECK_NOTNULL(db_->NewIterator(
+              NonPrefixIteratorReadOptions(),
+              column_family_handle)));
 
-    // TODO: investigate using "prefix seek" for better performance, see:
-    // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
-    iterator->Seek(rocksdb::Slice(TASK_KEY_PREFIX));
+      // TODO: investigate using "prefix seek" for better performance, see:
+      // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
+      iterator->Seek(rocksdb::Slice(TASK_KEY_PREFIX));
 
-    while (iterator->Valid()
-           && iterator->key().ToStringView().find(TASK_KEY_PREFIX) == 0) {
-      Task task;
-      CHECK(task.ParseFromArray(
-          iterator->value().data(),
-          iterator->value().size()));
-      if (task.has_response()
-          && task.response().type_url().find("type.googleapis.com") != 0) {
-        rocksdb::Status status = db_->Delete(
-            DefaultWriteOptions(),
-            column_family_handle,
-            iterator->key());
-        if (!status.ok()) {
-          return make_unexpected(
-              fmt::format(
-                  "Failed to delete stale task: {}",
-                  status.ToString()));
+      while (iterator->Valid()
+             && iterator->key().ToStringView().find(TASK_KEY_PREFIX) == 0) {
+        Task task;
+        CHECK(task.ParseFromArray(
+            iterator->value().data(),
+            iterator->value().size()));
+        if (task.has_response()
+            && task.response().type_url().find("type.googleapis.com") != 0) {
+          rocksdb::Status status = db_->Delete(
+              DefaultWriteOptions(),
+              column_family_handle,
+              iterator->key());
+          if (!status.ok()) {
+            return make_unexpected(
+                fmt::format(
+                    "Failed to delete stale task: {}",
+                    status.ToString()));
+          }
         }
-      }
 
-      iterator->Next();
+        iterator->Next();
+      }
     }
   }
 
@@ -3208,156 +3396,161 @@ expected<void> DatabaseService::MigratePersistence2To3(
 // 2. Renames task keys so we can just recover pending tasks.
 expected<void> DatabaseService::MigratePersistence3To4(
     const RecoverRequest& request) {
-  for (rocksdb::ColumnFamilyHandle* column_family_handle :
-       column_family_handles_) {
-    if (column_family_handle->GetName() == "default") {
-      continue;
-    }
-
-    std::unique_ptr<rocksdb::Iterator> iterator(CHECK_NOTNULL(db_->NewIterator(
-        NonPrefixIteratorReadOptions(),
-        column_family_handle)));
-
-    // To do the rename atomically we need to use a write batch. We
-    // also want to batch writes together because for large enough
-    // databases doing a write for every single idempotent mutation or
-    // task is prohibitively expensive
-    rocksdb::WriteBatch batch;
-
-    size_t entries = 0;
-
-    REBOOT_DATABASE_LOG(1) << "Migrating idempotent mutations for '"
-                           << column_family_handle->GetName() << "'";
-
-    // TODO: investigate using "prefix seek" for better performance, see:
-    // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
-    iterator->Seek(rocksdb::Slice(IDEMPOTENT_MUTATION_KEY_PREFIX_V3 ":"));
-
-    // Helper to determine if the iterator is still valid.
-    std::function<bool()> valid = [&]() {
-      return iterator->Valid()
-          && iterator->key().ToStringView().find(
-                 IDEMPOTENT_MUTATION_KEY_PREFIX_V3 ":")
-          == 0;
-    };
-
-    while (valid()) {
-      IdempotentMutation idempotent_mutation;
-
-      CHECK(idempotent_mutation.ParseFromArray(
-          iterator->value().data(),
-          iterator->value().size()));
-
-      expected<std::string> idempotent_mutation_key = MakeIdempotentMutationKey(
-          idempotent_mutation.state_ref(),
-          idempotent_mutation.key());
-
-      if (!idempotent_mutation_key.has_value()) {
-        return make_unexpected(idempotent_mutation_key.error());
+  {
+    std::unique_lock lock(column_family_handles_mutex_);
+    for (rocksdb::ColumnFamilyHandle* column_family_handle :
+         column_family_handles_) {
+      if (column_family_handle->GetName() == "default") {
+        continue;
       }
 
-      rocksdb::Status status = batch.Put(
-          column_family_handle,
-          rocksdb::Slice(*idempotent_mutation_key),
-          iterator->value());
+      std::unique_ptr<rocksdb::Iterator> iterator(
+          CHECK_NOTNULL(db_->NewIterator(
+              NonPrefixIteratorReadOptions(),
+              column_family_handle)));
 
-      if (!status.ok()) {
-        return make_unexpected(
-            fmt::format(
-                "Failed to rename idempotent mutation: {}",
-                status.ToString()));
-      }
+      // To do the rename atomically we need to use a write batch. We
+      // also want to batch writes together because for large enough
+      // databases doing a write for every single idempotent mutation or
+      // task is prohibitively expensive
+      rocksdb::WriteBatch batch;
 
-      status = batch.Delete(column_family_handle, iterator->key());
+      size_t entries = 0;
 
-      if (!status.ok()) {
-        return make_unexpected(
-            fmt::format(
-                "Failed to rename idempotent mutation key: {}",
-                status.ToString()));
-      }
+      REBOOT_DATABASE_LOG(1) << "Migrating idempotent mutations for '"
+                             << column_family_handle->GetName() << "'";
 
-      entries += 1;
+      // TODO: investigate using "prefix seek" for better performance, see:
+      // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
+      iterator->Seek(rocksdb::Slice(IDEMPOTENT_MUTATION_KEY_PREFIX_V3 ":"));
 
-      iterator->Next();
+      // Helper to determine if the iterator is still valid.
+      std::function<bool()> valid = [&]() {
+        return iterator->Valid()
+            && iterator->key().ToStringView().find(
+                   IDEMPOTENT_MUTATION_KEY_PREFIX_V3 ":")
+            == 0;
+      };
 
-      // Check if we don't have any more to migrate or if we've hit
-      // our batch size and should do a write.
-      if (!valid() || batch.GetDataSize() == (32 * 1024 * 1024)) {  // 32 MB
-        // Write the batch then instantiate a new one.
-        status = db_->Write(DefaultWriteOptions(), &batch);
+      while (valid()) {
+        IdempotentMutation idempotent_mutation;
+
+        CHECK(idempotent_mutation.ParseFromArray(
+            iterator->value().data(),
+            iterator->value().size()));
+
+        expected<std::string> idempotent_mutation_key =
+            MakeIdempotentMutationKey(
+                idempotent_mutation.state_ref(),
+                idempotent_mutation.key());
+
+        if (!idempotent_mutation_key.has_value()) {
+          return make_unexpected(idempotent_mutation_key.error());
+        }
+
+        rocksdb::Status status = batch.Put(
+            column_family_handle,
+            rocksdb::Slice(*idempotent_mutation_key),
+            iterator->value());
 
         if (!status.ok()) {
           return make_unexpected(
               fmt::format(
-                  "Failed to rename idempotent mutation key(s): {}",
+                  "Failed to rename idempotent mutation: {}",
                   status.ToString()));
         }
 
-        batch = rocksdb::WriteBatch();
-
-        REBOOT_DATABASE_LOG(1)
-            << "Migrated " << entries << " idempotent mutation(s)";
-      }
-    }
-
-    CHECK_EQ(batch.Count(), 0) << "Should have a new batch";
-
-    entries = 0;
-
-    REBOOT_DATABASE_LOG(1) << "Migrating tasks for '"
-                           << column_family_handle->GetName() << "'";
-
-    // TODO: investigate using "prefix seek" for better performance, see:
-    // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
-    iterator->Seek(rocksdb::Slice(TASK_KEY_PREFIX_V3 ":"));
-
-    valid = [&]() {
-      return iterator->Valid()
-          && iterator->key().ToStringView().find(TASK_KEY_PREFIX_V3 ":") == 0;
-    };
-
-    while (valid()) {
-      Task task;
-      CHECK(task.ParseFromArray(
-          iterator->value().data(),
-          iterator->value().size()));
-
-      rocksdb::Status status = batch.Put(
-          column_family_handle,
-          rocksdb::Slice(MakeTaskKey(task.status(), task.task_id())),
-          iterator->value());
-
-      if (!status.ok()) {
-        return make_unexpected(
-            fmt::format("Failed to rename task key: {}", status.ToString()));
-      }
-
-      status = batch.Delete(column_family_handle, iterator->key());
-
-      if (!status.ok()) {
-        return make_unexpected(
-            fmt::format("Failed to rename task key: {}", status.ToString()));
-      }
-
-      entries += 1;
-
-      iterator->Next();
-
-      if (!valid() || batch.GetDataSize() == (32 * 1024 * 1024)) {  // 32 MB
-        // Write the batch then instantiate a new one.
-        status = db_->Write(DefaultWriteOptions(), &batch);
+        status = batch.Delete(column_family_handle, iterator->key());
 
         if (!status.ok()) {
           return make_unexpected(
               fmt::format(
-                  "Failed to rename task key(s): {}",
+                  "Failed to rename idempotent mutation key: {}",
                   status.ToString()));
         }
 
-        batch = rocksdb::WriteBatch();
+        entries += 1;
 
-        REBOOT_DATABASE_LOG(1) << "Migrated " << entries << " task(s)";
+        iterator->Next();
+
+        // Check if we don't have any more to migrate or if we've hit
+        // our batch size and should do a write.
+        if (!valid() || batch.GetDataSize() == (32 * 1024 * 1024)) {  // 32 MB
+          // Write the batch then instantiate a new one.
+          status = db_->Write(DefaultWriteOptions(), &batch);
+
+          if (!status.ok()) {
+            return make_unexpected(
+                fmt::format(
+                    "Failed to rename idempotent mutation key(s): {}",
+                    status.ToString()));
+          }
+
+          batch = rocksdb::WriteBatch();
+
+          REBOOT_DATABASE_LOG(1)
+              << "Migrated " << entries << " idempotent mutation(s)";
+        }
+      }
+
+      CHECK_EQ(batch.Count(), 0) << "Should have a new batch";
+
+      entries = 0;
+
+      REBOOT_DATABASE_LOG(1)
+          << "Migrating tasks for '" << column_family_handle->GetName() << "'";
+
+      // TODO: investigate using "prefix seek" for better performance, see:
+      // https://github.com/facebook/rocksdb/wiki/Prefix-Seek
+      iterator->Seek(rocksdb::Slice(TASK_KEY_PREFIX_V3 ":"));
+
+      valid = [&]() {
+        return iterator->Valid()
+            && iterator->key().ToStringView().find(TASK_KEY_PREFIX_V3 ":") == 0;
+      };
+
+      while (valid()) {
+        Task task;
+        CHECK(task.ParseFromArray(
+            iterator->value().data(),
+            iterator->value().size()));
+
+        rocksdb::Status status = batch.Put(
+            column_family_handle,
+            rocksdb::Slice(MakeTaskKey(task.status(), task.task_id())),
+            iterator->value());
+
+        if (!status.ok()) {
+          return make_unexpected(
+              fmt::format("Failed to rename task key: {}", status.ToString()));
+        }
+
+        status = batch.Delete(column_family_handle, iterator->key());
+
+        if (!status.ok()) {
+          return make_unexpected(
+              fmt::format("Failed to rename task key: {}", status.ToString()));
+        }
+
+        entries += 1;
+
+        iterator->Next();
+
+        if (!valid() || batch.GetDataSize() == (32 * 1024 * 1024)) {  // 32 MB
+          // Write the batch then instantiate a new one.
+          status = db_->Write(DefaultWriteOptions(), &batch);
+
+          if (!status.ok()) {
+            return make_unexpected(
+                fmt::format(
+                    "Failed to rename task key(s): {}",
+                    status.ToString()));
+          }
+
+          batch = rocksdb::WriteBatch();
+
+          REBOOT_DATABASE_LOG(1) << "Migrated " << entries << " task(s)";
+        }
       }
     }
   }
@@ -3479,6 +3672,11 @@ std::string DatabaseService::GetShardForHash(
 
 // Helper function to determine which shard owns a given state_ref.
 std::string DatabaseService::GetShardForStateRef(std::string_view state_ref) {
+  // `Cache` is not thread-safe by default. `_Export` calls this
+  // without holding top level `mutex_`, so we use a separate lock to
+  // protect the cache.
+  std::lock_guard<std::mutex> cache_lock(shard_cache_mutex_);
+
   // Check if we have this cached.
   //
   // TODO: improve stout to support C++20 "heterogeneous lookup" to
@@ -3547,7 +3745,10 @@ grpc::Status DatabaseService::Recover(
 
   REBOOT_DATABASE_LOG(1) << "Recovering tasks";
 
-  RecoverTasks(*responses, shard_ids);
+  if (grpc::Status status = RecoverTasks(*context, *responses, shard_ids);
+      !status.ok()) {
+    return status;
+  }
 
   // NOTE: newer versions of Reboot recover idempotent mutations on
   // demand via `RecoverIdempotentMutations()`, but for backwards
@@ -3555,15 +3756,22 @@ grpc::Status DatabaseService::Recover(
   if (!request->skip_idempotent_mutations()) {
     REBOOT_DATABASE_LOG(1) << "Recovering idempotent mutations";
 
-    RecoverShardsIdempotentMutations(*responses, shard_ids);
+    if (grpc::Status status =
+            RecoverShardsIdempotentMutations(*context, *responses, shard_ids);
+        !status.ok()) {
+      return status;
+    }
   }
 
   REBOOT_DATABASE_LOG(1) << "Recovering transactions";
 
   expected<void> recover_transactions =
-      RecoverTransactions(*responses, shard_ids);
+      RecoverTransactions(*context, *responses, shard_ids);
 
   if (!recover_transactions.has_value()) {
+    if (context->IsCancelled()) {
+      return grpc::Status::CANCELLED;
+    }
     return grpc::Status(grpc::UNKNOWN, recover_transactions.error());
   }
 
@@ -3577,6 +3785,10 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
     const RecoverIdempotentMutationsRequest* request,
     grpc::ServerWriter<RecoverIdempotentMutationsResponse>* responses) {
   std::unique_lock lock(mutex_);
+
+  if (testonly_hook_for_long_running_rpc_) {
+    testonly_hook_for_long_running_rpc_();
+  }
 
   REBOOT_DATABASE_LOG(1) << "RecoverIdempotentMutations { "
                          << request->ShortDebugString() << " }";
@@ -3597,9 +3809,12 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
 
   size_t estimated_batch_bytes = 0;
 
-  // Helper for recovering idempotency keys given a prefix.
+  // Helper for recovering idempotency keys given a prefix. Returns
+  // a non-OK status if the client disconnected; the caller should
+  // exit early.
   auto recover = [&](const std::string& start_prefix,
-                     std::optional<std::string> end_prefix = std::nullopt) {
+                     std::optional<std::string> end_prefix =
+                         std::nullopt) -> grpc::Status {
     if (!end_prefix.has_value()) {
       end_prefix = start_prefix;
     }
@@ -3620,14 +3835,20 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
           EstimateIdempotentMutationSize(idempotent_mutation);
       *response.add_idempotent_mutations() = std::move(idempotent_mutation);
 
-      MaybeWriteAndClearResponse(
-          *responses,
-          response,
-          estimated_batch_bytes,
-          estimated_idempotent_mutation_bytes);
+      if (grpc::Status status = MaybeWriteAndClearResponse(
+              *context,
+              *responses,
+              response,
+              estimated_batch_bytes,
+              estimated_idempotent_mutation_bytes);
+          !status.ok()) {
+        return status;
+      }
 
       iterator->Next();
     }
+
+    return grpc::Status::OK;
   };
 
   auto timestamp = []() {
@@ -3671,7 +3892,10 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
           idempotent_mutation_key_prefix.error());
     }
 
-    recover(*idempotent_mutation_key_prefix);
+    if (grpc::Status status = recover(*idempotent_mutation_key_prefix);
+        !status.ok()) {
+      return status;
+    }
 
     CHECK_LE(response.idempotent_mutations_size(), 1)
         << "Only expecting at most a single idempotency key";
@@ -3683,64 +3907,86 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
     // mutations are stored at the iteration scope because only
     // `.per_iteration()` sets the `workflow_iteration` header,
     // and it uses deterministic UUIDv4 keys.
-    recover(
-        fmt::format(
-            WORKFLOW_ITERATION_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}:{}",
-            request->state_ref(),
-            *workflow_id,
-            *workflow_iteration));
+    if (grpc::Status status = recover(
+            fmt::format(
+                WORKFLOW_ITERATION_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}:{}",
+                request->state_ref(),
+                *workflow_id,
+                *workflow_iteration));
+        !status.ok()) {
+      return status;
+    }
   } else if (workflow_id.has_value()) {
     CHECK_EQ(workflow_id->size(), 16)
         << "Expecting workflow id to be the raw 16-byte format";
 
     // Recover this workflow's non-expiring mutations.
-    recover(
-        fmt::format(
-            WORKFLOW_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}",
-            request->state_ref(),
-            *workflow_id));
+    if (grpc::Status status = recover(
+            fmt::format(
+                WORKFLOW_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}",
+                request->state_ref(),
+                *workflow_id));
+        !status.ok()) {
+      return status;
+    }
 
     // Recover this workflow's expiring idempotent mutations that have
     // an expiration timestamp _after_ the current time (in
     // milliseconds since Unix epoch).
-    recover(
-        fmt::format(
-            WORKFLOW_EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}:{}",
-            request->state_ref(),
-            *workflow_id,
-            timestamp()),
-        // Don't recover past this workflow's expiring idempotent
-        // mutations, which may have timestamps that are larger than
-        // `timestamp()`.
-        fmt::format(
-            WORKFLOW_EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}",
-            request->state_ref(),
-            *workflow_id));
+    if (grpc::Status status = recover(
+            fmt::format(
+                WORKFLOW_EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}:{}",
+                request->state_ref(),
+                *workflow_id,
+                timestamp()),
+            // Don't recover past this workflow's expiring idempotent
+            // mutations, which may have timestamps that are larger
+            // than `timestamp()`.
+            fmt::format(
+                WORKFLOW_EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}",
+                request->state_ref(),
+                *workflow_id));
+        !status.ok()) {
+      return status;
+    }
   } else {
     // Recover non-expiring idempotent mutations.
-    recover(
-        fmt::format(
-            IDEMPOTENT_MUTATION_KEY_PREFIX ":{}",
-            request->state_ref()));
+    if (grpc::Status status = recover(
+            fmt::format(
+                IDEMPOTENT_MUTATION_KEY_PREFIX ":{}",
+                request->state_ref()));
+        !status.ok()) {
+      return status;
+    }
 
     // Recover expiring idempotent mutations that have an expiration
     // timestamp _after_ the current time (in milliseconds since Unix
     // epoch).
-    recover(
-        fmt::format(
-            EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}",
-            request->state_ref(),
-            timestamp()),
-        // Don't recover past this state ref's expiring idempotent
-        // mutations, which may have timestamps that are larger than
-        // `timestamp()`.
-        fmt::format(
-            EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}",
-            request->state_ref()));
+    if (grpc::Status status = recover(
+            fmt::format(
+                EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}:{}",
+                request->state_ref(),
+                timestamp()),
+            // Don't recover past this state ref's expiring idempotent
+            // mutations, which may have timestamps that are larger
+            // than `timestamp()`.
+            fmt::format(
+                EXPIRING_IDEMPOTENT_MUTATION_KEY_PREFIX ":{}",
+                request->state_ref()));
+        !status.ok()) {
+      return status;
+    }
   }
 
   // Flush any remaining idempotent mutations.
-  WriteAndClearResponse(*responses, response, estimated_batch_bytes);
+  if (grpc::Status status = WriteAndClearResponse(
+          *context,
+          *responses,
+          response,
+          estimated_batch_bytes);
+      !status.ok()) {
+    return status;
+  }
 
   return grpc::Status::OK;
 }
@@ -3800,6 +4046,15 @@ void TestOnly_EnableLegacyCoordinatorPrepared(grpc::Service* service) {
   auto* sidecar_service = dynamic_cast<DatabaseService*>(service);
   if (sidecar_service) {
     sidecar_service->SetAllowLegacyCoordinatorPrepared(true);
+  }
+}
+
+void SetTestOnlyHookForLongRunningRPC(
+    grpc::Service* service,
+    std::function<void()> hook) {
+  auto* db_service = dynamic_cast<DatabaseService*>(service);
+  if (db_service) {
+    db_service->SetTestOnlyHookForLongRunningRPC(std::move(hook));
   }
 }
 
