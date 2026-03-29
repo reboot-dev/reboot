@@ -59,17 +59,20 @@ mkdir -p api/ai_chat_counter/v1 && touch api/ai_chat_counter/v1/counter.py
   title="Define your state and methods"
   description={`
 
-Define a \`Session\` type and a \`Counter\` type.
+Define a \`User\` type and a \`Counter\` type.
 
-Naming a type \`Session\` in your \`API(...)\` is special:
+Naming a type \`User\` in your \`API(...)\` is special:
 
-- A new \`Session\` instance is automatically created for each MCP
-  session that connects to your app.
-- All methods on \`Session\` are automatically callable by the AI.
-- \`Session\` acts as an entry point: its methods create other state
+- A \`User\` instance is automatically created for each authenticated
+  user that connects to your app.
+- During development all users of your app are automatically
+  "authenticated" with the built-in \`Anonymous\` OAuth provider, so every
+  user of your app gets a \`User\` instance.
+- All methods on \`User\` are automatically callable by the AI.
+- \`User\` acts as an entry point: its methods create other state
   types (like \`Counter\`) whose IDs the AI tracks in its context
   window.
-- Methods on non-\`Session\` types use \`mcp=Tool()\` to be
+- Methods on non-\`User\` types use \`mcp=Tool()\` to be
   AI-callable.
 
 `}>
@@ -93,16 +96,34 @@ from reboot.api import (
 )
 
 
+class CreateCounterRequest(Model):
+    description: str = Field(tag=1)
+
+
 class CreateCounterResponse(Model):
     counter_id: str = Field(tag=1)
 
 
-class SessionState(Model):
-    pass
+class CounterEntry(Model):
+    counter_id: str = Field(tag=1)
+    description: str = Field(tag=2)
+
+
+class ListCountersResponse(Model):
+    counters: list[CounterEntry] = Field(tag=1, default_factory=list)
+
+
+class UserState(Model):
+    counter_ids: list[str] = Field(tag=1, default_factory=list)
+
+
+class DescriptionResponse(Model):
+    description: str = Field(tag=1)
 
 
 class CounterState(Model):
     value: int = Field(tag=1, default=0)
+    description: str = Field(tag=2, default="")
 
 
 class GetResponse(Model):
@@ -115,17 +136,26 @@ class IncrementRequest(Model):
 
 
 api = API(
-    Session=Type(
-        state=SessionState,
+    User=Type(
+        state=UserState,
         methods=Methods(
             create_counter=Transaction(
-                request=None,
+                request=CreateCounterRequest,
                 response=CreateCounterResponse,
-                description="Create a new Counter. Returns "
-                "the ID of the new counter. That ID is "
-                "not human-readable; pass it to future "
-                "tool calls where needed, but no need to "
-                "tell the human what it is.",
+                description="Create a new Counter with a "
+                "description of what it counts. Returns "
+                "the `counter_id`, which is not "
+                "human-readable but should be passed to "
+                "future tool calls that need it.",
+            ),
+            list_counters=Reader(
+                request=None,
+                response=ListCountersResponse,
+                description="List all counters created "
+                "by this user. Returns `counter_id` and "
+                "description for each. The `counter_id` "
+                "is not human-readable, but use it when "
+                "calling tools that take a `counter_id`.",
             ),
         ),
     ),
@@ -140,7 +170,7 @@ api = API(
                 "for the counter.",
             ),
             create=Writer(
-                request=None,
+                request=CreateCounterRequest,
                 response=None,
                 factory=True,
             ),
@@ -158,6 +188,10 @@ api = API(
                 "the specified amount.",
                 mcp=Tool(),
             ),
+            description=Reader(
+                request=None,
+                response=DescriptionResponse,
+            ),
         ),
     ),
 )
@@ -166,10 +200,10 @@ api = API(
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
 :::info Naming conventions
-Your state class should end in `State`, e.g., `SessionState`,
-`CounterState`. All fields on `Session` state must have default
-values, because `Session` instances are auto-constructed for
-each MCP session.
+Your state class should end in `State`, e.g., `UserState`,
+`CounterState`. All fields on `User` state must have default
+values, because `User` instances are auto-constructed for
+each authenticated user.
 :::
 
 </Step>
@@ -193,7 +227,7 @@ mkdir -p backend/src/servicers && touch backend/src/servicers/counter.py
   title="Implement your servicer"
   description={`
 
-You implement one servicer class per type. \`SessionServicer\`
+You implement one servicer class per type. \`UserServicer\`
 handles the \`create_counter\` transaction; \`CounterServicer\`
 handles the counter operations. Each method gets a \`context\`
 and optionally a \`request\`. You access state via
@@ -206,7 +240,12 @@ and optionally a \`request\`. You access state via
 
 ```python
 # backend/src/servicers/counter.py
-from ai_chat_counter.v1.counter_rbt import Counter, Session
+from ai_chat_counter.v1.counter import (
+    CreateCounterRequest,
+    CreateCounterResponse,
+    ListCountersResponse,
+)
+from ai_chat_counter.v1.counter_rbt import Counter, User
 from reboot.aio.auth.authorizers import Authorizer, allow
 from reboot.aio.contexts import (
     ReaderContext,
@@ -215,21 +254,38 @@ from reboot.aio.contexts import (
 )
 
 
-class SessionServicer(Session.Servicer):
-    """Servicer for the Session state machine."""
-
-    def authorizer(self) -> Authorizer:
-        return allow()
+class UserServicer(User.Servicer):
+    """Servicer for the User state machine."""
 
     async def create_counter(
         self,
         context: TransactionContext,
-    ) -> Session.CreateCounterResponse:
+        request: CreateCounterRequest,
+    ) -> CreateCounterResponse:
         """Create a new Counter and return its ID."""
-        counter, _ = await Counter.create(context)
-        return Session.CreateCounterResponse(
+        counter, _ = await Counter.create(
+            context, description=request.description
+        )
+        self.state.counter_ids.append(counter.state_id)
+        return CreateCounterResponse(
             counter_id=counter.state_id,
         )
+
+    async def list_counters(
+        self,
+        context: ReaderContext,
+    ) -> ListCountersResponse:
+        """List all counters created by this user."""
+        counters = []
+        for counter_id in self.state.counter_ids:
+            response = await Counter.ref(counter_id).description(context)
+            counters.append(
+                User.CounterEntry(
+                    counter_id=counter_id,
+                    description=response.description,
+                )
+            )
+        return ListCountersResponse(counters=counters)
 
 
 class CounterServicer(Counter.Servicer):
@@ -238,8 +294,22 @@ class CounterServicer(Counter.Servicer):
     def authorizer(self) -> Authorizer:
         return allow()
 
-    async def create(self, context) -> None:
-        pass
+    async def create(
+        self,
+        context: WriterContext,
+        request: CreateCounterRequest,
+    ) -> None:
+        """Initialize the counter with a description."""
+        self.state.description = request.description
+
+    async def description(
+        self,
+        context: ReaderContext,
+    ) -> Counter.DescriptionResponse:
+        """Get the counter's description."""
+        return Counter.DescriptionResponse(
+            description=self.state.description,
+        )
 
     async def increment(
         self,
@@ -282,12 +352,14 @@ touch backend/src/main.py
 # backend/src/main.py
 import asyncio
 from reboot.aio.applications import Application
-from servicers.counter import CounterServicer, SessionServicer
+from reboot.aio.auth.oauth_providers import Anonymous
+from servicers.counter import CounterServicer, UserServicer
 
 
 async def main() -> None:
     application = Application(
-        servicers=[SessionServicer, CounterServicer],
+        servicers=[UserServicer, CounterServicer],
+        oauth=Anonymous(),
     )
     await application.run()
 
@@ -689,7 +761,8 @@ touch mcp_servers.json
   "mcpServers": {
     "counter-server": {
       "type": "streamable-http",
-      "url": "http://localhost:9991/mcp"
+      "url": "http://localhost:9991/mcp",
+      "auth": "oauth"
     }
   }
 }
@@ -743,8 +816,8 @@ next steps:
   the AI passes props to the React component.
 * **[Creating tools](/learn_more/define/pydantic#creating-tools-for-the-ai)** —
   how to control which methods are callable by the AI, including
-  exposing methods on non-`Session` state types, or hiding some
-  `Session` methods from the AI.
+  exposing methods on non-`User` state types, or hiding some
+  `User` methods from the AI.
 * **[How Reboot uses MCP](/learn_more/mcp_apps)** — learn how
   AI Chat Apps work under the hood.
 * **[AI Chat App Examples](/ai_chat_apps/examples)**

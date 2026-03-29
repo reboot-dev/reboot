@@ -316,6 +316,15 @@ RUN set -e; \
     chmod +x ${BINARY_NAME}; \
     mv ${BINARY_NAME} /usr/local/bin/envoy
 
+# Install `ngrok`, useful in testing MCP servers from non-local clients
+# like `claude.ai` - or to intercept traffic for inspection.
+RUN curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
+  | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null \
+  && echo "deb https://ngrok-agent.s3.amazonaws.com bookworm main" \
+  | sudo tee /etc/apt/sources.list.d/ngrok.list \
+  && sudo apt update \
+  && sudo apt install ngrok
+
 # Ensure presence of relevant system groups.
 RUN groupadd -f --system docker
 RUN groupadd -f --system ssh

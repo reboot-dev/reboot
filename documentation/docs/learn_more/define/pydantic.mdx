@@ -10,9 +10,9 @@ for full-stack apps with Python backends.
 ## AI Chat App
 
 A Reboot API is centered on _types_, which contain _state_ and
-_methods_. When building an AI Chat App, you define a `Session`
-type (auto-constructed per MCP session) whose methods create
-other state types. Methods become
+_methods_. When building an AI Chat App, you define a `User`
+type (auto-constructed per authenticated user) whose methods
+create other state types. Methods become
 [tools the AI can call](/learn_more/mcp_apps):
 
 <!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py&syntax=python) -->
@@ -34,16 +34,34 @@ from reboot.api import (
 )
 
 
+class CreateCounterRequest(Model):
+    description: str = Field(tag=1)
+
+
 class CreateCounterResponse(Model):
     counter_id: str = Field(tag=1)
 
 
-class SessionState(Model):
-    pass
+class CounterEntry(Model):
+    counter_id: str = Field(tag=1)
+    description: str = Field(tag=2)
+
+
+class ListCountersResponse(Model):
+    counters: list[CounterEntry] = Field(tag=1, default_factory=list)
+
+
+class UserState(Model):
+    counter_ids: list[str] = Field(tag=1, default_factory=list)
+
+
+class DescriptionResponse(Model):
+    description: str = Field(tag=1)
 
 
 class CounterState(Model):
     value: int = Field(tag=1, default=0)
+    description: str = Field(tag=2, default="")
 
 
 class GetResponse(Model):
@@ -56,17 +74,26 @@ class IncrementRequest(Model):
 
 
 api = API(
-    Session=Type(
-        state=SessionState,
+    User=Type(
+        state=UserState,
         methods=Methods(
             create_counter=Transaction(
-                request=None,
+                request=CreateCounterRequest,
                 response=CreateCounterResponse,
-                description="Create a new Counter. Returns "
-                "the ID of the new counter. That ID is "
-                "not human-readable; pass it to future "
-                "tool calls where needed, but no need to "
-                "tell the human what it is.",
+                description="Create a new Counter with a "
+                "description of what it counts. Returns "
+                "the `counter_id`, which is not "
+                "human-readable but should be passed to "
+                "future tool calls that need it.",
+            ),
+            list_counters=Reader(
+                request=None,
+                response=ListCountersResponse,
+                description="List all counters created "
+                "by this user. Returns `counter_id` and "
+                "description for each. The `counter_id` "
+                "is not human-readable, but use it when "
+                "calling tools that take a `counter_id`.",
             ),
         ),
     ),
@@ -81,7 +108,7 @@ api = API(
                 "for the counter.",
             ),
             create=Writer(
-                request=None,
+                request=CreateCounterRequest,
                 response=None,
                 factory=True,
             ),
@@ -98,6 +125,10 @@ api = API(
                 description="Increment the counter by "
                 "the specified amount.",
                 mcp=Tool(),
+            ),
+            description=Reader(
+                request=None,
+                response=DescriptionResponse,
             ),
         ),
     ),
@@ -117,42 +148,47 @@ All Pydantic fields must include a `tag` parameter using
 :::
 
 :::info Naming conventions
-Your state class should end in `State`, e.g., `SessionState`,
+Your state class should end in `State`, e.g., `UserState`,
 `CounterState`.
 :::
 
-## Special state: `Session`
+## Special state: `User`
 
-Naming a type `Session` in your `API(Session=Type(...))`
+Naming a type `User` in your `API(User=Type(...))`
 definition triggers special behavior:
 
-1. **Auto-construction**: a `Session` instance is automatically
-   created for each new MCP session. You do not need an
+1. **Auto-construction**: a `User` instance is automatically
+   created for each authenticated user. You do not need an
    `initialize` function or manual `create()` calls. All fields
-   on `SessionState` must have default values, since instances
+   on `UserState` must have default values, since instances
    are created without arguments.
-2. **Auto-tool-exposure**: all `Session` methods are
+2. **Auto-tool-exposure**: all `User` methods are
    automatically exposed as tools (unless `mcp=False`).
 3. **Automatic ID resolution**: the AI never needs to specify a
-   state ID for `Session` methods — it is resolved from the
-   MCP session.
+   state ID for `User` methods — it is resolved from the
+   authenticated user.
+4. **Default authorization**: `User` methods are accessible to
+   the owning user (whose `user_id` matches the state ID) and
+   to app-internal calls. No `authorizer()` override is needed.
+   See [Default authorizer](/learn_more/auth#default-authorizer)
+   for details.
 
-`Session` typically acts as an entry point: its methods create or look
+`User` typically acts as an entry point: its methods create or look
 up other state types (like `Counter`) and return their IDs. The AI
 tracks those IDs in its context window and passes them in subsequent
 tool calls.
 
 ## Creating tools for the AI
 
-### `Session` methods are AI-callable by default
+### `User` methods are AI-callable by default
 
-All methods on the `Session` state type are automatically
+All methods on the `User` state type are automatically
 exposed as MCP tools the AI can call. The `description` field
 on each method is what the AI reads to decide when and how to
 call a tool:
 
 ```python
-SessionMethods = Methods(
+UserMethods = Methods(
     create_counter=Transaction(
         request=None,
         response=CreateCounterResponse,
@@ -166,12 +202,12 @@ SessionMethods = Methods(
 
 ### Opting out with `mcp=False`
 
-To prevent a `Session` method from being AI-callable, set
+To prevent a `User` method from being AI-callable, set
 `mcp=False`:
 
 ```python
-SessionMethods = Methods(
-    # AI-callable (default for Session methods).
+UserMethods = Methods(
+    # AI-callable (default for User methods).
     create_counter=Transaction(
         request=None,
         response=CreateCounterResponse,
@@ -187,11 +223,11 @@ SessionMethods = Methods(
 )
 ```
 
-### Exposing non-`Session` methods to the AI
+### Exposing non-`User` methods to the AI
 
-Methods on state types other than `Session` are **not**
+Methods on state types other than `User` are **not**
 AI-callable by default. To expose them, add `mcp=Tool()`.
-This is how you expose methods on the types that `Session`
+This is how you expose methods on the types that `User`
 creates:
 
 ```python
@@ -205,7 +241,7 @@ CounterMethods = Methods(
         description="Get the current counter value.",
         mcp=Tool(),
     ),
-    # NOT AI-callable (default for non-Session methods).
+    # NOT AI-callable (default for non-User methods).
     create=Writer(
         request=None,
         response=None,
@@ -214,9 +250,9 @@ CounterMethods = Methods(
 )
 
 api = API(
-    Session=Type(
-        state=SessionState,
-        methods=SessionMethods,
+    User=Type(
+        state=UserState,
+        methods=UserMethods,
     ),
     Counter=Type(
         state=CounterState,
@@ -225,7 +261,7 @@ api = API(
 )
 ```
 
-For non-`Session` types, the AI must specify a state ID when
+For non-`User` types, the AI must specify a state ID when
 calling the tool. It receives the ID when it creates the
 instance (e.g., from `create_counter`).
 
@@ -270,7 +306,7 @@ write (e.g., `Writer`) the state. A type can have any number of
 ## Full-stack
 
 You can also use Pydantic for full-stack apps that are not AI Chat Apps.
-In that case you do not need the `Session` type, `UI` methods, or
+In that case you do not need the `User` type, `UI` methods, or
 `description` fields:
 
 ```python

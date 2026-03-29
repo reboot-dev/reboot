@@ -1,6 +1,7 @@
 import unittest
 import uuid
 from datetime import timedelta
+from rbt.v1alpha1.errors_pb2 import StateAlreadyConstructed
 from reboot.aio.applications import Application
 from reboot.aio.call import Options
 from reboot.aio.idempotency import (
@@ -313,6 +314,76 @@ class IdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
             "idempotency key) for mutations",
             str(error.exception),
         )
+
+    async def test_constructors_are_idempotent(self) -> None:
+        """
+        Tests that calling a constructor idempotently twice with
+        the same alias and parameters succeeds both times, rather
+        than raising `StateAlreadyConstructed` on the second call.
+        """
+        await self.rbt.up(Application(servicers=[AccountServicer]))
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        # First call: construct the account idempotently.
+        state_id = 'idempotent-constructor-test'
+        account1, _ = await Account.idempotently(
+            'open account',
+        ).Open(context, state_id)
+
+        # Second call: exact same alias, context, and state ID. This
+        # must succeed (not raise `StateAlreadyConstructed`).
+        account2, _ = await Account.idempotently(
+            'open account',
+        ).Open(context, state_id)
+
+        # Both calls should return the same state.
+        self.assertEqual(account1.state_id, state_id)
+        self.assertEqual(account2.state_id, state_id)
+
+        # Verify that calling the constructor *without* idempotency on
+        # the same state ID does raise `StateAlreadyConstructed`.
+        with self.assertRaises(Account.OpenAborted) as aborted:
+            await Account.Open(context, state_id)
+
+        self.assertEqual(
+            type(aborted.exception.error), StateAlreadyConstructed
+        )
+
+    async def test_non_constructor_transactions_are_idempotent(
+        self,
+    ) -> None:
+        """
+        Tests that calling a non-constructor transaction idempotently
+        twice with the same alias will elide the second execution,
+        rather than re-executing the mutation on the second call.
+        """
+        await self.rbt.up(
+            Application(servicers=[AccountServicer, BankServicer])
+        )
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+        # First call: sign up the account idempotently.
+        await bank.idempotently('sign up jonathan').SignUp(
+            context,
+            account_id='jonathan',
+        )
+
+        # Second call: exact same alias, context, and arguments. This
+        # must succeed by returning the cached response, not by
+        # re-executing the mutation (which would fail because 'jonathan'
+        # is already in `bank.state.account_ids`).
+        await bank.idempotently('sign up jonathan').SignUp(
+            context,
+            account_id='jonathan',
+        )
+
+        # Sanity-check: a non-idempotent re-sign-up must still fail.
+        with self.assertRaises(Bank.SignUpAborted):
+            await bank.SignUp(context, account_id='jonathan')
 
     async def test_idempotently_generate_id(self) -> None:
 

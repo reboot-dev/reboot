@@ -921,7 +921,8 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             # realize where they are missing authorization).
             if authorizer_or_rule is None:
                 return IMPORT_reboot_aio_auth_authorizers.DefaultAuthorizer(
-                    'Echo'
+                    'Echo',
+                    is_user_type=False,
                 )
 
             if isinstance(authorizer_or_rule, IMPORT_reboot_aio_auth_authorizers.AuthorizerRule):
@@ -10279,10 +10280,16 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 method=method,
                 context_type=IMPORT_reboot_aio_contexts.ReaderContext,
             ) as context:
-                return await self._token_verifier.verify_token(
+                result = await self._token_verifier.verify_token(
                     context=context,
                     token=headers.bearer_token,
                 )
+                if isinstance(result, IMPORT_rbt_v1alpha1.errors_pb2.Unauthenticated):
+                    raise IMPORT_reboot_aio_aborted.SystemAborted(
+                        result,
+                        message=result.message or None,
+                    )
+                return result
 
         return None
 

@@ -43,7 +43,7 @@ class CreateCounterResponse(Model):
     counter_id: str = Field(tag=1)
 
 
-class SessionState(Model):
+class UserState(Model):
     pass
 
 
@@ -61,8 +61,8 @@ class IncrementRequest(Model):
 
 
 api = API(
-    Session=Type(
-        state=SessionState,
+    User=Type(
+        state=UserState,
         methods=Methods(
             create_counter=Transaction(
                 request=None,

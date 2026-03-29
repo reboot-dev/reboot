@@ -93,9 +93,9 @@ my-app/
 └── pyproject.toml
 ```
 
-The API definition uses the same `Session` + application type
+The API definition uses the same `User` + application type
 pattern described in the
-[hand-written guide](/ai_chat_apps/get_started): `Session` is the
+[hand-written guide](/ai_chat_apps/get_started): `User` is the
 auto-constructed entry point whose methods create other state
 types, and those types' methods use `mcp=Tool()` to be callable
 by the AI.

@@ -15,7 +15,7 @@ from rbt.v1alpha1 import errors_pb2, nodejs_pb2, tasks_pb2
 from reboot.aio.aborted import Aborted, SystemAborted
 from reboot.aio.auth import Auth
 from reboot.aio.auth.authorizers import Authorizer
-from reboot.aio.auth.token_verifiers import TokenVerifier
+from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
 from reboot.aio.contexts import Context, ReaderContext, WorkflowContext
 from reboot.aio.directories import chdir
 from reboot.aio.external import ExternalContext
@@ -366,7 +366,7 @@ class NodeAdaptorTokenVerifier(TokenVerifier):
         self,
         context: ReaderContext,
         token: Optional[str],
-    ) -> Optional[Auth]:
+    ) -> VerifyTokenResult:
         cancelled: asyncio.Future[None] = asyncio.Future()
         try:
             # TODO: See the note before the call in `NodeAdaptorAuthorizer`.

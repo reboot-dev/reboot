@@ -1,5 +1,7 @@
+import jwt
 import os
 import reboot.aio.reboot
+import time
 import unittest
 from reboot.aio.applications import Application
 from reboot.aio.auth.token_verifiers import TokenVerifier
@@ -10,9 +12,16 @@ from reboot.aio.libraries import AbstractLibrary
 from reboot.aio.reboot import ApplicationRevision
 from reboot.aio.servicers import Servicer
 from reboot.run_environments import in_nodejs
-from reboot.settings import ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG
+from reboot.settings import (
+    ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG,
+    ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
+)
 from typing import Any, Awaitable, Callable, Optional, Sequence, overload
 from unittest import mock
+
+# Hardcoded signing secret for unit tests. Not a real
+# secret — only used in-process for test JWT minting.
+_TEST_OAUTH_SIGNING_SECRET = "reboot-test-signing-secret"
 
 
 def assert_called_twice_with(
@@ -43,6 +52,54 @@ class Reboot(reboot.aio.reboot.Reboot):
         # must be set before `start()` which is where
         # `monitor_event_loop()` reads the env var.
         os.environ[ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG] = 'true'
+        # Set a signing secret so that `OAuthServer` can be used in
+        # tests without manual env patching. Mirrors what `rbt dev` does
+        # for local development.
+        os.environ[ENVVAR_REBOOT_OAUTH_SIGNING_SECRET] = (
+            _TEST_OAUTH_SIGNING_SECRET
+        )
+
+    def make_valid_oauth_access_token(
+        self,
+        user_id: str = "test-user",
+    ) -> str:
+        """
+        Mint a valid JWT OAuth access token for use in tests.
+        
+        The resulting token will be accepted by Reboot applications in
+        unit tests, as if the caller had gone through the full OAuth
+        flow and was authenticated with the given user ID.
+        
+        It doesn't matter which OAuth provider is used by the
+        application; the OAuth flow doesn't in fact execute. A token is
+        directly minted using the application's signing secret,
+        emulating what happens in the final step of a successful OAuth
+        flow. The resulting token is valid, but the identity it presents
+        is just whatever the developer specified - no actual
+        authentication takes place.
+        """
+        return self.make_jwt(
+            type="access",
+            sub=user_id,
+            aud="reboot-mcp",
+            # Valid for 1000 hours; much longer than any test should
+            # ever run.
+            exp=int(time.time()) + 60 * 60 * 1000,
+        )
+
+    def make_jwt(self, **claims: Any) -> str:
+        """
+        Mint an arbitrary JWT signed with the test signing secret.
+        
+        Use `make_bearer_token` for the common case of a valid access
+        token; use this for custom tokens (expired, refresh, client,
+        etc.).
+        """
+        return jwt.encode(
+            claims,
+            _TEST_OAUTH_SIGNING_SECRET,
+            algorithm="HS256",
+        )
 
     @overload
     async def up(
@@ -162,6 +219,12 @@ class Reboot(reboot.aio.reboot.Reboot):
         if local_envoy is None and not in_nodejs():
             if application.has_http_routes_or_mounts():
                 local_envoy = True
+
+        # Mount MCP now that we know we have a real cluster coming up.
+        # This is deliberately deferred from `Application.__init__`,
+        # where the run environment was `InvalidRunEnvironment` (i.e.
+        # no `rbt dev` / `rbt serve` process detected).
+        application._mount_mcp(application._servicers or [])
 
         revision = await super().up(
             servicers=application.servicers,

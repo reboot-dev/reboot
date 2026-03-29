@@ -124,6 +124,11 @@ class PythonWebFramework(WebFramework):
             assert "methods" not in kwargs
             return self._api_route(path, methods=["POST"], **kwargs)
 
+        def options(self, path: str, **kwargs):
+            # Used for CORS preflight handlers.
+            assert "methods" not in kwargs
+            return self._api_route(path, methods=["OPTIONS"], **kwargs)
+
         @overload
         def mount(
             self,

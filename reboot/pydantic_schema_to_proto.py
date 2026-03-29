@@ -18,7 +18,13 @@ from reboot.api import (
     to_snake_case,
 )
 from reboot.fail import fail
+from reboot.settings import AUTO_CONSTRUCT_STATE_TYPE
 from typing import Dict, List, Literal, Optional, Union, get_args, get_origin
+
+# Proto `AutoConstruct` enum value name for per-user
+# auto-construction. Must match the enum in
+# `rbt/v1alpha1/options.proto`.
+_PER_USER_ID = "PER_USER_ID"
 
 
 def _pydantic_field_type_string_from_type(
@@ -133,6 +139,9 @@ async def generate(
     discriminator: Optional[str] = None,
     # UIs associated with this state type.
     uis: Optional[List] = None,
+    # Auto-construct enum value name for this state type,
+    # or None for non-auto-constructed types.
+    auto_construct: Optional[str] = None,
 ):
     origin = get_origin(schema)
     args = get_args(schema)
@@ -143,12 +152,18 @@ async def generate(
         await proto.write(f"message {name} {{\n")
 
         if state:
-            if uis:
-                # Generate state option with UIs.
-                # Proto text format uses repeated field
-                # names, not array syntax.
+            if uis or auto_construct:
+                # Generate state option with UIs and/or
+                # auto-construct annotation. Proto text
+                # format uses repeated field names, not
+                # array syntax.
                 await proto.write("  option (rbt.v1alpha1.state) = {\n")
-                for ui in uis:
+                if auto_construct is not None:
+                    await proto.write(
+                        f"    auto_construct: "
+                        f"{auto_construct}\n"
+                    )
+                for ui in (uis or []):
                     ui_fields = [
                         f'name: "{ui["name"]}"',
                         f'title: "{ui["title"]}"',
@@ -678,6 +693,8 @@ async def generate_proto_file_from_api(
                 name=type_name,
                 state=True,
                 uis=uis if uis else None,
+                auto_construct=_PER_USER_ID
+                if type_name == AUTO_CONSTRUCT_STATE_TYPE else None,
             )
             await proto.write('\n')
 

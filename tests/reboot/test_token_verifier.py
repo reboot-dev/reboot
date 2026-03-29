@@ -1,7 +1,7 @@
 import jwt
 from log.log import get_logger
 from reboot.aio.auth import Auth
-from reboot.aio.auth.token_verifiers import TokenVerifier
+from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
 from reboot.aio.contexts import ReaderContext
 from typing import Any, Optional
 
@@ -22,7 +22,7 @@ class TestTokenVerifier(TokenVerifier):
         self,
         context: ReaderContext,
         token: Optional[str],
-    ) -> Optional[Auth]:
+    ) -> VerifyTokenResult:
         """Decode self-signed JWT and return Auth.
 
         The token must contain the `sub` claim. This claim is assumed to hold

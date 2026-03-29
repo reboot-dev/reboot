@@ -27,6 +27,7 @@ export {
   McpAppContext,
   useMcpApp,
   useMcpToolData,
+  useRefreshMCPBearerToken,
   type McpAppContextValue,
 } from "./internal/index.js";
 
@@ -246,7 +247,10 @@ export const RebootClientProvider = ({
             <div style={{ padding: "1rem", opacity: 0.7 }}>Loading MCP...</div>
           }
         >
-          <LazyMcpConnector appName={mcpTitle.uiTitle}>
+          <LazyMcpConnector
+            appName={mcpTitle.uiTitle}
+            setBearerToken={setBearerToken}
+          >
             {children}
           </LazyMcpConnector>
         </Suspense>

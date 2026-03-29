@@ -158,6 +158,7 @@ py_binary(
         "REBOOT_LOCAL_ENVOY": "true",
         "REBOOT_LOCAL_ENVOY_PORT": "9991",
         "REBOOT_LOCAL_ENVOY_USE_TLS": "False",
+        "REBOOT_OAUTH_SIGNING_SECRET": "ping",
     },
     main = "ping.py",
     visibility = ["//visibility:public"],

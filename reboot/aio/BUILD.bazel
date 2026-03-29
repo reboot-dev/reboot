@@ -33,6 +33,8 @@ py_library(
         ":tracing_py",
         ":workflows_py",
         "//reboot:run_environments_py",
+        "//reboot/aio/auth:oauth_providers_py",
+        "//reboot/aio/auth:oauth_server_py",
         "//reboot/aio/auth:token_verifiers_py",
         "//reboot/aio/internals:contextvars_py",
         "//reboot/cli:terminal_py",

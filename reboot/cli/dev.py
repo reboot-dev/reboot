@@ -67,6 +67,7 @@ from reboot.settings import (
     ENVVAR_RBT_STATE_DIRECTORY,
     ENVVAR_REBOOT_LOCAL_ENVOY,
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
+    ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
     ENVVAR_REBOOT_USE_TTY,
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
 )
@@ -1341,6 +1342,12 @@ async def __dev_run(
     if args.api_key is not None:
         env[ENVVAR_RBT_CLOUD_API_KEY] = args.api_key
     env[ENVVAR_RBT_CLOUD_URL] = args.cloud_url
+
+    # Set a signing secret for the MCP OAuth server. For local
+    # dev we use the application name (insecure, but convenient).
+    # Fall back to a fixed string when `--name` wasn't provided.
+    if ENVVAR_REBOOT_OAUTH_SIGNING_SECRET not in env:
+        env[ENVVAR_REBOOT_OAUTH_SIGNING_SECRET] = args.name or "reboot-dev"
 
     if tracing == Tracing.JAEGER:
         # TODO: dynamic port. See comment in `_run_jaeger()`.

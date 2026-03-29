@@ -7,24 +7,24 @@ dependency cycles.
 
 from typing import Any
 
-# Key used to store MCP session ID in request.state.
-_MCP_SESSION_ID_KEY = "mcp_session_id"
+# Key used to store user ID in request.state.
+_MCP_USER_ID_KEY = "mcp_user_id"
 
 
-def get_mcp_session_id(ctx: Any) -> str | None:
-    """Get the current MCP session ID from MCP `Context`.
+def get_mcp_user_id(context: Any) -> str | None:
+    """Get the authenticated user ID from MCP `Context`.
 
     Call this from within MCP tool or resource handlers to get
-    the session ID assigned to this MCP connection.
+    the user ID extracted from the OAuth bearer token.
 
     Args:
-        ctx: The MCP `Context` passed to your tool or resource
-            handler.
+        context: The MCP `Context` passed to your tool or
+            resource handler.
 
     Returns:
-        The session ID string, or `None` if unavailable.
+        The user ID string, or `None` if unavailable.
     """
-    request = ctx.request_context.request
+    request = context.request_context.request
     if request is None:
         return None
-    return getattr(request.state, _MCP_SESSION_ID_KEY, None)
+    return getattr(request.state, _MCP_USER_ID_KEY, None)

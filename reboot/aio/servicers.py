@@ -36,9 +36,18 @@ class Servicer(ABC):
     # Naming: has a leading underscore to ensure it doesn't collide with
     # customer-API-defined methods; those can't use leading underscores.
     @staticmethod
+    def _mcp_tool_names() -> list[str]:
+        """
+        Return the MCP tool names this servicer would register.
+        
+        Overridden by generated code for states with MCP annotations.
+        """
+        return []
+
+    @staticmethod
     def _add_mcp(
         mcp: FastMCP,
-        auto_construct_state_type_full_name: Optional[str] = None,
+        auto_construct_state_type_full_names: list[StateTypeName],
     ) -> None:
         """
         Register any MCP tools/resources on `mcp`.

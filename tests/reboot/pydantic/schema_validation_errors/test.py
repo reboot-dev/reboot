@@ -349,58 +349,57 @@ class APIValidationErrorsTest(unittest.TestCase):
         )
 
 
-class SessionStateValidationErrorsTest(unittest.TestCase):
-    """Test that Session state must be default-constructible."""
+class UserStateValidationErrorsTest(unittest.TestCase):
+    """Test that User state must be default-constructible."""
 
-    def test_session_state_without_defaults_raises_error(self):
-        """Session state fields must all have defaults."""
+    def test_user_state_without_defaults_raises_error(self):
+        """User state fields must all have defaults."""
 
-        class BadSessionState(Model):
+        class BadUserState(Model):
             value: int = Field(tag=1)  # No default!
 
         with self.assertRaises(UserPydanticError) as error:
             API(
-                Session=Type(
-                    state=BadSessionState,
+                User=Type(
+                    state=BadUserState,
                     methods=Methods(),
                 ),
             )
 
         self.assertEqual(
             str(error.exception),
-            "Field `value` in Session state model "
-            "`BadSessionState` must have a default "
-            "value, or be optional. Session instances "
+            "Field `value` in User state model "
+            "`BadUserState` must have a default "
+            "value, or be optional. User instances "
             "are auto-constructed, in their default "
-            "(empty) state, for every new AI session "
-            "connecting to the application, and such "
-            "a fresh state must be valid.",
+            "(empty) state, and such a fresh state "
+            "must be valid.",
         )
 
-    def test_session_state_with_defaults_is_valid(self):
-        """Session state with all defaults should be accepted."""
+    def test_user_state_with_defaults_is_valid(self):
+        """User state with all defaults should be accepted."""
 
-        class GoodSessionState(Model):
+        class GoodUserState(Model):
             value: int = Field(tag=1, default=0)
 
         # Should not raise.
         API(
-            Session=Type(
-                state=GoodSessionState,
+            User=Type(
+                state=GoodUserState,
                 methods=Methods(),
             ),
         )
 
-    def test_session_state_with_optional_field_is_valid(self):
-        """Session state with Optional fields is accepted."""
+    def test_user_state_with_optional_field_is_valid(self):
+        """User state with Optional fields is accepted."""
 
-        class GoodSessionState(Model):
+        class GoodUserState(Model):
             value: Optional[str] = Field(tag=1)
 
         # Should not raise: Optional fields default to None.
         API(
-            Session=Type(
-                state=GoodSessionState,
+            User=Type(
+                state=GoodUserState,
                 methods=Methods(),
             ),
         )

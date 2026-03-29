@@ -321,10 +321,22 @@ def is_app_internal(*, context: ReaderContext, **kwargs):
     return rbt.v1alpha1.errors_pb2.PermissionDenied()
 
 
+def state_id_is_user_id(*, context: ReaderContext, **kwargs):
+    """Allow when the caller's `user_id` matches the state ID."""
+    if context.auth is None or context.auth.user_id is None:
+        return rbt.v1alpha1.errors_pb2.Unauthenticated()
+
+    if context.auth.user_id == context.state_id:
+        return rbt.v1alpha1.errors_pb2.Ok()
+
+    return rbt.v1alpha1.errors_pb2.PermissionDenied()
+
+
 class DefaultAuthorizer(Authorizer[Message | Model, Message | Model | None]):
 
-    def __init__(self, state_name: str):
+    def __init__(self, state_name: str, is_user_type: bool):
         self._state_name = state_name
+        self._is_user_type = is_user_type
 
     async def authorize(
         self,
@@ -335,6 +347,25 @@ class DefaultAuthorizer(Authorizer[Message | Model, Message | Model | None]):
         request: Optional[Message | Model],
         **kwargs,
     ) -> Authorizer.Decision:
+        # For `User` types, allow if the caller's `user_id` matches the
+        # state ID. Unlike other types, `User` auth is always enforced
+        # (even in dev mode) because (unlike other state types) the
+        # default rules are production-worthy.
+        if self._is_user_type:
+            decision = state_id_is_user_id(context=context)
+            if isinstance(decision, rbt.v1alpha1.errors_pb2.Ok):
+                return decision
+            # Fall through to the app-internal check, but if that
+            # doesn't match either, return the `state_id_is_user_id`
+            # decision. We do NOT use the dev-mode behavior of other
+            # state types - in `rbt dev` it is normally possible to
+            # bypass auth that simply may not have been written yet, but
+            # unlike other state types `User` has a default security
+            # stance that's expected to go to produciton in many cases.
+            if context.app_internal:
+                return rbt.v1alpha1.errors_pb2.Ok()
+            return decision
+
         # Allow if app internal.
         if context.app_internal:
             return rbt.v1alpha1.errors_pb2.Ok()

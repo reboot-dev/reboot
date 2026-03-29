@@ -232,10 +232,10 @@ The key differences:
 </RebootClientProvider>
 ```
 
-- **Automatic ID resolution.** For `Session` methods, the hook
-  resolves the state ID from the MCP session automatically. For
-  other types (like `Counter`), the ID is provided by the
-  framework when the UI is opened:
+- **Automatic ID resolution.** For `User` methods, the hook
+  resolves the state ID from the authenticated user
+  automatically. For other types (like `Counter`), the ID is
+  provided by the framework when the UI is opened:
 
 ```tsx
 import { useCounter } from "@api/ai_chat_counter/v1/counter_rbt_react";

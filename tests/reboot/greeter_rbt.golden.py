@@ -1131,7 +1131,8 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             # realize where they are missing authorization).
             if authorizer_or_rule is None:
                 return IMPORT_reboot_aio_auth_authorizers.DefaultAuthorizer(
-                    'Greeter'
+                    'Greeter',
+                    is_user_type=False,
                 )
 
             if isinstance(authorizer_or_rule, IMPORT_reboot_aio_auth_authorizers.AuthorizerRule):
@@ -5171,6 +5172,25 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     self._servicer.__state_type_name__, context._state_ref
                 )
             assert transaction is not None
+            # Re-check for an idempotent mutation now that we hold the
+            # transaction semaphore. This is a fix for a potential race:
+            #   https://github.com/reboot-dev/mono/issues/5361
+            #
+            # If a previous call's commit ran (updating the bloom filter
+            # and, for constructors, making the state visible in memory
+            # via `self._states`) after our initial idempotent mutation
+            # check but before we acquired the semaphore, then without
+            # this re-check, constructors could raise
+            # `StateAlreadyConstructed` and non-constructors could
+            # re-execute the mutation, potentially corrupting state.
+            idempotent_mutation = await self._state_manager.check_for_idempotent_mutation(
+                context
+            )
+            if idempotent_mutation is not None:
+                await self._state_manager.transaction_participant_abort(transaction)
+                response = tests.reboot.greeter_pb2.SetAdjectiveResponse()
+                response.ParseFromString(idempotent_mutation.response)
+                return response
             async with self._state_manager.transaction(
                 context,
                 self._servicer.__state_type__,
@@ -10462,6 +10482,25 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     self._servicer.__state_type_name__, context._state_ref
                 )
             assert transaction is not None
+            # Re-check for an idempotent mutation now that we hold the
+            # transaction semaphore. This is a fix for a potential race:
+            #   https://github.com/reboot-dev/mono/issues/5361
+            #
+            # If a previous call's commit ran (updating the bloom filter
+            # and, for constructors, making the state visible in memory
+            # via `self._states`) after our initial idempotent mutation
+            # check but before we acquired the semaphore, then without
+            # this re-check, constructors could raise
+            # `StateAlreadyConstructed` and non-constructors could
+            # re-execute the mutation, potentially corrupting state.
+            idempotent_mutation = await self._state_manager.check_for_idempotent_mutation(
+                context
+            )
+            if idempotent_mutation is not None:
+                await self._state_manager.transaction_participant_abort(transaction)
+                response = tests.reboot.greeter_pb2.ConstructAndStoreRecursiveMessageResponse()
+                response.ParseFromString(idempotent_mutation.response)
+                return response
             async with self._state_manager.transaction(
                 context,
                 self._servicer.__state_type__,
@@ -10830,10 +10869,16 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 method=method,
                 context_type=IMPORT_reboot_aio_contexts.ReaderContext,
             ) as context:
-                return await self._token_verifier.verify_token(
+                result = await self._token_verifier.verify_token(
                     context=context,
                     token=headers.bearer_token,
                 )
+                if isinstance(result, IMPORT_rbt_v1alpha1.errors_pb2.Unauthenticated):
+                    raise IMPORT_reboot_aio_aborted.SystemAborted(
+                        result,
+                        message=result.message or None,
+                    )
+                return result
 
         return None
 

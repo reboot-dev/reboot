@@ -1183,36 +1183,34 @@ class API(pydantic.BaseModel):
                     if not has_default and not is_optional:
                         raise UserPydanticError(
                             f"Field `{field_name}` in "
-                            f"{AUTO_CONSTRUCT_STATE_TYPE} "
-                            "state model "
+                            f"{type_name} state model "
                             f"`{data_type.state.__name__}` "
                             "must have a default value, or "
                             "be optional. "
-                            f"{AUTO_CONSTRUCT_STATE_TYPE} "
-                            "instances are auto-constructed, "
-                            "in their default (empty) state, "
-                            "for every new AI session connecting "
-                            "to the application, and such a "
+                            f"{type_name} instances are "
+                            "auto-constructed, in their "
+                            "default (empty) state, and such a "
                             "fresh state must be valid."
                         )
 
                 if AUTO_CONSTRUCT_METHOD in data_type.methods:
                     raise UserPydanticError(
-                        f"'{AUTO_CONSTRUCT_METHOD}' is a reserved "
-                        f"method name for "
-                        f"{AUTO_CONSTRUCT_STATE_TYPE} types. If "
-                        "you want custom initialization logic, "
+                        f"'{AUTO_CONSTRUCT_METHOD}' is a "
+                        "reserved method name for "
+                        f"{type_name} types. If you want "
+                        "custom initialization logic, "
                         "override the default "
-                        f"'{AUTO_CONSTRUCT_METHOD}' Writer in "
-                        "your servicer implementation instead of "
-                        "declaring it in the API definition. "
-                        "You may also declare alternative "
-                        "factory methods for your own use, but "
-                        "note the system will always use "
+                        f"'{AUTO_CONSTRUCT_METHOD}' Writer "
+                        "in your servicer implementation "
+                        "instead of declaring it in the API "
+                        "definition. You may also declare "
+                        "alternative factory methods for "
+                        "your own use, but note the system "
+                        "will always use "
                         f"'{AUTO_CONSTRUCT_METHOD}' when "
                         "automatically constructing a "
-                        f"'{AUTO_CONSTRUCT_STATE_TYPE}' for a "
-                        "new AI session."
+                        f"'{type_name}' for a new AI "
+                        "session."
                     )
                 data_type.methods[AUTO_CONSTRUCT_METHOD] = Writer(
                     request=None,

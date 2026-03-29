@@ -18,19 +18,17 @@ from a browser or backend.
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py -->
 
 ```python
-class SessionState(Model):
-    pass
+class CreateCounterResponse(Model):
+    counter_id: str = Field(tag=1)
 
 
-class CounterState(Model):
-    value: int = Field(tag=1, default=0)
+class CounterEntry(Model):
+    counter_id: str = Field(tag=1)
+    description: str = Field(tag=2)
 
 
-class GetResponse(Model):
-    value: int = Field(tag=1)
-
-
-class IncrementRequest(Model):
+class ListCountersResponse(Model):
+    counters: list[CounterEntry] = Field(tag=1, default_factory=list)
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -54,12 +52,13 @@ From the `ai-chat-counter` example:
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py -->
 
 ```python
-class SessionState(Model):
-    pass
+class CreateCounterResponse(Model):
+    counter_id: str = Field(tag=1)
 
 
-class CounterState(Model):
-    value: int = Field(tag=1, default=0)
+class CounterEntry(Model):
+    counter_id: str = Field(tag=1)
+    description: str = Field(tag=2)
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -72,19 +71,17 @@ From the `ai-chat-counter-dashboard` example:
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py -->
 
 ```python
-class SessionState(Model):
-    pass
+class CreateCounterResponse(Model):
+    counter_id: str = Field(tag=1)
 
 
-class CounterState(Model):
-    value: int = Field(tag=1, default=0)
+class CounterEntry(Model):
+    counter_id: str = Field(tag=1)
+    description: str = Field(tag=2)
 
 
-class GetResponse(Model):
-    value: int = Field(tag=1)
-
-
-class IncrementRequest(Model):
+class ListCountersResponse(Model):
+    counters: list[CounterEntry] = Field(tag=1, default_factory=list)
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->

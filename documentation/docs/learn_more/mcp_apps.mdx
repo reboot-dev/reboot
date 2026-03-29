@@ -14,15 +14,16 @@ server exposes **tools** (actions the AI can call) and
 
 ## How Reboot uses MCP
 
-When your Reboot API includes a `Session` type, `Application`
+When your Reboot API includes a `User` type, `Application`
 automatically registers an MCP endpoint at `/mcp`. This means:
 
-- **`Session` methods become MCP tools.** All methods on the
-  `Session` type are automatically exposed as MCP tools. The AI
-  calls them without specifying a state ID — the right `Session`
-  is resolved from the MCP session. `Session` typically acts as
-  an entry point, with methods that create other state types.
-- **Non-`Session` methods can be tools too.** Methods on other
+- **`User` methods become MCP tools.** All methods on the
+  `User` type are automatically exposed as MCP tools. The AI
+  calls them without specifying a state ID — the right `User`
+  is resolved from the authenticated user. `User` typically
+  acts as an entry point, with methods that create other state
+  types.
+- **Non-`User` methods can be tools too.** Methods on other
   types (like `Counter`) are exposed with `mcp=Tool()`. The AI
   receives the state ID when it creates the instance and passes
   it in subsequent calls.
@@ -36,8 +37,8 @@ serialization, transport, session management, and state routing.
 
 ## Controlling which methods are tools
 
-`Session` methods are MCP tools by default — to opt out, set
-`mcp=False`. Non-`Session` methods are **not** tools by
+`User` methods are MCP tools by default — to opt out, set
+`mcp=False`. Non-`User` methods are **not** tools by
 default — to opt in, set `mcp=Tool()`.
 
 Not every method should be an MCP tool:
@@ -53,31 +54,23 @@ Not every method should be an MCP tool:
 For the full API reference and code examples, see
 [Creating tools](/learn_more/define/pydantic#creating-tools-for-the-ai).
 
-## Sessions and `Session` state
+## Users and `User` state
 
-When an MCP client begins a new MCP session with your app, Reboot
-automatically creates a `Session` state instance for that session.
-`Session` acts as an entry point: its methods typically create other
-state types (like `Counter`) whose IDs are returned to the AI. The AI
-can then use those IDs to make further calls (like
-`Counter.increment()`) directly to those states. The AI tracks IDs
-in its context window, which is scoped to the chat conversation.
+When an authenticated user connects to your app via MCP, Reboot
+automatically creates a `User` state instance for that user (if one does
+not already exist). `User` acts as an entry point: its methods typically
+create other state types (like `Counter`) whose IDs can be stored in the
+`User`'s state. Such IDs can also be returned to the AI, which can use
+them to make further calls (like `Counter.increment()`) directly to
+those states. The AI tracks IDs in its context window, which is scoped
+to the chat conversation. To remember IDs or other info across
+conversations, place it in `User` state and provide methods on `User`
+for the AI to use to fetch that information.
 
-Reboot issues a UUIDv7 session ID for each newly connected
-session. Reboot handles persistence on the server side, so
-state created during a session is durable and can be accessed
-again later.
-
-How long a session is (re)used is up to the MCP client; different
-providers have different behaviors, which are typically not
-well-documented. The most common behaviors we've observed are:
-
-* **Many different conversations reuse the same session** - Claude,
-  VSCode, MCPJam, [...]. Sessions are never shared across users.
-* **Most tool calls get a new session** - ChatGPT.
-
-Note that, despite their encouraging name, sessions do not represent
-conversations.
+The `User` state ID is derived from the authenticated user's identity
+(e.g. the `sub` claim in an OAuth token). Reboot handles persistence on
+the server side, so state created by a user is durable and accessible
+across sessions and conversations.
 
 ## Connecting AI clients
 

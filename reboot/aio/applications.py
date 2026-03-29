@@ -10,9 +10,11 @@ import traceback
 from log.log import get_logger
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
+from reboot.aio.auth.oauth_providers import Anonymous, OAuthProvider
+from reboot.aio.auth.oauth_server import OAuthServer
 from reboot.aio.auth.token_verifiers import TokenVerifier
 from reboot.aio.exceptions import InputError
-from reboot.aio.external import InitializeContext
+from reboot.aio.external import ExternalContext, InitializeContext
 from reboot.aio.http import NodeWebFramework, PythonWebFramework, WebFramework
 from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.libraries import AbstractLibrary
@@ -20,7 +22,7 @@ from reboot.aio.reboot import Reboot
 from reboot.aio.servers import ConfigServer
 from reboot.aio.servicers import Serviceable, Servicer
 from reboot.aio.tracing import function_span
-from reboot.aio.types import ServerId
+from reboot.aio.types import ServerId, StateTypeName
 from reboot.cli import terminal
 from reboot.controller.server_managers import (
     run_nodejs_server_process,
@@ -33,6 +35,7 @@ from reboot.run_environments import (
     InvalidRunEnvironment,
     RunEnvironment,
     detect_run_environment,
+    running_rbt_dev,
     within_nodejs_server,
     within_python_server,
 )
@@ -45,11 +48,14 @@ from reboot.settings import (
     ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS,
     ENVVAR_REBOOT_LOCAL_ENVOY,
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
+    ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
 )
 from typing import Awaitable, Callable, NoReturn, Optional
 
 logger = get_logger(__name__)
+
+_MCP_PATH = "/mcp"
 
 
 def _handle_unknown_exception(
@@ -175,34 +181,58 @@ class Application:
                                       Awaitable[None]]] = None,
         initialize_bearer_token: Optional[str] = None,
         token_verifier: Optional[TokenVerifier] = None,
+        oauth: Optional[OAuthProvider] = None,
     ):
         """
-        :param servicers: the types of Reboot-powered servicers that this
-                          Application will serve.
-        :param legacy_grpc_servicers: the types of legacy gRPC servicers (not
-                                      using Reboot libraries) that this
-                                      Application will serve.
-
+        :param servicers: the types of Reboot-powered servicers that
+            this Application will serve.
+        :param legacy_grpc_servicers: the types of legacy gRPC servicers
+            (not using Reboot libraries) that this Application will
+            serve.
         :param libraries: the libraries this Application will use.
+        :param initialize: will be called after the Application's
+            servicers have started for the first time, so that it can
+            perform initialization logic (e.g., creating some well-known
+            actors, loading some data, etc.). It must do so in the
+            context of the given InitializeContext.
+        :param initialize_bearer_token: a Bearer token that will be used
+            to construct the `InitializeContext` passed to `initialize`.
+            If none is provided, the `InitializeContext` will be
+            constructed without a Bearer token, and have app-internal
+            privileges instead.
+        :param token_verifier: a TokenVerifier that will be used to
+            verify authorization bearer tokens passed to the
+            application.
+        :param oauth: an OAuth provider (e.g. `Google` or `GitHub`) for
+            authenticating MCP clients. When set, the Application
+            automatically creates a `TokenVerifier` for the minted JWTs.
+            Mutually exclusive with `token_verifier`.
 
-        :param initialize: will be called after the Application's servicers have
-                       started for the first time, so that it can perform
-                       initialization logic (e.g., creating some well-known
-                       actors, loading some data, etc.). It must do so in the
-                       context of the given InitializeContext.
-
-        :param initialize_bearer_token: a Bearer token that will be used to construct
-            the `InitializeContext` passed to `initialize`. If none is provided,
-            the `InitializeContext` will be constructed without a Bearer token,
-            and have app-internal privileges instead.
-
-        :param token_verifier: a TokenVerifier that will be used to verify
-            authorization bearer tokens passed to the application.
-
-        TODO(benh): update the initialize function to be run in a transaction
-        and ensure that the transaction has finished before serving any other
-        calls on the servicers.
+        TODO(benh): update the initialize function to be run in a
+        transaction and ensure that the transaction has finished before
+        serving any other calls on the servicers.
         """
+        if oauth is not None and token_verifier is not None:
+            # TODO(rjh): support _adding_ a token verifier, rather than
+            #            demanding this is the only one.
+            raise ValueError(
+                "`oauth` and `token_verifier` are mutually "
+                "exclusive. When `oauth` is set, a "
+                "`TokenVerifier` is created automatically."
+            )
+
+        # Default to Anonymous OAuth in environments that also have a
+        # default signing secret (i.e. `rbt dev` and unit tests; these
+        # are the environments where true security isn't needed yet).
+        # This lets MCP clients connect without explicit config. In `rbt
+        # dev`, `_is_dev_default` triggers a warning nudging the
+        # developer to configure a real provider for production.
+        if oauth is None and token_verifier is None:
+            if running_rbt_dev():
+                oauth = Anonymous(_is_dev_default=True)
+            elif os.environ.get(ENVVAR_REBOOT_OAUTH_SIGNING_SECRET):
+                oauth = Anonymous()
+
         # Get all libraries including required dependent libraries.
         if libraries is not None:
             # Check for dupes.
@@ -293,12 +323,31 @@ class Application:
         self._initialize = initialize
         self._token_verifier = token_verifier
         self._initialize_bearer_token = initialize_bearer_token
+        self._oauth = oauth
+
+        # Validate MCP configuration eagerly at construction time so
+        # errors are raised consistently regardless of run environment.
+        seen_tools: dict[str, str] = {}
+        for servicer_cls in self._servicers or []:
+            if servicer_cls._is_auto_construct and oauth is None:
+                raise ValueError(
+                    "Application includes a `User` auto-constructed state "
+                    "type, which requires OAuth to identify the user. Pass "
+                    "`Application(oauth=...)` - e.g. `oauth=Anonymous()`."
+                )
+            for tool_name in servicer_cls._mcp_tool_names():
+                if tool_name in seen_tools:
+                    raise ValueError(
+                        f"Duplicate MCP tool name '{tool_name}' registered"
+                        f" by both '{seen_tools[tool_name]}' and "
+                        f"'{servicer_cls.__name__}'. Use the `name` "
+                        "parameter in `Tool()` to give one of them a "
+                        "distinct name."
+                    )
+                seen_tools[tool_name] = servicer_cls.__name__
 
         # NOTE: we override with `NodeWebFramework` in `NodeApplication`.
         self._web_framework: WebFramework = PythonWebFramework()
-
-        # Mount MCP.
-        self._mount_mcp(self._servicers or [])
 
         self._rbt: Optional[Reboot] = None
 
@@ -324,11 +373,14 @@ class Application:
             self._run_environment == RunEnvironment.RBT_CLOUD and
             os.environ.get(ENVVAR_REBOOT_MODE) == REBOOT_MODE_CONFIG
         ):
-            # This application is running on Reboot Cloud, and is
-            # running in "config mode" rather than as a serving
-            # server. Don't initialize the Reboot instance; the
-            # config server that we'll start later doesn't need it.
+            # This application is running on Reboot Cloud in "config
+            # mode" rather than as a serving server. Don't initialize
+            # the Reboot instance or mount the MCP server; the config
+            # server that we'll start later doesn't need them.
             return
+
+        # We'll be serving. Mount MCP's HTTP endpoints.
+        self._mount_mcp(self._servicers or [])
 
         if within_nodejs_server() or within_python_server():
             # We don't need to bring up a Reboot cluster when running a
@@ -406,47 +458,62 @@ class Application:
         servicers have tools — the server will accept
         connections and explain what's missing.
         """
-        auto_construct_state_type_full_names: list[str] = []
+        auto_construct_state_type_full_names: list[StateTypeName] = []
         new_session_hooks = []
 
-        # Find auto-construct info.
+        # Wire up auto-construction of states for every authenticated user.
         for servicer_cls in servicers:
             if servicer_cls._is_auto_construct:
                 auto_construct_state_type_full_names.append(
                     servicer_cls.__state_type_name__
                 )
-                new_session_hooks.append(servicer_cls._auto_construct)
 
-        if len(auto_construct_state_type_full_names) > 1:
-            state_type_names = (
-                "'" + "', '".join(auto_construct_state_type_full_names) + "'"
-            )
-            raise ValueError(
-                f"Multiple auto-construct state types ({state_type_names}) are "
-                "defined in this application's API. Only one auto-constructed "
-                "state type per application is currently supported."
-            )
+                async def maybe_auto_construct_based_on_user_id(
+                    context: ExternalContext,
+                    user_id: Optional[str],
+                    # Capture by value to avoid the closure-in-a-loop
+                    # pitfall.
+                    _cls=servicer_cls,
+                ):
+                    if user_id is None:
+                        # We can't auto-construct if there's no user ID.
+                        return
+                    await _cls._auto_construct(context, state_id=user_id)
 
-        auto_construct_state_type_full_name = (
-            auto_construct_state_type_full_names[0]
-            if len(auto_construct_state_type_full_names) == 1 else None
-        )
+                new_session_hooks.append(maybe_auto_construct_based_on_user_id)
 
-        # Create MCP server and register all servicers'
-        # tools/resources.
+        # Create MCP server and register all servicers' tools/resources.
         server = FastMCP(name="reboot-mcp")
         for servicer_cls in servicers:
-            servicer_cls._add_mcp(server, auto_construct_state_type_full_name)
+            servicer_cls._add_mcp(server, auto_construct_state_type_full_names)
+
+        # Create the OAuth server (if configured) before mounting the
+        # MCP factory so we can pass it the `MCPSDKOAuthTokenVerifier` -
+        # if we didn't have that in place, expired tokens wouldn't be
+        # caught until our `OAuthTokenVerifier`, and those errors are
+        # (to the MCP SDK) merely internal server errors - they wouldn't
+        # produce the 401 error code needed to trigger a token refresh.
+        mcp_sdk_token_verifier = None
+        oauth_server = None
+        if self._oauth is not None:
+            oauth_server = OAuthServer(
+                provider=self._oauth,
+                protected_resources=[_MCP_PATH],
+            )
+            self._token_verifier = oauth_server.token_verifier
+            mcp_sdk_token_verifier = oauth_server.mcp_sdk_token_verifier
+            oauth_server.mount_routes(self.http)
 
         # The `type: ignore` is needed because `create_mcp_factory`
         # returns a closure, and mypy can't verify Protocol conformance
         # on closures (the closure is structurally compatible with
         # `HTTPASGIApp` at runtime).
         self.http.mount(
-            "/mcp",
+            _MCP_PATH,
             factory=create_mcp_factory(  # type: ignore[arg-type]
                 server=server,
                 new_session_hooks=new_session_hooks,
+                token_verifier=mcp_sdk_token_verifier,
             ),
         )
 

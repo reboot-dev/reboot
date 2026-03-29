@@ -20,6 +20,7 @@ import * as reboot_web from "@reboot-dev/reboot-web";
 import * as reboot_api from "@reboot-dev/reboot-api";
 import React, { useEffect, useMemo, useRef, useState, } from "react";
 import { v4 as uuidv4 } from "uuid";
+import { useRefreshMCPBearerToken } from "@reboot-dev/reboot-react/internal";
 // NOTE NOTE NOTE
 //
 // If you are reading this comment because you are trying to debug
@@ -3840,6 +3841,7 @@ export const useGreeter = ({ id }) => {
     const rebootClient = reboot_react.useRebootClient();
     const url = rebootClient.url;
     const bearerToken = rebootClient.bearerToken;
+    const refreshMCPBearerToken = useRefreshMCPBearerToken();
     const [instance, setInstance] = useState(() => {
         return GreeterInstance.use(id, stateRef, url);
     });
@@ -3943,6 +3945,13 @@ export const useGreeter = ({ id }) => {
                 setAborted(undefined);
                 setResponse(GreeterGreetResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
+                // If the server rejected us due to an expired
+                // token, refresh via the MCP host. The token
+                // change triggers a re-render and reconnect.
+                if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshMCPBearerToken) {
+                    refreshMCPBearerToken();
+                }
                 const aborted = GreeterGreetAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.Greet' aborted with ${aborted.message}`);
                 setAborted(aborted);
@@ -4064,9 +4073,80 @@ export const useGreeter = ({ id }) => {
         if (aborted) {
             return { aborted };
         }
+        else if (response.status === 401 && refreshMCPBearerToken) {
+            // Token expired — refresh via MCP host and retry once.
+            const newToken = await refreshMCPBearerToken();
+            if (newToken) {
+                const retryHeaders = new Headers();
+                retryHeaders.set("Content-Type", "application/json");
+                retryHeaders.append("Connection", "keep-alive");
+                retryHeaders.append("Authorization", `Bearer ${newToken}`);
+                try {
+                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/Greet`, {
+                        method: "POST",
+                        headers: retryHeaders,
+                        body: request.toJsonString()
+                    }), options);
+                    if (retryResponse.ok) {
+                        return {
+                            response: GreeterGreetResponseFromProtobufShape((greeter_pb.GreetResponse.fromJson(await retryResponse.json())))
+                        };
+                    }
+                    // Fall through to generic error handling on retry failure.
+                    return {
+                        aborted: new GreeterGreetAborted(new reboot_api.errors_pb.Unknown(), {
+                            message: `Unknown error with HTTP status ${retryResponse.status} after token refresh`
+                        })
+                    };
+                }
+                catch (e) {
+                    return {
+                        aborted: new GreeterGreetAborted(new reboot_api.errors_pb.Aborted(), {
+                            message: e instanceof Error
+                                ? `${e}`
+                                : `Unknown error: ${JSON.stringify(e)}`
+                        })
+                    };
+                }
+            }
+            // Refresh failed — fall through to generic error.
+            return {
+                aborted: new GreeterGreetAborted(new reboot_api.errors_pb.Unknown(), {
+                    message: `Unauthorized (HTTP 401) and token refresh failed`
+                })
+            };
+        }
         else if (!response.ok) {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
+                // If the server rejected us due to an expired
+                // token, refresh via the MCP host and retry once.
+                if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshMCPBearerToken) {
+                    const newToken = await refreshMCPBearerToken();
+                    if (newToken) {
+                        const retryHeaders = new Headers();
+                        retryHeaders.set("Content-Type", "application/json");
+                        retryHeaders.append("Connection", "keep-alive");
+                        retryHeaders.append("Authorization", `Bearer ${newToken}`);
+                        try {
+                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/Greet`, {
+                                method: "POST",
+                                headers: retryHeaders,
+                                body: request.toJsonString()
+                            }), options);
+                            if (retryResponse.ok) {
+                                return {
+                                    response: GreeterGreetResponseFromProtobufShape((greeter_pb.GreetResponse.fromJson(await retryResponse.json())))
+                                };
+                            }
+                        }
+                        catch (_a) {
+                            // Fall through to return the original
+                            // aborted error.
+                        }
+                    }
+                }
                 const aborted = GreeterGreetAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.Greet' aborted with ${aborted.message}`);
                 return { aborted };
@@ -4200,6 +4280,13 @@ export const useGreeter = ({ id }) => {
                 setAborted(undefined);
                 setResponse(GreeterTryToConstructContextResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
+                // If the server rejected us due to an expired
+                // token, refresh via the MCP host. The token
+                // change triggers a re-render and reconnect.
+                if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshMCPBearerToken) {
+                    refreshMCPBearerToken();
+                }
                 const aborted = GreeterTryToConstructContextAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.TryToConstructContext' aborted with ${aborted.message}`);
                 setAborted(aborted);
@@ -4321,9 +4408,80 @@ export const useGreeter = ({ id }) => {
         if (aborted) {
             return { aborted };
         }
+        else if (response.status === 401 && refreshMCPBearerToken) {
+            // Token expired — refresh via MCP host and retry once.
+            const newToken = await refreshMCPBearerToken();
+            if (newToken) {
+                const retryHeaders = new Headers();
+                retryHeaders.set("Content-Type", "application/json");
+                retryHeaders.append("Connection", "keep-alive");
+                retryHeaders.append("Authorization", `Bearer ${newToken}`);
+                try {
+                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructContext`, {
+                        method: "POST",
+                        headers: retryHeaders,
+                        body: request.toJsonString()
+                    }), options);
+                    if (retryResponse.ok) {
+                        return {
+                            response: GreeterTryToConstructContextResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
+                        };
+                    }
+                    // Fall through to generic error handling on retry failure.
+                    return {
+                        aborted: new GreeterTryToConstructContextAborted(new reboot_api.errors_pb.Unknown(), {
+                            message: `Unknown error with HTTP status ${retryResponse.status} after token refresh`
+                        })
+                    };
+                }
+                catch (e) {
+                    return {
+                        aborted: new GreeterTryToConstructContextAborted(new reboot_api.errors_pb.Aborted(), {
+                            message: e instanceof Error
+                                ? `${e}`
+                                : `Unknown error: ${JSON.stringify(e)}`
+                        })
+                    };
+                }
+            }
+            // Refresh failed — fall through to generic error.
+            return {
+                aborted: new GreeterTryToConstructContextAborted(new reboot_api.errors_pb.Unknown(), {
+                    message: `Unauthorized (HTTP 401) and token refresh failed`
+                })
+            };
+        }
         else if (!response.ok) {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
+                // If the server rejected us due to an expired
+                // token, refresh via the MCP host and retry once.
+                if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshMCPBearerToken) {
+                    const newToken = await refreshMCPBearerToken();
+                    if (newToken) {
+                        const retryHeaders = new Headers();
+                        retryHeaders.set("Content-Type", "application/json");
+                        retryHeaders.append("Connection", "keep-alive");
+                        retryHeaders.append("Authorization", `Bearer ${newToken}`);
+                        try {
+                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructContext`, {
+                                method: "POST",
+                                headers: retryHeaders,
+                                body: request.toJsonString()
+                            }), options);
+                            if (retryResponse.ok) {
+                                return {
+                                    response: GreeterTryToConstructContextResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
+                                };
+                            }
+                        }
+                        catch (_a) {
+                            // Fall through to return the original
+                            // aborted error.
+                        }
+                    }
+                }
                 const aborted = GreeterTryToConstructContextAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.TryToConstructContext' aborted with ${aborted.message}`);
                 return { aborted };
@@ -4391,6 +4549,13 @@ export const useGreeter = ({ id }) => {
                 setAborted(undefined);
                 setResponse(GreeterTryToConstructExternalContextResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
+                // If the server rejected us due to an expired
+                // token, refresh via the MCP host. The token
+                // change triggers a re-render and reconnect.
+                if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshMCPBearerToken) {
+                    refreshMCPBearerToken();
+                }
                 const aborted = GreeterTryToConstructExternalContextAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.TryToConstructExternalContext' aborted with ${aborted.message}`);
                 setAborted(aborted);
@@ -4512,9 +4677,80 @@ export const useGreeter = ({ id }) => {
         if (aborted) {
             return { aborted };
         }
+        else if (response.status === 401 && refreshMCPBearerToken) {
+            // Token expired — refresh via MCP host and retry once.
+            const newToken = await refreshMCPBearerToken();
+            if (newToken) {
+                const retryHeaders = new Headers();
+                retryHeaders.set("Content-Type", "application/json");
+                retryHeaders.append("Connection", "keep-alive");
+                retryHeaders.append("Authorization", `Bearer ${newToken}`);
+                try {
+                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructExternalContext`, {
+                        method: "POST",
+                        headers: retryHeaders,
+                        body: request.toJsonString()
+                    }), options);
+                    if (retryResponse.ok) {
+                        return {
+                            response: GreeterTryToConstructExternalContextResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
+                        };
+                    }
+                    // Fall through to generic error handling on retry failure.
+                    return {
+                        aborted: new GreeterTryToConstructExternalContextAborted(new reboot_api.errors_pb.Unknown(), {
+                            message: `Unknown error with HTTP status ${retryResponse.status} after token refresh`
+                        })
+                    };
+                }
+                catch (e) {
+                    return {
+                        aborted: new GreeterTryToConstructExternalContextAborted(new reboot_api.errors_pb.Aborted(), {
+                            message: e instanceof Error
+                                ? `${e}`
+                                : `Unknown error: ${JSON.stringify(e)}`
+                        })
+                    };
+                }
+            }
+            // Refresh failed — fall through to generic error.
+            return {
+                aborted: new GreeterTryToConstructExternalContextAborted(new reboot_api.errors_pb.Unknown(), {
+                    message: `Unauthorized (HTTP 401) and token refresh failed`
+                })
+            };
+        }
         else if (!response.ok) {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
+                // If the server rejected us due to an expired
+                // token, refresh via the MCP host and retry once.
+                if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshMCPBearerToken) {
+                    const newToken = await refreshMCPBearerToken();
+                    if (newToken) {
+                        const retryHeaders = new Headers();
+                        retryHeaders.set("Content-Type", "application/json");
+                        retryHeaders.append("Connection", "keep-alive");
+                        retryHeaders.append("Authorization", `Bearer ${newToken}`);
+                        try {
+                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructExternalContext`, {
+                                method: "POST",
+                                headers: retryHeaders,
+                                body: request.toJsonString()
+                            }), options);
+                            if (retryResponse.ok) {
+                                return {
+                                    response: GreeterTryToConstructExternalContextResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
+                                };
+                            }
+                        }
+                        catch (_a) {
+                            // Fall through to return the original
+                            // aborted error.
+                        }
+                    }
+                }
                 const aborted = GreeterTryToConstructExternalContextAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.TryToConstructExternalContext' aborted with ${aborted.message}`);
                 return { aborted };
@@ -4582,6 +4818,13 @@ export const useGreeter = ({ id }) => {
                 setAborted(undefined);
                 setResponse(GreeterTestLongRunningFetchResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
+                // If the server rejected us due to an expired
+                // token, refresh via the MCP host. The token
+                // change triggers a re-render and reconnect.
+                if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshMCPBearerToken) {
+                    refreshMCPBearerToken();
+                }
                 const aborted = GreeterTestLongRunningFetchAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.TestLongRunningFetch' aborted with ${aborted.message}`);
                 setAborted(aborted);
@@ -4703,9 +4946,80 @@ export const useGreeter = ({ id }) => {
         if (aborted) {
             return { aborted };
         }
+        else if (response.status === 401 && refreshMCPBearerToken) {
+            // Token expired — refresh via MCP host and retry once.
+            const newToken = await refreshMCPBearerToken();
+            if (newToken) {
+                const retryHeaders = new Headers();
+                retryHeaders.set("Content-Type", "application/json");
+                retryHeaders.append("Connection", "keep-alive");
+                retryHeaders.append("Authorization", `Bearer ${newToken}`);
+                try {
+                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TestLongRunningFetch`, {
+                        method: "POST",
+                        headers: retryHeaders,
+                        body: request.toJsonString()
+                    }), options);
+                    if (retryResponse.ok) {
+                        return {
+                            response: GreeterTestLongRunningFetchResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
+                        };
+                    }
+                    // Fall through to generic error handling on retry failure.
+                    return {
+                        aborted: new GreeterTestLongRunningFetchAborted(new reboot_api.errors_pb.Unknown(), {
+                            message: `Unknown error with HTTP status ${retryResponse.status} after token refresh`
+                        })
+                    };
+                }
+                catch (e) {
+                    return {
+                        aborted: new GreeterTestLongRunningFetchAborted(new reboot_api.errors_pb.Aborted(), {
+                            message: e instanceof Error
+                                ? `${e}`
+                                : `Unknown error: ${JSON.stringify(e)}`
+                        })
+                    };
+                }
+            }
+            // Refresh failed — fall through to generic error.
+            return {
+                aborted: new GreeterTestLongRunningFetchAborted(new reboot_api.errors_pb.Unknown(), {
+                    message: `Unauthorized (HTTP 401) and token refresh failed`
+                })
+            };
+        }
         else if (!response.ok) {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
+                // If the server rejected us due to an expired
+                // token, refresh via the MCP host and retry once.
+                if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshMCPBearerToken) {
+                    const newToken = await refreshMCPBearerToken();
+                    if (newToken) {
+                        const retryHeaders = new Headers();
+                        retryHeaders.set("Content-Type", "application/json");
+                        retryHeaders.append("Connection", "keep-alive");
+                        retryHeaders.append("Authorization", `Bearer ${newToken}`);
+                        try {
+                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TestLongRunningFetch`, {
+                                method: "POST",
+                                headers: retryHeaders,
+                                body: request.toJsonString()
+                            }), options);
+                            if (retryResponse.ok) {
+                                return {
+                                    response: GreeterTestLongRunningFetchResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
+                                };
+                            }
+                        }
+                        catch (_a) {
+                            // Fall through to return the original
+                            // aborted error.
+                        }
+                    }
+                }
                 const aborted = GreeterTestLongRunningFetchAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.TestLongRunningFetch' aborted with ${aborted.message}`);
                 return { aborted };
@@ -4806,6 +5120,13 @@ export const useGreeter = ({ id }) => {
                 setAborted(undefined);
                 setResponse(GreeterGetWholeStateResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
+                // If the server rejected us due to an expired
+                // token, refresh via the MCP host. The token
+                // change triggers a re-render and reconnect.
+                if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshMCPBearerToken) {
+                    refreshMCPBearerToken();
+                }
                 const aborted = GreeterGetWholeStateAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.GetWholeState' aborted with ${aborted.message}`);
                 setAborted(aborted);
@@ -4927,9 +5248,80 @@ export const useGreeter = ({ id }) => {
         if (aborted) {
             return { aborted };
         }
+        else if (response.status === 401 && refreshMCPBearerToken) {
+            // Token expired — refresh via MCP host and retry once.
+            const newToken = await refreshMCPBearerToken();
+            if (newToken) {
+                const retryHeaders = new Headers();
+                retryHeaders.set("Content-Type", "application/json");
+                retryHeaders.append("Connection", "keep-alive");
+                retryHeaders.append("Authorization", `Bearer ${newToken}`);
+                try {
+                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/GetWholeState`, {
+                        method: "POST",
+                        headers: retryHeaders,
+                        body: request.toJsonString()
+                    }), options);
+                    if (retryResponse.ok) {
+                        return {
+                            response: GreeterGetWholeStateResponseFromProtobufShape((GreeterProto.fromJson(await retryResponse.json())))
+                        };
+                    }
+                    // Fall through to generic error handling on retry failure.
+                    return {
+                        aborted: new GreeterGetWholeStateAborted(new reboot_api.errors_pb.Unknown(), {
+                            message: `Unknown error with HTTP status ${retryResponse.status} after token refresh`
+                        })
+                    };
+                }
+                catch (e) {
+                    return {
+                        aborted: new GreeterGetWholeStateAborted(new reboot_api.errors_pb.Aborted(), {
+                            message: e instanceof Error
+                                ? `${e}`
+                                : `Unknown error: ${JSON.stringify(e)}`
+                        })
+                    };
+                }
+            }
+            // Refresh failed — fall through to generic error.
+            return {
+                aborted: new GreeterGetWholeStateAborted(new reboot_api.errors_pb.Unknown(), {
+                    message: `Unauthorized (HTTP 401) and token refresh failed`
+                })
+            };
+        }
         else if (!response.ok) {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
+                // If the server rejected us due to an expired
+                // token, refresh via the MCP host and retry once.
+                if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshMCPBearerToken) {
+                    const newToken = await refreshMCPBearerToken();
+                    if (newToken) {
+                        const retryHeaders = new Headers();
+                        retryHeaders.set("Content-Type", "application/json");
+                        retryHeaders.append("Connection", "keep-alive");
+                        retryHeaders.append("Authorization", `Bearer ${newToken}`);
+                        try {
+                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/GetWholeState`, {
+                                method: "POST",
+                                headers: retryHeaders,
+                                body: request.toJsonString()
+                            }), options);
+                            if (retryResponse.ok) {
+                                return {
+                                    response: GreeterGetWholeStateResponseFromProtobufShape((GreeterProto.fromJson(await retryResponse.json())))
+                                };
+                            }
+                        }
+                        catch (_a) {
+                            // Fall through to return the original
+                            // aborted error.
+                        }
+                    }
+                }
                 const aborted = GreeterGetWholeStateAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.GetWholeState' aborted with ${aborted.message}`);
                 return { aborted };
@@ -4997,6 +5389,13 @@ export const useGreeter = ({ id }) => {
                 setAborted(undefined);
                 setResponse(GreeterFailWithExceptionResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
+                // If the server rejected us due to an expired
+                // token, refresh via the MCP host. The token
+                // change triggers a re-render and reconnect.
+                if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshMCPBearerToken) {
+                    refreshMCPBearerToken();
+                }
                 const aborted = GreeterFailWithExceptionAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.FailWithException' aborted with ${aborted.message}`);
                 setAborted(aborted);
@@ -5118,9 +5517,80 @@ export const useGreeter = ({ id }) => {
         if (aborted) {
             return { aborted };
         }
+        else if (response.status === 401 && refreshMCPBearerToken) {
+            // Token expired — refresh via MCP host and retry once.
+            const newToken = await refreshMCPBearerToken();
+            if (newToken) {
+                const retryHeaders = new Headers();
+                retryHeaders.set("Content-Type", "application/json");
+                retryHeaders.append("Connection", "keep-alive");
+                retryHeaders.append("Authorization", `Bearer ${newToken}`);
+                try {
+                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithException`, {
+                        method: "POST",
+                        headers: retryHeaders,
+                        body: request.toJsonString()
+                    }), options);
+                    if (retryResponse.ok) {
+                        return {
+                            response: GreeterFailWithExceptionResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
+                        };
+                    }
+                    // Fall through to generic error handling on retry failure.
+                    return {
+                        aborted: new GreeterFailWithExceptionAborted(new reboot_api.errors_pb.Unknown(), {
+                            message: `Unknown error with HTTP status ${retryResponse.status} after token refresh`
+                        })
+                    };
+                }
+                catch (e) {
+                    return {
+                        aborted: new GreeterFailWithExceptionAborted(new reboot_api.errors_pb.Aborted(), {
+                            message: e instanceof Error
+                                ? `${e}`
+                                : `Unknown error: ${JSON.stringify(e)}`
+                        })
+                    };
+                }
+            }
+            // Refresh failed — fall through to generic error.
+            return {
+                aborted: new GreeterFailWithExceptionAborted(new reboot_api.errors_pb.Unknown(), {
+                    message: `Unauthorized (HTTP 401) and token refresh failed`
+                })
+            };
+        }
         else if (!response.ok) {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
+                // If the server rejected us due to an expired
+                // token, refresh via the MCP host and retry once.
+                if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshMCPBearerToken) {
+                    const newToken = await refreshMCPBearerToken();
+                    if (newToken) {
+                        const retryHeaders = new Headers();
+                        retryHeaders.set("Content-Type", "application/json");
+                        retryHeaders.append("Connection", "keep-alive");
+                        retryHeaders.append("Authorization", `Bearer ${newToken}`);
+                        try {
+                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithException`, {
+                                method: "POST",
+                                headers: retryHeaders,
+                                body: request.toJsonString()
+                            }), options);
+                            if (retryResponse.ok) {
+                                return {
+                                    response: GreeterFailWithExceptionResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
+                                };
+                            }
+                        }
+                        catch (_a) {
+                            // Fall through to return the original
+                            // aborted error.
+                        }
+                    }
+                }
                 const aborted = GreeterFailWithExceptionAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.FailWithException' aborted with ${aborted.message}`);
                 return { aborted };
@@ -5188,6 +5658,13 @@ export const useGreeter = ({ id }) => {
                 setAborted(undefined);
                 setResponse(GreeterFailWithAbortedResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
+                // If the server rejected us due to an expired
+                // token, refresh via the MCP host. The token
+                // change triggers a re-render and reconnect.
+                if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshMCPBearerToken) {
+                    refreshMCPBearerToken();
+                }
                 const aborted = GreeterFailWithAbortedAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.FailWithAborted' aborted with ${aborted.message}`);
                 setAborted(aborted);
@@ -5309,9 +5786,80 @@ export const useGreeter = ({ id }) => {
         if (aborted) {
             return { aborted };
         }
+        else if (response.status === 401 && refreshMCPBearerToken) {
+            // Token expired — refresh via MCP host and retry once.
+            const newToken = await refreshMCPBearerToken();
+            if (newToken) {
+                const retryHeaders = new Headers();
+                retryHeaders.set("Content-Type", "application/json");
+                retryHeaders.append("Connection", "keep-alive");
+                retryHeaders.append("Authorization", `Bearer ${newToken}`);
+                try {
+                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithAborted`, {
+                        method: "POST",
+                        headers: retryHeaders,
+                        body: request.toJsonString()
+                    }), options);
+                    if (retryResponse.ok) {
+                        return {
+                            response: GreeterFailWithAbortedResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
+                        };
+                    }
+                    // Fall through to generic error handling on retry failure.
+                    return {
+                        aborted: new GreeterFailWithAbortedAborted(new reboot_api.errors_pb.Unknown(), {
+                            message: `Unknown error with HTTP status ${retryResponse.status} after token refresh`
+                        })
+                    };
+                }
+                catch (e) {
+                    return {
+                        aborted: new GreeterFailWithAbortedAborted(new reboot_api.errors_pb.Aborted(), {
+                            message: e instanceof Error
+                                ? `${e}`
+                                : `Unknown error: ${JSON.stringify(e)}`
+                        })
+                    };
+                }
+            }
+            // Refresh failed — fall through to generic error.
+            return {
+                aborted: new GreeterFailWithAbortedAborted(new reboot_api.errors_pb.Unknown(), {
+                    message: `Unauthorized (HTTP 401) and token refresh failed`
+                })
+            };
+        }
         else if (!response.ok) {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
+                // If the server rejected us due to an expired
+                // token, refresh via the MCP host and retry once.
+                if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshMCPBearerToken) {
+                    const newToken = await refreshMCPBearerToken();
+                    if (newToken) {
+                        const retryHeaders = new Headers();
+                        retryHeaders.set("Content-Type", "application/json");
+                        retryHeaders.append("Connection", "keep-alive");
+                        retryHeaders.append("Authorization", `Bearer ${newToken}`);
+                        try {
+                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithAborted`, {
+                                method: "POST",
+                                headers: retryHeaders,
+                                body: request.toJsonString()
+                            }), options);
+                            if (retryResponse.ok) {
+                                return {
+                                    response: GreeterFailWithAbortedResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
+                                };
+                            }
+                        }
+                        catch (_a) {
+                            // Fall through to return the original
+                            // aborted error.
+                        }
+                    }
+                }
                 const aborted = GreeterFailWithAbortedAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.FailWithAborted' aborted with ${aborted.message}`);
                 return { aborted };
@@ -5445,6 +5993,13 @@ export const useGreeter = ({ id }) => {
                 setAborted(undefined);
                 setResponse(GreeterReadRecursiveMessageResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
+                // If the server rejected us due to an expired
+                // token, refresh via the MCP host. The token
+                // change triggers a re-render and reconnect.
+                if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshMCPBearerToken) {
+                    refreshMCPBearerToken();
+                }
                 const aborted = GreeterReadRecursiveMessageAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.ReadRecursiveMessage' aborted with ${aborted.message}`);
                 setAborted(aborted);
@@ -5566,9 +6121,80 @@ export const useGreeter = ({ id }) => {
         if (aborted) {
             return { aborted };
         }
+        else if (response.status === 401 && refreshMCPBearerToken) {
+            // Token expired — refresh via MCP host and retry once.
+            const newToken = await refreshMCPBearerToken();
+            if (newToken) {
+                const retryHeaders = new Headers();
+                retryHeaders.set("Content-Type", "application/json");
+                retryHeaders.append("Connection", "keep-alive");
+                retryHeaders.append("Authorization", `Bearer ${newToken}`);
+                try {
+                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/ReadRecursiveMessage`, {
+                        method: "POST",
+                        headers: retryHeaders,
+                        body: request.toJsonString()
+                    }), options);
+                    if (retryResponse.ok) {
+                        return {
+                            response: GreeterReadRecursiveMessageResponseFromProtobufShape((greeter_pb.ReadRecursiveMessageResponse.fromJson(await retryResponse.json())))
+                        };
+                    }
+                    // Fall through to generic error handling on retry failure.
+                    return {
+                        aborted: new GreeterReadRecursiveMessageAborted(new reboot_api.errors_pb.Unknown(), {
+                            message: `Unknown error with HTTP status ${retryResponse.status} after token refresh`
+                        })
+                    };
+                }
+                catch (e) {
+                    return {
+                        aborted: new GreeterReadRecursiveMessageAborted(new reboot_api.errors_pb.Aborted(), {
+                            message: e instanceof Error
+                                ? `${e}`
+                                : `Unknown error: ${JSON.stringify(e)}`
+                        })
+                    };
+                }
+            }
+            // Refresh failed — fall through to generic error.
+            return {
+                aborted: new GreeterReadRecursiveMessageAborted(new reboot_api.errors_pb.Unknown(), {
+                    message: `Unauthorized (HTTP 401) and token refresh failed`
+                })
+            };
+        }
         else if (!response.ok) {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
+                // If the server rejected us due to an expired
+                // token, refresh via the MCP host and retry once.
+                if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshMCPBearerToken) {
+                    const newToken = await refreshMCPBearerToken();
+                    if (newToken) {
+                        const retryHeaders = new Headers();
+                        retryHeaders.set("Content-Type", "application/json");
+                        retryHeaders.append("Connection", "keep-alive");
+                        retryHeaders.append("Authorization", `Bearer ${newToken}`);
+                        try {
+                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/ReadRecursiveMessage`, {
+                                method: "POST",
+                                headers: retryHeaders,
+                                body: request.toJsonString()
+                            }), options);
+                            if (retryResponse.ok) {
+                                return {
+                                    response: GreeterReadRecursiveMessageResponseFromProtobufShape((greeter_pb.ReadRecursiveMessageResponse.fromJson(await retryResponse.json())))
+                                };
+                            }
+                        }
+                        catch (_a) {
+                            // Fall through to return the original
+                            // aborted error.
+                        }
+                    }
+                }
                 const aborted = GreeterReadRecursiveMessageAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.ReadRecursiveMessage' aborted with ${aborted.message}`);
                 return { aborted };
