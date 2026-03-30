@@ -2038,71 +2038,6 @@ TEST_F(TwoShardDatabaseTest, ColocatedReverseRangeBasic) {
   EXPECT_EQ(colocated_reverse_range("State", "b", "", "", 128), empty);
 }
 
-TEST_F(TwoShardDatabaseTest, ColocatedRangeCancelled) {
-  for (int i = 0; i < 10; i++) {
-    colocated_store("State", "a/" + std::to_string(i), {});
-  }
-
-  v1alpha1::ColocatedRangeRequest request;
-  request.set_state_type("State");
-  request.set_parent_state_ref("a");
-  request.set_limit(100);
-
-  std::promise<void> in_iteration;
-  std::promise<void> cancelled;
-  SetTestOnlyHookForLongRunningRPC(server->TestOnly_GetService(), [&]() {
-    in_iteration.set_value();
-    cancelled.get_future().wait();
-  });
-
-  grpc::ClientContext context;
-  v1alpha1::ColocatedRangeResponse response;
-  grpc::Status status;
-  std::thread rpc_thread(
-      [&]() { status = stub->ColocatedRange(&context, request, &response); });
-
-  in_iteration.get_future().wait();
-  context.TryCancel();
-  cancelled.set_value();
-  rpc_thread.join();
-
-  EXPECT_EQ(status.error_code(), grpc::StatusCode::CANCELLED);
-  EXPECT_EQ(response.ByteSizeLong(), 0u);
-}
-
-TEST_F(TwoShardDatabaseTest, ColocatedReverseRangeCancelled) {
-  for (int i = 0; i < 10; i++) {
-    colocated_store("State", "a/" + std::to_string(i), {});
-  }
-
-  v1alpha1::ColocatedReverseRangeRequest request;
-  request.set_state_type("State");
-  request.set_parent_state_ref("a");
-  request.set_limit(100);
-
-  std::promise<void> in_iteration;
-  std::promise<void> cancelled;
-  SetTestOnlyHookForLongRunningRPC(server->TestOnly_GetService(), [&]() {
-    in_iteration.set_value();
-    cancelled.get_future().wait();
-  });
-
-  grpc::ClientContext context;
-  v1alpha1::ColocatedReverseRangeResponse response;
-  grpc::Status status;
-  std::thread rpc_thread([&]() {
-    status = stub->ColocatedReverseRange(&context, request, &response);
-  });
-
-  in_iteration.get_future().wait();
-  context.TryCancel();
-  cancelled.set_value();
-  rpc_thread.join();
-
-  EXPECT_EQ(status.error_code(), grpc::StatusCode::CANCELLED);
-  EXPECT_EQ(response.ByteSizeLong(), 0u);
-}
-
 ////////////////////////////////////////////////////////////////////////
 
 std::string STATE_TYPE_NAME = "MyCoolStateType";
@@ -2969,12 +2904,18 @@ TEST_F(TwoShardDatabaseTest, ExportStreamedCancelled) {
     store({actor}, {});
   }
 
-  std::promise<void> in_iteration;
+  std::promise<void> snapshot_taken;
   std::promise<void> cancelled;
-  SetTestOnlyHookForLongRunningRPC(server->TestOnly_GetService(), [&]() {
-    in_iteration.set_value();
-    cancelled.get_future().wait();
-  });
+  SetTestOnlyHookForLongRunningRPC(
+      server->TestOnly_GetService(),
+      [&](TestOnlyLongRunningRPCHookSite site) {
+        ASSERT_EQ(
+            site,
+            TestOnlyLongRunningRPCHookSite::
+                EXPORT_RIGHT_AFTER_IMPLICIT_SNAPSHOT);
+        snapshot_taken.set_value();
+        cancelled.get_future().wait();
+      });
 
   v1alpha1::ExportRequest request;
   request.set_state_type(state_type);
@@ -2989,7 +2930,7 @@ TEST_F(TwoShardDatabaseTest, ExportStreamedCancelled) {
     while (reader->Read(&response)) {}
   });
 
-  in_iteration.get_future().wait();
+  snapshot_taken.get_future().wait();
   context.TryCancel();
   cancelled.set_value();
   read_thread.join();
@@ -3013,15 +2954,21 @@ TEST_F(TwoShardDatabaseTest, ExportStreamedDoesNotBlockConcurrentStore) {
     store({actor}, {});
   }
 
-  // `in_export` fires from the server thread once the snapshot is
-  // taken and `mutex_` released. `store_done` unblocks the server
-  // thread to finish iteration after the concurrent `Store` completes.
-  std::promise<void> in_export;
+  // `snapshot_taken` fires from the server thread once the snapshot is
+  // taken. `store_done` unblocks the server thread to finish export
+  // after the concurrent `Store` completes.
+  std::promise<void> snapshot_taken;
   std::promise<void> store_done;
-  SetTestOnlyHookForLongRunningRPC(server->TestOnly_GetService(), [&]() {
-    in_export.set_value();
-    store_done.get_future().wait();
-  });
+  SetTestOnlyHookForLongRunningRPC(
+      server->TestOnly_GetService(),
+      [&](TestOnlyLongRunningRPCHookSite site) {
+        ASSERT_EQ(
+            site,
+            TestOnlyLongRunningRPCHookSite::
+                EXPORT_RIGHT_AFTER_IMPLICIT_SNAPSHOT);
+        snapshot_taken.set_value();
+        store_done.get_future().wait();
+      });
 
   v1alpha1::ExportRequest request;
   request.set_state_type(state_type);
@@ -3048,7 +2995,7 @@ TEST_F(TwoShardDatabaseTest, ExportStreamedDoesNotBlockConcurrentStore) {
 
   // Wait until the server has taken the iterator snapshot, then
   // perform a concurrent `Store` into the same shard being exported.
-  in_export.get_future().wait();
+  snapshot_taken.get_future().wait();
 
   // Use the same shard which we use in the export so we know for sure
   // the new actor would be included if the snapshot were taken after
@@ -3081,12 +3028,17 @@ TEST_F(TwoShardDatabaseTest, RecoverCancelled) {
   actor.set_state("data");
   store({actor}, {});
 
-  std::promise<void> in_iteration;
+  std::promise<void> mutex_acquired;
   std::promise<void> cancelled;
-  SetTestOnlyHookForLongRunningRPC(server->TestOnly_GetService(), [&]() {
-    in_iteration.set_value();
-    cancelled.get_future().wait();
-  });
+  SetTestOnlyHookForLongRunningRPC(
+      server->TestOnly_GetService(),
+      [&](TestOnlyLongRunningRPCHookSite site) {
+        ASSERT_EQ(
+            site,
+            TestOnlyLongRunningRPCHookSite::RECOVER_RIGHT_AFTER_MUTEX_ACQUIRE);
+        mutex_acquired.set_value();
+        cancelled.get_future().wait();
+      });
 
   v1alpha1::RecoverRequest request;
   request.add_shard_ids("s000000000");
@@ -3101,7 +3053,7 @@ TEST_F(TwoShardDatabaseTest, RecoverCancelled) {
     while (reader->Read(&response)) {}
   });
 
-  in_iteration.get_future().wait();
+  mutex_acquired.get_future().wait();
   context.TryCancel();
   cancelled.set_value();
   read_thread.join();
@@ -3122,12 +3074,18 @@ TEST_F(TwoShardDatabaseTest, RecoverIdempotentMutationsCancelled) {
   idempotent_mutation.set_response({});
   store({}, {}, std::nullopt, std::move(idempotent_mutation));
 
-  std::promise<void> in_iteration;
+  std::promise<void> mutex_acquired;
   std::promise<void> cancelled;
-  SetTestOnlyHookForLongRunningRPC(server->TestOnly_GetService(), [&]() {
-    in_iteration.set_value();
-    cancelled.get_future().wait();
-  });
+  SetTestOnlyHookForLongRunningRPC(
+      server->TestOnly_GetService(),
+      [&](TestOnlyLongRunningRPCHookSite site) {
+        ASSERT_EQ(
+            site,
+            TestOnlyLongRunningRPCHookSite::
+                RECOVER_IDEMPOTENT_MUTATIONS_RIGHT_AFTER_MUTEX_ACQUIRE);
+        mutex_acquired.set_value();
+        cancelled.get_future().wait();
+      });
 
   v1alpha1::RecoverIdempotentMutationsRequest request;
   request.set_state_type(state_type);
@@ -3143,7 +3101,7 @@ TEST_F(TwoShardDatabaseTest, RecoverIdempotentMutationsCancelled) {
     while (reader->Read(&response)) {}
   });
 
-  in_iteration.get_future().wait();
+  mutex_acquired.get_future().wait();
   context.TryCancel();
   cancelled.set_value();
   read_thread.join();

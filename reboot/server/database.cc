@@ -282,7 +282,7 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       const std::unordered_set<std::string>& shard_ids);
 
   // Helper for recovering transactions.
-  expected<void> RecoverTransactions(
+  expected<void, grpc::Status> RecoverTransactions(
       const grpc::ServerContext& context,
       grpc::ServerWriter<RecoverResponse>& responses,
       const std::unordered_set<std::string>& shard_ids);
@@ -330,19 +330,18 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
       const std::function<grpc::Status(ExportItem&&, size_t)>& on_item);
 
   // Helper for sending a response to the client and clearing the
-  // batch. Returns `grpc::Status::CANCELLED` if the client has
-  // disconnected; the caller should propagate that status and exit.
+  // batch. Returns `CANCELLED` if `Write()` returns `false` (stream
+  // has been closed), which indicates the client has disconnected or
+  // cancelled the RPC.
   template <typename T>
   grpc::Status WriteAndClearResponse(
-      const grpc::ServerContext& context,
       grpc::ServerWriter<T>& responses,
       T& response,
       size_t& estimated_batch_bytes) {
     if (estimated_batch_bytes != 0) {
-      if (context.IsCancelled()) {
+      if (!responses.Write(response)) {
         return grpc::Status::CANCELLED;
       }
-      responses.Write(response);
       response.Clear();
       estimated_batch_bytes = 0;
     }
@@ -351,21 +350,18 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
 
   // Helper for sending a response to the client and clearing the
   // batch once its estimated byte size reaches the flush threshold.
-  // Returns a non-OK status if the client has disconnected.
+  // Returns `CANCELLED` if `Write()` returns `false` (stream
+  // has been closed), which indicates the client has disconnected or
+  // cancelled the RPC.
   template <typename T>
   grpc::Status MaybeWriteAndClearResponse(
-      const grpc::ServerContext& context,
       grpc::ServerWriter<T>& responses,
       T& response,
       size_t& estimated_batch_bytes,
       size_t estimated_item_bytes) {
     estimated_batch_bytes += estimated_item_bytes;
     if (estimated_batch_bytes >= rbt::kBatchFlushBytes) {
-      return WriteAndClearResponse(
-          context,
-          responses,
-          response,
-          estimated_batch_bytes);
+      return WriteAndClearResponse(responses, response, estimated_batch_bytes);
     }
     return grpc::Status::OK;
   }
@@ -422,13 +418,16 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   // This should only be true for tests.
   bool allow_legacy_coordinator_prepared_ = false;
 
-  // Optional hook invoked only in tests just before the response is
-  // returned from a potentially long-running RPC.
-  std::function<void()> testonly_hook_for_long_running_rpc_;
+  // Optional hook invoked only in tests at specific long-running RPC
+  // call sites. See `TestOnlyLongRunningRPCHookSite` for the set of
+  // call sites.
+  std::function<void(TestOnlyLongRunningRPCHookSite)>
+      test_only_hook_for_long_running_rpc_;
 
  public:
-  void SetTestOnlyHookForLongRunningRPC(std::function<void()> hook) {
-    testonly_hook_for_long_running_rpc_ = std::move(hook);
+  void SetTestOnlyHookForLongRunningRPC(
+      std::function<void(TestOnlyLongRunningRPCHookSite)> hook) {
+    test_only_hook_for_long_running_rpc_ = std::move(hook);
   }
 };
 
@@ -1286,10 +1285,6 @@ grpc::Status DatabaseService::ColocatedRange(
     ColocatedRangeResponse* response) {
   std::unique_lock lock(mutex_);
 
-  if (testonly_hook_for_long_running_rpc_) {
-    testonly_hook_for_long_running_rpc_();
-  }
-
   REBOOT_DATABASE_LOG(1) << "ColocatedRange { " << request->ShortDebugString()
                          << " }";
 
@@ -1358,13 +1353,6 @@ grpc::Status DatabaseService::ColocatedRange(
   }
 
   for (int i = 0; i < request->limit() && it->Valid(); it->Next(), i++) {
-    // Despite the RPC is unary, it may be a "long-running" RPC if the
-    // limit is large, so we want to check is the context is cancelled
-    // so we will return early and release the DB lock.
-    // https://github.com/reboot-dev/mono/issues/5349
-    if (context->IsCancelled()) {
-      return grpc::Status::CANCELLED;
-    }
     auto key = it->key();
     key.remove_prefix(strlen(STATE_KEY_PREFIX) + 1);
     *response->add_keys() = key.ToString();
@@ -1390,10 +1378,6 @@ grpc::Status DatabaseService::ColocatedReverseRange(
     const ColocatedReverseRangeRequest* request,
     ColocatedReverseRangeResponse* response) {
   std::unique_lock lock(mutex_);
-
-  if (testonly_hook_for_long_running_rpc_) {
-    testonly_hook_for_long_running_rpc_();
-  }
 
   REBOOT_DATABASE_LOG(1) << "ColocatedReverseRange { "
                          << request->ShortDebugString() << " }";
@@ -1479,13 +1463,6 @@ grpc::Status DatabaseService::ColocatedReverseRange(
   }
 
   for (int i = 0; i < request->limit() && it->Valid(); it->Prev(), i++) {
-    // Despite the RPC is unary, it may be a "long-running" RPC if the
-    // limit is large, so we want to check is the context is cancelled
-    // so we will return early and release the DB lock.
-    // https://github.com/reboot-dev/mono/issues/5349
-    if (context->IsCancelled()) {
-      return grpc::Status::CANCELLED;
-    }
     auto key = it->key();
     key.remove_prefix(strlen(STATE_KEY_PREFIX) + 1);
     *response->add_keys() = key.ToString();
@@ -1571,13 +1548,32 @@ grpc::Status DatabaseService::Find(
 
     // Collect up to 'limit' entries going forward.
     uint32_t added_count = 0;
+
+    // We don't know how many iterations we'll need to do to find `limit`
+    // matching entries. To perform `IsCancelled()` checks with the
+    // same frequency we use a separate counter.
+    uint8_t cancellation_check_counter = 0;
+
     while (added_count < request->limit() && it->Valid()) {
       // Despite the RPC is unary, it may be a "long-running" RPC if the
       // limit is large, so we want to check is the context is cancelled
-      // so we will return early and release the DB lock.
+      // so we will return early.
       // https://github.com/reboot-dev/mono/issues/5349
-      if (context->IsCancelled()) {
-        return grpc::Status::CANCELLED;
+      //
+      // Performing `IsCancelled()` checks is relatively expensive due to
+      // a `seq_cst` atomic load and there is no reason to check on every
+      // iteration.
+      //
+      // TODO: Remove that code once we make `Find` be a streaming RPC
+      // or support pagination.
+      // https://github.com/reboot-dev/mono/issues/5360
+      if (++cancellation_check_counter == 100) {
+        // To not overflow the counter, we reset it each time we do a
+        // check.
+        cancellation_check_counter = 0;
+        if (context->IsCancelled()) {
+          return grpc::Status::CANCELLED;
+        }
       }
       std::string_view key_view = it->key().ToStringView();
       const std::string prefix = STATE_KEY_PREFIX ":";
@@ -1612,13 +1608,32 @@ grpc::Status DatabaseService::Find(
     // reverse them since we want to return in forward order.
     std::vector<std::string> state_refs;
     uint32_t added_count = 0;
+
+    // We don't know how many iterations we'll need to do to find `limit`
+    // matching entries. To perform `IsCancelled()` checks with the
+    // same frequency we use a separate counter.
+    uint8_t cancellation_check_counter = 0;
+
     while (added_count < request->limit() && it->Valid()) {
       // Despite the RPC is unary, it may be a "long-running" RPC if the
       // limit is large, so we want to check is the context is cancelled
-      // so we will return early and release the DB lock.
+      // so we will return early.
       // https://github.com/reboot-dev/mono/issues/5349
-      if (context->IsCancelled()) {
-        return grpc::Status::CANCELLED;
+      //
+      // Performing `IsCancelled()` checks is relatively expensive due to
+      // a `seq_cst` atomic load and there is no reason to check on every
+      // iteration.
+      //
+      // TODO: Remove that code once we make `Find` be a streaming RPC
+      // or support pagination.
+      // https://github.com/reboot-dev/mono/issues/5360
+      if (++cancellation_check_counter == 100) {
+        // To not overflow the counter, we reset it each time we do a
+        // check.
+        cancellation_check_counter = 0;
+        if (context->IsCancelled()) {
+          return grpc::Status::CANCELLED;
+        }
       }
       std::string_view key_view = it->key().ToStringView();
       const std::string prefix = STATE_KEY_PREFIX ":";
@@ -2558,14 +2573,12 @@ grpc::Status DatabaseService::_Export(
   std::unique_ptr<rocksdb::Iterator> it(
       db_->NewIterator(read_options, *column_family_handle));
 
-  if (testonly_hook_for_long_running_rpc_) {
-    testonly_hook_for_long_running_rpc_();
+  if (test_only_hook_for_long_running_rpc_) {
+    test_only_hook_for_long_running_rpc_(
+        TestOnlyLongRunningRPCHookSite::EXPORT_RIGHT_AFTER_IMPLICIT_SNAPSHOT);
   }
 
   for (it->SeekToFirst(); it->Valid(); it->Next()) {
-    if (context.IsCancelled()) {
-      return grpc::Status::CANCELLED;
-    }
     std::string_view key = it->key().ToStringView();
     size_t colon_position = key.find(":");
     if (colon_position == std::string::npos) {
@@ -2654,7 +2667,6 @@ grpc::Status DatabaseService::ExportStreamed(
           size_t estimated_item_bytes) -> grpc::Status {
         *response.add_items() = std::move(item);
         return MaybeWriteAndClearResponse(
-            *context,
             *responses,
             response,
             estimated_batch_bytes,
@@ -2664,11 +2676,7 @@ grpc::Status DatabaseService::ExportStreamed(
     return status;
   }
   // Flush any remaining items.
-  return WriteAndClearResponse(
-      *context,
-      *responses,
-      response,
-      estimated_batch_bytes);
+  return WriteAndClearResponse(*responses, response, estimated_batch_bytes);
 }
 
 grpc::Status DatabaseService::Export(
@@ -2802,10 +2810,6 @@ grpc::Status DatabaseService::RecoverTasks(
 
   size_t estimated_batch_bytes = 0;
 
-  if (testonly_hook_for_long_running_rpc_) {
-    testonly_hook_for_long_running_rpc_();
-  }
-
   {
     std::unique_lock lock(column_family_handles_mutex_);
     for (rocksdb::ColumnFamilyHandle* column_family_handle :
@@ -2826,10 +2830,6 @@ grpc::Status DatabaseService::RecoverTasks(
       while (iterator->Valid()
              && iterator->key().ToStringView().find(TASK_PENDING_KEY_PREFIX)
                  == 0) {
-        if (context.IsCancelled()) {
-          return grpc::Status::CANCELLED;
-        }
-
         Task task;
         CHECK(task.ParseFromArray(
             iterator->value().data(),
@@ -2845,7 +2845,6 @@ grpc::Status DatabaseService::RecoverTasks(
           *response.add_pending_tasks() = std::move(task);
 
           if (grpc::Status status = MaybeWriteAndClearResponse(
-                  context,
                   responses,
                   response,
                   estimated_batch_bytes,
@@ -2861,11 +2860,7 @@ grpc::Status DatabaseService::RecoverTasks(
   }
 
   // Flush any remaining tasks.
-  return WriteAndClearResponse(
-      context,
-      responses,
-      response,
-      estimated_batch_bytes);
+  return WriteAndClearResponse(responses, response, estimated_batch_bytes);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -2898,10 +2893,6 @@ grpc::Status DatabaseService::RecoverTransactionTasks(
   std::set<std::string> task_ids;
 
   while (iterator->Valid()) {
-    if (context.IsCancelled()) {
-      return grpc::Status::CANCELLED;
-    }
-
     rocksdb::WriteEntry entry = iterator->Entry();
 
     // Make sure this is still a key we care about.
@@ -2964,10 +2955,6 @@ grpc::Status DatabaseService::RecoverTransactionIdempotentMutations(
   std::set<std::string> idempotency_keys;
 
   while (iterator->Valid()) {
-    if (context.IsCancelled()) {
-      return grpc::Status::CANCELLED;
-    }
-
     rocksdb::WriteEntry entry = iterator->Entry();
 
     // Make sure this is still a key we care about.
@@ -3004,7 +2991,7 @@ grpc::Status DatabaseService::RecoverTransactionIdempotentMutations(
 
 ////////////////////////////////////////////////////////////////////////
 
-expected<void> DatabaseService::RecoverTransactions(
+expected<void, grpc::Status> DatabaseService::RecoverTransactions(
     const grpc::ServerContext& context,
     grpc::ServerWriter<RecoverResponse>& responses,
     const std::unordered_set<std::string>& shard_ids) {
@@ -3023,10 +3010,6 @@ expected<void> DatabaseService::RecoverTransactions(
       iterator->Valid()
       && iterator->key().ToStringView().find(TRANSACTION_PARTICIPANT_KEY_PREFIX)
           == 0) {
-    if (context.IsCancelled()) {
-      return make_unexpected("client disconnected");
-    }
-
     Transaction transaction;
 
     CHECK(transaction.ParseFromArray(
@@ -3061,7 +3044,7 @@ expected<void> DatabaseService::RecoverTransactions(
       if (grpc::Status status =
               RecoverTransactionTasks(context, transaction, *txn);
           !status.ok()) {
-        return make_unexpected(status.error_message());
+        return make_unexpected(status);
       }
 
       // Now recover any idempotent mutations for our actor that are part of
@@ -3069,7 +3052,7 @@ expected<void> DatabaseService::RecoverTransactions(
       if (grpc::Status status =
               RecoverTransactionIdempotentMutations(context, transaction, *txn);
           !status.ok()) {
-        return make_unexpected(status.error_message());
+        return make_unexpected(status);
       }
     } else {
       // Transaction just started when we called
@@ -3081,26 +3064,22 @@ expected<void> DatabaseService::RecoverTransactions(
     *response.add_participant_transactions() = std::move(transaction);
 
     if (grpc::Status status = MaybeWriteAndClearResponse(
-            context,
             responses,
             response,
             estimated_batch_bytes,
             estimated_transaction_bytes);
         !status.ok()) {
-      return make_unexpected(status.error_message());
+      return make_unexpected(status);
     }
 
     iterator->Next();
   }
 
   // Flush any remaining participant transactions.
-  if (grpc::Status status = WriteAndClearResponse(
-          context,
-          responses,
-          response,
-          estimated_batch_bytes);
+  if (grpc::Status status =
+          WriteAndClearResponse(responses, response, estimated_batch_bytes);
       !status.ok()) {
-    return make_unexpected(status.error_message());
+    return make_unexpected(status);
   }
 
   // Now recover any prepared coordinator transactions.
@@ -3134,10 +3113,6 @@ expected<void> DatabaseService::RecoverTransactions(
            && iterator->key().ToStringView().find(
                   LEGACY_PREPARED_TRANSACTION_COORDINATOR_KEY_PREFIX)
                == 0) {
-      if (context.IsCancelled()) {
-        return make_unexpected("client disconnected");
-      }
-
       // NOTE: we use the stringified form of the UUID as the index
       // because a protobuf 'map' can not have a bytes key. We also
       // store the stringified version of the transaction UUID in the
@@ -3168,13 +3143,12 @@ expected<void> DatabaseService::RecoverTransactions(
           EstimatePreparedTransactionCoordinatorSize(coordinator_entry);
 
       if (grpc::Status status = MaybeWriteAndClearResponse(
-              context,
               responses,
               response,
               estimated_batch_bytes,
               estimated_prepared_transaction_coordinator_bytes);
           !status.ok()) {
-        return make_unexpected(status.error_message());
+        return make_unexpected(status);
       }
 
       iterator->Next();
@@ -3195,10 +3169,6 @@ expected<void> DatabaseService::RecoverTransactions(
 
   while (iterator->Valid()
          && iterator->key().ToStringView().find(prefix) == 0) {
-    if (context.IsCancelled()) {
-      return make_unexpected("client disconnected");
-    }
-
     // Parse the key format: `prefix:shard_id:transaction_id`.
     std::string_view key_view = iterator->key().ToStringView();
 
@@ -3240,26 +3210,22 @@ expected<void> DatabaseService::RecoverTransactions(
         EstimatePreparedTransactionCoordinatorSize(coordinator_entry);
 
     if (grpc::Status status = MaybeWriteAndClearResponse(
-            context,
             responses,
             response,
             estimated_batch_bytes,
             estimated_prepared_transaction_coordinator_bytes);
         !status.ok()) {
-      return make_unexpected(status.error_message());
+      return make_unexpected(status);
     }
 
     iterator->Next();
   }
 
   // Flush any remaining coordinator transactions.
-  if (grpc::Status status = WriteAndClearResponse(
-          context,
-          responses,
-          response,
-          estimated_batch_bytes);
+  if (grpc::Status status =
+          WriteAndClearResponse(responses, response, estimated_batch_bytes);
       !status.ok()) {
-    return make_unexpected(status.error_message());
+    return make_unexpected(status);
   }
 
   return {};
@@ -3296,10 +3262,6 @@ grpc::Status DatabaseService::RecoverShardsIdempotentMutations(
           iterator->Valid()
           && iterator->key().ToStringView().find(IDEMPOTENT_MUTATION_KEY_PREFIX)
               == 0) {
-        if (context.IsCancelled()) {
-          return grpc::Status::CANCELLED;
-        }
-
         IdempotentMutation idempotent_mutation;
 
         CHECK(idempotent_mutation.ParseFromArray(
@@ -3317,7 +3279,6 @@ grpc::Status DatabaseService::RecoverShardsIdempotentMutations(
           *response.add_idempotent_mutations() = std::move(idempotent_mutation);
 
           if (grpc::Status status = MaybeWriteAndClearResponse(
-                  context,
                   responses,
                   response,
                   estimated_batch_bytes,
@@ -3333,11 +3294,7 @@ grpc::Status DatabaseService::RecoverShardsIdempotentMutations(
   }
 
   // Flush any remaining idempotent mutations.
-  return WriteAndClearResponse(
-      context,
-      responses,
-      response,
-      estimated_batch_bytes);
+  return WriteAndClearResponse(responses, response, estimated_batch_bytes);
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -3719,6 +3676,11 @@ grpc::Status DatabaseService::Recover(
     grpc::ServerWriter<RecoverResponse>* responses) {
   std::unique_lock lock(mutex_);
 
+  if (test_only_hook_for_long_running_rpc_) {
+    test_only_hook_for_long_running_rpc_(
+        TestOnlyLongRunningRPCHookSite::RECOVER_RIGHT_AFTER_MUTEX_ACQUIRE);
+  }
+
   REBOOT_DATABASE_LOG(1) << "Recover { " << request->ShortDebugString() << " }";
 
   // Validate that shard_ids are provided.
@@ -3765,14 +3727,11 @@ grpc::Status DatabaseService::Recover(
 
   REBOOT_DATABASE_LOG(1) << "Recovering transactions";
 
-  expected<void> recover_transactions =
+  expected<void, grpc::Status> recover_transactions =
       RecoverTransactions(*context, *responses, shard_ids);
 
   if (!recover_transactions.has_value()) {
-    if (context->IsCancelled()) {
-      return grpc::Status::CANCELLED;
-    }
-    return grpc::Status(grpc::UNKNOWN, recover_transactions.error());
+    return recover_transactions.error();
   }
 
   return grpc::Status::OK;
@@ -3786,8 +3745,10 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
     grpc::ServerWriter<RecoverIdempotentMutationsResponse>* responses) {
   std::unique_lock lock(mutex_);
 
-  if (testonly_hook_for_long_running_rpc_) {
-    testonly_hook_for_long_running_rpc_();
+  if (test_only_hook_for_long_running_rpc_) {
+    test_only_hook_for_long_running_rpc_(
+        TestOnlyLongRunningRPCHookSite::
+            RECOVER_IDEMPOTENT_MUTATIONS_RIGHT_AFTER_MUTEX_ACQUIRE);
   }
 
   REBOOT_DATABASE_LOG(1) << "RecoverIdempotentMutations { "
@@ -3836,7 +3797,6 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
       *response.add_idempotent_mutations() = std::move(idempotent_mutation);
 
       if (grpc::Status status = MaybeWriteAndClearResponse(
-              *context,
               *responses,
               response,
               estimated_batch_bytes,
@@ -3979,11 +3939,8 @@ grpc::Status DatabaseService::RecoverIdempotentMutations(
   }
 
   // Flush any remaining idempotent mutations.
-  if (grpc::Status status = WriteAndClearResponse(
-          *context,
-          *responses,
-          response,
-          estimated_batch_bytes);
+  if (grpc::Status status =
+          WriteAndClearResponse(*responses, response, estimated_batch_bytes);
       !status.ok()) {
     return status;
   }
@@ -4051,7 +4008,7 @@ void TestOnly_EnableLegacyCoordinatorPrepared(grpc::Service* service) {
 
 void SetTestOnlyHookForLongRunningRPC(
     grpc::Service* service,
-    std::function<void()> hook) {
+    std::function<void(TestOnlyLongRunningRPCHookSite)> hook) {
   auto* db_service = dynamic_cast<DatabaseService*>(service);
   if (db_service) {
     db_service->SetTestOnlyHookForLongRunningRPC(std::move(hook));

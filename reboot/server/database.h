@@ -120,11 +120,24 @@ class DatabaseServer final {
 // This should only be used in tests.
 void TestOnly_EnableLegacyCoordinatorPrepared(grpc::Service* service);
 
-// Set a hook that is invoked only in tests just before the response is
-// returned from a potentially long-running RPC.
+// Identifies the exact call site where the test-only hook fires.
+enum class TestOnlyLongRunningRPCHookSite {
+  // `_Export`: immediately after `NewIterator()` captures the implicit
+  // snapshot, before the iteration loop begins, so that we can check
+  // that the new data came after the snapshot is taken won't be part
+  // of the export.
+  EXPORT_RIGHT_AFTER_IMPLICIT_SNAPSHOT,
+  // `Recover`: immediately after `mutex_` is acquired, so that we know
+  // the server has started processing the RPC.
+  RECOVER_RIGHT_AFTER_MUTEX_ACQUIRE,
+  // `RecoverIdempotentMutations`: immediately after `mutex_` is
+  // acquired, so that we know the server has started processing the RPC.
+  RECOVER_IDEMPOTENT_MUTATIONS_RIGHT_AFTER_MUTEX_ACQUIRE,
+};
+
 void SetTestOnlyHookForLongRunningRPC(
     grpc::Service* service,
-    std::function<void()> hook);
+    std::function<void(TestOnlyLongRunningRPCHookSite)> hook);
 
 ////////////////////////////////////////////////////////////////////////
 
