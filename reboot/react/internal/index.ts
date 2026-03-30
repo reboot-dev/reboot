@@ -13,6 +13,9 @@ export interface McpAppContextValue {
   // Merged data from ontoolinput (arguments) and
   // ontoolresult (parsed result content).
   toolData: Record<string, unknown> | null;
+  // Re-invoke the UI tool via the MCP host to obtain a
+  // fresh bearer token. Concurrent calls are coalesced.
+  refreshMCPBearerToken: () => Promise<string | undefined>;
 }
 
 export const McpAppContext = createContext<McpAppContextValue | null>(null);
@@ -31,4 +34,15 @@ export function useMcpApp(): any | null {
  */
 export function useMcpToolData(): Record<string, unknown> | null {
   return useContext(McpAppContext)?.toolData ?? null;
+}
+
+/**
+ * @internal Used by generated code to refresh an expired
+ * bearer token by re-invoking the UI tool through the
+ * MCP host.
+ */
+export function useRefreshMCPBearerToken():
+  | (() => Promise<string | undefined>)
+  | null {
+  return useContext(McpAppContext)?.refreshMCPBearerToken ?? null;
 }

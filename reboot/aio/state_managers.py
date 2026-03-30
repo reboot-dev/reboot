@@ -1148,6 +1148,29 @@ class IdempotentMutations:
 
         self._recovered_workflow_iterations.add(key)
 
+    def complete_workflow_iteration(
+        self,
+        workflow_id: uuid.UUID,
+        iteration: int,
+    ) -> None:
+        """Remove the tracking entry for a completed iteration.
+        Once an iteration advances, its mutations will never be
+        queried again.
+        """
+        self._recovered_workflow_iterations.discard(
+            (
+                workflow_id,
+                iteration,
+            ),
+        )
+
+    def complete_workflow(self, workflow_id: uuid.UUID) -> None:
+        """Remove all tracking entries for a completed workflow.
+        Called when the task is marked COMPLETED so the sets
+        don't grow unboundedly.
+        """
+        self._recovered_workflow_ids.discard(workflow_id)
+
     async def get(
         self,
         idempotency_key: uuid.UUID,
@@ -2554,7 +2577,25 @@ class SidecarStateManager(
                 pass
 
             # Make sure we stop all transitive `React.Query` calls.
-            await context.react.cancel()
+            # Use `asyncio.shield()` so that if this task is being
+            # cancelled (e.g., the gRPC client disconnected), the
+            # cleanup still runs to completion.
+            context_react_cancel_task = asyncio.ensure_future(
+                context.react.cancel(),
+            )
+            try:
+                await asyncio.shield(context_react_cancel_task)
+            except asyncio.CancelledError:
+                # Wait for `react.cancel()`` to actually finish.
+                await context_react_cancel_task
+                # Propagate so the outer task actually cancels.
+                raise
+            finally:
+                # We've already invalidated the `context.react` as part
+                # of `context.react.cancel()`, so now it is safe to set
+                # it to `None` to allow the GC to clean up any resources
+                # associated with it.
+                context.react = None
 
     @asynccontextmanager_span(
         # We expect an `EffectValidationRetry` exception; that's not an error.
@@ -2693,6 +2734,28 @@ class SidecarStateManager(
                 ),
             )
 
+            if state_ref in self._idempotent_mutations[state_type]:
+                # Clean up per-workflow tracking so the sets in
+                # `IdempotentMutations` don't grow unboundedly.
+                workflow_id = uuid.UUID(bytes=task_effect.task_id.task_uuid)
+
+                # Since we clean workflow iterations when the iteration
+                # is done and we continue with the next one, we will
+                # miss cleaning up the workflow iteration for the last
+                # iteration of a loop, i.e. when we break/return/raise
+                # an error. If we raise a declared error - we will
+                # eventually call `complete_task()` which should clean
+                # the workflow iteration, but when the error was not
+                # declared - we don't want to clear the workflow
+                # iteration, since we might need it on a workflow retry.
+                self._idempotent_mutations[state_type][
+                    state_ref].complete_workflow_iteration(
+                        workflow_id,
+                        task_effect.iteration,
+                    )
+                self._idempotent_mutations[state_type][
+                    state_ref].complete_workflow(workflow_id)
+
     @asynccontextmanager
     async def task_workflow(
         self,
@@ -2786,6 +2849,7 @@ class SidecarStateManager(
                         )
 
                     async with self._mutator_locks[state_type][state_ref]:
+                        completed_iteration = task_effect.iteration
                         task_effect.iteration += 1
 
                         await self._store(
@@ -2793,6 +2857,17 @@ class SidecarStateManager(
                             state_ref=state_ref,
                             task=task_effect.to_sidecar_task(),
                         )
+
+                    if state_ref in (self._idempotent_mutations[state_type]):
+                        # The completed iteration's mutations will never
+                        # be queried again; drop its tracking entry.
+                        workflow_id = uuid.UUID(
+                            bytes=task_effect.task_id.task_uuid
+                        )
+                        self._idempotent_mutations[state_type][
+                            state_ref].complete_workflow_iteration(
+                                workflow_id, completed_iteration
+                            )
 
                     on_loop_iteration(
                         # The number of the anticipated next iteration.

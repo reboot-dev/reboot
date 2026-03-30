@@ -85,7 +85,7 @@ export namespace rbt_native {
     idempotency: IdempotencyOptions
   ): Promise<string>;
   function WriterContext_set_sync(external: NapiExternal, sync: boolean): void;
-  function retry_reactively_until(
+  function workflow_retry_reactively_until(
     external: NapiExternal,
     condition: () => Promise<boolean>
   ): Promise<void>;

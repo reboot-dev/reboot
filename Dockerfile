@@ -316,6 +316,15 @@ RUN set -e; \
     chmod +x ${BINARY_NAME}; \
     mv ${BINARY_NAME} /usr/local/bin/envoy
 
+# Install `ngrok`, useful in testing MCP servers from non-local clients
+# like `claude.ai` - or to intercept traffic for inspection.
+RUN curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
+  | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null \
+  && echo "deb https://ngrok-agent.s3.amazonaws.com bookworm main" \
+  | sudo tee /etc/apt/sources.list.d/ngrok.list \
+  && sudo apt update \
+  && sudo apt install ngrok
+
 # Ensure presence of relevant system groups.
 RUN groupadd -f --system docker
 RUN groupadd -f --system ssh
@@ -532,6 +541,29 @@ RUN curl -fsSL https://get.pnpm.io/install.sh | env PNPM_VERSION=${PNPM_VERSION}
 ARG FIREBASE_VERSION=13.26.0
 RUN npm install -g corepack firebase-tools@${FIREBASE_VERSION} \
     && corepack enable
+
+# Install `kubectl krew` plugin manager, and the `resource-capacity`
+# plugin. We use a shared `KREW_ROOT` so that any user can run `kubectl
+# krew` without permission issues.
+ARG KREW_VERSION=v0.4.4
+ENV KREW_ROOT=/opt/krew
+RUN set -e; \
+    case "${TARGETARCH}" in \
+        amd64|arm64) ;; \
+        *) echo "Unsupported arch for krew: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    TMPDIR="$(mktemp -d)" \
+    && cd "${TMPDIR}" \
+    && KREW="krew-linux_${TARGETARCH}" \
+    && curl -fsSLO "https://github.com/kubernetes-sigs/krew/releases/download/${KREW_VERSION}/${KREW}.tar.gz" \
+    && tar zxf "${KREW}.tar.gz" \
+    && ./"${KREW}" install krew \
+    && ln -s "${KREW_ROOT}/bin/kubectl-krew" /usr/local/bin/kubectl-krew \
+    && kubectl krew install resource-capacity \
+    && ln -s "${KREW_ROOT}/bin/kubectl-resource_capacity" /usr/local/bin/kubectl-resource_capacity \
+    && chown -R ${UNAME}: "${KREW_ROOT}" \
+    && chmod -R a+rX "${KREW_ROOT}" \
+    && rm -rf "${TMPDIR}"
 
 # Install Claude Code. We're not worried about breaking changes in this
 # tool (we don't use its API or CLI, it's human-driven) so we don't need

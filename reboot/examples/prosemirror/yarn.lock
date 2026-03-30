@@ -713,7 +713,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@modelcontextprotocol/ext-apps@npm:^1.0.1":
+"@modelcontextprotocol/ext-apps@npm:1.2.0":
   version: 1.2.0
   resolution: "@modelcontextprotocol/ext-apps@npm:1.2.0"
   peerDependencies:
@@ -730,7 +730,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@modelcontextprotocol/sdk@npm:^1.26.0":
+"@modelcontextprotocol/sdk@npm:1.27.1":
   version: 1.27.1
   resolution: "@modelcontextprotocol/sdk@npm:1.27.1"
   dependencies:
@@ -776,8 +776,8 @@ __metadata:
     "@bufbuild/protobuf": "npm:1.10.1"
     "@monorepo/api": "workspace:*"
     "@monorepo/common": "workspace:*"
-    "@reboot-dev/reboot": "npm:0.45.2"
-    "@reboot-dev/reboot-api": "npm:0.45.2"
+    "@reboot-dev/reboot": "npm:0.46.0"
+    "@reboot-dev/reboot-api": "npm:0.46.0"
     prosemirror-model: "npm:^1.23.0"
     prosemirror-transform: "npm:^1.1.0"
   languageName: unknown
@@ -802,7 +802,7 @@ __metadata:
     "@monorepo/api": "workspace:*"
     "@monorepo/common": "workspace:*"
     "@nytimes/react-prosemirror": "npm:^0.6.2"
-    "@reboot-dev/reboot-react": "npm:0.45.2"
+    "@reboot-dev/reboot-react": "npm:0.46.0"
     "@types/node": "npm:^20"
     "@types/react": "npm:^18"
     "@types/react-dom": "npm:^18"
@@ -971,27 +971,27 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@reboot-dev/reboot-api@npm:0.45.2":
-  version: 0.45.2
-  resolution: "@reboot-dev/reboot-api@npm:0.45.2"
+"@reboot-dev/reboot-api@npm:0.46.0":
+  version: 0.46.0
+  resolution: "@reboot-dev/reboot-api@npm:0.46.0"
   dependencies:
     "@scarf/scarf": "npm:1.4.0"
     typescript: "npm:5.4.5"
     zod: "npm:^3.25.51"
   peerDependencies:
     "@bufbuild/protobuf": 1.10.1
-  checksum: 10c0/7f27d7b729dd96d847a82d10cc91bfda03fce6ad824789d42e3e35c33265a9c1669ad983d348e4acaf79c41b2f0dd85531768d76d771ecbd6dfc29cdf6c2fe3b
+  checksum: 10c0/988d942f13c68029429e5c763a65e952f4b1fa029ba3445d2c5481a986f96e424bfbcb07f1a957198763bec6779cccf64d13900c0334999f598b23c6168217e3
   languageName: node
   linkType: hard
 
-"@reboot-dev/reboot-react@npm:0.45.2":
-  version: 0.45.2
-  resolution: "@reboot-dev/reboot-react@npm:0.45.2"
+"@reboot-dev/reboot-react@npm:0.46.0":
+  version: 0.46.0
+  resolution: "@reboot-dev/reboot-react@npm:0.46.0"
   dependencies:
-    "@modelcontextprotocol/ext-apps": "npm:^1.0.1"
-    "@modelcontextprotocol/sdk": "npm:^1.26.0"
-    "@reboot-dev/reboot-api": "npm:0.45.2"
-    "@reboot-dev/reboot-web": "npm:0.45.2"
+    "@modelcontextprotocol/ext-apps": "npm:1.2.0"
+    "@modelcontextprotocol/sdk": "npm:1.27.1"
+    "@reboot-dev/reboot-api": "npm:0.46.0"
+    "@reboot-dev/reboot-web": "npm:0.46.0"
     "@scarf/scarf": "npm:1.4.0"
     "@types/uuid": "npm:^9.0.4"
     js-sha1: "npm:0.7.0"
@@ -1002,15 +1002,15 @@ __metadata:
     "@bufbuild/protobuf": 1.10.1
     react: ">=18.0.0"
     react-dom: ">=18.0.0"
-  checksum: 10c0/4de84f6bb4aa3d07ff9213b193532c838a213f7bb41b182b639e8a0a47449f4451888b7d49a651cc2eb22388561dcc5aecb910eb6a4addf657013a3465e27548
+  checksum: 10c0/6d832caa130c2e467e8f3430abebbe903f21128ec9cbfd55185644dd9bf914d439fe9c8d5064541b5641463432858c4da67aefb4fa3c4470e2a675603a39cb83
   languageName: node
   linkType: hard
 
-"@reboot-dev/reboot-web@npm:0.45.2":
-  version: 0.45.2
-  resolution: "@reboot-dev/reboot-web@npm:0.45.2"
+"@reboot-dev/reboot-web@npm:0.46.0":
+  version: 0.46.0
+  resolution: "@reboot-dev/reboot-web@npm:0.46.0"
   dependencies:
-    "@reboot-dev/reboot-api": "npm:0.45.2"
+    "@reboot-dev/reboot-api": "npm:0.46.0"
     "@scarf/scarf": "npm:1.4.0"
     js-sha1: "npm:0.7.0"
     lru-cache-idb: "npm:^0.5.2"
@@ -1019,17 +1019,17 @@ __metadata:
     uuid: "npm:11.1.0"
   peerDependencies:
     "@bufbuild/protobuf": 1.10.1
-  checksum: 10c0/ddd4fc45326d120174b7b5de9308b41a71002e99d6a1c0d085206f37288879e7b3d3d3e492a34b34db2b292951959348e8be871a2e3c00a7aad5ae0048472339
+  checksum: 10c0/1e0068cb15c420a8c93b68107e18c3d0e6fb3b378a54e484029bda5b008893261919d05d9094449c3b261dd6ecd12a0d19eee6a36d4bde3c93a89795ac2afcf2
   languageName: node
   linkType: hard
 
-"@reboot-dev/reboot@npm:0.45.2":
-  version: 0.45.2
-  resolution: "@reboot-dev/reboot@npm:0.45.2"
+"@reboot-dev/reboot@npm:0.46.0":
+  version: 0.46.0
+  resolution: "@reboot-dev/reboot@npm:0.46.0"
   dependencies:
     "@bufbuild/protoc-gen-es": "npm:1.10.1"
     "@bufbuild/protoplugin": "npm:1.10.1"
-    "@reboot-dev/reboot-api": "npm:0.45.2"
+    "@reboot-dev/reboot-api": "npm:0.46.0"
     "@scarf/scarf": "npm:1.4.0"
     "@standard-schema/spec": "npm:1.0.0"
     chalk: "npm:^4.1.2"
@@ -1050,7 +1050,7 @@ __metadata:
     rbt: rbt.js
     rbt-esbuild: rbt-esbuild.js
     zod-to-proto: zod-to-proto.js
-  checksum: 10c0/2d233aa036c63e05baeae34f62a9f7f2d593668f58e9f6269169f01899aa9ca776ca42e340a186246ab5118e2229a00e5a7f4e3bc68ce6cca3d92dfa39ee4a4b
+  checksum: 10c0/66d746c93408bc2fcf4c56b0ab508d4ebdd9fad480b5bffaa86de35b2ea90123cf2e4bba783970109555957f6b08e6985a0331eb904a477b4d8d48a1546dcbb9
   languageName: node
   linkType: hard
 

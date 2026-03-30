@@ -73,7 +73,7 @@ wrong means regenerating everything across 12+ files.
    below
 2. Enter plan mode (`EnterPlanMode`)
 3. Present the proposed design:
-   - Session type and its methods (as the MCP front door to the
+   - User type and its methods (as the MCP front door to the
      application types discussed below, creating new ones and
      locating existing ones)
    - Application types: state shape (fields, types, tags)
@@ -93,8 +93,8 @@ Before writing code, analyze the user's request:
 1. **Application types**: What primary things is the user managing?
    (counter, inventory, chat thread, etc.) Each becomes
    its own `Type` with its own state.
-2. **Session methods**: How does the AI create instances of
-   application types? Each gets a `Transaction` on `Session`
+2. **User methods**: How does the AI create instances of
+   application types? Each gets a `Transaction` on `User`
    that calls `<Type>.create(context)`.
 3. **State shape**: Fields, types — lists, nested objects,
    primitives. Each gets `Field(tag=N)`.
@@ -102,7 +102,7 @@ Before writing code, analyze the user's request:
    - `Reader` — read-only queries
    - `Writer` — single-state mutations
    - `Transaction` — multi-state atomic operations (e.g.,
-     transfer between two accounts, or Session creating an
+     transfer between two accounts, or User creating an
      application type instance)
    - `Workflow` — long-running control flows with loops,
      scheduling, and idempotency helpers
@@ -114,16 +114,16 @@ Before writing code, analyze the user's request:
 
 ## Key Framework Concepts
 
-### Session and Application Types
+### User and Application Types
 
-Every AI Chat App has a `Session` type and one or more application
+Every AI Chat App has a `User` type and one or more application
 types:
 
-- **`Session`** is auto-constructed for each AI chat session. Its
+- **`User`** is auto-constructed for each authenticated user. Its
   state is typically empty. Its methods are `Transaction`s that
   create instances of application types, or `Reader`s that find
   the IDs of existing application type instances in indexes that
-  have well-known IDs of their own. `Session` methods are
+  have well-known IDs of their own. `User` methods are
   automatically exposed as MCP tools.
 - **Application types** (e.g., `Counter`) hold the
   actual application state. They need a `create` Writer with
@@ -132,12 +132,12 @@ types:
 
 ### Tool Exposure Control
 
-- **Session methods are tools by default.** All methods on
-  `Session` are automatically callable by the AI.
-- **`mcp=False`**: Opt a Session method OUT of being AI-callable.
+- **User methods are tools by default.** All methods on
+  `User` are automatically callable by the AI.
+- **`mcp=False`**: Opt a User method OUT of being AI-callable.
   Use for human-only actions or to reduce context bloat.
 - **`mcp=Tool()`**: Opt an application type method IN to being
-  AI-callable. Required on methods of non-Session types.
+  AI-callable. Required on methods of non-User types.
 - **`Tool()` options**: `Tool(name="custom_name", title="Title")`
   to override the default tool name or add a human-readable title.
 
@@ -154,7 +154,7 @@ types:
 - **`Reader`**: Read-only queries. Context: `ReaderContext`.
 - **`Transaction`**: Multi-state atomic operations. Context:
   `TransactionContext`. Use when an operation must modify multiple
-  state instances atomically, or when Session creates application
+  state instances atomically, or when User creates application
   type instances.
 - **`Workflow`**: Long-running control flows. Context:
   `WorkflowContext`. Implemented as `@classmethod` (not instance
@@ -306,14 +306,14 @@ dependencies = [
     "httpx>=0.27,<1.0",
     "uuid7>=0.1.0",
     "anyio>=4.0.0",
-    "reboot>=0.45.2",
+    "reboot>=0.46.0",
 ]
 
 [tool.rye]
 dev-dependencies = [
     "mypy==1.18.1",
     "types-protobuf>=4.24.0.20240129",
-    "reboot>=0.45.2",
+    "reboot>=0.46.0",
 ]
 
 virtual = true
@@ -327,12 +327,12 @@ Rules:
 - Import only the method types you use from `reboot.api`
 - Helper Model types as standalone classes
 - State model with `Field(tag=N)` on every field
-- `Session` type with empty state and `Transaction` methods
+- `User` type with empty state and `Transaction` methods
   that create application type instances
 - Application types with their own state and methods
 - Application type methods need `mcp=Tool()` to be AI-callable
 - Application types need a `create` Writer with `factory=True`
-- `api = API(Session=Type(...), <AppType>=Type(...))`
+- `api = API(User=Type(...), <AppType>=Type(...))`
 
 #### Simple Example (Counter)
 
@@ -351,14 +351,14 @@ from reboot.api import (
 )
 
 
-# -- Session models. --
+# -- User models. --
 
 
 class CreateCounterResponse(Model):
     counter_id: str = Field(tag=1)
 
 
-class SessionState(Model):
+class UserState(Model):
     pass
 
 
@@ -379,8 +379,8 @@ class AmountRequest(Model):
 
 
 api = API(
-    Session=Type(
-        state=SessionState,
+    User=Type(
+        state=UserState,
         methods=Methods(
             create_counter=Transaction(
                 request=None,
@@ -506,7 +506,7 @@ messages, etc.):
 - In the servicer, import helpers standalone:
   `from <pkg>.v1.<name> import Item`
 
-The counter example above shows the full Session + application
+The counter example above shows the full User + application
 type pattern. Apply the same structure for any application type,
 adding whatever Writers and Readers your app needs.
 
@@ -549,10 +549,10 @@ Rules:
 - Import helper types standalone:
   `from <pkg>.v1.<name> import MyItem`
 - Import generated classes:
-  `from <pkg>.v1.<name>_rbt import Session, Counter`
+  `from <pkg>.v1.<name>_rbt import User, Counter`
 - Each type gets its own servicer class
-  (e.g., `SessionServicer`, `CounterServicer`)
-- `Session.Servicer` / `Counter.Servicer` base, `allow()` authorizer
+  (e.g., `UserServicer`, `CounterServicer`)
+- `User.Servicer` / `Counter.Servicer` base, `allow()` authorizer
 - Context types from `reboot.aio.contexts`:
   - `ReaderContext` — read-only
   - `WriterContext` — single-state mutation
@@ -565,7 +565,7 @@ Rules:
 #### Simple Servicer (Counter)
 
 ```python
-from ai_chat_counter.v1.counter_rbt import Counter, Session
+from ai_chat_counter.v1.counter_rbt import Counter, User
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import (
     ReaderContext,
@@ -574,7 +574,7 @@ from reboot.aio.contexts import (
 )
 
 
-class SessionServicer(Session.Servicer):
+class UserServicer(User.Servicer):
 
     def authorizer(self):
         return allow()
@@ -582,10 +582,10 @@ class SessionServicer(Session.Servicer):
     async def create_counter(
         self,
         context: TransactionContext,
-    ) -> Session.CreateCounterResponse:
+    ) -> User.CreateCounterResponse:
         """Create a new Counter and return its ID."""
         counter, _ = await Counter.create(context)
-        return Session.CreateCounterResponse(
+        return User.CreateCounterResponse(
             counter_id=counter.state_id,
         )
 
@@ -652,7 +652,7 @@ async def do_ping_periodically(
 
 ### `main.py`
 
-Register all servicers (Session + application types):
+Register all servicers (User + application types):
 
 ```python
 import asyncio
@@ -660,7 +660,7 @@ import logging
 from reboot.aio.applications import Application
 from servicers.<name> import (
     CounterServicer,
-    SessionServicer,
+    UserServicer,
 )
 
 logging.basicConfig(
@@ -671,7 +671,7 @@ logging.basicConfig(
 
 async def main() -> None:
     application = Application(
-        servicers=[SessionServicer, CounterServicer],
+        servicers=[UserServicer, CounterServicer],
     )
     await application.run()
 
@@ -696,10 +696,10 @@ if __name__ == "__main__":
     "build:watch": "concurrently \"npm:build:watch:*\""
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "^1.0.1",
-    "@modelcontextprotocol/sdk": "^1.26.0",
-    "@reboot-dev/reboot-react": "^0.45.2",
-    "@reboot-dev/reboot-api": "^0.45.2",
+    "@modelcontextprotocol/ext-apps": "1.2.0",
+    "@modelcontextprotocol/sdk": "1.27.1",
+    "@reboot-dev/reboot-react": "0.46.0",
+    "@reboot-dev/reboot-api": "0.46.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zod": "^3.25.0"
@@ -1223,7 +1223,7 @@ Adapt the CSS module to your app's needs. The CSS variables from
    `.XxxRequest`, `.XxxResponse`.
 6. **React bindings use camelCase:** Python `from_index` becomes
    TypeScript `fromIndex`.
-7. **`Session` methods are auto-exposed as MCP tools.** Application
+7. **`User` methods are auto-exposed as MCP tools.** Application
    type methods require explicit `mcp=Tool()`. Use `mcp=False` to
    hide a method from the AI.
 8. **Application types need `factory=True`** on their `create`
@@ -1235,13 +1235,13 @@ Adapt the CSS module to your app's needs. The CSS variables from
 11. **Generated React import path:**
     `@api/<pkg>/v1/<name>_rbt_react`
 12. **Generated Python import path:**
-    `from <pkg>.v1.<name>_rbt import Session, Counter`
+    `from <pkg>.v1.<name>_rbt import User, Counter`
 13. **Use `--default-config=hmr`** in `.rbtrc` (not `--default=hmr`).
 14. **`UI(path="web/ui/<name>")`** — path is relative to project root.
 15. **`UI(request=<ConfigType>)`** passes config as React component
     props. `UI(request=None)` passes no props.
 16. **Register all servicers** in `main.py`:
-    `Application(servicers=[SessionServicer, CounterServicer])`.
+    `Application(servicers=[UserServicer, CounterServicer])`.
 17. The requests and responses on the frontend are always Zod types
     generated from the Python Models.
 

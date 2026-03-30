@@ -10,7 +10,7 @@ from reboot.aio.aborted import Aborted
 from reboot.aio.backoff import Backoff
 from reboot.aio.caller_id import CallerID
 from reboot.aio.contexts import Context, Participants, WorkflowContext
-from reboot.aio.external import ExternalContext
+from reboot.aio.external import ExternalContext, InitializeContext
 from reboot.aio.headers import IDEMPOTENCY_KEY_HEADER, Headers
 from reboot.aio.idempotency import (
     IdempotencyManager,
@@ -298,7 +298,10 @@ class Stub:
         # and there isn't a user-provided idempotency key, add one so
         # that we can retry safely.
         if not reader and self._context is None and idempotency_key is None:
-            assert isinstance(self._idempotency_manager, ExternalContext)
+            assert (
+                isinstance(self._idempotency_manager, ExternalContext) and
+                not isinstance(self._idempotency_manager, InitializeContext)
+            ), "Calls with `InitializeContext` should already have idempotency key"
 
             # We may perform transparent retries on this call. That
             # means it needs to be idempotent, and for non-readers that

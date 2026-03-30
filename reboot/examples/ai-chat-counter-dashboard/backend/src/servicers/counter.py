@@ -1,4 +1,9 @@
-from ai_chat_counter.v1.counter_rbt import Counter, Session
+from ai_chat_counter.v1.counter import (
+    CreateCounterRequest,
+    CreateCounterResponse,
+    ListCountersResponse,
+)
+from ai_chat_counter.v1.counter_rbt import Counter, User
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import (
     ReaderContext,
@@ -7,21 +12,38 @@ from reboot.aio.contexts import (
 )
 
 
-class SessionServicer(Session.Servicer):
-    """Servicer for the Session state machine."""
-
-    def authorizer(self):
-        return allow()
+class UserServicer(User.Servicer):
+    """Servicer for the User state machine."""
 
     async def create_counter(
         self,
         context: TransactionContext,
-    ) -> Session.CreateCounterResponse:
+        request: CreateCounterRequest,
+    ) -> CreateCounterResponse:
         """Create a new Counter and return its ID."""
-        counter, _ = await Counter.create(context)
-        return Session.CreateCounterResponse(
+        counter, _ = await Counter.create(
+            context, description=request.description
+        )
+        self.state.counter_ids.append(counter.state_id)
+        return CreateCounterResponse(
             counter_id=counter.state_id,
         )
+
+    async def list_counters(
+        self,
+        context: ReaderContext,
+    ) -> ListCountersResponse:
+        """List all counters created by this user."""
+        counters = []
+        for counter_id in self.state.counter_ids:
+            response = await Counter.ref(counter_id).description(context)
+            counters.append(
+                User.CounterEntry(
+                    counter_id=counter_id,
+                    description=response.description,
+                )
+            )
+        return ListCountersResponse(counters=counters)
 
 
 class CounterServicer(Counter.Servicer):
@@ -30,8 +52,22 @@ class CounterServicer(Counter.Servicer):
     def authorizer(self):
         return allow()
 
-    async def create(self, context) -> None:
-        pass
+    async def create(
+        self,
+        context: WriterContext,
+        request: CreateCounterRequest,
+    ) -> None:
+        """Initialize the counter with a description."""
+        self.state.description = request.description
+
+    async def description(
+        self,
+        context: ReaderContext,
+    ) -> Counter.DescriptionResponse:
+        """Get the counter's description."""
+        return Counter.DescriptionResponse(
+            description=self.state.description,
+        )
 
     async def increment(
         self,

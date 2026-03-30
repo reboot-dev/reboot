@@ -133,6 +133,14 @@ extend google.protobuf.ServiceOptions {
   ServiceOptions service = 50000;
 }
 
+// Whether and when this state type is auto-constructed.
+enum AutoConstruct {
+  // Not auto-constructed (default).
+  AUTO_CONSTRUCT_UNSPECIFIED = 0;
+  // One instance per authenticated user, keyed by user ID.
+  PER_USER_ID = 1;
+}
+
 message StateOptions {
   // A list of names of Reboot method definition `service`s that provide this
   // state `message` with methods. May be omitted if the system's default naming
@@ -142,6 +150,9 @@ message StateOptions {
 
   // UIs associated with this state type (from UI() methods).
   repeated UI uis = 2;
+
+  // Whether and when this state type is auto-constructed.
+  AutoConstruct auto_construct = 3;
 }
 
 extend google.protobuf.MessageOptions {
@@ -173,6 +184,9 @@ message FieldOptions {
   // The fully qualified Pydantic type for this field if the input schema
   // is from Pydantic.
   string pydantic_type = 1;
+  // Whether this field is required (has no default value).
+  // Set when generating proto from Pydantic and Zod.
+  bool required = 2;
 }
 
 extend google.protobuf.FieldOptions {

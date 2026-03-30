@@ -51,7 +51,7 @@ rbt generate
 PYTHONPATH=backend/api/:backend/src/ python test.py
 
 # Run 'rbt dev run' to make sure that the generated '.rbtrc' config works.
-EXPECTED_RBT_DEV_OUTPUT_FILE=$(rlocation "$(dirname "$0")/expected_output.txt")
+EXPECTED_RBT_DEV_OUTPUT_FILE=$(rlocation "$(dirname "$0")/expected_multi_env_output.txt")
 actual_output_file=$(mktemp)
 
 rbt dev run --terminate-after-health-check > "$actual_output_file"

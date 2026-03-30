@@ -28,25 +28,35 @@ class ServiceDescriptorValidatorPydanticTestCase(unittest.TestCase):
     field_type_changed: FileDescriptorSet
     method_deleted: FileDescriptorSet
     method_type_changed: FileDescriptorSet
+    state_non_required_field: FileDescriptorSet
+    required_field_added: FileDescriptorSet
     state_renamed: FileDescriptorSet
+    request_non_required_field: FileDescriptorSet
     request_original: FileDescriptorSet
     request_field_deleted: FileDescriptorSet
     request_field_type_changed: FileDescriptorSet
+    request_required_field_added: FileDescriptorSet
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.original = get_descriptor_set('pydantic_original_api_pb2')
+        cls.original = get_descriptor_set('pydantic_state_original_api_pb2')
         cls.field_deleted = get_descriptor_set(
-            'pydantic_field_deleted_api_pb2'
+            'pydantic_state_field_deleted_api_pb2'
         )
         cls.field_type_changed = get_descriptor_set(
-            'pydantic_field_type_changed_api_pb2'
+            'pydantic_state_field_type_changed_api_pb2'
         )
         cls.method_deleted = get_descriptor_set(
             'pydantic_method_deleted_api_pb2'
         )
         cls.method_type_changed = get_descriptor_set(
             'pydantic_method_type_changed_api_pb2'
+        )
+        cls.state_non_required_field = get_descriptor_set(
+            'pydantic_state_non_required_field_api_pb2'
+        )
+        cls.required_field_added = get_descriptor_set(
+            'pydantic_state_required_field_added_api_pb2'
         )
         cls.state_renamed = get_descriptor_set(
             'pydantic_state_renamed_api_pb2'
@@ -59,6 +69,12 @@ class ServiceDescriptorValidatorPydanticTestCase(unittest.TestCase):
         )
         cls.request_field_type_changed = get_descriptor_set(
             'pydantic_request_field_type_changed_api_pb2'
+        )
+        cls.request_non_required_field = get_descriptor_set(
+            'pydantic_request_non_required_field_api_pb2'
+        )
+        cls.request_required_field_added = get_descriptor_set(
+            'pydantic_request_required_field_added_api_pb2'
         )
 
     def test_pydantic_state_deleted(self):
@@ -76,7 +92,7 @@ class ServiceDescriptorValidatorPydanticTestCase(unittest.TestCase):
         self.assertEqual(
             'servicer type `tests.reboot.server'
             '.service_descriptor_validator_pydantic'
-            '.pydantic_original_api.EchoPydantic` '
+            '.pydantic_state_original_api.EchoPydantic` '
             'was deleted',
             errors[0],
         )
@@ -98,7 +114,7 @@ class ServiceDescriptorValidatorPydanticTestCase(unittest.TestCase):
             'Method `do_something` was deleted from servicer type '
             '`tests.reboot.server'
             '.service_descriptor_validator_pydantic'
-            '.pydantic_original_api.EchoPydantic`',
+            '.pydantic_state_original_api.EchoPydantic`',
             errors[0],
         )
 
@@ -118,7 +134,7 @@ class ServiceDescriptorValidatorPydanticTestCase(unittest.TestCase):
         self.assertEqual(
             'Reboot options for method `do_something` of servicer type '
             '`tests.reboot.server.service_descriptor_validator_pydantic'
-            '.pydantic_original_api.EchoPydantic` updated from...\n'
+            '.pydantic_state_original_api.EchoPydantic` updated from...\n'
             '```\n'
             'writer {\n'
             '}\n'
@@ -148,7 +164,7 @@ class ServiceDescriptorValidatorPydanticTestCase(unittest.TestCase):
             'Field `my_field` was removed from the state of servicer type '
             '`tests.reboot.server'
             '.service_descriptor_validator_pydantic'
-            '.pydantic_original_api.EchoPydantic`. '
+            '.pydantic_state_original_api.EchoPydantic`. '
             'Removing fields is a backwards-incompatible change. '
             'To continue, restore the field or use `expunge` to '
             'clear all existing state data.',
@@ -172,7 +188,7 @@ class ServiceDescriptorValidatorPydanticTestCase(unittest.TestCase):
             'Field `my_field` in the state of servicer type '
             '`tests.reboot.server'
             '.service_descriptor_validator_pydantic'
-            '.pydantic_field_type_changed_api.EchoPydantic` '
+            '.pydantic_state_field_type_changed_api.EchoPydantic` '
             'has switched type from `double` to `string`',
             errors[0],
         )
@@ -222,6 +238,150 @@ class ServiceDescriptorValidatorPydanticTestCase(unittest.TestCase):
             '.pydantic_request_field_type_changed_api'
             '.EchoPydanticDoSomethingRequest` '
             'has switched type from `double` to `string`',
+            errors[0],
+        )
+
+    def test_pydantic_required_field_added(self):
+        """Adding a required field raises an error with Pydantic terminology."""
+        with self.assertRaises(ProtoValidationError) as e:
+            validate_descriptor_sets_are_backwards_compatible(
+                self.original,
+                self.required_field_added,
+            )
+
+        self.assertIsNotNone(e.exception.validation_errors)
+        assert e.exception.validation_errors is not None  # for mypy
+        errors = e.exception.validation_errors
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(
+            'Field `my_new_field` was added to the state of servicer '
+            'type `tests.reboot.server'
+            '.service_descriptor_validator_pydantic'
+            '.pydantic_state_required_field_added_api.EchoPydantic` as a '
+            'required field. Adding required fields is a '
+            'backwards-incompatible change. To continue, add the field '
+            'with a default value or use `expunge` to clear all '
+            'existing state data.',
+            errors[0],
+        )
+
+    def test_pydantic_optional_to_required(self):
+        """Changing a field from optional to required raises an error."""
+        with self.assertRaises(ProtoValidationError) as e:
+            validate_descriptor_sets_are_backwards_compatible(
+                self.state_non_required_field,
+                self.original,
+            )
+
+        self.assertIsNotNone(e.exception.validation_errors)
+        assert e.exception.validation_errors is not None  # for mypy
+        errors = e.exception.validation_errors
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(
+            'Field `my_field` in the state of servicer type '
+            '`tests.reboot.server'
+            '.service_descriptor_validator_pydantic'
+            '.pydantic_state_original_api.EchoPydantic` became required. '
+            'This is a backwards-incompatible change. To continue, '
+            'revert the change or use `expunge` to clear all existing '
+            'state data.',
+            errors[0],
+        )
+
+    def test_pydantic_required_to_optional(self):
+        """Changing a field from required to optional raises an error."""
+        with self.assertRaises(ProtoValidationError) as e:
+            validate_descriptor_sets_are_backwards_compatible(
+                self.original,
+                self.state_non_required_field,
+            )
+
+        self.assertIsNotNone(e.exception.validation_errors)
+        assert e.exception.validation_errors is not None  # for mypy
+        errors = e.exception.validation_errors
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(
+            'Field `my_field` in the state of servicer type '
+            '`tests.reboot.server'
+            '.service_descriptor_validator_pydantic'
+            '.pydantic_state_non_required_field_api.EchoPydantic` is not '
+            'required anymore. This is a backwards-incompatible change. '
+            'To continue, revert the change or use `expunge` to clear '
+            'all existing state data.',
+            errors[0],
+        )
+
+    def test_pydantic_request_required_field_added(self):
+        """Adding a required request field raises an error with 'Pydantic
+        model' terminology."""
+        with self.assertRaises(ProtoValidationError) as e:
+            validate_descriptor_sets_are_backwards_compatible(
+                self.request_original,
+                self.request_required_field_added,
+            )
+
+        self.assertIsNotNone(e.exception.validation_errors)
+        assert e.exception.validation_errors is not None  # for mypy
+        errors = e.exception.validation_errors
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(
+            'Field `my_new_request_field` was added to Pydantic model '
+            '`tests.reboot.server'
+            '.service_descriptor_validator_pydantic'
+            '.pydantic_request_required_field_added_api'
+            '.EchoPydanticDoSomethingRequest` as a required field. '
+            'Adding required fields is a backwards-incompatible change. '
+            'To continue, add the field with a default value or use '
+            '`expunge` to clear all existing state data.',
+            errors[0],
+        )
+
+    def test_pydantic_request_optional_to_required(self):
+        """Changing a request field from optional to required raises an
+        error."""
+        with self.assertRaises(ProtoValidationError) as e:
+            validate_descriptor_sets_are_backwards_compatible(
+                self.request_non_required_field,
+                self.request_original,
+            )
+
+        self.assertIsNotNone(e.exception.validation_errors)
+        assert e.exception.validation_errors is not None  # for mypy
+        errors = e.exception.validation_errors
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(
+            'Field `my_request_field` in Pydantic model '
+            '`tests.reboot.server'
+            '.service_descriptor_validator_pydantic'
+            '.pydantic_request_original_api'
+            '.EchoPydanticDoSomethingRequest` became required. This is '
+            'a backwards-incompatible change. To continue, revert the '
+            'change or use `expunge` to clear all existing state data.',
+            errors[0],
+        )
+
+    def test_pydantic_request_required_to_optional(self):
+        """Changing a request field from required to optional raises an
+        error."""
+        with self.assertRaises(ProtoValidationError) as e:
+            validate_descriptor_sets_are_backwards_compatible(
+                self.request_original,
+                self.request_non_required_field,
+            )
+
+        self.assertIsNotNone(e.exception.validation_errors)
+        assert e.exception.validation_errors is not None  # for mypy
+        errors = e.exception.validation_errors
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(
+            'Field `my_request_field` in Pydantic model '
+            '`tests.reboot.server'
+            '.service_descriptor_validator_pydantic'
+            '.pydantic_request_non_required_field_api'
+            '.EchoPydanticDoSomethingRequest` is not required anymore. '
+            'This is a backwards-incompatible change. To continue, '
+            'revert the change or use `expunge` to clear all existing '
+            'state data.',
             errors[0],
         )
 

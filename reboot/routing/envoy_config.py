@@ -47,10 +47,10 @@ from reboot.routing.filters.lua import (
 )
 from reboot.run_environments import on_cloud
 from reboot.settings import (
+    ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES,
     ENVVAR_LOCAL_ENVOY_MODE,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_MCP_FRONTEND_HOST,
-    MAX_GRPC_RESPONSE_SIZE_BYTES,
 )
 from urllib.parse import urlparse
 
@@ -690,9 +690,18 @@ def _filter_http_connection_manager(
                             string_pb2.StringMatcher(
                                 safe_regex=regex_pb2.RegexMatcher(
                                     # TODO(rjh): deprecated; can remove?
+                                    # We do not know or control where
+                                    # frontends get hosted, and neither
+                                    # do our customers: depending on the
+                                    # MCP client used, a sandbox may
+                                    # have any origin. Permit all
+                                    # origins. Note that the correct
+                                    # incantation for Envoy is `".*"`,
+                                    # not `"*"` (which only matches a
+                                    # literal star).
                                     google_re2=regex_pb2.RegexMatcher.
                                     GoogleRE2(),
-                                    regex="\\*",
+                                    regex=".*",
                                 ),
                             )
                         ],
@@ -858,7 +867,7 @@ def listeners(
             ],
             # See: https://github.com/reboot-dev/mono/issues/3944.
             per_connection_buffer_limit_bytes=UInt32Value(
-                value=MAX_GRPC_RESPONSE_SIZE_BYTES
+                value=ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES
             ),
         ) for listener in listeners
     ]
@@ -964,7 +973,7 @@ def _cluster(
         ),
         # See: https://github.com/reboot-dev/mono/issues/3944.
         per_connection_buffer_limit_bytes=UInt32Value(
-            value=MAX_GRPC_RESPONSE_SIZE_BYTES
+            value=ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES
         ),
     )
 

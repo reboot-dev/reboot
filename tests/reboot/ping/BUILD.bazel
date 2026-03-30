@@ -16,6 +16,8 @@ py_test(
         "//reboot/aio:applications_py",
         "//reboot/ping:ping_py",
         "//reboot/aio:tests_py",
+        "//tests/reboot:test_token_verifier_py",
         requirement("httpx"),
+        requirement("PyJWT"),
     ],
 )

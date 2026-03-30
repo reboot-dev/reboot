@@ -15,6 +15,7 @@ import * as reboot_api from "@reboot-dev/reboot-api";
 import React, {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { v4 as uuidv4 } from "uuid";
@@ -33,6 +34,7 @@ import { v4 as uuidv4 } from "uuid";
 import type { App as McpApp } from "@modelcontextprotocol/ext-apps/react";
 import { useMcpApp, useMcpToolData } from "@reboot-dev/reboot-react/internal";
 {% endif %}
+import { useRefreshMCPBearerToken } from "@reboot-dev/reboot-react/internal";
 {% if proto.messages_and_enums|length > 0 or states|length > 0 %}
 // NOTE NOTE NOTE
 //
@@ -1408,6 +1410,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
   const url = rebootClient.url;
   const bearerToken = rebootClient.bearerToken;
+  const refreshMCPBearerToken = useRefreshMCPBearerToken();
 
   const [instance, setInstance] = useState(() => {
     return {{ client.proto.state_name | to_camel }}Instance.use(
@@ -1595,6 +1598,16 @@ export const use{{ client.proto.state_name | to_camel }} = (
         },
         setIsLoading,
         (status: reboot_api.Status) => {
+          // If the server rejected us due to an expired
+          // token, refresh via the MCP host. The token
+          // change triggers a re-render and reconnect.
+          if (
+            status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+            refreshMCPBearerToken
+          ) {
+            refreshMCPBearerToken();
+          }
+
           const aborted = {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(status);
 
           console.warn(
@@ -1639,15 +1652,30 @@ export const use{{ client.proto.state_name | to_camel }} = (
     // in order to set internal state on it, but on subsequent
     // renders it will recognize the same promise and return
     // without suspending.
+	//
+	// We need to store the suspense promise in a `useRef` so
+	// that we can continually return it even if the reader is
+	// changing due to things like the `bearerToken` changing,
+	// however, we don't want to flicker the suspense fallback
+	// when `bearerToken` changes after we've already received
+	// a stable `response` (or `aborted`).
+	const suspensePromiseRef = useRef(undefined);
+
     const suspensePromise = useMemo(
       () => {
-        if (!options.suspense || reader.event.isSet()) {
-          return Promise.resolve();
-        }
-        reboot_api.assert(reader.promise !== undefined);
-        return reader.promise.then(() => {});
+	    if (suspensePromiseRef.current === undefined || (response === undefined && aborted === undefined)) {
+          if (!options.suspense || reader.event.isSet()) {
+		    suspensePromiseRef.current = Promise.resolve();
+          } else {
+            reboot_api.assert(reader.promise !== undefined);
+			reboot_api.assert(response === undefined);
+			reboot_api.assert(aborted === undefined);
+            suspensePromiseRef.current = reader.promise.then(() => {});
+          }
+		}        
+		return suspensePromiseRef.current;
       },
-      [reader, options.suspense]
+      [options.suspense, reader, response, aborted]
     );
 
     if (options.suspense) {
@@ -1728,9 +1756,106 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
     if (aborted) {
       return { aborted };
+    } else if (response.status === 401 && refreshMCPBearerToken) {
+      // Token expired — refresh via MCP host and retry once.
+      const newToken = await refreshMCPBearerToken();
+      if (newToken) {
+        const retryHeaders = new Headers();
+        retryHeaders.set("Content-Type", "application/json");
+        retryHeaders.append("Connection", "keep-alive");
+        retryHeaders.append("Authorization", `Bearer ${newToken}`);
+        try {
+          const retryResponse = await reboot_web.guardedFetch(
+            new Request(
+              `${rebootClient.url}/__/reboot/rpc/${stateRef}/{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}`, {
+                method: "POST",
+                headers: retryHeaders,
+                body: request.toJsonString()
+              }
+            ),
+            options
+          );
+          if (retryResponse.ok) {
+            return {
+              response:
+                {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(({{ method.output_type }}.fromJson(await retryResponse.json())))
+            };
+          }
+          // Fall through to generic error handling on retry failure.
+          return {
+            aborted: new {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
+              new reboot_api.errors_pb.Unknown(), {
+                message: `Unknown error with HTTP status ${retryResponse.status} after token refresh`
+              }
+            )
+          };
+        } catch (e: unknown) {
+          return {
+            aborted: new {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
+              new reboot_api.errors_pb.Aborted(), {
+                message: e instanceof Error
+                  ? `${e}`
+                  : `Unknown error: ${JSON.stringify(e)}`
+              }
+            )
+          };
+        }
+      }
+      // Refresh failed — fall through to generic error.
+      return {
+        aborted: new {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted(
+          new reboot_api.errors_pb.Unknown(), {
+            message: `Unauthorized (HTTP 401) and token refresh failed`
+          }
+        )
+      };
     } else if (!response.ok) {
       if (response.headers.get("content-type") === "application/json") {
         const status = reboot_api.Status.fromJson(await response.json());
+
+
+        // If the server rejected us due to an expired
+        // token, refresh via the MCP host and retry once.
+        if (
+          status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+          refreshMCPBearerToken
+        ) {
+          const newToken = await refreshMCPBearerToken();
+          if (newToken) {
+            const retryHeaders = new Headers();
+            retryHeaders.set(
+              "Content-Type", "application/json",
+            );
+            retryHeaders.append(
+              "Connection", "keep-alive",
+            );
+            retryHeaders.append(
+              "Authorization", `Bearer ${newToken}`,
+            );
+            try {
+              const retryResponse =
+                await reboot_web.guardedFetch(
+                  new Request(
+                    `${rebootClient.url}/__/reboot/rpc/${stateRef}/{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}`, {
+                      method: "POST",
+                      headers: retryHeaders,
+                      body: request.toJsonString()
+                    }
+                  ),
+                  options
+                );
+              if (retryResponse.ok) {
+                return {
+                  response:
+                    {{ client.proto.state_name }}{{ method.proto.name }}ResponseFromProtobufShape(({{ method.output_type }}.fromJson(await retryResponse.json())))
+                };
+              }
+            } catch {
+              // Fall through to return the original
+              // aborted error.
+            }
+          }
+        }
 
         const aborted = {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(status);
 

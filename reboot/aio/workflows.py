@@ -1,5 +1,5 @@
 import sys
-from reboot.aio.contexts import WorkflowContext, retry_reactively_until
+from reboot.aio.contexts import WorkflowContext
 from reboot.aio.idempotency import (  # noqa: F401
     ALWAYS,
     PER_ITERATION,
@@ -289,7 +289,7 @@ async def until(
     """
 
     async def converge():
-        return await retry_reactively_until(context, callable)
+        return await context.retry_reactively_until(callable)
 
     assert memoize is not None
     return await memoize(

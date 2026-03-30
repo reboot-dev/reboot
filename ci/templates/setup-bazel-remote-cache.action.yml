@@ -26,10 +26,19 @@ runs:
           echo "${{ inputs.environment-id }}" >> the_environment.txt
         fi
         echo $(uname -rsm) >> the_environment.txt
-        echo $(lscpu) >> the_environment.txt
+        # Exclude BogoMIPS from lscpu output: it's a
+        # runtime-measured value that fluctuates slightly on
+        # every boot (e.g. 5199.99 vs 5200.00), even on
+        # identical hardware, causing needless cache
+        # invalidation.
+        lscpu | grep -v BogoMIPS >> the_environment.txt
         if [ "${{ inputs.include-devcontainer-json }}" = "true" ]; then
           cat .devcontainer/devcontainer.json >> the_environment.txt
         fi
+        echo "the_environment.txt:"
+        echo "----"
+        cat the_environment.txt
+        echo "----"
 
     - name: Create user.bazelrc for remote cache
       shell: bash
@@ -53,3 +62,9 @@ runs:
         echo "----"
         cat user.bazelrc
         echo "----"
+        # If there's a `public`/ folder, also write a `user.bazelrc`
+        # there - the `public/` folder represents a separate Bazel
+        # workspace that should also get the remote cache configuration.
+        if [ -d public ]; then
+          cp user.bazelrc public/user.bazelrc
+        fi

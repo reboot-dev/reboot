@@ -162,16 +162,16 @@ was valid:
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/aio/auth/token_verifiers.py&lines=15-20) -->
+(CODE:src=../../../reboot/aio/auth/token_verifiers.py&lines=30-35) -->
 <!-- The below code snippet is automatically added from ../../../reboot/aio/auth/token_verifiers.py -->
 
 ```py
-@abstractmethod
-async def verify_token(
-    self,
-    context: ReaderContext,
     token: Optional[str],
-) -> Optional[Auth]:
+) -> VerifyTokenResult:
+    """Verify the bearer token.
+
+    Returns:
+        * `Auth` if the token is valid and the caller is
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -179,7 +179,7 @@ async def verify_token(
 
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/nodejs/index.ts&lines=626-629) -->
+(CODE:src=../../../reboot/nodejs/index.ts&lines=662-665) -->
 <!-- The below code snippet is automatically added from ../../../reboot/nodejs/index.ts -->
 
 ```ts
@@ -379,6 +379,17 @@ for.
 
 By default, if you don't provide an authorizer by overriding
 `authorizer()`, **only _application internal_ calls are allowed**.
+
+#### `User` type default
+
+The [`User`](/learn_more/define/pydantic#special-state-user) type is
+a special case: its default authorizer also allows calls where
+the caller's `user_id` matches the `User`'s state ID. In other
+words, each user can access their own `User` state without any
+custom authorizer. App-internal calls are allowed as well.
+
+If you need different rules, you can override override `authorizer()` as
+with any other state type.
 
 :::important
 

@@ -98,7 +98,7 @@ should use to [authenticate](/learn_more/auth) itself to your application.
 
 ## AI Chat App auto-registration
 
-When your API includes a `Session` type or
+When your API includes a `User` type or
 [`UI`](/learn_more/implement/ui_methods) methods, `Application`
 automatically registers the necessary endpoints for AI chat
 clients. No extra configuration is needed in your `main.py` —
@@ -107,7 +107,7 @@ everything:
 
 ```python
 application = Application(
-    servicers=[SessionServicer, CounterServicer],
+    servicers=[UserServicer, CounterServicer],
 )
 await application.run()
 ```
