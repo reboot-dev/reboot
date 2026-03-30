@@ -13,15 +13,15 @@ logger = get_logger(__name__)
 
 # Minimal `Servicer` stubs for testing `_mount_mcp` behavior.
 # Only the attributes accessed by `_mount_mcp` need real values.
-class _StubAutoConstructA(Servicer):
-    __service_names__ = [ServiceName("test.v1.ServiceA")]
-    __state_type_name__ = StateTypeName("test.v1.StateA")
+class _StubUserA(Servicer):
+    __service_names__ = [ServiceName("test.v1.ServiceC")]
+    __state_type_name__ = StateTypeName("test.v1.UserA")
     _is_auto_construct = True
 
 
-class _StubAutoConstructB(Servicer):
-    __service_names__ = [ServiceName("test.v1.ServiceB")]
-    __state_type_name__ = StateTypeName("test.v1.StateB")
+class _StubUserB(Servicer):
+    __service_names__ = [ServiceName("test.v1.ServiceD")]
+    __state_type_name__ = StateTypeName("test.v1.UserB")
     _is_auto_construct = True
 
 
@@ -112,18 +112,42 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
             str(e.exception),
         )
 
-    async def test_multiple_auto_construct_types_raises(self) -> None:
-        """Tests that having multiple servicers with
-        `_is_auto_construct = True` raises a `ValueError`."""
+    async def test_multiple_auto_construct_types_ok(self) -> None:
+        """
+        Multiple auto-construct types of the same kind are allowed.
+        """
+        # Should not raise.
+        Application(servicers=[_StubUserA, _StubUserB])
+
+    async def test_duplicate_mcp_tool_names_raises(self) -> None:
+        """
+        Two servicers registering the same MCP tool is an error.
+        """
+
+        class _FooServicer(Servicer):
+            __service_names__ = [ServiceName("test.v1.Svc")]
+            __state_type_name__ = StateTypeName("test.v1.Foo")
+            _is_auto_construct = False
+
+            @staticmethod
+            def _mcp_tool_names() -> list[str]:
+                return ["foo_bar"]
+
+        class _FooV2Servicer(Servicer):
+            __service_names__ = [ServiceName("test.v2.Svc")]
+            __state_type_name__ = StateTypeName("test.v2.Foo")
+            _is_auto_construct = False
+
+            @staticmethod
+            def _mcp_tool_names() -> list[str]:
+                return ["foo_bar"]
+
         with self.assertRaises(ValueError) as e:
-            Application(servicers=[
-                _StubAutoConstructA,
-                _StubAutoConstructB,
-            ])
+            Application(servicers=[_FooServicer, _FooV2Servicer])
         msg = str(e.exception)
-        self.assertIn("Multiple auto-construct state types", msg)
-        self.assertIn("test.v1.StateA", msg)
-        self.assertIn("test.v1.StateB", msg)
+        self.assertIn("Duplicate MCP tool name 'foo_bar'", msg)
+        self.assertIn("'_FooServicer'", msg)
+        self.assertIn("'_FooV2Servicer'", msg)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ import os
 from datetime import timedelta
 from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow
+from reboot.aio.auth.oauth_providers import Anonymous
 from reboot.aio.contexts import (
     ReaderContext,
     TransactionContext,
@@ -15,18 +16,23 @@ from reboot.aio.contexts import (
 from reboot.aio.external import InitializeContext
 from reboot.controller.settings import ENVVAR_REBOOT_MODE
 from reboot.ping.ping_api import (
+    CounterEntry,
+    CreateCounterRequest,
     CreateCounterResponse,
     DescribeResponse,
+    DescriptionResponse,
     DoPingPeriodicallyRequest,
     DoPingPeriodicallyResponse,
     DoPingResponse,
     DoPongResponse,
     IncrementResponse,
+    ListCountersResponse,
     NumPingsResponse,
     NumPongsResponse,
     ValueResponse,
+    WhoAmIResponse,
 )
-from reboot.ping.ping_api_rbt import Counter, Ping, Pong, Session
+from reboot.ping.ping_api_rbt import Counter, Ping, Pong, User
 
 logging.basicConfig(level=logging.INFO)
 
@@ -116,17 +122,39 @@ class PongServicer(Pong.Servicer):
         return NumPongsResponse(num_pongs=self.state.num_pongs)
 
 
-class SessionServicer(Session.Servicer):
-
-    def authorizer(self):
-        return allow()
+class UserServicer(User.Servicer):
 
     async def create_counter(
         self,
         context: TransactionContext,
+        request: CreateCounterRequest,
     ) -> CreateCounterResponse:
-        counter, _ = await Counter.create(context)
-        return CreateCounterResponse(counter_id=counter.state_id)
+        counter, _ = await Counter.create(
+            context, description=request.description
+        )
+        self.state.counter_ids.append(counter.state_id)
+        return CreateCounterResponse(
+            counter_id=counter.state_id,
+        )
+
+    async def list_counters(
+        self,
+        context: ReaderContext,
+    ) -> ListCountersResponse:
+        counters = []
+        for counter_id in self.state.counter_ids:
+            response = await Counter.ref(counter_id).description(context)
+            counters.append(
+                CounterEntry(
+                    counter_id=counter_id,
+                    description=response.description,
+                )
+            )
+        return ListCountersResponse(counters=counters)
+
+    async def whoami(self, context: ReaderContext) -> WhoAmIResponse:
+        user_id = context.auth.user_id if context.auth else "unauthenticated"
+        return WhoAmIResponse(user_id=user_id)
 
 
 class CounterServicer(Counter.Servicer):
@@ -134,16 +162,30 @@ class CounterServicer(Counter.Servicer):
     def authorizer(self):
         return allow()
 
-    async def create(self, context) -> None:
-        # We don't need any non-default values in our state; it just
-        # needs to exist.
-        pass
+    async def create(
+        self,
+        context: WriterContext,
+        request: CreateCounterRequest,
+    ) -> None:
+        self.state.description = request.description
+
+    async def description(
+        self,
+        context: ReaderContext,
+    ) -> DescriptionResponse:
+        return DescriptionResponse(
+            description=self.state.description,
+        )
 
     async def increment(
         self,
         context: WriterContext,
     ) -> IncrementResponse:
         self.state.value += 1
+        print(
+            f"Counter('{context.state_id}'): incremented to {self.state.value} "
+            f"by user '{context.auth.user_id if context.auth else None}'"
+        )
         return IncrementResponse(value=self.state.value)
 
     async def value(
@@ -188,12 +230,18 @@ async def main():
         servicers=[
             PingServicer,
             PongServicer,
-            SessionServicer,
+            UserServicer,
             CounterServicer,
         ],
         # We choose to not call the initialization method
         # `initialize`, to exercise that that is allowed.
         initialize=start_periodic_ping,
+        oauth=Anonymous(
+            # Set a short access token TTL so that most manual tests
+            # with this app naturally also exercise the access token
+            # refresh flow.
+            access_token_ttl_seconds=30,
+        ),
     )
     await application.run()
 

@@ -3,8 +3,9 @@ syntax = "proto3";
 package rbt.cloud.v1alpha1.application;
 
 import "google/protobuf/timestamp.proto";
-import "rbt/v1alpha1/options.proto";
+
 import "rbt/cloud/v1alpha1/logs/logs.proto";
+import "rbt/v1alpha1/options.proto";
 
 /////////////////////////////////////////////////////////////////////////
 
@@ -365,6 +366,7 @@ message GetResponse {
   repeated Revision revisions = 2;
   ApplicationMetrics metrics = 3;
   string application_name = 4;
+  string application_id = 5;
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -395,6 +397,13 @@ message PaymentMethodRequiredError {}
 
 //////////////////////////////////////////////////////////////////////
 
-message MetricsWorkflowRequest {}
+message MetricsWorkflowRequest {
+  // The revision number the workflow is scheduled for.
+  // We need this to be able to "complete" the workflow when a new
+  // revision is deployed (and a new `metrics_workflow` is started), so
+  // the "old" revision will be marked as non-`UP` and the workflow
+  // will stop.
+  uint64 revision_number = 1;
+}
 
 message MetricsWorkflowResponse {}

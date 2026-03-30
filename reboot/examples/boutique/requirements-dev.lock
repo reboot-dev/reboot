@@ -197,10 +197,12 @@ python-dotenv==1.2.2
     # via pydantic-settings
 python-multipart==0.0.22
     # via mcp
+python-ulid==3.1.0
+    # via reboot
 pyyaml==6.0.2
     # via kubernetes-asyncio
     # via reboot
-reboot==0.45.2
+reboot==0.46.0
 referencing==0.37.0
     # via jsonschema
     # via jsonschema-specifications

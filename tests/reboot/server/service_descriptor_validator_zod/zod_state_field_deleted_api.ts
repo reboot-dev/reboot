@@ -1,7 +1,7 @@
 /**
- * Variant of `zod_original_api.ts` with `myField` removed.
+ * Variant of `zod_state_original_api.ts` with `myField` removed.
  *
- * When compared against `zod_original_api.ts` as the updated version,
+ * When compared against `zod_state_original_api.ts` as the updated version,
  * the `myField` field appears deleted from `EchoZod`.
  */
 import { writer } from "@reboot-dev/reboot-api";

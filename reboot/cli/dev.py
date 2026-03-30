@@ -67,6 +67,7 @@ from reboot.settings import (
     ENVVAR_RBT_STATE_DIRECTORY,
     ENVVAR_REBOOT_LOCAL_ENVOY,
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
+    ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
     ENVVAR_REBOOT_USE_TTY,
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
 )
@@ -481,6 +482,7 @@ async def _check_local_envoy_status(
     tls_certificate: Optional[str],
     root_certificate: Optional[str],
     tracing: Tracing,
+    nodejs: bool,
 ) -> None:
     """Checks if the application is up and running.
     Optionally exits as soon as the health check has passed.
@@ -608,9 +610,14 @@ async def _check_local_envoy_status(
 
             if is_application_serving:
                 terminal.info("Application is serving traffic ...\n")
+                # MCP server and endpoint is not supported for Nodejs currently.
+                mcp_line = (
+                    "" if nodejs else
+                    f"  MCP clients can connect at:    {protocol}://{address}/mcp\n"
+                )
                 terminal.info(
                     f"  Your API is available at:      {protocol}://{address}\n"
-                    f"  MCP clients can connect at:    {protocol}://{address}/mcp\n"
+                    f"{mcp_line}"
                     f"  You can inspect your state at: {protocol}://{address}/__/inspect\n",
                     color=Fore.WHITE,
                 )
@@ -1292,6 +1299,7 @@ async def __dev_run(
             tls_certificate=args.tls_certificate,
             root_certificate=args.tls_root_certificate,
             tracing=tracing,
+            nodejs=bool(args.nodejs),
         ),
         name=f'_check_local_envoy_status(...) in {__name__}',
     )
@@ -1334,6 +1342,12 @@ async def __dev_run(
     if args.api_key is not None:
         env[ENVVAR_RBT_CLOUD_API_KEY] = args.api_key
     env[ENVVAR_RBT_CLOUD_URL] = args.cloud_url
+
+    # Set a signing secret for the MCP OAuth server. For local
+    # dev we use the application name (insecure, but convenient).
+    # Fall back to a fixed string when `--name` wasn't provided.
+    if ENVVAR_REBOOT_OAUTH_SIGNING_SECRET not in env:
+        env[ENVVAR_REBOOT_OAUTH_SIGNING_SECRET] = args.name or "reboot-dev"
 
     if tracing == Tracing.JAEGER:
         # TODO: dynamic port. See comment in `_run_jaeger()`.

@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "1.10.1",
-    "@reboot-dev/reboot-web": "^0.45.2",
+    "@reboot-dev/reboot-web": "0.46.0",
     "@testing-library/jest-dom": "^5.17.0",
     "@testing-library/user-event": "^13.5.0",
     "@types/jest": "^27.5.2",

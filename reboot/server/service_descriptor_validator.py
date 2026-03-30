@@ -16,6 +16,7 @@ from rbt.v1alpha1 import options_pb2
 from reboot.aio.exceptions import InputError
 from reboot.api import snake_to_camel, to_snake_case
 from reboot.options import (
+    get_field_options,
     get_file_options,
     get_method_options,
     is_reboot_state,
@@ -307,7 +308,7 @@ def legal_diff_mcp_change(
 ) -> bool:
     """
     Changing MCP options is always allowed.
-    
+
     MCP clients are short-lived; they reconnect frequently and will
     discover any changes to the MCP schema as soon as they do. They are
     therefore very robust to changes in the MCP schema and don't need to
@@ -887,6 +888,49 @@ def _compare_messages(
                 schema_type,
                 processed_field_messages_names,
             )
+
+    if schema_type != SchemaType.PROTO:
+        for field_number, updated_field in (
+            updated_message.fields_by_number.items()
+        ):
+            field_label = _user_field_name(updated_field.name, schema_type)
+            schema_ref = _user_visible_schema_ref(updated_message, schema_type)
+            if field_number in original_message.fields_by_number:
+                # Check if the `required` option changed on an existing
+                # field.
+                original_field = (
+                    original_message.fields_by_number[field_number]
+                )
+                original_required = (
+                    get_field_options(original_field).required
+                )
+                updated_required = (get_field_options(updated_field).required)
+                if original_required != updated_required:
+                    if updated_required:
+                        error_cause = 'became required'
+                    else:
+                        error_cause = 'is not required anymore'
+                    exceptions.append(
+                        f'Field `{field_label}` in {kind_label} '
+                        f'{schema_ref} {error_cause}. This is a '
+                        'backwards-incompatible change. To continue, '
+                        'revert the change or use `expunge` to clear '
+                        'all existing state data.'
+                    )
+            else:
+                # Error if a new field is `required`.
+                # NOTE: Removing both required and non-required fields
+                #       is treated as a backwards-incompatible change,
+                #       and handled above.
+                if get_field_options(updated_field).required:
+                    exceptions.append(
+                        f'Field `{field_label}` was added to '
+                        f'{kind_label} {schema_ref} as a required '
+                        'field. Adding required fields is a '
+                        'backwards-incompatible change. To continue, '
+                        'add the field with a default value or use '
+                        '`expunge` to clear all existing state data.'
+                    )
 
     return exceptions
 

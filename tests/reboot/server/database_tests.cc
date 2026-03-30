@@ -2,8 +2,10 @@
 
 #include <chrono>
 #include <filesystem>
+#include <future>
 #include <random>
 #include <set>
+#include <thread>
 
 #include "gmock/gmock-matchers.h"
 #include "google/protobuf/any.pb.h"
@@ -2779,6 +2781,10 @@ TEST_F(TwoShardDatabaseTest, ExportFiltersByShardIds) {
 
     v1alpha1::ExportResponse response;
     grpc::ClientContext context;
+    // This uses `Export` instead of `ExportStreamed` since the code
+    // path is pretty much the same.
+    // TODO: Make these tests use `ExportStreamed` once we deprecate
+    // `Export`.
     grpc::Status status = stub->Export(&context, request, &response);
     ASSERT_TRUE(status.ok()) << status.error_message();
 
@@ -2807,6 +2813,10 @@ TEST_F(TwoShardDatabaseTest, ExportFiltersByShardIds) {
 
     v1alpha1::ExportResponse response;
     grpc::ClientContext context;
+    // This uses `Export` instead of `ExportStreamed` since the code
+    // path is pretty much the same.
+    // TODO: Make these tests use `ExportStreamed` once we deprecate
+    // `Export`.
     grpc::Status status = stub->Export(&context, request, &response);
     ASSERT_TRUE(status.ok()) << status.error_message();
 
@@ -2836,6 +2846,10 @@ TEST_F(TwoShardDatabaseTest, ExportFiltersByShardIds) {
 
     v1alpha1::ExportResponse response;
     grpc::ClientContext context;
+    // This uses `Export` instead of `ExportStreamed` since the code
+    // path is pretty much the same.
+    // TODO: Make these tests use `ExportStreamed` once we deprecate
+    // `Export`.
     grpc::Status status = stub->Export(&context, request, &response);
     ASSERT_TRUE(status.ok()) << status.error_message();
 
@@ -2866,6 +2880,10 @@ TEST_F(TwoShardDatabaseTest, ExportFiltersByShardIds) {
 
     v1alpha1::ExportResponse response;
     grpc::ClientContext context;
+    // This uses `Export` instead of `ExportStreamed` since the code
+    // path is pretty much the same.
+    // TODO: Make these tests use `ExportStreamed` once we deprecate
+    // `Export`.
     grpc::Status status = stub->Export(&context, request, &response);
 
     EXPECT_FALSE(status.ok());
@@ -2876,6 +2894,222 @@ TEST_F(TwoShardDatabaseTest, ExportFiltersByShardIds) {
   }
 }
 
+TEST_F(TwoShardDatabaseTest, ExportStreamedCancelled) {
+  const std::string state_type = "TestType";
+  for (const auto& state_ref : find_shard_actors(0, 5)) {
+    v1alpha1::Actor actor;
+    actor.set_state_type(state_type);
+    actor.set_state_ref(state_ref);
+    actor.set_state("data");
+    store({actor}, {});
+  }
+
+  std::promise<void> snapshot_taken;
+  std::promise<void> cancelled;
+  SetTestOnlyHookForLongRunningRPC(
+      server->TestOnly_GetService(),
+      [&](TestOnlyLongRunningRPCHookSite site) {
+        ASSERT_EQ(
+            site,
+            TestOnlyLongRunningRPCHookSite::
+                EXPORT_RIGHT_AFTER_IMPLICIT_SNAPSHOT);
+        snapshot_taken.set_value();
+        cancelled.get_future().wait();
+      });
+
+  v1alpha1::ExportRequest request;
+  request.set_state_type(state_type);
+  request.add_shard_ids("s000000000");
+
+  grpc::ClientContext context;
+  std::unique_ptr<grpc::ClientReader<v1alpha1::ExportResponse>> reader(
+      stub->ExportStreamed(&context, request));
+
+  v1alpha1::ExportResponse response;
+  std::thread read_thread([&]() {
+    while (reader->Read(&response)) {}
+  });
+
+  snapshot_taken.get_future().wait();
+  context.TryCancel();
+  cancelled.set_value();
+  read_thread.join();
+
+  grpc::Status status = reader->Finish();
+  EXPECT_EQ(status.error_code(), grpc::StatusCode::CANCELLED);
+  EXPECT_EQ(response.ByteSizeLong(), 0u);
+}
+
+TEST_F(TwoShardDatabaseTest, ExportStreamedDoesNotBlockConcurrentStore) {
+  // Verify that `ExportStreamed` does not hold the database mutex during
+  // iteration.
+  const std::string state_type = "TestType";
+
+  std::vector<std::string> shard0_refs = find_shard_actors(0, 5);
+  for (const auto& state_ref : shard0_refs) {
+    v1alpha1::Actor actor;
+    actor.set_state_type(state_type);
+    actor.set_state_ref(state_ref);
+    actor.set_state("data");
+    store({actor}, {});
+  }
+
+  // `snapshot_taken` fires from the server thread once the snapshot is
+  // taken. `store_done` unblocks the server thread to finish export
+  // after the concurrent `Store` completes.
+  std::promise<void> snapshot_taken;
+  std::promise<void> store_done;
+  SetTestOnlyHookForLongRunningRPC(
+      server->TestOnly_GetService(),
+      [&](TestOnlyLongRunningRPCHookSite site) {
+        ASSERT_EQ(
+            site,
+            TestOnlyLongRunningRPCHookSite::
+                EXPORT_RIGHT_AFTER_IMPLICIT_SNAPSHOT);
+        snapshot_taken.set_value();
+        store_done.get_future().wait();
+      });
+
+  v1alpha1::ExportRequest request;
+  request.set_state_type(state_type);
+  request.add_shard_ids("s000000000");
+
+  grpc::ClientContext export_context;
+  std::unique_ptr<grpc::ClientReader<v1alpha1::ExportResponse>> reader(
+      stub->ExportStreamed(&export_context, request));
+
+  std::set<std::string> exported_refs;
+  int exported_export_items_count = 0;
+  std::thread export_thread([&]() {
+    v1alpha1::ExportResponse response;
+    while (reader->Read(&response)) {
+      for (const auto& item : response.items()) {
+        EXPECT_TRUE(item.has_actor());
+        EXPECT_EQ(state_type, item.actor().state_type());
+        EXPECT_EQ("data", item.actor().state());
+        exported_refs.insert(item.actor().state_ref());
+        exported_export_items_count++;
+      }
+    }
+  });
+
+  // Wait until the server has taken the iterator snapshot, then
+  // perform a concurrent `Store` into the same shard being exported.
+  snapshot_taken.get_future().wait();
+
+  // Use the same shard which we use in the export so we know for sure
+  // the new actor would be included if the snapshot were taken after
+  // the `Store`.
+  std::string new_ref = find_shard_actors(0, 6)[5];
+  v1alpha1::Actor new_actor;
+  new_actor.set_state_type(state_type);
+  new_actor.set_state_ref(new_ref);
+  new_actor.set_state("concurrent_data");
+  store({new_actor}, {});
+
+  // Unblock the server to finish the `ExportStreamed`.
+  store_done.set_value();
+  export_thread.join();
+
+  // The snapshot was taken before the concurrent `Store`, so only the
+  // original actors must appear.
+  EXPECT_EQ(shard0_refs.size(), exported_export_items_count);
+
+  // The new actor must not appear, it was stored after the snapshot
+  // was taken.
+  EXPECT_EQ(exported_refs.count(new_ref), 0);
+}
+
+TEST_F(TwoShardDatabaseTest, RecoverCancelled) {
+  // Store a task so RecoverTasks has something to iterate over.
+  v1alpha1::Actor actor;
+  actor.set_state_type("Greeter");
+  actor.set_state_ref(make_state_ref("test_1234"));
+  actor.set_state("data");
+  store({actor}, {});
+
+  std::promise<void> mutex_acquired;
+  std::promise<void> cancelled;
+  SetTestOnlyHookForLongRunningRPC(
+      server->TestOnly_GetService(),
+      [&](TestOnlyLongRunningRPCHookSite site) {
+        ASSERT_EQ(
+            site,
+            TestOnlyLongRunningRPCHookSite::RECOVER_RIGHT_AFTER_MUTEX_ACQUIRE);
+        mutex_acquired.set_value();
+        cancelled.get_future().wait();
+      });
+
+  v1alpha1::RecoverRequest request;
+  request.add_shard_ids("s000000000");
+  request.add_shard_ids("s000000001");
+
+  grpc::ClientContext context;
+  std::unique_ptr<grpc::ClientReader<v1alpha1::RecoverResponse>> reader(
+      stub->Recover(&context, request));
+
+  v1alpha1::RecoverResponse response;
+  std::thread read_thread([&]() {
+    while (reader->Read(&response)) {}
+  });
+
+  mutex_acquired.get_future().wait();
+  context.TryCancel();
+  cancelled.set_value();
+  read_thread.join();
+
+  grpc::Status status = reader->Finish();
+  EXPECT_EQ(status.error_code(), grpc::StatusCode::CANCELLED);
+  EXPECT_EQ(response.ByteSizeLong(), 0u);
+}
+
+TEST_F(TwoShardDatabaseTest, RecoverIdempotentMutationsCancelled) {
+  const std::string state_type = "Greeter";
+  const std::string state_ref = make_state_ref("test_1234");
+
+  v1alpha1::IdempotentMutation idempotent_mutation;
+  idempotent_mutation.set_state_type(state_type);
+  idempotent_mutation.set_state_ref(state_ref);
+  idempotent_mutation.set_key(UUID::random().toBytes());
+  idempotent_mutation.set_response({});
+  store({}, {}, std::nullopt, std::move(idempotent_mutation));
+
+  std::promise<void> mutex_acquired;
+  std::promise<void> cancelled;
+  SetTestOnlyHookForLongRunningRPC(
+      server->TestOnly_GetService(),
+      [&](TestOnlyLongRunningRPCHookSite site) {
+        ASSERT_EQ(
+            site,
+            TestOnlyLongRunningRPCHookSite::
+                RECOVER_IDEMPOTENT_MUTATIONS_RIGHT_AFTER_MUTEX_ACQUIRE);
+        mutex_acquired.set_value();
+        cancelled.get_future().wait();
+      });
+
+  v1alpha1::RecoverIdempotentMutationsRequest request;
+  request.set_state_type(state_type);
+  request.set_state_ref(state_ref);
+
+  grpc::ClientContext context;
+  std::unique_ptr<
+      grpc::ClientReader<v1alpha1::RecoverIdempotentMutationsResponse>>
+      reader(stub->RecoverIdempotentMutations(&context, request));
+
+  v1alpha1::RecoverIdempotentMutationsResponse response;
+  std::thread read_thread([&]() {
+    while (reader->Read(&response)) {}
+  });
+
+  mutex_acquired.get_future().wait();
+  context.TryCancel();
+  cancelled.set_value();
+  read_thread.join();
+
+  grpc::Status status = reader->Finish();
+  EXPECT_EQ(status.error_code(), grpc::StatusCode::CANCELLED);
+  EXPECT_EQ(response.ByteSizeLong(), 0u);
+}
 
 ////////////////////////////////////////////////////////////////////////
 

@@ -177,7 +177,6 @@ def success_echo_test(
         browsers = [
             "@io_bazel_rules_webtesting//browsers:chromium-local",
         ],
-        local = True,
         main = name + "_react_test_generated_main.py",
         py_test_tags = [
             "requires-docker",

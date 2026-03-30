@@ -5,9 +5,12 @@
 # gRPC max message size to transmit large state data.
 MAX_DATABASE_GRPC_MESSAGE_LENGTH_BYTES = 100 * 1024 * 1024
 
-# gRPC max response size (our limit; gRPC doesn't specify a limit
-# normally). See: https://github.com/reboot-dev/mono/issues/3944
-MAX_GRPC_RESPONSE_SIZE_BYTES = 4 * 1024 * 1024
+# Envoy per-connection buffer limit for both listeners and clusters.
+# Must be at least as large as `MAX_DATABASE_GRPC_MESSAGE_LENGTH_BYTES`
+# so that large chunks of data (probably for state) transfers will not
+# degrade performance by triggering backpressure too early.
+# See: https://github.com/reboot-dev/mono/issues/3944.
+ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES = 100 * 1024 * 1024
 
 # grpc.keepalive_time_ms: The period (in milliseconds) after which a
 #     keepalive ping is sent on the transport.
@@ -131,6 +134,13 @@ RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY = 13
 # local Envoy.
 ENVVAR_REBOOT_LOCAL_ENVOY = 'REBOOT_LOCAL_ENVOY'
 ENVVAR_REBOOT_LOCAL_ENVOY_PORT = 'REBOOT_LOCAL_ENVOY_PORT'
+
+# Shared secret used by the MCP OAuth server to sign JWTs
+# (HS256). Must be the same across all server processes. For
+# `rbt dev` this is set automatically to the application name;
+# for production the operator must provide a strong random
+# secret.
+ENVVAR_REBOOT_OAUTH_SIGNING_SECRET = 'REBOOT_OAUTH_SIGNING_SECRET'
 
 # The level of tracing to use. This is a Reboot-internal environment
 # variable; it is not expected to be set by developers using Reboot.
@@ -267,10 +277,10 @@ ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG = 'REBOOT_ENABLE_EVENT_LOOP_BLO
 REBOOT_DISCORD_URL = 'https://discord.gg/cRbdcS94Nr'
 REBOOT_GITHUB_ISSUES_URL = 'https://github.com/reboot-dev/reboot/issues'
 
-# State type name that triggers auto-construction for every MCP session.
-AUTO_CONSTRUCT_STATE_TYPE = "Session"
+# State type name that triggers auto-construction per
+# authenticated user.
+AUTO_CONSTRUCT_STATE_TYPE = "User"
 
-# Name of the method injected for auto-construction on the
-# above state type.
+# Constructor method name for auto-constructed state types.
 AUTO_CONSTRUCT_METHOD = "create"  # As used in Python.
 AUTO_CONSTRUCT_PROTO_METHOD = "Create"  # As used in protobuf.

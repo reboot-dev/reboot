@@ -11,7 +11,9 @@ reported in user code. #}
 
 {# Constants we use throughout template. #}
 {% set constants = namespace(has_read=false, has_write=false) %}
-{% set AUTO_CONSTRUCT_STATE_TYPE = "Session" %}
+{# Auto-construct enum values from proto `AutoConstruct`. #}
+{% set AUTO_CONSTRUCT_UNSPECIFIED = 0 %}
+{% set AUTO_CONSTRUCT_PER_USER_ID = 1 %}
 {% set AUTO_CONSTRUCT_PROTO_METHOD = "Create" %}
 {% set AUTO_CONSTRUCT_METHOD = "create" %}
 
@@ -461,7 +463,8 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             # realize where they are missing authorization).
             if authorizer_or_rule is None:
                 return IMPORT_reboot_aio_auth_authorizers.DefaultAuthorizer(
-                    '{{ state.proto.name }}'
+                    '{{ state.proto.name }}',
+                    is_user_type={{ state.proto.auto_construct == AUTO_CONSTRUCT_PER_USER_ID }},
                 )
 
             if isinstance(authorizer_or_rule, IMPORT_reboot_aio_auth_authorizers.AuthorizerRule):
@@ -882,61 +885,55 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
 
             {% if method.options.proto.kind == 'workflow' %}
             @IMPORT_reboot_aio_internals_middleware.maybe_run_function_twice_to_validate_effects
-            async def run_{{ method.proto.name }}_reactively(
+            async def run_{{ method.proto.name }}_workflow(
                 validating_effects: bool,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
             ):
-                async with self._state_manager.reactively(
-                    context,
-                    self._servicer.__state_type__,
-                    # Already authorized when we created the task.
-                    authorize=None,
-                ):
-                    try:
-                        # When we're validating effects we
-                        # periodically timeout so that we can log
-                        # that a workflow might be hung, i.e., the
-                        # user has a bug.
-                        task = IMPORT_asyncio.create_task(
-                            run_{{ method.proto.name }}(
-                                context,
-                                validating_effects=validating_effects,
-                            )
+                try:
+                    # When we're validating effects we
+                    # periodically timeout so that we can log
+                    # that a workflow might be hung, i.e., the
+                    # user has a bug.
+                    task = IMPORT_asyncio.create_task(
+                        run_{{ method.proto.name }}(
+                            context,
+                            validating_effects=validating_effects,
                         )
-                        timeout = None if not validating_effects else 5  # seconds
-                        while True:
-                            done, pending = await IMPORT_asyncio.wait(
-                                [task],
-                                timeout=timeout,
+                    )
+                    timeout = None if not validating_effects else 5  # seconds
+                    while True:
+                        done, pending = await IMPORT_asyncio.wait(
+                            [task],
+                            timeout=timeout,
+                        )
+                        # Check if we've timed out, which
+                        # should only occur if we're
+                        # validating effects.
+                        if len(done) == 0:
+                            assert validating_effects and timeout is not None
+                            logger.warning(
+                                f'Still waiting for method {{ state.proto.name }}.{{ method.proto.name }} '
+                                'to complete after re-running to validate effects.'
                             )
-                            # Check if we've timed out, which
-                            # should only occur if we're
-                            # validating effects.
-                            if len(done) == 0:
-                                assert validating_effects and timeout is not None
-                                logger.warning(
-                                    f'Still waiting for method {{ state.proto.name }}.{{ method.proto.name }} '
-                                    'to complete after re-running to validate effects.'
-                                )
-                                timeout += 5  # seconds
-                                continue
-                            return task.result()
-                    finally:
-                        if not task.done():
-                            task.cancel()
-                            # Need to actually await the task so if
-                            # there is an exception we don't get a
-                            # warning logged that the exception was
-                            # never retrieved, but we don't care about
-                            # the exception because we're done with
-                            # the task.
-                            try:
-                                await task
-                            except:
-                                pass
+                            timeout += 5  # seconds
+                            continue
+                        return task.result()
+                finally:
+                    if not task.done():
+                        task.cancel()
+                        # Need to actually await the task so if
+                        # there is an exception we don't get a
+                        # warning logged that the exception was
+                        # never retrieved, but we don't care about
+                        # the exception because we're done with
+                        # the task.
+                        try:
+                            await task
+                        except:
+                            pass
             {% endif %}
 
-            return await run_{{ method.proto.name }}{% if method.options.proto.kind == 'workflow' %}_reactively{% endif %}(
+            return await run_{{ method.proto.name }}{% if method.options.proto.kind == 'workflow' %}_workflow{% endif %}(
                 self.create_context(
                     headers=IMPORT_reboot_aio_headers.Headers(
                         application_id=self.application_id,
@@ -949,6 +946,14 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                     method='{{ method.proto.name }}',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
                 )
             )
         {% endif %}
@@ -1075,9 +1080,6 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 IMPORT_reboot_aio_types.assert_type(response, [{{ method.output_type }}])
                 yield response
             {% endif %}
-        except IMPORT_reboot_aio_contexts.RetryReactively:
-            # Retrying reactively, just let this propagate.
-            raise
         except IMPORT_reboot_aio_contexts.EffectValidationRetry:
             # Doing effect validation, just let this propagate.
             raise
@@ -1341,6 +1343,25 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 return effects.response  # type: ignore[return-value]
         {% elif method.options.proto.kind == 'transaction' %}
             assert transaction is not None
+            # Re-check for an idempotent mutation now that we hold the
+            # transaction semaphore. This is a fix for a potential race:
+            #   https://github.com/reboot-dev/mono/issues/5361
+            #
+            # If a previous call's commit ran (updating the bloom filter
+            # and, for constructors, making the state visible in memory
+            # via `self._states`) after our initial idempotent mutation
+            # check but before we acquired the semaphore, then without
+            # this re-check, constructors could raise
+            # `StateAlreadyConstructed` and non-constructors could
+            # re-execute the mutation, potentially corrupting state.
+            idempotent_mutation = await self._state_manager.check_for_idempotent_mutation(
+                context
+            )
+            if idempotent_mutation is not None:
+                await self._state_manager.transaction_participant_abort(transaction)
+                response = {{ method.output_type }}()
+                response.ParseFromString(idempotent_mutation.response)
+                return response
             async with self._state_manager.transaction(
                 context,
                 self._servicer.__state_type__,
@@ -1769,10 +1790,16 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 method=method,
                 context_type=IMPORT_reboot_aio_contexts.ReaderContext,
             ) as context:
-                return await self._token_verifier.verify_token(
+                result = await self._token_verifier.verify_token(
                     context=context,
                     token=headers.bearer_token,
                 )
+                if isinstance(result, IMPORT_rbt_v1alpha1.errors_pb2.Unauthenticated):
+                    raise IMPORT_reboot_aio_aborted.SystemAborted(
+                        result,
+                        message=result.message or None,
+                    )
+                return result
 
         return None
 
@@ -2385,12 +2412,24 @@ class {{ state.proto.name }}Authorizer(
         # NOTE: using `_` prefix for `_default` so as not to collide
         # with any method names since a prefixed `_` is forbidden by
         # our protoc plugins.
+{% if state.proto.auto_construct == AUTO_CONSTRUCT_PER_USER_ID %}
+        _default: IMPORT_reboot_aio_auth_authorizers.AuthorizerRule[
+            {{ state.pb2_name }}.{{ state.proto.name }},
+            IMPORT_google_protobuf_message.Message,
+        ] = IMPORT_reboot_aio_auth_authorizers.allow_if(
+            any=[
+                IMPORT_reboot_aio_auth_authorizers.state_id_is_user_id,
+                IMPORT_reboot_aio_auth_authorizers.is_app_internal,
+            ],
+        ),
+{% else %}
         _default: IMPORT_reboot_aio_auth_authorizers.AuthorizerRule[
             {{ state.pb2_name }}.{{ state.proto.name }},
             IMPORT_google_protobuf_message.Message,
         ] = IMPORT_reboot_aio_auth_authorizers.allow_if(
             all=[IMPORT_reboot_aio_auth_authorizers.is_app_internal],
         ),
+{% endif %}
     ):
         {% for service in state.services %}
         {% for method in service.methods %}
@@ -2550,7 +2589,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
     def token_verifier(self) -> IMPORT_typing.Optional[IMPORT_reboot_aio_auth_token_verifiers.TokenVerifier]:
         return None
 
-{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+{% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
     _is_auto_construct = True
 {% else %}
     _is_auto_construct = False
@@ -2566,19 +2605,36 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endfor %}
 
 {% if state_has_mcp.value or state.proto.uis | length > 0 %}
+{% set mcp_name_prefix_for_names = "" if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED else (state.proto.name | to_snake) + "_" %}
+    @staticmethod
+    def _mcp_tool_names() -> list[str]:
+        """Return the MCP tool names this servicer registers."""
+        return [
+{% for service in state.services %}
+{% for method in service.methods %}
+{% if method.options.proto.mcp and method.options.proto.mcp.tool %}
+            "{{ method.options.proto.mcp.name if method.options.proto.mcp.name else mcp_name_prefix_for_names + (method.proto.name | to_snake) }}",
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% for ui in state.proto.uis %}
+            "{{ mcp_name_prefix_for_names }}{{ ui.name }}",
+{% endfor %}
+        ]
+
     @staticmethod
     def _add_mcp(
         mcp: IMPORT_mcp_server_fastmcp.FastMCP,
-        auto_construct_state_type_full_name: IMPORT_typing.Optional[str] = None,
+        auto_construct_state_type_full_names: list[IMPORT_reboot_aio_types.StateTypeName],
     ) -> None:
         """Register MCP tools and resources for {{ state.proto.name }}."""
-{% set mcp_name_prefix = "" if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE else (state.proto.name | to_snake) + "_" %}
+{% set mcp_name_prefix = "" if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED else (state.proto.name | to_snake) + "_" %}
 {% for service in state.services %}
 {% for method in service.methods %}
 {% if method.options.proto.mcp and method.options.proto.mcp.tool %}
 {% set tool_name = method.options.proto.mcp.name if method.options.proto.mcp.name else mcp_name_prefix + (method.proto.name | to_snake) %}
 {% set tool_title = method.options.proto.mcp.title if method.options.proto.mcp.title else method.proto.name %}
-{% set tool_description_suffix = "" if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE else " on " + state.proto.name %}
+{% set tool_description_suffix = "" if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED else " on " + state.proto.name %}
 {% set tool_description = method.options.proto.mcp.description if method.options.proto.mcp.description else "Invoke " + method.proto.name + tool_description_suffix + "." %}
 {% set request_type = state.proto.name + "." + method.proto.name + "Request" %}
 
@@ -2590,7 +2646,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         )
         async def {{ tool_name }}_tool(
             ctx: IMPORT_mcp_server_fastmcp.Context,
-{% if state.proto.name != AUTO_CONSTRUCT_STATE_TYPE %}
+{% if state.proto.auto_construct == AUTO_CONSTRUCT_UNSPECIFIED %}
             {{ mcp_name_prefix }}id: str,
 {% endif %}
 {% if method.input_type_fields %}
@@ -2599,8 +2655,10 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endif %}
         ):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
-{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
-            {{ mcp_name_prefix }}id = IMPORT_reboot_mcp_context.get_mcp_session_id(ctx)
+{% if state.proto.auto_construct == AUTO_CONSTRUCT_PER_USER_ID %}
+            {{ mcp_name_prefix }}id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
+{% endif %}
+{% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
             # State is auto-constructed on session init;
             # see `_auto_construct`.
 {% endif %}
@@ -2632,7 +2690,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         # Resource for '{{ method.proto.full_name }}'.
 {% if method.input_type_fields %}
         @mcp.resource(
-{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+{% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
             "{{ state_scheme }}:///{{ method_path }}{% for name in method.input_type_fields.keys() %}/{{'{'}}{{ name }}{{'}'}}{% endfor %}",
 {% else %}
             "{{ state_scheme }}://{{ '{' }}{{ mcp_name_prefix }}id{{ '}' }}/{{ method_path }}{% for name in method.input_type_fields.keys() %}/{{'{'}}{{ name }}{{'}'}}{% endfor %}",
@@ -2644,7 +2702,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         )
         async def {{ resource_name }}_resource(
             ctx: IMPORT_mcp_server_fastmcp.Context,
-{% if state.proto.name != AUTO_CONSTRUCT_STATE_TYPE %}
+{% if state.proto.auto_construct == AUTO_CONSTRUCT_UNSPECIFIED %}
             {{ mcp_name_prefix }}id: str,
 {% endif %}
             *,
@@ -2653,9 +2711,12 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endfor %}
         ):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
-{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
-            # State is auto-constructed on session init; see `_auto_construct`.
-            {{ mcp_name_prefix }}id = IMPORT_reboot_mcp_context.get_mcp_session_id(ctx)
+{% if state.proto.auto_construct == AUTO_CONSTRUCT_PER_USER_ID %}
+            {{ mcp_name_prefix }}id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
+{% endif %}
+{% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
+            # State is auto-constructed on session init;
+            # see `_auto_construct`.
 {% endif %}
             # Construct request from URI params, coercing types
             # as needed.
@@ -2681,7 +2742,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endif %}
 {% else %}
         @mcp.resource(
-{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+{% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
             "{{ state_scheme }}://",
 {% else %}
             "{{ state_scheme }}://{{ '{' }}{{ mcp_name_prefix }}id{{ '}' }}",
@@ -2691,15 +2752,18 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             description="{{ resource_description }}",
             mime_type="application/json",
         )
-{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+{% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
         async def {{ resource_name }}_resource(ctx: IMPORT_mcp_server_fastmcp.Context):
 {% else %}
         async def {{ resource_name }}_resource(ctx: IMPORT_mcp_server_fastmcp.Context, {{ mcp_name_prefix }}id: str):
 {% endif %}
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
-{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
-            # State is auto-constructed on session init; see `_auto_construct`.
-            {{ mcp_name_prefix }}id = IMPORT_reboot_mcp_context.get_mcp_session_id(ctx)
+{% if state.proto.auto_construct == AUTO_CONSTRUCT_PER_USER_ID %}
+            {{ mcp_name_prefix }}id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
+{% endif %}
+{% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
+            # State is auto-constructed on session init;
+            # see `_auto_construct`.
 {% endif %}
 {% if method.options.proto.constructor %}
             _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, {{ mcp_name_prefix }}id)
@@ -2715,35 +2779,40 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% if state.proto.uis | length > 0 %}
 
         # UI tools — allow AI to trigger loading of UIs.
-{% set ui_suffix = "" if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE else " for " + state.proto.name %}
+{% set ui_suffix = "" if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED else " for " + state.proto.name %}
 {% for ui in state.proto.uis %}
         @mcp.tool(
             name="{{ mcp_name_prefix }}{{ ui.name }}",
             title="Show {{ ui.title }}",
             description="{{ ui.description if ui.description else 'Opens the ' + ui.name + ' interface' + ui_suffix + '.' }}",
-            meta={"ui/resourceUri": "ui://{{ state.proto.name | to_snake }}/{{ ui.name }}"},
+            meta={"ui": {"resourceUri": "ui://{{ state.proto.name | to_snake }}/{{ ui.name }}"}},
         )
-{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+{% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
         async def {{ mcp_name_prefix }}{{ ui.name }}_tool(
             ctx: IMPORT_mcp_server_fastmcp.Context,
         ) -> dict:
-            return {
-                "ids": {
-                    "{{ state.proto.full_name }}":
-                        IMPORT_reboot_mcp_context.get_mcp_session_id(ctx),
-                },
+            _ids: dict[IMPORT_reboot_aio_types.StateTypeName, str | None] = {
+                IMPORT_reboot_aio_types.StateTypeName("{{ state.proto.full_name }}"):
+                    IMPORT_reboot_mcp_context.get_mcp_user_id(ctx),
             }
+            # Also include all other auto-construct IDs.
+            for _auto_construct_full_name in auto_construct_state_type_full_names:
+                if _auto_construct_full_name not in _ids:
+                    _ids[_auto_construct_full_name] = (
+                        IMPORT_reboot_mcp_context.get_mcp_user_id(ctx))
+            return {"ids": _ids}
 {% else %}
         async def {{ mcp_name_prefix }}{{ ui.name }}_tool(
             ctx: IMPORT_mcp_server_fastmcp.Context,
             {{ mcp_name_prefix }}id: str,
         ) -> dict:
-            _ids: dict[str, str | None] = {
-                "{{ state.proto.full_name }}": {{ mcp_name_prefix }}id,
+            _ids: dict[IMPORT_reboot_aio_types.StateTypeName, str | None] = {
+                IMPORT_reboot_aio_types.StateTypeName("{{ state.proto.full_name }}"): {{ mcp_name_prefix }}id,
             }
-            if auto_construct_state_type_full_name is not None:
-                _ids[auto_construct_state_type_full_name] = (
-                    IMPORT_reboot_mcp_context.get_mcp_session_id(ctx))
+            # Include all auto-construct IDs.
+            for _auto_construct_full_name in auto_construct_state_type_full_names:
+                _ids[_auto_construct_full_name] = (
+                    IMPORT_reboot_mcp_context.get_mcp_user_id(ctx))
             return {"ids": _ids}
 {% endif %}
 
@@ -2814,14 +2883,27 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         pass  # End of _add_mcp.
 {% endif %}
 
-{% if state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+{% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
     @staticmethod
     async def _auto_construct(
         context: IMPORT_reboot_aio_external.ExternalContext,
-        session_id: str,
+        state_id: str,
     ) -> None:
-        """Construct an empty `{{ AUTO_CONSTRUCT_STATE_TYPE }}` state"""
-        await {{ state.proto.name }}.{{ AUTO_CONSTRUCT_METHOD }}(context, session_id)
+        """Auto-construct a `{{ state.proto.name }}` state."""
+        # Some states have `_auto_construct` called many times, e.g. a
+        # per-user state may get auto-constructed at the start of every
+        # MCP session. We derive a deterministic idempotency key from the
+        # state ID so that repeated calls (even from different contexts)
+        # are a NOOP. We prefer this over catching the
+        # `StateAlreadyExists` error that would otherwise result, since
+        # that logs an `ERROR` to user-visible logs.
+        idempotency_key = IMPORT_uuid.uuid5(
+            IMPORT_uuid.NAMESPACE_URL,
+            f"urn:dev.reboot:auto-construct:{{ state.proto.name }}:{state_id}",
+        )
+        await {{ state.proto.name }}.idempotently(
+            key=idempotency_key,
+        ).{{ AUTO_CONSTRUCT_METHOD }}(context, state_id)
 {% endif %}
 
     def ref(
@@ -3392,10 +3474,10 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         yield  # Necessary for type checking.
         {% endif %}
     {% elif method.options.proto.kind == 'writer' %}
-    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
     # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`.
     # Override in your Servicer to run custom initialization
-    # on new {{ AUTO_CONSTRUCT_STATE_TYPE }} sessions.
+    # on new {{ state.proto.name }} instances.
     async def _{{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.WriterContext,
@@ -3526,10 +3608,10 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         yield  # Necessary for type checking.
         {% endif %}
     {% elif method.options.proto.kind == 'writer' %}
-    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
     # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`.
     # Override in your Servicer to run custom initialization
-    # on new {{ AUTO_CONSTRUCT_STATE_TYPE }} sessions.
+    # on new {{ state.proto.name }} instances.
     async def {{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.WriterContext,
@@ -3860,10 +3942,10 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
     {% for service in state.services %}
     {% for method in service.methods %}
     # For '{{ method.proto.full_name }}'.
-    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.name == AUTO_CONSTRUCT_STATE_TYPE %}
+    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
     # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`.
     # Override in your Servicer to run custom initialization
-    # on new {{ AUTO_CONSTRUCT_STATE_TYPE }} sessions.
+    # on new {{ state.proto.name }} instances.
     async def {{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.WriterContext,

@@ -30,10 +30,7 @@ from reboot.options import (
     has_service_options,
     is_reboot_state,
 )
-from reboot.settings import (
-    AUTO_CONSTRUCT_PROTO_METHOD,
-    AUTO_CONSTRUCT_STATE_TYPE,
-)
+from reboot.settings import AUTO_CONSTRUCT_PROTO_METHOD
 from reboot.version import REBOOT_VERSION
 from typing import Any, Literal, Optional, Sequence
 
@@ -215,6 +212,10 @@ class ProtoState:
     full_name: str  # Name including package.
     implements: list[str]  # Full names of services.
     uis: list[ProtoUI]  # UIs from UI() methods.
+    # Proto `AutoConstruct` enum value.
+    auto_construct: options_pb2.AutoConstruct.ValueType = (
+        options_pb2.AUTO_CONSTRUCT_UNSPECIFIED
+    )
 
 
 @dataclass
@@ -694,6 +695,7 @@ class RebootProtocPlugin(ProtocPlugin):
             full_name=state.full_name,
             implements=implements,
             uis=uis,
+            auto_construct=state_options.auto_construct,
         )
 
     @staticmethod
@@ -901,8 +903,9 @@ class RebootProtocPlugin(ProtocPlugin):
             # Note: duplicate methods between services are checked for during
             #       client generation.
 
-        # Validate that auto-constructed states have the auto-constructor.
-        if proto_state.name == AUTO_CONSTRUCT_STATE_TYPE:
+        # Validate that auto-constructed states have the
+        # auto-constructor.
+        if proto_state.auto_construct != options_pb2.AUTO_CONSTRUCT_UNSPECIFIED:
             has_auto_construct = any(
                 method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD
                 for service in base_services
@@ -910,13 +913,14 @@ class RebootProtocPlugin(ProtocPlugin):
             )
             if not has_auto_construct:
                 raise UserProtoError(
-                    f"State type '{AUTO_CONSTRUCT_STATE_TYPE}' requires a "
-                    f"'{AUTO_CONSTRUCT_PROTO_METHOD}' Writer method. Add to "
-                    "your service:\n"
+                    f"State type '{proto_state.name}' requires "
+                    f"a '{AUTO_CONSTRUCT_PROTO_METHOD}' Writer "
+                    "method. Add to your service:\n"
                     f"  rpc {AUTO_CONSTRUCT_PROTO_METHOD}"
-                    "(google.protobuf.Empty) returns (google.protobuf.Empty) "
-                    "{\n"
-                    "    option (rbt.v1alpha1.method) = { writer: {} };\n"
+                    "(google.protobuf.Empty) returns "
+                    "(google.protobuf.Empty) {\n"
+                    "    option (rbt.v1alpha1.method) = "
+                    "{ writer: {} };\n"
                     "  }"
                 )
 

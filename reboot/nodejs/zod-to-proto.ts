@@ -115,6 +115,13 @@ const generate = (
 
       const field = toSnakeCase(key);
 
+      // A field is "required" means that validation will fail if the
+      // field is not provided, i.e., it does not have a `default` value
+      // and is not `optional`. If a field was `optional` the default
+      // value `undefined` is applied.
+      const isRequired =
+        !(value instanceof z.ZodOptional) && !(value instanceof z.ZodDefault);
+
       if (value instanceof z.ZodPipe) {
         value = value.in;
       } else if (value instanceof z.ZodOptional) {
@@ -156,14 +163,18 @@ const generate = (
         value = value._zod.def.innerType;
       }
 
+      const requiredString = ` [(rbt.v1alpha1.field).required = ${
+        isRequired ? "true" : "false"
+      }];`;
+
       if (value._zod.def.type === "string") {
-        proto.write(`optional string ${field} = ${tag};`);
+        proto.write(`optional string ${field} = ${tag}` + requiredString);
       } else if (value._zod.def.type === "number") {
-        proto.write(`optional double ${field} = ${tag};`);
+        proto.write(`optional double ${field} = ${tag}` + requiredString);
       } else if (value._zod.def.type === "bigint") {
-        proto.write(`optional int64 ${field} = ${tag};`);
+        proto.write(`optional int64 ${field} = ${tag}` + requiredString);
       } else if (value._zod.def.type === "boolean") {
-        proto.write(`optional bool ${field} = ${tag};`);
+        proto.write(`optional bool ${field} = ${tag}` + requiredString);
       } else if (value._zod.def.type === "literal") {
         // Make the name of this nested type be the PascalCase property
         // TODO: ensure `key` is already camelCase.
@@ -199,7 +210,7 @@ const generate = (
 
         proto.write(`}`);
 
-        proto.write(`optional ${typeName} ${field} = ${tag};`);
+        proto.write(`optional ${typeName} ${field} = ${tag}` + requiredString);
       } else if (value._zod.def.type === "array") {
         // Make the name of this nested type be the PascalCase property
         // TODO: ensure `key` is already camelCase.
@@ -211,7 +222,7 @@ const generate = (
 
         proto.write(`}`);
 
-        proto.write(`optional ${typeName} ${field} = ${tag};`);
+        proto.write(`optional ${typeName} ${field} = ${tag}` + requiredString);
       } else if (value._zod.def.type === "record") {
         // Make the name of this nested type be the PascalCase property
         // TODO: ensure `key` is already camelCase.
@@ -223,7 +234,7 @@ const generate = (
 
         proto.write(`}`);
 
-        proto.write(`optional ${typeName} ${field} = ${tag};`);
+        proto.write(`optional ${typeName} ${field} = ${tag}` + requiredString);
       } else if (value instanceof z.ZodDiscriminatedUnion) {
         // `instanceof` b.c. type = "union".
         // Make the name of this nested type be the PascalCase property
@@ -236,7 +247,7 @@ const generate = (
           name: typeName,
         });
 
-        proto.write(`optional ${typeName} ${field} = ${tag};`);
+        proto.write(`optional ${typeName} ${field} = ${tag}` + requiredString);
       } else if (value._zod.def.type === "object") {
         // Make the name of this nested type be the PascalCase property.
         const typeName = key.charAt(0).toUpperCase() + key.slice(1);
@@ -247,12 +258,14 @@ const generate = (
           name: typeName,
         });
 
-        proto.write(`optional ${typeName} ${field} = ${tag};`);
+        proto.write(`optional ${typeName} ${field} = ${tag}` + requiredString);
       } else if (value._zod.def.type === "custom" && "protobuf" in meta) {
         const typeName = meta.protobuf;
-        proto.write(`optional ${typeName} ${field} = ${tag};`);
+        proto.write(`optional ${typeName} ${field} = ${tag}` + requiredString);
       } else if (iszjson(value as z.ZodType)) {
-        proto.write(`optional google.protobuf.Value ${field} = ${tag};`);
+        proto.write(
+          `optional google.protobuf.Value ${field} = ${tag}` + requiredString
+        );
       } else {
         console.error(
           chalk.stderr.bold.red(

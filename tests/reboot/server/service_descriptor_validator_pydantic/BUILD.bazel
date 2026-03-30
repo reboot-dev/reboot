@@ -5,14 +5,14 @@ load("@rules_python//python:defs.bzl", "py_test")
 load("//reboot:pydantic_to_proto.bzl", "pydantic_to_proto")
 
 pydantic_to_proto(
-    name = "pydantic_original_proto_file",
+    name = "pydantic_state_original_proto_file",
     py_deps = ["//reboot:api_py"],
-    pydantic = ":pydantic_original_api.py",
+    pydantic = ":pydantic_state_original_api.py",
 )
 
 proto_library(
-    name = "pydantic_original_proto",
-    srcs = [":pydantic_original_proto_file"],
+    name = "pydantic_state_original_proto",
+    srcs = [":pydantic_state_original_proto_file"],
     deps = [
         "//rbt/v1alpha1:options_proto",
         "//rbt/v1alpha1:tasks_proto",
@@ -22,20 +22,20 @@ proto_library(
 )
 
 py_proto_library(
-    name = "pydantic_original_py_proto",
+    name = "pydantic_state_original_py_proto",
     visibility = ["//tests/reboot:__subpackages__"],
-    deps = [":pydantic_original_proto"],
+    deps = [":pydantic_state_original_proto"],
 )
 
 pydantic_to_proto(
-    name = "pydantic_field_deleted_proto_file",
+    name = "pydantic_state_field_deleted_proto_file",
     py_deps = ["//reboot:api_py"],
-    pydantic = ":pydantic_field_deleted_api.py",
+    pydantic = ":pydantic_state_field_deleted_api.py",
 )
 
 proto_library(
-    name = "pydantic_field_deleted_proto",
-    srcs = [":pydantic_field_deleted_proto_file"],
+    name = "pydantic_state_field_deleted_proto",
+    srcs = [":pydantic_state_field_deleted_proto_file"],
     deps = [
         "//rbt/v1alpha1:options_proto",
         "//rbt/v1alpha1:tasks_proto",
@@ -45,9 +45,9 @@ proto_library(
 )
 
 py_proto_library(
-    name = "pydantic_field_deleted_py_proto",
+    name = "pydantic_state_field_deleted_py_proto",
     visibility = ["//tests/reboot:__subpackages__"],
-    deps = [":pydantic_field_deleted_proto"],
+    deps = [":pydantic_state_field_deleted_proto"],
 )
 
 pydantic_to_proto(
@@ -120,14 +120,14 @@ py_proto_library(
 )
 
 pydantic_to_proto(
-    name = "pydantic_field_type_changed_proto_file",
+    name = "pydantic_state_field_type_changed_proto_file",
     py_deps = ["//reboot:api_py"],
-    pydantic = ":pydantic_field_type_changed_api.py",
+    pydantic = ":pydantic_state_field_type_changed_api.py",
 )
 
 proto_library(
-    name = "pydantic_field_type_changed_proto",
-    srcs = [":pydantic_field_type_changed_proto_file"],
+    name = "pydantic_state_field_type_changed_proto",
+    srcs = [":pydantic_state_field_type_changed_proto_file"],
     deps = [
         "//rbt/v1alpha1:options_proto",
         "//rbt/v1alpha1:tasks_proto",
@@ -137,9 +137,9 @@ proto_library(
 )
 
 py_proto_library(
-    name = "pydantic_field_type_changed_py_proto",
+    name = "pydantic_state_field_type_changed_py_proto",
     visibility = ["//tests/reboot:__subpackages__"],
-    deps = [":pydantic_field_type_changed_proto"],
+    deps = [":pydantic_state_field_type_changed_proto"],
 )
 
 pydantic_to_proto(
@@ -211,21 +211,117 @@ py_proto_library(
     deps = [":pydantic_request_field_type_changed_proto"],
 )
 
+pydantic_to_proto(
+    name = "pydantic_state_non_required_field_proto_file",
+    py_deps = ["//reboot:api_py"],
+    pydantic = ":pydantic_state_non_required_field_api.py",
+)
+
+proto_library(
+    name = "pydantic_state_non_required_field_proto",
+    srcs = [":pydantic_state_non_required_field_proto_file"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_proto_library(
+    name = "pydantic_state_non_required_field_py_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+    deps = [":pydantic_state_non_required_field_proto"],
+)
+
+pydantic_to_proto(
+    name = "pydantic_state_required_field_added_proto_file",
+    py_deps = ["//reboot:api_py"],
+    pydantic = ":pydantic_state_required_field_added_api.py",
+)
+
+proto_library(
+    name = "pydantic_state_required_field_added_proto",
+    srcs = [":pydantic_state_required_field_added_proto_file"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_proto_library(
+    name = "pydantic_state_required_field_added_py_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+    deps = [":pydantic_state_required_field_added_proto"],
+)
+
+pydantic_to_proto(
+    name = "pydantic_request_non_required_field_proto_file",
+    py_deps = ["//reboot:api_py"],
+    pydantic = ":pydantic_request_non_required_field_api.py",
+)
+
+proto_library(
+    name = "pydantic_request_non_required_field_proto",
+    srcs = [":pydantic_request_non_required_field_proto_file"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_proto_library(
+    name = "pydantic_request_non_required_field_py_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+    deps = [":pydantic_request_non_required_field_proto"],
+)
+
+pydantic_to_proto(
+    name = "pydantic_request_required_field_added_proto_file",
+    py_deps = ["//reboot:api_py"],
+    pydantic = ":pydantic_request_required_field_added_api.py",
+)
+
+proto_library(
+    name = "pydantic_request_required_field_added_proto",
+    srcs = [":pydantic_request_required_field_added_proto_file"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_proto_library(
+    name = "pydantic_request_required_field_added_py_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+    deps = [":pydantic_request_required_field_added_proto"],
+)
+
 py_test(
     name = "service_descriptor_validator_pydantic_test_py",
     srcs = ["test.py"],
     main = "test.py",
     deps = [
         requirement("protobuf"),
-        ":pydantic_field_deleted_py_proto",
-        ":pydantic_field_type_changed_py_proto",
         ":pydantic_method_deleted_py_proto",
         ":pydantic_method_type_changed_py_proto",
-        ":pydantic_original_py_proto",
         ":pydantic_request_field_deleted_py_proto",
         ":pydantic_request_field_type_changed_py_proto",
+        ":pydantic_request_non_required_field_py_proto",
         ":pydantic_request_original_py_proto",
+        ":pydantic_request_required_field_added_py_proto",
+        ":pydantic_state_field_deleted_py_proto",
+        ":pydantic_state_field_type_changed_py_proto",
+        ":pydantic_state_non_required_field_py_proto",
+        ":pydantic_state_original_py_proto",
         ":pydantic_state_renamed_py_proto",
+        ":pydantic_state_required_field_added_py_proto",
         "//reboot/server:service_descriptor_validator_py",
         "//tests/reboot:test_helpers_py",
     ],

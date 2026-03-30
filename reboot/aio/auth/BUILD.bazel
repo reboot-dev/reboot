@@ -52,12 +52,42 @@ py_library(
 )
 
 py_library(
+    name = "oauth_providers_py",
+    srcs = ["oauth_providers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//log:log_py",
+        requirement("aiohttp"),
+        requirement("pyjwt"),
+        requirement("python-ulid"),
+    ],
+)
+
+py_library(
+    name = "oauth_server_py",
+    srcs = ["oauth_server.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":__init___py",
+        ":oauth_providers_py",
+        ":token_verifiers_py",
+        "//reboot:settings_py",
+        requirement("pyjwt"),
+        requirement("starlette"),
+    ],
+)
+
+py_library(
     name = "python",
     visibility = ["//visibility:public"],
     deps = [
         ":__init___py",
         ":admin_auth_py",
         ":authorizers_py",
+        ":oauth_providers_py",
+        ":oauth_server_py",
         ":token_verifiers_py",
     ],
 )

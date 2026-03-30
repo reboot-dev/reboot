@@ -18,7 +18,13 @@ from reboot.api import (
     to_snake_case,
 )
 from reboot.fail import fail
+from reboot.settings import AUTO_CONSTRUCT_STATE_TYPE
 from typing import Dict, List, Literal, Optional, Union, get_args, get_origin
+
+# Proto `AutoConstruct` enum value name for per-user
+# auto-construction. Must match the enum in
+# `rbt/v1alpha1/options.proto`.
+_PER_USER_ID = "PER_USER_ID"
 
 
 def _pydantic_field_type_string_from_type(
@@ -90,15 +96,20 @@ async def _write_field_maybe_with_type_string_annotation(
     proto_field_name: str,
     proto_field_type_string: str,
     tag: int,
+    required: bool,
     field_type_string: Optional[str] = None,
 ):
     await proto.write(
         f"  optional {proto_field_type_string} {proto_field_name} = {tag}"
     )
+    annotations = []
     if field_type_string is not None:
-        await proto.write(
-            f' [ (rbt.v1alpha1.field).pydantic_type = "{field_type_string}"]'
+        annotations.append(
+            f'(rbt.v1alpha1.field).pydantic_type = "{field_type_string}"'
         )
+    required_string = "true" if required else "false"
+    annotations.append(f'(rbt.v1alpha1.field).required = {required_string}')
+    await proto.write(f' [{", ".join(annotations)}]')
     await proto.write(";\n")
 
 
@@ -128,6 +139,9 @@ async def generate(
     discriminator: Optional[str] = None,
     # UIs associated with this state type.
     uis: Optional[List] = None,
+    # Auto-construct enum value name for this state type,
+    # or None for non-auto-constructed types.
+    auto_construct: Optional[str] = None,
 ):
     origin = get_origin(schema)
     args = get_args(schema)
@@ -138,12 +152,18 @@ async def generate(
         await proto.write(f"message {name} {{\n")
 
         if state:
-            if uis:
-                # Generate state option with UIs.
-                # Proto text format uses repeated field
-                # names, not array syntax.
+            if uis or auto_construct:
+                # Generate state option with UIs and/or
+                # auto-construct annotation. Proto text
+                # format uses repeated field names, not
+                # array syntax.
                 await proto.write("  option (rbt.v1alpha1.state) = {\n")
-                for ui in uis:
+                if auto_construct is not None:
+                    await proto.write(
+                        f"    auto_construct: "
+                        f"{auto_construct}\n"
+                    )
+                for ui in (uis or []):
                     ui_fields = [
                         f'name: "{ui["name"]}"',
                         f'title: "{ui["title"]}"',
@@ -206,6 +226,12 @@ async def generate(
 
             tags[tag] = field_name
 
+            # In Pydantic if a class has an `Optional` field, that field
+            # should be explicitly set to `None`, otherwise it will fail
+            # during validation. So the "required" in Pydantic means
+            # that the field has `default` or `default_factory` specified.
+            required = field_info.is_required()
+
             field_type_string: Optional[str] = None
             if add_type_string_annotation_to_proto:
                 field_type_string = _pydantic_field_type_string_from_type(
@@ -256,6 +282,7 @@ async def generate(
                     proto_field_name,
                     type_name,
                     tag,
+                    required,
                     field_type_string,
                 )
                 continue
@@ -273,6 +300,7 @@ async def generate(
                     proto_field_name,
                     "string",
                     tag,
+                    required,
                     field_type_string,
                 )
             elif inner_type == int:
@@ -282,6 +310,7 @@ async def generate(
                     proto_field_name,
                     "double",
                     tag,
+                    required,
                     field_type_string,
                 )
             elif inner_type == float:
@@ -291,6 +320,7 @@ async def generate(
                     proto_field_name,
                     "double",
                     tag,
+                    required,
                     field_type_string,
                 )
             elif inner_type == bool:
@@ -300,6 +330,7 @@ async def generate(
                     proto_field_name,
                     "bool",
                     tag,
+                    required,
                     field_type_string,
                 )
             elif inner_origin in (list, List):
@@ -317,6 +348,7 @@ async def generate(
                     proto_field_name,
                     type_name,
                     tag,
+                    required,
                     field_type_string,
                 )
             elif inner_origin in (dict, Dict):
@@ -333,6 +365,7 @@ async def generate(
                     proto_field_name,
                     type_name,
                     tag,
+                    required,
                     field_type_string,
                 )
             elif inner_origin is Literal:
@@ -375,6 +408,7 @@ async def generate(
                     proto_field_name,
                     type_name,
                     tag,
+                    required,
                     field_type_string,
                 )
             elif isinstance(inner_type,
@@ -391,6 +425,7 @@ async def generate(
                     proto_field_name,
                     type_name,
                     tag,
+                    required,
                     field_type_string,
                 )
             elif not field_args and inner_origin is None:
@@ -658,6 +693,8 @@ async def generate_proto_file_from_api(
                 name=type_name,
                 state=True,
                 uis=uis if uis else None,
+                auto_construct=_PER_USER_ID
+                if type_name == AUTO_CONSTRUCT_STATE_TYPE else None,
             )
             await proto.write('\n')
 

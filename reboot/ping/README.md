@@ -17,7 +17,7 @@ The application contains MCP functionality. Test it using MCPJam:
 
 ```
 # From the root of the Bazel repo:
-npx @mcpjam/inspector@v2.0.4 --config reboot/ping/mcp_servers.json --server ping-server
+npx @mcpjam/inspector@v2.0.18 --config reboot/ping/mcp_servers.json --server ping-server
 ```
 
 ## On the local cluster

@@ -567,16 +567,15 @@ class DatabaseClient:
     async def export(
         self, state_type: StateTypeName, shard_ids: list[str]
     ) -> AsyncIterator[database_pb2.ExportItem]:
-        # TODO: Should be streaming.
         stub = await self._get_database_stub()
-        response = await stub.Export(
+        async for batch in stub.ExportStreamed(
             database_pb2.ExportRequest(
                 state_type=state_type,
                 shard_ids=shard_ids,
             ),
-        )
-        for item in response.items:
-            yield item
+        ):
+            for item in batch.items:
+                yield item
 
     async def get_application_metadata(
         self,

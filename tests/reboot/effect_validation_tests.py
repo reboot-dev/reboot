@@ -268,10 +268,16 @@ class EffectValidationTestCase(unittest.IsolatedAsyncioTestCase):
             "constructor_writer",
             "workflow",
             "reader",
-            "writer",
-            # TODO: This second call to the `Reader` is due to eager retry of
-            # the reader methods that the workflow has consumed: see #3152.
+            # This second call to the `Reader` is due to `memoize`
+            # effect validation: `callable_validating_effects` inside of
+            # the default `at_least_once` readers behavior.
             "reader",
+            # There is no second call to the `Writer`, since the
+            # workflow idempotency ensures that the second attempt of
+            # the workflow re-uses the result of the first `Writer`
+            # call instead of making a second call to the `Writer` and
+            # we don't retry writers inside a workflow.
+            "writer",
             "workflow",
         )
 

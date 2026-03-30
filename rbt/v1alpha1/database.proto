@@ -516,8 +516,14 @@ service Database {
   rpc TransactionCoordinatorCleanup(TransactionCoordinatorCleanupRequest)
       returns (TransactionCoordinatorCleanupResponse);
 
-  // TODO: This should be streaming: see #3329.
+  // Exports all items for the given state type and shards. Fails
+  // with `FAILED_PRECONDITION` if the data exceeds the gRPC message
+  // size limit; use `ExportStreamed` instead for large datasets.
   rpc Export(ExportRequest) returns (ExportResponse);
+
+  // Like `Export`, but streams batched responses to handle datasets
+  // larger than the gRPC message size limit.
+  rpc ExportStreamed(ExportRequest) returns (stream ExportResponse);
 
   // Gets application metadata from persistent storage.
   rpc GetApplicationMetadata(GetApplicationMetadataRequest)

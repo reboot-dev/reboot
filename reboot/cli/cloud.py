@@ -589,11 +589,20 @@ async def cloud_up(args: argparse.Namespace) -> int:
             continue
 
         if revision.status == Status.UP:
+            url = _application_url(
+                ApplicationId(up_response.application_id),
+                args.cloud_url,
+            )
             terminal.info(
                 f"✅\n"
                 "\n"
-                f"  '{args.name}' revision {revision.number} is available at: {_application_url(ApplicationId(up_response.application_id), args.cloud_url)}"
+                f"  '{args.name}' revision {revision.number}"
+                " is available:\n"
                 "\n"
+                f"  Your API is available at:      {url}\n"
+                f"  MCP clients can connect at:    {url}/mcp\n"
+                "  You can inspect your state at: "
+                f"{url}/__/inspect\n"
             )
             return 0
 
@@ -690,7 +699,9 @@ async def cloud_down(args: argparse.Namespace) -> None:
                 if organization_name is None:
                     terminal.fail(
                         f"User '{user_id}' does not have an application "
-                        f"named '{args.name}'"
+                        f"named '{args.name}'. If the application "
+                        "belongs to an organization, try adding "
+                        "--organization=<name>."
                     )
                 else:
                     terminal.fail(
@@ -866,7 +877,9 @@ async def _cloud_logs(
                     if organization_name is None:
                         terminal.fail(
                             f"User '{user_id}' does not have an "
-                            f"application named '{name}'"
+                            f"application named '{name}'. If the "
+                            "application belongs to an organization, "
+                            "try adding --organization=<name>."
                         )
                     else:
                         terminal.fail(

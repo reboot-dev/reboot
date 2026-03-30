@@ -78,7 +78,8 @@ exports.Context_generateIdempotentStateId =
   reboot_native.exports.Context_generateIdempotentStateId;
 exports.WriterContext_set_sync = reboot_native.exports.WriterContext_set_sync;
 exports.WorkflowContext_loop = reboot_native.exports.WorkflowContext_loop;
-exports.retry_reactively_until = reboot_native.exports.retry_reactively_until;
+exports.workflow_retry_reactively_until =
+  reboot_native.exports.workflow_retry_reactively_until;
 exports.memoize = reboot_native.exports.memoize;
 exports.Servicer_read = reboot_native.exports.Servicer_read;
 exports.Servicer_write = reboot_native.exports.Servicer_write;

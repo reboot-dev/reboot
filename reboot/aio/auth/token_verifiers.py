@@ -1,7 +1,18 @@
+import rbt.v1alpha1.errors_pb2
 from abc import ABC, abstractmethod
 from reboot.aio.auth import Auth
 from reboot.aio.contexts import ReaderContext
-from typing import Optional
+from typing import Optional, Union
+
+# Return type for `TokenVerifier.verify_token`:
+#   - `Auth`: caller is authenticated.
+#   - `None`: no opinion (defer to Authorizer).
+#   - `Unauthenticated`: definitively reject the request.
+VerifyTokenResult = Union[
+    Auth,
+    None,
+    rbt.v1alpha1.errors_pb2.Unauthenticated,
+]
 
 
 class TokenVerifier(ABC):
@@ -17,17 +28,18 @@ class TokenVerifier(ABC):
         self,
         context: ReaderContext,
         token: Optional[str],
-    ) -> Optional[Auth]:
-        """Verifies the token and returns an `Auth` if the token implies the
-        caller is authenticated. Returning `None` implies the caller is not
-        authenticated, however, it is up to an `Authorizer` to decide that or
-        not.
-
-
-        :param context: A reader context to enable calling other services.
-        :param token: The token to verify.
+    ) -> VerifyTokenResult:
+        """Verify the bearer token.
 
         Returns:
-            `Auth` information if the token is valid, None otherwise.
+            * `Auth` if the token is valid and the caller is
+              authenticated.
+            * `None` if there is no opinion (e.g. no token was
+              provided). The `Authorizer` will decide whether to allow
+              or reject the request.
+            * `Unauthenticated` to definitively reject the request,
+              bypassing the `Authorizer`. Use this when it is clear the
+              caller intended to authenticate but failed (e.g. an
+              expired token).
         """
         raise NotImplementedError()

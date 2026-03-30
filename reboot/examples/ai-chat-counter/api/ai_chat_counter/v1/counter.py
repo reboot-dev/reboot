@@ -13,16 +13,34 @@ from reboot.api import (
 )
 
 
+class CreateCounterRequest(Model):
+    description: str = Field(tag=1)
+
+
 class CreateCounterResponse(Model):
     counter_id: str = Field(tag=1)
 
 
-class SessionState(Model):
-    pass
+class CounterEntry(Model):
+    counter_id: str = Field(tag=1)
+    description: str = Field(tag=2)
+
+
+class ListCountersResponse(Model):
+    counters: list[CounterEntry] = Field(tag=1, default_factory=list)
+
+
+class UserState(Model):
+    counter_ids: list[str] = Field(tag=1, default_factory=list)
+
+
+class DescriptionResponse(Model):
+    description: str = Field(tag=1)
 
 
 class CounterState(Model):
     value: int = Field(tag=1, default=0)
+    description: str = Field(tag=2, default="")
 
 
 class GetResponse(Model):
@@ -35,17 +53,26 @@ class IncrementRequest(Model):
 
 
 api = API(
-    Session=Type(
-        state=SessionState,
+    User=Type(
+        state=UserState,
         methods=Methods(
             create_counter=Transaction(
-                request=None,
+                request=CreateCounterRequest,
                 response=CreateCounterResponse,
-                description="Create a new Counter. Returns "
-                "the ID of the new counter. That ID is "
-                "not human-readable; pass it to future "
-                "tool calls where needed, but no need to "
-                "tell the human what it is.",
+                description="Create a new Counter with a "
+                "description of what it counts. Returns "
+                "the `counter_id`, which is not "
+                "human-readable but should be passed to "
+                "future tool calls that need it.",
+            ),
+            list_counters=Reader(
+                request=None,
+                response=ListCountersResponse,
+                description="List all counters created "
+                "by this user. Returns `counter_id` and "
+                "description for each. The `counter_id` "
+                "is not human-readable, but use it when "
+                "calling tools that take a `counter_id`.",
             ),
         ),
     ),
@@ -60,7 +87,7 @@ api = API(
                 "for the counter.",
             ),
             create=Writer(
-                request=None,
+                request=CreateCounterRequest,
                 response=None,
                 factory=True,
             ),
@@ -77,6 +104,10 @@ api = API(
                 description="Increment the counter by "
                 "the specified amount.",
                 mcp=Tool(),
+            ),
+            description=Reader(
+                request=None,
+                response=DescriptionResponse,
             ),
         ),
     ),

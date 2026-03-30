@@ -87,7 +87,6 @@ py_web_test_suite_env(
     browsers = [
         "@io_bazel_rules_webtesting//browsers:chromium-local",
     ],
-    local = True,
     main = "test_against_local_envoy.py",
     py_test_tags = [
         "macos_not_supported",

@@ -49,8 +49,8 @@ class ExportImportTestCase(unittest.IsolatedAsyncioTestCase):
             await self.rbt.stop()
             self.rbt = None
 
-    async def up(
-        self, *, name: str, servers: int
+    async def start(
+        self, *, servers: int
     ) -> tuple[ExternalContext, export_import_pb2_grpc.ExportImportStub]:
         assert self.rbt is None
         self.rbt = Reboot()
@@ -72,7 +72,7 @@ class ExportImportTestCase(unittest.IsolatedAsyncioTestCase):
         stub = export_import_pb2_grpc.ExportImportStub(channel)
         return context, stub
 
-    async def down(self) -> None:
+    async def stop(self) -> None:
         assert self.rbt is not None
         await self.rbt.stop()
         self.rbt = None
@@ -113,9 +113,7 @@ class ExportImportTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def _do_test(self, *, servers: int) -> None:
         # Start an application with one name.
-        context, stub = await self.up(
-            name=f"first-attempt-with-{servers}", servers=servers
-        )
+        context, stub = await self.start(servers=servers)
 
         # When there are no states, we expect that `export` creates empty files.
         with tempfile.TemporaryDirectory() as d:
@@ -173,12 +171,10 @@ class ExportImportTestCase(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        # Take the application down, re-launch it with a different name, and
-        # confirm that it is empty.
-        await self.down()
-        context, stub = await self.up(
-            name=f"second-attempt-with-{servers}", servers=servers
-        )
+        # Take the application down, re-launch it with, and confirm that
+        # it is empty.
+        await self.stop()
+        context, stub = await self.start(servers=servers)
         with self.assertRaises(Exception) as exc:
             await Echo.ref(
                 list(messages_by_state_ref.keys())[0].id,
