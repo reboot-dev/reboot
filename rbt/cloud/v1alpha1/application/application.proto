@@ -104,6 +104,12 @@ message Application {
 
   // Live metrics, updated every 30 seconds while the application is UP.
   ApplicationMetrics metrics = 10;
+
+  // The `task_uuid` of the most recently scheduled `metrics_workflow`.
+  // `metrics_workflow` compares its own `context.task_id` against this
+  // to detect that a newer instance has been scheduled and exit, ensuring
+  // at most one `metrics_workflow` runs per application at a time.
+  bytes latest_metrics_workflow_task_uuid = 11;
 }
 
 ///////////////////////////////////////////////////////////////////////
