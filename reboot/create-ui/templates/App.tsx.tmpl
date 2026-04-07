@@ -1,0 +1,26 @@
+import { useState, type FC } from "react";
+import { {{hookName}} } from "{{importPath}}";
+import css from "./App.module.css";
+
+export const {{appName}}: FC = () => {
+  const [isPending, setIsPending] = useState(false);
+  const state = {{hookName}}();
+  const { response, isLoading } = state.useGet();
+
+  if (isLoading && response === undefined) {
+    return (
+      <div className={css.container}>
+        <div className={css.loading}>loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={css.container}>
+      <div className={css.label}>{{titleLower}}</div>
+      <pre className={css.data}>
+        {JSON.stringify(response, null, 2)}
+      </pre>
+    </div>
+  );
+};

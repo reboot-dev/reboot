@@ -1,0 +1,60 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//npm:defs.bzl", "npm_package")
+load("@com_github_reboot_dev_reboot//reboot:versions.bzl", "REBOOT_VERSION")
+
+esbuild(
+    name = "bundle",
+    srcs = glob([
+        "src/*.ts",
+        "templates/*.tmpl",
+    ]),
+    bazel_sandbox_plugin = False,
+    config = {
+        "banner": {"js": "#!/usr/bin/env node"},
+        "loader": {".tmpl": "text"},
+    },
+    entry_point = "src/index.ts",
+    format = "cjs",
+    output = "dist/index.js",
+    platform = "node",
+)
+
+npm_package(
+    name = "create-ui",
+    srcs = [
+        ":bundle",
+        ":package.json",
+    ],
+    include_runfiles = False,
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "reboot-dev-create-ui",
+    srcs = [
+        "//:README.md",
+        ":create-ui",
+    ],
+    outs = ["reboot-dev-create-ui-" + REBOOT_VERSION + ".tgz"],
+    cmd = """
+        set -eu
+        npm_binary_path=$$(realpath $(execpath @node//:npm))
+        readme_path="$$(realpath $(execpath //:README.md))"
+        working_folder=$$(dirname $(location :create-ui))
+        pushd $$working_folder
+        mkdir -p build && cd build
+        cp -r -L ../create-ui/* .
+        cp $$readme_path README.md
+        $$npm_binary_path pack --pack-destination .
+        path=$$(realpath reboot-dev-create-ui-{reboot_version}.tgz)
+        popd
+        mv $$path $(@D)
+        rm -rf $$working_folder/build
+    """.format(
+        reboot_version = REBOOT_VERSION,
+    ),
+    tools = [
+        "@node//:npm",
+    ],
+    visibility = ["//visibility:public"],
+)

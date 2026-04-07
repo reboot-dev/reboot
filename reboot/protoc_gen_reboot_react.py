@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
+import json
 import os
 import reboot.aio.tracing
 import sys
 from dataclasses import dataclass
+from google.protobuf.descriptor_pb2 import FileDescriptorProto
 from reboot.protoc_gen_reboot_generic import (
     BaseClient,
     BaseFile,
@@ -221,6 +223,41 @@ class ReactRebootProtocPlugin(TypescriptRebootProtocPlugin):
                 ),
             ) for mutation in mutations
         ]
+
+    def process_file(self, file_proto: FileDescriptorProto) -> None:
+        # Run the normal generation (emits `_rbt_react.ts`).
+        super().process_file(file_proto)
+
+        # Also emit a `_rbt_ui.json` manifest alongside the
+        # `.ts` file when any state has UIs defined.
+        file = self.pool.FindFileByName(file_proto.name)
+        base = self._base_data(file, file_proto)
+
+        all_uis = []
+        for state in base.states:
+            for ui in state.proto.uis:
+                all_uis.append(
+                    {
+                        "name": ui.name,
+                        "stateName": state.proto.name,
+                        "path": ui.path,
+                        "title": ui.title,
+                    }
+                )
+
+        if not all_uis:
+            return
+
+        manifest = {
+            "package": base.proto.package_name,
+            "uis": all_uis,
+        }
+
+        output_file = self.response.file.add()
+        output_file.name = (
+            base.proto.file_name.replace('.proto', '_rbt_ui.json')
+        )
+        output_file.content = json.dumps(manifest, indent=2) + "\n"
 
     def add_language_dependent_data(self, file: BaseFile) -> BaseFile:
         google_protobuf_used_messages = self._google_protobuf_messages(

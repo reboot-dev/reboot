@@ -1,0 +1,31 @@
+// Build all discovered UIs. Run via `npm run build`.
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { execSync } from "child_process";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Find UI directories containing index.html.
+function findUis(dir, prefix = "") {
+  const result = [];
+  if (!fs.existsSync(dir)) return result;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (["node_modules", "dist", "api"].includes(entry.name)) continue;
+    const subPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const full = path.join(dir, entry.name);
+    if (fs.existsSync(path.join(full, "index.html"))) {
+      result.push(entry.name);
+    } else {
+      result.push(...findUis(full, subPath));
+    }
+  }
+  return result;
+}
+
+const uis = findUis(__dirname);
+for (const ui of uis) {
+  console.log(`Building ${ui}...`);
+  execSync(`npx vite build --mode ${ui}`, { stdio: "inherit" });
+}

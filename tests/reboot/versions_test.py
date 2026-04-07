@@ -10,6 +10,7 @@ ALL_PACKAGE_NAMES = [
     '@reboot-dev/reboot-react',
     '@reboot-dev/reboot-api',
     'ghcr.io/reboot-dev/reboot-base',
+    '@reboot-dev/create-ui',
 ]
 BASE_IMAGE_NAME = "ghcr.io/reboot-dev/reboot-base"
 

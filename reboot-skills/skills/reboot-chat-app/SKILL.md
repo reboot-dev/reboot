@@ -212,12 +212,10 @@ application directory.**
 4. `uv run rbt generate`
 5. Write servicer (`backend/src/servicers/<name>.py`)
 6. Write `main.py`
-7. Scaffold web: `package.json`, tsconfigs, `vite.config.ts`,
-   `index.css`
+7. `npm create @reboot-dev/ui`
 8. `cd web && npm install`
 9. `uv run rbt generate` (React bindings need `node_modules`)
-10. Write React: `index.html`, `main.tsx`, `App.tsx`,
-    `App.module.css`
+10. Customize React UIs: edit `App.tsx` files in `web/ui/*/`
 11. `cd web && npm run build`
 12. Create `mcp_servers.json` with
     `{"mcpServers":{"<name>":{"type":"streamable-http","url":"http://localhost:9991/mcp"}}}`
