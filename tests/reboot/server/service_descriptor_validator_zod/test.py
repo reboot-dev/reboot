@@ -7,6 +7,7 @@ from reboot.server.service_descriptor_validator import (
     validate_descriptor_sets_are_backwards_compatible,
 )
 from tests.reboot import test_helpers
+from tests.reboot.test_helpers import combine_descriptor_sets
 
 
 def get_descriptor_set(name: str) -> FileDescriptorSet:
@@ -36,6 +37,8 @@ class ServiceDescriptorValidatorZodTestCase(unittest.TestCase):
     request_field_deleted: FileDescriptorSet
     request_field_type_changed: FileDescriptorSet
     request_required_field_added: FileDescriptorSet
+    original_other: FileDescriptorSet
+    method_deleted_other: FileDescriptorSet
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -71,6 +74,12 @@ class ServiceDescriptorValidatorZodTestCase(unittest.TestCase):
         )
         cls.request_required_field_added = get_descriptor_set(
             'zod_request_required_field_added_api_pb2'
+        )
+        cls.original_other = get_descriptor_set(
+            'other.zod_state_original_api_pb2'
+        )
+        cls.method_deleted_other = get_descriptor_set(
+            'other.zod_method_deleted_api_pb2'
         )
 
     def test_zod_state_deleted(self):
@@ -372,6 +381,61 @@ class ServiceDescriptorValidatorZodTestCase(unittest.TestCase):
             'continue, revert the change or use `expunge` to clear all '
             'existing state data.',
             errors[0],
+        )
+
+    def test_same_simple_name_different_packages(self):
+        """Test that a backwards-incompatible change in one package is
+        not masked by another package's servicer type sharing the same
+        simple name.
+
+        `zod_state_original_api_pb2` (package `...zod`) and
+        `other.zod_other_api_pb2` (package `...zod.other`) both
+        define a servicer type called `EchoZod`. When both are present
+        in a combined `FileDescriptorSet`, the validator must key
+        states by their fully-qualified names.
+        """
+
+        # Both packages have `EchoZod` with `doSomething`.
+        original = combine_descriptor_sets(
+            self.original,
+            self.original_other,
+        )
+        # Remove `doSomething` from the first package.
+        updated = combine_descriptor_sets(
+            self.method_deleted,
+            self.original_other,
+        )
+
+        with self.assertRaises(ProtoValidationError) as context:
+            validate_descriptor_sets_are_backwards_compatible(
+                original, updated
+            )
+
+        errors = context.exception.validation_errors
+        assert errors is not None
+        # The first package's `doSomething` method was deleted.
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(
+            'Method `doSomething` was deleted from servicer type '
+            '`EchoZod` (from `tests/reboot/server'
+            '/service_descriptor_validator_zod'
+            '/zod_state_original_api.ts`)',
+            errors[0],
+        )
+
+    def test_same_name_no_errors_when_added(self):
+        """Test that no errors are reported when two packages share a
+        state name but technically are not backwards compatible.
+        """
+
+        # The first package has `EchoZod` with `doSomething`, the
+        # second package has `EchoZod` with empty methods.
+        updated = combine_descriptor_sets(
+            self.original, self.method_deleted_other
+        )
+
+        validate_descriptor_sets_are_backwards_compatible(
+            self.original, updated
         )
 
 

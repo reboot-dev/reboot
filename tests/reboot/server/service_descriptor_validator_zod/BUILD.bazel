@@ -291,7 +291,7 @@ py_proto_library(
 )
 
 py_test(
-    name = "service_descriptor_validator_zod_test_py",
+    name = "test_py",
     srcs = ["test.py"],
     main = "test.py",
     deps = [
@@ -311,5 +311,7 @@ py_test(
         ":zod_state_required_field_added_py_proto",
         "//reboot/server:service_descriptor_validator_py",
         "//tests/reboot:test_helpers_py",
+        "//tests/reboot/server/service_descriptor_validator_zod/other:zod_method_deleted_py_proto",
+        "//tests/reboot/server/service_descriptor_validator_zod/other:zod_state_original_py_proto",
     ],
 )

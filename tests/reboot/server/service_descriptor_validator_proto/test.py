@@ -10,6 +10,7 @@ from reboot.server.service_descriptor_validator import (
     validate_descriptor_sets_are_backwards_compatible,
 )
 from tests.reboot import test_helpers
+from tests.reboot.test_helpers import combine_descriptor_sets
 
 
 def get_descriptor_set(name: str) -> FileDescriptorSet:
@@ -54,6 +55,8 @@ class ServiceDescriptorValidatorProtoTestCase(unittest.TestCase):
     errors_added: FileDescriptorSet
     mcp_added: FileDescriptorSet
     mcp_changed: FileDescriptorSet
+    original_other_package: FileDescriptorSet
+    replay_deleted_other_package: FileDescriptorSet
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -119,6 +122,12 @@ class ServiceDescriptorValidatorProtoTestCase(unittest.TestCase):
         cls.errors_added = get_descriptor_set('echo_errors_added_pb2')
         cls.mcp_added = get_descriptor_set('echo_mcp_added_pb2')
         cls.mcp_changed = get_descriptor_set('echo_mcp_changed_pb2')
+        cls.original_other_package = get_descriptor_set(
+            'echo_original_other_package_pb2'
+        )
+        cls.replay_deleted_other_package = get_descriptor_set(
+            'echo_replay_deleted_other_package_pb2'
+        )
 
     def test_no_change(self):
         """Test that an unchanged ServiceDescriptor has no errors."""
@@ -450,7 +459,8 @@ class ServiceDescriptorValidatorProtoTestCase(unittest.TestCase):
         # The state message was renamed.
         self.assertEqual(len(errors), 1)
         self.assertEqual(
-            'State `Echo` was deleted',
+            'State `tests.reboot.server.service_descriptor_validator'
+            '_proto.Echo` was deleted',
             errors[0],
         )
 
@@ -758,6 +768,57 @@ class ServiceDescriptorValidatorProtoTestCase(unittest.TestCase):
         validate_descriptor_sets_are_backwards_compatible(
             self.mcp_added,
             self.mcp_changed,
+        )
+
+    def test_same_state_name_different_packages(self):
+        """Test that a backwards-incompatible change in one package is
+        not masked by another package's state sharing the same simple
+        message name.
+
+        `echo_original_pb2` (package `...proto`) and
+        `echo_original_other_package_pb2` (package `...proto_other`) both
+        define a state called `Echo`. When both are present in a
+        combined `FileDescriptorSet`, the validator must key states by
+        their fully-qualified names.
+        """
+
+        # Both packages have `Echo` with `Reply` and `Replay`.
+        original = combine_descriptor_sets(
+            self.original, self.original_other_package
+        )
+        # Remove `Replay` from the first package.
+        updated = combine_descriptor_sets(
+            self.replay_deleted, self.original_other_package
+        )
+
+        with self.assertRaises(ProtoValidationError) as context:
+            validate_descriptor_sets_are_backwards_compatible(
+                original, updated
+            )
+
+        errors = context.exception.validation_errors
+        assert errors is not None
+        # The first package's `Replay` method was deleted.
+        self.assertEqual(len(errors), 1)
+        self.assertIn(
+            'Method `tests.reboot.server.service_descriptor_validator_'
+            'proto.EchoMethods.Replay` was deleted',
+            errors[0],
+        )
+
+    def test_same_name_no_errors_when_added(self):
+        """Test that no errors are reported when two packages share a
+        state name but technically are not backwards compatible.
+        """
+
+        # The first package has `Echo` with `Reply` and `Replay`, the
+        # second package has `Echo` with only `Reply`.
+        updated = combine_descriptor_sets(
+            self.original, self.replay_deleted_other_package
+        )
+
+        validate_descriptor_sets_are_backwards_compatible(
+            self.original, updated
         )
 
 

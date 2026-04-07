@@ -63,3 +63,17 @@ def get_descriptor_set(name: str) -> FileDescriptorSet:
 
     process.join()
     return result
+
+
+def combine_descriptor_sets(
+    *descriptor_sets: FileDescriptorSet,
+) -> FileDescriptorSet:
+    """Combine multiple `FileDescriptorSet`s into one."""
+    result = FileDescriptorSet()
+    seen: set[str] = set()
+    for descriptor_set in descriptor_sets:
+        for file_proto in descriptor_set.file:
+            if file_proto.name not in seen:
+                result.file.append(file_proto)
+                seen.add(file_proto.name)
+    return result

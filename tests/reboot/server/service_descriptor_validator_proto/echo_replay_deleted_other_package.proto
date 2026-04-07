@@ -3,29 +3,19 @@ syntax = "proto3";
 import "rbt/v1alpha1/options.proto";
 import "tests/reboot/server/echo_shared_messages.proto";
 
-package tests.reboot.server.service_descriptor_validator_proto;
+package tests.reboot.server.service_descriptor_validator_proto_other;
 
+// Like `echo_original_other_package.proto` but without `Replay`.
 message Echo {
   option (rbt.v1alpha1.state) = {
   };
   repeated string messages = 1;
 }
 
-// Same as echo_original, but with `mcp` added to the Reply method.
 service EchoMethods {
   rpc Reply(SingleStringField) returns (SingleStringField) {
     option (rbt.v1alpha1.method) = {
       writer: {},
-      mcp: {
-        tool: true,
-        description: "Reply to a message",
-      },
-    };
-  }
-
-  rpc Replay(EmptyMessage) returns (RepeatedStringField) {
-    option (rbt.v1alpha1.method) = {
-      reader: {},
     };
   }
 }
