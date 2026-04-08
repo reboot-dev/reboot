@@ -5172,25 +5172,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     self._servicer.__state_type_name__, context._state_ref
                 )
             assert transaction is not None
-            # Re-check for an idempotent mutation now that we hold the
-            # transaction semaphore. This is a fix for a potential race:
-            #   https://github.com/reboot-dev/mono/issues/5361
-            #
-            # If a previous call's commit ran (updating the bloom filter
-            # and, for constructors, making the state visible in memory
-            # via `self._states`) after our initial idempotent mutation
-            # check but before we acquired the semaphore, then without
-            # this re-check, constructors could raise
-            # `StateAlreadyConstructed` and non-constructors could
-            # re-execute the mutation, potentially corrupting state.
-            idempotent_mutation = await self._state_manager.check_for_idempotent_mutation(
-                context
-            )
-            if idempotent_mutation is not None:
-                await self._state_manager.transaction_participant_abort(transaction)
-                response = tests.reboot.greeter_pb2.SetAdjectiveResponse()
-                response.ParseFromString(idempotent_mutation.response)
-                return response
             async with self._state_manager.transaction(
                 context,
                 self._servicer.__state_type__,
@@ -10482,25 +10463,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     self._servicer.__state_type_name__, context._state_ref
                 )
             assert transaction is not None
-            # Re-check for an idempotent mutation now that we hold the
-            # transaction semaphore. This is a fix for a potential race:
-            #   https://github.com/reboot-dev/mono/issues/5361
-            #
-            # If a previous call's commit ran (updating the bloom filter
-            # and, for constructors, making the state visible in memory
-            # via `self._states`) after our initial idempotent mutation
-            # check but before we acquired the semaphore, then without
-            # this re-check, constructors could raise
-            # `StateAlreadyConstructed` and non-constructors could
-            # re-execute the mutation, potentially corrupting state.
-            idempotent_mutation = await self._state_manager.check_for_idempotent_mutation(
-                context
-            )
-            if idempotent_mutation is not None:
-                await self._state_manager.transaction_participant_abort(transaction)
-                response = tests.reboot.greeter_pb2.ConstructAndStoreRecursiveMessageResponse()
-                response.ParseFromString(idempotent_mutation.response)
-                return response
             async with self._state_manager.transaction(
                 context,
                 self._servicer.__state_type__,

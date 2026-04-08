@@ -3146,6 +3146,22 @@ class SidecarStateManager(
         state_type_name = context.state_type_name
         state_ref = context._state_ref
 
+        # If there's an in-flight transaction for this state with a
+        # matching idempotency key, wait for it to finish rather than
+        # starting a duplicate. After it commits the normal check below
+        # will find the cached response. This avoids
+        # https://github.com/reboot-dev/mono/issues/5361.
+        transaction: Optional[StateManager.Transaction]
+        if isinstance(context, TransactionContext) and not context.nested:
+            transaction = self._participant_transactions[state_type_name].get(
+                state_ref
+            )
+            if (
+                transaction is not None and
+                transaction.idempotency_key == context.idempotency_key
+            ):
+                await transaction
+
         # Recover idempotent mutations on demand if necessary.
         #
         # NOTE: we do this even if we are within a transaction because
@@ -3181,8 +3197,8 @@ class SidecarStateManager(
         # If we haven't found an idempotent mutation and we're within
         # a transaction, check and see if the transaction includes it.
         if idempotent_mutation is None and context.transaction_ids is not None:
-            transaction: Optional[StateManager.Transaction] = (
-                self._participant_transactions[state_type_name].get(state_ref)
+            transaction = self._participant_transactions[state_type_name].get(
+                state_ref
             )
 
             if (
