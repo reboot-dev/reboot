@@ -48,14 +48,11 @@ from reboot.std.collections.v1.sorted_map import SortedMap
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.ts&lines=3-6) -->
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.ts&lines=4-4) -->
 <!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.ts -->
 
 ```ts
-import {
-  SortedMap,
-  sortedMapLibrary,
-} from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
+import { SortedMap } from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -74,12 +71,13 @@ async def main():
     application = Application(
         servicers=[MyServicer],
         libraries=[sorted_map_library()],
-    ).run()
+    )
+    await application.run()
 ```
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 ```ts
-import sortedMap from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
+import { sortedMapLibrary } from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
 
 new Application({
   servicers: [MyServicer],
