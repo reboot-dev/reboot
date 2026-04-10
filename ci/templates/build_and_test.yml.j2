@@ -175,10 +175,15 @@ jobs:
           QUERY="$QUERY except attr(\"tags\",\"flaky\",//tests/...)"
         fi
 
-        # 4) Run the query and pipe into bazel test.
+        # 4) Build test targets first so that test execution
+        # doesn't compete with compilation for I/O.
         echo "▶ bazel query: $QUERY"
-        bazel query "$QUERY" \
-          | xargs bazel test
+        TARGETS=$(bazel query "$QUERY")
+        echo "$TARGETS" | xargs bazel build
+
+        # 5) Run tests; all build artifacts are cached so
+        # this only executes tests.
+        echo "$TARGETS" | xargs bazel test
 
   build-reboot-documentation:
     name: Build Reboot documentation
@@ -281,7 +286,12 @@ jobs:
           QUERY="$QUERY except attr(\"tags\",\"flaky\",//tests/...)"
         fi
 
-        # 4) Run the query and pipe into bazel test.
+        # 4) Build test targets first so that test execution
+        # doesn't compete with compilation for I/O.
         echo "▶ bazel query: $QUERY"
-        bazel query "$QUERY" \
-          | xargs bazel test
+        TARGETS=$(bazel query "$QUERY")
+        echo "$TARGETS" | xargs bazel build
+
+        # 5) Run tests; all build artifacts are cached so
+        # this only executes tests.
+        echo "$TARGETS" | xargs bazel test
