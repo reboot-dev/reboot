@@ -254,7 +254,7 @@ class Application:
             if len(needed_requirements) > 0:
                 raise ValueError(
                     "Missing required libraries: "
-                    f"{', '.join(needed_requirements)}"
+                    f"{', '.join(needed_requirements)}. "
                     "Please add these libraries and pass them to the "
                     "`libraries` parameter."
                 )
