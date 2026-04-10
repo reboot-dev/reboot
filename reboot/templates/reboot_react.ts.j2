@@ -1582,6 +1582,19 @@ export const use{{ client.proto.state_name | to_camel }} = (
       {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted | undefined
       >(reader.status && {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(reader.status));
 
+    // Track which state ID the current `response` and `aborted` belong
+    // to so we can reset them when the state ID changes, back into
+    // their "loading" state. We track `id` rather than `instance`
+    // because `id` updates immediately from props, whereas `instance`
+    // only updates later after a separate `setState`.
+    const [responseStateId, setResponseStateId] = useState(id);
+    if (responseStateId !== id) {
+      setResponseStateId(id);
+      setResponse(undefined);
+      setAborted(undefined);
+      setIsLoading(true);
+    }
+
     useEffect(() => {
       const id = uuidv4();
 
@@ -1924,7 +1937,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
       {% endif %}
       {% endfor %}
       {% endfor %}
-    }), [id, bearerToken]);
+    }), [id, instance, bearerToken]);
 };
 
 

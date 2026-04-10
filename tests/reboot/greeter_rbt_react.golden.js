@@ -3939,6 +3939,18 @@ export const useGreeter = ({ id }) => {
         const reader = instance.startGreet(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
         const [response, setResponse] = useState(reader.response && GreeterGreetResponseFromProtobufShape(reader.response));
         const [aborted, setAborted] = useState(reader.status && GreeterGreetAborted.fromStatus(reader.status));
+        // Track which state ID the current `response` and `aborted` belong
+        // to so we can reset them when the state ID changes, back into
+        // their "loading" state. We track `id` rather than `instance`
+        // because `id` updates immediately from props, whereas `instance`
+        // only updates later after a separate `setState`.
+        const [responseStateId, setResponseStateId] = useState(id);
+        if (responseStateId !== id) {
+            setResponseStateId(id);
+            setResponse(undefined);
+            setAborted(undefined);
+            setIsLoading(true);
+        }
         useEffect(() => {
             const id = uuidv4();
             instance.useGreet(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, (response) => {
@@ -4274,6 +4286,18 @@ export const useGreeter = ({ id }) => {
         const reader = instance.startTryToConstructContext(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
         const [response, setResponse] = useState(reader.response && GreeterTryToConstructContextResponseFromProtobufShape(reader.response));
         const [aborted, setAborted] = useState(reader.status && GreeterTryToConstructContextAborted.fromStatus(reader.status));
+        // Track which state ID the current `response` and `aborted` belong
+        // to so we can reset them when the state ID changes, back into
+        // their "loading" state. We track `id` rather than `instance`
+        // because `id` updates immediately from props, whereas `instance`
+        // only updates later after a separate `setState`.
+        const [responseStateId, setResponseStateId] = useState(id);
+        if (responseStateId !== id) {
+            setResponseStateId(id);
+            setResponse(undefined);
+            setAborted(undefined);
+            setIsLoading(true);
+        }
         useEffect(() => {
             const id = uuidv4();
             instance.useTryToConstructContext(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, (response) => {
@@ -4543,6 +4567,18 @@ export const useGreeter = ({ id }) => {
         const reader = instance.startTryToConstructExternalContext(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
         const [response, setResponse] = useState(reader.response && GreeterTryToConstructExternalContextResponseFromProtobufShape(reader.response));
         const [aborted, setAborted] = useState(reader.status && GreeterTryToConstructExternalContextAborted.fromStatus(reader.status));
+        // Track which state ID the current `response` and `aborted` belong
+        // to so we can reset them when the state ID changes, back into
+        // their "loading" state. We track `id` rather than `instance`
+        // because `id` updates immediately from props, whereas `instance`
+        // only updates later after a separate `setState`.
+        const [responseStateId, setResponseStateId] = useState(id);
+        if (responseStateId !== id) {
+            setResponseStateId(id);
+            setResponse(undefined);
+            setAborted(undefined);
+            setIsLoading(true);
+        }
         useEffect(() => {
             const id = uuidv4();
             instance.useTryToConstructExternalContext(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, (response) => {
@@ -4812,6 +4848,18 @@ export const useGreeter = ({ id }) => {
         const reader = instance.startTestLongRunningFetch(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
         const [response, setResponse] = useState(reader.response && GreeterTestLongRunningFetchResponseFromProtobufShape(reader.response));
         const [aborted, setAborted] = useState(reader.status && GreeterTestLongRunningFetchAborted.fromStatus(reader.status));
+        // Track which state ID the current `response` and `aborted` belong
+        // to so we can reset them when the state ID changes, back into
+        // their "loading" state. We track `id` rather than `instance`
+        // because `id` updates immediately from props, whereas `instance`
+        // only updates later after a separate `setState`.
+        const [responseStateId, setResponseStateId] = useState(id);
+        if (responseStateId !== id) {
+            setResponseStateId(id);
+            setResponse(undefined);
+            setAborted(undefined);
+            setIsLoading(true);
+        }
         useEffect(() => {
             const id = uuidv4();
             instance.useTestLongRunningFetch(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, (response) => {
@@ -5114,6 +5162,18 @@ export const useGreeter = ({ id }) => {
         const reader = instance.startGetWholeState(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
         const [response, setResponse] = useState(reader.response && GreeterGetWholeStateResponseFromProtobufShape(reader.response));
         const [aborted, setAborted] = useState(reader.status && GreeterGetWholeStateAborted.fromStatus(reader.status));
+        // Track which state ID the current `response` and `aborted` belong
+        // to so we can reset them when the state ID changes, back into
+        // their "loading" state. We track `id` rather than `instance`
+        // because `id` updates immediately from props, whereas `instance`
+        // only updates later after a separate `setState`.
+        const [responseStateId, setResponseStateId] = useState(id);
+        if (responseStateId !== id) {
+            setResponseStateId(id);
+            setResponse(undefined);
+            setAborted(undefined);
+            setIsLoading(true);
+        }
         useEffect(() => {
             const id = uuidv4();
             instance.useGetWholeState(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, (response) => {
@@ -5383,6 +5443,18 @@ export const useGreeter = ({ id }) => {
         const reader = instance.startFailWithException(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
         const [response, setResponse] = useState(reader.response && GreeterFailWithExceptionResponseFromProtobufShape(reader.response));
         const [aborted, setAborted] = useState(reader.status && GreeterFailWithExceptionAborted.fromStatus(reader.status));
+        // Track which state ID the current `response` and `aborted` belong
+        // to so we can reset them when the state ID changes, back into
+        // their "loading" state. We track `id` rather than `instance`
+        // because `id` updates immediately from props, whereas `instance`
+        // only updates later after a separate `setState`.
+        const [responseStateId, setResponseStateId] = useState(id);
+        if (responseStateId !== id) {
+            setResponseStateId(id);
+            setResponse(undefined);
+            setAborted(undefined);
+            setIsLoading(true);
+        }
         useEffect(() => {
             const id = uuidv4();
             instance.useFailWithException(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, (response) => {
@@ -5652,6 +5724,18 @@ export const useGreeter = ({ id }) => {
         const reader = instance.startFailWithAborted(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
         const [response, setResponse] = useState(reader.response && GreeterFailWithAbortedResponseFromProtobufShape(reader.response));
         const [aborted, setAborted] = useState(reader.status && GreeterFailWithAbortedAborted.fromStatus(reader.status));
+        // Track which state ID the current `response` and `aborted` belong
+        // to so we can reset them when the state ID changes, back into
+        // their "loading" state. We track `id` rather than `instance`
+        // because `id` updates immediately from props, whereas `instance`
+        // only updates later after a separate `setState`.
+        const [responseStateId, setResponseStateId] = useState(id);
+        if (responseStateId !== id) {
+            setResponseStateId(id);
+            setResponse(undefined);
+            setAborted(undefined);
+            setIsLoading(true);
+        }
         useEffect(() => {
             const id = uuidv4();
             instance.useFailWithAborted(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, (response) => {
@@ -5987,6 +6071,18 @@ export const useGreeter = ({ id }) => {
         const reader = instance.startReadRecursiveMessage(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey);
         const [response, setResponse] = useState(reader.response && GreeterReadRecursiveMessageResponseFromProtobufShape(reader.response));
         const [aborted, setAborted] = useState(reader.status && GreeterReadRecursiveMessageAborted.fromStatus(reader.status));
+        // Track which state ID the current `response` and `aborted` belong
+        // to so we can reset them when the state ID changes, back into
+        // their "loading" state. We track `id` rather than `instance`
+        // because `id` updates immediately from props, whereas `instance`
+        // only updates later after a separate `setState`.
+        const [responseStateId, setResponseStateId] = useState(id);
+        if (responseStateId !== id) {
+            setResponseStateId(id);
+            setResponse(undefined);
+            setAborted(undefined);
+            setIsLoading(true);
+        }
         useEffect(() => {
             const id = uuidv4();
             instance.useReadRecursiveMessage(id, requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey, (response) => {
@@ -6290,7 +6386,7 @@ export const useGreeter = ({ id }) => {
         readRecursiveMessage,
         useReadRecursiveMessage,
         constructAndStoreRecursiveMessage,
-    }), [id, bearerToken]);
+    }), [id, instance, bearerToken]);
 };
 export class Greeter {
 }

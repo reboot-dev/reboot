@@ -783,8 +783,8 @@ export async function* grpcWebsocketServerStream<
         event instanceof MessageEvent ||
         // When we use 'WebSocket' class in the backend it is not the
         // same one as the frontend has, so the event type differs as
-        // well.
-        (event as any).data instanceof ArrayBuffer
+        // well. When `closed` wins the race `event` is `undefined`.
+        (event !== undefined && (event as any).data instanceof ArrayBuffer)
       ) {
         // Receiving a message demonstrates that the websocket is
         // connected; if we had a connection warning displayed we can
