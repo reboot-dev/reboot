@@ -16,7 +16,7 @@ these formats in a given `Queue`. Read more about [`Item`](/library_services/ite
 to determine the best format for your data.
 
 
-## Imports and servicers
+## Imports and set up
 
 To use a `Queue`, import the library where you would like to use it.
 
@@ -35,39 +35,43 @@ from reboot.std.item.v1.item import Item
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=4-4) -->
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=5-5) -->
 <!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
 
 ```ts
-import queue, { Queue } from "@reboot-dev/reboot-std/collections/queue/v1";
+import { Queue } from "@reboot-dev/reboot-std/collections/queue/v1";
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
-Also make sure to include the `Queue` servicers when starting up your `Application`.
-(Note: this import is different from above.)
+Also make sure to include the `Queue` library and the dependent [`SortedMap`](./sorted_map)
+library when starting up your `Application`. (Note: this import is different
+from above.)
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 ```py
-from reboot.std.collections.queue.v1 import queue
+from reboot.std.collections.queue.v1.queue import queue_library
+from reboot.std.collections.v1.sorted_map import sorted_map_library
 
 async def main():
     application = Application(
-        servicers=[MyServicer] + queue.servicers(),
+        servicers=[MyServicer],
+        libraries=[queue_library(), sorted_map_library()],
     )
-
     await application.run()
 ```
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 ```ts
-import queue from "@reboot-dev/reboot-std/collections/queue/v1";
+import { queueLibrary } from "@reboot-dev/reboot-std/collections/queue/v1";
+import { sortedMapLibrary } from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
 
 new Application({
-  servicers: [MyServicer, ...queue.servicers()],
+  servicers: [MyServicer],
+  libraries: [queueLibrary(), sortedMapLibrary()]
   initialize,
 }).run();
 ```
@@ -82,19 +86,20 @@ and `"my-second-queue"`. You can then call methods on these references.
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=300-301) -->
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=346-348) -->
 <!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.py -->
 
 ```py
 first_queue = Queue.ref("my-first-queue")
 second_queue = Queue.ref("my-second-queue")
+third_queue = Queue.ref("my-third-queue")
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=68-69) -->
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=76-77) -->
 <!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
 
 ```ts
@@ -118,7 +123,7 @@ NOTE: `Any` is only supported in Python, not TypeScript.
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=313-322) -->
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=359-368) -->
 <!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.py -->
 
 ```py
@@ -147,7 +152,7 @@ import { Value } from "@bufbuild/protobuf";
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=71-77) -->
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=79-85) -->
 <!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
 
 ```ts
@@ -173,7 +178,7 @@ NOTE: `Any` is only supported in Python, not TypeScript.
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=325-334) -->
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=371-380) -->
 <!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.py -->
 
 ```py
@@ -193,7 +198,7 @@ print(item.any)
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=86-90) -->
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=94-98) -->
 <!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
 
 ```ts
@@ -217,7 +222,7 @@ NOTE: `Any` is only supported in Python, not TypeScript.
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=362-396) -->
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=413-447) -->
 <!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.py -->
 
 ```py
@@ -271,7 +276,7 @@ import { Value } from "@bufbuild/protobuf";
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=120-136) -->
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=130-146) -->
 <!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
 
 ```ts
@@ -307,7 +312,7 @@ NOTE: `Any` is only supported in Python, not TypeScript.
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=398-399) -->
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=449-450) -->
 <!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.py -->
 
 ```py
@@ -319,7 +324,7 @@ items = await first_queue.dequeue(context, bulk=True, at_most=5)
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=143-147) -->
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=153-157) -->
 <!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
 
 ```ts

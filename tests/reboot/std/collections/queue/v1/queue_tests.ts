@@ -1,7 +1,11 @@
 // `eslint` disabled to preserve separation of imports for documentation.
 import { Value } from "@bufbuild/protobuf";
 import { Application, Reboot } from "@reboot-dev/reboot";
-import queue, { Queue } from "@reboot-dev/reboot-std/collections/queue/v1";
+// eslint-disable-next-line
+import { Queue } from "@reboot-dev/reboot-std/collections/queue/v1";
+// eslint-disable-next-line
+import { queueLibrary } from "@reboot-dev/reboot-std/collections/queue/v1";
+import { sortedMapLibrary } from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { CreateRequest } from "../../../../greeter_rbt.js";
@@ -21,7 +25,9 @@ test("Use queue servicers", async (t) => {
   });
 
   await t.test("Interact with the Queue", async (t) => {
-    await rbt.up(new Application({ servicers: queue.servicers() }));
+    await rbt.up(
+      new Application({ libraries: [queueLibrary(), sortedMapLibrary()] })
+    );
 
     const context = rbt.createExternalContext("test", {
       appInternal: true,
@@ -59,7 +65,9 @@ test("Use queue servicers", async (t) => {
   await t.test(
     "Examples for documentation for single enqueue/dequeue.",
     async (t) => {
-      await rbt.up(new Application({ servicers: queue.servicers() }));
+      await rbt.up(
+        new Application({ libraries: [queueLibrary(), sortedMapLibrary()] })
+      );
 
       const context = rbt.createExternalContext("test", {
         appInternal: true,
@@ -100,7 +108,9 @@ test("Use queue servicers", async (t) => {
   await t.test(
     "Examples for documentation for bulk enqueue/dequeue.",
     async (t) => {
-      await rbt.up(new Application({ servicers: queue.servicers() }));
+      await rbt.up(
+        new Application({ libraries: [queueLibrary(), sortedMapLibrary()] })
+      );
 
       const context = rbt.createExternalContext("test", {
         appInternal: true,
