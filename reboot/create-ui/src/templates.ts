@@ -4,7 +4,6 @@ import type { UiEntryWithPackage } from "./discover.js";
 // (`--loader:.tmpl=text`). Parameterized templates use
 // `{{variable}}` placeholders filled by `render()`.
 import viteConfigTmpl from "../templates/vite.config.ts.tmpl";
-import buildJsTmpl from "../templates/build.js.tmpl";
 import indexCssTmpl from "../templates/index.css.tmpl";
 import appModuleCssTmpl from "../templates/App.module.css.tmpl";
 import indexHtmlTmpl from "../templates/index.html.tmpl";
@@ -35,25 +34,40 @@ function appName(ui: UiEntryWithPackage): string {
 // ── Shared files (web root) ────────────────────────────
 
 /**
- * Build scripts use vite's auto-discovery, so they don't
- * need to be updated when new UIs are added.
+ * Generate web/package.json with per-UI build scripts.
+ * Each UI gets a `build:<name>` and `build:watch:<name>`
+ * script, and the top-level `build` chains them all.
  */
-export function packageJson(projectName: string): string {
+export function packageJson(
+  projectName: string,
+  uiNames: string[] = []
+): string {
+  const scripts: Record<string, string> = {
+    dev: "vite",
+  };
+
+  for (const name of uiNames) {
+    scripts[`build:${name}`] = `vite build --mode ${name}`;
+    scripts[`build:watch:${name}`] = `vite build --mode ${name} --watch`;
+  }
+
+  const buildChain = uiNames
+    .map((name) => `npm run build:${name}`)
+    .join(" && ");
+  scripts.build = buildChain ? `tsc --noEmit && ${buildChain}` : "tsc --noEmit";
+  scripts["build:watch"] = 'concurrently "npm:build:watch:*"';
+
   const pkg = {
     name: `${projectName}-web`,
     version: "0.1.0",
     private: true,
     type: "module",
-    scripts: {
-      dev: "vite",
-      build: "tsc --noEmit && node build.js",
-      "build:watch": 'concurrently "npm:build:watch:*"',
-    },
+    scripts,
     dependencies: {
       "@modelcontextprotocol/ext-apps": "1.2.0",
       "@modelcontextprotocol/sdk": "1.27.1",
-      "@reboot-dev/reboot-react": "0.45.2",
-      "@reboot-dev/reboot-api": "0.45.2",
+      "@reboot-dev/reboot-react": "0.46.0",
+      "@reboot-dev/reboot-api": "0.46.0",
       react: "^18.2.0",
       "react-dom": "^18.2.0",
       zod: "^3.25.0",
@@ -74,10 +88,6 @@ export function packageJson(projectName: string): string {
 
 export function viteConfig(): string {
   return viteConfigTmpl;
-}
-
-export function buildJs(): string {
-  return buildJsTmpl;
 }
 
 export function tsconfigJson(): string {
@@ -178,12 +188,11 @@ export function mainTsx(ui: UiEntryWithPackage): string {
 
 export function appTsx(ui: UiEntryWithPackage): string {
   const pkgPath = ui.package.replace(/\./g, "/");
-  const protoBase = ui.stateName.toLowerCase();
 
   return render(appTsxTmpl, {
     appName: appName(ui),
     hookName: `use${ui.stateName}`,
-    importPath: `@api/${pkgPath}/${protoBase}_rbt_react`,
+    importPath: `@api/${pkgPath}/${ui.protoBase}_rbt_react`,
     titleLower: ui.title.toLowerCase(),
   });
 }

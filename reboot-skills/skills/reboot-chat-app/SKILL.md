@@ -223,6 +223,8 @@ application directory.**
     following run instructions exactly, then wait:
 
     ```
+    Project directory: <absolute path to the current working directory>
+
     To run (each in a separate terminal, from the project directory):
 
       uv run rbt dev run          # start backend
@@ -234,9 +236,10 @@ application directory.**
     ```
 
     Replace `<name>` with the actual server name from
-    `mcp_servers.json`. Then suggest a first prompt the user
-    can try in the inspector (e.g., "Create a new todo list
-    and show it to me").
+    `mcp_servers.json`. Print the real absolute path of the
+    project directory (not the literal placeholder). Then
+    suggest a first prompt the user can try in the inspector
+    (e.g., "Create a new todo list and show it to me").
 
 ## Inline Patterns
 
@@ -365,6 +368,7 @@ class UserState(Model):
 
 class CounterState(Model):
     value: int = Field(tag=1, default=0)
+    description: str = Field(tag=2, default="")
 
 
 class ValueResponse(Model):
@@ -582,6 +586,10 @@ class UserServicer(User.Servicer):
         context: TransactionContext,
     ) -> User.CreateCounterResponse:
         """Create a new Counter and return its ID."""
+        # Factory create: pass request fields as keyword args
+        # directly — do NOT wrap in a Request object.
+        # No-args: Counter.create(context)
+        # With args: Counter.create(context, title="...", count=0)
         counter, _ = await Counter.create(context)
         return User.CreateCounterResponse(
             counter_id=counter.state_id,
@@ -680,6 +688,10 @@ if __name__ == "__main__":
 
 ### `web/package.json`
 
+**Use explicit per-UI build scripts as shown below. Do NOT create a
+`build.js` or any auto-discovery wrapper — use `npm run build:<name>`
+scripts directly.**
+
 ```json
 {
   "name": "<project-name>-web",
@@ -722,6 +734,11 @@ for each UI, and update the `build` script to chain them:
 ```
 
 ### `web/vite.config.ts`
+
+**CRITICAL: Copy this file EXACTLY. Do NOT refactor, generalize, or
+add recursive directory scanning. The flat `outDir: "dist"` and
+`output: "${name}.html"` pattern is required — nested output paths
+will break the MCP server's UI discovery.**
 
 ```typescript
 // Vite configuration for Reboot UIs.
@@ -1214,6 +1231,12 @@ Adapt the CSS module to your app's needs. The CSS variables from
    all `.py` files; `__init__.py` causes conflicts.
 3. **`Field(tag=N)` required on every field.** Tags must be unique
    within each Model class. Start at 1.
+   **Defaults:** State fields must use proto3 zero-value defaults:
+   `default=0` for int, `default=""` for str, `default=False` for
+   bool, `default_factory=list` for lists. Non-zero defaults like
+   `default="red"` or `default=1` are NOT supported (protobuf
+   limitation). Set initial values in a servicer method marked as
+   a factory instead. Request/response fields need no default.
 4. **Helper Model types are standalone imports:**
    `from <pkg>.v1.<name> import MyItem` —
    NOT `Counter.MyItem` (that doesn't exist).
@@ -1226,21 +1249,24 @@ Adapt the CSS module to your app's needs. The CSS variables from
    hide a method from the AI.
 8. **Application types need `factory=True`** on their `create`
    Writer method.
-9. **`npm install` before second `rbt generate`** — React bindings
-   need `node_modules` to exist.
-10. **Generated React hook:** `use<TypeName>()` — e.g.,
+9. **Factory create call signature:** `Type.create(context, field=val)`
+   — pass request fields as keyword args directly. Do NOT wrap in a
+   Request object (e.g., `request=Type.CreateRequest(...)` is WRONG).
+10. **`npm install` before second `rbt generate`** — React bindings
+    need `node_modules` to exist.
+11. **Generated React hook:** `use<TypeName>()` — e.g.,
     `useCounter()`, `useInventory()`, etc.
-11. **Generated React import path:**
+12. **Generated React import path:**
     `@api/<pkg>/v1/<name>_rbt_react`
-12. **Generated Python import path:**
+13. **Generated Python import path:**
     `from <pkg>.v1.<name>_rbt import User, Counter`
-13. **Use `--default-config=hmr`** in `.rbtrc` (not `--default=hmr`).
-14. **`UI(path="web/ui/<name>")`** — path is relative to project root.
-15. **`UI(request=<ConfigType>)`** passes config as React component
+14. **Use `--default-config=hmr`** in `.rbtrc` (not `--default=hmr`).
+15. **`UI(path="web/ui/<name>")`** — path is relative to project root.
+16. **`UI(request=<ConfigType>)`** passes config as React component
     props. `UI(request=None)` passes no props.
-16. **Register all servicers** in `main.py`:
+17. **Register all servicers** in `main.py`:
     `Application(servicers=[UserServicer, CounterServicer])`.
-17. The requests and responses on the frontend are always Zod types
+18. The requests and responses on the frontend are always Zod types
     generated from the Python Models.
 
 ## Update Flow

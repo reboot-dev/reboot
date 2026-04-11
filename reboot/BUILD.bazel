@@ -583,6 +583,40 @@ sh_binary(
     deps = [":force_reinstall_dev_reboot_lib"],
 )
 
+# See comment on `force_reinstall_dev_reboot_lib` above re: the
+# sh_library/sh_binary indirection.
+sh_library(
+    name = "stage_and_publish_local_lib",
+    srcs = [
+        "stage_and_publish_local.sh",
+    ],
+    data = [
+        ":reboot.dev",
+        "//rbt/v1alpha1:reboot-dev-reboot-api",
+        "//reboot/create-ui:reboot-dev-create-ui",
+        "//reboot/react:reboot-dev-reboot-react",
+        "//reboot/web:reboot-dev-reboot-web",
+    ],
+)
+
+# Stage locally-built Reboot artifacts and publish to Verdaccio.
+# Intended to be invoked via `ibazel run` so rebuilds on source
+# changes automatically re-stage and re-publish.
+sh_binary(
+    name = "stage_and_publish_local",
+    srcs = [
+        "stage_and_publish_local.sh",
+    ],
+    data = [
+        ":reboot.dev",
+        "//rbt/v1alpha1:reboot-dev-reboot-api",
+        "//reboot/create-ui:reboot-dev-create-ui",
+        "//reboot/react:reboot-dev-reboot-react",
+        "//reboot/web:reboot-dev-reboot-web",
+    ],
+    deps = [":stage_and_publish_local_lib"],
+)
+
 # TODO: This `sh_library` is a necessary indirection until Bazel 6, because a `sh_binary`
 # does not actually force a `data` attribute to build, but a `sh_library` does. We can
 # remove the indirection once we upgrade. See https://github.com/bazelbuild/bazel/issues/12348

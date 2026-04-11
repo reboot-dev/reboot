@@ -9,9 +9,11 @@ export interface UiEntry {
   title: string;
 }
 
-/** A UI entry enriched with its proto package. */
+/** A UI entry enriched with its proto package and base name. */
 export interface UiEntryWithPackage extends UiEntry {
   package: string;
+  /** Base name of the proto/API file (e.g. "romeo" from romeo_rbt_ui.json). */
+  protoBase: string;
 }
 
 interface UiManifest {
@@ -118,10 +120,15 @@ export function discover(cwd: string): DiscoveryResult | null {
   for (const manifestPath of manifests) {
     const raw = fs.readFileSync(manifestPath, "utf-8");
     const manifest: UiManifest = JSON.parse(raw);
+    // Derive proto base from manifest filename:
+    // e.g. "romeo_rbt_ui.json" -> "romeo"
+    const baseName = path.basename(manifestPath);
+    const protoBase = baseName.replace(/_rbt_ui\.json$/, "");
     for (const ui of manifest.uis) {
       allUis.push({
         ...ui,
         package: manifest.package,
+        protoBase,
       });
     }
   }

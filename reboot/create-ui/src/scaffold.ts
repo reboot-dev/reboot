@@ -55,11 +55,17 @@ export function scaffold(
   const createdShared: string[] = [];
   const createdUis: string[] = [];
 
+  // Derive UI directory names for package.json build scripts.
+  // Use the last path component (e.g. "web/ui/profile" -> "profile")
+  // to match what the vite config discovers under ui/.
+  const uiNames = allUis
+    .filter((ui) => ui.path.split("/")[0] === root)
+    .map((ui) => path.basename(ui.path));
+
   // Shared files (written once, never updated).
   const sharedFiles: Array<[string, string]> = [
-    ["package.json", templates.packageJson(name)],
+    ["package.json", templates.packageJson(name, uiNames)],
     ["vite.config.ts", templates.viteConfig()],
-    ["build.js", templates.buildJs()],
     ["tsconfig.json", templates.tsconfigJson()],
     ["tsconfig.app.json", templates.tsconfigAppJson()],
     ["tsconfig.node.json", templates.tsconfigNodeJson()],

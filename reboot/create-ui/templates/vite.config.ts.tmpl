@@ -5,30 +5,18 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
 
-// Auto-discover UIs: scan subdirectories recursively for
-// index.html files. Returns a map from UI name to its
-// input path and subdirectory (for build output).
-function findUis(
-  dir: string,
-  prefix = ""
-): Record<string, { input: string; subPath: string }> {
-  const result: Record<string, { input: string; subPath: string }> = {};
-  if (!fs.existsSync(dir)) return result;
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    if (entry.name === "node_modules" || entry.name === "dist" || entry.name === "api") continue;
-    const subPath = prefix ? `${prefix}/${entry.name}` : entry.name;
-    const full = path.join(dir, entry.name);
-    if (fs.existsSync(path.join(full, "index.html"))) {
-      result[entry.name] = { input: `${subPath}/index.html`, subPath };
-    } else {
-      Object.assign(result, findUis(full, subPath));
-    }
-  }
-  return result;
-}
-
-const uis = findUis(path.resolve(__dirname));
+// Auto-discover UIs from ui/ directory.
+const uiDir = path.resolve(__dirname, "ui");
+const uis: Record<string, { input: string; output: string }> =
+  Object.fromEntries(
+    fs
+      .readdirSync(uiDir)
+      .filter((d) => fs.existsSync(path.join(uiDir, d, "index.html")))
+      .map((name) => [
+        name,
+        { input: `ui/${name}/index.html`, output: `${name}.html` },
+      ])
+  );
 
 export default defineConfig(({ command, mode }) => {
   // Path alias for API imports (@api/... -> ./api/...).
@@ -73,9 +61,6 @@ export default defineConfig(({ command, mode }) => {
   }
 
   // Build mode: `vite build --mode <ui-name>`
-  // Output lands at `dist/<subPath>/index.html` so the
-  // Reboot MCP server can find it (it inserts `dist/` after
-  // the first component of the UI path).
   const ui = uis[mode];
   if (!ui) {
     const valid = Object.keys(uis).join(", ");
@@ -85,7 +70,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     plugins: [react(), viteSingleFile()],
     build: {
-      outDir: `dist/${ui.subPath}`,
+      outDir: "dist",
       emptyOutDir: false,
       assetsInlineLimit: 100000000,
       cssCodeSplit: false,
@@ -93,8 +78,8 @@ export default defineConfig(({ command, mode }) => {
         input: ui.input,
         output: {
           inlineDynamicImports: true,
-          entryFileNames: "index.js",
-          assetFileNames: "[name].[ext]",
+          entryFileNames: ui.output.replace(".html", ".js"),
+          assetFileNames: ui.output.replace(".html", ".[ext]"),
         },
       },
     },
