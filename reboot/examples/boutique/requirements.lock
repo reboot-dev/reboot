@@ -113,7 +113,7 @@ kubernetes-asyncio==31.1.0
     # via reboot
 markupsafe==2.1.5
     # via jinja2
-mcp==1.26.0
+mcp==1.27.0
     # via reboot
 multidict==6.1.0
     # via aiohttp

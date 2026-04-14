@@ -63,9 +63,13 @@ export function packageJson(
     private: true,
     type: "module",
     scripts,
+    // Version pins below are synced by `make versions` from
+    // `reboot/versions.bzl` (@reboot-dev/*) and the workspace root
+    // `package.json` (@modelcontextprotocol/*). Hand edits get
+    // overwritten; change the source of truth instead.
     dependencies: {
-      "@modelcontextprotocol/ext-apps": "1.2.0",
-      "@modelcontextprotocol/sdk": "1.27.1",
+      "@modelcontextprotocol/ext-apps": "1.5.0",
+      "@modelcontextprotocol/sdk": "1.29.0",
       "@reboot-dev/reboot-react": "0.46.0",
       "@reboot-dev/reboot-api": "0.46.0",
       react: "^18.2.0",

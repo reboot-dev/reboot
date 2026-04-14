@@ -628,32 +628,48 @@ class CounterServicer(Counter.Servicer):
 
 #### Workflow Servicer
 
-Workflow methods are `@classmethod` — no `self.state` access:
+Workflow methods are `@classmethod` — no `self`, no `self.state`. To
+call back into the current instance, use the **state class**
+imported from `<name>_rbt` (e.g. `MyType.ref()`), NOT `cls`. Inside a
+Workflow, calling `<StateClass>.ref()` with no arguments is special:
+it picks up the current `state_id` from `WorkflowContext`
+automatically, so `MyType.ref()` resolves to a ref to the running
+workflow's own instance.
 
 ```python
 from datetime import timedelta
 from reboot.aio.contexts import WorkflowContext
+# Import the state class — this is what `.ref()` is called on,
+# NOT `cls`. `cls` inside the classmethod is `MyTypeBaseServicer`.
+from <pkg>.v1.<name>_rbt import MyType
 
-# In the application type's servicer:
-@classmethod
-async def do_ping_periodically(
-    cls,
-    context: WorkflowContext,
-    request: MyType.DoPingPeriodicallyRequest,
-) -> MyType.DoPingPeriodicallyResponse:
-    async for iteration in context.loop(
-        "Ping periodically",
-        interval=timedelta(seconds=request.period_seconds),
-    ):
-        await MyType.ref().do_ping(context)
-        pings_sent = iteration + 1  # iteration starts at 0
-        if pings_sent >= request.num_pings:
-            break
 
-    state = await MyType.ref().read(context)
-    return MyType.DoPingPeriodicallyResponse(
-        num_pings=state.num_pings,
-    )
+class MyTypeServicer(MyType.Servicer):
+
+    @classmethod
+    async def do_ping_periodically(
+        cls,
+        context: WorkflowContext,
+        request: MyType.DoPingPeriodicallyRequest,
+    ) -> MyType.DoPingPeriodicallyResponse:
+        async for iteration in context.loop(
+            "Ping periodically",
+            interval=timedelta(seconds=request.period_seconds),
+        ):
+            # `MyType.ref()` with no args is Workflow-only magic:
+            # it reads `state_id` from `WorkflowContext`, returning
+            # a ref to this workflow's own instance. Do NOT write
+            # `cls.ref()` or `self.ref()` here — see Critical
+            # Gotcha #19.
+            await MyType.ref().do_ping(context)
+            pings_sent = iteration + 1  # iteration starts at 0.
+            if pings_sent >= request.num_pings:
+                break
+
+        state = await MyType.ref().read(context)
+        return MyType.DoPingPeriodicallyResponse(
+            num_pings=state.num_pings,
+        )
 ```
 
 ### `main.py`
@@ -706,8 +722,8 @@ scripts directly.**
     "build:watch": "concurrently \"npm:build:watch:*\""
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "1.2.0",
-    "@modelcontextprotocol/sdk": "1.27.1",
+    "@modelcontextprotocol/ext-apps": "1.5.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@reboot-dev/reboot-react": "0.46.0",
     "@reboot-dev/reboot-api": "0.46.0",
     "react": "^18.2.0",
@@ -1268,6 +1284,15 @@ Adapt the CSS module to your app's needs. The CSS variables from
     `Application(servicers=[UserServicer, CounterServicer])`.
 18. The requests and responses on the frontend are always Zod types
     generated from the Python Models.
+19. **Inside a Workflow classmethod, `cls` is the servicer, not the
+    state class.** To call methods on the running instance, use the
+    state class imported from `<name>_rbt`:
+    `await MyType.ref().some_method(context)`. A no-arg `.ref()`
+    inside a Workflow picks up `state_id` from `WorkflowContext`
+    automatically. **Do NOT write `cls.ref()`** — it fails with
+    `TypeError: <YourType>BaseServicer.ref() missing 1 required positional argument: 'self'`, because `ref` on the BaseServicer
+    is an instance method, not the state-class factory. `self.ref()`
+    is also wrong because there is no `self` in a classmethod.
 
 ## Update Flow
 
