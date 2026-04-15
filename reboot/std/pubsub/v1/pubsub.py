@@ -8,18 +8,29 @@ from rbt.std.pubsub.v1.pubsub_rbt import (
     SubscribeResponse,
     Topic,
 )
+from reboot.aio.applications import Library
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.concurrently import concurrently
 from reboot.aio.contexts import WorkflowContext, WriterContext
 from reboot.aio.workflows import until
 from reboot.std.collections.queue.v1 import queue
+from reboot.std.collections.queue.v1.queue import QUEUE_LIBRARY_NAME
 from reboot.std.item.v1.item import Item
+from typing import Optional
 
 
 class TopicServicer(Topic.Servicer):
 
+    # Singleton authorizer as class variable.
+    # Discussion here for singleton authorizer vs subclassing the servicer:
+    # https://github.com/reboot-dev/mono/pull/5140#issuecomment-3667592432
+    _authorizer: Optional[Topic.Authorizer] = None
+
     def authorizer(self):
-        return allow()
+        if self._authorizer:
+            return self._authorizer
+        else:
+            return allow()
 
     async def Publish(
         self,
@@ -108,5 +119,28 @@ class TopicServicer(Topic.Servicer):
         return BrokerResponse()
 
 
+PUBSUB_LIBRARY_NAME = "reboot.std.pubsub.v1.pubsub"
+
+
+class PubSubLibrary(Library):
+    name = PUBSUB_LIBRARY_NAME
+
+    def __init__(
+        self,
+        authorizer: Optional[Topic.Authorizer] = None,
+    ):
+        TopicServicer._authorizer = authorizer
+
+    def servicers(self):
+        return [TopicServicer]
+
+    def requirements(self):
+        return [QUEUE_LIBRARY_NAME]
+
+
 def servicers():
     return [TopicServicer] + queue.servicers()
+
+
+def pubsub_library(authorizer: Optional[Topic.Authorizer] = None):
+    return PubSubLibrary(authorizer)
