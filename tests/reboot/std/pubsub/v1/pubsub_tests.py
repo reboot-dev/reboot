@@ -1,13 +1,17 @@
 import unittest
 from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot
+from reboot.protobuf import as_dict
+from reboot.std.collections.queue.v1.queue import queue_library
+from reboot.std.collections.v1.sorted_map import sorted_map_library
+from reboot.std.pubsub.v1.pubsub import pubsub_library
 
 # Import used in PubSub documentation.
 # isort: off
 from reboot.std.collections.queue.v1.queue import Queue
 from reboot.std.pubsub.v1.pubsub import Topic
 # isort: on
-from reboot.std.pubsub.v1.pubsub import pubsub_library
+from tests.reboot.greeter_rbt import CreateRequest
 
 
 class TestPubsub(unittest.IsolatedAsyncioTestCase):
@@ -24,7 +28,15 @@ class TestPubsub(unittest.IsolatedAsyncioTestCase):
         Test that we can subscribe and publish to a `Topic`.
         """
 
-        await self.rbt.up(Application(libraries=[pubsub_library()]))
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    pubsub_library(),
+                    queue_library(),
+                    sorted_map_library(),
+                ]
+            )
+        )
 
         context = self.rbt.create_external_context(
             name=f"test-{self.id()}",
@@ -43,6 +55,137 @@ class TestPubsub(unittest.IsolatedAsyncioTestCase):
         # Wait to get the message on the queue.
         message = await test_queue.dequeue(context)
         self.assertEqual(message.bytes, b"a message")
+
+    async def test_example_code_for_documentation(self) -> None:
+        """
+        Examples used in documentation for referencing, publish, and
+        subscribe.
+        """
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    pubsub_library(),
+                    queue_library(),
+                    sorted_map_library(),
+                ]
+            )
+        )
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        first_topic = Topic.ref("my-first-topic")
+        second_topic = Topic.ref("my-second-topic")
+        third_topic = Topic.ref("my-third-topic")
+
+        # `any` needs to be defined for documentation. It won't actually
+        # be shown. Any proto will do.
+        any = CreateRequest(
+            title="king",
+            name="nemo",
+            adjective="fishy",
+        )
+
+        await first_topic.subscribe(context, queue_id="receiving-queue")
+
+        # Import used for documentation.
+        from reboot.protobuf import from_dict, pack
+
+        await first_topic.publish(
+            context,
+            value=from_dict({"details": "details-go-here"}),
+        )
+
+        await second_topic.publish(context, bytes=b"my-bytes")
+
+        await third_topic.publish(context, any=pack(any))
+
+        # This subscribe is repeated for example code in documentation.
+        await first_topic.subscribe(context, queue_id="receiving-queue")
+
+        response = await Queue.ref("receiving-queue").dequeue(context)
+
+        # Check response
+        self.assertTrue(response.HasField("value"))
+        self.assertEqual(as_dict(response.value)["details"], "details-go-here")
+
+    async def test_example_bulk_code_for_documentation(self) -> None:
+        """
+        Examples used in documentation for bulk publish.
+        """
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    pubsub_library(),
+                    queue_library(),
+                    sorted_map_library(),
+                ]
+            )
+        )
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        first_topic = Topic.ref("my-first-topic")
+        second_topic = Topic.ref("my-second-topic")
+        third_topic = Topic.ref("my-third-topic")
+
+        # `any` needs to be defined for documentation. It won't actually
+        # be shown. Any proto will do.
+        any = CreateRequest(
+            title="king",
+            name="nemo",
+            adjective="fishy",
+        )
+
+        await first_topic.subscribe(context, queue_id="receiving-queue")
+
+        # Import used in example.
+        from reboot.protobuf import (
+            from_bool,
+            from_dict,
+            from_int,
+            from_list,
+            from_str,
+            pack,
+        )
+        from reboot.std.item.v1.item import Item
+
+        await first_topic.publish(
+            context,
+            items=[
+                Item(value=from_bool(True)),
+                Item(value=from_int(3)),
+                Item(value=from_str("apple")),
+                Item(value=from_list(["a", "b", "c"])),
+                Item(value=from_dict({"details": "details-go-here"})),
+            ],
+        )
+
+        await second_topic.publish(
+            context,
+            items=[
+                Item(bytes=b"some-bytes"),
+                Item(bytes=b"some-more-bytes"),
+            ],
+        )
+
+        await third_topic.publish(
+            context,
+            items=[
+                Item(any=pack(any)),
+                Item(any=pack(any)),
+            ],
+        )
+
+        # Dequeue to consume messages.
+        items = await Queue.ref("receiving-queue"
+                               ).dequeue(context, bulk=True, at_most=5)
+        self.assertEqual(len(items.items), 5)
 
 
 if __name__ == '__main__':

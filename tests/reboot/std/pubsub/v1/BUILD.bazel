@@ -7,9 +7,11 @@ py_test(
     srcs = [":pubsub_tests.py"],
     main = "pubsub_tests.py",
     deps = [
+        "//reboot:protobuf_py",
         "//reboot/aio:tests_py",
-        "//reboot/std/collections/queue/v1:queue_py",
+        "//reboot/std/item/v1:item_py",
         "//reboot/std/pubsub/v1:pubsub_py",
+        "//tests/reboot:greeter_py_reboot",
     ],
 )
 

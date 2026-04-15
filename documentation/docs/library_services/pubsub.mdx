@@ -30,17 +30,28 @@ To read messages from a subscribed [`Queue`](/library_services/queue), you will 
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/pubsub/v1/pubsub_tests.py&lines=11-12) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/pubsub/v1/pubsub_tests.py -->
+
 ```py
 from reboot.std.collections.queue.v1.queue import Queue
-from reboot.std.item.v1.item import Item
 from reboot.std.pubsub.v1.pubsub import Topic
- ```
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/pubsub/v1/pubsub_tests.ts&lines=4-5) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/pubsub/v1/pubsub_tests.ts -->
+
 ```ts
 import { Queue } from "@reboot-dev/reboot-std/collections/queue/v1";
 import { Topic } from "@reboot-dev/reboot-std/pubsub/v1";
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -50,22 +61,31 @@ Also make sure to include the pub/sub servicers when starting up your `Applicati
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 ```py
-from reboot.std.pubsub.v1 import pubsub
+from reboot.std.collections.queue.v1.queue import queue_library
+from reboot.std.collections.v1.sorted_map import sorted_map_library
+from reboot.std.pubsub.v1.pubsub import pubsub_library
 
 async def main():
     application = Application(
-        servicers=[MyServicer] + pubsub.servicers(),
+        servicers=[MyServicer],
+        libraries=[
+            pubsub_library(),
+            queue_library(),
+            sorted_map_library(),
+        ],
     )
-
     await application.run()
 ```
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 ```ts
-import pubsub from "@reboot-dev/reboot-std/pubsub/v1";
+import { queueLibrary } from "@reboot-dev/reboot-std/collections/queue/v1";
+import { sortedMapLibrary } from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
+import { pubsubLibrary } from "@reboot-dev/reboot-std/pubsub/v1";
 
 new Application({
-  servicers: [MyServicer, ...pubsub.servicers()],
+  servicers: [MyServicer],
+  libraries: [pubsubLibrary(), queueLibrary(), sortedMapLibrary()],
   initialize,
 }).run();
 ```
@@ -74,20 +94,34 @@ new Application({
 
 ## Referencing Topics
 
-This creates references to two `Topic`s with IDs `"my-first-topic"` and `"my-second-topic"`.
+This creates references to `Topic`s with IDs `"my-first-topic"` and
+`"my-second-topic"`. You can then call methods on these references.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/pubsub/v1/pubsub_tests.py&lines=79-81) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/pubsub/v1/pubsub_tests.py -->
+
 ```py
 first_topic = Topic.ref("my-first-topic")
 second_topic = Topic.ref("my-second-topic")
+third_topic = Topic.ref("my-third-topic")
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/pubsub/v1/pubsub_tests.ts&lines=68-69) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/pubsub/v1/pubsub_tests.ts -->
+
 ```ts
 const firstTopic = Topic.ref("my-first-topic");
 const secondTopic = Topic.ref("my-second-topic");
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -95,12 +129,18 @@ const secondTopic = Topic.ref("my-second-topic");
 
 ### Publish
 
-Publish a single message as a `Value`, `bytes`, or `Any`.
+Publish a single [`Item`](/library_services/item) directly from a `Value`, `bytes`, or `Any`.
+
+Note: The ability to add an `Item` with an `Any` format is only supported in Python, not TypeScript.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/pubsub/v1/pubsub_tests.py&lines=94-103) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/pubsub/v1/pubsub_tests.py -->
+
 ```py
-from reboot.protobuf import from_dict
+from reboot.protobuf import from_dict, pack
 
 await first_topic.publish(
     context,
@@ -109,13 +149,26 @@ await first_topic.publish(
 
 await second_topic.publish(context, bytes=b"my-bytes")
 
-await third_topic.publish(context, any=<Any>)
+await third_topic.publish(context, any=pack(any))
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/pubsub/v1/pubsub_tests.ts&lines=2-2) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/pubsub/v1/pubsub_tests.ts -->
+
 ```ts
 import { Value } from "@bufbuild/protobuf";
+```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/pubsub/v1/pubsub_tests.ts&lines=75-81) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/pubsub/v1/pubsub_tests.ts -->
+
+```ts
 await firstTopic.publish(context, {
   value: Value.fromJson({ details: "details-go-here" }),
 });
@@ -123,18 +176,16 @@ await firstTopic.publish(context, {
 await secondTopic.publish(context, {
   bytes: new TextEncoder().encode("my-bytes"),
 });
-
-await thirdTopic.publish(context, {
-  any: <Any>,
-});
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
 ### Subscribe
 
 Subscribe a single [`Queue`](/library_services/queue) as referenced by its ID to a `Topic`.
-Any subsequent messages publishes to the `Topic` will be received by
+Any subsequent messages published to the `Topic` will be received by
 [`dequeue`](/library_services/queue#dequeue)ing on the [`Queue`](/library_services/queue).
 
 Note: Any messages published to the `Topic` *before* the `Queue` is subscribed
@@ -142,18 +193,32 @@ is not guaranteed to be received by the `Queue`.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/pubsub/v1/pubsub_tests.py&lines=106-108) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/pubsub/v1/pubsub_tests.py -->
+
 ```py
 await first_topic.subscribe(context, queue_id="receiving-queue")
+
 response = await Queue.ref("receiving-queue").dequeue(context)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/pubsub/v1/pubsub_tests.ts&lines=84-88) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/pubsub/v1/pubsub_tests.ts -->
+
 ```ts
 await firstTopic.subscribe(context, {
   queueId: "receiving-queue",
 });
+
 const response = await Queue.ref("receiving-queue").dequeue(context);
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -161,15 +226,28 @@ const response = await Queue.ref("receiving-queue").dequeue(context);
 
 Publish a list of messages, formatted as [`Item`](/library_services/item)s.
 
-This examples demonstrates how to store different types of data in `Value`, but
+This example demonstrates how to store different types of data in `Value`, but
 in practice, you will want to use a uniform structure for all `Value`s
 published to a `Topic`.
 
+Note: The ability to add an `Item` with an `Any` format is only supported in Python, not TypeScript.
+
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/pubsub/v1/pubsub_tests.py&lines=148-183) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/pubsub/v1/pubsub_tests.py -->
+
 ```py
-from reboot.protobuf import from_bool, from_dict, from_int, from_list, from_str
-from reboot.std.collections.queue.v1.queue import Item
+from reboot.protobuf import (
+    from_bool,
+    from_dict,
+    from_int,
+    from_list,
+    from_str,
+    pack,
+)
+from reboot.std.item.v1.item import Item
 
 await first_topic.publish(
     context,
@@ -193,17 +271,29 @@ await second_topic.publish(
 await third_topic.publish(
     context,
     items=[
-        Item(any=<Any>),
-        Item(any=<Any>),
+        Item(any=pack(any)),
+        Item(any=pack(any)),
     ],
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/pubsub/v1/pubsub_tests.ts&lines=2-2) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/pubsub/v1/pubsub_tests.ts -->
+
 ```ts
 import { Value } from "@bufbuild/protobuf";
-import { Item } from "@reboot-dev/reboot-std/collections/queue/v1";
+```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/pubsub/v1/pubsub_tests.ts&lines=110-126) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/pubsub/v1/pubsub_tests.ts -->
+
+```ts
 await firstTopic.publish(context, {
   items: [
     { value: Value.fromJson(null) },
@@ -221,13 +311,8 @@ await secondTopic.publish(context, {
     { bytes: new TextEncoder().encode("some-more-bytes") },
   ],
 });
-
-await thirdTopic.publish(context, {
-  items: [
-    { any: <Any> },
-    { any: <Any> },
-  ],
-});
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
