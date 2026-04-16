@@ -1,8 +1,5 @@
 // `eslint` disabled to preserve separation of imports for documentation.
-// eslint-disable-next-line
 import { Value } from "@bufbuild/protobuf";
-// eslint-disable-next-line
-import { Any } from "@bufbuild/protobuf";
 import { Application, Reboot } from "@reboot-dev/reboot";
 import queue, { Queue } from "@reboot-dev/reboot-std/collections/queue/v1";
 import { strict as assert } from "node:assert";
@@ -70,15 +67,6 @@ test("Use queue servicers", async (t) => {
 
       const firstQueue = Queue.ref("my-first-queue");
       const secondQueue = Queue.ref("my-second-queue");
-      const thirdQueue = Queue.ref("my-third-queue");
-
-      // `any` needs to be defined for documentation. It won't actually be
-      // shown. Any proto will do.
-      let any = new CreateRequest({
-        title: "king",
-        name: "nemo",
-        adjective: "fishy",
-      });
 
       await firstQueue.enqueue(context, {
         value: Value.fromJson({ details: "details-go-here" }),
@@ -88,9 +76,12 @@ test("Use queue servicers", async (t) => {
         bytes: new TextEncoder().encode("my-bytes"),
       });
 
-      await thirdQueue.enqueue(context, {
-        any: Any.pack(any),
-      });
+      // `Any` not supported by TypeScript because conversion from TS to Python is
+      // passed via JSON, which bufbuilder needs a registry for. Converting into
+      // bytes instead would fix this.
+      // await thirdQueue.enqueue(context, {
+      //   any: Any.pack(any),
+      // });
 
       const { value } = await firstQueue.dequeue(context);
       console.log(value?.toJson()["details"]);
@@ -117,7 +108,6 @@ test("Use queue servicers", async (t) => {
 
       const firstQueue = Queue.ref("my-first-queue");
       const secondQueue = Queue.ref("my-second-queue");
-      const thirdQueue = Queue.ref("my-third-queue");
 
       // `any` needs to be defined for documentation. It won't actually be
       // shown. Any proto will do.
