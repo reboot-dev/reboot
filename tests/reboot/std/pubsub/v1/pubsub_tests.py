@@ -1,7 +1,7 @@
 import unittest
 from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot
-from reboot.protobuf import as_dict
+from reboot.protobuf import as_dict, as_str
 from reboot.std.collections.queue.v1.queue import queue_library
 from reboot.std.collections.v1.sorted_map import sorted_map_library
 from reboot.std.pubsub.v1.pubsub import pubsub_library
@@ -56,6 +56,81 @@ class TestPubsub(unittest.IsolatedAsyncioTestCase):
         message = await test_queue.dequeue(context)
         self.assertEqual(message.bytes, b"a message")
 
+    async def test_multiple_publishes(self) -> None:
+        """
+        Test that if we publish multiple times on a topic,
+        we can pick them up from the receiving queue.
+        """
+
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    pubsub_library(),
+                    queue_library(),
+                    sorted_map_library(),
+                ]
+            )
+        )
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        test_topic = Topic.ref("test-topic")
+        test_queue = Queue.ref("receiving-queue")
+
+        # Subscribe to the topic with the queue.
+        await test_topic.subscribe(context, queue_id=test_queue.state_id)
+
+        # Publish to the topic.
+        await test_topic.publish(context, bytes=b"first message")
+        await test_topic.publish(context, bytes=b"second message")
+
+        # Wait to get both messages in order.
+        message1 = await test_queue.dequeue(context)
+        message2 = await test_queue.dequeue(context)
+        self.assertEqual(message1.bytes, b"first message")
+        self.assertEqual(message2.bytes, b"second message")
+
+    async def test_multiple_subscribers(self) -> None:
+        """
+        Test that we can publish to multiple subscribers.
+        """
+
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    pubsub_library(),
+                    queue_library(),
+                    sorted_map_library(),
+                ]
+            )
+        )
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        test_topic = Topic.ref("test-topic")
+        test_queue1 = Queue.ref("receiving-queue1")
+        test_queue2 = Queue.ref("receiving-queue2")
+
+        # Subscribe to the topic with the queue.
+        await test_topic.subscribe(context, queue_id=test_queue1.state_id)
+        await test_topic.subscribe(context, queue_id=test_queue2.state_id)
+
+        # Publish to the topic.
+        await test_topic.publish(context, bytes=b"a message")
+
+        # Wait to get the message on the both queues.
+        message1 = await test_queue1.dequeue(context)
+        self.assertEqual(message1.bytes, b"a message")
+
+        message2 = await test_queue2.dequeue(context)
+        self.assertEqual(message2.bytes, b"a message")
+
     async def test_example_code_for_documentation(self) -> None:
         """
         Examples used in documentation for referencing, publish, and
@@ -88,7 +163,15 @@ class TestPubsub(unittest.IsolatedAsyncioTestCase):
             adjective="fishy",
         )
 
-        await first_topic.subscribe(context, queue_id="receiving-queue")
+        # `first_queue` named differently for better readability when pulled
+        # into doc examples.
+        first_queue = Queue.ref("receiving-queue")
+        second_queue = Queue.ref("queue2")
+        third_queue = Queue.ref("queue3")
+
+        await first_topic.subscribe(context, queue_id=first_queue.state_id)
+        await second_topic.subscribe(context, queue_id=second_queue.state_id)
+        await third_topic.subscribe(context, queue_id=third_queue.state_id)
 
         # Import used for documentation.
         from reboot.protobuf import from_dict, pack
@@ -102,7 +185,8 @@ class TestPubsub(unittest.IsolatedAsyncioTestCase):
 
         await third_topic.publish(context, any=pack(any))
 
-        # This subscribe is repeated for example code in documentation.
+        # This subscribe is repeated and the Queue is referenced by string
+        # for example code in documentation.
         await first_topic.subscribe(context, queue_id="receiving-queue")
 
         response = await Queue.ref("receiving-queue").dequeue(context)
@@ -186,6 +270,7 @@ class TestPubsub(unittest.IsolatedAsyncioTestCase):
         items = await Queue.ref("receiving-queue"
                                ).dequeue(context, bulk=True, at_most=5)
         self.assertEqual(len(items.items), 5)
+        self.assertEqual(as_str(items.items[2].value), "apple")
 
 
 if __name__ == '__main__':
