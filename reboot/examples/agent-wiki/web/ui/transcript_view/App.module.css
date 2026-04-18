@@ -1,0 +1,75 @@
+.container {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.header {
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 10px;
+}
+
+.title {
+  font-size: 22px;
+  font-weight: bold;
+  color: var(--color-pink);
+}
+
+.messageList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 640px;
+  overflow-y: auto;
+}
+
+.message {
+  background: var(--color-bg-dark);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.role {
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-purple);
+}
+
+.content {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text);
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+}
+
+.empty {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  padding: 16px;
+  border: 1px dashed var(--color-border);
+  border-radius: 6px;
+  text-align: center;
+}
+
+.loading {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  padding: 24px;
+}

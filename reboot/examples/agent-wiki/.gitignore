@@ -1,0 +1,33 @@
+# Python virtual environment.
+.venv/
+
+# Byte-compiled files.
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Generated API code (from `rbt generate`).
+backend/api/
+web/api/
+
+# Reboot runtime state.
+.rbt/
+
+# Distribution / packaging.
+*.egg-info/
+
+# mypy / pytest caches.
+.mypy_cache/
+.pytest_cache/
+
+# Node / web build artifacts.
+web/node_modules/
+web/dist/
+
+# IDE / editor.
+.idea/
+.vscode/
+*.swp
+
+# OS.
+.DS_Store

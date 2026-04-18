@@ -1,0 +1,64 @@
+:root {
+  /* Tron / retro-terminal palette: deep black ground, phosphor
+     cyan primary, hot magenta + amber for accents. */
+  --color-bg: #04060d;
+  --color-bg-dark: #000000;
+  --color-border: #0f3d5c;
+  --color-text: #bde6ff;
+  --color-text-muted: #4a7a9a;
+  --color-green: #00ff9f;
+  --color-blue: #00d4ff;
+  --color-yellow: #ffb000;
+  --color-pink: #ff2a6d;
+  --color-purple: #b967ff;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  /* Solid color plus a thin cyan grid that stays put while the
+     page scrolls — evokes the Tron "Game Grid" floor. */
+  background-color: var(--color-bg);
+  background-image: linear-gradient(
+      rgba(0, 212, 255, 0.05) 1px,
+      transparent 1px
+    ),
+    linear-gradient(90deg, rgba(0, 212, 255, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-attachment: fixed;
+  position: relative;
+  min-height: 100vh;
+}
+
+/* Faint horizontal scanlines overlay — CRT flavor. Pointer
+   events disabled so it never blocks clicks. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 212, 255, 0.04) 0px,
+    rgba(0, 212, 255, 0.04) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  z-index: 1000;
+  mix-blend-mode: screen;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
