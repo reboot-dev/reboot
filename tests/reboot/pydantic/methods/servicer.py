@@ -257,6 +257,15 @@ class TestServicer(Test.Servicer):
         assert state_from_read.str_value == response.new_str
         assert state_from_read.literal_value == response.new_literal_value
 
+        # When we read the state with "always" it goes through the
+        # different code path.
+        state_from_read_always = await Test.ref().always().read(context)
+
+        assert isinstance(state_from_read_always, State)
+
+        assert state_from_read.model_dump(
+        ) == state_from_read_always.model_dump()
+
         return response
 
     async def transaction(

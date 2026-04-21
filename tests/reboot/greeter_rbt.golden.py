@@ -14597,14 +14597,14 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                         'are you using this class without Reboot?'
                     )
 
-                async def read():
+                async def read() -> tests.reboot.greeter_pb2.Greeter:
                     assert servicer._middleware is not None
                     return await servicer._middleware._state_manager.read(
                         context, servicer.__state_type__
                     )
 
                 if idempotency.always:
-                    return await read()
+                    return GreeterFromProto(await read())
 
                 state_type_name = IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Greeter')
 

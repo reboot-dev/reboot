@@ -3062,14 +3062,14 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                         'are you using this class without Reboot?'
                     )
 
-                async def read():
+                async def read() -> {{ state.pb2_name }}.{{ state.proto.name }}:
                     assert servicer._middleware is not None
                     return await servicer._middleware._state_manager.read(
                         context, servicer.__state_type__
                     )
 
                 if idempotency.always:
-                    return await read()
+                    return {{ state.proto.name }}FromProto(await read())
 
                 state_type_name = IMPORT_reboot_aio_types.StateTypeName('{{ state.proto.full_name }}')
 
