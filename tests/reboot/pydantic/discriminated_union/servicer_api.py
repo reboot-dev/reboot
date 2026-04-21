@@ -105,6 +105,7 @@ TestMethods = Methods(
     process_variant=Writer(
         request=TestRequest,
         response=TestResponse,
+        description="\"Testing escape quotes during \"rbt generate\"\"",
     ),
     get_current_variant=Reader(
         request=None,
