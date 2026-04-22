@@ -1,0 +1,28 @@
+[project]
+name = "chick-potle"
+version = "0.1.0"
+requires-python = ">= 3.10"
+dependencies = [
+    "httpx>=0.27,<1.0",
+    "uuid7>=0.1.0",
+    "anyio>=4.0.0",
+    "reboot>=0.46.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=7.4"]
+
+[tool.pytest.ini_options]
+# Reproduce the backend's `sys.path`:
+#   - `backend/src/`  — `main.py` and `servicers/`.
+#   - `backend/api/`  — generated Reboot bindings (e.g.,
+#                       `ai_chat_food.v1.food_rbt`).
+#   - `api/`          — Pydantic API definition module
+#                       (`ai_chat_food.v1.food`).
+# `ai_chat_food.v1` is a namespace package split across the
+# last two paths, so both are required.
+pythonpath = ["backend/src", "backend/api", "api"]
+testpaths = ["backend/tests"]
+# Tests end in `_test.py` to match the convention used by
+# sibling Reboot examples.
+python_files = ["*_test.py"]

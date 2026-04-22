@@ -1,0 +1,32 @@
+version: 1.0.0
+merge_rules:
+  publish_status_check: true
+  labels:
+    trigger: mergequeue-ready
+    skip_line: ""
+    merge_failed: ""
+    skip_delete_branch: ""
+  update_latest: true
+  delete_branch: false
+  use_rebase: true
+  enable_comments: true
+  ci_timeout_mins: 0
+  preconditions:
+    number_of_approvals: 1
+    use_github_mergeability: true
+    conversation_resolution_required: true
+  merge_mode:
+    type: default
+    parallel_mode: null
+  auto_update:
+    enabled: false
+    label: ""
+    max_runs_for_update: 0
+  merge_commit:
+    use_title_and_body: false
+  merge_strategy:
+    name: squash
+    override_labels:
+      squash: ""
+      merge: ""
+      rebase: mergequeue-rebase

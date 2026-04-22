@@ -30,6 +30,30 @@ It demonstrates:
   workflow with a scripted Pydantic AI `FunctionModel`, so
   no real Anthropic calls are needed in CI.
 
+## `chick-potle`
+
+[`reboot-dev/reboot-chick-potle`](https://github.com/reboot-dev/reboot-chick-potle) - _Python backend, React AI Chat App UIs_
+
+The `chick-potle` example is a small food-ordering AI Chat
+App. The AI calls tools to start an order, browse the menu,
+and add or remove items from the cart; humans see two
+embedded React UIs — a menu grid and a cart — rendered
+alongside the conversation.
+
+It demonstrates:
+
+* `UI` methods that render React views (menu, cart) inside
+  the AI chat interface.
+* The `User` type: auto-constructed per authenticated user,
+  acting as an entry point that creates a `FoodOrder` via a
+  `Transaction` (`User.start_order`).
+* MCP `Tool`s (`get_menu`, `get_cart`, `add_to_cart`,
+  `remove_from_cart`) that let the AI drive the order
+  programmatically.
+* Generated React hooks (`useFoodOrder()`) shared between
+  the menu and cart UIs, so adding an item from one view
+  immediately updates the other.
+
 ## `ai-chat-counter`
 
 _Python backend, React AI Chat App UIs_

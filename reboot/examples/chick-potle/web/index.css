@@ -1,0 +1,49 @@
+:root {
+  /* Chick-fil-A brand palette */
+  --color-bg: #ffffff;
+  --color-bg-dark: #f4f4f4;
+  --color-border: #e0e0e0;
+  --color-text: #2c2c2c;
+  --color-text-muted: #6b6b6b;
+  --color-green: #4ade80;
+  --color-blue: #60a5fa;
+  --color-yellow: #d4a853;
+  --color-pink: #f472b6;
+  --color-purple: #a78bfa;
+  --color-orange: #fb923c;
+  --cfa-red: #e51636;
+  --cfa-red-dark: #c8102e;
+  --cfa-white: #ffffff;
+  --cfa-dark: #2c2c2c;
+  --cfa-light-gray: #f4f4f4;
+  --cfa-mid-gray: #e0e0e0;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    monospace;
+  --font-brand: "Lato", "Helvetica Neue", Arial, sans-serif;
+}
+
+[data-theme="light"] {
+  --color-bg: #ffffff;
+  --color-bg-dark: #f4f4f4;
+  --color-border: #e0e0e0;
+  --color-text: #2c2c2c;
+  --color-text-muted: #6b6b6b;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+}
+
+body {
+  font-family: var(--font-brand);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
