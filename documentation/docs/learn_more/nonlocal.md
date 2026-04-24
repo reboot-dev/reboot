@@ -74,7 +74,7 @@ No matter what tunnel service you've chosen, it will have given you a new
 hostname and port for your application. You will use this hostname and port into
 your frontend's `.env` file, replacing `http://localhost:9991`. For example:
 ```
-REACT_APP_REBOOT_URL=https://43ee-20-61-126-210.ngrok-free.app
+VITE_REBOOT_URL=https://43ee-20-61-126-210.ngrok-free.app
 ```
 
 You may need to restart your development webserver (e.g. the `npm start`
