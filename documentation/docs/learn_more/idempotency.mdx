@@ -19,30 +19,31 @@ method on a state more than once, including when you're doing manual
 retries, then you can specify an idempotency "alias" to
 distinguish each call, for example:
 
-<!-- TODO: this example does not actually use idempotency aliases -->
-
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/monorepo/bank/backend/src/main.py&lines=15-17) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/monorepo/bank/backend/src/main.py -->
+(CODE:src=../../../tests/reboot/idempotency_tests.py&lines=370-373) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/idempotency_tests.py -->
 
 ```py
-bank = Bank.ref(SINGLETON_BANK_ID)
-
-await bank.sign_up(context, customer_name="Initial User")
+await bank.idempotently('sign up jonathan').SignUp(
+    context,
+    account_id='jonathan',
+)
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/bank-nodejs/backend/src/main.ts&lines=11-13) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/bank-nodejs/backend/src/main.ts -->
+(CODE:src=../../../tests/reboot/nodejs/greeter_test/test.ts&lines=64-68) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/nodejs/greeter_test/test.ts -->
 
 ```ts
-await Bank.ref(SINGLETON_BANK_ID).signUp(context, {
-  customerName: "Initial User",
+await Greeter.idempotently("generated").create(context, {
+  title: "Mr",
+  name: "John",
+  adjective: "Dangerous",
 });
 ```
 
