@@ -82,9 +82,9 @@ const [bank] = await Bank.create(
 ### From React
 
 ```tsx
-import { useRebootContext } from "@reboot-dev/reboot-react";
+import { useRebootClient } from "@reboot-dev/reboot-react";
 
-const { setBearerToken } = useRebootContext();
+const { setBearerToken } = useRebootClient();
 
 setBearerToken(token);
 ```
