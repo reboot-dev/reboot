@@ -5,7 +5,7 @@
 To deploy your Reboot app to production, you can use the [Reboot Cloud](https://cloud.reboot.dev/). The Reboot Cloud leverages Reboot's safety guarantees to automatically partition and deploy your application across a cluster of machines, providing automatic scaling and high availability!
 
 ```console
-$ rbt cloud up --image-name=...
+$ rbt cloud up --name=my-app --organization=my-org
 ...
 Application starting; your application will be available at:
 
