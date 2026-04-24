@@ -33,7 +33,7 @@ class RebootGreeterServicer(RebootGreeter.Servicer):
         # WARNING: Calls to legacy gRPC services will not get the same safety
         # guarantees as Reboot calls. Calls from Reboot state machines to
         # legacy services should be wrapped in Tasks if they represent
-        # side-effects. See https://docs.reboot.dev/develop/side_effects.
+        # side-effects. See https://docs.reboot.dev/learn_more/side_effects.
         #
         # In this example, `DeprecatedGreeter`'s `GetSalutation` RPC
         # is a pure function, so it is safe to access from our context.

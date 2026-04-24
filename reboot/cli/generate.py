@@ -789,7 +789,7 @@ async def generate_direct(
             if os.stat(file).st_size == 0:
                 terminal.error(
                     f"'{file}' is empty. "
-                    f"See {DOCS_BASE_URL}/develop/schema for "
+                    f"See {DOCS_BASE_URL}/learn_more/define/protobuf for "
                     "more information on filling out your proto file."
                 )
                 # Return an error status here to not break the 'rbt dev' loop.
@@ -823,7 +823,7 @@ async def generate_direct(
                 if os.stat(file).st_size == 0:
                     terminal.error(
                         f"'{file}' is empty. "
-                        f"See {DOCS_BASE_URL}/develop/schema for "
+                        f"See {DOCS_BASE_URL}/learn_more/define/protobuf for "
                         "more information on filling out your schema in a '.ts' file."
                     )
                     # Return an error status here to not break the 'rbt dev' loop.
@@ -962,7 +962,7 @@ async def generate_direct(
                 if os.stat(file).st_size == 0:
                     terminal.error(
                         f"'{file}' is empty. "
-                        f"See {DOCS_BASE_URL}/develop/schema for "
+                        f"See {DOCS_BASE_URL}/learn_more/define/protobuf for "
                         "more information on filling out your schema in a '.py' file."
                     )
                     # Return an error status here to not break the 'rbt dev' loop.

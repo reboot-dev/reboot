@@ -76,7 +76,7 @@ class EchoServicer(Echo.singleton.Servicer):
         # return ReplyResponse()
         #
         # Read more about the writer methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/writers
+        # https://docs.reboot.dev/learn_more/implement/writers
         raise NotImplementedError
 
     async def replay(
@@ -88,7 +88,7 @@ class EchoServicer(Echo.singleton.Servicer):
         # TODO: implement your own business logic here!
         #
         # Read more about the reader methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/readers
+        # https://docs.reboot.dev/learn_more/implement/readers
         raise NotImplementedError
 
         # TODO: fill in the response here.
@@ -103,7 +103,7 @@ class EchoServicer(Echo.singleton.Servicer):
         # TODO: implement your own business logic here!
         #
         # Read more about the reader methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/readers
+        # https://docs.reboot.dev/learn_more/implement/readers
         raise NotImplementedError
 
         # TODO: receive state updates like this.
@@ -122,7 +122,7 @@ class EchoServicer(Echo.singleton.Servicer):
         # TODO: implement your own business logic here!
         #
         # Read more about the reader methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/readers
+        # https://docs.reboot.dev/learn_more/implement/readers
         raise NotImplementedError
 
         # TODO: receive state updates like this.
@@ -143,7 +143,7 @@ class EchoServicer(Echo.singleton.Servicer):
         # TODO: implement your own business logic here!
         #
         # Read more about the reader methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/readers
+        # https://docs.reboot.dev/learn_more/implement/readers
         raise NotImplementedError
 
         # TODO: receive state updates like this.
@@ -174,7 +174,7 @@ class EchoServicer(Echo.singleton.Servicer):
         # return SearchAndReplaceResponse()
         #
         # Read more about the writer methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/writers
+        # https://docs.reboot.dev/learn_more/implement/writers
         raise NotImplementedError
 
     async def fail_once_should_be_retried(
@@ -192,7 +192,7 @@ class EchoServicer(Echo.singleton.Servicer):
         # return FailOnceShouldBeRetriedResponse()
         #
         # Read more about the writer methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/writers
+        # https://docs.reboot.dev/learn_more/implement/writers
         raise NotImplementedError
 
     @classmethod
@@ -203,7 +203,7 @@ class EchoServicer(Echo.singleton.Servicer):
     ) -> FailOnceShouldBeRetriedWorkflowResponse:
         # TODO: implement your own business logic here!
         # Read more about the workflow methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/workflows
+        # https://docs.reboot.dev/learn_more/implement/workflows
         raise NotImplementedError
 
         # Here is how to create a control loop:
@@ -228,7 +228,7 @@ class EchoServicer(Echo.singleton.Servicer):
         # return TooManyTasksResponse()
         #
         # Read more about the writer methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/writers
+        # https://docs.reboot.dev/learn_more/implement/writers
         raise NotImplementedError
 
     @classmethod
@@ -239,7 +239,7 @@ class EchoServicer(Echo.singleton.Servicer):
     ) -> HangingResponse:
         # TODO: implement your own business logic here!
         # Read more about the workflow methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/workflows
+        # https://docs.reboot.dev/learn_more/implement/workflows
         raise NotImplementedError
 
         # Here is how to create a control loop:
@@ -257,7 +257,7 @@ class EchoServicer(Echo.singleton.Servicer):
     ) -> ReactiveWorkflowResponse:
         # TODO: implement your own business logic here!
         # Read more about the workflow methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/workflows
+        # https://docs.reboot.dev/learn_more/implement/workflows
         raise NotImplementedError
 
         # Here is how to create a control loop:
@@ -275,7 +275,7 @@ class EchoServicer(Echo.singleton.Servicer):
     ) -> ControlLoopResponse:
         # TODO: implement your own business logic here!
         # Read more about the workflow methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/workflows
+        # https://docs.reboot.dev/learn_more/implement/workflows
         raise NotImplementedError
 
         # Here is how to create a control loop:
@@ -293,7 +293,7 @@ class EchoServicer(Echo.singleton.Servicer):
     ) -> AtMostOnceWorkflowResponse:
         # TODO: implement your own business logic here!
         # Read more about the workflow methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/workflows
+        # https://docs.reboot.dev/learn_more/implement/workflows
         raise NotImplementedError
 
         # Here is how to create a control loop:
@@ -311,7 +311,7 @@ class EchoServicer(Echo.singleton.Servicer):
     ) -> WorkflowCallingWorkflowResponse:
         # TODO: implement your own business logic here!
         # Read more about the workflow methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/workflows
+        # https://docs.reboot.dev/learn_more/implement/workflows
         raise NotImplementedError
 
         # Here is how to create a control loop:
@@ -336,7 +336,7 @@ class EchoServicer(Echo.singleton.Servicer):
         # return RaiseValueErrorResponse()
         #
         # Read more about the writer methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/writers
+        # https://docs.reboot.dev/learn_more/implement/writers
         raise NotImplementedError
 
     async def raise_specified_error(
@@ -354,7 +354,7 @@ class EchoServicer(Echo.singleton.Servicer):
         # return RaiseSpecifiedErrorResponse()
         #
         # Read more about the writer methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/writers
+        # https://docs.reboot.dev/learn_more/implement/writers
         raise NotImplementedError
 
     @classmethod
@@ -365,7 +365,7 @@ class EchoServicer(Echo.singleton.Servicer):
     ) -> FailingWorkflowResponse:
         # TODO: implement your own business logic here!
         # Read more about the workflow methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/workflows
+        # https://docs.reboot.dev/learn_more/implement/workflows
         raise NotImplementedError
 
         # Here is how to create a control loop:

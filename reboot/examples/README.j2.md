@@ -9,13 +9,13 @@ For the impatient:
 ### Overview
 
 {{ overview }}
-The [Reboot '.proto' definitions](https://docs.reboot.dev/develop/define/overview/#code-generation)
+The [Reboot '.proto' definitions](https://docs.reboot.dev/learn_more/define/overview#code-generation)
 can be found in the `api/` directory, grouped into
 subdirectories by proto package, while backend specific code can be
 found in {{ backend_locations }}{% if has_frontend %} and front end specific code in `web/`{% endif %}
 {% if has_non_react_frontend %} and non-React front end in `reboot-non-react-web/`{% endif %}.
 
-_For more information on all of the Reboot examples, please [see the docs](https://docs.reboot.dev/get_started/examples)._
+_For more information on all of the Reboot examples, please [see the docs](https://docs.reboot.dev/full_stack_apps/examples)._
 
 ## Prepare an environment by...
 

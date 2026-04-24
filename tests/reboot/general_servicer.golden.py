@@ -45,7 +45,7 @@ class GeneralServicer(General.singleton.Servicer):
         # return GeneralResponse()
         #
         # Read more about the transaction methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/transactions
+        # https://docs.reboot.dev/learn_more/implement/transactions
         raise NotImplementedError
 
     async def constructor_writer(
@@ -63,7 +63,7 @@ class GeneralServicer(General.singleton.Servicer):
         # return GeneralResponse()
         #
         # Read more about the writer methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/writers
+        # https://docs.reboot.dev/learn_more/implement/writers
         raise NotImplementedError
 
     async def reader(
@@ -75,7 +75,7 @@ class GeneralServicer(General.singleton.Servicer):
         # TODO: implement your own business logic here!
         #
         # Read more about the reader methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/readers
+        # https://docs.reboot.dev/learn_more/implement/readers
         raise NotImplementedError
 
         # TODO: fill in the response here.
@@ -96,7 +96,7 @@ class GeneralServicer(General.singleton.Servicer):
         # return GeneralResponse()
         #
         # Read more about the writer methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/writers
+        # https://docs.reboot.dev/learn_more/implement/writers
         raise NotImplementedError
 
     async def transaction(
@@ -114,7 +114,7 @@ class GeneralServicer(General.singleton.Servicer):
         # return GeneralResponse()
         #
         # Read more about the transaction methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/transactions
+        # https://docs.reboot.dev/learn_more/implement/transactions
         raise NotImplementedError
 
     @classmethod
@@ -125,7 +125,7 @@ class GeneralServicer(General.singleton.Servicer):
     ) -> GeneralResponse:
         # TODO: implement your own business logic here!
         # Read more about the workflow methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/workflows
+        # https://docs.reboot.dev/learn_more/implement/workflows
         raise NotImplementedError
 
         # Here is how to create a control loop:
@@ -143,7 +143,7 @@ class GeneralServicer(General.singleton.Servicer):
     ) -> GeneralResponse:
         # TODO: implement your own business logic here!
         # Read more about the workflow methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/workflows
+        # https://docs.reboot.dev/learn_more/implement/workflows
         raise NotImplementedError
 
         # Here is how to create a control loop:
@@ -162,7 +162,7 @@ class GeneralServicer(General.singleton.Servicer):
         # TODO: implement your own business logic here!
         #
         # Read more about the reader methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/readers
+        # https://docs.reboot.dev/learn_more/implement/readers
         raise NotImplementedError
 
         # TODO: receive state updates like this.
@@ -183,7 +183,7 @@ class GeneralServicer(General.singleton.Servicer):
         # TODO: implement your own business logic here!
         #
         # Read more about the reader methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/readers
+        # https://docs.reboot.dev/learn_more/implement/readers
         raise NotImplementedError
 
         # TODO: receive state updates like this.
@@ -206,7 +206,7 @@ class GeneralServicer(General.singleton.Servicer):
         # TODO: implement your own business logic here!
         #
         # Read more about the reader methods in the Reboot documentation:
-        # https://docs.reboot.dev/develop/implement/readers
+        # https://docs.reboot.dev/learn_more/implement/readers
         raise NotImplementedError
 
         # TODO: receive state updates like this.

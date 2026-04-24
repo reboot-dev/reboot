@@ -7,5 +7,5 @@ tasks.
 In "Hello, Tasks," all messages saved in a Hello state machine will disappear
 after 10 seconds, with a warning displayed after 7 seconds.
 
-Read more about async tasks in the [Reboot documentation](https://docs.reboot.dev/develop/tasks/#scheduling-and-spawning).
+Read more about async tasks in the [Reboot documentation](https://docs.reboot.dev/learn_more/tasks#scheduling-and-spawning).
 
