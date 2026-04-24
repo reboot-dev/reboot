@@ -25,11 +25,4 @@ of Reboot Cloud on your own hardware.
 
 ## Comparison
 
-|                                   | `rbt serve` (EBS or equivalent)| `rbt serve` (EFS or equivalent)| Reboot Cloud                                    | Reboot Cloud Enterprise                   |
-| :-------------------------------- | :----------------------------- | :----------------------------- | :---------------------------------------------- | :---------------------------------------- |
-| Physical backups                  | yes                            | yes                            | yes                                             | yes                                       |
-| Replication                       | within an availability zone    | within a region                | within a region                                 | within a region                           |
-| High availability (failover time) | \~minutes                      | \~seconds                      | \~seconds                                       | \~seconds                                 |
-| Vertical scaling                  | yes                            | yes                            | yes                                             | yes                                       |
-| Horizontal scaling                | no                             | no                             | yes                                             | yes                                       |
-| Availability                      | available now                  | available now                  | [Join the waitlist](https://cloud.reboot.dev/)! | [Contact Reboot](mailto:team@reboot.dev)! |
+For a side-by-side of Reboot Cloud against `rbt serve` on EBS and EFS, see [the deployment comparison on "Deploy on your own"](/deploy_on_your_own#comparison).
