@@ -67,14 +67,17 @@ TestMethods = Methods(
     initialize_with_defaults=Writer(
         request=None,
         response=None,
+        mcp=None,
     ),
     update_state=Writer(
         request=UpdateStateRequest,
         response=None,
+        mcp=None,
     ),
     get_state=Reader(
         request=None,
         response=GetStateResponse,
+        mcp=None,
     ),
 )
 

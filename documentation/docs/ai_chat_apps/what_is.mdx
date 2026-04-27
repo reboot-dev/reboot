@@ -112,6 +112,7 @@ api = API(
                 "the `counter_id`, which is not "
                 "human-readable but should be passed to "
                 "future tool calls that need it.",
+                mcp=Tool(),
             ),
             list_counters=Reader(
                 request=None,
@@ -121,6 +122,7 @@ api = API(
                 "description for each. The `counter_id` "
                 "is not human-readable, but use it when "
                 "calling tools that take a `counter_id`.",
+                mcp=Tool(),
             ),
         ),
     ),
@@ -138,6 +140,7 @@ api = API(
                 request=CreateCounterRequest,
                 response=None,
                 factory=True,
+                mcp=None,
             ),
             get=Reader(
                 request=None,
@@ -156,6 +159,7 @@ api = API(
             description=Reader(
                 request=None,
                 response=DescriptionResponse,
+                mcp=None,
             ),
         ),
     ),
@@ -164,10 +168,10 @@ api = API(
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
-All methods on `User` are automatically callable by the AI.
-Methods on other types (like `Counter`) are exposed with
-`mcp=Tool()`. The AI receives the state ID when it creates
-a new instance and uses it in subsequent calls.
+Use `mcp=Tool()` on every method you want the AI to call,
+including `User` methods. Methods on other types (like `Counter`)
+that expose `mcp=Tool()` receive a state ID from the AI when it
+creates a new instance and uses it in subsequent calls.
 
 Under the hood, AI Chat Apps use [MCP (the Model Context
 Protocol)](/learn_more/mcp_apps) — the standard that AI clients use to

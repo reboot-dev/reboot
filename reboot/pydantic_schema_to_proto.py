@@ -819,10 +819,7 @@ async def generate_proto_file_from_api(
                     )
 
                 # MCP options for exposing method as tool/resource.
-                if (
-                    method_spec.mcp is not None and
-                    method_spec.mcp is not False
-                ):
+                if method_spec.mcp is not None:
                     mcp = method_spec.mcp
                     mcp_fields = []
                     if isinstance(mcp, Tool):

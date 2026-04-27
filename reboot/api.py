@@ -880,7 +880,7 @@ class MethodModel(pydantic.BaseModel):
     description: Optional[str] = None
     factory: bool = False
     kind: MethodKind
-    mcp: Union[Tool, Literal[False], None] = None
+    mcp: Optional[Tool]
 
     # TODO(rjh): we need more experience with resources
     #            in the context of AI Chat apps before
@@ -1216,19 +1216,13 @@ class API(pydantic.BaseModel):
                     request=None,
                     response=None,
                     factory=True,
+                    # The `User.create` method is reserved for auto
+                    # construction a `User` state for new AI session. It
+                    # is called by the Reboot internally and shouldn't
+                    # be exposed as an MCP tool so others can't call it
+                    # directly.
+                    mcp=None,
                 )
-
-                # Auto-enable MCP for the auto-constructed state
-                # type's methods that don't explicitly opt out.
-                # The auto-constructor is never exposed over MCP.
-                # UI methods are already MCP-only; skip them.
-                for method_name, method in (data_type.methods.items()):
-                    if method_name == AUTO_CONSTRUCT_METHOD:
-                        continue
-                    if isinstance(method, UI):
-                        continue
-                    if method.mcp is None:
-                        method.mcp = Tool()
 
         # Only pass non-None types to Pydantic.
         super().__init__(**{k: v for k, v in types.items() if v is not None})

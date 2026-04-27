@@ -44,10 +44,12 @@ api = API(
             transaction=Transaction(
                 request=TransactionRequest,
                 response=None,
+                mcp=None,
             ),
             get_data=Reader(
                 request=None,
                 response=GetDataResponse,
+                mcp=None,
             ),
         ),
     ),
@@ -57,10 +59,12 @@ api = API(
             writer=Writer(
                 request=WriterRequest,
                 response=None,
+                mcp=None,
             ),
             get_data=Reader(
                 request=None,
                 response=GetSecondaryDataResponse,
+                mcp=None,
             ),
         ),
     ),

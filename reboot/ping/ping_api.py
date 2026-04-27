@@ -118,10 +118,12 @@ api = API(
             do_ping_periodically=Workflow(
                 request=DoPingPeriodicallyRequest,
                 response=DoPingPeriodicallyResponse,
+                mcp=None,
             ),
             describe=Reader(
                 request=None,
                 response=DescribeResponse,
+                mcp=None,
             ),
             num_pings=Reader(
                 request=None,
@@ -136,10 +138,12 @@ api = API(
             do_pong=Writer(
                 request=None,
                 response=DoPongResponse,
+                mcp=None,
             ),
             num_pongs=Reader(
                 request=None,
                 response=NumPongsResponse,
+                mcp=None,
             ),
         ),
     ),
@@ -154,6 +158,7 @@ api = API(
                 "the `counter_id`, which is not "
                 "human-readable but should be passed to "
                 "future tool calls that need it.",
+                mcp=Tool(),
             ),
             list_counters=Reader(
                 request=None,
@@ -163,6 +168,7 @@ api = API(
                 "description for each. The `counter_id` is "
                 "not human-readable, but use it when "
                 "calling tools that take a `counter_id`.",
+                mcp=Tool(),
             ),
             whoami=Reader(
                 request=None,
@@ -185,6 +191,7 @@ api = API(
                 request=CreateCounterRequest,
                 response=None,
                 factory=True,
+                mcp=None,
             ),
             increment=Writer(
                 request=None,
@@ -201,6 +208,7 @@ api = API(
             description=Reader(
                 request=None,
                 response=DescriptionResponse,
+                mcp=None,
             ),
         ),
     ),

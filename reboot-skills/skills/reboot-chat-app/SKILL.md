@@ -123,21 +123,20 @@ types:
   state is typically empty. Its methods are `Transaction`s that
   create instances of application types, or `Reader`s that find
   the IDs of existing application type instances in indexes that
-  have well-known IDs of their own. `User` methods are
-  automatically exposed as MCP tools.
+  have well-known IDs of their own.
 - **Application types** (e.g., `Counter`) hold the
   actual application state. They need a `create` Writer with
-  `factory=True` for construction. Their methods require explicit
-  `mcp=Tool()` to be AI-callable.
+  `factory=True` for construction.
 
 ### Tool Exposure Control
 
-- **User methods are tools by default.** All methods on
-  `User` are automatically callable by the AI.
-- **`mcp=False`**: Opt a User method OUT of being AI-callable.
-  Use for human-only actions or to reduce context bloat.
-- **`mcp=Tool()`**: Opt an application type method IN to being
-  AI-callable. Required on methods of non-User types.
+Every method must explicitly declare its MCP exposure:
+
+- **`mcp=Tool()`**: Expose the method as an AI-callable tool.
+  Required on every method — including `User` methods — that
+  the AI should be able to call.
+- **`mcp=None`**: Hide the method from the AI. Use for
+  human-only actions or to reduce context bloat.
 - **`Tool()` options**: `Tool(name="custom_name", title="Title")`
   to override the default tool name or add a human-readable title.
 
@@ -331,7 +330,8 @@ Rules:
 - `User` type with empty state and `Transaction` methods
   that create application type instances
 - Application types with their own state and methods
-- Application type methods need `mcp=Tool()` to be AI-callable
+- All methods need explicit `mcp=Tool()` (AI-callable) or
+  `mcp=None` (hidden from AI)
 - Application types need a `create` Writer with `factory=True`
 - `api = API(User=Type(...), <AppType>=Type(...))`
 
@@ -392,6 +392,7 @@ api = API(
                 "human-readable; pass it to future tool "
                 "calls where needed, but no need to tell "
                 "the human what it is.",
+                mcp=Tool(),
             ),
         ),
     ),
@@ -409,6 +410,7 @@ api = API(
                 request=None,
                 response=None,
                 factory=True,
+                mcp=None,
             ),
             get=Reader(
                 request=None,
@@ -479,7 +481,7 @@ export const DashboardApp: FC<DashboardConfig> = ({ personalizedMessage }) => {
 };
 ```
 
-#### mcp=False Example
+#### mcp=None Example
 
 Hide a method from the AI (e.g., for human-only actions):
 
@@ -490,7 +492,7 @@ confirm_dangerous_action=Writer(
     request=ConfirmRequest,
     response=None,
     description="Confirm a dangerous action.",
-    mcp=False,
+    mcp=None,
 ),
 ```
 
@@ -1253,9 +1255,10 @@ Adapt the CSS module to your app's needs. The CSS variables from
    `.XxxRequest`, `.XxxResponse`.
 6. **React bindings use camelCase:** Python `from_index` becomes
    TypeScript `fromIndex`.
-7. **`User` methods are auto-exposed as MCP tools.** Application
-   type methods require explicit `mcp=Tool()`. Use `mcp=False` to
-   hide a method from the AI.
+7. **Every method requires explicit `mcp=`.** Use `mcp=Tool()`
+   to expose a method as an AI-callable tool (required on all
+   types, including `User`). Use `mcp=None` to hide it from
+   the AI.
 8. **Application types need `factory=True`** on their `create`
    Writer method.
 9. **Factory create call signature:** `Type.create(context, field=val)`

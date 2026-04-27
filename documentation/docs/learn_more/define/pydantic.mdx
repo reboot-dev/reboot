@@ -85,6 +85,7 @@ api = API(
                 "the `counter_id`, which is not "
                 "human-readable but should be passed to "
                 "future tool calls that need it.",
+                mcp=Tool(),
             ),
             list_counters=Reader(
                 request=None,
@@ -94,6 +95,7 @@ api = API(
                 "description for each. The `counter_id` "
                 "is not human-readable, but use it when "
                 "calling tools that take a `counter_id`.",
+                mcp=Tool(),
             ),
         ),
     ),
@@ -111,6 +113,7 @@ api = API(
                 request=CreateCounterRequest,
                 response=None,
                 factory=True,
+                mcp=None,
             ),
             get=Reader(
                 request=None,
@@ -129,6 +132,7 @@ api = API(
             description=Reader(
                 request=None,
                 response=DescriptionResponse,
+                mcp=None,
             ),
         ),
     ),
@@ -162,12 +166,10 @@ definition triggers special behavior:
    `initialize` function or manual `create()` calls. All fields
    on `UserState` must have default values, since instances
    are created without arguments.
-2. **Auto-tool-exposure**: all `User` methods are
-   automatically exposed as tools (unless `mcp=False`).
-3. **Automatic ID resolution**: the AI never needs to specify a
+2. **Automatic ID resolution**: the AI never needs to specify a
    state ID for `User` methods — it is resolved from the
    authenticated user.
-4. **Default authorization**: `User` methods are accessible to
+3. **Default authorization**: `User` methods are accessible to
    the owning user (whose `user_id` matches the state ID) and
    to app-internal calls. No `authorizer()` override is needed.
    See [Default authorizer](/learn_more/auth#default-authorizer)
@@ -180,58 +182,37 @@ tool calls.
 
 ## Creating tools for the AI
 
-### `User` methods are AI-callable by default
+### Explicit `mcp=` on every method
 
-All methods on the `User` state type are automatically
-exposed as MCP tools the AI can call. The `description` field
-on each method is what the AI reads to decide when and how to
-call a tool:
+Every method must declare its MCP exposure explicitly:
+
+- `mcp=Tool()` — expose the method as an AI-callable tool.
+- `mcp=None` — hide the method from the AI.
+
+This applies to all state types, including `User`. The
+`description` field is what the AI reads to decide when and
+how to call a tool:
 
 ```python
+from reboot.api import Tool
+
 UserMethods = Methods(
+    # AI-callable — the AI can call this.
     create_counter=Transaction(
         request=None,
         response=CreateCounterResponse,
-        # Good: tells the AI what the tool does
-        # and when to use it.
         description="Create a new Counter. Returns "
         "the ID of the new counter.",
-    ),
-)
-```
-
-### Opting out with `mcp=False`
-
-To prevent a `User` method from being AI-callable, set
-`mcp=False`:
-
-```python
-UserMethods = Methods(
-    # AI-callable (default for User methods).
-    create_counter=Transaction(
-        request=None,
-        response=CreateCounterResponse,
-        description="Create a new Counter.",
+        mcp=Tool(),
     ),
     # NOT AI-callable — internal use only.
     cleanup=Writer(
         request=None,
         response=None,
         description="Clean up old state.",
-        mcp=False,
+        mcp=None,
     ),
 )
-```
-
-### Exposing non-`User` methods to the AI
-
-Methods on state types other than `User` are **not**
-AI-callable by default. To expose them, add `mcp=Tool()`.
-This is how you expose methods on the types that `User`
-creates:
-
-```python
-from reboot.api import Tool
 
 CounterMethods = Methods(
     # AI-callable because of `mcp=Tool()`.
@@ -241,11 +222,12 @@ CounterMethods = Methods(
         description="Get the current counter value.",
         mcp=Tool(),
     ),
-    # NOT AI-callable (default for non-User methods).
+    # NOT AI-callable.
     create=Writer(
         request=None,
         response=None,
         factory=True,
+        mcp=None,
     ),
 )
 

@@ -68,12 +68,11 @@ Naming a type \`User\` in your \`API(...)\` is special:
 - During development all users of your app are automatically
   "authenticated" with the built-in \`Anonymous\` OAuth provider, so every
   user of your app gets a \`User\` instance.
-- All methods on \`User\` are automatically callable by the AI.
 - \`User\` acts as an entry point: its methods create other state
   types (like \`Counter\`) whose IDs the AI tracks in its context
   window.
-- Methods on non-\`User\` types use \`mcp=Tool()\` to be
-  AI-callable.
+- Use \`mcp=Tool()\` on every method you want the AI to call,
+  including \`User\` methods. Use \`mcp=None\` to hide a method.
 
 `}>
 
@@ -147,6 +146,7 @@ api = API(
                 "the `counter_id`, which is not "
                 "human-readable but should be passed to "
                 "future tool calls that need it.",
+                mcp=Tool(),
             ),
             list_counters=Reader(
                 request=None,
@@ -156,6 +156,7 @@ api = API(
                 "description for each. The `counter_id` "
                 "is not human-readable, but use it when "
                 "calling tools that take a `counter_id`.",
+                mcp=Tool(),
             ),
         ),
     ),
@@ -173,6 +174,7 @@ api = API(
                 request=CreateCounterRequest,
                 response=None,
                 factory=True,
+                mcp=None,
             ),
             get=Reader(
                 request=None,
@@ -191,6 +193,7 @@ api = API(
             description=Reader(
                 request=None,
                 response=DescriptionResponse,
+                mcp=None,
             ),
         ),
     ),

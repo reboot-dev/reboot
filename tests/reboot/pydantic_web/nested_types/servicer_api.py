@@ -18,13 +18,23 @@ class UpdateInfoRequest(Model):
 
 
 CustomerMethods = Methods(
-    initialize=Writer(request=None, response=None, factory=True),
+    initialize=Writer(
+        request=None,
+        response=None,
+        factory=True,
+        mcp=None,
+    ),
     update_info=Writer(
         request=UpdateInfoRequest,
         response=None,
         errors=[InvalidPhoneError],
+        mcp=None,
     ),
-    get_state=Reader(request=None, response=GetStateResponse),
+    get_state=Reader(
+        request=None,
+        response=GetStateResponse,
+        mcp=None,
+    ),
 )
 
 api = API(Customer=Type(state=State, methods=CustomerMethods))

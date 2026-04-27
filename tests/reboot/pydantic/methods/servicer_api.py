@@ -163,51 +163,63 @@ TestMethods = Methods(
         request=None,
         response=None,
         factory=True,
+        mcp=None,
     ),
     reader_with_nones=Reader(
         request=None,
         response=None,
+        mcp=None,
     ),
     raise_value_error=Writer(
         request=None,
         response=None,
+        mcp=None,
     ),
     raise_declared_error=Writer(
         request=RaiseDeclaredErrorRequest,
         response=None,
         errors=[MyError, AnotherError],
+        mcp=None,
     ),
     get_snapshot=Reader(
         request=None,
         response=GetSnapshotResponse,
+        mcp=None,
     ),
     update_state=Writer(
         request=UpdateRequest,
         response=UpdateResponse,
+        mcp=None,
     ),
     transaction_state_update=Transaction(
         request=TransactionUpdateRequest,
         response=None,
+        mcp=None,
     ),
     workflow=Workflow(
         request=UpdateRequest,
         response=UpdateResponse,
+        mcp=None,
     ),
     transaction=Transaction(
         request=None,
         response=None,
+        mcp=None,
     ),
     transaction_reader=Reader(
         request=None,
         response=None,
+        mcp=None,
     ),
     transaction_writer=Writer(
         request=TransactionWriterRequest,
         response=None,
+        mcp=None,
     ),
     complex_types_method_mypy=Writer(
         request=ComplexTypesRequest,
         response=None,
+        mcp=None,
     ),
 )
 

@@ -64,6 +64,7 @@ api = API(
                 "the `counter_id`, which is not "
                 "human-readable but should be passed to "
                 "future tool calls that need it.",
+                mcp=Tool(),
             ),
             list_counters=Reader(
                 request=None,
@@ -73,6 +74,7 @@ api = API(
                 "description for each. The `counter_id` "
                 "is not human-readable, but use it when "
                 "calling tools that take a `counter_id`.",
+                mcp=Tool(),
             ),
         ),
     ),
@@ -90,6 +92,7 @@ api = API(
                 request=CreateCounterRequest,
                 response=None,
                 factory=True,
+                mcp=None,
             ),
             get=Reader(
                 request=None,
@@ -108,6 +111,7 @@ api = API(
             description=Reader(
                 request=None,
                 response=DescriptionResponse,
+                mcp=None,
             ),
         ),
     ),
