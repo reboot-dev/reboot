@@ -217,7 +217,7 @@ application directory.**
 10. Customize React UIs: edit `App.tsx` files in `web/ui/*/`
 11. `cd web && npm run build`
 12. Create `mcp_servers.json` with
-    `{"mcpServers":{"<name>":{"type":"streamable-http","url":"http://localhost:9991/mcp"}}}`
+    `{"mcpServers":{"<name>":{"url":"http://localhost:9991/mcp","useOAuth":true}}}`
 13. **STOP.** Do NOT run the app yourself. Print the
     following run instructions exactly, then wait:
 
@@ -231,7 +231,7 @@ application directory.**
 
     To test with MCP inspector (separate terminal):
 
-      npx @mcpjam/inspector@v2.0.4 --config mcp_servers.json --server <name>
+      npx @mcpjam/inspector@2.4.0 --config mcp_servers.json --server <name>
     ```
 
     Replace `<name>` with the actual server name from

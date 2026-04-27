@@ -763,9 +763,8 @@ touch mcp_servers.json
 {
   "mcpServers": {
     "counter-server": {
-      "type": "streamable-http",
       "url": "http://localhost:9991/mcp",
-      "auth": "oauth"
+      "useOAuth": true
     }
   }
 }
@@ -774,7 +773,7 @@ touch mcp_servers.json
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
 ```sh
-npx @mcpjam/inspector@v2.0.4 --config mcp_servers.json --server counter-server
+npx @mcpjam/inspector@2.4.0 --config mcp_servers.json --server counter-server
 ```
 
 </Step>

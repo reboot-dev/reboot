@@ -18,8 +18,8 @@ Add an `mcp_servers.json` file in your project root, and fill it in:
 {
   "mcpServers": {
     "my-app": {
-      "type": "streamable-http",
-      "url": "http://localhost:9991/mcp"
+      "url": "http://localhost:9991/mcp",
+      "useOAuth": true
     }
   }
 }
@@ -30,7 +30,7 @@ app runs on a different port or host.
 
 Then run MCPJam:
 ```sh
-npx @mcpjam/inspector@v2.0.4 \
+npx @mcpjam/inspector@2.4.0 \
   --config mcp_servers.json --server my-app
 ```
 
