@@ -2759,6 +2759,65 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endfor %}
 {% if state.proto.uis | length > 0 %}
 
+        # Map UI method names to web app paths.
+        _ui_app_paths: dict[str, str] = {
+{% for ui in state.proto.uis %}
+            "{{ ui.name }}": "{{ ui.path }}",
+{% endfor %}
+        }
+
+        # Optional artifact path overrides (only populated
+        # when `artifact_path` is explicitly set).
+        _ui_artifact_paths: dict[str, str] = {
+{% for ui in state.proto.uis %}
+{% if ui.artifact_path %}
+            "{{ ui.name }}": "{{ ui.artifact_path }}",
+{% endif %}
+{% endfor %}
+        }
+
+        # Cache-bust tokens: content hash of each UI's built
+        # `index.html`, or a per-process random fallback if the
+        # artifact is missing. Embedded in the tool's
+        # `_meta.ui.resourceUri` below and in the `@mcp.resource`
+        # URI template so hosts that aggressively cache MCP
+        # resource reads (e.g., ChatGPT) see a fresh URI after
+        # each rebuild. Computed once at servicer setup since
+        # `--config=dist` restarts the process on deploy. The
+        # helper falls back to a per-process token (and logs)
+        # rather than raising if the project root can't be
+        # located — deploys with unusual filesystem layouts
+        # still start cleanly.
+        _ui_cache_busts: dict[str, str] = (
+            IMPORT_reboot_mcp_ui.compute_ui_cache_busts(
+                __file__,
+                _ui_app_paths,
+                _ui_artifact_paths,
+            )
+        )
+
+        # Register each UI tool's recompute inputs in the
+        # server-local registry. The patched `FastMCP.list_tools`
+        # in `reboot.mcp.factories` reads this on every
+        # `tools/list` call and rewrites `_meta.ui.resourceUri`
+        # with a freshly-hashed token so clients that re-list on
+        # new sessions (Claude, MCPJam) pick up dist-file changes
+        # without a server restart. Kept server-local — never
+        # rides on the wire in `_meta`.
+{% for ui in state.proto.uis %}
+        IMPORT_reboot_mcp_ui.register_ui_tool_for_cache_bust(
+            tool_name="{{ mcp_name_prefix }}{{ ui.name }}",
+            caller_file=__file__,
+            ui_path=_ui_app_paths["{{ ui.name }}"],
+            ui_name="{{ ui.name }}",
+            artifact_path=_ui_artifact_paths.get("{{ ui.name }}"),
+            uri_prefix=(
+                "ui://{{ state.proto.name | to_snake }}/"
+                "{{ ui.name }}/"
+            ),
+        )
+{% endfor %}
+
         # UI tools — allow AI to trigger loading of UIs.
 {% set ui_suffix = "" if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED else " for " + state.proto.name %}
 {% for ui in state.proto.uis %}
@@ -2766,7 +2825,14 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             name="{{ mcp_name_prefix }}{{ ui.name }}",
             title="Show {{ ui.title }}",
             description="{{ ui.description if ui.description else 'Opens the ' + ui.name + ' interface' + ui_suffix + '.' }}",
-            meta={"ui": {"resourceUri": "ui://{{ state.proto.name | to_snake }}/{{ ui.name }}"}},
+            meta={
+                "ui": {
+                    "resourceUri": (
+                        "ui://{{ state.proto.name | to_snake }}/{{ ui.name }}/"
+                        + _ui_cache_busts["{{ ui.name }}"]
+                    ),
+                },
+            },
         )
 {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
         async def {{ mcp_name_prefix }}{{ ui.name }}_tool(
@@ -2798,23 +2864,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endif %}
 
 {% endfor %}
-        # Map UI method names to web app paths.
-        _ui_app_paths: dict[str, str] = {
-{% for ui in state.proto.uis %}
-            "{{ ui.name }}": "{{ ui.path }}",
-{% endfor %}
-        }
-
-        # Optional artifact path overrides (only populated
-        # when `artifact_path` is explicitly set).
-        _ui_artifact_paths: dict[str, str] = {
-{% for ui in state.proto.uis %}
-{% if ui.artifact_path %}
-            "{{ ui.name }}": "{{ ui.artifact_path }}",
-{% endif %}
-{% endfor %}
-        }
-
         def _get_reboot_url_from_request(
             ctx: IMPORT_mcp_server_fastmcp.Context,
         ) -> str:
@@ -2840,7 +2889,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             return f"{scheme}://{host}"
 
         @mcp.resource(
-            "ui://{{ state.proto.name | to_snake }}/{ui}",
+            "ui://{{ state.proto.name | to_snake }}/{ui}/{cache_bust}",
             name="{{ state.proto.name | to_snake }}-ui",
             title="{{ state.proto.name }} UI",
             description="{{ state.proto.name }} UIs.",
@@ -2849,7 +2898,15 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         def {{ state.proto.name | to_snake }}_ui_resource(
             ctx: IMPORT_mcp_server_fastmcp.Context,
             ui: str,
+            cache_bust: str,
         ) -> str:
+            # `cache_bust` comes from the URI's trailing
+            # segment: the content-hash token that `list_tools`
+            # wrote into the tool's `_meta.ui.resourceUri`. We
+            # pass it to `ui_html` so the per-process HTML
+            # cache keys on it — same token = cache hit,
+            # changed token (because the dist file changed) =
+            # cache miss = fresh read.
             reboot_url = _get_reboot_url_from_request(ctx)
             if ui not in _ui_app_paths:
                 raise ValueError(f"Unknown UI: {ui}")
@@ -2858,6 +2915,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 reboot_url,
                 ui_name=ui,
                 artifact_path=_ui_artifact_paths.get(ui),
+                cache_bust=cache_bust,
             )
 
 {% endif %}

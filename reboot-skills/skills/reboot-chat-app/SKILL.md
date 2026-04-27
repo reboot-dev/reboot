@@ -667,6 +667,44 @@ class MyTypeServicer(MyType.Servicer):
         )
 ```
 
+#### Scheduling a Workflow from a Transaction
+
+A workflow can only be `await`-ed directly from an
+`ExternalContext` (e.g. a bootstrap script) or from another
+`WorkflowContext`. In **any** other context — most commonly a
+`TransactionContext` kicking off a workflow on a state it just
+created — the workflow must be **scheduled**, not awaited
+directly. Use `.schedule()` to fire-and-forget from a
+transaction:
+
+```python
+# In a User's Transaction method that creates a Game and wants
+# its autoplay workflow to start running:
+class UserServicer(User.Servicer):
+
+    async def create_game(
+        self,
+        context: TransactionContext,
+        request: User.CreateGameRequest,
+    ) -> User.CreateGameResponse:
+        game, _ = await Game.create(context, ...)
+        # GOOD — schedule the workflow from the transaction.
+        await Game.ref(game.state_id).schedule().autoplay(context)
+        # BAD — `await Game.ref(game.state_id).autoplay(context)`
+        # raises `TypeError: ... 'Autoplay' is a workflow and
+        # must be scheduled from a 'TransactionContext' via
+        # `await [...].schedule([...]).Autoplay(context, [...])`.
+        return User.CreateGameResponse(game_id=game.state_id)
+```
+
+`.schedule(when=timedelta(...))` delays the workflow by a
+duration. `.schedule()` with no argument starts it as soon as
+the transaction commits.
+
+Same rule from a `WriterContext` or `ReaderContext`: use
+`.schedule()`. Only `ExternalContext` and `WorkflowContext` can
+await a workflow directly.
+
 ### `main.py`
 
 Register all servicers (User + application types):
@@ -1289,6 +1327,16 @@ Adapt the CSS module to your app's needs. The CSS variables from
     `TypeError: <YourType>BaseServicer.ref() missing 1 required positional argument: 'self'`, because `ref` on the BaseServicer
     is an instance method, not the state-class factory. `self.ref()`
     is also wrong because there is no `self` in a classmethod.
+20. **Workflows must be scheduled, not awaited, from a
+    `TransactionContext`/`WriterContext`/`ReaderContext`.** Only
+    `ExternalContext` and `WorkflowContext` can `await` a workflow
+    directly. From a transaction that kicks off a workflow on a
+    state it just created, use `.schedule()`:
+    `await MyType.ref(id).schedule().autoplay(context)`.
+    Writing `await MyType.ref(id).autoplay(context)` from a
+    transaction raises `TypeError: ... '<Method>' is a workflow and must be scheduled from a 'TransactionContext' via `await [...].schedule([...]).<Method>(context, [...])``.
+    See the "Scheduling a Workflow from a Transaction" example
+    in the Workflow Servicer section.
 
 ## Update Flow
 
