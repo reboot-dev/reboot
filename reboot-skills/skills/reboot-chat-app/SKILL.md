@@ -554,7 +554,7 @@ Rules:
   `from <pkg>.v1.<name>_rbt import User, Counter`
 - Each type gets its own servicer class
   (e.g., `UserServicer`, `CounterServicer`)
-- `User.Servicer` / `Counter.Servicer` base, `allow()` authorizer
+- `User.Servicer` / `Counter.Servicer` base
 - Context types from `reboot.aio.contexts`:
   - `ReaderContext` — read-only
   - `WriterContext` — single-state mutation
@@ -568,7 +568,6 @@ Rules:
 
 ```python
 from ai_chat_counter.v1.counter_rbt import Counter, User
-from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import (
     ReaderContext,
     TransactionContext,
@@ -577,9 +576,6 @@ from reboot.aio.contexts import (
 
 
 class UserServicer(User.Servicer):
-
-    def authorizer(self):
-        return allow()
 
     async def create_counter(
         self,
@@ -597,9 +593,6 @@ class UserServicer(User.Servicer):
 
 
 class CounterServicer(Counter.Servicer):
-
-    def authorizer(self):
-        return allow()
 
     async def create(self, context) -> None:
         # State is initialized with defaults; nothing to do.
