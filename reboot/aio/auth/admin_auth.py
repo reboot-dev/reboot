@@ -4,10 +4,9 @@ import rbt.v1alpha1.admin.auth_pb2 as admin_auth_pb2
 import rbt.v1alpha1.admin.auth_pb2_grpc as admin_auth_pb2_grpc
 from log.log import get_logger
 from reboot.aio.headers import AUTHORIZATION_HEADER
-from reboot.aio.secrets import SecretNotFoundException, Secrets
 from reboot.controller.settings import ENVVAR_REBOOT_ADMIN_AUTH_URL
 from reboot.run_environments import running_rbt_dev
-from reboot.settings import ADMIN_SECRET_NAME
+from reboot.settings import ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
 from typing import Optional
 
 logger = get_logger(__name__)
@@ -29,15 +28,9 @@ def auth_metadata_from_metadata(
 
 
 class AdminAuthMixin:
-    """Mixin that is used to provide a helper for checking that a request
-    contains the necessary admin credentials.
-
-    We use a mixin over a free standing function to avoid a global `Secrets` object.
+    """Mixin that is used to provide a helper for checking that a
+    request contains the necessary admin credentials.
     """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__secrets = Secrets()
 
     async def ensure_admin_auth_or_fail(
         self,
@@ -76,19 +69,18 @@ class AdminAuthMixin:
             )
             raise
 
-        admin_secret: str
-        try:
-            admin_secret = (await
-                            self.__secrets.get(ADMIN_SECRET_NAME)).decode()
-
+        admin_secret = os.environ.get(ENVVAR_SECRET_REBOOT_ADMIN_TOKEN)
+        if admin_secret is not None:
             if bearer_token == admin_secret:
-                # The provided bearer token matches the configured admin secret.
-                # This is sufficient to authorize the request.
+                # The provided bearer token matches the
+                # configured admin secret. This is sufficient to
+                # authorize the request.
                 return
 
             logger.info(
-                "An admin access request was made, but the provided "
-                "bearer token did not match the configured admin secret"
+                "An admin access request was made, but the "
+                "provided bearer token did not match the "
+                "configured admin secret"
             )
 
             await grpc_context.abort(
@@ -98,13 +90,10 @@ class AdminAuthMixin:
 
             raise AssertionError  # For `mypy`.
 
-        except SecretNotFoundException:
-            logger.debug(
-                "Admin secret '%s' not found. "
-                "Going to check if an external admin auth application "
-                "is configured.",
-                ADMIN_SECRET_NAME,
-            )
+        logger.debug(
+            f"{ENVVAR_SECRET_REBOOT_ADMIN_TOKEN} env var not found. Going to "
+            "check if an external admin auth application is configured.",
+        )
 
         # If an external application is configured as being responsible for
         # admin auth, delegate to it.

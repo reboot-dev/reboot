@@ -53,7 +53,7 @@ based on your selections.
 To set up a Python backend, use the following command:
 
 ```shell
-rbt init --name=reboot_hello_world --backend=python
+rbt init --application-name=reboot_hello_world --backend=python
 ```
 
 This will generate the necessary source files and include a Python script to
@@ -64,7 +64,7 @@ test the connection to the backend.
 For a TypeScript backend, use the following command:
 
 ```shell
-rbt init --name=reboot_hello_world --backend=nodejs
+rbt init --application-name=reboot_hello_world --backend=nodejs
 ```
 
 This will create the source files and configure package.json if it doesn't
@@ -75,7 +75,7 @@ already exist.
 To initialize a frontend with React, use the following command:
 
 ```shell
-rbt init --name=reboot_hello_world --frontend=react
+rbt init --application-name=reboot_hello_world --frontend=react
 ```
 
 This command generates the source files and sets up package.json in the web
@@ -87,12 +87,12 @@ for Python and TypeScript:
 
 For Python:
 ```shell
-rbt init --name=reboot_hello_world --backend=python --frontend=react
+rbt init --application-name=reboot_hello_world --backend=python --frontend=react
 ```
 
 For TypeScript:
 ```shell
-npx rbt init --name=reboot_hello_world --backend=nodejs --frontend=react
+npx rbt init --application-name=reboot_hello_world --backend=nodejs --frontend=react
 ```
 ::: -->
 
@@ -131,13 +131,13 @@ dev run --watch=backend/**/*.py
 dev run --python
 
 # Save state between chaos restarts.
-dev run --name=bank
+dev run --application-name=bank
 
 # Run the application!
 dev run --application=backend/src/main.py
 
 # When expunging, expunge that state we've saved.
-dev expunge --name=bank
+dev expunge --application-name=bank
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -150,7 +150,7 @@ dev expunge --name=bank
 
 ```shell
 # Set the name of our application.
-dev run --name=counter
+dev run --application-name=counter
 
 # Declare that this is a nodejs application.
 dev run --nodejs
@@ -286,7 +286,7 @@ changed the default port from `9991`).
 ### Persisting state during development
 
 By default your application state will not be persisted across
-restarts. To persist state, you can pass a `--name=...` flag to `rbt dev
+restarts. To persist state, you can pass an `--application-name=...` flag to `rbt dev
 run`.
 
 When state is persisted, backwards incompatible changes in your `.proto` files
@@ -304,5 +304,5 @@ During early development of your application, either `ask` or `expunge` are
 reasonable choices. Once you have deployed to production, the `fail` option
 can encourage more caution while adjusting schemas.
 
-You can also use `rbt dev expunge --name=...` to manually expunge data (where `--name=...`
-is the same value you're using for `rbt dev run`).
+You can also use `rbt dev expunge --application-name=...` to manually expunge data (where
+`--application-name=...` is the same value you're using for `rbt dev run`).

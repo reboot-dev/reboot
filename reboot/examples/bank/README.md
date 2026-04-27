@@ -78,7 +78,7 @@ API key as an environment variable.
 Replace `MY_MAILGUN_API_KEY` with your own mailgun API key, which you can get
 from [your Mailgun account](https://www.mailgun.com):
 ```shell
-export RBT_SECRET_MAILGUN_API_KEY="MY_MAILGUN_API_KEY"
+export MAILGUN_API_KEY="MY_MAILGUN_API_KEY"
 ```
 
 #### Run the backend

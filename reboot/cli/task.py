@@ -1,3 +1,4 @@
+import argparse
 import grpc
 import re
 import uuid
@@ -10,6 +11,10 @@ from reboot.cli.rc import ArgumentParser, add_common_channel_args
 from reboot.time import DateTimeWithTimeZone
 from tabulate import tabulate  # type: ignore[import]
 from typing import Optional
+
+
+def task_subcommands() -> list[str]:
+    return ['task list', 'task cancel']
 
 
 def register_task(parser: ArgumentParser):
@@ -271,3 +276,15 @@ async def task_cancel(args) -> None:
             terminal.fail("Task is cancelling.")
     except grpc.aio.AioRpcError as e:
         terminal.fail(f"Failed to cancel task: {e.details()}")
+
+
+async def handle_task_subcommand(
+    args: argparse.Namespace,
+) -> Optional[int]:
+    if args.subcommand == 'task list':
+        await task_list(args)
+        return 0
+    elif args.subcommand == 'task cancel':
+        await task_cancel(args)
+        return 0
+    return None

@@ -44,7 +44,7 @@ rye add --dev reboot --absolute --path=$REBOOT_WHL_FILE
 rye sync --no-lock
 source .venv/bin/activate
 
-rbt init --name=bazel_init_test
+rbt init --application-name=bazel_init_test
 
 rbt generate
 

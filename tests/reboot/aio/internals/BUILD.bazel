@@ -23,7 +23,6 @@ py_test(
         requirement("grpcio"),
         "//rbt/v1alpha1:tasks_py_grpc",
         "//rbt/v1alpha1:tasks_py_proto",
-        "//reboot/aio:secrets_py",
         "//reboot/aio:tasks_py",
         "//reboot/aio:tests_py",
         "//reboot/ssl:localhost_py",

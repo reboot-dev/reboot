@@ -1,10 +1,12 @@
 import aiofiles.os
+import argparse
 import importlib
 import os
 import re
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from reboot.cli import terminal
 from reboot.cli.rc import ArgumentParser
+from typing import Optional
 
 DEFAULT_PROTO_DIRECTORY = 'api'
 DEFAULT_BACKEND_DIRECTORY = 'backend'
@@ -40,6 +42,10 @@ DEFAULT_BACKEND = BACKEND[0]
 DEFAULT_FRONTEND = FRONTEND[0]
 
 
+def init_subcommands() -> list[str]:
+    return ['init']
+
+
 def register_init(parser: ArgumentParser):
     parser.subcommand('init').add_argument(
         '--backend',
@@ -58,11 +64,12 @@ def register_init(parser: ArgumentParser):
     )
 
     parser.subcommand('init').add_argument(
-        '--name',
+        '--application-name',
         type=str,
         help="name of application; should be in lower_snake_case",
         required=True,
     )
+    parser.subcommand('init').add_renamed_flag('--name', '--application-name')
 
 
 async def _write_templated_file(
@@ -83,7 +90,7 @@ async def _write_templated_file(
 
 async def _initialize_python(env: Environment, directory: str, args):
     template_data = {
-        'name': args.name,
+        'name': args.application_name,
     }
 
     await _write_templated_file(
@@ -124,7 +131,7 @@ async def _initialize_nodejs(env: Environment, directory: str, args):
             directory,
             'package.json',
             template_data={
-                'name': args.name,
+                'name': args.application_name,
             },
         )
 
@@ -142,7 +149,7 @@ async def _initialize_nodejs(env: Environment, directory: str, args):
         f'{directory}/{DEFAULT_BACKEND_SRC_DIRECTORY}',
         NODEJS_MAIN_TEMPLATE.replace('.j2', ''),
         template_data={
-            'name': args.name,
+            'name': args.application_name,
             'api_directory': DEFAULT_PROTO_DIRECTORY,
         },
     )
@@ -153,7 +160,7 @@ async def _initialize_nodejs(env: Environment, directory: str, args):
         f'{directory}/{DEFAULT_BACKEND_SRC_DIRECTORY}',
         NODEJS_SERVICER_TEMPLATE.replace('.j2', ''),
         template_data={
-            'name': args.name,
+            'name': args.application_name,
             'api_directory': DEFAULT_PROTO_DIRECTORY,
         },
     )
@@ -223,7 +230,7 @@ async def _initialize_react(env: Environment, directory: str, args):
 
     template_data = {
         'reboot_react_path':
-            f"./{DEFAULT_PROTO_DIRECTORY}/{args.name}/v1/{PROTO_TEMPLATE.replace('.j2', '').replace('.proto', '_rbt_react')}",
+            f"./{DEFAULT_PROTO_DIRECTORY}/{args.application_name}/v1/{PROTO_TEMPLATE.replace('.j2', '').replace('.proto', '_rbt_react')}",
     }
 
     await _write_templated_file(
@@ -244,13 +251,13 @@ async def _initialize_react(env: Environment, directory: str, args):
 
 async def _initialize_proto_directory(env: Environment, directory: str, args):
     template_data = {
-        'name': args.name,
+        'name': args.application_name,
     }
 
     await _write_templated_file(
         env,
         PROTO_TEMPLATE,
-        f'{directory}/{DEFAULT_PROTO_DIRECTORY}/{args.name}/v1',
+        f'{directory}/{DEFAULT_PROTO_DIRECTORY}/{args.application_name}/v1',
         PROTO_TEMPLATE.replace('.j2', ''),
         template_data,
     )
@@ -267,7 +274,7 @@ async def _create_rbtrc(env: Environment, directory: str, args):
         'web_directory':
             DEFAULT_WEB_SRC_DIRECTORY if args.frontend == 'react' else None,
         'name':
-            args.name,
+            args.application_name,
         'backend':
             args.backend,
     }
@@ -294,7 +301,7 @@ def validate_name(name: str):
 
 
 async def init_run(args):
-    validate_name(args.name)
+    validate_name(args.application_name)
 
     directory = os.getcwd()
 
@@ -304,11 +311,13 @@ async def init_run(args):
             # it will clash with the project name, since we don't provide
             # '__init__.py' files in the generated code, so we force users to pick
             # a different name.
-            module = importlib.import_module(args.name)  # noqa: F841
+            module = importlib.import_module(  # noqa: F841
+                args.application_name
+            )
 
             terminal.fail(
-                f"Can't initialize your Python backend: the name '{args.name}' "
-                f"would clash with the Python standard library '{args.name}' "
+                f"Can't initialize your Python backend: the name '{args.application_name}' "
+                f"would clash with the Python standard library '{args.application_name}' "
                 "module. Try a different name."
             )
         except ModuleNotFoundError:
@@ -344,3 +353,12 @@ async def init_run(args):
 
     if args.frontend == 'react':
         await _initialize_react(env, directory, args)
+
+
+async def handle_init_subcommand(
+    args: argparse.Namespace,
+) -> Optional[int]:
+    if args.subcommand == 'init':
+        await init_run(args)
+        return 0
+    return None

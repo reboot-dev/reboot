@@ -31,15 +31,15 @@ generate api/
 # See .tests/test.sh
 generate --nodejs-extensions
 
-dev run --name=chat-room-nodejs
+dev run --application-name=chat-room-nodejs
 
 dev run --nodejs
 
 dev run --application=backend/src/main.ts
 
-dev expunge --name=chat-room-nodejs
+dev expunge --application-name=chat-room-nodejs
 
-serve run --name=chat-room
+serve run --application-name=chat-room
 
 # Tell `rbt serve` that this is a Node.js application.
 serve run --nodejs

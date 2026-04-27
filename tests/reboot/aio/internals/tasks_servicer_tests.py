@@ -1,5 +1,6 @@
 import asyncio
 import grpc.aio
+import os
 import unittest
 from datetime import timedelta
 from google.protobuf import any_pb2
@@ -7,7 +8,6 @@ from google.rpc import status_pb2
 from rbt.v1alpha1 import errors_pb2, tasks_pb2, tasks_pb2_grpc
 from reboot.aio.aborted import Aborted, SystemAborted
 from reboot.aio.applications import Application
-from reboot.aio.auth.admin_auth import ADMIN_SECRET_NAME
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import WorkflowContext, WriterContext
 from reboot.aio.external import ExternalContext
@@ -17,9 +17,9 @@ from reboot.aio.headers import (
     STATE_REF_HEADER,
 )
 from reboot.aio.internals.tasks_dispatcher import Backoff
-from reboot.aio.secrets import MockSecretSource, Secrets
 from reboot.aio.tests import Reboot
 from reboot.aio.types import StateRef, StateTypeName
+from reboot.settings import ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA
 from tests.reboot.echo_rbt import Echo, SpecifiedError
 from tests.reboot.echo_servicers import MyEchoServicer, retry_budget
@@ -27,15 +27,14 @@ from tests.reboot.general_rbt import General, GeneralRequest, GeneralResponse
 from tests.reboot.general_servicer import GeneralServicer
 from unittest.mock import patch
 
-TEST_ADMIN_SECRET = 'test-admin-secret'
+TEST_SECRET_REBOOT_ADMIN_TOKEN = 'test-admin-secret'
 
 
 class TasksServicerTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
-        Secrets.set_secret_source(
-            MockSecretSource({ADMIN_SECRET_NAME: TEST_ADMIN_SECRET.encode()})
-        )
+        os.environ[ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
+                  ] = TEST_SECRET_REBOOT_ADMIN_TOKEN
 
         self.rbt = Reboot()
         await self.rbt.start()
@@ -50,7 +49,12 @@ class TasksServicerTestCase(unittest.IsolatedAsyncioTestCase):
     ):
         list_tasks_response = await stub.ListTasks(
             tasks_pb2.ListTasksRequest(),
-            metadata=((AUTHORIZATION_HEADER, f'Bearer {TEST_ADMIN_SECRET}'),),
+            metadata=(
+                (
+                    AUTHORIZATION_HEADER,
+                    f'Bearer {TEST_SECRET_REBOOT_ADMIN_TOKEN}'
+                ),
+            ),
         )
 
         self.assertEqual(len(tasks), len(list_tasks_response.tasks))
@@ -87,7 +91,10 @@ class TasksServicerTestCase(unittest.IsolatedAsyncioTestCase):
             ),
             metadata=(
                 (STATE_REF_HEADER, task_id.state_ref),
-                (AUTHORIZATION_HEADER, f'Bearer {TEST_ADMIN_SECRET}'),
+                (
+                    AUTHORIZATION_HEADER,
+                    f'Bearer {TEST_SECRET_REBOOT_ADMIN_TOKEN}'
+                ),
             ),
         )
 
@@ -106,7 +113,10 @@ class TasksServicerTestCase(unittest.IsolatedAsyncioTestCase):
             tasks_pb2.WaitRequest(task_id=task_id),
             metadata=(
                 (STATE_REF_HEADER, task_id.state_ref),
-                (AUTHORIZATION_HEADER, f'Bearer {TEST_ADMIN_SECRET}'),
+                (
+                    AUTHORIZATION_HEADER,
+                    f'Bearer {TEST_SECRET_REBOOT_ADMIN_TOKEN}'
+                ),
             ),
         )
         self.assertEqual(
@@ -181,7 +191,10 @@ class TasksServicerTestCase(unittest.IsolatedAsyncioTestCase):
                 tasks_pb2.ListTasksRequest(only_server_id=server),
                 metadata=(
                     (SERVER_ID_HEADER, server),
-                    (AUTHORIZATION_HEADER, f'Bearer {TEST_ADMIN_SECRET}'),
+                    (
+                        AUTHORIZATION_HEADER,
+                        f'Bearer {TEST_SECRET_REBOOT_ADMIN_TOKEN}'
+                    ),
                 ),
             )
             self.assertLess(len(list_tasks_response.tasks), NUM_OF_TASKS)
@@ -292,7 +305,10 @@ class TasksServicerTestCase(unittest.IsolatedAsyncioTestCase):
                 tasks_pb2.WaitRequest(task_id=task_id),
                 metadata=(
                     (STATE_REF_HEADER, task_id.state_ref),
-                    (AUTHORIZATION_HEADER, f'Bearer {TEST_ADMIN_SECRET}'),
+                    (
+                        AUTHORIZATION_HEADER,
+                        f'Bearer {TEST_SECRET_REBOOT_ADMIN_TOKEN}'
+                    ),
                 ),
             )
 
@@ -482,13 +498,23 @@ class TasksServicerTestCase(unittest.IsolatedAsyncioTestCase):
         # Get the response from a unary ListTasks call.
         list_tasks_response = await stub.ListTasks(
             tasks_pb2.ListTasksRequest(),
-            metadata=((AUTHORIZATION_HEADER, f'Bearer {TEST_ADMIN_SECRET}'),),
+            metadata=(
+                (
+                    AUTHORIZATION_HEADER,
+                    f'Bearer {TEST_SECRET_REBOOT_ADMIN_TOKEN}'
+                ),
+            ),
         )
 
         # Get the first response from the ListTasksStream stream.
         list_tasks_stream = stub.ListTasksStream(
             tasks_pb2.ListTasksRequest(),
-            metadata=((AUTHORIZATION_HEADER, f'Bearer {TEST_ADMIN_SECRET}'),),
+            metadata=(
+                (
+                    AUTHORIZATION_HEADER,
+                    f'Bearer {TEST_SECRET_REBOOT_ADMIN_TOKEN}'
+                ),
+            ),
         )
 
         first_stream_response = None
@@ -534,7 +560,12 @@ class TasksServicerTestCase(unittest.IsolatedAsyncioTestCase):
         assert second_stream_response is not None
         list_tasks_response_2 = await stub.ListTasks(
             tasks_pb2.ListTasksRequest(),
-            metadata=((AUTHORIZATION_HEADER, f'Bearer {TEST_ADMIN_SECRET}'),),
+            metadata=(
+                (
+                    AUTHORIZATION_HEADER,
+                    f'Bearer {TEST_SECRET_REBOOT_ADMIN_TOKEN}'
+                ),
+            ),
         )
         for task_info in list_tasks_response_2.tasks:
             task_info.occurred_at.Clear()

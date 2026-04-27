@@ -17,7 +17,7 @@ dev run --watch=web/dist/**/*.html
 dev run --python
 
 # Save state between restarts.
-dev run --name=ai-chat-counter
+dev run --application-name=ai-chat-counter
 
 # Entrypoint.
 dev run --application=backend/src/main.py
@@ -35,4 +35,4 @@ dev run:hmr --mcp-frontend-host=http://localhost:4444
 dev run:dist --mcp-frontend-host=""
 
 # When expunging, expunge that state we've saved.
-dev expunge --name=ai-chat-counter
+dev expunge --application-name=ai-chat-counter

@@ -21,7 +21,6 @@ py_library(
         "//reboot:run_environments_py",
         "//reboot/aio:aborted_py",
         "//reboot/aio:headers_py",
-        "//reboot/aio:secrets_py",
         "//reboot/controller:settings_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:auth_py_reboot",
     ],

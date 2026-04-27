@@ -67,7 +67,7 @@ RBT_FLAGS="--state-directory=$(mktemp -d)"
 if [ -n "${EXPECTED_RBT_DEV_OUTPUT_FILE:-}" ]; then
     mkdir init_nodejs_test && cd init_nodejs_test
 
-    npx rbt $RBT_FLAGS init --name=bazel_init_nodejs_test --backend=nodejs
+    npx rbt $RBT_FLAGS init --application-name=bazel_init_nodejs_test --backend=nodejs
 
     # As per the instructions from running `rbt init`, we now need to
     # run `npm install` but making sure to get the unreleased Reboot

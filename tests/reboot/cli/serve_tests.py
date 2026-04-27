@@ -38,7 +38,7 @@ class RbtServeTestCase(unittest.IsolatedAsyncioTestCase):
                 'serve',
                 'run',
                 '--application=backend/src/main.py',
-                '--name=test',
+                '--application-name=test',
                 '--tls=external',
                 '--state-directory=/tmp',
                 '--port=1337',
@@ -58,7 +58,7 @@ class RbtServeTestCase(unittest.IsolatedAsyncioTestCase):
                 'serve',
                 'run',
                 '--application=backend/src/main.py',
-                '--name=test',
+                '--application-name=test',
                 '--tls=external',
             ]
         )
@@ -76,7 +76,7 @@ class RbtServeTestCase(unittest.IsolatedAsyncioTestCase):
                 'serve',
                 'run',
                 '--application=backend/src/main.py',
-                '--name=test',
+                '--application-name=test',
                 '--tls=external',
                 '--state-directory=/tmp',
                 '--port=1337',
@@ -105,7 +105,7 @@ class RbtServeTestCase(unittest.IsolatedAsyncioTestCase):
                 'serve',
                 'run',
                 '--application=backend/src/main.py',
-                '--name=test',
+                '--application-name=test',
                 '--tls=external',
                 '--state-directory=/tmp',
                 '--port=1337',
@@ -133,7 +133,7 @@ class RbtServeTestCase(unittest.IsolatedAsyncioTestCase):
                 'serve',
                 'run',
                 '--application=backend/src/main.py',
-                '--name=test',
+                '--application-name=test',
                 '--tls=external',
                 '--state-directory=/tmp',
             ]
@@ -165,7 +165,7 @@ class RbtServeTestCase(unittest.IsolatedAsyncioTestCase):
                 'serve',
                 'run',
                 '--application=backend/src/main.py',
-                '--name=test',
+                '--application-name=test',
                 '--tls=external',
                 '--state-directory=/tmp',
             ]
@@ -188,7 +188,7 @@ class RbtServeTestCase(unittest.IsolatedAsyncioTestCase):
                 'serve',
                 'run',
                 '--application=backend/src/main.py',
-                '--name=test',
+                '--application-name=test',
                 '--tls=external',
                 '--port=1234',
             ]
@@ -220,7 +220,7 @@ class RbtServeTestCase(unittest.IsolatedAsyncioTestCase):
                 'serve',
                 'run',
                 '--application=backend/src/main.py',
-                '--name=test',
+                '--application-name=test',
                 '--tls=external',
             ]
         )
@@ -247,7 +247,7 @@ class RbtServeTestCase(unittest.IsolatedAsyncioTestCase):
                 'serve',
                 'run',
                 '--application=backend/src/main.py',
-                '--name=test',
+                '--application-name=test',
                 '--tls=external',
             ]
         )

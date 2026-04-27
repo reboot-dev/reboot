@@ -12,10 +12,10 @@ dev run --watch=backend/**/*.py
 dev run --python
 
 # Save state between chaos restarts.
-dev run --name=chat
+dev run --application-name=chat
 
 # Run the application!
 dev run --application=backend/src/main.py
 
 # When expunging, expunge that state we've saved.
-dev expunge --name=chat
+dev expunge --application-name=chat

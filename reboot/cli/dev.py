@@ -27,7 +27,6 @@ from reboot.aio.exceptions import InputError
 # We import the whole `terminal` module (as opposed to the methods it contains)
 # to allow us to mock these methods out in tests.
 from reboot.cli import terminal
-from reboot.cli.cloud import add_cloud_options
 from reboot.cli.directories import (
     add_working_directory_options,
     dot_rbt_dev_directory,
@@ -55,14 +54,11 @@ from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_TLS_CERTIFICATE_PATH,
     ENVVAR_LOCAL_ENVOY_TLS_KEY_PATH,
     ENVVAR_LOCAL_ENVOY_USE_TLS,
-    ENVVAR_RBT_CLOUD_API_KEY,
-    ENVVAR_RBT_CLOUD_URL,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_EFFECT_VALIDATION,
     ENVVAR_RBT_MCP_FRONTEND_HOST,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
-    ENVVAR_RBT_SECRETS_DIRECTORY,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
     ENVVAR_REBOOT_LOCAL_ENVOY,
@@ -129,23 +125,16 @@ def add_application_options(subcommand: SubcommandParser) -> None:
     )
 
     subcommand.add_argument(
-        "--secrets-directory",
-        type=Path,
-        default=None,
-        help=(
-            "a directory to use to override the default source (environment variables) of Secrets; "
-            "in the Reboot Cloud, Secrets are written using `rbt cloud secret write`; "
-            f"see {DOCS_BASE_URL}/develop/secrets for more information."
-        ),
-    )
-
-    subcommand.add_argument(
         '--application',
         type=str,  # TODO: consider argparse.FileType('e')
         help='path to application to execute',
         required=True,
         non_empty_string=True,
     )
+
+
+def dev_subcommands() -> list[str]:
+    return ['dev expunge', 'dev run']
 
 
 def register_dev(parser: ArgumentParser):
@@ -159,7 +148,7 @@ def _register_dev_run(parser: ArgumentParser):
     add_application_options(parser.subcommand('dev run'))
 
     parser.subcommand('dev run').add_argument(
-        '--name',
+        '--application-name',
         type=str,
         help=(
             "name of application; state will be persisted using this name in "
@@ -167,6 +156,8 @@ def _register_dev_run(parser: ArgumentParser):
         ),
         non_empty_string=True,
     )
+    parser.subcommand('dev run'
+                     ).add_renamed_flag('--name', '--application-name')
 
     parser.subcommand('dev run').add_argument(
         '--background-command',
@@ -300,10 +291,6 @@ def _register_dev_run(parser: ArgumentParser):
         help="path to TLS root certificate to use",
     )
 
-    # The `dev` command does not require an API key, since not everyone will
-    # have access to secrets on day one.
-    add_cloud_options(parser.subcommand('dev run'), api_key_required=False)
-
     parser.subcommand('dev run').add_argument(
         '--tracing',
         type=str,
@@ -315,7 +302,7 @@ def _register_dev_run(parser: ArgumentParser):
 
 def _register_dev_expunge(parser: ArgumentParser):
     parser.subcommand('dev expunge').add_argument(
-        '--name',
+        '--application-name',
         type=str,
         help=(
             "name of the application to expunge; will remove this "
@@ -324,6 +311,8 @@ def _register_dev_expunge(parser: ArgumentParser):
         required=True,
         non_empty_string=True,
     )
+    parser.subcommand('dev expunge'
+                     ).add_renamed_flag('--name', '--application-name')
 
     parser.subcommand('dev expunge').add_argument(
         '--yes',
@@ -1266,17 +1255,14 @@ async def __dev_run(
 
     env[ENVVAR_RBT_DEV] = 'true'
 
-    if args.name is not None:
-        env[ENVVAR_RBT_NAME] = args.name
+    if args.application_name is not None:
+        env[ENVVAR_RBT_NAME] = args.application_name
         # Use a state directory specific to the application name. For some
         # applications there may be multiple servers, each with their own
         # subdirectory.
         env[ENVVAR_RBT_STATE_DIRECTORY] = str(
-            dot_rbt_dev_directory(args, parser) / args.name
+            dot_rbt_dev_directory(args, parser) / args.application_name
         )
-
-    if args.secrets_directory is not None:
-        env[ENVVAR_RBT_SECRETS_DIRECTORY] = args.secrets_directory
 
     if args.mcp_frontend_host:
         env[ENVVAR_RBT_MCP_FRONTEND_HOST] = args.mcp_frontend_host
@@ -1339,15 +1325,13 @@ async def __dev_run(
         EffectValidation,
     ).name
 
-    if args.api_key is not None:
-        env[ENVVAR_RBT_CLOUD_API_KEY] = args.api_key
-    env[ENVVAR_RBT_CLOUD_URL] = args.cloud_url
-
     # Set a signing secret for the MCP OAuth server. For local
     # dev we use the application name (insecure, but convenient).
     # Fall back to a fixed string when `--name` wasn't provided.
     if ENVVAR_REBOOT_OAUTH_SIGNING_SECRET not in env:
-        env[ENVVAR_REBOOT_OAUTH_SIGNING_SECRET] = args.name or "reboot-dev"
+        env[ENVVAR_REBOOT_OAUTH_SIGNING_SECRET] = (
+            args.application_name or "reboot-dev"
+        )
 
     if tracing == Tracing.JAEGER:
         # TODO: dynamic port. See comment in `_run_jaeger()`.
@@ -1401,15 +1385,15 @@ async def __dev_run(
 
         # Determine the appropriate verb.
         start_verb = "Starting" if first_start else "Restarting"
-        if args.name is None:
+        if args.application_name is None:
             terminal.warn(
                 f'{start_verb} an ANONYMOUS application; to reuse state '
-                'across application restarts use --name'
+                'across application restarts use --application-name'
                 '\n'
             )
         else:
             terminal.info(
-                f'{start_verb} application with name "{args.name}"...'
+                f'{start_verb} application with name "{args.application_name}"...'
                 '\n'
             )
         first_start = False
@@ -1482,7 +1466,7 @@ async def __dev_run(
                     bundle = await auto_transpile(
                         subprocesses,
                         application,
-                        args.name or "anonymous",
+                        args.application_name or "anonymous",
                         ts_input_paths,
                     )
 
@@ -1729,21 +1713,25 @@ async def _expunge(
 
     dot_rbt_dev = dot_rbt_dev_directory(args, parser)
     if confirm and args.yes is False:
-        terminal.info(f"About to expunge '{args.name}' from '{dot_rbt_dev}'")
+        terminal.info(
+            f"About to expunge '{args.application_name}' from '{dot_rbt_dev}'"
+        )
         if not ask_for_confirmation(
             "Do you want to continue? [y/n] (Tip: Use the --yes flag to skip this prompt):"
         ):
             terminal.fail("Expunge cancelled")
 
-    application_directory = dot_rbt_dev / args.name
+    application_directory = dot_rbt_dev / args.application_name
     if not application_directory.exists():
         terminal.warn(
-            f"Could not find application with name '{args.name}' (looked in "
+            f"Could not find application with name '{args.application_name}' (looked in "
             f"'{application_directory}'); did not expunge"
         )
         return
     await asyncio.to_thread(shutil.rmtree, application_directory)
-    terminal.info(f"Application '{args.name}' has been expunged.\n")
+    terminal.info(
+        f"Application '{args.application_name}' has been expunged.\n"
+    )
 
 
 async def dev_expunge(
@@ -1755,3 +1743,21 @@ async def dev_expunge(
     """
 
     await _expunge(args, parser, confirm=True)
+
+
+async def handle_dev_subcommand(
+    args: argparse.Namespace,
+    *,
+    parser: ArgumentParser,
+    parser_factory: ArgumentParserFactory,
+) -> Optional[int]:
+    if args.subcommand == 'dev run':
+        return await dev_run(
+            args,
+            parser=parser,
+            parser_factory=parser_factory,
+        )
+    elif args.subcommand == 'dev expunge':
+        await dev_expunge(args, parser)
+        return 0
+    return None

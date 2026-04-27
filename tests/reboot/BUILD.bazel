@@ -258,7 +258,6 @@ py_test(
         "//rbt/v1alpha1:tasks_py_proto",
         "//reboot/aio:exceptions_py",
         "//reboot/aio:reboot_py",
-        "//reboot/aio:secrets_py",
         "//reboot/aio:tests_py",
         "//reboot/server:service_descriptor_validator_py",
     ],

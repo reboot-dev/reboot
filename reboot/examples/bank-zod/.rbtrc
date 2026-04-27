@@ -12,10 +12,10 @@ generate --react-extensions
 
 dev run --watch=backend/src/**/*.ts
 
-dev run --name=bank-zod
+dev run --application-name=bank-zod
 
 dev run --nodejs
 
 dev run --application=backend/src/main.ts
 
-dev expunge --name=bank-zod
+dev expunge --application-name=bank-zod

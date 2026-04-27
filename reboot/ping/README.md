@@ -58,5 +58,5 @@ echo "CghEZXNjcmliZQ==" | base64 -d | websocat -b ws://a7dum7c5z5d.reboot-cloud-
 ./rbt.sh cloud logs \
   --cloud-url=http://cloud.reboot-cloud-cluster.localhost:9990 \
   --api-key=OUTPUT_BY_YOUR_UP_COMMAND \
-  --name=ping
+  --application-name=ping
 ```

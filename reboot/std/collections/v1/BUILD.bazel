@@ -12,7 +12,6 @@ py_library(
         requirement("aiohttp"),
         "//reboot/aio:applications_py",
         "//reboot/aio:contexts_py",
-        "//reboot/aio:secrets_py",
         "//reboot/aio/auth:authorizers_py",
         "@com_github_reboot_dev_reboot//rbt/std/collections/v1:sorted_map_py_reboot",
         "@com_github_reboot_dev_reboot//reboot:run_environments_py",

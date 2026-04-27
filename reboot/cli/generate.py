@@ -1,4 +1,5 @@
 import aiofiles.os
+import argparse
 import asyncio
 import glob
 import os
@@ -97,6 +98,10 @@ rbt_from_nodejs = os.environ.get(
     ENVVAR_RBT_FROM_NODEJS,
     "false",
 ).lower() == "true"
+
+
+def generate_subcommands() -> list[str]:
+    return ['generate']
 
 
 def register_generate(parser: ArgumentParser):
@@ -365,6 +370,17 @@ async def generate(
         return await generate_direct(
             args, argv_after_dash_dash, parser, subprocesses
         )
+
+
+async def handle_generate_subcommand(
+    args: argparse.Namespace,
+    *,
+    argv_after_dash_dash: list[str],
+    parser: ArgumentParser,
+) -> Optional[int]:
+    if args.subcommand == 'generate':
+        return await generate(args, argv_after_dash_dash, parser=parser)
+    return None
 
 
 @reboot.aio.tracing.function_span()

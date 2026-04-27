@@ -5,7 +5,6 @@ import h2.config
 import h2.connection
 import h2.events
 import json
-import os
 import random
 import socket
 import string
@@ -17,7 +16,7 @@ from reboot.aio.contexts import ReaderContext, WriterContext
 from reboot.aio.external import ExternalContext
 from reboot.aio.headers import SERVER_ID_HEADER
 from reboot.aio.interceptors import LegacyGrpcContext
-from reboot.aio.tests import Reboot
+from reboot.aio.tests import Reboot, temporary_environ
 from reboot.aio.types import StateRef
 from reboot.settings import ENVVAR_LOCAL_ENVOY_DEBUG
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA
@@ -114,7 +113,7 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_server_filter(self):
         # Output debug information from our local Envoy, so that if this
         # test fails we have all necessary debug logs available.
-        os.environ[ENVVAR_LOCAL_ENVOY_DEBUG] = 'true'
+        temporary_environ(self, {ENVVAR_LOCAL_ENVOY_DEBUG: 'true'})
 
         rbt = Reboot()
         await rbt.start()
@@ -273,7 +272,7 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_mangled_path_filter(self):
         # Output debug information from our local Envoy, so that if this
         # test fails we have all necessary debug logs available.
-        os.environ[ENVVAR_LOCAL_ENVOY_DEBUG] = 'true'
+        temporary_environ(self, {ENVVAR_LOCAL_ENVOY_DEBUG: 'true'})
 
         rbt = Reboot()
         await rbt.start()
@@ -346,7 +345,7 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
         """
         # Output debug information from our local Envoy, so that if this
         # test fails we have all necessary debug logs available.
-        os.environ[ENVVAR_LOCAL_ENVOY_DEBUG] = 'true'
+        temporary_environ(self, {ENVVAR_LOCAL_ENVOY_DEBUG: 'true'})
 
         rbt = Reboot()
         await rbt.start()
@@ -473,7 +472,7 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
         """
         # Output debug information from our local Envoy, so that if this
         # test fails we have all necessary debug logs available.
-        os.environ[ENVVAR_LOCAL_ENVOY_DEBUG] = 'true'
+        temporary_environ(self, {ENVVAR_LOCAL_ENVOY_DEBUG: 'true'})
 
         rbt = Reboot()
         await rbt.start()

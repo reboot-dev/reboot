@@ -1,10 +1,9 @@
 import unittest
 from rbt.thirdparty.mailgun.v1.mailgun_rbt import Message
 from reboot.aio.applications import Application
-from reboot.aio.secrets import MockSecretSource, Secrets
-from reboot.aio.tests import Reboot
+from reboot.aio.tests import Reboot, temporary_environ
 from reboot.thirdparty import mailgun
-from reboot.thirdparty.mailgun import MAILGUN_API_KEY_SECRET_NAME
+from reboot.thirdparty.mailgun import ENVVAR_MAILGUN_API_KEY
 from reboot.thirdparty.mailgun.servicers import MockMessageServicer
 
 # Any arbitrary mailgun API key works for the `MockMessageServicer`.
@@ -14,12 +13,9 @@ MAILGUN_API_KEY = 'S3CR3T!'
 class TestCase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
-        Secrets.set_secret_source(
-            MockSecretSource(
-                {
-                    MAILGUN_API_KEY_SECRET_NAME: MAILGUN_API_KEY.encode(),
-                }
-            )
+        temporary_environ(
+            self,
+            {ENVVAR_MAILGUN_API_KEY: MAILGUN_API_KEY},
         )
         self.rbt = Reboot()
         await self.rbt.start()

@@ -55,6 +55,9 @@ py_test(
     ],
     data = ["//reboot/cli:rbt"],
     main = "subcommand_run_tests.py",
+    deps = [
+        "//reboot/aio:tests_py",
+    ],
 )
 
 py_test(
@@ -100,5 +103,19 @@ py_test(
     main = "watch_tests.py",
     deps = [
         "//reboot/cli:watch_py",
+    ],
+)
+
+py_test(
+    name = "cloud_secrets_tests_py",
+    srcs = [
+        "cloud_secrets_tests.py",
+    ],
+    main = "cloud_secrets_tests.py",
+    deps = [
+        ":mock_exit_py",
+        "//reboot/cli:cli_py",
+        "//reboot/cli:rc_py",
+        "//reboot/cli/cloud:secrets_py",
     ],
 )

@@ -1,4 +1,5 @@
 import grpc
+import os
 import tempfile
 import unittest
 from ast import literal_eval
@@ -12,9 +13,8 @@ from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow, deny
 from reboot.aio.contexts import TransactionContext, WriterContext
 from reboot.aio.external import ExternalContext
-from reboot.aio.secrets import MockSecretSource, Secrets
 from reboot.aio.tests import Reboot
-from reboot.settings import ADMIN_SECRET_NAME
+from reboot.settings import ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA
 
 # Import used in SortedMap documentation.
@@ -34,7 +34,7 @@ from tests.reboot.general_rbt import General, GeneralRequest, GeneralResponse
 from tests.reboot.general_servicer import GeneralServicer
 from typing import Optional
 
-TEST_ADMIN_SECRET = 'test-admin-secret'
+TEST_SECRET_REBOOT_ADMIN_TOKEN = 'test-admin-secret'
 
 
 class SortedMapConsumer(GeneralServicer):
@@ -100,11 +100,8 @@ class SortedMapConsumer(GeneralServicer):
 class TestCase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
-        Secrets.set_secret_source(
-            MockSecretSource({
-                ADMIN_SECRET_NAME: TEST_ADMIN_SECRET.encode(),
-            })
-        )
+        os.environ[ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
+                  ] = TEST_SECRET_REBOOT_ADMIN_TOKEN
 
         self.rbt = Reboot()
         await self.rbt.start()
@@ -670,7 +667,7 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
             await export_import_client.do_export(
                 export_import_stub,
                 directory,
-                admin_token=TEST_ADMIN_SECRET,
+                admin_token=TEST_SECRET_REBOOT_ADMIN_TOKEN,
             )
 
             # Delete all entries and confirm empty.
@@ -681,7 +678,7 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
             await export_import_client.do_import(
                 export_import_stub,
                 directory,
-                admin_token=TEST_ADMIN_SECRET,
+                admin_token=TEST_SECRET_REBOOT_ADMIN_TOKEN,
             )
 
             # Confirm full.

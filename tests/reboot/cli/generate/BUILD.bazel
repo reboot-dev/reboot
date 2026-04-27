@@ -15,6 +15,7 @@ py_library(
     ],
     deps = [
         "//reboot:version_py",
+        "//reboot/aio:tests_py",
         "//reboot/cli:cli_py",
         "//reboot/cli:generate_py",
         "//reboot/cli:rc_py",

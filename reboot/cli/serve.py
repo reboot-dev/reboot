@@ -1,4 +1,5 @@
 import aiofiles.os
+import argparse
 import asyncio
 import math
 import os
@@ -40,7 +41,6 @@ from reboot.settings import (
     ENVVAR_RBT_EFFECT_VALIDATION,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
-    ENVVAR_RBT_SECRETS_DIRECTORY,
     ENVVAR_RBT_SERVE,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
@@ -166,6 +166,10 @@ async def _pick_envoy_mode(
             )
 
 
+def serve_subcommands() -> list[str]:
+    return ['serve run']
+
+
 def register_serve(parser: ArgumentParser):
     add_working_directory_options(parser.subcommand('serve run'))
 
@@ -195,12 +199,14 @@ def register_serve(parser: ArgumentParser):
     )
 
     parser.subcommand('serve run').add_argument(
-        '--name',
+        '--application-name',
         type=str,
         help="name of application, used to differentiate within "
         "'--state-directory'",
         required=True,
     )
+    parser.subcommand('serve run'
+                     ).add_renamed_flag('--name', '--application-name')
 
     parser.subcommand('serve run').add_argument(
         '--port',
@@ -283,15 +289,12 @@ async def serve_run(
 
         env[ENVVAR_RBT_SERVE] = 'true'
 
-        assert args.name is not None
+        assert args.application_name is not None
 
-        env[ENVVAR_RBT_NAME] = args.name
+        env[ENVVAR_RBT_NAME] = args.application_name
 
         if args.state_directory is not None:
             env[ENVVAR_RBT_STATE_DIRECTORY] = args.state_directory
-
-        if args.secrets_directory is not None:
-            env[ENVVAR_RBT_SECRETS_DIRECTORY] = args.secrets_directory
 
         # Pick the mode we'll run Envoy in: either as a stand-alone
         # program or inside a Docker container.
@@ -360,7 +363,7 @@ async def serve_run(
             bundle = await auto_transpile(
                 subprocesses,
                 application,
-                args.name,
+                args.application_name,
                 [],
             )
 
@@ -391,3 +394,18 @@ async def serve_run(
 
         async with subprocesses.exec(*args, env=env) as process:
             return await process.wait()
+
+
+async def handle_serve_subcommand(
+    args: argparse.Namespace,
+    *,
+    parser: ArgumentParser,
+    parser_factory: ArgumentParserFactory,
+) -> Optional[int]:
+    if args.subcommand == 'serve run':
+        return await serve_run(
+            args,
+            parser=parser,
+            parser_factory=parser_factory,
+        )
+    return None

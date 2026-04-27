@@ -56,7 +56,7 @@ dev run --python
 dev run --application=backend/src/main.py
 {% endif %}
 # Save state between restarts.
-dev run --name={{ name }}
+dev run --application-name={{ name }}
 
 # When expunging, expunge that state we've saved.
-dev expunge --name={{ name }}
+dev expunge --application-name={{ name }}

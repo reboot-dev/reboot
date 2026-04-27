@@ -41,11 +41,11 @@ dev run --python
 serve run --python
 
 # Set the application name for commands that require it.
-cloud up --name=boutique
-cloud down --name=boutique --expunge
-dev expunge --name=boutique
-dev run --name=boutique
-serve run --name=boutique
+cloud up --application-name=boutique
+cloud down --application-name=boutique --expunge
+dev expunge --application-name=boutique
+dev run --application-name=boutique
+serve run --application-name=boutique
 
 # Run the application!
 dev run --application=backend/src/main.py
