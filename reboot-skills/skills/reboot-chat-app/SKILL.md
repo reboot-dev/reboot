@@ -173,8 +173,8 @@ No `@mcp.tool()` decorators.
 
 ### State is Durable
 
-State survives restarts. Set `dev run --name=<name>` in `.rbtrc` to
-persist across dev restarts. Use `uv run rbt dev expunge --name=<name>` to reset.
+State survives restarts. Set `dev run --application-name=<name>` in `.rbtrc` to
+persist across dev restarts. Use `uv run rbt dev expunge --application-name=<name>` to reset.
 
 ## Project Structure
 
@@ -279,7 +279,7 @@ dev run --watch=backend/**/*.py
 dev run --python
 
 # Save state between restarts.
-dev run --name=<project-name>
+dev run --application-name=<project-name>
 
 # Run the application!
 dev run --application=backend/src/main.py
@@ -298,7 +298,7 @@ dev run:hmr --mcp-frontend-host=http://localhost:4444
 dev run:dist --mcp-frontend-host=""
 
 # When expunging, expunge that state we've saved.
-dev expunge --name=<project-name>
+dev expunge --application-name=<project-name>
 ```
 
 ### `pyproject.toml`

@@ -220,10 +220,19 @@ def _iframe_relay(ui_url: str, ui_name: str, variant: str) -> str:
         const SIZE_CHANGED = 'ui/notifications/size-changed';
         const TOOL_INPUT = 'ui/notifications/tool-input';
         const TOOL_RESULT = 'ui/notifications/tool-result';
+        const SANDBOX_PROXY_READY = 'ui/notifications/sandbox-proxy-ready';
+        const SANDBOX_RESOURCE_READY =
+            'ui/notifications/sandbox-resource-ready';
 
         // Saved notifications for replay on reconnect.
         let savedToolInput = null;
         let savedToolResult = null;
+
+        // Last size forwarded to the host; used to suppress
+        // duplicate `size-changed` forwards that would otherwise
+        // drive an oscillation loop.
+        let lastForwardedHeight = null;
+        let lastForwardedWidth = null;
 
         window.addEventListener('message', (event) => {{
             if (event.source === iframe.contentWindow) {{
@@ -254,13 +263,21 @@ def _iframe_relay(ui_url: str, ui_name: str, variant: str) -> str:
                     return;
                 }}
 
-                // Reflect size-changed into body height for the
-                // sandbox-proxy's ResizeObserver.
+                // Reflect the inner size into our body height
+                // and also forward `size-changed` to the host.
+                // De-duplicated to avoid oscillation.
                 if (d && d.method === SIZE_CHANGED) {{
                     const h = d.params && d.params.height;
+                    const w = d.params && d.params.width;
                     if (typeof h === 'number') {{
                         document.documentElement.style.height = h + 'px';
                         document.body.style.height = h + 'px';
+                    }}
+                    if (h !== lastForwardedHeight ||
+                        w !== lastForwardedWidth) {{
+                        lastForwardedHeight = h;
+                        lastForwardedWidth = w;
+                        window.parent.postMessage(d, '*');
                     }}
                     return;
                 }}
@@ -269,6 +286,12 @@ def _iframe_relay(ui_url: str, ui_name: str, variant: str) -> str:
                 window.parent.postMessage(event.data, '*');
             }} else if (event.source === window.parent) {{
                 const d = event.data;
+
+                // We loaded our own ui_url instead of waiting for HTML
+                // from the host, so consume the host's reply to our
+                // `sandbox-proxy-ready` instead of forwarding it to
+                // the inner iframe.
+                if (d && d.method === SANDBOX_RESOURCE_READY) return;
 
                 // Save tool notifications for reconnect replay.
                 if (d && d.method === TOOL_INPUT) savedToolInput = d;
@@ -281,6 +304,16 @@ def _iframe_relay(ui_url: str, ui_name: str, variant: str) -> str:
                 }}
             }}
         }});
+
+        // Tell the host we're ready. The host (e.g. Goose) gates its
+        // iframe-load timeout on this notification; without it a cold
+        // inner-iframe boot through ngrok can exceed the host's
+        // window and the UI fails to mount.
+        window.parent.postMessage({{
+            jsonrpc: '2.0',
+            method: SANDBOX_PROXY_READY,
+            params: {{}},
+        }}, '*');
     </script>
 </body>
 </html>'''
