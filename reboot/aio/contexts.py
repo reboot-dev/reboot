@@ -27,6 +27,9 @@ from reboot.aio.idempotency import (
     How,
     Idempotency,
     IdempotencyManager,
+    _merge_idempotency_seeds,
+    make_derived_idempotency_key,
+    make_idempotency_alias,
 )
 from reboot.aio.internals.channel_manager import (
     LegacyGrpcChannel,
@@ -66,6 +69,32 @@ if TYPE_CHECKING:
 
 ContextT = TypeVar('ContextT', bound='Context')
 ResponseT = TypeVar('ResponseT', bound=Message)
+
+
+class IterationCompleteCallable(Protocol):
+    """Callable signature accepted by
+    `WorkflowContext.on_iteration_complete`. May be sync (returning
+    `None`) or async (returning an `Awaitable[None]`). The runtime
+    awaits async returns to completion before continuing.
+    """
+
+    def __call__(self, *, iteration: int) -> None | Awaitable[None]:
+        ...
+
+
+class MethodCompleteCallable(Protocol):
+    """Callable signature accepted by
+    `WorkflowContext.on_method_complete`. May be sync (returning
+    `None`) or async (returning an `Awaitable[None]`). The runtime
+    awaits async returns to completion before continuing.
+
+    `retrying=True` means the workflow method body raised and the
+    framework will retry it; `retrying=False` means the method body
+    returned normally or raised a declared error.
+    """
+
+    def __call__(self, *, retrying: bool) -> None | Awaitable[None]:
+        ...
 
 
 class Participants:
@@ -1219,6 +1248,11 @@ class WorkflowContext(Context):
     _reactively_state_manager: StateManager
     _reactively_state_type: type
 
+    # Callables for when the current `context.loop(...)` iteration
+    # completes and when the method body returns or raises.
+    _on_iteration_complete: list[IterationCompleteCallable]
+    _on_method_complete: list[MethodCompleteCallable]
+
     def __init__(
         self,
         *,
@@ -1244,6 +1278,69 @@ class WorkflowContext(Context):
 
         self._reactively_state_manager = reactively_state_manager
         self._reactively_state_type = reactively_state_type
+
+        self._on_iteration_complete = []
+        self._on_method_complete = []
+
+    def on_iteration_complete(
+        self,
+        callable: IterationCompleteCallable,
+    ) -> None:
+        """Register `callable` to be called every time a
+        `context.loop(...)` iteration completes during this workflow
+        method invocation, with the just-finished iteration number
+        passed as `iteration=`. Callables stay registered across
+        iterations and are cleared only when the workflow method
+        itself completes (see `on_method_complete`) -- callers
+        register once per method invocation, not once per iteration.
+        Callables may be sync or async; if async, the runtime awaits
+        them to completion before continuing.
+
+        Raising from this callable propagates out of the iteration
+        body and the entire workflow method gets retried (including
+        the iteration whose completion the callable was called).
+        """
+        self._on_iteration_complete.append(callable)
+
+    def on_method_complete(
+        self,
+        callable: MethodCompleteCallable,
+    ) -> None:
+        """Register `callable` to be called when this workflow method body
+        finishes -- whether by returning a result or raising a
+        declared error (`retrying=False`) or by raising an unexpected
+        error that will cause the method to be retried
+        (`retrying=True`). Calls exactly once per method invocation;
+        afterwards both `on_iteration_complete` and
+        `on_method_complete` lists are cleared so a re-run on the same
+        context starts with a fresh registration. Callables may be
+        sync or async; if async, the runtime awaits them to completion
+        before continuing.
+
+        Raising from this callable propagates out of the workflow
+        method body and the entire workflow method gets retried.
+        """
+        self._on_method_complete.append(callable)
+
+    @contextmanager
+    def idempotency_seeds(
+        self,
+        entries: dict[str, Any],
+    ) -> Iterator[None]:
+        """Push key=value `entries` that scope every
+        `Idempotency`-keyed call (`at_least_once`, `at_most_once`,
+        `until`, idempotent method calls, inline writer idempotency)
+        made inside the `with` block. Nested blocks merge with
+        inner-overrides-outer semantics; the outer state is restored
+        on exit.
+
+        Exposed on `WorkflowContext` and not `Context` because
+        composing extra seeds only makes sense when the context
+        already has an idempotency seed -- a `WorkflowContext` always
+        does (seeded from the task's UUID).
+        """
+        with _merge_idempotency_seeds(entries):
+            yield
 
     def within_until(self) -> bool:
         return _within_until.get()
@@ -1274,12 +1371,20 @@ class WorkflowContext(Context):
         and produce a single key for the entire workflow regardless of
         iteration.
         """
-        if self.within_loop() and not per_workflow:
-            alias += f" (iteration #{self.task.iteration})"
+        iteration = (
+            self.task.iteration
+            if self.within_loop() and not per_workflow else None
+        )
 
+        alias_iteration = make_idempotency_alias(alias, iteration)
+
+        assert alias_iteration is not None
+
+        # NOTE: `self.workflow_id` is the same as the task ID which is
+        # also what we use as the seed in IdempotencyManager.
         assert self.workflow_id is not None
 
-        return uuid.uuid5(self.workflow_id, alias)
+        return make_derived_idempotency_key(self.workflow_id, alias_iteration)
 
     @property
     def workflow_iteration(self) -> Optional[int]:

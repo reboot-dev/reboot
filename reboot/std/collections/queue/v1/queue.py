@@ -92,7 +92,7 @@ class QueueServicer(Queue.Servicer):
         item to return.
         """
 
-        async def have_items():
+        async def have_items() -> bool | DequeueResponse:
             # Check if it's empty.
             response = await Queue.ref().empty(context)
 
@@ -117,10 +117,7 @@ class QueueServicer(Queue.Servicer):
             else:
                 return response
 
-        response = await until(
-            "Have items", context, have_items, type=DequeueResponse
-        )
-        return response
+        return await until("Have items", context, have_items)
 
     async def try_dequeue(
         self,

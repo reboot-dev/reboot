@@ -274,15 +274,17 @@ class MyEchoServicer(Echo.singleton.Servicer):
 
         # NOTE: we're returning a non-boolean value from `until()` to
         # test that feature.
-        async def number_of_messages_eq(n):
+        async def number_of_messages_eq(n) -> str | bool:
             state = await Echo.ref().read(context)
             return VALUE if len(state.messages) == n else False
+
+        async def messages_eq_3() -> str | bool:
+            return await number_of_messages_eq(3)
 
         value = await until(
             'Number of messages equals 3',
             context,
-            lambda: number_of_messages_eq(3),
-            type=str,
+            messages_eq_3,
         )
 
         assert value == VALUE
@@ -292,11 +294,13 @@ class MyEchoServicer(Echo.singleton.Servicer):
             message='Reactive workflow task down/up',
         )
 
+        async def messages_eq_4() -> str | bool:
+            return await number_of_messages_eq(4)
+
         value = await until(
             'Number of messages equals 4',
             context,
-            lambda: number_of_messages_eq(4),
-            type=str,
+            messages_eq_4,
         )
 
         assert value == VALUE
@@ -317,7 +321,7 @@ class MyEchoServicer(Echo.singleton.Servicer):
             assert iteration <= 1, iteration
             read_state_run = False
 
-            async def read_state():
+            async def read_state() -> Echo.State:
                 nonlocal read_state_run
                 read_state_run = True
                 return await Echo.ref().read(context)
@@ -339,7 +343,6 @@ class MyEchoServicer(Echo.singleton.Servicer):
                 'Read state the first time',
                 context,
                 read_state,
-                type=Echo.State,
             )
 
             assert state_the_first_time.messages == ['Test started']
@@ -389,7 +392,7 @@ class MyEchoServicer(Echo.singleton.Servicer):
             # test brings the servicer down/up after waiting for this
             # message so we can test idempotency aliases across recovery
             # _and_ across iterations.
-            async def add_message(state: Echo.State):
+            async def add_message(state: Echo.State) -> int:
                 state.messages.append(
                     'Control loop workflow task -- each iteration'
                 )
@@ -398,7 +401,6 @@ class MyEchoServicer(Echo.singleton.Servicer):
             result = await Echo.ref().per_iteration('Add message').write(
                 context,
                 add_message,
-                type=int,
             )
 
             assert result == iteration
@@ -437,7 +439,7 @@ class MyEchoServicer(Echo.singleton.Servicer):
         class SomeException(Exception):
             pass
 
-        async def callable_that_raises_retryable_exception():
+        async def callable_that_raises_retryable_exception() -> int:
             if not cls._at_most_once_workflow_raised_some_exception:
                 cls._at_most_once_workflow_raised_some_exception = True
                 raise SomeException
@@ -448,7 +450,6 @@ class MyEchoServicer(Echo.singleton.Servicer):
             'Raise retryable exception, then return 42',
             context,
             callable_that_raises_retryable_exception,
-            type=int,
             retryable_exceptions=[SomeException],
         )
 

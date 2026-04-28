@@ -177,9 +177,7 @@ class ChatbotServicer(Chatbot.Servicer):
                 )
 
             try:
-                response = await at_most_once(
-                    "Generate", context, generate, type=ChatbotResponse
-                )
+                response = await at_most_once("Generate", context, generate)
 
                 if response.should_respond:
                     text = response.response

@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Exit on error, unset variable, or any failure in a pipeline. Notably,
+# `pipefail` is what makes `curl ... | tar -xzf -` fail loudly when
+# `curl` fails: without it, `tar`'s success on the (empty) stream
+# masks the download failure, leaving `.reboot_python_env` pointing
+# at a non-existent interpreter.
+set -euo pipefail
+
 OS=$(node -p "require('os').platform()")
 ARCH=$(node -p "process.arch")
 

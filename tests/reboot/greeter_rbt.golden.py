@@ -14512,19 +14512,6 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 )
             ).read(context)
 
-        @IMPORT_typing.overload
-        async def write(
-            self,
-            idempotency_alias: str,
-            context: IMPORT_reboot_aio_contexts.WorkflowContext,
-            writer: GreeterBaseServicer.InlineWriterCallable[None],
-            __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
-            *,
-            type: type = type(None),
-        ) -> None:
-            ...
-
-        @IMPORT_typing.overload
         async def write(
             self,
             idempotency_alias: str,
@@ -14532,25 +14519,22 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             writer: GreeterBaseServicer.InlineWriterCallable[GreeterBaseServicer.InlineWriterCallableResult],
             __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
             *,
-            type: type[GreeterBaseServicer.InlineWriterCallableResult],
+            type: IMPORT_reboot_aio_workflows.Type | IMPORT_reboot_aio_workflows._Unset = IMPORT_reboot_aio_workflows._UNSET,
         ) -> GreeterBaseServicer.InlineWriterCallableResult:
-            ...
+            """Perform an "inline write" within a workflow.
 
-        async def write(
-            self,
-            idempotency_alias: str,
-            context: IMPORT_reboot_aio_contexts.WorkflowContext,
-            writer: GreeterBaseServicer.InlineWriterCallable[GreeterBaseServicer.InlineWriterCallableResult],
-            __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
-            *,
-            type: type = type(None),
-        ) -> GreeterBaseServicer.InlineWriterCallableResult:
-            """Perform an "inline write" within a workflow."""
+            `type=` is optional: when omitted, `writer`'s return
+            annotation is used (falling back to `type(None)` if
+            there is none).
+            """
+            type_t, _ = IMPORT_reboot_aio_workflows._resolve_callable_return_type(
+                writer, type,
+            )
             return await (
                 self.per_iteration(idempotency_alias) if context.within_loop()
                 else self.per_workflow(idempotency_alias)
             ).write(
-                context, writer, __options__, type=type
+                context, writer, __options__, type=type_t
             )
 
         class _Idempotently:
@@ -14646,44 +14630,26 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
                     return GreeterFromProto(protobuf_state)
 
-            @IMPORT_typing.overload
-            async def write(
-                self,
-                context: IMPORT_reboot_aio_contexts.WorkflowContext,
-                writer: GreeterBaseServicer.InlineWriterCallable[None],
-                __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
-                *,
-                type: type = type(None),
-                check_type: bool = True,
-            ) -> None:
-                ...
-
-            @IMPORT_typing.overload
             async def write(
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
                 writer: GreeterBaseServicer.InlineWriterCallable[GreeterBaseServicer.InlineWriterCallableResult],
                 __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
                 *,
-                type: type[GreeterBaseServicer.InlineWriterCallableResult],
+                type: IMPORT_reboot_aio_workflows.Type | IMPORT_reboot_aio_workflows._Unset = IMPORT_reboot_aio_workflows._UNSET,
                 check_type: bool = True,
             ) -> GreeterBaseServicer.InlineWriterCallableResult:
-                ...
-
-            async def write(
-                self,
-                context: IMPORT_reboot_aio_contexts.WorkflowContext,
-                writer: GreeterBaseServicer.InlineWriterCallable[GreeterBaseServicer.InlineWriterCallableResult],
-                __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
-                *,
-                type: type = type(None),
-                check_type: bool = True,
-            ) -> GreeterBaseServicer.InlineWriterCallableResult:
+                # `type=` is optional: when omitted, `writer`'s
+                # return annotation is used (falling back to
+                # `type(None)` when there is none).
+                type_t, _ = IMPORT_reboot_aio_workflows._resolve_callable_return_type(
+                    writer, type,
+                )
                 return await self._write(
                     context,
                     writer,
                     __options__,
-                    type_result=type,
+                    type_result=type_t,
                     check_type=check_type,
                 )
 
@@ -14693,7 +14659,7 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 writer: GreeterBaseServicer.InlineWriterCallable[GreeterBaseServicer.InlineWriterCallableResult],
                 __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
                 *,
-                type_result: type,
+                type_result: IMPORT_reboot_aio_workflows.TypeT,
                 check_type: bool,
             ) -> GreeterBaseServicer.InlineWriterCallableResult:
                 unidempotently = self._how == IMPORT_reboot_aio_workflows.ALWAYS
@@ -14729,7 +14695,7 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 writer: GreeterBaseServicer.InlineWriterCallable[GreeterBaseServicer.InlineWriterCallableResult],
                 __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
                 *,
-                type_result: type,
+                type_result: IMPORT_reboot_aio_workflows.TypeT,
                 check_type: bool,
                 unidempotently: bool,
                 checkpoint: IMPORT_reboot_aio_idempotency.Checkpoint,
@@ -14820,10 +14786,10 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                             response.ParseFromString(idempotent_mutation.response)
                             result: GreeterBaseServicer.InlineWriterCallableResult = IMPORT_pickle.loads(response.value)
 
-                            if check_type and type(result) is not type_result:
+                            if check_type and not isinstance(result, IMPORT_reboot_aio_workflows._isinstance_type(type_result)):
                                 raise TypeError(
                                     f"Stored result of type '{type(result).__name__}' from 'writer' "
-                                    f"is not of expected type '{type_result.__name__}'; have you changed "
+                                    f"is not of expected type '{IMPORT_reboot_aio_workflows._format_type(type_result)}'; have you changed "
                                     "the 'type' that you expect after having stored a result?"
                                 )
 
@@ -14854,10 +14820,10 @@ class GreeterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
                                 GreeterToProto(typed_state, protobuf_state)
 
-                                if check_type and type(result) is not type_result:
+                                if check_type and not isinstance(result, IMPORT_reboot_aio_workflows._isinstance_type(type_result)):
                                     raise TypeError(
                                         f"Result of type '{type(result).__name__}' from 'writer' is "
-                                        f"not of expected type '{type_result.__name__}'; "
+                                        f"not of expected type '{IMPORT_reboot_aio_workflows._format_type(type_result)}'; "
                                         "did you specify an incorrect 'type'?"
                                     )
 
@@ -22485,32 +22451,12 @@ class Greeter:
                     context,
                 )
 
-            @IMPORT_typing.overload
-            async def write(
-                self,
-                context: IMPORT_reboot_aio_contexts.WorkflowContext,
-                writer: GreeterBaseServicer.InlineWriterCallable[None],
-                *,
-                type: type = type(None),
-            ) -> None:
-                ...
-
-            @IMPORT_typing.overload
             async def write(
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
                 writer: GreeterBaseServicer.InlineWriterCallable[GreeterBaseServicer.InlineWriterCallableResult],
                 *,
-                type: type[GreeterBaseServicer.InlineWriterCallableResult],
-            ) -> GreeterBaseServicer.InlineWriterCallableResult:
-                ...
-
-            async def write(
-                self,
-                context: IMPORT_reboot_aio_contexts.WorkflowContext,
-                writer: GreeterBaseServicer.InlineWriterCallable[GreeterBaseServicer.InlineWriterCallableResult],
-                *,
-                type: type = type(None),
+                type: IMPORT_reboot_aio_workflows.Type | IMPORT_reboot_aio_workflows._Unset = IMPORT_reboot_aio_workflows._UNSET,
             ) -> GreeterBaseServicer.InlineWriterCallableResult:
                 if self._weak_reference._servicer is None:
                     raise RuntimeError(
@@ -22519,12 +22465,18 @@ class Greeter:
                         "is important for you!"
                     )
 
+                # `type=` is optional: when omitted, `writer`'s
+                # return annotation is used.
+                type_t, _ = IMPORT_reboot_aio_workflows._resolve_callable_return_type(
+                    writer, type,
+                )
+
                 return await GreeterBaseServicer.WorkflowState._Idempotently._write_validating_effects(
                     self._weak_reference._servicer,
                     self._idempotency,
                     context,
                     writer,
-                    type_result=type,
+                    type_result=type_t,
                     check_type=not self._idempotency.always,
                     unidempotently=self._idempotency.always,
                     checkpoint=context.checkpoint(),
@@ -28488,34 +28440,22 @@ class Greeter:
                 )
             ).read(context)
 
-        @IMPORT_typing.overload
-        async def write(
-            self,
-            context: IMPORT_reboot_aio_contexts.WorkflowContext,
-            writer: GreeterBaseServicer.InlineWriterCallable[None],
-            *,
-            type: type = type(None),
-        ) -> None:
-            ...
-
-        @IMPORT_typing.overload
         async def write(
             self,
             context: IMPORT_reboot_aio_contexts.WorkflowContext,
             writer: GreeterBaseServicer.InlineWriterCallable[GreeterBaseServicer.InlineWriterCallableResult],
             *,
-            type: type[GreeterBaseServicer.InlineWriterCallableResult],
+            type: IMPORT_reboot_aio_workflows.Type | IMPORT_reboot_aio_workflows._Unset = IMPORT_reboot_aio_workflows._UNSET,
         ) -> GreeterBaseServicer.InlineWriterCallableResult:
-            ...
+            """Perform an "inline write" within a workflow.
 
-        async def write(
-            self,
-            context: IMPORT_reboot_aio_contexts.WorkflowContext,
-            writer: GreeterBaseServicer.InlineWriterCallable[GreeterBaseServicer.InlineWriterCallableResult],
-            *,
-            type: type = type(None),
-        ) -> GreeterBaseServicer.InlineWriterCallableResult:
-            """Perform an "inline write" within a workflow."""
+            `type=` is optional: when omitted, `writer`'s return
+            annotation is used.
+            """
+            # We forward `type=` along to the inner `write` (which
+            # also infers if not passed). Pass through whichever
+            # form the user supplied -- explicit class or the
+            # `_UNSET` sentinel to trigger inference downstream.
             return await (
                 self.always() if context.within_until()
                 else (

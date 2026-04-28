@@ -480,6 +480,7 @@ py_library(
     # ship with the Reboot library, even when they aren't themselves
     # used by the Reboot library.
     deps = [
+        "//reboot/agents/pydantic_ai:python",
         "//reboot/thirdparty/mailgun:servicers_py",
     ],
 )

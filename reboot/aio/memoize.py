@@ -9,11 +9,15 @@ from reboot.aio.contexts import (
     WriterContext,
     _log_message_for_effect_validation,
 )
+from reboot.aio.idempotency import make_derived_idempotency_key
 from reboot.aio.types import assert_type
 from reboot.aio.workflows import (
     ALWAYS,
     PER_ITERATION,
     AtMostOnceFailedBeforeCompleting,
+    TypeT,
+    _format_type,
+    _isinstance_type,
 )
 from reboot.memoize.v1.memoize_rbt import (
     FailRequest,
@@ -53,13 +57,21 @@ async def memoize(
     context: WorkflowContext,
     callable: Callable[[], Awaitable[T]],
     *,
-    type_t: type[T],
+    type_t: TypeT,
+    type_t_inferred: bool = False,
     at_most_once: bool,
     until: bool = False,
     retryable_exceptions: Optional[list[type[Exception]]] = None,
 ) -> T:
     """Memoizes the result of running `callable`, only attempting to do so
     once if `at_most_once=True`.
+
+    `type_t_inferred=True` indicates that `type_t` was inferred from
+    `callable`'s return annotation rather than passed explicitly by
+    the caller. This only affects the wording of the `TypeError`
+    raised when the runtime value disagrees with `type_t`, so the
+    caller knows whether to fix the annotation or pass `type=`
+    explicitly.
 
     NOTE: this is the Python wrapper for `reboot.memoize.v1` and as
     such uses `pickle` to serialize the result of calling `callable`
@@ -93,7 +105,7 @@ async def memoize(
     #
     # TODO(benh): colocate with `context.state_ref` for performance.
     memoize = Memoize.ref(
-        str(uuid.uuid5(context.task_id, idempotency.alias)),
+        str(make_derived_idempotency_key(context.task_id, idempotency.alias)),
     )
 
     await memoize.idempotently(
@@ -114,11 +126,21 @@ async def memoize(
         )
     elif status.stored:
         t = pickle.loads(status.data)
-        if type(t) is not type_t:
+        if not isinstance(t, _isinstance_type(type_t)):
+            if type_t_inferred:
+                raise TypeError(
+                    f"Stored result of type '{type(t).__name__}' from "
+                    "'callable' is not compatible with the expected type "
+                    f"'{_format_type(type_t)}' inferred from the "
+                    "callable's return annotation; has the annotation "
+                    "changed since the result was stored? Update the "
+                    "annotation or pass `type=` explicitly."
+                )
             raise TypeError(
-                f"Stored result of type '{type(t).__name__}' from 'callable' "
-                f"is not of expected type '{type_t.__name__}'; have you changed "
-                "the 'type' that you expect after having stored a result?"
+                f"Stored result of type '{type(t).__name__}' from "
+                "'callable' is not compatible with the expected type "
+                f"'{_format_type(type_t)}'; have you changed the 'type' that "
+                "you expect after having stored a result?"
             )
         return t
 
@@ -219,16 +241,38 @@ async def memoize(
         # validation and were confused. See
         # https://github.com/reboot-dev/mono/issues/4616 for more
         # details.
-        if type(t) is not type_t:
+        if not isinstance(t, _isinstance_type(type_t)):
             # NOTE: this error will only apply to Python developers
             # and hence we use Python names, e.g., `at_least_once`,
             # because we know that the Node.js code will always pass
             # the correct `type_t` (or else we have an internal bug).
+            primitive = (
+                'at_most_once' if at_most_once else
+                ('until' if until else 'at_least_once')
+            )
+            if type_t_inferred:
+                if type_t is type(None):
+                    raise TypeError(
+                        f"Result of type '{type(t).__name__}' from "
+                        f"callable passed to '{primitive}' is not `None` "
+                        "but no `type=` argument was passed and "
+                        "no return annotation was found on the "
+                        "callable; either annotate the callable's "
+                        "return type or pass `type=` explicitly."
+                    )
+                raise TypeError(
+                    f"Result of type '{type(t).__name__}' from "
+                    f"callable passed to '{primitive}' is not "
+                    "compatible with the expected type "
+                    f"'{_format_type(type_t)}' inferred from the "
+                    "callable's return annotation; fix the "
+                    "annotation or pass `type=` explicitly."
+                )
             raise TypeError(
-                f"Result of type '{type(t).__name__}' from callable passed to "
-                f"'{'at_most_once' if at_most_once else ('until' if until else 'at_least_once')}' "
-                f"is not of expected type '{type_t.__name__}'; "
-                "did you specify an incorrect 'type' or _forget_ to specify "
+                f"Result of type '{type(t).__name__}' from callable "
+                f"passed to '{primitive}' is not of expected type "
+                f"'{_format_type(type_t)}'; did you specify an incorrect "
+                "'type' or _forget_ to specify "
                 "the keyword argument 'type' all together?"
             )
 

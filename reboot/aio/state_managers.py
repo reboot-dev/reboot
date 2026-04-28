@@ -4,6 +4,7 @@ import asyncio
 import bitarray  # type: ignore[import]
 import grpc
 import hashlib
+import inspect
 import log.log
 import logging
 import math
@@ -2848,8 +2849,26 @@ class SidecarStateManager(
                             "to iterate"
                         )
 
+                    completed_iteration = task_effect.iteration
+
+                    # Call iteration-complete callables BEFORE
+                    # advancing and persisting the iteration
+                    # counter, so that if a callable raises the
+                    # exception propagates out of the iteration
+                    # body and the entire workflow method gets
+                    # retried -- including this iteration, since
+                    # we haven't yet recorded its completion. The
+                    # list is intentionally NOT cleared --
+                    # callables are persistent across iterations
+                    # of the same method invocation and only get
+                    # cleared when the method itself completes.
+                    # Async callables are awaited to completion.
+                    for callable in context._on_iteration_complete:
+                        result = callable(iteration=completed_iteration)
+                        if inspect.isawaitable(result):
+                            await result
+
                     async with self._mutator_locks[state_type][state_ref]:
-                        completed_iteration = task_effect.iteration
                         task_effect.iteration += 1
 
                         await self._store(
@@ -2919,7 +2938,26 @@ class SidecarStateManager(
         context.loop = loop
         context.within_loop = lambda: within_loop.get()
 
-        yield self.complete_task
+        retrying = True
+        try:
+            yield self.complete_task
+            retrying = False
+        finally:
+            # The workflow method body has completed. Call
+            # method-complete callables with `retrying=` indicating
+            # whether the framework is about to retry, then clear
+            # *both* callable lists so any re-invocation on this same
+            # `WorkflowContext` starts with a fresh registration. If a
+            # callable raises, the exception propagates out of the
+            # workflow method body and the entire workflow method gets
+            # retried.
+            method_callables = context._on_method_complete
+            context._on_method_complete = []
+            context._on_iteration_complete = []
+            for callable in method_callables:
+                result = callable(retrying=retrying)
+                if inspect.isawaitable(result):
+                    await result
 
     @asynccontextmanager
     async def transaction(

@@ -1,0 +1,90 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "_typing_py",
+    srcs = ["_typing.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("typing-extensions"),
+    ],
+)
+
+py_library(
+    name = "_run_py",
+    srcs = ["_run.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("pydantic-ai-slim"),
+        "//reboot/aio:contexts_py",
+        "//reboot/aio:idempotency_py",
+        "//reboot/aio:workflows_py",
+    ],
+)
+
+py_library(
+    name = "_model_py",
+    srcs = ["_model.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":_run_py",
+        requirement("pydantic-ai-slim"),
+        "//reboot/aio:workflows_py",
+    ],
+)
+
+py_library(
+    name = "_toolset_py",
+    srcs = ["_toolset.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":_run_py",
+        ":_typing_py",
+        requirement("pydantic-ai-slim"),
+        "//reboot/aio:idempotency_py",
+        "//reboot/aio:workflows_py",
+    ],
+)
+
+py_library(
+    name = "_agent_py",
+    srcs = ["_agent.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":_model_py",
+        ":_run_py",
+        ":_toolset_py",
+        ":_typing_py",
+        requirement("pydantic-ai-slim"),
+        "//reboot/aio:contexts_py",
+    ],
+)
+
+py_library(
+    name = "__init___py",
+    srcs = ["__init__.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":_agent_py",
+        ":_model_py",
+    ],
+)
+
+py_library(
+    name = "python",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":__init___py",
+        ":_agent_py",
+        ":_model_py",
+        ":_run_py",
+        ":_toolset_py",
+        ":_typing_py",
+    ],
+)

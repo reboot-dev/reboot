@@ -116,6 +116,7 @@ const sidebars = {
         "learn_more/tasks",
         "learn_more/side_effects",
         "learn_more/idempotency",
+        "learn_more/agents",
       ],
     },
     {

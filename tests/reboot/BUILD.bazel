@@ -689,6 +689,24 @@ py_test(
 )
 
 py_test(
+    name = "idempotency_seeds_tests_py",
+    srcs = [":idempotency_seeds_tests.py"],
+    main = "idempotency_seeds_tests.py",
+    deps = [
+        "//reboot/aio:idempotency_py",
+    ],
+)
+
+py_test(
+    name = "type_annotation_inference_tests_py",
+    srcs = [":type_annotation_inference_tests.py"],
+    main = "type_annotation_inference_tests.py",
+    deps = [
+        "//reboot/aio:workflows_py",
+    ],
+)
+
+py_test(
     name = "types_tests_py",
     srcs = [
         ":types_tests.py",

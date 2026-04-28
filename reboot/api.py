@@ -46,7 +46,7 @@ ALLOWED_DEFAULT_BY_FIELD_TYPE = {
     # `None` is allowed for `Optional` fields, but we check that separately.
 }
 
-ALLOWED_DEFAULT_FACTORY_BY_FIELD_TYPE = {
+ALLOWED_DEFAULT_FACTORY_BY_FIELD_TYPE: dict[type, type] = {
     list: list,
     dict: dict,
 }
@@ -81,6 +81,8 @@ class Model(pydantic.BaseModel):
                 # or a `Model`. Otherwise it will be a collection
                 # type like `list` or `dict`.
                 field_type_origin = field_info.annotation
+
+            assert field_type_origin is not None
 
             if field_info.default_factory is not None:
                 allowed_default_factory = ALLOWED_DEFAULT_FACTORY_BY_FIELD_TYPE.get(
@@ -229,7 +231,7 @@ class Model(pydantic.BaseModel):
 def _get_discriminated_union_info(
     field_type: type,
     field_info: Optional[FieldInfo] = None,
-) -> Optional[Tuple[str, list[Model]]]:
+) -> Optional[Tuple[str, list[type[Model]]]]:
     """
     Check if a field type is a discriminated union and return info about it.
 
@@ -248,6 +250,11 @@ def _get_discriminated_union_info(
 
     if discriminator is None:
         return None
+
+    # Reboot only supports the string-name form of pydantic
+    # discriminators (the field name); callable `Discriminator`
+    # instances aren't supported.
+    assert isinstance(discriminator, str)
 
     # Get all non-None args, since it might be an optional discriminated union.
     non_none_args = [

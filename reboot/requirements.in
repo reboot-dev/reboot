@@ -39,4 +39,6 @@ opentelemetry-instrumentation-grpc==0.49b1 # Latest as of 2024/11/14.
 fastapi==0.115.12 # Latest as of 2025/03/30.
 uvicorn==0.34.0 # Latest as of 2025/03/30.
 pydantic>=2.7.4 # To be version compatibable with projects like `langchain`.
-bitarray==3.8.0 # Lastest as of 2025/12/14.
+bitarray==3.8.0 # Latest as of 2025/12/14.
+pydantic-ai-slim>=1.0.0 # Latest as of 2026/04/24.
+typing-extensions>=4.15.0 # Latest as of 2026/04/27.
