@@ -8,23 +8,21 @@ FROM ghcr.io/reboot-dev/reboot-base:0.46.0
 
 WORKDIR /app
 
-# Install `uv` so we can install Python dependencies from the
-# pinned `uv.lock`.
-RUN pip install uv
-
-# Copy only the dependency manifest and lock first so this
-# layer is cached until they actually change. `--frozen`
-# requires `uv.lock` to exactly match `pyproject.toml`, giving
-# reproducible builds across machines.
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-install-project
+# Install Python dependencies from the rye-generated lockfile.
+# `pip` accepts the `requirements.lock` format directly. This
+# layer is cached until the lockfile changes, so app-code edits
+# don't trigger a re-install of the dependency tree. The base
+# image already includes Reboot itself; the lockfile pins it to
+# the matching version.
+COPY requirements.lock requirements.txt
+RUN pip install -r requirements.txt
 
 # Copy the API definition and `.rbtrc`, then generate Reboot
 # code. Separate layer so regeneration only reruns when the
 # API changes.
 COPY api/ api/
 COPY .rbtrc .rbtrc
-RUN uv run rbt generate
+RUN rbt generate
 
 # Copy the backend source.
 COPY backend/src/ backend/src/
@@ -44,4 +42,4 @@ ENV PYTHONPATH=/app/api:/app/backend/api
 # its flags (`--python`, `--application=...`, `--application-name=...`,
 # `--tls=external`) from `.rbtrc`. `--port` is picked up from
 # the `PORT` env var set by Reboot Cloud.
-CMD ["uv", "run", "rbt", "serve", "run"]
+CMD ["rbt", "serve", "run"]

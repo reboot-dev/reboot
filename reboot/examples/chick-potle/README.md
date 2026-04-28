@@ -36,25 +36,26 @@ drive the order programmatically.
 ## Quick start
 
 ```bash
-# Install Python dependencies.
-uv sync
+# Install Python dependencies and create the virtualenv.
+rye sync
+source .venv/bin/activate
 
 # Install web dependencies.
 cd web && npm install && cd ..
 
 # Generate API code (Python + React bindings).
-uv run rbt generate
+rbt generate
 
 # Build the React UIs.
 cd web && npm run build && cd ..
 ```
 
 Then run the app (each command in its own terminal, from the
-project directory):
+project directory, with `.venv` activated):
 
 ```bash
 # Terminal 1: start the Reboot backend.
-uv run rbt dev run
+rbt dev run
 
 # Terminal 2: start the Vite dev server for Hot Module Replacement.
 cd web && npm run dev
@@ -74,8 +75,9 @@ The backend has an in-process test suite that exercises the
 no MCP client, no browser, no external services.
 
 ```bash
-uv sync --group dev
-uv run pytest backend/tests/
+rye sync
+source .venv/bin/activate
+pytest backend/
 ```
 
 ## Testing with MCPJam Inspector
