@@ -43,6 +43,10 @@ class UpdateResponse(Model):
     new_literal_value: LiteralType = Field(tag=6)
 
 
+class InitializeFromWorkflowRequest(Model):
+    str_value: str = Field(tag=1)
+
+
 class TransactionUpdateRequest(Model):
     update_request: UpdateRequest = Field(tag=1)
     state_id: str = Field(tag=2)
@@ -161,6 +165,12 @@ class AnotherError(Model):
 TestMethods = Methods(
     initialize=Writer(
         request=None,
+        response=None,
+        factory=True,
+        mcp=None,
+    ),
+    initialize_from_workflow=Writer(
+        request=InitializeFromWorkflowRequest,
         response=None,
         factory=True,
         mcp=None,

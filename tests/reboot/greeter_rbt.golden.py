@@ -31195,6 +31195,17 @@ class Greeter:
             )
 
         if __idempotency__ is None:
+            __args__: tuple[IMPORT_typing.Any, ...] = (
+                __context__,
+            )
+            if __state_id__ is not None:
+                # Don't include `state_id` if it is `None`, so that
+                # we won't break the positional argument deduction.
+                __args__ += (__state_id__,)
+            __args__ += (
+                __request__,
+                __options__,
+            )
             if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                 return await (
                     __cls__.always() if __context__.within_until()
@@ -31203,17 +31214,11 @@ class Greeter:
                         else __cls__.per_workflow()
                     )
                 ).Create(
-                    __context__,
-                    __state_id__,
-                    __request__,
-                    __options__,
+                    *__args__
                 )
             elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
                 return await __cls__.idempotently().Create(
-                    __context__,
-                    __state_id__,
-                    __request__,
-                    __options__,
+                    *__args__
                 )
 
         __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
