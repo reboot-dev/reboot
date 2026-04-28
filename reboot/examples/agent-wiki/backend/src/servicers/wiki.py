@@ -164,9 +164,7 @@ async def get_wiki(
     markdown content."""
     state = await Wiki.ref(
         run_context.deps.wiki_id,
-    ).idempotently("get_wiki").get(
-        context,
-    )
+    ).get(context)
     return {
         "name": state.name,
         "description": state.description,
@@ -186,7 +184,7 @@ async def update_wiki(
     URIs."""
     await Wiki.ref(
         run_context.deps.wiki_id,
-    ).idempotently("update_wiki").update(
+    ).update(
         context,
         content=content,
     )
@@ -199,9 +197,7 @@ async def get_page(
     page_id: str,
 ) -> dict:
     """Read a page's title and markdown content."""
-    state = await Page.ref(page_id).idempotently(
-        "get_page",
-    ).get(context)
+    state = await Page.ref(page_id).get(context)
     return {
         "title": state.title,
         "content": state.content,
@@ -220,9 +216,7 @@ async def update_page(
     rename a page as its scope broadens (e.g., a page about
     the steam engine becoming "History of Inventions"), or
     to rewrite its content to incorporate new material."""
-    await Page.ref(page_id).idempotently(
-        "update_page",
-    ).update(
+    await Page.ref(page_id).update(
         context,
         title=title,
         content=content,
@@ -240,9 +234,7 @@ async def create_page(
     content. Returns the new page's state ID, which you
     should link to from the wiki's markdown as
     `Page:<state_id>`."""
-    page, _ = await Page.idempotently(
-        "create_page",
-    ).create(
+    page, _ = await Page.create(
         context,
         title=title,
         content=content,
