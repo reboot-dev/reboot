@@ -97,7 +97,13 @@ Before writing code, analyze the user's request:
    application types? Each gets a `Transaction` on `User`
    that calls `<Type>.create(context)`.
 3. **State shape**: Fields, types — lists, nested objects,
-   primitives. Each gets `Field(tag=N)`.
+   primitives. Each gets `Field(tag=N)`. **Nested Model
+   subobjects** (preferences, profile, config — owned 1:1 by a
+   parent state) must be `Optional[X] = Field(tag=N, default=None)`
+   and hydrated in the parent's factory `create` Writer; nested
+   Models can't take `default=` or `default_factory=` (Gotcha #21).
+   For collections, prefer `list[Item]` with `default_factory=list`
+   over a single-nested wrapper.
 4. **Operations**: Map to the right method type:
    - `Reader` — read-only queries
    - `Writer` — single-state mutations
@@ -514,6 +520,53 @@ The counter example above shows the full User + application
 type pattern. Apply the same structure for any application type,
 adding whatever Writers and Readers your app needs.
 
+#### Nested Model State Patterns
+
+For application types that own a single nested `Model`
+sub-object (preferences blob, profile, config, etc.):
+
+- Declare the field as `Optional[Sub] = Field(tag=N, default=None)`.
+  Nested non-Optional `Model` types reject both `default=` and
+  `default_factory=` (Gotcha #21).
+- Hydrate the sub-object in the parent's factory `create`
+  Writer, so callers never observe the `None`:
+
+```python
+from reboot.api import API, Field, Methods, Model, Transaction, Type, User as RbtUser, Writer
+from typing import Optional
+
+class GuestPreferences(Model):
+    meal_type: str = Field(tag=1, default="")
+    calorie_level: str = Field(tag=2, default="")
+    dietary_restrictions: str = Field(tag=3, default="")
+
+class Guest(Model):
+    name: str = Field(tag=1, default="")
+    # Single nested Model: Optional + default=None, populated
+    # by the factory `create` below.
+    preferences: Optional[GuestPreferences] = Field(tag=2, default=None)
+
+class CreateRequest(Model):
+    name: str = Field(tag=1)
+    meal_type: str = Field(tag=2, default="")
+    calorie_level: str = Field(tag=3, default="")
+    dietary_restrictions: str = Field(tag=4, default="")
+
+# Servicer side (in `backend/src/servicers/<name>.py`):
+class GuestServicer(Guest.Servicer):
+    async def create(self, context, *, name, meal_type, calorie_level, dietary_restrictions):
+        self.state.name = name
+        self.state.preferences = GuestPreferences(
+            meal_type=meal_type,
+            calorie_level=calorie_level,
+            dietary_restrictions=dietary_restrictions,
+        )
+```
+
+If the prompt suggests _plural_ sub-objects ("each guest's
+preferences"), prefer `list[GuestPreferences]` with
+`default_factory=list` — lists are exempt from this rule.
+
 #### Workflow Example (Long-Running)
 
 Use `Workflow` for periodic or long-running operations:
@@ -661,11 +714,43 @@ class MyTypeServicer(MyType.Servicer):
             if pings_sent >= request.num_pings:
                 break
 
+        # `.read()` is only valid on the workflow's own no-arg
+        # ref; a foreign-state read like
+        # `OtherType.ref(id).read(context)` raises a "only
+        # supported within workflows" RuntimeError. Call a Reader
+        # method on the foreign type instead — see Gotcha #23.
         state = await MyType.ref().read(context)
         return MyType.DoPingPeriodicallyResponse(
             num_pings=state.num_pings,
         )
 ```
+
+**Use inline writers for workflow-only state changes.** When the
+mutation is only ever performed by this workflow, do _not_ add a
+separate `store_xxx` Writer to the API just so the workflow can
+call it. Pass an `async (state) -> ...` function to
+`.idempotently("alias").write(context, fn)`:
+
+```python
+async def increment_count(state):
+    state.num_pings += 1
+
+await MyType.ref().idempotently(
+    "Increment ping count",
+).write(context, increment_count)
+```
+
+The idempotency alias is a human-readable string that survives
+workflow restarts — the inline writer runs at most once per
+alias. Anti-pattern: defining a `store_count` Writer in the API
+just so the workflow can `await MyType.ref().store_count(context)`
+to bump a counter. That adds an unnecessary indirection.
+Reserve declared Writers for operations that are also called
+from outside the workflow.
+
+For "run every time" (e.g., re-fetching a remote value on each
+loop iteration), use `.always().write(context, fn)` instead of
+`.idempotently("...").write(...)`.
 
 #### Scheduling a Workflow from a Transaction
 
@@ -689,11 +774,29 @@ class UserServicer(User.Servicer):
     ) -> User.CreateGameResponse:
         game, _ = await Game.create(context, ...)
         # GOOD — schedule the workflow from the transaction.
+        # Request type is empty (`AutoplayRequest`), so just
+        # pass `context`:
         await Game.ref(game.state_id).schedule().autoplay(context)
-        # BAD — `await Game.ref(game.state_id).autoplay(context)`
+        # If the workflow request had fields (e.g.
+        # `do_ping_periodically(num_pings, period_seconds)`),
+        # pass them as keyword args:
+        await Game.ref(game.state_id).schedule().do_ping_periodically(
+            context,
+            num_pings=10,
+            period_seconds=1.0,
+        )
+        # BAD — wrapping in `request=` raises
+        # `TypeError: ... got an unexpected keyword argument
+        # 'request'` (Gotcha #9):
+        # await Game.ref(game.state_id).schedule().autoplay(
+        #     context, request=Game.AutoplayRequest()
+        # )
+        # BAD — awaiting a workflow directly from a Transaction
         # raises `TypeError: ... 'Autoplay' is a workflow and
         # must be scheduled from a 'TransactionContext' via
-        # `await [...].schedule([...]).Autoplay(context, [...])`.
+        # `await [...].schedule([...]).Autoplay(context, [...])`
+        # (Gotcha #20):
+        # await Game.ref(game.state_id).autoplay(context)
         return User.CreateGameResponse(game_id=game.state_id)
 ```
 
@@ -1299,9 +1402,25 @@ Adapt the CSS module to your app's needs. The CSS variables from
    the AI.
 8. **Application types need `factory=True`** on their `create`
    Writer method.
-9. **Factory create call signature:** `Type.create(context, field=val)`
-   — pass request fields as keyword args directly. Do NOT wrap in a
-   Request object (e.g., `request=Type.CreateRequest(...)` is WRONG).
+9. **Method call signatures: pass request fields as kwargs,
+   never wrap in a Request object.** This applies to every
+   call shape — factory constructors, regular Writers/Readers/
+   Transactions, and `.schedule().method()` for workflows.
+   Right shapes:
+
+   - `Type.constructor_method(context, field=val, ...)`
+   - `Type.ref(id).some_method(context, field=val, ...)`
+   - `Type.ref(id).schedule().my_workflow(context, field=val, ...)`
+   - For empty request types, omit fields entirely:
+     `Type.ref(id).schedule().autoplay(context)`.
+
+   Wrong:
+
+   - `Type.constructor_method(context, request=Type.ConstructorMethodRequest(...))`
+   - `Type.ref(id).some_method(context, request=Type.SomeMethodRequest(...))`
+
+   The `request=` kwarg raises `TypeError: ... got an unexpected keyword argument 'request'` at runtime.
+
 10. **`npm install` before second `rbt generate`** — React bindings
     need `node_modules` to exist.
 11. **Generated React hook:** `use<TypeName>()` — e.g.,
@@ -1337,6 +1456,56 @@ Adapt the CSS module to your app's needs. The CSS variables from
     transaction raises `TypeError: ... '<Method>' is a workflow and must be scheduled from a 'TransactionContext' via `await [...].schedule([...]).<Method>(context, [...])``.
     See the "Scheduling a Workflow from a Transaction" example
     in the Workflow Servicer section.
+21. **Nested `Model` fields can't take `default_factory` or
+    `default`.** Two related rules — both raise `UserPydanticError`
+    at startup, not at field-construction time, so they look like
+    runtime errors but are static schema problems:
+
+    - `default_factory=` is only supported for `list` and `dict`.
+      `Field(tag=N, default_factory=MyModel)` raises
+      `Field <X> in model <Y> uses default_factory which is not supported for type <T>. Only list, dict types can have a default_factory currently.`
+    - A non-Optional `Model`-typed field also can't take
+      `default=`, even with an instance:
+      `Field <X> in model <Y> is a non-optional Model type and cannot have a default value. Use Optional for Model types with empty default.`
+
+    The fix is to declare the field optional and construct lazily,
+    e.g. `preferences: Optional[UserPreferences] = Field(tag=N, default=None)`,
+    then materialize it inside the servicer (or in a factory
+    `create` method) when the parent state is first written.
+
+22. **`.per_workflow()` is implicit; don't write it.** Inside a
+    workflow, `MyType.ref().read(context)` and
+    `MyType.ref().write(context, fn)` already pick the right
+    semantics: `.always()` inside an `until` block,
+    `.per_iteration()` inside a `context.loop`, and
+    `.per_workflow()` everywhere else. Only reach for an explicit
+    `.per_iteration()` (override the default to per-iteration when
+    _not_ inside a loop) or `.always()` (re-run every time). A
+    plain `MyType.ref().per_workflow().some_method(context)` adds
+    nothing beyond `MyType.ref().some_method(context)`.
+23. **`.read(context)` only works on the workflow's own
+    no-argument `MyType.ref()`.** Inside a workflow,
+    `MyType.ref().read(context)` reads the workflow's own state
+    via the no-argument `ref()` (picks up `state_id` from
+    `WorkflowContext`). A foreign read like
+    `OtherType.ref(other_id).read(context)` raises
+    `RuntimeError: read() is currently only supported within workflows` — the constraint isn't actually "must be inside
+    a workflow" (you are) but "must be the workflow's own
+    no-argument ref." For cross-state reads, call a Reader
+    method on the target type. The same rule applies to inline
+    `.write(context, fn)`.
+
+    ```python
+    # GOOD — workflow's own state.
+    state = await MyType.ref().read(context)
+
+    # GOOD — cross-state read via a Reader method.
+    response = await User.ref(user_id).get_history(context)
+
+    # BAD — raises the "only supported within workflows"
+    # RuntimeError despite being inside one. Use a Reader.
+    # user_state = await User.ref(user_id).read(context)
+    ```
 
 ## Update Flow
 
