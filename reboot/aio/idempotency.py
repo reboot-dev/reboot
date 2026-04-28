@@ -290,7 +290,7 @@ class RPC:
 class Checkpoint:
     """Captures all `IdempotencyManager` instance variables for
     checkpoint/restore functionality."""
-    aliases: dict[tuple[StateRef, str], uuid.UUID]
+    aliases: dict[tuple[StateRef, str, Optional[uuid.UUID]], uuid.UUID]
     rpcs: dict[uuid.UUID, RPC]
     mutations_without_idempotency: bool
     uncertain_mutation: bool
@@ -302,8 +302,16 @@ class Checkpoint:
 
 class IdempotencyManager:
 
-    # Map from (state_ref, alias) to a generated UUID for an idempotency key.
-    _aliases: dict[tuple[StateRef, str], uuid.UUID]
+    # Map from (state_ref, alias, idempotency_seeds_uuid) to a generated
+    # UUID for an idempotency key. The third tuple element is the active
+    # `_idempotency_seeds_uuid` (or `None` if no `idempotency_seeds(...)`
+    # block is active) so two calls under the same `(state_ref, alias)`
+    # but in different seed scopes get distinct cache slots -- otherwise
+    # the first call would "claim" the slot for the lifetime of the
+    # manager and subsequent calls in different scopes would receive the
+    # first call's UUID, defeating the "new scope" semantics that
+    # `idempotency_seeds(...)` promises.
+    _aliases: dict[tuple[StateRef, str, Optional[uuid.UUID]], uuid.UUID]
 
     # Map from idempotency key to its RPC.
     _rpcs: dict[uuid.UUID, RPC]
@@ -630,7 +638,13 @@ class IdempotencyManager:
         if idempotency.alias is not None:
             alias += f": {idempotency.alias}"
 
-        key = (state_ref, alias)
+        # Include the active `_idempotency_seeds_uuid` in the cache key
+        # so calls in different seed scopes don't collide. The seeds
+        # are also folded into the cached UUID's value below (via
+        # `make_derived_idempotency_key`), but on a cache hit only the
+        # key matters -- a seed-blind key would short-circuit before
+        # the seeds ever influence the result.
+        key = (state_ref, alias, _idempotency_seeds_uuid.get())
 
         if key not in self._aliases:
             if self._seed is None:

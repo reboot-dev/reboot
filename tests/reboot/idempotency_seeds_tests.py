@@ -1,10 +1,13 @@
 import unittest
 import uuid
 from reboot.aio.idempotency import (
+    Idempotency,
+    IdempotencyManager,
     _merge_idempotency_seeds,
     make_derived_idempotency_key,
     make_idempotency_alias,
 )
+from reboot.aio.types import ServiceName, StateRef, StateTypeName
 
 
 class IdempotencyKeyTestCase(unittest.TestCase):
@@ -97,6 +100,123 @@ class IdempotencyKeyTestCase(unittest.TestCase):
         with _merge_idempotency_seeds({"workflow_id": workflow_id}):
             scoped = make_derived_idempotency_key(self.SEED, "foo")
         self.assertNotEqual(scoped, uuid.uuid5(self.SEED, "foo"))
+
+
+class IdempotencyManagerSeedScopingTestCase(unittest.TestCase):
+    """
+    The `_aliases` cache in `IdempotencyManager` should be scoped by the
+    active `idempotency_seeds(...)` UUID. Two `idempotently()` calls
+    under different seed scopes -- even when targeting the same
+    `(state_ref, method)` -- should receive distinct idempotency keys,
+    because they represent work in different conceptual scopes (e.g.,
+    two agent runs with distinct `variant=`, or two parallel tool calls
+    with distinct `tool_call_id`s).
+    """
+
+    SEED = uuid.UUID(int=0xCAFEBABE_CAFEBABE_CAFEBABE_CAFEBABE)
+    STATE_TYPE = StateTypeName("test.Counter")
+    SERVICE = ServiceName("test.CounterMethods")
+    METHOD = "Increment"
+
+    def _state_ref(self) -> StateRef:
+        return StateRef.from_id(self.STATE_TYPE, "my-counter")
+
+    def _call_bare_idempotently(
+        self,
+        manager: IdempotencyManager,
+    ) -> uuid.UUID:
+        """
+        Mirror what a workflow's
+        `Counter.ref('my-counter').idempotently().Increment(context)`
+        ultimately does: enter the manager's `idempotently()` context
+        with no alias and no key, capture the key it yields.
+        """
+        with manager.idempotently(
+            state_type_name=self.STATE_TYPE,
+            state_ref=self._state_ref(),
+            service_name=self.SERVICE,
+            method=self.METHOD,
+            mutation=True,
+            request=None,
+            metadata=None,
+            idempotency=Idempotency(),
+            aborted_type=None,
+        ) as key:
+            assert key is not None
+            return key
+
+    def _call_named_idempotently(
+        self,
+        manager: IdempotencyManager,
+        alias: str,
+    ) -> uuid.UUID:
+        with manager.idempotently(
+            state_type_name=self.STATE_TYPE,
+            state_ref=self._state_ref(),
+            service_name=self.SERVICE,
+            method=self.METHOD,
+            mutation=True,
+            request=None,
+            metadata=None,
+            idempotency=Idempotency(alias=alias),
+            aborted_type=None,
+        ) as key:
+            assert key is not None
+            return key
+
+    def test_bare_idempotently_under_different_seeds_does_not_collide(
+        self,
+    ) -> None:
+        # Two bare `idempotently()` calls in different seed scopes
+        # (e.g., different agent run `variant=`) to the same method
+        # should each succeed and receive distinct UUIDs.
+        manager = IdempotencyManager(seed=self.SEED)
+        with _merge_idempotency_seeds({"agent_run_variant": "first"}):
+            key_1 = self._call_bare_idempotently(manager)
+        with _merge_idempotency_seeds({"agent_run_variant": "second"}):
+            key_2 = self._call_bare_idempotently(manager)
+        self.assertNotEqual(key_1, key_2)
+
+    def test_named_idempotently_under_different_seeds_gets_different_uuid(
+        self,
+    ) -> None:
+        # Even with an explicit alias, two calls under distinct seed
+        # scopes should derive distinct UUIDs -- otherwise the seeds
+        # aren't really defining a "new scope" as the docstring on
+        # `_merge_idempotency_seeds` claims.
+        manager = IdempotencyManager(seed=self.SEED)
+        with _merge_idempotency_seeds({"agent_run_variant": "first"}):
+            key_1 = self._call_named_idempotently(manager, "tag")
+        with _merge_idempotency_seeds({"agent_run_variant": "second"}):
+            key_2 = self._call_named_idempotently(manager, "tag")
+        self.assertNotEqual(key_1, key_2)
+
+    def test_bare_idempotently_under_same_seed_still_collides(self) -> None:
+        # Within a single seed scope, bare `idempotently()` is still
+        # "once per `(state_ref, method)`". A second call must still
+        # raise `ValueError`, because the user supplied no way to
+        # distinguish the calls.
+        manager = IdempotencyManager(seed=self.SEED)
+        with _merge_idempotency_seeds({"agent_run_variant": "first"}):
+            self._call_bare_idempotently(manager)
+            with self.assertRaises(ValueError) as exc:
+                self._call_bare_idempotently(manager)
+        self.assertIn(
+            "more than once using the same context", str(exc.exception)
+        )
+
+    def test_named_idempotently_under_same_seed_caches_to_same_uuid(
+        self,
+    ) -> None:
+        # Within a single seed scope, the same alias should produce the
+        # same UUID on repeat calls (so legit retry / replay patterns
+        # hit the cache and get back the same idempotency key as the
+        # original call).
+        manager = IdempotencyManager(seed=self.SEED)
+        with _merge_idempotency_seeds({"agent_run_variant": "first"}):
+            key_1 = self._call_named_idempotently(manager, "tag")
+            key_2 = self._call_named_idempotently(manager, "tag")
+        self.assertEqual(key_1, key_2)
 
 
 if __name__ == "__main__":
