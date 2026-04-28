@@ -18,51 +18,77 @@ check_lines_in_file() {
   done < "$expected"
 }
 
-# Make sure `uv` is on `PATH`. The release devcontainer image
-# already ships it; in other environments fall back to a
-# `pip install`.
-if ! command -v uv > /dev/null; then
-  pip install uv
-  # `pip install` drops `uv` in the interpreter's scripts dir,
-  # which isn't on `PATH` inside the macOS Bazel test sandbox.
-  export PATH="$(python -c 'import sysconfig; print(sysconfig.get_path("scripts"))'):$PATH"
-fi
-
-# Sync the project's pinned dependencies, including the `dev`
-# group (which provides `pytest`).
-uv sync --frozen --group dev
-
-# If the test system supplied an alternate `reboot` wheel (e.g.
-# the in-tree development build under Bazel), overlay it on top
-# of the synced venv. `--no-deps` keeps the rest of the locked
-# dependency tree intact.
+# Use the published Reboot pip package by default, but allow the
+# test system to override it with a different value.
 if [ -n "$REBOOT_WHL_FILE" ]; then
-  uv pip install --reinstall --no-deps \
-    "${SANDBOX_ROOT}${REBOOT_WHL_FILE}"
+  # Install the `reboot` package from the specified path
+  # explicitly, overwriting the version from `pyproject.toml`.
+  rye remove --no-sync reboot
+  rye remove --no-sync --dev reboot
+  rye add --dev reboot --absolute --path="${SANDBOX_ROOT}$REBOOT_WHL_FILE"
 fi
 
-# Activate the venv so subsequent commands (and the Reboot
-# runtime) use the synced interpreter and `rbt` script.
-source .venv/bin/activate
+# Force a fresh virtualenv. A pre-existing `.venv/` (e.g.,
+# carried over from a pre-baked image, or copied between
+# containers/host paths during the dev-container test) will
+# have absolute shebangs in its console scripts (`rbt`,
+# `pytest`) pointing at the path where it was originally
+# created, which produces "bad interpreter: No such file or
+# directory" when those scripts are executed from a different
+# location. `rye sync` only regenerates entry-point scripts
+# for packages it reinstalls, so it can't repair an existing
+# venv whose shebangs are stale. Nuking and re-syncing here
+# guarantees the venv lives at the current path.
+rm -rf .venv
+rye sync --no-lock
+
+# Don't `source .venv/bin/activate`: that script bakes in the
+# venv's original creation path on its first line, which is
+# wrong when the venv has been relocated (e.g., a pre-baked
+# image bind-mounted at a different path in CI). The
+# console-script wrappers (`rbt`, `pytest`) also have absolute
+# shebangs that point at the stale path. Set `PATH` and
+# `VIRTUAL_ENV` to the real location ourselves, and invoke the
+# tools via `python -m`: the `python` symlink resolves the
+# venv from its own location through `pyvenv.cfg`, so it
+# survives relocation, and `-m` bypasses the broken script
+# shebangs.
+VENV_BIN="$(pwd)/.venv/bin"
+export PATH="$VENV_BIN:$PATH"
+export VIRTUAL_ENV="$(pwd)/.venv"
+PYTHON="$VENV_BIN/python"
 
 # When running in a Bazel test, our `.rbtrc` file ends up in a
 # very deep directory structure, which can result in "path too
 # long" errors from RocksDB. Explicitly specify a shorter path.
 RBT_FLAGS="--state-directory=$(mktemp -d)"
 
-rbt $RBT_FLAGS generate
+"$PYTHON" -m reboot.cli.rbt_main $RBT_FLAGS generate
 
-pytest -v -s backend/tests/
+"$PYTHON" -m pytest backend/
 
 if [ -n "$EXPECTED_RBT_DEV_OUTPUT_FILE" ]; then
   actual_output_file=$(mktemp)
 
+  # `--config=dist` overrides `.rbtrc`'s default `hmr` config,
+  # whose `--mcp-frontend-host=http://localhost:4444` would
+  # have Envoy proxy `/__/web/**` to a Vite dev server. There
+  # is no Vite running in CI, and on the macOS executable-Envoy
+  # path that proxy target makes cluster init hang
+  # indefinitely, so `--terminate-after-health-check` never
+  # fires. The `dist` config sets `--mcp-frontend-host=""`,
+  # which skips the proxy entirely. `web/dist/` doesn't need
+  # to actually exist; the health check only probes gRPC and
+  # Envoy listeners.
+  #
   # The librarian agent fails fast if `ANTHROPIC_API_KEY` is
   # unset, so we provide a dummy value. No real Anthropic calls
   # are made: the health check terminates the process before any
   # transcript ingestion happens.
   ANTHROPIC_API_KEY="dummy-for-health-check" \
-    rbt $RBT_FLAGS dev run --terminate-after-health-check \
+    "$PYTHON" -m reboot.cli.rbt_main $RBT_FLAGS dev run \
+      --config=dist \
+      --terminate-after-health-check \
       > "$actual_output_file"
 
   check_lines_in_file \

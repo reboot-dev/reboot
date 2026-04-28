@@ -73,14 +73,15 @@ for manual fix-ups).
 ## Quick start
 
 ```bash
-# Install Python dependencies.
-uv sync
+# Install Python dependencies and create the virtualenv.
+rye sync
+source .venv/bin/activate
 
 # Install web dependencies.
 cd web && npm install && cd ..
 
 # Generate API code (Python + React bindings).
-uv run rbt generate
+rbt generate
 
 # Build the React UIs.
 cd web && npm run build && cd ..
@@ -107,11 +108,11 @@ is what the Anthropic SDK reads directly — the same code works
 in both places.
 
 Then run the app (each command in its own terminal, from the
-project directory):
+project directory, with `.venv` activated):
 
 ```bash
 # Terminal 1: start the Reboot backend.
-uv run rbt dev run
+rbt dev run
 
 # Terminal 2: start the Vite dev server for Hot Module Replacement.
 cd web && npm run dev
@@ -121,7 +122,7 @@ State persists between restarts under the name `agent-wiki`
 (configured in `.rbtrc`). To wipe it:
 
 ```bash
-uv run rbt dev expunge --application-name=agent-wiki
+rbt dev expunge --application-name=agent-wiki
 ```
 
 ## Running the tests
@@ -132,8 +133,9 @@ making any real Anthropic calls (the LLM is replaced by a
 scripted Pydantic AI `FunctionModel`).
 
 ```bash
-uv sync --group dev
-uv run pytest backend/tests/
+rye sync
+source .venv/bin/activate
+pytest backend/
 ```
 
 ## Testing with MCPJam Inspector
