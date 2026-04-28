@@ -121,7 +121,7 @@ State persists between restarts under the name `agent-wiki`
 (configured in `.rbtrc`). To wipe it:
 
 ```bash
-uv run rbt dev expunge --name=agent-wiki
+uv run rbt dev expunge --application-name=agent-wiki
 ```
 
 ## Running the tests

@@ -96,8 +96,8 @@ class ServicerTest(unittest.IsolatedAsyncioTestCase):
     Anthropic calls from this suite."""
 
     async def asyncSetUp(self) -> None:
-        self._original_model = wiki_module.librarian.model
-        wiki_module.librarian.model = _null_librarian_model()
+        self._original_model = wiki_module.librarian.wrapped.model
+        wiki_module.librarian.wrapped.model = _null_librarian_model()
 
         self.rbt = Reboot()
         await self.rbt.start()
@@ -122,7 +122,7 @@ class ServicerTest(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         await self.rbt.stop()
-        wiki_module.librarian.model = self._original_model
+        wiki_module.librarian.wrapped.model = self._original_model
 
     async def test_user_create_and_list_wikis(self) -> None:
         """A user can create a wiki and then see it in their
@@ -327,8 +327,8 @@ class IngestWorkflowTest(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
         self.script = ScriptedLibrarian()
-        self._original_model = wiki_module.librarian.model
-        wiki_module.librarian.model = FunctionModel(self.script.step)
+        self._original_model = wiki_module.librarian.wrapped.model
+        wiki_module.librarian.wrapped.model = FunctionModel(self.script.step)
 
         self.rbt = Reboot()
         await self.rbt.start()
@@ -353,7 +353,7 @@ class IngestWorkflowTest(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         await self.rbt.stop()
-        wiki_module.librarian.model = self._original_model
+        wiki_module.librarian.wrapped.model = self._original_model
 
     async def test_ingest_creates_page_and_updates_wiki(
         self,

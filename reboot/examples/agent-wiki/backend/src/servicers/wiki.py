@@ -1,5 +1,7 @@
+import asyncio
 import json
 import logging
+import pydantic_ai
 from agent_wiki.v1.wiki import (
     UserCreateWikiRequest,
     UserCreateWikiResponse,
@@ -9,7 +11,8 @@ from agent_wiki.v1.wiki import (
 )
 from agent_wiki.v1.wiki_rbt import Page, Transcript, User, Wiki
 from dataclasses import dataclass
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import RunContext
+from reboot.agents.pydantic_ai import Agent
 from reboot.aio.contexts import (
     ReaderContext,
     TransactionContext,
@@ -35,9 +38,9 @@ def _log_librarian_node(prefix: str, node: object) -> None:
     for every node yielded by the iterator so the backend
     log shows the model's thoughts, its tool calls, and
     each tool's return value as the ingest happens."""
-    if Agent.is_user_prompt_node(node):
+    if pydantic_ai.Agent.is_user_prompt_node(node):
         logger.info("%s prompt submitted", prefix)
-    elif Agent.is_model_request_node(node):
+    elif pydantic_ai.Agent.is_model_request_node(node):
         # `node.request.parts` holds the tool results (and
         # any user prompts) being fed back to the model.
         for part in node.request.parts:
@@ -48,7 +51,7 @@ def _log_librarian_node(prefix: str, node: object) -> None:
                     part.tool_name,
                     _truncate(part.content),
                 )
-    elif Agent.is_call_tools_node(node):
+    elif pydantic_ai.Agent.is_call_tools_node(node):
         # `node.model_response.parts` is the model's latest
         # reply: free-form text (its "thinking") and the
         # tool calls it wants us to execute.
@@ -67,7 +70,7 @@ def _log_librarian_node(prefix: str, node: object) -> None:
                     part.tool_name,
                     _truncate(part.args),
                 )
-    elif Agent.is_end_node(node):
+    elif pydantic_ai.Agent.is_end_node(node):
         logger.info("%s done", prefix)
     else:
         logger.debug("%s unknown node: %r", prefix, node)
@@ -75,11 +78,6 @@ def _log_librarian_node(prefix: str, node: object) -> None:
 
 @dataclass
 class LibrarianDeps:
-    # The live workflow context used to make Reboot calls
-    # from inside agent tools. Held as a Python object (not
-    # serialized), so Pydantic AI must be configured to
-    # allow arbitrary types here.
-    context: WorkflowContext
     wiki_id: str
 
 
@@ -87,6 +85,7 @@ librarian = Agent(
     # NOTE: Pydantic AI reads the Anthropic API key from the
     # `ANTHROPIC_API_KEY` environment variable.
     "anthropic:claude-sonnet-4-6",
+    name="librarian",
     deps_type=LibrarianDeps,
     system_prompt=(
         "You are the librarian of a knowledge base wiki. "
@@ -158,12 +157,15 @@ librarian = Agent(
 
 @librarian.tool
 async def get_wiki(
+    context: WorkflowContext,
     run_context: RunContext[LibrarianDeps],
 ) -> dict:
     """Read the wiki's current name, description, and
     markdown content."""
-    state = await Wiki.ref(run_context.deps.wiki_id).always().get(
-        run_context.deps.context,
+    state = await Wiki.ref(
+        run_context.deps.wiki_id,
+    ).idempotently("get_wiki").get(
+        context,
     )
     return {
         "name": state.name,
@@ -174,6 +176,7 @@ async def get_wiki(
 
 @librarian.tool
 async def update_wiki(
+    context: WorkflowContext,
     run_context: RunContext[LibrarianDeps],
     content: str,
 ) -> None:
@@ -181,19 +184,24 @@ async def update_wiki(
     contents, cross-references, and any structure directly
     in this markdown. Link to pages with `Page:<state_id>`
     URIs."""
-    await Wiki.ref(run_context.deps.wiki_id).always().update(
-        run_context.deps.context,
+    await Wiki.ref(
+        run_context.deps.wiki_id,
+    ).idempotently("update_wiki").update(
+        context,
         content=content,
     )
 
 
 @librarian.tool
 async def get_page(
+    context: WorkflowContext,
     run_context: RunContext[LibrarianDeps],
     page_id: str,
 ) -> dict:
     """Read a page's title and markdown content."""
-    state = await Page.ref(page_id).always().get(run_context.deps.context)
+    state = await Page.ref(page_id).idempotently(
+        "get_page",
+    ).get(context)
     return {
         "title": state.title,
         "content": state.content,
@@ -202,6 +210,7 @@ async def get_page(
 
 @librarian.tool
 async def update_page(
+    context: WorkflowContext,
     run_context: RunContext[LibrarianDeps],
     page_id: str,
     title: str,
@@ -211,8 +220,10 @@ async def update_page(
     rename a page as its scope broadens (e.g., a page about
     the steam engine becoming "History of Inventions"), or
     to rewrite its content to incorporate new material."""
-    await Page.ref(page_id).always().update(
-        run_context.deps.context,
+    await Page.ref(page_id).idempotently(
+        "update_page",
+    ).update(
+        context,
         title=title,
         content=content,
     )
@@ -220,6 +231,7 @@ async def update_page(
 
 @librarian.tool
 async def create_page(
+    context: WorkflowContext,
     run_context: RunContext[LibrarianDeps],
     title: str,
     content: str,
@@ -228,8 +240,10 @@ async def create_page(
     content. Returns the new page's state ID, which you
     should link to from the wiki's markdown as
     `Page:<state_id>`."""
-    page, _ = await Page.always().create(
-        run_context.deps.context,
+    page, _ = await Page.idempotently(
+        "create_page",
+    ).create(
+        context,
         title=title,
         content=content,
     )
@@ -367,11 +381,9 @@ class WikiServicer(Wiki.Servicer):
 
             async def run_librarian() -> str:
                 async with librarian.iter(
+                    context,
                     prompt,
-                    deps=LibrarianDeps(
-                        context=context,
-                        wiki_id=wiki_id,
-                    ),
+                    deps=LibrarianDeps(wiki_id=wiki_id),
                 ) as run:
                     async for node in run:
                         _log_librarian_node(log_prefix, node)
@@ -385,6 +397,10 @@ class WikiServicer(Wiki.Servicer):
                     run_librarian,
                     type=str,
                 )
+            except asyncio.CancelledError:
+                # Explicitly propagate cancellation so the workflow can
+                # be stopped i.e. during the test teardown.
+                raise
             except:
                 import traceback
                 traceback.print_exc()

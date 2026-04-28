@@ -15,7 +15,7 @@ dev run --watch=backend/**/*.py
 dev run --python
 
 # Save state between restarts.
-dev run --name=agent-wiki
+dev run --application-name=agent-wiki
 
 # Run the application!
 dev run --application=backend/src/main.py
@@ -34,14 +34,14 @@ dev run:hmr --mcp-frontend-host=http://localhost:4444
 dev run:dist --mcp-frontend-host=""
 
 # When expunging, expunge that state we've saved.
-dev expunge --name=agent-wiki
+dev expunge --application-name=agent-wiki
 
 # Production (`rbt serve run`) settings, used by the Dockerfile
 # when deploying to the Reboot Cloud. In production `web/dist/`
 # is served from disk, so no `--mcp-frontend-host` is needed
 # (that flag is dev-only anyway).
 serve run --python
-serve run --name=agent-wiki
+serve run --application-name=agent-wiki
 serve run --application=backend/src/main.py
 
 # Leave TLS termination to the external load balancer; expose
