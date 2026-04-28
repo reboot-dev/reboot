@@ -699,13 +699,23 @@ class IdempotencyManager:
                 f"(of type {state_type_name}) without an idempotency seed."
             )
 
+        # Route through `make_derived_idempotency_key` so the active
+        # `_idempotency_seeds_uuid` (if any) is folded into the seed.
+        # That keeps the generated state ID scoped consistently with
+        # the per-RPC idempotency key produced by
+        # `_get_or_create_idempotency_key` -- otherwise two
+        # `Foo.idempotently("alias").create(context)` calls in
+        # different seed scopes derive the same state ID but distinct
+        # RPC idempotency keys, and the server-side dedup raises
+        # `StateAlreadyConstructed` on the second call.
         if idempotency.key is not None:
-            # Generate a UUID based on the specified key.
-            return str(uuid.uuid5(self._seed, str(idempotency.key)))
+            return str(
+                make_derived_idempotency_key(self._seed, str(idempotency.key))
+            )
 
         alias = (
             idempotency.alias if idempotency.alias is not None else
             f'{self._rpc_name(state_type_name, service_name, method, True)}'
         )
 
-        return str(uuid.uuid5(self._seed, alias))
+        return str(make_derived_idempotency_key(self._seed, alias))

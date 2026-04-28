@@ -218,6 +218,34 @@ class IdempotencyManagerSeedScopingTestCase(unittest.TestCase):
             key_2 = self._call_named_idempotently(manager, "tag")
         self.assertEqual(key_1, key_2)
 
+    def test_idempotent_state_id_is_seed_scoped(self) -> None:
+        # `generate_idempotent_state_id` derives a state ID from
+        # `(seed, alias)`, used by constructors like
+        # `Counter.idempotently("create").create(context)` to pick a
+        # deterministic ID for the new state. It must fold in the
+        # active `_idempotency_seeds_uuid` for consistency with
+        # `idempotently()`'s seed-aware idempotency key, otherwise the
+        # state ID collides across seed scopes while the idempotency
+        # key differs -- which the server-side dedup interprets as
+        # "different request trying to create an already-constructed
+        # state" and surfaces as `StateAlreadyConstructed`.
+        manager = IdempotencyManager(seed=self.SEED)
+        with _merge_idempotency_seeds({"agent_run_variant": "first"}):
+            state_id_1 = manager.generate_idempotent_state_id(
+                state_type_name=self.STATE_TYPE,
+                service_name=self.SERVICE,
+                method="Create",
+                idempotency=Idempotency(alias="create"),
+            )
+        with _merge_idempotency_seeds({"agent_run_variant": "second"}):
+            state_id_2 = manager.generate_idempotent_state_id(
+                state_type_name=self.STATE_TYPE,
+                service_name=self.SERVICE,
+                method="Create",
+                idempotency=Idempotency(alias="create"),
+            )
+        self.assertNotEqual(state_id_1, state_id_2)
+
 
 if __name__ == "__main__":
     unittest.main()
