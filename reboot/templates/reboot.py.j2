@@ -2847,7 +2847,22 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 if _auto_construct_full_name not in _ids:
                     _ids[_auto_construct_full_name] = (
                         IMPORT_reboot_mcp_context.get_mcp_user_id(ctx))
-            return {"ids": _ids}
+            result: dict = {"ids": _ids}
+
+            # Invariant: the MCP server has a bearer token for this tool
+            # call because opening a UI requires an authenticated
+            # session. This is the only place where the token can be
+            # passed to the iframe, since the iframe has no other access
+            # to the MCP session credentials. The token is read by
+            # `McpConnector` from `ontoolresult` and forwarded to
+            # `RebootClientProvider` for all Reboot calls inside the
+            # app. This tool is also invoked by `McpConnector` to
+            # refresh an expired token, so the field must always be
+            # present when a token is available.
+            reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
+            if reboot_context is not None and reboot_context.bearer_token is not None:
+                result["bearer_token"] = reboot_context.bearer_token
+            return result
 {% else %}
         async def {{ mcp_name_prefix }}{{ ui.name }}_tool(
             ctx: IMPORT_mcp_server_fastmcp.Context,
@@ -2860,7 +2875,22 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             for _auto_construct_full_name in auto_construct_state_type_full_names:
                 _ids[_auto_construct_full_name] = (
                     IMPORT_reboot_mcp_context.get_mcp_user_id(ctx))
-            return {"ids": _ids}
+            result: dict = {"ids": _ids}
+
+            # Invariant: the MCP server has a bearer token for this tool
+            # call because opening a UI requires an authenticated
+            # session. This is the only place where the token can be
+            # passed to the iframe, since the iframe has no other access
+            # to the MCP session credentials. The token is read by
+            # `McpConnector` from `ontoolresult` and forwarded to
+            # `RebootClientProvider` for all Reboot calls inside the
+            # app. This tool is also invoked by `McpConnector` to
+            # refresh an expired token, so the field must always be
+            # present when a token is available.
+            reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
+            if reboot_context is not None and reboot_context.bearer_token is not None:
+                result["bearer_token"] = reboot_context.bearer_token
+            return result
 {% endif %}
 
 {% endfor %}
