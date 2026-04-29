@@ -65,11 +65,14 @@ class WikiState(Model):
     # entries and folds each transcript's material into the
     # wiki's markdown `content` and into Pages it references.
     transcripts: dict[str, bool] = Field(tag=5, default_factory=dict)
+    # The user ID of the user who owns this Wiki.
+    owner_id: str = Field(tag=6)
 
 
 class WikiCreateRequest(Model):
     name: str = Field(tag=1)
     description: str = Field(tag=2)
+    owner_id: str = Field(tag=3)
 
 
 class WikiGetResponse(Model):
@@ -113,11 +116,14 @@ class PageState(Model):
     # link, call the corresponding type with the referenced
     # state ID (e.g., `Page.get` on `abc123`).
     content: str = Field(tag=2, default="")
+    # The user ID of the user who owns this Page.
+    owner_id: str = Field(tag=3)
 
 
 class PageCreateRequest(Model):
     title: str = Field(tag=1)
     content: str = Field(tag=2)
+    owner_id: str = Field(tag=3)
 
 
 class PageGetResponse(Model):
@@ -135,10 +141,13 @@ class PageUpdateRequest(Model):
 
 class TranscriptState(Model):
     messages: list[TranscriptMessage] = Field(tag=1, default_factory=list)
+    # The user ID of the user who owns this Transcript.
+    owner_id: str = Field(tag=2)
 
 
 class TranscriptCreateRequest(Model):
     messages: list[TranscriptMessage] = Field(tag=1, default_factory=list)
+    owner_id: str = Field(tag=2)
 
 
 class TranscriptGetResponse(Model):
