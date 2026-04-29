@@ -1,4 +1,5 @@
 import aiofiles.os
+import argparse
 import asyncio
 import glob
 import os
@@ -97,6 +98,10 @@ rbt_from_nodejs = os.environ.get(
     ENVVAR_RBT_FROM_NODEJS,
     "false",
 ).lower() == "true"
+
+
+def generate_subcommands() -> list[str]:
+    return ['generate']
 
 
 def register_generate(parser: ArgumentParser):
@@ -365,6 +370,17 @@ async def generate(
         return await generate_direct(
             args, argv_after_dash_dash, parser, subprocesses
         )
+
+
+async def handle_generate_subcommand(
+    args: argparse.Namespace,
+    *,
+    argv_after_dash_dash: list[str],
+    parser: ArgumentParser,
+) -> Optional[int]:
+    if args.subcommand == 'generate':
+        return await generate(args, argv_after_dash_dash, parser=parser)
+    return None
 
 
 @reboot.aio.tracing.function_span()
@@ -789,7 +805,7 @@ async def generate_direct(
             if os.stat(file).st_size == 0:
                 terminal.error(
                     f"'{file}' is empty. "
-                    f"See {DOCS_BASE_URL}/develop/schema for "
+                    f"See {DOCS_BASE_URL}/learn_more/define/protobuf for "
                     "more information on filling out your proto file."
                 )
                 # Return an error status here to not break the 'rbt dev' loop.
@@ -823,7 +839,7 @@ async def generate_direct(
                 if os.stat(file).st_size == 0:
                     terminal.error(
                         f"'{file}' is empty. "
-                        f"See {DOCS_BASE_URL}/develop/schema for "
+                        f"See {DOCS_BASE_URL}/learn_more/define/protobuf for "
                         "more information on filling out your schema in a '.ts' file."
                     )
                     # Return an error status here to not break the 'rbt dev' loop.
@@ -962,7 +978,7 @@ async def generate_direct(
                 if os.stat(file).st_size == 0:
                     terminal.error(
                         f"'{file}' is empty. "
-                        f"See {DOCS_BASE_URL}/develop/schema for "
+                        f"See {DOCS_BASE_URL}/learn_more/define/protobuf for "
                         "more information on filling out your schema in a '.py' file."
                     )
                     # Return an error status here to not break the 'rbt dev' loop.

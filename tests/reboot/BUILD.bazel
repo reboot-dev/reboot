@@ -258,7 +258,6 @@ py_test(
         "//rbt/v1alpha1:tasks_py_proto",
         "//reboot/aio:exceptions_py",
         "//reboot/aio:reboot_py",
-        "//reboot/aio:secrets_py",
         "//reboot/aio:tests_py",
         "//reboot/server:service_descriptor_validator_py",
     ],
@@ -686,6 +685,24 @@ py_test(
     deps = [
         ":bank_py",
         "//reboot/aio:tests_py",
+    ],
+)
+
+py_test(
+    name = "idempotency_seeds_tests_py",
+    srcs = [":idempotency_seeds_tests.py"],
+    main = "idempotency_seeds_tests.py",
+    deps = [
+        "//reboot/aio:idempotency_py",
+    ],
+)
+
+py_test(
+    name = "type_annotation_inference_tests_py",
+    srcs = [":type_annotation_inference_tests.py"],
+    main = "type_annotation_inference_tests.py",
+    deps = [
+        "//reboot/aio:workflows_py",
     ],
 )
 

@@ -1,0 +1,37 @@
+{
+  "name": "agent-wiki-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build:wiki_view": "vite build --mode wiki_view",
+    "build:page_view": "vite build --mode page_view",
+    "build:transcript_view": "vite build --mode transcript_view",
+    "build:watch:wiki_view": "vite build --mode wiki_view --watch",
+    "build:watch:page_view": "vite build --mode page_view --watch",
+    "build:watch:transcript_view": "vite build --mode transcript_view --watch",
+    "build": "tsc --noEmit && npm run build:wiki_view && npm run build:page_view && npm run build:transcript_view",
+    "build:watch": "concurrently \"npm:build:watch:*\""
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "1.5.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@reboot-dev/reboot-api": "1.0.3",
+    "@reboot-dev/reboot-react": "1.0.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.67",
+    "@types/react-dom": "^18.2.22",
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.1.2",
+    "typescript": "^5.9.2",
+    "vite": "^6.3.5",
+    "vite-plugin-singlefile": "^2.0.3"
+  }
+}

@@ -30,10 +30,8 @@ py_library(
         ":settings_py",
         "//reboot/aio:call_py",
         "//reboot/aio:contexts_py",
-        "//reboot/aio:secrets_py",
         "//reboot/aio/auth:authorizers_py",
         "@com_github_reboot_dev_reboot//rbt/thirdparty/mailgun/v1:mailgun_py_reboot",
-        "@com_github_reboot_dev_reboot//reboot:run_environments_py",
         "@com_github_reboot_dev_reboot//reboot/aio/auth:token_verifiers_py",
     ],
 )

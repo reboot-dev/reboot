@@ -19,11 +19,21 @@ from reboot.mcp.context import (
     _init_session_state,
     _set_user_id,
 )
-from reboot.mcp.ui import _resource_meta
+from reboot.mcp.proxy import _UI_ASSETS_PREFIX
+from reboot.mcp.ui import (
+    _request_user_agent,
+    _resolve_dist_path,
+    _resource_meta,
+    _ui_tool_cache_bust_info,
+    compute_ui_cache_bust,
+    find_project_root_from,
+    find_ui_asset_info,
+)
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.types import Receive, Scope, Send
 from typing import Any, Awaitable, Callable, Optional, Sequence
+from urllib.parse import unquote
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +93,147 @@ async def _read_resource_with_dynamic_meta(
 
 FastMCP.read_resource = _read_resource_with_dynamic_meta  # type: ignore[method-assign]
 
+# ---------------------------------------------------------------------------
+# Patch `FastMCP.list_tools` to recompute UI cache-bust tokens on
+# each call so clients that re-list tools on new sessions (Claude,
+# MCPJam) pick up dist-file changes without requiring a server
+# restart.
+#
+# Each UI tool's recompute inputs live in the server-local
+# `_ui_tool_cache_bust_info` registry in `reboot.mcp.ui`,
+# populated by generated `_add_mcp` code via
+# `register_ui_tool_for_cache_bust`. On every `tools/list`, we
+# look up each tool by name, re-hash the current dist artifact,
+# and rewrite `_meta.ui.resourceUri` with the fresh token.
+# ChatGPT doesn't re-list so it doesn't benefit here — but for
+# clients that do, this turns the `--config=dist` dev loop from
+# "edit, build, restart, test" into "edit, build, new session".
+#
+# The registry is intentionally kept server-local rather than
+# stashed in tool `_meta`: the client never sees our internal
+# bookkeeping, and correctness doesn't depend on how MCP hosts
+# treat unknown `_meta` keys.
+#
+# Failures during recompute are swallowed (the existing URI
+# stays) so `tools/list` never breaks over a cache-bust issue.
+# ---------------------------------------------------------------------------
+
+_original_list_tools = FastMCP.list_tools
+
+
+async def _list_tools_with_fresh_cache_busts(
+    self: FastMCP,
+) -> list[mcp.types.Tool]:
+    tools = await _original_list_tools(self)
+    for tool in tools:
+        info = _ui_tool_cache_bust_info.get(tool.name)
+        if info is None:
+            continue
+        try:
+            project_root = find_project_root_from(info["caller_file"])
+            token = compute_ui_cache_bust(
+                project_root,
+                info["ui_path"],
+                info["ui_name"],
+                info.get("artifact_path"),
+            )
+        except Exception:
+            # Keep the existing URI baked in at registration.
+            # A `tools/list` response must never fail just
+            # because a cache-bust refresh couldn't resolve.
+            continue
+        meta = tool.meta
+        if not isinstance(meta, dict):
+            continue
+        ui_meta = meta.get("ui")
+        if isinstance(ui_meta, dict):
+            ui_meta["resourceUri"] = info["uri_prefix"] + token
+    return tools
+
+
+FastMCP.list_tools = _list_tools_with_fresh_cache_busts  # type: ignore[method-assign]
+
+
+async def _serve_ui_asset(
+    scope: Scope,
+    receive: Receive,
+    send: Send,
+    path: str,
+) -> None:
+    """Serve a file from a UI's dist directory.
+
+    Called for requests matching `/ui-assets/<ui_name>/<cache_bust>/<rest>`.
+    The `<cache_bust>` segment is part of the URL identity (so
+    browser HTTP caches invalidate when it rotates) but is
+    otherwise ignored server-side — the actual bytes come from
+    the current filesystem. Looks up `<ui_name>` in the
+    `_ui_tool_cache_bust_info` registry to find the project
+    root and ui_path, resolves the dist directory via
+    `_resolve_dist_path`, and serves `<rest>` (defaulting to
+    `index.html` if empty) from inside that directory.
+
+    Returns 404 if the UI isn't registered, the file isn't in
+    the dist, or the resolved path escapes the dist directory.
+    """
+
+    async def reject(reason: str) -> None:
+        # Reason is for the server log only; never echoed in
+        # the response body, since these can leak filesystem
+        # layout and registry contents.
+        logger.debug("ui-assets 404: %s (path=%s)", reason, path)
+        await Response(status_code=404)(scope, receive, send)
+
+    # Parse: `<_UI_ASSETS_PREFIX><ui_name>/<cache_bust>/<rest>`.
+    parts = path[len(_UI_ASSETS_PREFIX):].split("/", 2)
+    if len(parts) < 2:
+        await reject("bad ui-assets path")
+        return
+    ui_name = unquote(parts[0])
+    # `parts[1]` is the cache-bust segment; intentionally
+    # unused for lookup — it exists purely for URL-identity
+    # cache-busting.
+    rest = parts[2] if len(parts) == 3 else "index.html"
+
+    info = find_ui_asset_info(ui_name)
+    if info is None:
+        await reject(f"unknown ui: {ui_name}")
+        return
+
+    try:
+        project_root = find_project_root_from(info["caller_file"])
+    except RuntimeError:
+        await reject("project root missing")
+        return
+
+    # Dist directory = parent of the `index.html` path that
+    # `_resolve_dist_path` returns.
+    dist_index = _resolve_dist_path(
+        project_root, info["ui_path"], info.get("artifact_path")
+    )
+    dist_dir = dist_index.parent
+    # Defend against path traversal: the resolved file must
+    # live under `dist_dir`.
+    resolved = (dist_dir / rest).resolve()
+    try:
+        resolved.relative_to(dist_dir.resolve())
+    except ValueError:
+        await reject("path escape")
+        return
+
+    if not resolved.is_file():
+        await reject(f"not found: {rest}")
+        return
+
+    # Short-lived freshness: the URL path already varies by
+    # `cache_bust`, so immutable caching is safe. But keep it
+    # conservative for now (dev-mode iteration without restart
+    # could still matter).
+    response = FileResponse(
+        path=str(resolved),
+        headers={"Cache-Control": "no-cache"},
+    )
+    await response(scope, receive, send)
+
 
 def create_mcp_factory(
     *,
@@ -133,7 +284,31 @@ def create_mcp_factory(
         async def mcp_asgi_app(
             scope: Scope, receive: Receive, send: Send
         ) -> None:
+            # Static-asset branch: serve the UI's dist files
+            # directly from disk for production-mode MCP Apps.
+            # The path shape, set by `prod_loader_html`, is
+            # `/mcp<_UI_ASSETS_PREFIX><ui_name>/<cache_bust>/<rest>`.
+            # Handled before any MCP-protocol logic (including
+            # bearer-token auth) so the iframe, which has no
+            # credentials, can load the bundle freely.
+            #
+            # Starlette mounts may or may not strip the mount
+            # prefix depending on wiring; accept both forms.
+            raw_path = scope.get("path", "")
+            idx = raw_path.find(_UI_ASSETS_PREFIX)
+            if idx != -1:
+                subpath = raw_path[idx:]
+                await _serve_ui_asset(scope, receive, send, subpath)
+                return
+
             request = Request(scope, receive, send)
+
+            # Publish the incoming User-Agent so `ui_html()` can
+            # branch on host identity (ChatGPT gets the relay
+            # iframe; others get the inlined bundle). Set here,
+            # before handing off to the MCP transport, so the
+            # contextvar is captured into downstream tasks.
+            _request_user_agent.set(request.headers.get("user-agent"))
 
             # If no tools are registered, there is nothing useful for an
             # MCP client to do.

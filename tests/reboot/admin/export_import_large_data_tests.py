@@ -1,4 +1,5 @@
 import grpc
+import os
 import tempfile
 import unittest
 from log.log import get_logger
@@ -7,9 +8,8 @@ from rbt.v1alpha1.admin import export_import_pb2_grpc
 from reboot.admin import export_import_client
 from reboot.aio.applications import Application
 from reboot.aio.external import ExternalContext
-from reboot.aio.secrets import MockSecretSource, Secrets
 from reboot.aio.tests import Reboot
-from reboot.settings import ADMIN_SECRET_NAME
+from reboot.settings import ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA
 from tests.reboot.echo_rbt import Echo
 from tests.reboot.echo_servicers import MyEchoServicer
@@ -17,7 +17,7 @@ from typing import Optional
 
 logger = get_logger(__name__)
 
-TEST_ADMIN_SECRET = 'test-admin-secret'
+TEST_SECRET_REBOOT_ADMIN_TOKEN = 'test-admin-secret'
 
 # Target total data volume that exceeds the 100 MB gRPC message limit.
 # This verifies that streaming batching (flush at 50 MB) works.
@@ -38,9 +38,8 @@ class LargeDataExportTestCase(unittest.IsolatedAsyncioTestCase):
     """
 
     async def asyncSetUp(self) -> None:
-        Secrets.set_secret_source(
-            MockSecretSource({ADMIN_SECRET_NAME: TEST_ADMIN_SECRET.encode()})
-        )
+        os.environ[ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
+                  ] = TEST_SECRET_REBOOT_ADMIN_TOKEN
         self.rbt: Optional[Reboot] = None
 
     async def asyncTearDown(self) -> None:
@@ -91,7 +90,7 @@ class LargeDataExportTestCase(unittest.IsolatedAsyncioTestCase):
             await export_import_client.do_export(
                 stub,
                 directory_path,
-                admin_token=TEST_ADMIN_SECRET,
+                admin_token=TEST_SECRET_REBOOT_ADMIN_TOKEN,
             )
 
             # Verify total exported data exceeds 300 MB.
@@ -115,7 +114,7 @@ class LargeDataExportTestCase(unittest.IsolatedAsyncioTestCase):
             await export_import_client.do_import(
                 fresh_stub,
                 directory_path,
-                admin_token=TEST_ADMIN_SECRET,
+                admin_token=TEST_SECRET_REBOOT_ADMIN_TOKEN,
             )
 
             for i in range(NUMBER_OF_STATES):

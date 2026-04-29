@@ -1,4 +1,5 @@
 import asyncio
+import os
 import random
 import reboot.thirdparty.mailgun
 from bank.v1.bank_rbt import (
@@ -37,9 +38,8 @@ from reboot.aio.contexts import (
     WriterContext,
 )
 from reboot.aio.external import InitializeContext
-from reboot.aio.secrets import SecretNotFoundException, Secrets
 from reboot.std.collections.v1.sorted_map import SortedMap, sorted_map_library
-from reboot.thirdparty.mailgun import MAILGUN_API_KEY_SECRET_NAME
+from reboot.thirdparty.mailgun import ENVVAR_MAILGUN_API_KEY
 from typing import Optional
 from uuid import uuid4
 from uuid7 import create as uuid7
@@ -112,7 +112,6 @@ class BankServicer(Bank.Servicer):
     def __init__(self):
         self._html_email = open('backend/src/email_to_bank_users.html').read()
         self._text_email = open('backend/src/email_to_bank_users.txt').read()
-        self._secrets = Secrets()
 
     def authorizer(self):
         return allow()
@@ -203,15 +202,14 @@ class BankServicer(Bank.Servicer):
         return TransferResponse()
 
     async def _mailgun_api_key(self) -> Optional[str]:
-        try:
-            secret_bytes = await self._secrets.get(MAILGUN_API_KEY_SECRET_NAME)
-            return secret_bytes.decode()
-        except SecretNotFoundException:
+        api_key = os.environ.get(ENVVAR_MAILGUN_API_KEY)
+        if api_key is None:
             logger.warning(
-                "The Mailgun API key secret is not set: please see the README to "
-                "enable sending email."
+                "The Mailgun API key secret is not set: "
+                "please see the README to enable sending "
+                "email."
             )
-            return None
+        return api_key
 
 
 async def initialize(context: InitializeContext):

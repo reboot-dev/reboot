@@ -1,0 +1,24 @@
+{
+  "name": "@reboot-dev/create-ui",
+  "version": "1.0.3",
+  "description": "Scaffold React implementation for Reboot AI Chat App UIs",
+  "type": "commonjs",
+  "bin": {
+    "create-ui": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=cjs --outfile=dist/index.js --banner:js='#!/usr/bin/env node' --loader:.tmpl=text",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

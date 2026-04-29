@@ -1,5 +1,59 @@
 # AI Chat App Examples
 
+## `agent-wiki`
+
+[`reboot-dev/reboot-agent-wiki`](https://github.com/reboot-dev/reboot-agent-wiki) - _Python backend, React AI Chat App UIs_
+
+The `agent-wiki` example is a shared knowledge base humans
+and AIs can both read from and write to. Users hand in raw
+conversation transcripts; a background "librarian" agent
+(built with Pydantic AI) progressively distills those
+transcripts into a small, well-organized set of markdown
+pages linked from the wiki's own markdown body, which
+serves as a living table of contents. Humans browse the
+result in embedded React UIs.
+
+It demonstrates:
+
+* `UI` methods that render React views (wiki, page,
+  transcript) inside the AI chat interface.
+* A long-running `workflow` method (`Wiki.ingest`) that
+  acts as a per-wiki background agent, reacting to new
+  transcripts as they arrive.
+* `Transaction`s that atomically create related state
+  across multiple types (e.g. `User.create_wiki` creates a
+  `Wiki` and records its ID on the user in one step).
+* Cross-state references via `<StateType>:<state_id>` URIs
+  embedded in markdown, letting the agent build a graph of
+  pages without a dedicated link table.
+* An in-process test suite that exercises the librarian
+  workflow with a scripted Pydantic AI `FunctionModel`, so
+  no real Anthropic calls are needed in CI.
+
+## `chick-potle`
+
+[`reboot-dev/reboot-chick-potle`](https://github.com/reboot-dev/reboot-chick-potle) - _Python backend, React AI Chat App UIs_
+
+The `chick-potle` example is a small food-ordering AI Chat
+App. The AI calls tools to start an order, browse the menu,
+and add or remove items from the cart; humans see two
+embedded React UIs — a menu grid and a cart — rendered
+alongside the conversation.
+
+It demonstrates:
+
+* `UI` methods that render React views (menu, cart) inside
+  the AI chat interface.
+* The `User` type: auto-constructed per authenticated user,
+  acting as an entry point that creates a `FoodOrder` via a
+  `Transaction` (`User.start_order`).
+* MCP `Tool`s (`get_menu`, `get_cart`, `add_to_cart`,
+  `remove_from_cart`) that let the AI drive the order
+  programmatically.
+* Generated React hooks (`useFoodOrder()`) shared between
+  the menu and cart UIs, so adding an item from one view
+  immediately updates the other.
+
 ## `ai-chat-counter`
 
 _Python backend, React AI Chat App UIs_

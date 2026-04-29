@@ -104,6 +104,18 @@ message Application {
 
   // Live metrics, updated every 30 seconds while the application is UP.
   ApplicationMetrics metrics = 10;
+
+  // The `task_uuid` of the most recently scheduled `metrics_workflow`.
+  // `metrics_workflow` compares its own `context.task_id` against this
+  // to detect that a newer instance has been scheduled and exit, ensuring
+  // at most one `metrics_workflow` runs per application at a time.
+  bytes latest_metrics_workflow_task_uuid = 11;
+
+  // The workflow (task) UUID of the workflow currently holding an
+  // exclusive lock on this state. In string representation for human
+  // readability. No other writers or workflows should edit the state if
+  // this field is non-emtpy.
+  optional bytes locked_for_workflow_task_uuid = 12;
 }
 
 ///////////////////////////////////////////////////////////////////////
@@ -209,6 +221,37 @@ service ApplicationMethods {
       returns (MetricsWorkflowResponse) {
     option (rbt.v1alpha1.method) = {
       workflow: {},
+    };
+  }
+
+  // Store one or more secrets for this application. Keys must be
+  // uppercase environment variable names (letters, digits, and
+  // underscores; not starting with a digit). They must not start
+  // with "REBOOT_" or "RBT_", and must not be exactly "REBOOT",
+  // "RBT", "PORT", or "PYTHONUNBUFFERED" -- those names are
+  // reserved by the Reboot platform. If specified keys already
+  // exist, they are overwritten. Any keys that are not specified
+  // are left as-is (use `DeleteSecrets` to remove them).
+  rpc SetSecrets(SetSecretsRequest) returns (SetSecretsResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+      errors: [ "InvalidInputError" ],
+    };
+  }
+
+  // Return (only) the names of all stored secrets.
+  rpc ListSecrets(ListSecretsRequest) returns (ListSecretsResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  // Remove one or more secrets. Unknown names are silently ignored;
+  // no validation is performed on the input names.
+  rpc DeleteSecrets(DeleteSecretsRequest) returns (DeleteSecretsResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+      errors: [ "InvalidInputError" ],
     };
   }
 }
@@ -378,6 +421,21 @@ message IsAdminRequest {
 message IsAdminResponse {
   bool is_admin = 1;
 }
+
+message SetSecretsRequest {
+  map<string, string> secrets = 1;
+}
+message SetSecretsResponse {}
+
+message ListSecretsRequest {}
+message ListSecretsResponse {
+  repeated string names = 1;
+}
+
+message DeleteSecretsRequest {
+  repeated string names = 1;
+}
+message DeleteSecretsResponse {}
 
 //////////////////////////////////////////////////////////////////////
 

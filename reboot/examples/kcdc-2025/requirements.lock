@@ -49,6 +49,7 @@ charset-normalizer==3.4.3
 click==8.2.1
     # via uvicorn
 colorama==0.4.6
+    # via griffecli
     # via reboot
 cryptography==44.0.0
     # via pyjwt
@@ -61,17 +62,27 @@ distro==1.9.0
     # via anthropic
 exceptiongroup==1.3.0
     # via anyio
+    # via pydantic-ai-slim
 fastapi==0.115.12
     # via reboot
 frozenlist==1.7.0
     # via aiohttp
     # via aiosignal
+genai-prices==0.0.57
+    # via pydantic-ai-slim
 googleapis-common-protos==1.65.0
     # via grpcio-status
     # via opentelemetry-exporter-otlp-proto-grpc
     # via reboot
 greenlet==3.2.4
     # via sqlalchemy
+griffe==2.0.2
+    # via pydantic-ai-slim
+griffecli==2.0.2
+    # via griffe
+griffelib==2.0.2
+    # via griffe
+    # via griffecli
 grpc-interceptor==0.15.4
     # via reboot
 grpcio==1.64.3
@@ -101,8 +112,11 @@ httpcore==1.0.9
     # via httpx
 httpx==0.28.1
     # via anthropic
+    # via genai-prices
     # via langsmith
     # via mcp
+    # via pydantic-ai-slim
+    # via pydantic-graph
 httpx-sse==0.4.3
     # via mcp
 hyperframe==6.1.0
@@ -142,9 +156,11 @@ langchain-text-splitters==0.3.9
 langsmith==0.4.14
     # via langchain
     # via langchain-core
+logfire-api==4.32.1
+    # via pydantic-graph
 markupsafe==3.0.2
     # via jinja2
-mcp==1.26.0
+mcp==1.27.0
     # via reboot
 multidict==6.6.4
     # via aiohttp
@@ -157,6 +173,7 @@ opentelemetry-api==1.28.1
     # via opentelemetry-instrumentation-grpc
     # via opentelemetry-sdk
     # via opentelemetry-semantic-conventions
+    # via pydantic-ai-slim
     # via reboot
 opentelemetry-exporter-otlp-proto-common==1.28.1
     # via opentelemetry-exporter-otlp-proto-grpc
@@ -204,15 +221,22 @@ pycparser==2.22
 pydantic==2.11.7
     # via anthropic
     # via fastapi
+    # via genai-prices
     # via langchain
     # via langchain-anthropic
     # via langchain-core
     # via langsmith
     # via mcp
+    # via pydantic-ai-slim
+    # via pydantic-graph
     # via pydantic-settings
+    # via reboot
+pydantic-ai-slim==1.60.0
     # via reboot
 pydantic-core==2.33.2
     # via pydantic
+pydantic-graph==1.60.0
+    # via pydantic-ai-slim
 pydantic-settings==2.13.1
     # via mcp
 pyjwt==2.10.1
@@ -233,7 +257,7 @@ pyyaml==6.0.2
     # via langchain
     # via langchain-core
     # via reboot
-reboot==0.46.0
+reboot==1.0.3
 referencing==0.37.0
     # via jsonschema
     # via jsonschema-specifications
@@ -268,7 +292,7 @@ tenacity==9.1.2
     # via langchain-core
 types-protobuf==6.30.2.20250809
     # via mypy-protobuf
-typing-extensions==4.14.1
+typing-extensions==4.15.0
     # via aiosignal
     # via anthropic
     # via anyio
@@ -280,6 +304,7 @@ typing-extensions==4.14.1
     # via opentelemetry-sdk
     # via pydantic
     # via pydantic-core
+    # via reboot
     # via referencing
     # via sqlalchemy
     # via typing-inspection
@@ -287,6 +312,8 @@ typing-extensions==4.14.1
 typing-inspection==0.4.1
     # via mcp
     # via pydantic
+    # via pydantic-ai-slim
+    # via pydantic-graph
     # via pydantic-settings
 tzlocal==5.3
     # via reboot

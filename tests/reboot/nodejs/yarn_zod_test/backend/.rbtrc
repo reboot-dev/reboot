@@ -9,10 +9,10 @@ generate --nodejs-extensions
 
 dev run --watch=src/**/*.ts
 
-dev run --name=bank-zod-yarn
+dev run --application-name=bank-zod-yarn
 
 dev run --nodejs
 
 dev run --application=src/main.ts
 
-dev expunge --name=bank-zod-yarn
+dev expunge --application-name=bank-zod-yarn

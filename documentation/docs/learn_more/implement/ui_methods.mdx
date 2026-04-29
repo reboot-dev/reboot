@@ -14,21 +14,17 @@ from a browser or backend.
 
 ## Syntax
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py&lines=17-31&syntax=python) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py&lines=88-94&syntax=python) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py -->
 
 ```python
-class CreateCounterResponse(Model):
-    counter_id: str = Field(tag=1)
-
-
-class CounterEntry(Model):
-    counter_id: str = Field(tag=1)
-    description: str = Field(tag=2)
-
-
-class ListCountersResponse(Model):
-    counters: list[CounterEntry] = Field(tag=1, default_factory=list)
+show_clicker=UI(
+    request=None,
+    path="web/ui/clicker",
+    title="Counter Clicker",
+    description="Interactive clicker UI "
+    "for the counter.",
+),
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -48,17 +44,17 @@ class ListCountersResponse(Model):
 
 From the `ai-chat-counter` example:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py&lines=18-26&syntax=python) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py&lines=84-90&syntax=python) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py -->
 
 ```python
-class CreateCounterResponse(Model):
-    counter_id: str = Field(tag=1)
-
-
-class CounterEntry(Model):
-    counter_id: str = Field(tag=1)
-    description: str = Field(tag=2)
+show_clicker=UI(
+    request=None,
+    path="web/ui/clicker",
+    title="Counter Clicker",
+    description="Interactive clicker UI "
+    "for the counter.",
+),
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -67,21 +63,18 @@ class CounterEntry(Model):
 
 From the `ai-chat-counter-dashboard` example:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py&lines=17-31&syntax=python) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py&lines=95-102&syntax=python) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-chat-counter-dashboard/api/ai_chat_counter/v1/counter.py -->
 
 ```python
-class CreateCounterResponse(Model):
-    counter_id: str = Field(tag=1)
-
-
-class CounterEntry(Model):
-    counter_id: str = Field(tag=1)
-    description: str = Field(tag=2)
-
-
-class ListCountersResponse(Model):
-    counters: list[CounterEntry] = Field(tag=1, default_factory=list)
+show_dashboard=UI(
+    request=DashboardConfig,
+    path="web/ui/dashboard",
+    title="Counter Dashboard",
+    description="Dashboard UI. Use "
+    "`personalized_message` to impart wisdom "
+    "on the topic of counting things.",
+),
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->

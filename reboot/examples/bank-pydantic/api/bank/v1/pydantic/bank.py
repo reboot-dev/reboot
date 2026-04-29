@@ -43,26 +43,32 @@ BankMethods = Methods(
         request=None,
         response=None,
         factory=True,
+        mcp=None,
     ),
     sign_up=Transaction(
         request=SignUpRequest,
         response=None,
+        mcp=None,
     ),
     all_customer_ids=Reader(
         request=None,
         response=AllCustomerIdsResponse,
+        mcp=None,
     ),
     transfer=Transaction(
         request=TransferRequest,
         response=None,
+        mcp=None,
     ),
     open_customer_account=Transaction(
         request=OpenCustomerAccountRequest,
         response=None,
+        mcp=None,
     ),
     account_balances=Reader(
         request=None,
         response=AccountBalancesResponse,
+        mcp=None,
     ),
 )
 

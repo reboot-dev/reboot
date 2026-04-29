@@ -17,7 +17,7 @@ from __future__ import annotations as IMPORT_future_annotations
 # may be invalid (broken) if the generated code is mismatched with the installed
 # libraries.
 import reboot.versioning as IMPORT_reboot_versioning
-IMPORT_reboot_versioning.check_generated_code_compatible("0.46.0")
+IMPORT_reboot_versioning.check_generated_code_compatible("1.0.3")
 
 # ATTENTION: no types in this file should be imported with their unqualified
 #            name (e.g. `from typing import Any`). That would cause clashes
@@ -13487,19 +13487,6 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 )
             ).read(context)
 
-        @IMPORT_typing.overload
-        async def write(
-            self,
-            idempotency_alias: str,
-            context: IMPORT_reboot_aio_contexts.WorkflowContext,
-            writer: EchoBaseServicer.InlineWriterCallable[None],
-            __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
-            *,
-            type: type = type(None),
-        ) -> None:
-            ...
-
-        @IMPORT_typing.overload
         async def write(
             self,
             idempotency_alias: str,
@@ -13507,25 +13494,22 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             writer: EchoBaseServicer.InlineWriterCallable[EchoBaseServicer.InlineWriterCallableResult],
             __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
             *,
-            type: type[EchoBaseServicer.InlineWriterCallableResult],
+            type: IMPORT_reboot_aio_workflows.Type | IMPORT_reboot_aio_workflows._Unset = IMPORT_reboot_aio_workflows._UNSET,
         ) -> EchoBaseServicer.InlineWriterCallableResult:
-            ...
+            """Perform an "inline write" within a workflow.
 
-        async def write(
-            self,
-            idempotency_alias: str,
-            context: IMPORT_reboot_aio_contexts.WorkflowContext,
-            writer: EchoBaseServicer.InlineWriterCallable[EchoBaseServicer.InlineWriterCallableResult],
-            __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
-            *,
-            type: type = type(None),
-        ) -> EchoBaseServicer.InlineWriterCallableResult:
-            """Perform an "inline write" within a workflow."""
+            `type=` is optional: when omitted, `writer`'s return
+            annotation is used (falling back to `type(None)` if
+            there is none).
+            """
+            type_t, _ = IMPORT_reboot_aio_workflows._resolve_callable_return_type(
+                writer, type,
+            )
             return await (
                 self.per_iteration(idempotency_alias) if context.within_loop()
                 else self.per_workflow(idempotency_alias)
             ).write(
-                context, writer, __options__, type=type
+                context, writer, __options__, type=type_t
             )
 
         class _Idempotently:
@@ -13572,14 +13556,14 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                         'are you using this class without Reboot?'
                     )
 
-                async def read():
+                async def read() -> tests.reboot.echo_pb2.Echo:
                     assert servicer._middleware is not None
                     return await servicer._middleware._state_manager.read(
                         context, servicer.__state_type__
                     )
 
                 if idempotency.always:
-                    return await read()
+                    return EchoFromProto(await read())
 
                 state_type_name = IMPORT_reboot_aio_types.StateTypeName('tests.reboot.Echo')
 
@@ -13621,44 +13605,26 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
                     return EchoFromProto(protobuf_state)
 
-            @IMPORT_typing.overload
-            async def write(
-                self,
-                context: IMPORT_reboot_aio_contexts.WorkflowContext,
-                writer: EchoBaseServicer.InlineWriterCallable[None],
-                __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
-                *,
-                type: type = type(None),
-                check_type: bool = True,
-            ) -> None:
-                ...
-
-            @IMPORT_typing.overload
             async def write(
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
                 writer: EchoBaseServicer.InlineWriterCallable[EchoBaseServicer.InlineWriterCallableResult],
                 __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
                 *,
-                type: type[EchoBaseServicer.InlineWriterCallableResult],
+                type: IMPORT_reboot_aio_workflows.Type | IMPORT_reboot_aio_workflows._Unset = IMPORT_reboot_aio_workflows._UNSET,
                 check_type: bool = True,
             ) -> EchoBaseServicer.InlineWriterCallableResult:
-                ...
-
-            async def write(
-                self,
-                context: IMPORT_reboot_aio_contexts.WorkflowContext,
-                writer: EchoBaseServicer.InlineWriterCallable[EchoBaseServicer.InlineWriterCallableResult],
-                __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
-                *,
-                type: type = type(None),
-                check_type: bool = True,
-            ) -> EchoBaseServicer.InlineWriterCallableResult:
+                # `type=` is optional: when omitted, `writer`'s
+                # return annotation is used (falling back to
+                # `type(None)` when there is none).
+                type_t, _ = IMPORT_reboot_aio_workflows._resolve_callable_return_type(
+                    writer, type,
+                )
                 return await self._write(
                     context,
                     writer,
                     __options__,
-                    type_result=type,
+                    type_result=type_t,
                     check_type=check_type,
                 )
 
@@ -13668,7 +13634,7 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 writer: EchoBaseServicer.InlineWriterCallable[EchoBaseServicer.InlineWriterCallableResult],
                 __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
                 *,
-                type_result: type,
+                type_result: IMPORT_reboot_aio_workflows.TypeT,
                 check_type: bool,
             ) -> EchoBaseServicer.InlineWriterCallableResult:
                 unidempotently = self._how == IMPORT_reboot_aio_workflows.ALWAYS
@@ -13704,7 +13670,7 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 writer: EchoBaseServicer.InlineWriterCallable[EchoBaseServicer.InlineWriterCallableResult],
                 __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
                 *,
-                type_result: type,
+                type_result: IMPORT_reboot_aio_workflows.TypeT,
                 check_type: bool,
                 unidempotently: bool,
                 checkpoint: IMPORT_reboot_aio_idempotency.Checkpoint,
@@ -13795,10 +13761,10 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                             response.ParseFromString(idempotent_mutation.response)
                             result: EchoBaseServicer.InlineWriterCallableResult = IMPORT_pickle.loads(response.value)
 
-                            if check_type and type(result) is not type_result:
+                            if check_type and not isinstance(result, IMPORT_reboot_aio_workflows._isinstance_type(type_result)):
                                 raise TypeError(
                                     f"Stored result of type '{type(result).__name__}' from 'writer' "
-                                    f"is not of expected type '{type_result.__name__}'; have you changed "
+                                    f"is not of expected type '{IMPORT_reboot_aio_workflows._format_type(type_result)}'; have you changed "
                                     "the 'type' that you expect after having stored a result?"
                                 )
 
@@ -13829,10 +13795,10 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
                                 EchoToProto(typed_state, protobuf_state)
 
-                                if check_type and type(result) is not type_result:
+                                if check_type and not isinstance(result, IMPORT_reboot_aio_workflows._isinstance_type(type_result)):
                                     raise TypeError(
                                         f"Result of type '{type(result).__name__}' from 'writer' is "
-                                        f"not of expected type '{type_result.__name__}'; "
+                                        f"not of expected type '{IMPORT_reboot_aio_workflows._format_type(type_result)}'; "
                                         "did you specify an incorrect 'type'?"
                                     )
 
@@ -20666,32 +20632,12 @@ class Echo:
                     context,
                 )
 
-            @IMPORT_typing.overload
-            async def write(
-                self,
-                context: IMPORT_reboot_aio_contexts.WorkflowContext,
-                writer: EchoBaseServicer.InlineWriterCallable[None],
-                *,
-                type: type = type(None),
-            ) -> None:
-                ...
-
-            @IMPORT_typing.overload
             async def write(
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
                 writer: EchoBaseServicer.InlineWriterCallable[EchoBaseServicer.InlineWriterCallableResult],
                 *,
-                type: type[EchoBaseServicer.InlineWriterCallableResult],
-            ) -> EchoBaseServicer.InlineWriterCallableResult:
-                ...
-
-            async def write(
-                self,
-                context: IMPORT_reboot_aio_contexts.WorkflowContext,
-                writer: EchoBaseServicer.InlineWriterCallable[EchoBaseServicer.InlineWriterCallableResult],
-                *,
-                type: type = type(None),
+                type: IMPORT_reboot_aio_workflows.Type | IMPORT_reboot_aio_workflows._Unset = IMPORT_reboot_aio_workflows._UNSET,
             ) -> EchoBaseServicer.InlineWriterCallableResult:
                 if self._weak_reference._servicer is None:
                     raise RuntimeError(
@@ -20700,12 +20646,18 @@ class Echo:
                         "is important for you!"
                     )
 
+                # `type=` is optional: when omitted, `writer`'s
+                # return annotation is used.
+                type_t, _ = IMPORT_reboot_aio_workflows._resolve_callable_return_type(
+                    writer, type,
+                )
+
                 return await EchoBaseServicer.WorkflowState._Idempotently._write_validating_effects(
                     self._weak_reference._servicer,
                     self._idempotency,
                     context,
                     writer,
-                    type_result=type,
+                    type_result=type_t,
                     check_type=not self._idempotency.always,
                     unidempotently=self._idempotency.always,
                     checkpoint=context.checkpoint(),
@@ -26123,34 +26075,22 @@ class Echo:
                 )
             ).read(context)
 
-        @IMPORT_typing.overload
-        async def write(
-            self,
-            context: IMPORT_reboot_aio_contexts.WorkflowContext,
-            writer: EchoBaseServicer.InlineWriterCallable[None],
-            *,
-            type: type = type(None),
-        ) -> None:
-            ...
-
-        @IMPORT_typing.overload
         async def write(
             self,
             context: IMPORT_reboot_aio_contexts.WorkflowContext,
             writer: EchoBaseServicer.InlineWriterCallable[EchoBaseServicer.InlineWriterCallableResult],
             *,
-            type: type[EchoBaseServicer.InlineWriterCallableResult],
+            type: IMPORT_reboot_aio_workflows.Type | IMPORT_reboot_aio_workflows._Unset = IMPORT_reboot_aio_workflows._UNSET,
         ) -> EchoBaseServicer.InlineWriterCallableResult:
-            ...
+            """Perform an "inline write" within a workflow.
 
-        async def write(
-            self,
-            context: IMPORT_reboot_aio_contexts.WorkflowContext,
-            writer: EchoBaseServicer.InlineWriterCallable[EchoBaseServicer.InlineWriterCallableResult],
-            *,
-            type: type = type(None),
-        ) -> EchoBaseServicer.InlineWriterCallableResult:
-            """Perform an "inline write" within a workflow."""
+            `type=` is optional: when omitted, `writer`'s return
+            annotation is used.
+            """
+            # We forward `type=` along to the inner `write` (which
+            # also infers if not passed). Pass through whichever
+            # form the user supplied -- explicit class or the
+            # `_UNSET` sentinel to trigger inference downstream.
             return await (
                 self.always() if context.within_until()
                 else (

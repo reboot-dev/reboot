@@ -103,7 +103,6 @@ const sidebars = {
           items: [
             "learn_more/call/overview",
             "learn_more/call/from_react",
-            // "learn_more/call/from_browser",
             "learn_more/call/from_within_your_app",
             "learn_more/call/from_outside_your_app",
             "learn_more/call/via_http",
@@ -117,6 +116,7 @@ const sidebars = {
         "learn_more/tasks",
         "learn_more/side_effects",
         "learn_more/idempotency",
+        "learn_more/agents",
       ],
     },
     {

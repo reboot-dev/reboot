@@ -1,0 +1,49 @@
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("//reboot:pydantic_to_proto.bzl", "pydantic_to_proto")
+
+pydantic_to_proto(
+    name = "pydantic_state_original_proto_file",
+    py_deps = ["//reboot:api_py"],
+    pydantic = ":pydantic_state_original_api.py",
+)
+
+proto_library(
+    name = "pydantic_state_original_proto",
+    srcs = [":pydantic_state_original_proto_file"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_proto_library(
+    name = "pydantic_state_original_py_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+    deps = [":pydantic_state_original_proto"],
+)
+
+pydantic_to_proto(
+    name = "pydantic_method_deleted_proto_file",
+    py_deps = ["//reboot:api_py"],
+    pydantic = ":pydantic_method_deleted_api.py",
+)
+
+proto_library(
+    name = "pydantic_method_deleted_proto",
+    srcs = [":pydantic_method_deleted_proto_file"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_proto_library(
+    name = "pydantic_method_deleted_py_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+    deps = [":pydantic_method_deleted_proto"],
+)

@@ -3,7 +3,7 @@ syntax = "proto3";
 import "rbt/v1alpha1/options.proto";
 import "tests/reboot/server/echo_shared_messages.proto";
 
-package tests.reboot.server;
+package tests.reboot.server.service_descriptor_validator_proto;
 
 message Echo {
   option (rbt.v1alpha1.state) = {

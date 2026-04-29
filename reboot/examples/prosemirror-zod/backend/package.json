@@ -10,8 +10,8 @@
     "@bufbuild/protobuf": "1.10.1",
     "@monorepo/api": "workspace:*",
     "@monorepo/common": "workspace:*",
-    "@reboot-dev/reboot": "0.46.0",
-    "@reboot-dev/reboot-api": "0.46.0",
+    "@reboot-dev/reboot": "1.0.3",
+    "@reboot-dev/reboot-api": "1.0.3",
     "prosemirror-model": "^1.23.0",
     "prosemirror-transform": "^1.1.0"
   }

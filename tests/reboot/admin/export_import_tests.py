@@ -1,5 +1,6 @@
 import grpc
 import json
+import os
 import tempfile
 import unittest
 import uuid
@@ -13,10 +14,9 @@ from reboot.admin import export_import_client
 from reboot.aio.applications import Application
 from reboot.aio.external import ExternalContext
 from reboot.aio.headers import AUTHORIZATION_HEADER
-from reboot.aio.secrets import MockSecretSource, Secrets
 from reboot.aio.tests import Reboot
 from reboot.aio.types import StateRef, StateTypeName
-from reboot.settings import ADMIN_SECRET_NAME
+from reboot.settings import ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA
 from tests.reboot.echo_rbt import Echo
 from tests.reboot.echo_servicers import MyEchoServicer
@@ -24,7 +24,7 @@ from typing import Any, Optional
 
 logger = get_logger(__name__)
 
-TEST_ADMIN_SECRET = 'test-admin-secret'
+TEST_SECRET_REBOOT_ADMIN_TOKEN = 'test-admin-secret'
 
 
 @dataclass
@@ -37,9 +37,8 @@ class ExpectedExportImportItems:
 class ExportImportTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
-        Secrets.set_secret_source(
-            MockSecretSource({ADMIN_SECRET_NAME: TEST_ADMIN_SECRET.encode()})
-        )
+        os.environ[ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
+                  ] = TEST_SECRET_REBOOT_ADMIN_TOKEN
 
         self.maxDiff = None
         self.rbt: Optional[Reboot] = None
@@ -121,7 +120,7 @@ class ExportImportTestCase(unittest.IsolatedAsyncioTestCase):
             await export_import_client.do_export(
                 stub,
                 directory,
-                admin_token=TEST_ADMIN_SECRET,
+                admin_token=TEST_SECRET_REBOOT_ADMIN_TOKEN,
             )
             self.assertTrue(any(directory.iterdir()))
             self._assert_contents(directory, {})
@@ -150,7 +149,7 @@ class ExportImportTestCase(unittest.IsolatedAsyncioTestCase):
         export_directory = tempfile.TemporaryDirectory()
         directory = Path(export_directory.name)
         await export_import_client.do_export(
-            stub, directory, admin_token=TEST_ADMIN_SECRET
+            stub, directory, admin_token=TEST_SECRET_REBOOT_ADMIN_TOKEN
         )
         self._assert_contents(
             directory,
@@ -186,7 +185,7 @@ class ExportImportTestCase(unittest.IsolatedAsyncioTestCase):
         await export_import_client.do_import(
             stub,
             directory,
-            admin_token=TEST_ADMIN_SECRET,
+            admin_token=TEST_SECRET_REBOOT_ADMIN_TOKEN,
         )
         for (state_ref, message), idempotency_key, task_id in zip(
             messages_by_state_ref.items(), idempotency_keys, task_ids
@@ -213,7 +212,10 @@ class ExportImportTestCase(unittest.IsolatedAsyncioTestCase):
             list_tasks_response = await tasks_stub.ListTasks(
                 tasks_pb2.ListTasksRequest(),
                 metadata=(
-                    (AUTHORIZATION_HEADER, f'Bearer {TEST_ADMIN_SECRET}'),
+                    (
+                        AUTHORIZATION_HEADER,
+                        f'Bearer {TEST_SECRET_REBOOT_ADMIN_TOKEN}'
+                    ),
                 ),
             )
 

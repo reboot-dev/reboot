@@ -1,0 +1,103 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "__init___py",
+    srcs = ["__init__.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":down_py",
+        ":logs_py",
+        ":secrets_py",
+        ":up_py",
+        "//reboot/cli:rc_py",
+    ],
+)
+
+py_library(
+    name = "common_py",
+    srcs = ["common.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot:api_keys_py",
+        "//reboot/cli:rc_py",
+        "//reboot/cli:terminal_py",
+        "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/auth:auth_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/organizations:organizations_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:aborted_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+    ],
+)
+
+py_library(
+    name = "up_py",
+    srcs = ["up.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common_py",
+        ":logs_py",
+        "//reboot/cli:commands_py",
+        "//reboot/cli:rc_py",
+        "//reboot/cli:terminal_py",
+        "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/application:application_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:aborted_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+    ],
+)
+
+py_library(
+    name = "down_py",
+    srcs = ["down.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common_py",
+        "//reboot/cli:rc_py",
+        "//reboot/cli:terminal_py",
+        "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/application:application_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "@com_github_reboot_dev_reboot//reboot/aio:aborted_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+    ],
+)
+
+py_library(
+    name = "logs_py",
+    srcs = ["logs.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common_py",
+        "//reboot/cli:rc_py",
+        "//reboot/cli:terminal_py",
+        "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/application:application_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/logs:logs_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+        "@com_github_reboot_dev_reboot//reboot:naming_py",
+        "@com_github_reboot_dev_reboot//reboot:time_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:aborted_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+        "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
+    ],
+)
+
+py_library(
+    name = "secrets_py",
+    srcs = ["secrets.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common_py",
+        "//reboot/cli:rc_py",
+        "//reboot/cli:terminal_py",
+        "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/application:application_py_reboot",
+        "@com_github_reboot_dev_reboot//reboot/aio:aborted_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+    ],
+)

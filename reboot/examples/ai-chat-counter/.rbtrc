@@ -17,7 +17,7 @@ dev run --watch=web/dist/**/*.html
 dev run --python
 
 # Save state between restarts.
-dev run --name=ai-chat-counter
+dev run --application-name=ai-chat-counter
 
 # Entrypoint.
 dev run --application=backend/src/main.py
@@ -35,4 +35,31 @@ dev run:hmr --mcp-frontend-host=http://localhost:4444
 dev run:dist --mcp-frontend-host=""
 
 # When expunging, expunge that state we've saved.
-dev expunge --name=ai-chat-counter
+dev expunge --application-name=ai-chat-counter
+
+# Production: tell `rbt serve` this is a Python application and where the
+# entrypoint lives. The Dockerfile's `CMD ["rbt", "serve", "run"]` picks
+# these up.
+serve run --python
+serve run --application=backend/src/main.py
+
+# Make both the generated code directory (`backend/api/`) and the
+# schema source directory (`api/`) importable. `rbt serve run` only
+# auto-adds the `--python=` directory to `PYTHONPATH`; for apps that
+# define their schemas in Pydantic modules under `api/` (and import
+# from them directly, e.g. `from ai_chat_counter.v1.counter import
+# CreateCounterRequest`), `api/` needs to be on the path too. Setting
+# `--env=PYTHONPATH=...` overrides the auto-set, so include both.
+# (`rbt dev run` does this automatically; `rbt serve run` does not.)
+serve run --env=PYTHONPATH=backend/api:api
+
+# Reboot Cloud terminates TLS at the external load balancer, so the app
+# itself only exposes a non-TLS port.
+serve run --tls=external
+
+# Application name, used by `rbt cloud {up,down,logs}` and `rbt serve run`
+# to identify this app.
+serve run --application-name=ai-chat-counter
+cloud up --application-name=ai-chat-counter
+cloud down --application-name=ai-chat-counter --expunge
+cloud logs --application-name=ai-chat-counter

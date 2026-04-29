@@ -8,4 +8,4 @@ In "Hello, Constructors" a state machine can't deliver messages until
 that state machine has been created by calling its constructor method, giving it
 an initial message to display.
 
-Read more about constructors in the [Reboot documentation](https://docs.reboot.dev/develop/call/overview/#constructing-instances).
+Read more about constructors in the [Reboot documentation](https://docs.reboot.dev/learn_more/call/overview#constructing-instances).

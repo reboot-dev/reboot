@@ -1,0 +1,47 @@
+load("@com_github_grpc_grpc//bazel:python_rules.bzl", "py_proto_library")
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("//tests:zod_to_proto.bzl", "zod_to_proto")
+
+zod_to_proto(
+    name = "zod_state_original_proto_file",
+    zod = "zod_state_original_api.ts",
+)
+
+proto_library(
+    name = "zod_state_original_proto",
+    srcs = [":zod_state_original_proto_file"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_proto_library(
+    name = "zod_state_original_py_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+    deps = [":zod_state_original_proto"],
+)
+
+zod_to_proto(
+    name = "zod_method_deleted_proto_file",
+    zod = "zod_method_deleted_api.ts",
+)
+
+proto_library(
+    name = "zod_method_deleted_proto",
+    srcs = [":zod_method_deleted_proto_file"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//rbt/v1alpha1:tasks_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_proto_library(
+    name = "zod_method_deleted_py_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+    deps = [":zod_method_deleted_proto"],
+)

@@ -1,5 +1,7 @@
+import pickle
 import uuid
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from google.protobuf.message import Message
@@ -15,7 +17,7 @@ from reboot.aio.types import (
     validate_ascii,
 )
 from reboot.settings import DOCS_BASE_URL, MAX_IDEMPOTENCY_KEY_LENGTH
-from typing import Iterator, Literal, Optional, TypeAlias
+from typing import Any, Iterator, Literal, Optional, TypeAlias
 from uuid7 import create as uuid7  # type: ignore[import]
 
 # NOTE: we're not using an enum because the values that can be
@@ -28,6 +30,108 @@ PER_ITERATION: Literal["PER_ITERATION"] = "PER_ITERATION"
 How: TypeAlias = (
     Literal["ALWAYS"] | Literal["PER_WORKFLOW"] | Literal["PER_ITERATION"]
 )
+
+# Stable UUID for deterministically combining the stringified version
+# of `idempotency_seeds(...)`.
+_REBOOT_IDEMPOTENCY_SEEDS_NAMESPACE: uuid.UUID = uuid.uuid5(
+    uuid.NAMESPACE_DNS, "idempotency_seeds.reboot.dev"
+)
+
+# Holds the currently-merged idempotency seeds for any active
+# `idempotency_seeds(...)` block. Needed so nested blocks can compose
+# with inner-overrides-outer semantics.
+_idempotency_seeds: ContextVar[Optional[dict[str, Any]]] = ContextVar(
+    "Idempotency seeds (if any) to use for generating idempotency keys",
+    default=None,
+)
+
+# Holds the precomputed UUID derived from the idempotency
+# seeds. Consumers (e.g., `memoize`, `_idempotency_key`) read this
+# directly so they don't have to recompute the UUID on every memoized
+# / idempotent call.
+_idempotency_seeds_uuid: ContextVar[Optional[uuid.UUID]] = ContextVar(
+    "UUID representing the idempotency seeds (if any)",
+    default=None,
+)
+
+
+def make_idempotency_alias(
+    base: Optional[str],
+    iteration: Optional[int],
+) -> Optional[str]:
+    """
+    Make an idempotency alias string from an optional base alias and an
+    optional control-loop `iteration`.
+    """
+    if base is None and iteration is None:
+        return None
+    alias = base if base is not None else "-"
+    if iteration is not None:
+        return f"{alias} (iteration #{iteration})"
+    return alias
+
+
+@contextmanager
+def _merge_idempotency_seeds(entries: dict[str, Any]) -> Iterator[None]:
+    """Internal context manager used by
+    `WorkflowContext.idempotency_seeds(...)`. Not part of the
+    public API -- callers should always reach it through a
+    seed-bearing context (today only `WorkflowContext`).
+
+    Push key=value entries that scope every `Idempotency`-keyed
+    call inside the `with` block.
+
+    All of the values in `entries` must be pickleable and their
+    pickled represenation should not _ever_ change, otherwise we may
+    generate different idempotency keys from these seeds.
+
+    Every consumer of `Idempotency` -- `at_least_once`,
+    `at_most_once`, `until`, idempotent method calls, inline writer
+    idempotency -- routes through the same
+    `make_derived_idempotency_key` helper, so a single seeds block
+    scopes all of them uniformly.
+
+    Nested `with` blocks merge with inner-overrides-outer semantics:
+    inner entries shadow outer entries on matching keys, and the outer
+    state is restored on exit.
+
+    NOTE: entering a seeds block perturbs every idempotency key
+    derived inside it. Any in-flight memoized iteration or
+    outstanding idempotency key whose key was derived without the
+    seeds will *not* match the new seeded key; those calls will
+    re-execute. This is the expected behaviour -- if you add
+    seeds, you've defined a new scope.
+    """
+    idempotency_seeds = _idempotency_seeds.get() or {}
+    merged = {**idempotency_seeds, **entries}
+    idempotency_seeds_uuid = uuid.uuid5(
+        _REBOOT_IDEMPOTENCY_SEEDS_NAMESPACE,
+        # We're pinning to `protocol=4` so the derived UUID stays
+        # stable across Python upgrades that might change
+        # `pickle.DEFAULT_PROTOCOL`.
+        pickle.dumps(sorted(merged.items()), protocol=4).hex(),
+    )
+    previous_idempotency_seeds = _idempotency_seeds.set(merged)
+    previous_idempotency_seeds_uuid = _idempotency_seeds_uuid.set(
+        idempotency_seeds_uuid
+    )
+    try:
+        yield
+    finally:
+        _idempotency_seeds_uuid.reset(previous_idempotency_seeds_uuid)
+        _idempotency_seeds.reset(previous_idempotency_seeds)
+
+
+def make_derived_idempotency_key(seed: uuid.UUID, alias: str) -> uuid.UUID:
+    """
+    Derive a `uuid5` from `(seed, alias)`, folding the
+    currently-active (if any) `idempotency_seeds(...)` UUID into the
+    seed first when one is in scope.
+    """
+    idempotency_seeds_uuid = _idempotency_seeds_uuid.get()
+    if idempotency_seeds_uuid is not None:
+        seed = uuid.uuid5(seed, str(idempotency_seeds_uuid))
+    return uuid.uuid5(seed, alias)
 
 
 def make_expiring_idempotency_key(
@@ -115,17 +219,11 @@ class Idempotency:
 
     @property
     def alias(self) -> Optional[str]:
-        """Returns the alias, scoped by iteration when applicable.
-
-        When `how=PER_ITERATION`, the iteration number is appended to
-        the alias so that all consumers (including `memoize()` and
-        `_get_or_create_idempotency_key()`) see an iteration-scoped
-        alias without needing to append it themselves.
+        """Returns the alias, scoped by iteration and any active
+        `alias_metadata(...)` block. See `make_idempotency_alias` for
+        the composition rules.
         """
-        if self._iteration is not None:
-            alias = self._alias if self._alias is not None else "-"
-            return f"{alias} (iteration #{self._iteration})"
-        return self._alias
+        return make_idempotency_alias(self._alias, self._iteration)
 
     @property
     def key(self) -> Optional[uuid.UUID]:
@@ -192,7 +290,7 @@ class RPC:
 class Checkpoint:
     """Captures all `IdempotencyManager` instance variables for
     checkpoint/restore functionality."""
-    aliases: dict[tuple[StateRef, str], uuid.UUID]
+    aliases: dict[tuple[StateRef, str, Optional[uuid.UUID]], uuid.UUID]
     rpcs: dict[uuid.UUID, RPC]
     mutations_without_idempotency: bool
     uncertain_mutation: bool
@@ -204,8 +302,16 @@ class Checkpoint:
 
 class IdempotencyManager:
 
-    # Map from (state_ref, alias) to a generated UUID for an idempotency key.
-    _aliases: dict[tuple[StateRef, str], uuid.UUID]
+    # Map from (state_ref, alias, idempotency_seeds_uuid) to a generated
+    # UUID for an idempotency key. The third tuple element is the active
+    # `_idempotency_seeds_uuid` (or `None` if no `idempotency_seeds(...)`
+    # block is active) so two calls under the same `(state_ref, alias)`
+    # but in different seed scopes get distinct slots -- otherwise
+    # the first call would "claim" the slot for the lifetime of the
+    # manager and subsequent calls in different scopes would receive the
+    # first call's UUID, defeating the "new scope" semantics that
+    # `idempotency_seeds(...)` promises.
+    _aliases: dict[tuple[StateRef, str, Optional[uuid.UUID]], uuid.UUID]
 
     # Map from idempotency key to its RPC.
     _rpcs: dict[uuid.UUID, RPC]
@@ -532,7 +638,14 @@ class IdempotencyManager:
         if idempotency.alias is not None:
             alias += f": {idempotency.alias}"
 
-        key = (state_ref, alias)
+        # Include the idempotency seeds (if any) in the key so calls
+        # in different seed scopes don't collide. The seeds are also
+        # folded into the cached UUID's value below (via
+        # `make_derived_idempotency_key`), but if we don't also use
+        # the seeds in the key then we may get a false collision and
+        # short-circuit thinking we already have an idempotency key
+        # when we don't.
+        key = (state_ref, alias, _idempotency_seeds_uuid.get())
 
         if key not in self._aliases:
             if self._seed is None:
@@ -555,12 +668,20 @@ class IdempotencyManager:
                 # 'stubs.py'), but then we won't give people the false
                 # believe that because they called `.idempotently()`
                 # it'll be safe "forever".
+                #
+                # Invariant: idempotency seeds can only be added via
+                # `WorkflowContext.idempotency_seeds(...)`, and a
+                # `WorkflowContext` always has a `_seed`, so if we're
+                # in the no-seed branch, we shouldn't have any extra
+                # idempotency seeds. We're asserting this so that if
+                # `_merge_idempotency_seeds()` gets called on its own
+                # in a place where it should not we catch the bug.
+                assert _idempotency_seeds.get() is None
                 self._aliases[key] = make_expiring_idempotency_key()
             else:
-                # A version 5 UUID is a deterministic hash from a
-                # "seed" UUID and some data (bytes or string, in our
-                # case the string `alias`).
-                self._aliases[key] = uuid.uuid5(self._seed, alias)
+                self._aliases[key] = make_derived_idempotency_key(
+                    self._seed, alias
+                )
 
         return self._aliases[key]
 
@@ -580,12 +701,23 @@ class IdempotencyManager:
             )
 
         if idempotency.key is not None:
-            # Generate a UUID based on the specified key.
-            return str(uuid.uuid5(self._seed, str(idempotency.key)))
+            # Need to use `make_derived_idempotency_key` so the active
+            # idempotency seeds (if any) are folded into the seed.
+            # That keeps the generated state ID scoped consistently
+            # with any per-RPC idempotency keys produced by
+            # `_get_or_create_idempotency_key`.
+            return str(
+                make_derived_idempotency_key(self._seed, str(idempotency.key))
+            )
 
         alias = (
             idempotency.alias if idempotency.alias is not None else
             f'{self._rpc_name(state_type_name, service_name, method, True)}'
         )
 
-        return str(uuid.uuid5(self._seed, alias))
+        # Need to use `make_derived_idempotency_key` so the active
+        # idempotency seeds (if any) are folded into the seed. That
+        # keeps the generated state ID scoped consistently with any
+        # per-RPC idempotency keys produced by
+        # `_get_or_create_idempotency_key`.
+        return str(make_derived_idempotency_key(self._seed, alias))

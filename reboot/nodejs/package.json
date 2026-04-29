@@ -2,7 +2,7 @@
   "dependencies": {
     "@bufbuild/protoplugin": "1.10.1",
     "@bufbuild/protoc-gen-es": "1.10.1",
-    "@reboot-dev/reboot-api": "0.46.0",
+    "@reboot-dev/reboot-api": "1.0.3",
     "chalk": "^4.1.2",
     "node-addon-api": "^7.0.0",
     "node-gyp": ">=10.2.0",
@@ -22,7 +22,7 @@
   },
   "type": "module",
   "name": "@reboot-dev/reboot",
-  "version": "0.46.0",
+  "version": "1.0.3",
   "description": "npm package for Reboot",
   "scripts": {
     "preinstall": "node preinstall.cjs",

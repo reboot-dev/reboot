@@ -13,15 +13,11 @@ from reboot.aio.contexts import (
     TransactionContext,
     WriterContext,
 )
-from reboot.aio.secrets import SecretNotFoundException, Secrets
-from reboot.thirdparty.mailgun import MAILGUN_API_KEY_SECRET_NAME
+from reboot.thirdparty.mailgun import ENVVAR_MAILGUN_API_KEY
 from typing import Optional
 
 
 class CheckoutServicer(Checkout.Servicer):
-
-    def __init__(self):
-        self._secrets = Secrets()
 
     def authorizer(self):
         return allow()
@@ -132,12 +128,11 @@ class CheckoutServicer(Checkout.Servicer):
         return demo_pb2.OrdersResponse(orders=reversed(self.state.orders))
 
     async def _mailgun_api_key(self) -> Optional[str]:
-        try:
-            secret_bytes = await self._secrets.get(MAILGUN_API_KEY_SECRET_NAME)
-            return secret_bytes.decode()
-        except SecretNotFoundException:
+        api_key = os.environ.get(ENVVAR_MAILGUN_API_KEY)
+        if api_key is None:
             logger.warning(
-                "The Mailgun API key secret is not set: please see the README to "
-                "enable sending email."
+                "The Mailgun API key secret is not set: "
+                "please see the README to enable sending "
+                "email."
             )
-            return None
+        return api_key

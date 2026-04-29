@@ -1,4 +1,5 @@
 import asyncio
+import os
 import unittest
 from boutique.v1 import demo_pb2, demo_pb2_grpc
 from boutique.v1.demo_rbt import Cart, Checkout, Shipping
@@ -9,10 +10,8 @@ from currencyconverter.servicer import CurrencyConverterServicer
 from main import initialize
 from productcatalog.servicer import ProductCatalogServicer
 from reboot.aio.applications import Application
-from reboot.aio.secrets import MockSecretSource, Secrets
 from reboot.aio.tests import Reboot
 from reboot.aio.types import ServiceName
-from reboot.thirdparty.mailgun import MAILGUN_API_KEY_SECRET_NAME
 from reboot.thirdparty.mailgun.servicers import MockMessageServicer
 from shipping.servicer import ShippingServicer
 
@@ -23,13 +22,7 @@ MAILGUN_API_KEY = 'S3CR3T!'
 class TestCase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
-        Secrets.set_secret_source(
-            MockSecretSource(
-                {
-                    MAILGUN_API_KEY_SECRET_NAME: MAILGUN_API_KEY.encode(),
-                }
-            )
-        )
+        os.environ["MAILGUN_API_KEY"] = MAILGUN_API_KEY
 
         self.rbt = Reboot()
         servicers: list[type] = [

@@ -2,6 +2,7 @@ import asyncio
 import os
 import tempfile
 import unittest
+from reboot.aio.tests import temporary_environ
 from typing import Optional
 
 TEST_API_KEY = "AAAAAAAAAA-AAAAAAAAAAAAAAAAAAAA"
@@ -10,14 +11,18 @@ TEST_API_KEY = "AAAAAAAAAA-AAAAAAAAAAAAAAAAAAAA"
 class RbtDevRunTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
-        # Add `reboot` directories to the path so that we can import the
-        # `rbt` binary. Applicable only for bazel tests.
-
-        os.environ['PATH'] = os.path.abspath(
-            os.path.join(os.getcwd(), 'reboot')
-        ) + os.pathsep + os.path.abspath(
-            os.path.join(os.getcwd(), 'reboot', 'cli')
-        ) + os.pathsep + os.environ['PATH']
+        # Add `reboot` directories to the path so that we can import
+        # the `rbt` binary. Applicable only for bazel tests.
+        temporary_environ(
+            self,
+            {
+                'PATH':
+                    os.path.abspath(os.path.join(os.getcwd(), 'reboot')) +
+                    os.pathsep + os.path.abspath(
+                        os.path.join(os.getcwd(), 'reboot', 'cli')
+                    ) + os.pathsep + os.environ['PATH']
+            },
+        )
 
     async def run_rbt(
         self,
@@ -73,17 +78,21 @@ class RbtDevRunTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_dev_empty_name(self) -> None:
         await self.run_rbt(
-            '--name=',
+            '--application-name=',
             '--python',
             '--application=some_application.py',
-            error_message="The argument '--name' must be a non-empty string",
+            error_message=(
+                "The argument '--application-name' must be a non-empty string"
+            ),
             returncode=2,
         )
 
     async def test_expunge_empty_name(self) -> None:
         await self.run_rbt(
-            '--name=',
-            error_message="The argument '--name' must be a non-empty string",
+            '--application-name=',
+            error_message=(
+                "The argument '--application-name' must be a non-empty string"
+            ),
             subcommand='expunge',
             returncode=2,
         )
@@ -91,8 +100,10 @@ class RbtDevRunTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_cloud_empty_name(self) -> None:
         await self.run_rbt(
             f'--api-key={TEST_API_KEY}',
-            '--name=',
-            error_message="The argument '--name' must be a non-empty string",
+            '--application-name=',
+            error_message=(
+                "The argument '--application-name' must be a non-empty string"
+            ),
             command='cloud',
             subcommand='up',
             returncode=2,
@@ -101,8 +112,10 @@ class RbtDevRunTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_cloud_empty_api_key(self) -> None:
         await self.run_rbt(
             '--api-key=',
-            '--name=test',
-            error_message="The argument '--api-key' must be a non-empty string",
+            '--application-name=test',
+            error_message=(
+                "The argument '--api-key' must be a non-empty string"
+            ),
             command='cloud',
             subcommand='up',
             returncode=2,

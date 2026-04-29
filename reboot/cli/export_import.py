@@ -6,6 +6,11 @@ from reboot.admin import export_import_client
 from reboot.aio.external import ExternalContext
 from reboot.cli import terminal
 from reboot.cli.rc import ArgumentParser, add_common_channel_args
+from typing import Optional
+
+
+def export_and_import_subcommands() -> list[str]:
+    return ['export', 'import']
 
 
 def register_export_and_import(parser: ArgumentParser):
@@ -97,3 +102,13 @@ async def do_import(args: argparse.Namespace) -> int:
 
     terminal.info(f"Imported from: `{src_dir}`")
     return 0
+
+
+async def handle_export_and_import_subcommand(
+    args: argparse.Namespace,
+) -> Optional[int]:
+    if args.subcommand == 'export':
+        return await do_export(args)
+    elif args.subcommand == 'import':
+        return await do_import(args)
+    return None

@@ -393,8 +393,38 @@ py_proto_library(
     deps = [":echo_mcp_changed_proto"],
 )
 
+proto_library(
+    name = "echo_original_other_package_proto",
+    srcs = ["echo_original_other_package.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_original_other_package_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_original_other_package_proto"],
+)
+
+proto_library(
+    name = "echo_replay_deleted_other_package_proto",
+    srcs = ["echo_replay_deleted_other_package.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "//tests/reboot/server:echo_shared_messages_proto",
+    ],
+)
+
+py_proto_library(
+    name = "echo_replay_deleted_other_package_py_proto",
+    visibility = ["//tests:__subpackages__"],
+    deps = [":echo_replay_deleted_other_package_proto"],
+)
+
 py_test(
-    name = "service_descriptor_validator_proto_test_py",
+    name = "test_py",
     srcs = ["test.py"],
     main = "test.py",
     deps = [
@@ -410,9 +440,11 @@ py_test(
         ":echo_mcp_changed_py_proto",
         ":echo_nested_repeated_string_input_type_py_proto",
         ":echo_nested_single_string_input_type_py_proto",
+        ":echo_original_other_package_py_proto",
         ":echo_original_py_proto",
         ":echo_output_type_changed_py_proto",
         ":echo_recursion_py_proto",
+        ":echo_replay_deleted_other_package_py_proto",
         ":echo_replay_deleted_py_proto",
         ":echo_replay_option_changed_py_proto",
         ":echo_replay_type_changed_py_proto",

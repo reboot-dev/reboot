@@ -28,7 +28,7 @@ class RcTestCase(unittest.IsolatedAsyncioTestCase):
                     'dev:fullstack --fullstack# This comment intentionally without a space.\n'
                     '\n'
                     'dev:amsterdam --config=fullstack\n'
-                    'dev:amsterdam --name=demo\n'
+                    'dev:amsterdam --application-name=demo\n'
                     'dev:amsterdam --python\n'
                     'dev:amsterdam ../bazel-bin/microservices_demo/backend/app.zip\n'
                 ).encode()
@@ -53,7 +53,7 @@ class RcTestCase(unittest.IsolatedAsyncioTestCase):
                     '--config=amsterdam',
                     '--always-dev=true',
                     '--config=fullstack',
-                    '--name=demo',
+                    '--application-name=demo',
                     '--python',
                     '../bazel-bin/microservices_demo/backend/app.zip',
                     '--fullstack',
@@ -156,7 +156,7 @@ class RcTestCase(unittest.IsolatedAsyncioTestCase):
         When a path argument has a relative default, it is expanded relative to
         the current working directory.
         """
-        cwd = Path("/tmp/myapp")
+        cwd = Path("/tmp/renamed-flag-value")
         argv = ['rbt', 'dev']
         parser = rc.ArgumentParser(
             program='rbt',
@@ -261,6 +261,182 @@ class RcTestCase(unittest.IsolatedAsyncioTestCase):
                 str(e.exception),
                 f"{file.name}:1: failed to parse '.rbtrc' file:\n'dev'",
             )
+
+    @patch('reboot.cli.terminal.warn')
+    async def test_renamed_flag_warns(self, mock_warn) -> None:
+        """
+        Using a renamed flag's old name prints a warning.
+        
+        It still stores the value correctly.
+        """
+        argv = ['rbt', 'dev', '--old-flag=foo']
+        parser = rc.ArgumentParser(
+            program='rbt',
+            filename='.rbtrc',
+            subcommands=['dev'],
+            argv=argv,
+        )
+
+        parser.subcommand('dev').add_argument(
+            '--new-flag',
+            type=str,
+            help='test flag.',
+        )
+        parser.subcommand('dev').add_renamed_flag('--old-flag', '--new-flag')
+
+        args, _ = parser.parse_args()
+
+        # The value is stored under the name of the new flag.
+        self.assertEqual(args.new_flag, 'foo')
+
+        # A rename warning was printed.
+        mock_warn.assert_called_once_with(
+            "'--old-flag' has been renamed to '--new-flag'. "
+            "Please switch to using '--new-flag', as "
+            "'--old-flag' will be removed in the future."
+        )
+
+    @patch('reboot.cli.terminal.warn')
+    async def test_new_flag_no_warning(self, mock_warn) -> None:
+        """Using the new flag name does not print a warning."""
+        argv = ['rbt', 'dev', '--new-flag=renamed-flag-value']
+        parser = rc.ArgumentParser(
+            program='rbt',
+            filename='.rbtrc',
+            subcommands=['dev'],
+            argv=argv,
+        )
+
+        parser.subcommand('dev').add_argument(
+            '--new-flag',
+            type=str,
+            help='test flag.',
+        )
+        parser.subcommand('dev').add_renamed_flag('--old-flag', '--new-flag')
+
+        args, _ = parser.parse_args()
+
+        self.assertEqual(args.new_flag, 'renamed-flag-value')
+        mock_warn.assert_not_called()
+
+    @patch('reboot.cli.terminal.warn')
+    async def test_renamed_flag_in_rbtrc(self, mock_warn) -> None:
+        """
+        A renamed flag's old name in an `.rbtrc` file prints a warning.
+        """
+        with tempfile.NamedTemporaryFile() as file:
+            file.write(('dev --old-flag=from-rc\n').encode())
+            file.flush()
+
+            argv = ['rbt', 'dev']
+            parser = rc.ArgumentParser(
+                program='rbt',
+                filename='.rbtrc',
+                subcommands=['dev'],
+                rc_file=file.name,
+                argv=argv,
+            )
+
+            parser.subcommand('dev').add_argument(
+                '--new-flag',
+                type=str,
+                help='test flag.',
+            )
+            parser.subcommand('dev'
+                             ).add_renamed_flag('--old-flag', '--new-flag')
+
+            args, _ = parser.parse_args()
+
+            self.assertEqual(args.new_flag, 'from-rc')
+            mock_warn.assert_called_with(
+                "'--old-flag' has been renamed to '--new-flag'. Please switch "
+                "to using '--new-flag', as '--old-flag' will be removed in the "
+                "future."
+            )
+
+    @patch('reboot.cli.terminal.warn')
+    async def test_renamed_flag_satisfies_required(
+        self,
+        mock_warn,
+    ) -> None:
+        """
+        Using the old flag name satisfies `required=True` on the new flag.
+        """
+        argv = ['rbt', 'dev', '--old-flag=renamed-flag-value']
+        parser = rc.ArgumentParser(
+            program='rbt',
+            filename='.rbtrc',
+            subcommands=['dev'],
+            argv=argv,
+        )
+
+        parser.subcommand('dev').add_argument(
+            '--new-flag',
+            type=str,
+            required=True,
+            help='test flag.',
+        )
+        parser.subcommand('dev').add_renamed_flag('--old-flag', '--new-flag')
+
+        # Should NOT raise — the old flag satisfies `required`.
+        args, _ = parser.parse_args()
+
+        self.assertEqual(args.new_flag, 'renamed-flag-value')
+
+    @patch('reboot.cli.terminal.warn')
+    async def test_both_old_and_new_flag_errors(self, mock_warn) -> None:
+        """Using both the old and new flag is an error."""
+        argv = [
+            'rbt',
+            'dev',
+            '--new-flag=something',
+            '--old-flag=other',
+        ]
+        parser = rc.ArgumentParser(
+            program='rbt',
+            filename='.rbtrc',
+            subcommands=['dev'],
+            argv=argv,
+        )
+
+        parser.subcommand('dev').add_argument(
+            '--new-flag',
+            type=str,
+            help='test flag.',
+        )
+        parser.subcommand('dev').add_renamed_flag('--old-flag', '--new-flag')
+
+        with self.assertRaises((SystemExit, ValueError)):
+            parser.parse_args()
+
+    @patch('reboot.cli.terminal.warn')
+    async def test_old_flag_requires_equals_syntax(
+        self,
+        mock_warn,
+    ) -> None:
+        """
+        The old flag name enforces the `--flag=VALUE` requirement.
+
+        Space-separated syntax like `--old-flag value` must be
+        rejected just as it would be for the new flag name.
+        """
+        argv = ['rbt', 'dev', '--old-flag', 'value']
+        parser = rc.ArgumentParser(
+            program='rbt',
+            filename='.rbtrc',
+            subcommands=['dev'],
+            argv=argv,
+        )
+
+        parser.subcommand('dev').add_argument(
+            '--new-flag',
+            type=str,
+            help='test flag.',
+        )
+        parser.subcommand('dev').add_renamed_flag('--old-flag', '--new-flag')
+
+        with self.assertRaises((SystemExit, ValueError)):
+            parser.parse_args()
 
 
 if __name__ == '__main__':

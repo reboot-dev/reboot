@@ -1,4 +1,5 @@
 from ai_chat_counter.v1.counter import (
+    CounterEntry,
     CreateCounterRequest,
     CreateCounterResponse,
     ListCountersResponse,
@@ -38,7 +39,7 @@ class UserServicer(User.Servicer):
         for counter_id in self.state.counter_ids:
             response = await Counter.ref(counter_id).description(context)
             counters.append(
-                User.CounterEntry(
+                CounterEntry(
                     counter_id=counter_id,
                     description=response.description,
                 )

@@ -349,16 +349,6 @@ py_library(
 )
 
 py_library(
-    name = "secrets_py",
-    srcs = ["secrets.py"],
-    srcs_version = "PY3",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//reboot:settings_py",
-    ],
-)
-
-py_library(
     name = "servers_py",
     srcs = ["servers.py"],
     srcs_version = "PY3",

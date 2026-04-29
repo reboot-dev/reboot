@@ -35,9 +35,9 @@ The five kinds of methods in Reboot are:
 
 ## Tool exposure
 
-Methods on the `User` state type are automatically exposed
-as tools callable by the AI. Methods on other state types can
-be exposed with `mcp=Tool()`. To prevent a `User` method
-from being AI-callable, set `mcp=False`. See
+Every method must explicitly declare its MCP exposure with
+`mcp=Tool()` (to expose it as an AI-callable tool) or
+`mcp=None` (to hide it from the AI). This applies to all
+state types, including `User`. See
 [Creating tools](/learn_more/define/pydantic#creating-tools-for-the-ai)
 for details.

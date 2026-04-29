@@ -113,7 +113,6 @@ ENVVAR_RBT_DEV = 'RBT_DEV'
 ENVVAR_RBT_SERVE = 'RBT_SERVE'
 ENVVAR_RBT_NAME = 'RBT_NAME'
 ENVVAR_RBT_EFFECT_VALIDATION = 'RBT_EFFECT_VALIDATION'
-ENVVAR_RBT_SECRETS_DIRECTORY = 'RBT_SECRETS_DIRECTORY'
 ENVVAR_RBT_STATE_DIRECTORY = 'RBT_STATE_DIRECTORY'
 ENVVAR_RBT_NODEJS = 'RBT_NODEJS'
 ENVVAR_RBT_SERVERS = 'RBT_SERVERS'
@@ -141,6 +140,9 @@ ENVVAR_REBOOT_LOCAL_ENVOY_PORT = 'REBOOT_LOCAL_ENVOY_PORT'
 # for production the operator must provide a strong random
 # secret.
 ENVVAR_REBOOT_OAUTH_SIGNING_SECRET = 'REBOOT_OAUTH_SIGNING_SECRET'
+
+# The shared-secret used to authenticate admin requests.
+ENVVAR_SECRET_REBOOT_ADMIN_TOKEN = 'SECRET_REBOOT_ADMIN_TOKEN'
 
 # The level of tracing to use. This is a Reboot-internal environment
 # variable; it is not expected to be set by developers using Reboot.

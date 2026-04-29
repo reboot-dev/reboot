@@ -30,12 +30,6 @@ git config --global submodule.recurse true
 #  https://stackoverflow.com/questions/27417656/should-diff3-be-default-conflictstyle-on-git
 git config --global merge.conflictstyle diff3
 
-# When force-pushing (e.g. a rebased branch), check that the upstream
-# branch is still exactly the way it was when it was last fetched. This
-# prevents force-pushes to the same branch from two different machines
-# (or developers) from accidentally wiping out the first pushed changes.
-git config --global push.forceWithLease true
-
 # Do some extra work to pre-configure GitHub authentication when running
 # in a codespace. Skip this for a local devcontainer.
 if [[ "${CODESPACES:-}" == "true" ]]; then

@@ -1,0 +1,518 @@
+# Agents
+
+Reboot's `reboot.agents` package lets you run [Pydantic AI](https://ai.pydantic.dev/)
+agents inside Reboot workflows with **durable, replay-safe execution
+of model calls and tool calls** -- you get back the same answer on
+re-runs without re-hitting the LLM provider, and tool side-effects
+that have already completed are not repeated.
+
+This page covers what's specific to running a Pydantic AI agent on
+Reboot. For everything that isn't Reboot-specific (model providers,
+tool argument schemas, output types, etc.), see the
+[Pydantic AI documentation](https://ai.pydantic.dev/).
+
+## What you get
+
+When you wrap a Pydantic AI agent with Reboot's `Agent`:
+
+- **Every model call (`request` / `request_stream`) is memoized**
+  via `at_least_once`. On workflow replay the stored `ModelResponse`
+  is returned instead of calling the provider again.
+- **Every tool call** -- whether registered via `@agent.tool`, passed
+  as `tools=`, or contributed by a `toolsets=` -- is memoized too,
+  so a tool's side effects aren't repeated on replay. During [effect
+  validation](/learn_more/side_effects) tools DO re-run, which helps
+  surface non-determinism early.
+- **Streaming runs are drained inside a memoized block.** The
+  `StreamedRunResult` you get back is backed by a fully-stored
+  response; iteration replays the stored events instead of
+  re-streaming from the provider. Live token-by-token streaming is
+  fundamentally incompatible with replay.
+- **Configuration drift is surfaced.** A snapshot of the agent's
+  static config + per-call kwargs is taken at the start of each run.
+  On replay, anything that has changed (instructions, system prompt,
+  model, tools, etc.) produces a targeted log warning so you know
+  that previously memoized responses may not reflect the current
+  configuration.
+
+## Constructing an agent
+
+There are two ways to construct a Reboot `Agent`:
+
+### Directly
+
+```python
+from reboot.agents.pydantic_ai import Agent
+
+agent = Agent(
+    "anthropic:claude-sonnet-4-5",
+    name="research_agent",
+    system_prompt="You are a careful research assistant.",
+)
+```
+
+The constructor accepts the same arguments as
+[`pydantic_ai.Agent`](https://ai.pydantic.dev/api/agent/#pydantic_ai.Agent.__init__).
+
+### Wrapping an existing `pydantic_ai.Agent`
+
+```python
+import pydantic_ai
+from reboot.agents.pydantic_ai import Agent
+
+bare = pydantic_ai.Agent("anthropic:claude-sonnet-4-5", name="research_agent")
+agent = Agent.wrap(bare)
+```
+
+Useful when the agent comes from code you don't control (e.g., a
+factory function or third-party library). Wrapping doesn't mutate
+`bare`; the original agent stays usable on its own.
+
+A `name=` is required either way -- Reboot uses the agent's name as
+part of the memoization key for every model and tool call. The name
+is locked at construction; assigning to `agent.name` raises a
+`UserError`.
+
+## Running the agent
+
+Reboot mirrors the four `pydantic_ai` entry points, with one extra
+required argument: the **`WorkflowContext`** for the surrounding
+workflow.
+
+```python
+@classmethod
+async def workflow(
+    cls,
+    context: WorkflowContext,
+    request: ResearchRequest,
+) -> ResearchResponse:
+    result = await agent.run(context, request.query)
+    return ResearchResponse(answer=result.output)
+```
+
+Available methods:
+
+- `agent.run(context, user_prompt, ...)`
+- `async with agent.iter(context, ...) as run: ...`
+- `async with agent.run_stream(context, ...) as result: ...`
+- `async for event in agent.run_stream_events(context, ...): ...`
+
+The synchronous variants `run_sync` and `run_stream_sync` are not
+supported -- a Reboot workflow method is always async.
+
+### Use `variant=` to differentiate same-args calls
+
+Reboot refuses duplicate calls with the same `(name, user_prompt,
+variant, message_history)` in the same workflow / control-loop
+iteration -- this catches the common bug of accidentally invoking the
+same agent twice and silently sharing a memoized response. To
+deliberately make multiple calls with the same prompt (e.g., asking
+the same question N times for diversity, or after changes in the
+environment or with your deps that might affect tool responses), pass
+distinct `variant=` strings:
+
+```python
+results = await asyncio.gather(*[
+    agent.run(context, "Generate an idea", variant=f"draft-{i}")
+    for i in range(5)
+])
+```
+
+## Tools
+
+Reboot's `@agent.tool_plain` and `@agent.tool` mirror `pydantic_ai`'s
+decorators with one additional convenience: `@agent.tool` accepts a
+`WorkflowContext` as the first parameter, BEFORE the `pydantic_ai`
+`RunContext`. This lets your tool body call into other Reboot data
+types easily, and you can also wrap external work in `at_least_once`
+although know that every tool call is already wrapped in an
+`at_least_once` for you.
+
+```python
+import uuid
+from pydantic_ai import RunContext
+from reboot.agents.pydantic_ai import Agent
+from reboot.aio.contexts import WorkflowContext
+from reboot.aio.workflows import at_least_once
+
+agent = Agent("anthropic:claude-sonnet-4-5", name="research_agent")
+
+@agent.tool_plain
+def now() -> str:
+    """Return the current UTC timestamp."""
+    # Because every tool is wrapped in an `at_least_once`
+    # the same UTC timestamp will be returned during replay! 
+    return datetime.utcnow().isoformat()
+
+@agent.tool
+async def stripe_create_invoice(
+    context: WorkflowContext,
+    run: RunContext[None],
+    customer_id: str,
+    ...
+) -> list[str]:
+    """Ask Stripe to create an invoice using an idempotency key so
+    only one invoice is ever created even in the event of retry."""
+    
+    async def make_idempotency_key() -> uuid.UUID:
+        return uuid.uuid4()
+
+    # Using `at_least_once` is not strictly necessary,
+    # but can be instrumental  memoize values that you
+    # want to ensure will be the same if this tool call
+    idempotency_key = await at_least_once(
+        "Make idempotency key for Stripe",
+        context,
+        make_idempotency_key,
+    )
+
+    # Now call Stripe.
+    ...
+```
+
+:::tip
+The above example was merely for demonstration purposes and in
+practice you should use Reboot's built-in helper for creating
+deterministic idempotency keys with a `WorkflowContext`:
+`context.make_idempotency_key(alias="Make idempotency key for
+Stripe")`
+:::
+
+`@agent.tool` and `@agent.tool_plain` work both at construction
+time and after `Agent.wrap(...)`. Tools you pass as `tools=` to the
+constructor or via `toolsets=` are also wrapped automatically -- you
+don't need to do anything special to opt them in to memoization.
+
+For everything else about tool definitions (argument validation,
+docstring parsing, output schemas, etc.), see
+[`pydantic_ai`'s tools docs](https://ai.pydantic.dev/tools/).
+
+### MCP servers
+
+[MCP](https://ai.pydantic.dev/mcp/) toolsets work transparently
+under Reboot. Both `pydantic_ai.mcp.MCPServer` and
+`pydantic_ai.toolsets.fastmcp.FastMCPToolset` are detected
+automatically when you pass them via `toolsets=` (at construction
+time or per-run) and wrapped to work with Reboot.
+
+`MCPServer.cache_tools=True` (the default) is honored as well: the
+first `get_tools` of an agent run hits the MCP server, subsequent
+calls within the same run reuse the cached `ToolDefinition`s. Set
+`cache_tools=False` if your MCP server's tool list may change
+mid-workflow. (`FastMCPToolset` has no `cache_tools` toggle and isn't
+cached by Reboot, matching `pydantic_ai`'s contract.)
+
+If you have **more than one MCP toolset on the same agent**, all
+but at most one must have a non-`None` `id=`:
+
+```python
+from pydantic_ai.mcp import MCPServerStdio
+from reboot.agents.pydantic_ai import Agent
+
+# OK -- distinct ids:
+weather = MCPServerStdio("weather-mcp", id="weather")
+calendar = MCPServerStdio("calendar-mcp", id="calendar")
+
+agent = Agent(
+    "anthropic:claude-sonnet-4-5",
+    name="planner",
+    toolsets=[weather, calendar],
+)
+```
+
+Reboot uses each MCP toolset's `id` to disambiguate memoization keys
+for `get_tools` / `get_instructions` / `call_tool` across replays. Two
+id-less servers would silently clobber each other's results, so we
+raise a `UserError` at agent construction time when this is
+detected. (For `MCPServer`, `tool_prefix=...` doubles as the id when
+`id=` isn't set.)
+
+### Why your tool doesn't re-run on replay (but should still be idempotent)
+
+Reboot wraps every tool call in `at_least_once`. On replay, the stored
+return value is reused without invoking your tool function.  Your tool
+function therefore should not be relied upon to be "called once per
+replay". Note that during [effect
+validation](/learn_more/side_effects), Reboot re-runs your tool to
+verify your code is deterministic, so if you are performing external
+side-effects inside your tool body you need to ensure they are done
+idempotently (or consider using an `at_most_once` block instead, but
+only after considering how that handles failures).
+
+:::tip
+
+Effect validation helps you write safe code during development instead
+of waiting for something to go wrong in production! The reality is
+that even with durable execution, if you've _started_ executing some
+code but haven't completed it, then on replay you'll have to re-run
+that code again. Effect validation helps uncover those places where
+you didn't realize you had idempotency issues!
+
+:::
+
+## Streaming events with `event_stream_handler`
+
+Pydantic AI's
+[`event_stream_handler`](https://ai.pydantic.dev/agents/#event-stream-handler)
+is a callback invoked for each event during a streaming run.
+Reboot doesn't wrap this callback specially -- it's just async
+Python code that runs inside your workflow body, so the standard
+"wrap side-effects with `at_least_once`" guidance applies.
+
+Define your handler **inside the workflow method** (or as a helper
+that takes `context` as a parameter and returns the closure) so it
+can capture the surrounding `WorkflowContext`:
+
+```python
+@classmethod
+async def workflow(
+    cls,
+    context: WorkflowContext,
+    request: ChatRequest,
+) -> ChatResponse:
+
+    async def handler(
+        run: RunContext[None],
+        stream,
+    ) -> None:
+        i = 0
+        async for event in stream:
+            # Push each event to the UI via a durable side-effect
+            # so the post is only sent once across replays.
+            await at_least_once(
+                f"Post event '{i}' to UI",
+                context,
+                lambda: post_to_chat_ui(event),
+            )
+            i += 1
+
+    result = await agent.run(
+        context,
+        request.message,
+        event_stream_handler=handler,
+    )
+    return ChatResponse(answer=result.output)
+```
+
+Note: streaming is drained-and-stored, so iteration is replay-safe.
+The events your handler sees on replay are identical to the events
+on first run.
+
+## Parallel tool execution mode
+
+Pydantic AI's
+[`parallel_tool_call_execution_mode`](https://ai.pydantic.dev/api/agent/#pydantic_ai.agent.AbstractAgent.parallel_tool_call_execution_mode)
+controls how concurrent tool calls dispatched in a single turn
+are scheduled. It accepts three values upstream:
+`'sequential'`, `'parallel'`, and `'parallel_ordered_events'`.
+Reboot accepts the first and last and rejects `'parallel'` at
+construction time.
+
+```python
+agent = Agent(
+    "anthropic:claude-sonnet-4-5",
+    name="research_agent",
+    parallel_execution_mode="parallel_ordered_events",  # default
+)
+```
+
+`'parallel'` is not a valid execution mode because it yields
+tool-result events in *completion* order, which depends on asyncio
+scheduling which is not reliable on replay.
+
+The two replay-safe modes:
+
+- `'parallel_ordered_events'` (default): tools dispatch
+  concurrently (`asyncio.gather`-style), but events are emitted
+  in the original call order once everything has completed.
+- `'sequential'`: one tool runs at a time, in original order.
+  Slower, but trivially deterministic.
+
+If the agent's tool functions are inherently order-sensitive
+(rare for well-designed tools), prefer `'sequential'`. For
+everything else `'parallel_ordered_events'` is what you want.
+
+## Overrides
+
+Pydantic AI's
+[`Agent.override(...)`](https://ai.pydantic.dev/api/agent/#pydantic_ai.Agent.override)
+context manager works on Reboot agents:
+
+```python
+with agent.override(model="openai:gpt-4o-mini"):
+    result = await agent.run(context, "Quick check.")
+```
+
+`model=` is automatically wrapped so the override stays memoized
+on replay. You may pass a `pydantic_ai.models.Model` instance, a
+`KnownModelName` string, or any provider:model string -- all paths
+are wrapped internally.
+
+`override(toolsets=...)` is **not currently supported** on a
+Reboot `Agent`: the run-time toolset wrapping that memoizes tool
+calls would shadow the override, and your toolsets would be
+silently dropped. Pass toolsets at construction (`Agent(toolsets=)`)
+or per-call (`agent.run(toolsets=)`) instead, both of which are
+fully supported. If your use case requires this, please reach out
+to the Reboot maintainers.
+
+## Configuration-drift warnings
+
+When you re-run a workflow that contains an agent run -- whether on
+replay, retry, or effect validation -- Reboot compares a snapshot
+of the agent's configuration to the one taken at the original run.
+Any divergence emits a targeted `WARNING` log entry naming what
+changed, e.g.:
+
+> `Agent 'research_agent': configured model 'anthropic:claude-sonnet-4-5' differs from the model 'openai:gpt-4o' used when this agent run was first executed; previously memoized model responses came from a different model and may not reflect what the current model would produce.`
+
+The fields tracked include the agent's static `instructions` and
+`system_prompt`, the configured model, and the per-call kwargs
+passed to `run/iter/run_stream/run_stream_events` (`instructions`,
+`toolsets`, `builtin_tools`, `model_settings`, `output_type`,
+`deferred_tool_results`).
+
+These are warnings, not errors -- they don't prevent the workflow
+from completing. They do flag that the stored responses may not
+match what the current configuration would produce, so you can
+decide whether to invalidate the stored run (e.g., by bumping
+`variant=`) or to accept the stale responses.
+
+## When is a call considered a "new" agent run?
+
+Within a single workflow / control-loop iteration, Reboot
+identifies an agent run by the tuple `(agent_name,
+user_prompt, variant, message_history)`. Two calls that match
+on all four are the *same* run -- the second is rejected as a
+duplicate (see [Use `variant=` to differentiate same-args
+calls](#use-variant-to-differentiate-same-args-calls)).
+
+Anything that changes any of those four counts as a new run
+and gets its own memoization slot:
+
+- A different `user_prompt` -- a new question is a new run.
+- A different `message_history=` -- continuing a conversation
+  with new prior turns is a new run.
+- A different `variant=` -- the explicit way to ask for a
+  fresh run when the prompt itself is unchanged.
+
+Per-call kwargs that affect *how* the model is invoked but
+not *what* run it is -- `model=`, `instructions=`,
+`toolsets=`, `model_settings=`, `output_type=`, `deps=`,
+`builtin_tools=`, `deferred_tool_results=` -- do **not** make
+the call a new run. Changing them on a replay is allowed,
+but the [configuration-drift
+warnings](#configuration-drift-warnings) will fire
+if any of the snapshotted ones differ from the values used
+when the run was first executed.
+
+## Watch out for compounded retries
+
+Several layers retry on failure, and combining them naively can
+cause an order of magnitude more attempts than you intended:
+
+- **Reboot workflows** retry the entire method body when an
+  uncaught exception escapes (configurable via the workflow's
+  retry policy).
+- **Reboot's `at_least_once`** retries the wrapped block until it
+  succeeds.
+- **Pydantic AI's agent** has a `retries=` parameter (and a
+  `tool.retries=` per tool) that retries on tool / output
+  validation failures within a single agent run.
+- **The model provider's HTTP client** (Anthropic SDK, OpenAI SDK,
+  etc.) typically retries 5xx / 429 / network errors on its own,
+  often with exponential backoff.
+
+For most setups you want to set the agent / tool `retries=` to a
+small number (or 0) and let the workflow-level retry handle
+hard failures. Provider HTTP retries can be left in place, but
+when you're already wrapping with `at_least_once` on top, a
+short retry budget on the provider client usually performs better
+than a long one.
+
+## Tool returns and model responses must be picklable
+
+Reboot's `at_least_once` memoizes return values via `pickle`. That
+means anything your tool function returns AND the `ModelResponse`
+objects `pydantic_ai` produces must round-trip through pickle
+cleanly:
+
+- Standard `pydantic_ai` message / response types are dataclasses
+  built for pickling — these work out of the box.
+- Custom return values from your tools must also be
+  pickle-friendly. Open file handles, DB connections, and lambdas
+  are common offenders. Return plain data (strings, dicts,
+  pydantic models, dataclasses) instead.
+
+Reboot's snapshot digests fall back to `repr(...)` when pickle
+fails, so the per-run config-drift warnings stay functional even
+for unpicklable values; only the actual memoization path requires
+pickle.
+
+## Observability (Logfire)
+
+Pydantic AI's [Logfire instrumentation](https://ai.pydantic.dev/logfire/)
+works under Reboot. Set up Logfire as you normally would, and
+agent runs / model calls / tool calls will produce spans that
+show prompts, tools, and outputs alongside Reboot's own workflow
+spans. Reboot's `at_least_once` wrapping is transparent to the
+instrumentation — you'll see one outer agent span with the model
+and tool calls nested inside, the same as a non-durable
+`pydantic_ai` run.
+
+## Renaming an agent invalidates replay
+
+The agent's `name=` is part of the memoization key for every
+model and tool call inside its runs. **If you rename an existing
+agent in your code, all previously memoized runs become
+unreachable** — workflows that depended on a stored response from
+the old name will re-call the provider.
+
+This is a one-time deployment-day concern, not a runtime issue.
+Plan agent name changes alongside any data migration / pinning
+work the way you would any other shape change to your workflow's
+durable state.
+
+## What's not memoized
+
+A few things deliberately fall outside Reboot's wrapping:
+
+- **Pydantic AI builtin tools** (web search, code execution,
+  etc.) -- these are executed by the model provider, and their
+  call/return parts are baked into the `ModelResponse` we already
+  memoize. They're durable for free.
+- **Dynamic instructions / dynamic system prompt callables** --
+  those are `pydantic_ai`'s `_system_prompt_dynamic_functions` and
+  the callable entries inside `instructions`. They run on every
+  turn and are not snapshotted. If your dynamic callables produce
+  different text between runs, wrap their non-deterministic work
+  in `at_least_once` yourself.
+- **Tool side-effects you didn't wrap.** Reboot's wrapping
+  memoizes the *return* of your tool function, but if your tool
+  body performs un-memoized writes (e.g., a direct database
+  update), effect validation will surface the duplication. Wrap
+  external side-effects inside the tool body in `at_least_once`
+  -- see the `search` example above.
+
+## Limitations
+
+- `run_sync` and `run_stream_sync` are not supported (workflow
+  methods are async).
+- Nested agent runs are not supported -- starting a second agent
+  run inside a tool function or another running agent raises a
+  `UserError`. To run multiple agents in sequence, run them from
+  the workflow body, one after the other.
+- `override(toolsets=...)` is not supported (see above).
+- `pydantic_ai`'s `parallel_tool_call_execution_mode='parallel'`
+  is rejected at construction time -- use the default
+  `'parallel_ordered_events'` or `'sequential'` instead.
+- Calling our entry points through an `AbstractAgent`-typed
+  reference will fail with a `UserError` naming the fix: our
+  `run` / `iter` / `run_stream` / `run_stream_events` require
+  `context: WorkflowContext` as the first positional argument,
+  while the supertype's signature has no `context`. The runtime
+  check converts what would otherwise be a confusing
+  `AttributeError` deep in `_agent_run` into an upfront error
+  message.
+- Only one `context.loop(...)` per workflow (a Reboot-wide
+  limitation, not specific to agents).

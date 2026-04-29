@@ -10,12 +10,12 @@ For the impatient:
 
 This repository contains a simple example application written using Reboot.
 
-The [Reboot '.proto' definitions](https://docs.reboot.dev/develop/define/overview/#code-generation)
+The [Reboot '.proto' definitions](https://docs.reboot.dev/learn_more/define/overview#code-generation)
 can be found in the `api/` directory, grouped into
 subdirectories by proto package, while backend specific code can be
 found in `backend/` and front end specific code in `web/` and non-React front end in `reboot-non-react-web/`.
 
-_For more information on all of the Reboot examples, please [see the docs](https://docs.reboot.dev/get_started/examples)._
+_For more information on all of the Reboot examples, please [see the docs](https://docs.reboot.dev/full_stack_apps/examples)._
 
 ## Prepare an environment by...
 

@@ -1,8 +1,18 @@
 import json
 import os
+import sys
+import time
 import unittest
 import yaml
 from tests.reboot.workspace_directory import WORKSPACE_DIR
+
+_t0 = time.monotonic()
+
+
+def _log(text: str) -> None:
+    elapsed = time.monotonic() - _t0
+    print(f"[{elapsed:7.3f}s] {text}", file=sys.stderr, flush=True)
+
 
 ALL_PACKAGE_NAMES = [
     'reboot',
@@ -10,8 +20,22 @@ ALL_PACKAGE_NAMES = [
     '@reboot-dev/reboot-react',
     '@reboot-dev/reboot-api',
     'ghcr.io/reboot-dev/reboot-base',
+    '@reboot-dev/create-ui',
 ]
 BASE_IMAGE_NAME = "ghcr.io/reboot-dev/reboot-base"
+
+_SKIP_DIRS = frozenset(
+    (
+        '.git',
+        '.venv',
+        'bazel-bin',
+        'bazel-out',
+        'bazel-public',
+        'bazel-testlogs',
+        'node_modules',
+        'submodules',
+    )
+)
 
 
 class RebootVersionTest(unittest.TestCase):
@@ -20,6 +44,7 @@ class RebootVersionTest(unittest.TestCase):
         """Test that all Reboot related packages are pinned to the same
         version.
         """
+        _log(f"WORKSPACE_DIR={WORKSPACE_DIR}")
         versions = open('reboot/versions.bzl', 'r')
         lines = versions.readlines()
 
@@ -43,13 +68,15 @@ class RebootVersionTest(unittest.TestCase):
         dockerfile_paths = set()
         helm_chart_paths = set()
         skill_md_paths = set()
-        for (dirpath, _, filenames) in os.walk(WORKSPACE_DIR):
-            # Skip these. Not the source code that we are looking for.
-            if any(
-                path in dirpath
-                for path in ['bazel-', 'submodules', '.venv', 'node_modules']
-            ):
-                continue
+        dir_count = 0
+        for (dirpath, dirnames, filenames) in os.walk(WORKSPACE_DIR):
+            # Skip useless directories by pruning `dirnames` in-place so
+            # `os.walk` doesn't descend into those directories.
+            dirnames[:] = [
+                dirname for dirname in dirnames if dirname not in _SKIP_DIRS
+            ]
+
+            dir_count += 1
 
             # The expectation is all Node package files are named package.json.
             if 'package.json' in filenames:
@@ -80,6 +107,15 @@ class RebootVersionTest(unittest.TestCase):
 
             if 'SKILL.md' in filenames:
                 skill_md_paths.add(f'{dirpath}/SKILL.md')
+
+        _log(
+            f"walk done: {dir_count} dirs, "
+            f"{len(package_json_file_paths)} package.json, "
+            f"{len(requirements_txt_file_paths)} requirements.txt, "
+            f"{len(dockerfile_paths)} Dockerfile, "
+            f"{len(helm_chart_paths)} Chart.yaml, "
+            f"{len(skill_md_paths)} SKILL.md"
+        )
 
         for path in package_json_file_paths:
             with open(path) as package_json_file:
@@ -182,6 +218,8 @@ class RebootVersionTest(unittest.TestCase):
                                 f'{line} that is out of date with'
                                 f' version {version}'
                             )
+
+        _log("all checks passed")
 
 
 if __name__ == '__main__':

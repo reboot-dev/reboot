@@ -21,10 +21,12 @@ TestMethods = Methods(
     set_message_and_counter=Writer(
         request=SetMessageAndCounterRequest,
         response=None,
+        mcp=None,
     ),
     get_state=Reader(
         request=None,
         response=GetStateResponse,
+        mcp=None,
     ),
 )
 

@@ -2,8 +2,8 @@ generate --nodejs=api/
 generate api/
 
 dev run --no-chaos
-dev run --name=benchmarks
+dev run --application-name=benchmarks
 dev run --nodejs
 dev run --application=main.ts
 
-dev expunge --name=benchmarks
+dev expunge --application-name=benchmarks

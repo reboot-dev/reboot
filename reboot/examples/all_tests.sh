@@ -10,7 +10,7 @@ set -x # Echo executed commands to help debug failures.
 
 # Check that this script has been invoked with the right working directory, by
 # checking that the expected subdirectories exist.
-ls -l bank-pydantic/ bank-zod/ docubot/ bank-nodejs/ boutique/ chat-room/ chat-room-nodejs/ monorepo/ 2> /dev/null > /dev/null || {
+ls -l agent-wiki/ bank-pydantic/ bank-zod/ chick-potle/ docubot/ bank-nodejs/ boutique/ chat-room/ chat-room-nodejs/ monorepo/ 2> /dev/null > /dev/null || {
   echo "ERROR: this script must be invoked from the 'reboot/examples' directory."
   echo "Current working directory is '$(pwd)'."
   ls
@@ -21,8 +21,10 @@ ls -l bank-pydantic/ bank-zod/ docubot/ bank-nodejs/ boutique/ chat-room/ chat-r
 export SANDBOX_ROOT=""
 
 # Run all of the tests.
+sh -c 'cd agent-wiki && ./.tests/test.sh'
 sh -c 'cd bank-pydantic && ./.tests/test.sh'
 sh -c 'cd bank-zod && ./.tests/test.sh'
+sh -c 'cd chick-potle && ./.tests/test.sh'
 sh -c 'cd docubot && ./.tests/test.sh'
 sh -c 'cd bank-nodejs && ./.tests/test.sh'
 sh -c 'cd boutique && ./.tests/test.sh'

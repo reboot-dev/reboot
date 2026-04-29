@@ -8,6 +8,15 @@ client can connect to it.
 During development it is easiest to use a local MCP client, since they
 can easily reach applications running on `localhost`.
 
+:::tip Recommended for rapid iteration
+
+For tight edit-reload cycles during development, use **MCPJam
+Inspector** (below). Claude and ChatGPT aggressively cache your
+app's assets, which can make rapid iteration frustrating —
+MCPJam picks up changes immediately.
+
+:::
+
 ### MCPJam Inspector (development)
 
 [MCPJam Inspector](https://mcpjam.com) is a browser-based MCP client
@@ -18,8 +27,8 @@ Add an `mcp_servers.json` file in your project root, and fill it in:
 {
   "mcpServers": {
     "my-app": {
-      "type": "streamable-http",
-      "url": "http://localhost:9991/mcp"
+      "url": "http://localhost:9991/mcp",
+      "useOAuth": true
     }
   }
 }
@@ -30,7 +39,7 @@ app runs on a different port or host.
 
 Then run MCPJam:
 ```sh
-npx @mcpjam/inspector@v2.0.4 \
+npx @mcpjam/inspector@2.4.0 \
   --config mcp_servers.json --server my-app
 ```
 
@@ -58,49 +67,120 @@ actions.
 
 ### Goose
 
-<!-- TODO(rjh): test these instructions, and expand them with `ngrok` info -->
+[Goose](https://block.github.io/goose/) is a desktop AI agent that
+supports MCP servers as extensions. To connect your Reboot app:
 
-[Goose](https://block.github.io/goose/) supports MCP servers. Add your
-server to the Goose configuration:
+1. In Goose, open **Extensions**, then click **+ Add custom
+   extension**.
+2. Enter a name, set **Type** to **Streamable HTTP**, and add a
+   description.
+3. For **Endpoint**, use your MCP server URL — if Goose is
+   running on the same machine as `rbt dev`, use
+   `http://localhost:9991/mcp`; otherwise use your Reboot Cloud
+   URL (`https://your-app.prod1.rbt.cloud:9991/mcp`) or your
+   `ngrok` tunnel URL with `/mcp` appended.
+4. Click **Add extension**.
+
+Alternatively, you can add the extension directly to Goose's
+configuration file:
 
 ```yaml
 extensions:
   my-app:
-    type: streamable-http
+    type: streamable_http
     uri: http://localhost:9991/mcp
 ```
 
+### Claude Desktop
+
+[Claude Desktop](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop)
+supports MCP servers through its `claude_desktop_config.json` file.
+This route is best for local MCP servers that don't require auth
+or render `UI` methods — see Claude's documentation for the full
+setup.
 
 ## On the web
 
-Eventually, you'll likely want to publish your app for popular web-based
-AI platforms. This requires that your app is reachable on the internet.
-During development, you can use `ngrok`. In production we suggest taking
-a look at [Reboot Cloud](/deploy_on_reboot_cloud).
+To publish your app to web-based AI platforms, it must be reachable
+on the internet. During development, you can use `ngrok`. In
+production we suggest taking a look at
+[Reboot Cloud](/deploy_on_reboot_cloud).
+
+:::note Local development with `UI` methods
+
+If your app has `UI` methods and you're tunneling `rbt dev` through
+`ngrok`, the right `.rbtrc` config depends on which client you're
+testing with:
+
+- **ChatGPT** can load UIs from the Vite dev server, so the default
+  `hmr` config (`uv run rbt dev run`) works and you get hot module
+  replacement.
+- **Claude** renders UIs in a sandboxed iframe that blocks HTTP
+  script sources, so it can't load from a local Vite dev server.
+  Build the UIs first with `cd web && npm run build`, then run
+  `uv run rbt dev run --config=dist` to serve the pre-built
+  artifacts from `web/dist/`.
+
+See your app's `.rbtrc` for the `hmr` and `dist` config
+definitions.
+
+:::
 
 ### ChatGPT
 
 ChatGPT supports
-[remote MCP servers](https://developers.openai.com/api/docs/guides/tools-connectors-mcp/).
-To connect your deployed Reboot app:
+[remote MCP servers](https://developers.openai.com/apps-sdk/deploy/connect-chatgpt)
+through its
+[Developer Mode](https://developers.openai.com/api/docs/guides/developer-mode),
+a beta feature available on Pro, Plus, Business, Enterprise, and Edu
+plans. Connecting an app requires Developer Mode to be enabled; on
+Business, Enterprise, and Edu workspaces only a workspace owner (or,
+on Enterprise/Edu, a user granted access via RBAC) can enable it.
+See
+[OpenAI's help article](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt-beta)
+for enablement details.
+
+Once Developer Mode is on, to connect your deployed Reboot app:
 
 1. Open [chatgpt.com](https://chatgpt.com).
-2. In the message composer, click the **Tools** icon (hammer).
-3. Select **Add MCP tool**, then enter your MCP server URL
-   (e.g., `https://your-app.prod1.rbt.cloud:9991/mcp`).
-4. ChatGPT will discover your tools and make them available in
-   the conversation.
+2. From your profile menu in the bottom-left corner, click
+   **Settings**, then **Apps**, then **Advanced Settings** →
+   **Create App**.
+3. Enter a name for your tool, a description, and the URL of your
+   MCP server. If you're running on Reboot Cloud the URL will look
+   like `https://your-app.prod1.rbt.cloud:9991/mcp`; if you're
+   running locally behind an `ngrok` tunnel (see
+   [exposing `rbt dev` to the internet](/learn_more/nonlocal#ngrok))
+   it will be your tunnel's URL with `/mcp` appended.
+4. If your app uses auth (`Anonymous` or otherwise), select
+   **OAuth** from the Authentication dropdown — ChatGPT will run
+   the OAuth handshake against your Reboot app as soon as you add
+   the server. Otherwise, select **No auth**.
+5. Check **I understand and want to continue**, then create the
+   app. ChatGPT will discover your tools and make them available
+   in the conversation.
 
 ### Claude (claude.ai)
 
-[Claude.ai](https://claude.ai) supports MCP servers. To connect your
-deployed Reboot app:
+[Claude.ai](https://claude.ai) supports custom connectors backed by
+remote MCP servers. They are available on Free, Pro, Max, Team, and
+Enterprise plans (Free is limited to one custom connector). On Team
+and Enterprise plans only workspace owners can add new custom
+connectors. See
+[Claude's help article](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)
+for the canonical walkthrough.
 
-1. Open a conversation on claude.ai.
-2. Click the **Integrations** icon (puzzle piece) in the message
-   composer.
-3. Add your MCP server URL (e.g., `https://your-app.prod1.rbt.cloud/mcp`).
-4. Claude will discover your tools and make them available in the
-   conversation.
+To connect your deployed Reboot app:
 
-
+1. Open [claude.ai](https://claude.ai).
+2. Click **Customize**, then **Connectors**, then **+**, then
+   **Add Custom Connector**.
+3. Enter a name and the URL of your MCP server — the URL follows
+   the same format as for ChatGPT above (e.g.,
+   `https://your-app.prod1.rbt.cloud:9991/mcp` on Reboot Cloud,
+   or your tunnel URL with `/mcp` appended when running locally).
+4. Click **Add**. Claude will automatically detect whether your
+   app requires auth and discover your tools.
+5. To use the connector in a chat, click the **+** button in the
+   message composer, choose **Connectors**, and toggle your
+   connector on for that conversation.
