@@ -19,7 +19,6 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from reboot.aio.applications import Application
-from reboot.aio.auth.authorizers import allow
 from reboot.aio.tests import Reboot
 from servicers import wiki as wiki_module
 from servicers.wiki import (
@@ -29,44 +28,11 @@ from servicers.wiki import (
     WikiServicer,
 )
 
-# Production servicers intentionally don't define an
-# `authorizer()`: in development Reboot defaults to allow-all,
-# but in production an absent authorizer denies by default,
-# which we rely on so that no permissive code accidentally
-# ships. The tests run against the production-mode harness, so
-# we extend each servicer here and grant `allow()` for the
-# duration of the suite.
-
-
-class PermissiveUserServicer(UserServicer):
-
-    def authorizer(self):
-        return allow()
-
-
-class PermissiveWikiServicer(WikiServicer):
-
-    def authorizer(self):
-        return allow()
-
-
-class PermissivePageServicer(PageServicer):
-
-    def authorizer(self):
-        return allow()
-
-
-class PermissiveTranscriptServicer(TranscriptServicer):
-
-    def authorizer(self):
-        return allow()
-
-
 APPLICATION_SERVICERS = [
-    PermissiveUserServicer,
-    PermissiveWikiServicer,
-    PermissivePageServicer,
-    PermissiveTranscriptServicer,
+    UserServicer,
+    WikiServicer,
+    PageServicer,
+    TranscriptServicer,
 ]
 
 
@@ -115,7 +81,7 @@ class ServicerTest(unittest.IsolatedAsyncioTestCase):
         # production the MCP session's "new session" hook
         # calls `_auto_construct` for the authenticated user.
         # Tests don't go through that hook, so we do it here.
-        await PermissiveUserServicer._auto_construct(
+        await UserServicer._auto_construct(
             self.context,
             state_id=self.user_id,
         )
@@ -170,6 +136,7 @@ class ServicerTest(unittest.IsolatedAsyncioTestCase):
             self.context,
             title="My Page",
             content="Initial body.",
+            owner_id=self.user_id,
         )
         got = await page.get(self.context)
         self.assertEqual(got.title, "My Page")
@@ -194,6 +161,7 @@ class ServicerTest(unittest.IsolatedAsyncioTestCase):
         transcript, _ = await Transcript.create(
             self.context,
             messages=messages,
+            owner_id=self.user_id,
         )
         got = await transcript.get(self.context)
         self.assertEqual(len(got.messages), 2)
@@ -346,7 +314,7 @@ class IngestWorkflowTest(unittest.IsolatedAsyncioTestCase):
         # production the MCP session's "new session" hook
         # calls `_auto_construct` for the authenticated user.
         # Tests don't go through that hook, so we do it here.
-        await PermissiveUserServicer._auto_construct(
+        await UserServicer._auto_construct(
             self.context,
             state_id=self.user_id,
         )
