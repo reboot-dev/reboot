@@ -11,8 +11,8 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "1.10.1",
-    "@reboot-dev/reboot": "1.0.3",
-    "@reboot-dev/reboot-react": "1.0.3",
+    "@reboot-dev/reboot": "1.0.4",
+    "@reboot-dev/reboot-react": "1.0.4",
     "next": "14.2.13",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

@@ -9,8 +9,11 @@ the alias strings it sees.
 """
 import asyncio
 import contextlib
-import sys
-import types
+# Stub `reboot.aio.contexts`, `reboot.aio.workflows`, and
+# `reboot.aio.idempotency` BEFORE importing anything from
+# `reboot.agents`.
+import reboot.aio.contexts
+import reboot.aio.workflows
 import typing
 import unittest
 import uuid
@@ -23,21 +26,9 @@ from typing import Any
 # with `FakeWorkflowContext` itself, so the inheritance never
 # materializes).
 if typing.TYPE_CHECKING:
-    from reboot.aio.contexts import WorkflowContext as _WorkflowContextBase
+    _WorkflowContextBase = reboot.aio.contexts.WorkflowContext
 else:
     _WorkflowContextBase = object
-
-# Stub `reboot.aio.contexts`, `reboot.aio.workflows`, and
-# `reboot.aio.idempotency` BEFORE importing anything from
-# `reboot.agents`. The real idempotency module transitively
-# imports protobuf-generated modules that aren't available
-# without a full bazel build; the idempotency_seeds composition is
-# already covered by `idempotency_seeds_tests.py`, so
-# here we just need a recording stub that lets us assert the
-# metadata dict the agent wrapper passes in.
-
-stub_idempotency = types.ModuleType('reboot.aio.idempotency')
-sys.modules['reboot.aio.idempotency'] = stub_idempotency
 
 # Each `context.idempotency_seeds(...)` block pushes its merged
 # dict onto this stack and pops it on exit. `at_least_once`
@@ -47,8 +38,6 @@ sys.modules['reboot.aio.idempotency'] = stub_idempotency
 # `_idempotency_key` does in production.
 _idempotency_seeds_stack: list[dict[str, Any]] = []
 _idempotency_seeds_calls: list[dict[str, Any]] = []
-
-stub_contexts = types.ModuleType('reboot.aio.contexts')
 
 
 class FakeWorkflowContext(_WorkflowContextBase):
@@ -123,8 +112,7 @@ class FakeWorkflowContext(_WorkflowContextBase):
                 await result
 
 
-setattr(stub_contexts, "WorkflowContext", FakeWorkflowContext)
-sys.modules['reboot.aio.contexts'] = stub_contexts
+reboot.aio.contexts.WorkflowContext = FakeWorkflowContext  # type: ignore[assignment, misc]
 
 # Capture every alias string passed to `at_least_once` so tests
 # can assert what the metadata splice produced. The cache keys
@@ -133,10 +121,15 @@ sys.modules['reboot.aio.contexts'] = stub_contexts
 _recorded_aliases: list[str] = []
 _memo_cache: dict[Any, Any] = {}
 
-stub_workflows = types.ModuleType('reboot.aio.workflows')
 
-
-async def _stub_at_least_once(alias_or_tuple, context, callable, *, type=None):
+async def _stub_at_least_once(
+    alias_or_tuple,
+    context,
+    callable,
+    *,
+    type=None,
+    effect_validation=None,
+):
     if isinstance(alias_or_tuple, tuple):
         alias = alias_or_tuple[0]
     else:
@@ -163,8 +156,7 @@ async def _stub_at_least_once(alias_or_tuple, context, callable, *, type=None):
     return _memo_cache[key]
 
 
-setattr(stub_workflows, "at_least_once", _stub_at_least_once)
-sys.modules['reboot.aio.workflows'] = stub_workflows
+reboot.aio.workflows.at_least_once = _stub_at_least_once  # type: ignore[assignment]
 
 import pydantic_ai  # noqa: E402
 from pydantic_ai import RunContext  # noqa: E402

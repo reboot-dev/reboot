@@ -4,7 +4,7 @@ import operator
 import sys
 import types
 import typing
-from reboot.aio.contexts import WorkflowContext
+from reboot.aio.contexts import EffectValidation, WorkflowContext  # noqa: F401
 from reboot.aio.idempotency import (  # noqa: F401
     ALWAYS,
     PER_ITERATION,
@@ -189,6 +189,7 @@ class Memoize(Protocol[T]):
         at_most_once: bool,
         until: bool = False,
         retryable_exceptions: Optional[list[type[Exception]]] = None,
+        effect_validation: EffectValidation | None = None,
     ) -> T:
         ...
 
@@ -283,6 +284,7 @@ async def at_least_once(
     callable: Callable[[], Awaitable[T]],
     *,
     type: Type | _Unset = _UNSET,
+    effect_validation: EffectValidation | None = None,
 ) -> T:
     """Attempts to run and memoize the result of calling `callable` while
     supporting retrying as many times as necessary until `callable`
@@ -293,6 +295,12 @@ async def at_least_once(
     no annotation -- the runtime check in `memoize` will raise
     a clear error if the callable actually returns a non-`None`
     value in that case.
+
+    `effect_validation=EffectValidation.DISABLED` disables
+    the per-call effect-validation re-run even when the context has
+    effect validation enabled. Use this for callables that are
+    intentionally non-deterministic or expensive to re-run (e.g., LLM
+    model requests).
 
     NOTE: this is the Python wrapper for `reboot.memoize.v1` and as
     such uses `pickle` to serialize the result of calling `callable`
@@ -307,6 +315,7 @@ async def at_least_once(
         type_t=type_t,
         type_t_inferred=type_t_inferred,
         at_most_once=False,
+        effect_validation=effect_validation,
     )
 
 
@@ -316,6 +325,7 @@ async def at_least_once_per_workflow(
     callable: Callable[[], Awaitable[T]],
     *,
     type: Type | _Unset = _UNSET,
+    effect_validation: EffectValidation | None = None,
 ) -> T:
     """Syntactic sugar for calling without an idempotency tuple."""
     return await at_least_once(
@@ -323,6 +333,7 @@ async def at_least_once_per_workflow(
         context,
         callable,
         type=type,
+        effect_validation=effect_validation,
     )
 
 

@@ -1,6 +1,6 @@
 {
   "name": "@reboot-dev/reboot-std",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Reboot standard library.",
   "main": "index.js",
   "type": "module",
@@ -10,8 +10,8 @@
   },
   "author": "reboot-dev",
   "dependencies": {
-    "@reboot-dev/reboot-std-api": "1.0.3",
-    "@reboot-dev/reboot": "1.0.3",
+    "@reboot-dev/reboot-std-api": "1.0.4",
+    "@reboot-dev/reboot": "1.0.4",
     "@scarf/scarf": "1.4.0"
   },
   "license": "Apache-2.0",

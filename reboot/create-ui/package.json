@@ -1,6 +1,6 @@
 {
   "name": "@reboot-dev/create-ui",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Scaffold React implementation for Reboot AI Chat App UIs",
   "type": "commonjs",
   "bin": {

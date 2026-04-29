@@ -431,9 +431,9 @@ __metadata:
   resolution: "@monorepo/backend@workspace:backend"
   dependencies:
     "@monorepo/api": "workspace:*"
-    "@reboot-dev/reboot": "npm:1.0.3"
-    "@reboot-dev/reboot-api": "npm:1.0.3"
-    "@reboot-dev/reboot-std": "npm:1.0.3"
+    "@reboot-dev/reboot": "npm:1.0.4"
+    "@reboot-dev/reboot-api": "npm:1.0.4"
+    "@reboot-dev/reboot-std": "npm:1.0.4"
     tsx: "npm:^4.20.3"
   languageName: unknown
   linkType: soft
@@ -467,46 +467,46 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@reboot-dev/reboot-api@npm:1.0.3":
-  version: 1.0.3
-  resolution: "@reboot-dev/reboot-api@npm:1.0.3"
+"@reboot-dev/reboot-api@npm:1.0.4":
+  version: 1.0.4
+  resolution: "@reboot-dev/reboot-api@npm:1.0.4"
   dependencies:
     "@scarf/scarf": "npm:1.4.0"
     typescript: "npm:5.4.5"
     zod: "npm:^3.25.51"
   peerDependencies:
     "@bufbuild/protobuf": 1.10.1
-  checksum: 10c0/d32c0531347db78af6c2a38240a6b1112b79d0bde507f309766ddf495ce54355e58e22b068758f8e4b0933cc4ce1d1cabb26f1c7fbd4006a77e2cdac729f414f
+  checksum: 10c0/dbc3d7fa8a449fcbe11fd6518e1652291a10bf6c56942a0321dd83492ab0d7702ef95c74bc12dfd08f8eb116500699e346055b73353c285531e3eca0b3c2738a
   languageName: node
   linkType: hard
 
-"@reboot-dev/reboot-std-api@npm:1.0.3":
-  version: 1.0.3
-  resolution: "@reboot-dev/reboot-std-api@npm:1.0.3"
+"@reboot-dev/reboot-std-api@npm:1.0.4":
+  version: 1.0.4
+  resolution: "@reboot-dev/reboot-std-api@npm:1.0.4"
   dependencies:
     "@scarf/scarf": "npm:1.4.0"
-  checksum: 10c0/78d4eb45b75058c9e5aad6b613a0773834b751b3c45d6f0b53170e24558ceb4a23a96fd738bbd48b66063f110a95790340194b4ad2f830d529a51fc8c81ae9b9
+  checksum: 10c0/c2a3a7634450295372d56febad3a93ea4972d41c375a9cdd080a2edd422561a89c4aede1c383627f29783f9e7c0312ecaae7f7bb6f04e3ad197b81890e481782
   languageName: node
   linkType: hard
 
-"@reboot-dev/reboot-std@npm:1.0.3":
-  version: 1.0.3
-  resolution: "@reboot-dev/reboot-std@npm:1.0.3"
+"@reboot-dev/reboot-std@npm:1.0.4":
+  version: 1.0.4
+  resolution: "@reboot-dev/reboot-std@npm:1.0.4"
   dependencies:
-    "@reboot-dev/reboot": "npm:1.0.3"
-    "@reboot-dev/reboot-std-api": "npm:1.0.3"
+    "@reboot-dev/reboot": "npm:1.0.4"
+    "@reboot-dev/reboot-std-api": "npm:1.0.4"
     "@scarf/scarf": "npm:1.4.0"
-  checksum: 10c0/4c6d0722dddff9e6e393a21ba088adf3e1105a6b8bb4a3157177f8bc311e73ecf95856a1a42d96c5804a6cae94cf8759bb26f47b74107c58421c2818c2f725e0
+  checksum: 10c0/280f48a3f7f6682c14a08d74fbff34df7aed4ed3410a455d8c7335c4a346f8abfd47c78a9bc45b38eeaaa34320e2b631cc1d94e2de47a78034f954b8f1ae8db1
   languageName: node
   linkType: hard
 
-"@reboot-dev/reboot@npm:1.0.3":
-  version: 1.0.3
-  resolution: "@reboot-dev/reboot@npm:1.0.3"
+"@reboot-dev/reboot@npm:1.0.4":
+  version: 1.0.4
+  resolution: "@reboot-dev/reboot@npm:1.0.4"
   dependencies:
     "@bufbuild/protoc-gen-es": "npm:1.10.1"
     "@bufbuild/protoplugin": "npm:1.10.1"
-    "@reboot-dev/reboot-api": "npm:1.0.3"
+    "@reboot-dev/reboot-api": "npm:1.0.4"
     "@scarf/scarf": "npm:1.4.0"
     "@standard-schema/spec": "npm:1.0.0"
     chalk: "npm:^4.1.2"
@@ -527,7 +527,7 @@ __metadata:
     rbt: rbt.js
     rbt-esbuild: rbt-esbuild.js
     zod-to-proto: zod-to-proto.js
-  checksum: 10c0/0b0331a3175fcd2189e9b2df5d431bb3c8b694020c700523bcb3b8c8b3748a2129b849e7eed1e58da0837eb8e4ecfd585de8f5224da1e4abf1d7070200c01608
+  checksum: 10c0/56fd8a59ff0e451966d910cf4d1dc6d571999f478c5f259fa2446f481d710b1c5d478c149777f4fa0035aa636d374815a1cb75304df8dee5e09fce562f1b521a
   languageName: node
   linkType: hard
 

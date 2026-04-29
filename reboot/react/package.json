@@ -1,6 +1,6 @@
 {
   "name": "@reboot-dev/reboot-react",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "npm package for Reboot React",
   "main": "index.js",
   "type": "module",
@@ -20,8 +20,8 @@
   },
   "author": "reboot-dev",
   "dependencies": {
-    "@reboot-dev/reboot-api": "1.0.3",
-    "@reboot-dev/reboot-web": "1.0.3",
+    "@reboot-dev/reboot-api": "1.0.4",
+    "@reboot-dev/reboot-web": "1.0.4",
     "@types/uuid": "^9.0.4",
     "js-sha1": "0.7.0",
     "tslib": "^2.6.2",
