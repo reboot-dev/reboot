@@ -312,14 +312,14 @@ dependencies = [
     "httpx>=0.27,<1.0",
     "uuid7>=0.1.0",
     "anyio>=4.0.0",
-    "reboot>=1.0.3",
+    "reboot>=1.0.4",
 ]
 
 [tool.rye]
 dev-dependencies = [
     "mypy==1.18.1",
     "types-protobuf>=4.24.0.20240129",
-    "reboot>=1.0.3",
+    "reboot>=1.0.4",
 ]
 
 virtual = true
@@ -860,8 +860,8 @@ scripts directly.**
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.5.0",
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@reboot-dev/reboot-react": "1.0.3",
-    "@reboot-dev/reboot-api": "1.0.3",
+    "@reboot-dev/reboot-react": "1.0.4",
+    "@reboot-dev/reboot-api": "1.0.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zod": "^3.25.0"

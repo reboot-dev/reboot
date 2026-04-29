@@ -7,7 +7,7 @@
     "prepack": "rbt generate && tsc"
   },
   "dependencies": {
-    "@reboot-dev/reboot": "1.0.3",
+    "@reboot-dev/reboot": "1.0.4",
     "typescript": "^5.2.2"
   },
   "files": [
