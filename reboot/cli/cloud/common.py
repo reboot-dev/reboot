@@ -26,7 +26,7 @@ from reboot.naming import (
 )
 from typing import Optional
 
-DEFAULT_REBOOT_CLOUD_URL = "https://cloud.prod1.rbt.cloud:9991"
+DEFAULT_REBOOT_CLOUD_URL = "https://cloud.prod1.rbt.cloud"
 
 _API_KEY_FLAG = '--api-key'
 
