@@ -43,10 +43,7 @@ def collect_all_error_models(
 
     for file_path in pydantic_files:
         module_path = file_path.rsplit('.py', 1)[0].replace(os.sep, '.')
-        try:
-            module = import_module(module_path)
-        except ImportError as e:
-            fail(f"Failed to import module {module_path}: {e}")
+        module = import_module(module_path)
 
         api = getattr(module, 'api', None)
         if api is None:

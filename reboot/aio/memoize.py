@@ -62,6 +62,7 @@ async def memoize(
     at_most_once: bool,
     until: bool = False,
     retryable_exceptions: Optional[list[type[Exception]]] = None,
+    effect_validation: EffectValidation | None = None,
 ) -> T:
     """Memoizes the result of running `callable`, only attempting to do so
     once if `at_most_once=True`.
@@ -162,7 +163,8 @@ async def memoize(
 
             if (
                 at_most_once or until or
-                context._effect_validation == EffectValidation.DISABLED
+                context._effect_validation == EffectValidation.DISABLED or
+                effect_validation == EffectValidation.DISABLED
             ):
                 return t
 

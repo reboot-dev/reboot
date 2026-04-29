@@ -8,8 +8,8 @@
   },
   "dependencies": {
     "@reboot-dev/docubot-api": "0.1.0",
-    "@reboot-dev/reboot": "1.0.3",
-    "@reboot-dev/reboot-api": "1.0.3",
+    "@reboot-dev/reboot": "1.0.4",
+    "@reboot-dev/reboot-api": "1.0.4",
     "create-temp-directory": "^2.4.0",
     "openai": "^4.52.7",
     "puppeteer": "^22.14.0",

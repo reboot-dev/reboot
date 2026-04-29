@@ -5,8 +5,8 @@
   "type": "module",
   "dependencies": {
     "@bufbuild/protobuf": "1.10.1",
-    "@reboot-dev/reboot": "1.0.3",
-    "@reboot-dev/reboot-api": "1.0.3",
+    "@reboot-dev/reboot": "1.0.4",
+    "@reboot-dev/reboot-api": "1.0.4",
     "typescript": "5.4.5",
     "@types/node": "20.11.5"
   },

@@ -7,13 +7,13 @@ dependencies = [
     "uuid7>=0.1.0",
     "anyio>=4.0.0",
     "pydantic-ai-slim[anthropic]>=1.0.0",
-    "reboot==1.0.3",
+    "reboot==1.0.4",
 ]
 
 [tool.rye]
 dev-dependencies = [
     "pytest>=7.4",
-    "reboot==1.0.3",
+    "reboot==1.0.4",
 ]
 
 # This project only uses `rye` to provide `python` and its dependencies.

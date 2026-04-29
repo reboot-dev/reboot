@@ -17,7 +17,7 @@ from __future__ import annotations as IMPORT_future_annotations
 # may be invalid (broken) if the generated code is mismatched with the installed
 # libraries.
 import reboot.versioning as IMPORT_reboot_versioning
-IMPORT_reboot_versioning.check_generated_code_compatible("1.0.3")
+IMPORT_reboot_versioning.check_generated_code_compatible("1.0.4")
 
 # ATTENTION: no types in this file should be imported with their unqualified
 #            name (e.g. `from typing import Any`). That would cause clashes
