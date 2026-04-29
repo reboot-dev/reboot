@@ -713,11 +713,11 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@modelcontextprotocol/ext-apps@npm:1.2.0":
-  version: 1.2.0
-  resolution: "@modelcontextprotocol/ext-apps@npm:1.2.0"
+"@modelcontextprotocol/ext-apps@npm:1.5.0":
+  version: 1.5.0
+  resolution: "@modelcontextprotocol/ext-apps@npm:1.5.0"
   peerDependencies:
-    "@modelcontextprotocol/sdk": ^1.24.0
+    "@modelcontextprotocol/sdk": ^1.29.0
     react: ^17.0.0 || ^18.0.0 || ^19.0.0
     react-dom: ^17.0.0 || ^18.0.0 || ^19.0.0
     zod: ^3.25.0 || ^4.0.0
@@ -726,13 +726,13 @@ __metadata:
       optional: true
     react-dom:
       optional: true
-  checksum: 10c0/0fa70e5e6a7218579448e4b78880ab83b9c70c6f0fd56dfddd73c8b93c6be4fc1af79266f59b4245c4aea055455517095c7055013841439345804f5ac5cb14a8
+  checksum: 10c0/b8ef86ee48fa5658c152a4ad282ab144335be9d25362a475c834155495d9b2884b1c524703df8ee599d43789c4ea92de20d114f569eec879a26da91dac57ac88
   languageName: node
   linkType: hard
 
-"@modelcontextprotocol/sdk@npm:1.27.1":
-  version: 1.27.1
-  resolution: "@modelcontextprotocol/sdk@npm:1.27.1"
+"@modelcontextprotocol/sdk@npm:1.29.0":
+  version: 1.29.0
+  resolution: "@modelcontextprotocol/sdk@npm:1.29.0"
   dependencies:
     "@hono/node-server": "npm:^1.19.9"
     ajv: "npm:^8.17.1"
@@ -759,7 +759,7 @@ __metadata:
       optional: true
     zod:
       optional: false
-  checksum: 10c0/1b8ad87093c9e43174c7d65864b3d826a8dd050d5c32248f5da49fd72c51b556ebd702e3e49a7f1cc7fa25717a3f7fcee22ed89edd5bd3d8f4e1f8ca499b365e
+  checksum: 10c0/7c4bc339205b1652330cd4e6b121cc859079655f2b9c0506bbb15563ba0d07924bda3d949705530532db7f4d2cb86d633dc8f92bc32803d97c7bece2ac63e29f
   languageName: node
   linkType: hard
 
@@ -776,8 +776,8 @@ __metadata:
     "@bufbuild/protobuf": "npm:1.10.1"
     "@monorepo/api": "workspace:*"
     "@monorepo/common": "workspace:*"
-    "@reboot-dev/reboot": "npm:0.46.0"
-    "@reboot-dev/reboot-api": "npm:0.46.0"
+    "@reboot-dev/reboot": "npm:1.0.3"
+    "@reboot-dev/reboot-api": "npm:1.0.3"
     prosemirror-model: "npm:^1.23.0"
     prosemirror-transform: "npm:^1.1.0"
   languageName: unknown
@@ -802,7 +802,7 @@ __metadata:
     "@monorepo/api": "workspace:*"
     "@monorepo/common": "workspace:*"
     "@nytimes/react-prosemirror": "npm:^0.6.2"
-    "@reboot-dev/reboot-react": "npm:0.46.0"
+    "@reboot-dev/reboot-react": "npm:1.0.3"
     "@types/node": "npm:^20"
     "@types/react": "npm:^18"
     "@types/react-dom": "npm:^18"
@@ -971,27 +971,27 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@reboot-dev/reboot-api@npm:0.46.0":
-  version: 0.46.0
-  resolution: "@reboot-dev/reboot-api@npm:0.46.0"
+"@reboot-dev/reboot-api@npm:1.0.3":
+  version: 1.0.3
+  resolution: "@reboot-dev/reboot-api@npm:1.0.3"
   dependencies:
     "@scarf/scarf": "npm:1.4.0"
     typescript: "npm:5.4.5"
     zod: "npm:^3.25.51"
   peerDependencies:
     "@bufbuild/protobuf": 1.10.1
-  checksum: 10c0/988d942f13c68029429e5c763a65e952f4b1fa029ba3445d2c5481a986f96e424bfbcb07f1a957198763bec6779cccf64d13900c0334999f598b23c6168217e3
+  checksum: 10c0/d32c0531347db78af6c2a38240a6b1112b79d0bde507f309766ddf495ce54355e58e22b068758f8e4b0933cc4ce1d1cabb26f1c7fbd4006a77e2cdac729f414f
   languageName: node
   linkType: hard
 
-"@reboot-dev/reboot-react@npm:0.46.0":
-  version: 0.46.0
-  resolution: "@reboot-dev/reboot-react@npm:0.46.0"
+"@reboot-dev/reboot-react@npm:1.0.3":
+  version: 1.0.3
+  resolution: "@reboot-dev/reboot-react@npm:1.0.3"
   dependencies:
-    "@modelcontextprotocol/ext-apps": "npm:1.2.0"
-    "@modelcontextprotocol/sdk": "npm:1.27.1"
-    "@reboot-dev/reboot-api": "npm:0.46.0"
-    "@reboot-dev/reboot-web": "npm:0.46.0"
+    "@modelcontextprotocol/ext-apps": "npm:1.5.0"
+    "@modelcontextprotocol/sdk": "npm:1.29.0"
+    "@reboot-dev/reboot-api": "npm:1.0.3"
+    "@reboot-dev/reboot-web": "npm:1.0.3"
     "@scarf/scarf": "npm:1.4.0"
     "@types/uuid": "npm:^9.0.4"
     js-sha1: "npm:0.7.0"
@@ -1002,15 +1002,15 @@ __metadata:
     "@bufbuild/protobuf": 1.10.1
     react: ">=18.0.0"
     react-dom: ">=18.0.0"
-  checksum: 10c0/6d832caa130c2e467e8f3430abebbe903f21128ec9cbfd55185644dd9bf914d439fe9c8d5064541b5641463432858c4da67aefb4fa3c4470e2a675603a39cb83
+  checksum: 10c0/4ac8544629455e1c19d0dfa3e69baa59c9cff5ae718f9e0a5a25671b266a6844343ee546567a1fbdcf835e4782e12ce8a7679e8837d3b59ef398206850810d00
   languageName: node
   linkType: hard
 
-"@reboot-dev/reboot-web@npm:0.46.0":
-  version: 0.46.0
-  resolution: "@reboot-dev/reboot-web@npm:0.46.0"
+"@reboot-dev/reboot-web@npm:1.0.3":
+  version: 1.0.3
+  resolution: "@reboot-dev/reboot-web@npm:1.0.3"
   dependencies:
-    "@reboot-dev/reboot-api": "npm:0.46.0"
+    "@reboot-dev/reboot-api": "npm:1.0.3"
     "@scarf/scarf": "npm:1.4.0"
     js-sha1: "npm:0.7.0"
     lru-cache-idb: "npm:^0.5.2"
@@ -1019,17 +1019,17 @@ __metadata:
     uuid: "npm:11.1.0"
   peerDependencies:
     "@bufbuild/protobuf": 1.10.1
-  checksum: 10c0/1e0068cb15c420a8c93b68107e18c3d0e6fb3b378a54e484029bda5b008893261919d05d9094449c3b261dd6ecd12a0d19eee6a36d4bde3c93a89795ac2afcf2
+  checksum: 10c0/0a0457e9d56b7179ca4dc2ac9767cd3ef6687c0089e69817069b92c382018a3075feeb8ce25a619d44a24defc10206d70676a445291d422db6170fb37aaa7a4e
   languageName: node
   linkType: hard
 
-"@reboot-dev/reboot@npm:0.46.0":
-  version: 0.46.0
-  resolution: "@reboot-dev/reboot@npm:0.46.0"
+"@reboot-dev/reboot@npm:1.0.3":
+  version: 1.0.3
+  resolution: "@reboot-dev/reboot@npm:1.0.3"
   dependencies:
     "@bufbuild/protoc-gen-es": "npm:1.10.1"
     "@bufbuild/protoplugin": "npm:1.10.1"
-    "@reboot-dev/reboot-api": "npm:0.46.0"
+    "@reboot-dev/reboot-api": "npm:1.0.3"
     "@scarf/scarf": "npm:1.4.0"
     "@standard-schema/spec": "npm:1.0.0"
     chalk: "npm:^4.1.2"
@@ -1050,7 +1050,7 @@ __metadata:
     rbt: rbt.js
     rbt-esbuild: rbt-esbuild.js
     zod-to-proto: zod-to-proto.js
-  checksum: 10c0/66d746c93408bc2fcf4c56b0ab508d4ebdd9fad480b5bffaa86de35b2ea90123cf2e4bba783970109555957f6b08e6985a0331eb904a477b4d8d48a1546dcbb9
+  checksum: 10c0/0b0331a3175fcd2189e9b2df5d431bb3c8b694020c700523bcb3b8c8b3748a2129b849e7eed1e58da0837eb8e4ecfd585de8f5224da1e4abf1d7070200c01608
   languageName: node
   linkType: hard
 

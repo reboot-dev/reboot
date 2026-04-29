@@ -136,7 +136,7 @@ logfire-api==4.32.1
     # via pydantic-graph
 markupsafe==3.0.3
     # via jinja2
-mcp==1.26.0
+mcp==1.27.0
     # via reboot
 multidict==6.7.1
     # via aiohttp
@@ -203,6 +203,7 @@ pydantic==2.13.3
     # via pydantic-settings
     # via reboot
 pydantic-ai-slim==1.87.0
+    # via reboot
 pydantic-core==2.46.3
     # via pydantic
 pydantic-graph==1.87.0
@@ -228,7 +229,7 @@ python-ulid==3.1.0
 pyyaml==6.0.2
     # via kubernetes-asyncio
     # via reboot
-reboot==0.46.0
+reboot==1.0.3
 referencing==0.37.0
     # via jsonschema
     # via jsonschema-specifications
@@ -265,6 +266,7 @@ typing-extensions==4.15.0
     # via opentelemetry-sdk
     # via pydantic
     # via pydantic-core
+    # via reboot
     # via referencing
     # via typing-inspection
     # via uvicorn
