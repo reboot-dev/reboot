@@ -12,7 +12,9 @@ from agent_wiki.v1.wiki import (
 from agent_wiki.v1.wiki_rbt import Page, Transcript, User, Wiki
 from dataclasses import dataclass
 from pydantic_ai import RunContext
+from rbt.v1alpha1.errors_pb2 import Ok, PermissionDenied, Unauthenticated
 from reboot.agents.pydantic_ai import Agent
+from reboot.aio.auth.authorizers import allow_if, is_app_internal
 from reboot.aio.contexts import (
     ReaderContext,
     TransactionContext,
@@ -20,8 +22,23 @@ from reboot.aio.contexts import (
     WriterContext,
 )
 from reboot.aio.workflows import at_most_once, until
+from typing import Union
 
 logger = logging.getLogger(__name__)
+
+
+def _caller_is_owner(
+    *,
+    context: ReaderContext,
+    state: Union[Wiki.State, Transcript.State, Page.State],
+    **kwargs,
+):
+    """Allow when the caller's `user_id` matches the stored owner ID."""
+    if context.auth is None or context.auth.user_id is None:
+        return Unauthenticated()
+    if state is not None and context.auth.user_id == state.owner_id:
+        return Ok()
+    return PermissionDenied()
 
 
 def _truncate(value: object, limit: int = 500) -> str:
@@ -79,6 +96,7 @@ def _log_librarian_node(prefix: str, node: object) -> None:
 @dataclass
 class LibrarianDeps:
     wiki_id: str
+    owner_id: str
 
 
 librarian = Agent(
@@ -238,6 +256,7 @@ async def create_page(
         context,
         title=title,
         content=content,
+        owner_id=run_context.deps.owner_id,
     )
     return page.state_id
 
@@ -253,10 +272,15 @@ class UserServicer(User.Servicer):
     ) -> UserCreateWikiResponse:
         """Create a new Wiki, record it on the user under
         the given name, and kick off its ingest workflow."""
+        owner_id = (
+            context.auth.user_id if context.auth is not None and
+            context.auth.user_id is not None else ""
+        )
         wiki, _ = await Wiki.create(
             context,
             name=request.name,
             description=request.description,
+            owner_id=owner_id,
         )
         self.state.wikis[request.name] = wiki.state_id
         return UserCreateWikiResponse(wiki_id=wiki.state_id)
@@ -284,6 +308,9 @@ class WikiServicer(Wiki.Servicer):
     title and description metadata, and the librarian
     `ingest` workflow that folds transcripts into it."""
 
+    def authorizer(self):
+        return allow_if(any=[_caller_is_owner, is_app_internal])
+
     async def create(
         self,
         context: WriterContext,
@@ -291,6 +318,7 @@ class WikiServicer(Wiki.Servicer):
     ) -> None:
         self.state.name = request.name
         self.state.description = request.description
+        self.state.owner_id = request.owner_id
         await self.ref().schedule().ingest(context)
 
     async def get(
@@ -320,6 +348,7 @@ class WikiServicer(Wiki.Servicer):
         transcript, _ = await Transcript.create(
             context,
             messages=list(request.messages),
+            owner_id=self.state.owner_id,
         )
         self.state.transcripts[transcript.state_id] = False
         return WikiAddTranscriptResponse(
@@ -337,6 +366,8 @@ class WikiServicer(Wiki.Servicer):
         Pages, then mark the transcript ingested."""
         wiki = Wiki.ref()
         wiki_id = wiki.state_id
+        initial_state = await wiki.read(context)
+        owner_id = initial_state.owner_id
 
         async for _ in context.loop("Ingest loop"):
 
@@ -375,7 +406,10 @@ class WikiServicer(Wiki.Servicer):
                 async with librarian.iter(
                     context,
                     prompt,
-                    deps=LibrarianDeps(wiki_id=wiki_id),
+                    deps=LibrarianDeps(
+                        wiki_id=wiki_id,
+                        owner_id=owner_id,
+                    ),
                 ) as run:
                     async for node in run:
                         _log_librarian_node(log_prefix, node)
@@ -410,6 +444,9 @@ class PageServicer(Page.Servicer):
     """Servicer for an individual Page: a markdown body with
     a title."""
 
+    def authorizer(self):
+        return allow_if(any=[_caller_is_owner, is_app_internal])
+
     async def create(
         self,
         context: WriterContext,
@@ -417,6 +454,7 @@ class PageServicer(Page.Servicer):
     ) -> None:
         self.state.title = request.title
         self.state.content = request.content
+        self.state.owner_id = request.owner_id
 
     async def get(
         self,
@@ -440,12 +478,16 @@ class TranscriptServicer(Transcript.Servicer):
     """Servicer for an individual Transcript (raw conversation
     transcript)."""
 
+    def authorizer(self):
+        return allow_if(any=[_caller_is_owner, is_app_internal])
+
     async def create(
         self,
         context: WriterContext,
         request: Transcript.CreateRequest,
     ) -> None:
         self.state.messages = list(request.messages)
+        self.state.owner_id = request.owner_id
 
     async def get(
         self,
