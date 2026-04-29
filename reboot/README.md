@@ -151,7 +151,7 @@ As part of this release, you will release a new version of the `rbt` CLI. This
 newer CLI likely requires the use of the latest Cloud APIs. Therefore, we must
 update the Cloud to its latest version before we release the CLI.
 
-Follow the steps [here](../infrastructure/clusters/README.md#performing-a-release) to release
+Follow the steps [here](../../infrastructure/clusters/README.md#performing-a-release) to release
 the Cloud, all the way to `prod1`, before you continue.
 
 ### 3. Releasing PyPI packages, npm packages, and examples
