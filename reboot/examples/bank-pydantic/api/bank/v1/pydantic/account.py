@@ -25,25 +25,30 @@ AccountMethods = Methods(
     balance=Reader(
         request=None,
         response=BalanceResponse,
+        mcp=None,
     ),
     deposit=Writer(
         request=DepositRequest,
         response=None,
+        mcp=None,
     ),
     withdraw=Writer(
         request=WithdrawRequest,
         response=None,
         errors=[OverdraftError],
+        mcp=None,
     ),
     # Must use this method to create an instance of Account.
     open=Writer(
         request=None,
         response=None,
         factory=True,
+        mcp=None,
     ),
     interest=Writer(
         request=None,
         response=None,
+        mcp=None,
     ),
 )
 

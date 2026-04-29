@@ -11,7 +11,11 @@ class EchoPydanticV2State(Model):
 
 
 EchoPydanticV2Methods = Methods(
-    do_something=Writer(request=None, response=None),
+    do_something=Writer(
+        request=None,
+        response=None,
+        mcp=None,
+    ),
 )
 
 api = API(

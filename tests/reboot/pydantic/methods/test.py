@@ -5,6 +5,7 @@ from rbt.v1alpha1.errors_pb2 import (
     Unknown,
 )
 from reboot.aio.applications import Application
+from reboot.aio.external import InitializeContext
 from reboot.aio.tests import Reboot
 from tests.reboot.pydantic.methods.servicer import TestServicer
 from tests.reboot.pydantic.methods.servicer_api import (
@@ -32,8 +33,48 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_constructor(self) -> None:
         """Test `Writer` method which is a `factory`."""
+
+        async def initialize(context: InitializeContext) -> None:
+            MY_STATE_ID = "my-state-id"
+            STR_VALUE = "initialized from workflow"
+            STR_VALUE_WITH_STATE_ID = "initialized from workflow with state id"
+
+            test_ref, _ = await Test.initialize_from_workflow(
+                context,
+                str_value=STR_VALUE,
+            )
+            state = await test_ref.get_snapshot(context)
+            self.assertEqual(
+                state.snapshot.current_str,
+                STR_VALUE,
+            )
+            self.assertNotEqual(
+                test_ref.state_id,
+                MY_STATE_ID,
+            )
+
+            test_ref_with_state_id, _ = await Test.initialize_from_workflow(
+                context,
+                MY_STATE_ID,
+                str_value=STR_VALUE_WITH_STATE_ID,
+            )
+            test_ref_with_state_id_state = await test_ref_with_state_id.get_snapshot(
+                context
+            )
+            self.assertEqual(
+                test_ref_with_state_id_state.snapshot.current_str,
+                STR_VALUE_WITH_STATE_ID,
+            )
+            self.assertEqual(
+                test_ref_with_state_id.state_id,
+                MY_STATE_ID,
+            )
+
         await self.rbt.up(
-            Application(servicers=[TestServicer]),
+            Application(
+                servicers=[TestServicer],
+                initialize=initialize,
+            ),
             servers=1,
         )
 

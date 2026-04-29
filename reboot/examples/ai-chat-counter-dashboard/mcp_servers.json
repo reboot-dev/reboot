@@ -1,9 +1,8 @@
 {
   "mcpServers": {
     "counter-server": {
-      "type": "streamable-http",
       "url": "http://localhost:9991/mcp",
-      "auth": "oauth"
+      "useOAuth": true
     }
   }
 }

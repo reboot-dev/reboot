@@ -17,16 +17,17 @@ server exposes **tools** (actions the AI can call) and
 When your Reboot API includes a `User` type, `Application`
 automatically registers an MCP endpoint at `/mcp`. This means:
 
-- **`User` methods become MCP tools.** All methods on the
-  `User` type are automatically exposed as MCP tools. The AI
-  calls them without specifying a state ID — the right `User`
-  is resolved from the authenticated user. `User` typically
-  acts as an entry point, with methods that create other state
-  types.
-- **Non-`User` methods can be tools too.** Methods on other
-  types (like `Counter`) are exposed with `mcp=Tool()`. The AI
-  receives the state ID when it creates the instance and passes
-  it in subsequent calls.
+- **Methods become MCP tools via `mcp=Tool()`.** Any method
+  on any type — including `User` — is exposed as an MCP tool
+  when declared with `mcp=Tool()`. Use `mcp=None` to keep a
+  method hidden from the AI. `User` methods called without a
+  state ID resolve the right `User` from the authenticated user.
+  `User` typically acts as an entry point, with methods that
+  create other state types.
+- **Non-`User` methods work the same way.** Methods on other
+  types (like `Counter`) also use `mcp=Tool()`. The AI receives
+  the state ID when it creates the instance and passes it in
+  subsequent calls.
 - **`UI` methods become MCP tools + resources.** When the AI
   calls a `UI` tool, it receives metadata pointing to a compiled
   React app (served as an MCP resource) — that prompts the AI to
@@ -37,9 +38,9 @@ serialization, transport, session management, and state routing.
 
 ## Controlling which methods are tools
 
-`User` methods are MCP tools by default — to opt out, set
-`mcp=False`. Non-`User` methods are **not** tools by
-default — to opt in, set `mcp=Tool()`.
+Every method must explicitly declare its MCP exposure: set
+`mcp=Tool()` to expose a method as an MCP tool, or `mcp=None`
+to keep it hidden from the AI. There is no implicit default.
 
 Not every method should be an MCP tool:
 

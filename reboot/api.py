@@ -46,7 +46,7 @@ ALLOWED_DEFAULT_BY_FIELD_TYPE = {
     # `None` is allowed for `Optional` fields, but we check that separately.
 }
 
-ALLOWED_DEFAULT_FACTORY_BY_FIELD_TYPE = {
+ALLOWED_DEFAULT_FACTORY_BY_FIELD_TYPE: dict[type, type] = {
     list: list,
     dict: dict,
 }
@@ -81,6 +81,8 @@ class Model(pydantic.BaseModel):
                 # or a `Model`. Otherwise it will be a collection
                 # type like `list` or `dict`.
                 field_type_origin = field_info.annotation
+
+            assert field_type_origin is not None
 
             if field_info.default_factory is not None:
                 allowed_default_factory = ALLOWED_DEFAULT_FACTORY_BY_FIELD_TYPE.get(
@@ -229,7 +231,7 @@ class Model(pydantic.BaseModel):
 def _get_discriminated_union_info(
     field_type: type,
     field_info: Optional[FieldInfo] = None,
-) -> Optional[Tuple[str, list[Model]]]:
+) -> Optional[Tuple[str, list[type[Model]]]]:
     """
     Check if a field type is a discriminated union and return info about it.
 
@@ -248,6 +250,11 @@ def _get_discriminated_union_info(
 
     if discriminator is None:
         return None
+
+    # Reboot only supports the string-name form of pydantic
+    # discriminators (the field name); callable `Discriminator`
+    # instances aren't supported.
+    assert isinstance(discriminator, str)
 
     # Get all non-None args, since it might be an optional discriminated union.
     non_none_args = [
@@ -880,7 +887,7 @@ class MethodModel(pydantic.BaseModel):
     description: Optional[str] = None
     factory: bool = False
     kind: MethodKind
-    mcp: Union[Tool, Literal[False], None] = None
+    mcp: Optional[Tool]
 
     # TODO(rjh): we need more experience with resources
     #            in the context of AI Chat apps before
@@ -1216,19 +1223,13 @@ class API(pydantic.BaseModel):
                     request=None,
                     response=None,
                     factory=True,
+                    # The `User.create` method is reserved for auto
+                    # construction a `User` state for new AI session. It
+                    # is called by the Reboot internally and shouldn't
+                    # be exposed as an MCP tool so others can't call it
+                    # directly.
+                    mcp=None,
                 )
-
-                # Auto-enable MCP for the auto-constructed state
-                # type's methods that don't explicitly opt out.
-                # The auto-constructor is never exposed over MCP.
-                # UI methods are already MCP-only; skip them.
-                for method_name, method in (data_type.methods.items()):
-                    if method_name == AUTO_CONSTRUCT_METHOD:
-                        continue
-                    if isinstance(method, UI):
-                        continue
-                    if method.mcp is None:
-                        method.mcp = Tool()
 
         # Only pass non-None types to Pydantic.
         super().__init__(**{k: v for k, v in types.items() if v is not None})

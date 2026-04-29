@@ -306,14 +306,14 @@ First, tell Reboot where the proto files live, the \`api/\` directory,
 and where to output the generated code, \`backend/api/\`.
 
 Next, tell Reboot how to run your app. Give the app a name via
-\`--name=chat-room\` to persist state between app restarts. Watch for source
-code changes via \`--watch=...\` to restart the app whenever there is a
-modification. Finally, tell Reboot that it should use Python to run
+\`--application-name=chat-room\` to persist state between app restarts. Watch
+for source code changes via \`--watch=...\` to restart the app whenever there
+is a modification. Finally, tell Reboot that it should use Python to run
 our app.
 
 :::tip
 If you want to remove all of your changes between app restarts, do not pass the
-\`--name\` flag to \`rbt\`.
+\`--application-name\` flag to \`rbt\`.
 :::
 
 Last, specify the entrypoint for your app.
@@ -326,7 +326,7 @@ See a complete list of supported flags by running \`rbt dev run --help\`.
 generate api/
 generate --python=backend/api/
 
-dev run --name=chat-room
+dev run --application-name=chat-room
 dev run --watch=backend/src/**/*.py
 dev run --python
 dev run --application=backend/src/main.py

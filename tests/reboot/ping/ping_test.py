@@ -326,8 +326,8 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                     await session.initialize()
 
                     # UI resources use URI templates (e.g.,
-                    # `ui://counter/{ui}`), so they appear in
-                    # `list_resource_templates`, not
+                    # `ui://counter/{ui}/{cache_bust}`), so they
+                    # appear in `list_resource_templates`, not
                     # `list_resources`.
                     templates = (await session.list_resource_templates())
                     template_uris = [
@@ -339,10 +339,44 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                         f"got: {template_uris}",
                     )
 
-                    # Read the clicker UI resource.
-                    result = await session.read_resource(
-                        "ui://counter/show_clicker"
+                    # Fetch the URI from the `show_clicker` tool's
+                    # `_meta.ui.resourceUri` the way a real host
+                    # (ChatGPT, Claude) does. The URI carries a
+                    # 12-char content-hash cache-bust segment so
+                    # hosts that cache `resources/read` keyed on
+                    # the URI see a fresh URI when the build
+                    # changes.
+                    tools_result = await session.list_tools()
+                    show_tool = next(
+                        (
+                            t for t in tools_result.tools
+                            if t.name == "counter_show_clicker"
+                        ),
+                        None,
                     )
+                    self.assertIsNotNone(
+                        show_tool,
+                        f"Expected a counter_show_clicker tool, got: "
+                        f"{[t.name for t in tools_result.tools]}",
+                    )
+                    assert show_tool is not None  # For mypy.
+                    self.assertIsNotNone(
+                        show_tool.meta,
+                        "Expected `_meta` on counter_show_clicker tool",
+                    )
+                    assert show_tool.meta is not None  # For mypy.
+                    resource_uri = show_tool.meta["ui"]["resourceUri"]
+                    self.assertRegex(
+                        resource_uri,
+                        r"^ui://counter/show_clicker/[0-9a-f]{12}$",
+                        f"Expected cache-busted URI "
+                        f"`ui://counter/show_clicker/<12 hex>`, "
+                        f"got: {resource_uri}",
+                    )
+
+                    # Read the clicker UI resource via the URI the
+                    # tool meta advertises.
+                    result = await session.read_resource(resource_uri)
                     self.assertEqual(len(result.contents), 1)
 
                     content = result.contents[0]

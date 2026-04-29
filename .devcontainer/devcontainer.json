@@ -40,7 +40,7 @@
         // Open in GitHub: provides links to open the current file + line number in GitHub.
         "ziyasal.vscode-open-in-github",
         // Protocol buffer support.
-        "zxh404.vscode-proto3",
+        "drblury.protobuf-vsc",
         // Spell checker.
         "streetsidesoftware.code-spell-checker",
         // Add autotmatic line/comment wrapper.

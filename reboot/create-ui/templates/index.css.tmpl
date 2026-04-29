@@ -1,0 +1,41 @@
+:root {
+  --color-bg: #1a1a2e;
+  --color-bg-dark: #0f0f1a;
+  --color-border: #2d2d4a;
+  --color-text: #e0e0e0;
+  --color-text-muted: #888899;
+  --color-green: #4ade80;
+  --color-blue: #60a5fa;
+  --color-yellow: #fbbf24;
+  --color-pink: #f472b6;
+  --color-purple: #a78bfa;
+  --color-orange: #fb923c;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    monospace;
+}
+
+[data-theme="light"] {
+  --color-bg: #f8f9fa;
+  --color-bg-dark: #e9ecef;
+  --color-border: #dee2e6;
+  --color-text: #212529;
+  --color-text-muted: #6c757d;
+  --color-green: #16a34a;
+  --color-blue: #2563eb;
+  --color-yellow: #ca8a04;
+  --color-pink: #db2777;
+  --color-purple: #7c3aed;
+  --color-orange: #ea580c;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-mono);
+  background: var(--color-bg);
+  color: var(--color-text);
+}

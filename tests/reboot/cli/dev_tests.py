@@ -134,7 +134,7 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             e.exception.message,
             "rbt dev expunge: error: the following arguments are required: "
-            "--name\n"
+            "--application-name\n"
         )
 
     async def test_dev_run_await_maybe_expunge(self) -> None:
@@ -144,7 +144,7 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
                 '--state-directory=something',
                 'dev',
                 'run',
-                '--name=app',
+                '--application-name=app',
                 '--working-directory=.',
                 '--application=some.py',
                 '--on-backwards-incompatibility=ask',
@@ -154,7 +154,9 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
         args, _ = parser.parse_args()
 
         # Create a directory for expunge to clear.
-        os.makedirs(dot_rbt_dev_directory(args, parser) / args.name)
+        os.makedirs(
+            dot_rbt_dev_directory(args, parser) / args.application_name
+        )
 
         # Create a pipe to emulate stdin.
         reader_fd, writer_fd = os.pipe()

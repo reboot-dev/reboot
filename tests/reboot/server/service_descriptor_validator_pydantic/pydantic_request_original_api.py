@@ -10,7 +10,11 @@ class DoSomethingRequest(Model):
 
 
 EchoPydanticMethods = Methods(
-    do_something=Writer(request=DoSomethingRequest, response=None),
+    do_something=Writer(
+        request=DoSomethingRequest,
+        response=None,
+        mcp=None,
+    ),
 )
 
 api = API(

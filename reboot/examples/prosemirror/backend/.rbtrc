@@ -32,15 +32,15 @@ generate --react=../api
 dev run --nodejs
 
 # Save state between chaos restarts.
-dev run --name=docs
+dev run --application-name=docs
 
 # Run the application!
 dev run --application=src/main.ts
 
 # Use the same name to expunge that we do to run.
-dev expunge --name=docs
+dev expunge --application-name=docs
 
-serve run --name=docs
+serve run --application-name=docs
 
 # Tell `rbt serve` that this is a Node.js application.
 serve run --nodejs

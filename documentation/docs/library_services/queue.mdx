@@ -22,15 +22,27 @@ To use a `Queue`, import the library where you would like to use it.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=9-10) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.py -->
+
 ```py
 from reboot.std.collections.queue.v1.queue import Queue
 from reboot.std.item.v1.item import Item
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=4-4) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
+
 ```ts
-import { Queue } from "@reboot-dev/reboot-std/collections/queue/v1";
+import queue, { Queue } from "@reboot-dev/reboot-std/collections/queue/v1";
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -69,16 +81,28 @@ and `"my-second-queue"`. You can then call methods on these references.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=300-301) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.py -->
+
 ```py
 first_queue = Queue.ref("my-first-queue")
 second_queue = Queue.ref("my-second-queue")
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=68-69) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
+
 ```ts
 const firstQueue = Queue.ref("my-first-queue");
 const secondQueue = Queue.ref("my-second-queue");
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -89,10 +113,16 @@ const secondQueue = Queue.ref("my-second-queue");
 
 Enqueues a single [`Item`](/library_services/item) directly from a `Value`, `bytes`, or `Any`.
 
+NOTE: `Any` is only supported in Python, not TypeScript.
+
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=313-322) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.py -->
+
 ```py
-from reboot.protobuf import from_dict
+from reboot.protobuf import from_dict, pack
 
 await first_queue.enqueue(
     context,
@@ -101,13 +131,26 @@ await first_queue.enqueue(
 
 await second_queue.enqueue(context, bytes=b"my-bytes")
 
-await third_queue.enqueue(context, any=<Any>)
+await third_queue.enqueue(context, any=pack(any))
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=2-2) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
+
 ```ts
 import { Value } from "@bufbuild/protobuf";
+```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=71-77) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
+
+```ts
 await firstQueue.enqueue(context, {
   value: Value.fromJson({ details: "details-go-here" }),
 });
@@ -115,11 +158,9 @@ await firstQueue.enqueue(context, {
 await secondQueue.enqueue(context, {
   bytes: new TextEncoder().encode("my-bytes"),
 });
-
-await thirdQueue.enqueue(context, {
-  any: <Any>,
-});
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -127,8 +168,14 @@ await thirdQueue.enqueue(context, {
 
 Dequeues a single [`Item`](/library_services/item).
 
+NOTE: `Any` is only supported in Python, not TypeScript.
+
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=325-334) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.py -->
+
 ```py
 from reboot.protobuf import as_dict
 
@@ -141,18 +188,23 @@ print(item.bytes)
 item = await third_queue.dequeue(context)
 print(item.any)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=86-90) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
+
 ```ts
 const { value } = await firstQueue.dequeue(context);
 console.log(value?.toJson()["details"]);
 
 const { bytes } = await secondQueue.dequeue(context);
 console.log(bytes);
-
-const { any } = await thirdQueue.dequeue(context);
-console.log(any);
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -160,10 +212,23 @@ console.log(any);
 
 Enqueues a list of [`Item`](/library_services/item)s.
 
+NOTE: `Any` is only supported in Python, not TypeScript.
+
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=362-396) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.py -->
+
 ```py
-from reboot.protobuf import from_bool, from_dict, from_int, from_list, from_str
+from reboot.protobuf import (
+    from_bool,
+    from_dict,
+    from_int,
+    from_list,
+    from_str,
+    pack,
+)
 
 await first_queue.enqueue(
     context,
@@ -187,16 +252,29 @@ await second_queue.enqueue(
 await third_queue.enqueue(
     context,
     items=[
-        Item(any=<Any>),
-        Item(any=<Any>),
+        Item(any=pack(any)),
+        Item(any=pack(any)),
     ],
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=2-2) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
+
 ```ts
 import { Value } from "@bufbuild/protobuf";
+```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=120-136) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
+
+```ts
 await firstQueue.enqueue(context, {
   items: [
     { value: Value.fromJson(null) },
@@ -208,16 +286,15 @@ await firstQueue.enqueue(context, {
   ],
 });
 
-await secondQueue.enqueue(context, { items: [
-  { bytes: new TextEncoder().encode("some-bytes") },
-  { bytes: new TextEncoder().encode("some-more-bytes") },
-]});
-
-await thirdQueue.enqueue(context, { items: [
-  { any: <Any> },
-  { any: <Any> },
-]});
+await secondQueue.enqueue(context, {
+  items: [
+    { bytes: new TextEncoder().encode("some-bytes") },
+    { bytes: new TextEncoder().encode("some-more-bytes") },
+  ],
+});
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -225,20 +302,34 @@ await thirdQueue.enqueue(context, { items: [
 
 By specifying `bulk` and `at_most`/`atMost`, you can also dequeue [`Item`](/library_services/item)s in bulk.
 
+NOTE: `Any` is only supported in Python, not TypeScript.
+
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=398-399) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.py -->
+
 ```py
 items = await first_queue.dequeue(context, bulk=True, at_most=5)
 # items.items is a list of Items
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=143-147) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
+
 ```ts
 const { items } = await firstQueue.dequeue(context, {
   bulk: true,
   atMost: 5,
-})
+});
 // `items` is a list of Items
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>

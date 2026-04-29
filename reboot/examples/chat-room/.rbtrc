@@ -41,11 +41,11 @@ dev run --watch=backend/src/**/*.py
 dev run --python
 
 # Set the application name for commands that require it.
-cloud up --name=chat-room
-cloud down --name=chat-room --expunge
-dev expunge --name=chat-room
-dev run --name=chat-room
-serve run --name=chat-room
+cloud up --application-name=chat-room
+cloud down --application-name=chat-room --expunge
+dev expunge --application-name=chat-room
+dev run --application-name=chat-room
+serve run --application-name=chat-room
 
 # Run the application!
 dev run --application=backend/src/main.py
@@ -60,4 +60,4 @@ serve run --tls=external
 # Run the application!
 serve run --application=backend/src/main.py
 
-cloud logs --name=chat-room
+cloud logs --application-name=chat-room

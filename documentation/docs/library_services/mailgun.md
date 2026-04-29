@@ -6,9 +6,10 @@
 
 Third-party integration that supports sending email messages using the Mailgun API.
 
-To use the Mailgun integration, store your Mailgun API key as a secret
-named `mailgun-api-key`, and use that secret to authenticate to the
-integration.
+To use the Mailgun integration, set the `MAILGUN_API_KEY`
+environment variable to your Mailgun API key. See [Secrets](../learn_more/secrets.mdx)
+for how to set this for local development and for deployments to
+Reboot Cloud.
 
 ## Message {#rbtthirdpartymailgunv1message}
 A single message sent using the integration.
@@ -65,6 +66,7 @@ self.assertEqual(1, len(MockMessageServicer.emails_sent))
 ```
 
 :::note
-When using `MockMessageServicer`, ensure that the `mailgun-api-key` secret is
-available in the Secrets servicer.
+When using `MockMessageServicer`, ensure that the `MAILGUN_API_KEY`
+environment variable is set (any non-empty value works for the
+mock).
 :::

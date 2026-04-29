@@ -1,6 +1,6 @@
 {
   "name": "@reboot-dev/reboot-react",
-  "version": "0.46.0",
+  "version": "1.0.3",
   "description": "npm package for Reboot React",
   "main": "index.js",
   "type": "module",
@@ -20,15 +20,15 @@
   },
   "author": "reboot-dev",
   "dependencies": {
-    "@reboot-dev/reboot-api": "0.46.0",
-    "@reboot-dev/reboot-web": "0.46.0",
+    "@reboot-dev/reboot-api": "1.0.3",
+    "@reboot-dev/reboot-web": "1.0.3",
     "@types/uuid": "^9.0.4",
     "js-sha1": "0.7.0",
     "tslib": "^2.6.2",
     "typescript": "4.8.4",
     "uuid": "11.1.0",
-    "@modelcontextprotocol/ext-apps": "1.2.0",
-    "@modelcontextprotocol/sdk": "1.27.1",
+    "@modelcontextprotocol/ext-apps": "1.5.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@scarf/scarf": "1.4.0"
   },
   "license": "Apache-2.0",

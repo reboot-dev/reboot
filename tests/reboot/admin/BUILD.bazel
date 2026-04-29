@@ -14,7 +14,6 @@ py_test(
         # `com_github_grpc_grpc`).
         requirement("grpcio"),
         "//reboot/admin:export_import_client_py",
-        "//reboot/aio:secrets_py",
         "//reboot/aio:tests_py",
         "//tests/reboot:echo_servicers_py",
         "//reboot:settings_py",
@@ -33,7 +32,6 @@ py_test(
         requirement("grpcio"),
         "//reboot:settings_py",
         "//reboot/admin:export_import_client_py",
-        "//reboot/aio:secrets_py",
         "//reboot/aio:tests_py",
         "//reboot/ssl:localhost_py",
         "//tests/reboot:echo_servicers_py",

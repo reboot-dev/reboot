@@ -42,7 +42,7 @@ class GeneralServicer extends General.singleton.Servicer {
     // }
     //
     // Read more about the transaction methods in the Reboot documentation:
-    // https://docs.reboot.dev/develop/implement/transactions
+    // https://docs.reboot.dev/learn_more/implement/transactions
     throw new Error("Not implemented");
   }
 
@@ -62,7 +62,7 @@ class GeneralServicer extends General.singleton.Servicer {
     // }
     //
     // Read more about the writer methods in the Reboot documentation:
-    // https://docs.reboot.dev/develop/implement/writers
+    // https://docs.reboot.dev/learn_more/implement/writers
 
     throw new Error("Not implemented");
   }
@@ -80,7 +80,7 @@ class GeneralServicer extends General.singleton.Servicer {
     // }
     //
     // Read more about the reader methods in the Reboot documentation:
-    // https://docs.reboot.dev/develop/implement/readers
+    // https://docs.reboot.dev/learn_more/implement/readers
     throw new Error("Not implemented");
   }
 
@@ -100,7 +100,7 @@ class GeneralServicer extends General.singleton.Servicer {
     // }
     //
     // Read more about the writer methods in the Reboot documentation:
-    // https://docs.reboot.dev/develop/implement/writers
+    // https://docs.reboot.dev/learn_more/implement/writers
 
     throw new Error("Not implemented");
   }
@@ -121,7 +121,7 @@ class GeneralServicer extends General.singleton.Servicer {
     // }
     //
     // Read more about the transaction methods in the Reboot documentation:
-    // https://docs.reboot.dev/develop/implement/transactions
+    // https://docs.reboot.dev/learn_more/implement/transactions
     throw new Error("Not implemented");
   }
 
@@ -142,7 +142,7 @@ class GeneralServicer extends General.singleton.Servicer {
     // }
     //
     // Read more about the workflow methods in the Reboot documentation:
-    // https://docs.reboot.dev/develop/implement/workflows
+    // https://docs.reboot.dev/learn_more/implement/workflows
     throw new Error("Not implemented");
   }
 
@@ -163,7 +163,7 @@ class GeneralServicer extends General.singleton.Servicer {
     // }
     //
     // Read more about the workflow methods in the Reboot documentation:
-    // https://docs.reboot.dev/develop/implement/workflows
+    // https://docs.reboot.dev/learn_more/implement/workflows
     throw new Error("Not implemented");
   }
 
@@ -180,7 +180,7 @@ class GeneralServicer extends General.singleton.Servicer {
     // }
     //
     // Read more about the reader methods in the Reboot documentation:
-    // https://docs.reboot.dev/develop/implement/readers
+    // https://docs.reboot.dev/learn_more/implement/readers
     throw new Error("Not implemented");
   }
 
@@ -197,7 +197,7 @@ class GeneralServicer extends General.singleton.Servicer {
     // }
     //
     // Read more about the reader methods in the Reboot documentation:
-    // https://docs.reboot.dev/develop/implement/readers
+    // https://docs.reboot.dev/learn_more/implement/readers
     throw new Error("Not implemented");
   }
 
@@ -214,7 +214,7 @@ class GeneralServicer extends General.singleton.Servicer {
     // }
     //
     // Read more about the reader methods in the Reboot documentation:
-    // https://docs.reboot.dev/develop/implement/readers
+    // https://docs.reboot.dev/learn_more/implement/readers
     throw new Error("Not implemented");
   }
 }

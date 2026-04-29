@@ -29,7 +29,7 @@ class RbtGenerateTestCase(RbtGenerateBaseTestCase):
                 working_directory=root,
                 error_message=(
                     "api/testpackage/test.proto' is empty. See "
-                    "https://docs.reboot.dev/develop/schema for more "
+                    "https://docs.reboot.dev/learn_more/define/protobuf for more "
                     "information on filling out your proto file.\n"
                 ),
             )

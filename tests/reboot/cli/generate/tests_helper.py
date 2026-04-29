@@ -4,6 +4,7 @@ import os
 import reboot.cli.cli as cli
 import reboot.cli.generate as generate
 import unittest
+from reboot.aio.tests import temporary_environ
 from reboot.cli.rc import ArgumentParser
 from tests.reboot.cli.mock_exit import (
     MockExitException,
@@ -144,20 +145,26 @@ async def proto_file_includes_another_proto_in_the_same_directory(
 class RbtGenerateBaseTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
-        # Add `reboot` directories to the path so that we can import the
-        # `protoc-gen-reboot_react`, `protoc-gen-reboot_python`, `protoc-gen-mypy` and
-        # `rbt` binaries. # Applicable only for bazel tests.
-        os.environ['PATH'] = os.path.abspath(
-            os.path.join(os.getcwd(), 'reboot')
-        ) + os.pathsep + os.path.join(
-            os.getcwd(),
-            'reboot',
-        ) + os.pathsep + os.path.join(
-            os.getcwd(),
-            'protoc_gen_mypy_plugin',
-        ) + os.pathsep + os.path.abspath(
-            os.path.join(os.getcwd(), 'reboot', 'cli')
-        ) + os.pathsep + os.environ['PATH']
+        # Add `reboot` directories to the path so that we can import
+        # the `protoc-gen-reboot_react`, `protoc-gen-reboot_python`,
+        # `protoc-gen-mypy` and `rbt` binaries. Applicable only for
+        # bazel tests.
+        temporary_environ(
+            self,
+            {
+                'PATH':
+                    os.path.abspath(os.path.join(os.getcwd(), 'reboot')) +
+                    os.pathsep + os.path.join(
+                        os.getcwd(),
+                        'reboot',
+                    ) + os.pathsep + os.path.join(
+                        os.getcwd(),
+                        'protoc_gen_mypy_plugin',
+                    ) + os.pathsep + os.path.abspath(
+                        os.path.join(os.getcwd(), 'reboot', 'cli')
+                    ) + os.pathsep + os.environ['PATH']
+            },
+        )
 
         patch_exit = patch(
             'argparse.ArgumentParser.exit',

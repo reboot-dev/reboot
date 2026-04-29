@@ -438,10 +438,14 @@ def _get_all_reboot_states_by_name(
         # Merge the new file descriptor's list of messages with the combined
         # list.
         try:
-            for message_name, message_descriptor in file_descriptor.message_types_by_name.items(
+            for message_descriptor in file_descriptor.message_types_by_name.values(
             ):
                 if is_reboot_state(message_descriptor):
-                    states_by_name[message_name] = message_descriptor
+                    # Use the fully qualified name to key states, since
+                    # different packages may have states with the same
+                    # name and we want to avoid collisions.
+                    states_by_name[message_descriptor.full_name
+                                  ] = message_descriptor
 
         except AttributeError:
             # This file descriptor has no messages. That's fine - maybe it's

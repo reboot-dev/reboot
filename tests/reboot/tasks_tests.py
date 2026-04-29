@@ -627,7 +627,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
                 request: GeneralRequest,
             ) -> GeneralResponse:
 
-                async def callable():
+                async def callable() -> General.State:
                     nonlocal calls
                     calls += 1
 
@@ -649,7 +649,6 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
                         "State has changed",
                         context,
                         callable,
-                        type=General.State,
                     )
 
                     if iteration == 0:
@@ -1533,7 +1532,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
                         assert "iteration" in state.content
                         assert state.content["iteration"] == "0"
 
-                    async def write(state: General.State):
+                    async def write(state: General.State) -> str:
                         nonlocal iteration_0_write_count
                         nonlocal iteration_1_write_count
                         if iteration == 0:
@@ -1545,9 +1544,9 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
 
                     # Per-iteration inline write: should be
                     # called at most once per iteration.
-                    result = await g.per_iteration("Do write").write(
-                        context, write, type=str
-                    )
+                    result = await g.per_iteration(
+                        "Do write",
+                    ).write(context, write)
 
                     # The result should match what the writer returned
                     # (or the memoized value on re-run).
@@ -1626,6 +1625,312 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
         # called exactly once: it has a different per-iteration
         # idempotency key.
         self.assertEqual(iteration_1_write_count, 1)
+
+    async def test_workflow_on_iteration_on_method(self) -> None:
+        """Both sync and async callables registered via
+        `on_iteration_complete` and `on_method_complete` should run
+        with the expected kwargs, with iteration callables firing
+        every iteration and the method callable firing once with
+        `retrying=False` on a normal return.
+        """
+        sync_iteration_calls: list[int] = []
+        async_iteration_calls: list[int] = []
+        sync_method_calls: list[bool] = []
+        async_method_calls: list[bool] = []
+
+        class TestServicer(GeneralServicer):
+
+            def authorizer(self):
+                return allow()
+
+            async def constructor_writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse()
+
+            @classmethod
+            async def workflow(
+                cls,
+                context: WorkflowContext,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+
+                def sync_on_iteration(*, iteration: int) -> None:
+                    sync_iteration_calls.append(iteration)
+
+                async def async_on_iteration(*, iteration: int) -> None:
+                    async_iteration_calls.append(iteration)
+
+                def sync_on_method(*, retrying: bool) -> None:
+                    sync_method_calls.append(retrying)
+
+                async def async_on_method(*, retrying: bool) -> None:
+                    async_method_calls.append(retrying)
+
+                context.on_iteration_complete(sync_on_iteration)
+                context.on_iteration_complete(async_on_iteration)
+                context.on_method_complete(sync_on_method)
+                context.on_method_complete(async_on_method)
+
+                async for iteration in context.loop("Test"):
+                    if iteration == 2:
+                        break
+
+                return GeneralResponse()
+
+        await self.rbt.up(
+            Application(servicers=[TestServicer]),
+            # Effect validation re-runs the workflow body, which
+            # would double up our captures.
+            effect_validation=EffectValidation.DISABLED,
+        )
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        g, _ = await General.constructor_writer(context)
+
+        await g.workflow(context)
+
+        # Iteration callables run after every iteration that completes
+        # (i.e., iterations 0 and 1 -- iteration 2 `break`s before the
+        # loop body finishes the iteration).
+        self.assertEqual(sync_iteration_calls, [0, 1])
+        self.assertEqual(async_iteration_calls, [0, 1])
+
+        # Method callables run exactly once, with `retrying=False` on
+        # a normal return.
+        self.assertEqual(sync_method_calls, [False])
+        self.assertEqual(async_method_calls, [False])
+
+    async def test_workflow_on_iteration_on_method_with_effect_validation(
+        self,
+    ) -> None:
+        """With effect validation ENABLED, the framework re-runs the
+        workflow method body once to validate effects. Reboot does NOT
+        do per-iteration effect validation: during the validation
+        re-run, the control loop is expected to break/return at the
+        last persisted iteration without executing any further
+        iteration body. So:
+
+        - `on_iteration_complete` runs ONCE for the real iteration
+          that completed (during the validation re-run, the loop
+          breaks before any iteration body finishes -- so no extra
+          runs).
+        - `on_method_complete` runs twice: the first attempt with
+          `retrying=True` because the framework signals
+          effect-validation re-run by raising
+          `EffectValidationRetry` out of the method body, and the
+          second attempt with `retrying=False` after the validation
+          re-run returns normally.
+        """
+        iteration_calls: list[int] = []
+        method_calls: list[bool] = []
+
+        class TestServicer(GeneralServicer):
+
+            def authorizer(self):
+                return allow()
+
+            async def constructor_writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse()
+
+            @classmethod
+            async def workflow(
+                cls,
+                context: WorkflowContext,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+
+                def on_iteration(*, iteration: int) -> None:
+                    iteration_calls.append(iteration)
+
+                def on_method(*, retrying: bool) -> None:
+                    method_calls.append(retrying)
+
+                context.on_iteration_complete(on_iteration)
+                context.on_method_complete(on_method)
+
+                async for iteration in context.loop("Test"):
+                    if iteration == 1:
+                        break
+
+                return GeneralResponse()
+
+        await self.rbt.up(
+            Application(servicers=[TestServicer]),
+            # Effect validation is the default; pass it explicitly to
+            # be obvious about what this test is exercising.
+            effect_validation=EffectValidation.ENABLED,
+        )
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        g, _ = await General.constructor_writer(context)
+
+        await g.workflow(context)
+
+        # Iteration 0 completes for real; iteration 1's body `break`s
+        # before completing. During effect validation the framework
+        # re-runs the method body and the loop is expected to break at
+        # the last persisted iteration (which is 1, where we break) --
+        # so no iteration body re-runs to completion and no extra
+        # `on_iteration_complete` call is made.
+        self.assertEqual(iteration_calls, [0])
+
+        # The method body runs twice. The first attempt ends with
+        # `retrying=True` because the framework triggers the
+        # validation re-run by raising `EffectValidationRetry` out of
+        # the body; the second (validation) attempt returns normally
+        # with `retrying=False`.
+        self.assertEqual(method_calls, [True, False])
+
+    async def test_workflow_iteration_complete_exception_retries_iteration(
+        self,
+    ) -> None:
+        """If `on_iteration_complete` raises, the exception
+        propagates out of the iteration body and the workflow
+        method gets retried -- including this iteration, since
+        the iteration counter has not yet been advanced.
+        """
+        # Track how many times we execute iteration 0. Without the
+        # retry-includes-this-iteration semantics this would be 1;
+        # with them it should be 2 (the iteration runs, the callable
+        # raises, the iteration runs again, the callable succeeds).
+        iteration_0_runs = 0
+        iteration_1_runs = 0
+        on_iteration_runs = 0
+
+        class TestServicer(GeneralServicer):
+
+            def authorizer(self):
+                return allow()
+
+            async def constructor_writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse()
+
+            @classmethod
+            async def workflow(
+                cls,
+                context: WorkflowContext,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+
+                def on_iteration(*, iteration: int) -> None:
+                    nonlocal on_iteration_runs
+                    on_iteration_runs += 1
+                    if iteration == 0 and on_iteration_runs == 1:
+                        raise RuntimeError("Forcing retry of iteration 0")
+
+                context.on_iteration_complete(on_iteration)
+
+                async for iteration in context.loop("Test"):
+                    nonlocal iteration_0_runs
+                    nonlocal iteration_1_runs
+                    if iteration == 0:
+                        iteration_0_runs += 1
+                    elif iteration == 1:
+                        iteration_1_runs += 1
+                        break
+
+                return GeneralResponse()
+
+        await self.rbt.up(
+            Application(servicers=[TestServicer]),
+            # Effect validation re-runs the workflow body, which would
+            # double up our captures.
+            effect_validation=EffectValidation.DISABLED,
+        )
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        g, _ = await General.constructor_writer(context)
+
+        await g.workflow(context)
+
+        # The exception fired by the callable was raised AFTER
+        # iteration 0 completed but BEFORE iteration 0 was persisted,
+        # so the workflow retries with iteration still at 0.
+        self.assertEqual(iteration_0_runs, 2)
+        # Iteration 1 only ever runs once.
+        self.assertEqual(iteration_1_runs, 1)
+        # The callable ran twice for iteration 0 (since once of them
+        # raised) and never for iteration 1 because of `break`.
+        self.assertEqual(on_iteration_runs, 2)
+
+    async def test_workflow_method_complete_exception_retries_workflow(
+        self,
+    ) -> None:
+        """If `on_method_complete` raises after a normal return,
+        the exception propagates out of the method body and the
+        workflow gets retried.
+        """
+        method_runs = 0
+        on_method_runs = 0
+
+        class TestServicer(GeneralServicer):
+
+            def authorizer(self):
+                return allow()
+
+            async def constructor_writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse()
+
+            @classmethod
+            async def workflow(
+                cls,
+                context: WorkflowContext,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                nonlocal method_runs
+                method_runs += 1
+
+                def on_method(*, retrying: bool) -> None:
+                    nonlocal on_method_runs
+                    on_method_runs += 1
+                    # Raise on the very first attempt to force a
+                    # retry; subsequent attempts succeed.
+                    if on_method_runs == 1:
+                        raise RuntimeError("Forcing retry of workflow method")
+
+                context.on_method_complete(on_method)
+
+                return GeneralResponse()
+
+        await self.rbt.up(
+            Application(servicers=[TestServicer]),
+            # Effect validation re-runs the workflow body, which would
+            # double up our captures.
+            effect_validation=EffectValidation.DISABLED,
+        )
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        g, _ = await General.constructor_writer(context)
+
+        await g.workflow(context)
+
+        # The method ran twice: once where the callable raised, then
+        # once as part of the retry where the callable succeeded.
+        self.assertEqual(method_runs, 2)
+        self.assertEqual(on_method_runs, 2)
 
 
 if __name__ == '__main__':

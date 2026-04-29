@@ -97,7 +97,13 @@ Before writing code, analyze the user's request:
    application types? Each gets a `Transaction` on `User`
    that calls `<Type>.create(context)`.
 3. **State shape**: Fields, types — lists, nested objects,
-   primitives. Each gets `Field(tag=N)`.
+   primitives. Each gets `Field(tag=N)`. **Nested Model
+   subobjects** (preferences, profile, config — owned 1:1 by a
+   parent state) must be `Optional[X] = Field(tag=N, default=None)`
+   and hydrated in the parent's factory `create` Writer; nested
+   Models can't take `default=` or `default_factory=` (Gotcha #21).
+   For collections, prefer `list[Item]` with `default_factory=list`
+   over a single-nested wrapper.
 4. **Operations**: Map to the right method type:
    - `Reader` — read-only queries
    - `Writer` — single-state mutations
@@ -123,21 +129,20 @@ types:
   state is typically empty. Its methods are `Transaction`s that
   create instances of application types, or `Reader`s that find
   the IDs of existing application type instances in indexes that
-  have well-known IDs of their own. `User` methods are
-  automatically exposed as MCP tools.
+  have well-known IDs of their own.
 - **Application types** (e.g., `Counter`) hold the
   actual application state. They need a `create` Writer with
-  `factory=True` for construction. Their methods require explicit
-  `mcp=Tool()` to be AI-callable.
+  `factory=True` for construction.
 
 ### Tool Exposure Control
 
-- **User methods are tools by default.** All methods on
-  `User` are automatically callable by the AI.
-- **`mcp=False`**: Opt a User method OUT of being AI-callable.
-  Use for human-only actions or to reduce context bloat.
-- **`mcp=Tool()`**: Opt an application type method IN to being
-  AI-callable. Required on methods of non-User types.
+Every method must explicitly declare its MCP exposure:
+
+- **`mcp=Tool()`**: Expose the method as an AI-callable tool.
+  Required on every method — including `User` methods — that
+  the AI should be able to call.
+- **`mcp=None`**: Hide the method from the AI. Use for
+  human-only actions or to reduce context bloat.
 - **`Tool()` options**: `Tool(name="custom_name", title="Title")`
   to override the default tool name or add a human-readable title.
 
@@ -168,8 +173,8 @@ No `@mcp.tool()` decorators.
 
 ### State is Durable
 
-State survives restarts. Set `dev run --name=<name>` in `.rbtrc` to
-persist across dev restarts. Use `uv run rbt dev expunge --name=<name>` to reset.
+State survives restarts. Set `dev run --application-name=<name>` in `.rbtrc` to
+persist across dev restarts. Use `uv run rbt dev expunge --application-name=<name>` to reset.
 
 ## Project Structure
 
@@ -212,19 +217,19 @@ application directory.**
 4. `uv run rbt generate`
 5. Write servicer (`backend/src/servicers/<name>.py`)
 6. Write `main.py`
-7. Scaffold web: `package.json`, tsconfigs, `vite.config.ts`,
-   `index.css`
+7. `npm create @reboot-dev/ui`
 8. `cd web && npm install`
 9. `uv run rbt generate` (React bindings need `node_modules`)
-10. Write React: `index.html`, `main.tsx`, `App.tsx`,
-    `App.module.css`
+10. Customize React UIs: edit `App.tsx` files in `web/ui/*/`
 11. `cd web && npm run build`
 12. Create `mcp_servers.json` with
-    `{"mcpServers":{"<name>":{"type":"streamable-http","url":"http://localhost:9991/mcp"}}}`
+    `{"mcpServers":{"<name>":{"url":"http://localhost:9991/mcp","useOAuth":true}}}`
 13. **STOP.** Do NOT run the app yourself. Print the
     following run instructions exactly, then wait:
 
     ```
+    Project directory: <absolute path to the current working directory>
+
     To run (each in a separate terminal, from the project directory):
 
       uv run rbt dev run          # start backend
@@ -232,13 +237,14 @@ application directory.**
 
     To test with MCP inspector (separate terminal):
 
-      npx @mcpjam/inspector@v2.0.4 --config mcp_servers.json --server <name>
+      npx @mcpjam/inspector@2.4.0 --config mcp_servers.json --server <name>
     ```
 
     Replace `<name>` with the actual server name from
-    `mcp_servers.json`. Then suggest a first prompt the user
-    can try in the inspector (e.g., "Create a new todo list
-    and show it to me").
+    `mcp_servers.json`. Print the real absolute path of the
+    project directory (not the literal placeholder). Then
+    suggest a first prompt the user can try in the inspector
+    (e.g., "Create a new todo list and show it to me").
 
 ## Inline Patterns
 
@@ -273,7 +279,7 @@ dev run --watch=backend/**/*.py
 dev run --python
 
 # Save state between restarts.
-dev run --name=<project-name>
+dev run --application-name=<project-name>
 
 # Run the application!
 dev run --application=backend/src/main.py
@@ -292,7 +298,7 @@ dev run:hmr --mcp-frontend-host=http://localhost:4444
 dev run:dist --mcp-frontend-host=""
 
 # When expunging, expunge that state we've saved.
-dev expunge --name=<project-name>
+dev expunge --application-name=<project-name>
 ```
 
 ### `pyproject.toml`
@@ -306,14 +312,14 @@ dependencies = [
     "httpx>=0.27,<1.0",
     "uuid7>=0.1.0",
     "anyio>=4.0.0",
-    "reboot>=0.46.0",
+    "reboot>=1.0.3",
 ]
 
 [tool.rye]
 dev-dependencies = [
     "mypy==1.18.1",
     "types-protobuf>=4.24.0.20240129",
-    "reboot>=0.46.0",
+    "reboot>=1.0.3",
 ]
 
 virtual = true
@@ -330,7 +336,8 @@ Rules:
 - `User` type with empty state and `Transaction` methods
   that create application type instances
 - Application types with their own state and methods
-- Application type methods need `mcp=Tool()` to be AI-callable
+- All methods need explicit `mcp=Tool()` (AI-callable) or
+  `mcp=None` (hidden from AI)
 - Application types need a `create` Writer with `factory=True`
 - `api = API(User=Type(...), <AppType>=Type(...))`
 
@@ -367,6 +374,7 @@ class UserState(Model):
 
 class CounterState(Model):
     value: int = Field(tag=1, default=0)
+    description: str = Field(tag=2, default="")
 
 
 class ValueResponse(Model):
@@ -390,6 +398,7 @@ api = API(
                 "human-readable; pass it to future tool "
                 "calls where needed, but no need to tell "
                 "the human what it is.",
+                mcp=Tool(),
             ),
         ),
     ),
@@ -407,6 +416,7 @@ api = API(
                 request=None,
                 response=None,
                 factory=True,
+                mcp=None,
             ),
             get=Reader(
                 request=None,
@@ -477,7 +487,7 @@ export const DashboardApp: FC<DashboardConfig> = ({ personalizedMessage }) => {
 };
 ```
 
-#### mcp=False Example
+#### mcp=None Example
 
 Hide a method from the AI (e.g., for human-only actions):
 
@@ -488,7 +498,7 @@ confirm_dangerous_action=Writer(
     request=ConfirmRequest,
     response=None,
     description="Confirm a dangerous action.",
-    mcp=False,
+    mcp=None,
 ),
 ```
 
@@ -509,6 +519,53 @@ messages, etc.):
 The counter example above shows the full User + application
 type pattern. Apply the same structure for any application type,
 adding whatever Writers and Readers your app needs.
+
+#### Nested Model State Patterns
+
+For application types that own a single nested `Model`
+sub-object (preferences blob, profile, config, etc.):
+
+- Declare the field as `Optional[Sub] = Field(tag=N, default=None)`.
+  Nested non-Optional `Model` types reject both `default=` and
+  `default_factory=` (Gotcha #21).
+- Hydrate the sub-object in the parent's factory `create`
+  Writer, so callers never observe the `None`:
+
+```python
+from reboot.api import API, Field, Methods, Model, Transaction, Type, User as RbtUser, Writer
+from typing import Optional
+
+class GuestPreferences(Model):
+    meal_type: str = Field(tag=1, default="")
+    calorie_level: str = Field(tag=2, default="")
+    dietary_restrictions: str = Field(tag=3, default="")
+
+class Guest(Model):
+    name: str = Field(tag=1, default="")
+    # Single nested Model: Optional + default=None, populated
+    # by the factory `create` below.
+    preferences: Optional[GuestPreferences] = Field(tag=2, default=None)
+
+class CreateRequest(Model):
+    name: str = Field(tag=1)
+    meal_type: str = Field(tag=2, default="")
+    calorie_level: str = Field(tag=3, default="")
+    dietary_restrictions: str = Field(tag=4, default="")
+
+# Servicer side (in `backend/src/servicers/<name>.py`):
+class GuestServicer(Guest.Servicer):
+    async def create(self, context, *, name, meal_type, calorie_level, dietary_restrictions):
+        self.state.name = name
+        self.state.preferences = GuestPreferences(
+            meal_type=meal_type,
+            calorie_level=calorie_level,
+            dietary_restrictions=dietary_restrictions,
+        )
+```
+
+If the prompt suggests _plural_ sub-objects ("each guest's
+preferences"), prefer `list[GuestPreferences]` with
+`default_factory=list` — lists are exempt from this rule.
 
 #### Workflow Example (Long-Running)
 
@@ -552,7 +609,7 @@ Rules:
   `from <pkg>.v1.<name>_rbt import User, Counter`
 - Each type gets its own servicer class
   (e.g., `UserServicer`, `CounterServicer`)
-- `User.Servicer` / `Counter.Servicer` base, `allow()` authorizer
+- `User.Servicer` / `Counter.Servicer` base
 - Context types from `reboot.aio.contexts`:
   - `ReaderContext` — read-only
   - `WriterContext` — single-state mutation
@@ -566,7 +623,6 @@ Rules:
 
 ```python
 from ai_chat_counter.v1.counter_rbt import Counter, User
-from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import (
     ReaderContext,
     TransactionContext,
@@ -576,14 +632,15 @@ from reboot.aio.contexts import (
 
 class UserServicer(User.Servicer):
 
-    def authorizer(self):
-        return allow()
-
     async def create_counter(
         self,
         context: TransactionContext,
     ) -> User.CreateCounterResponse:
         """Create a new Counter and return its ID."""
+        # Factory create: pass request fields as keyword args
+        # directly — do NOT wrap in a Request object.
+        # No-args: Counter.create(context)
+        # With args: Counter.create(context, title="...", count=0)
         counter, _ = await Counter.create(context)
         return User.CreateCounterResponse(
             counter_id=counter.state_id,
@@ -591,9 +648,6 @@ class UserServicer(User.Servicer):
 
 
 class CounterServicer(Counter.Servicer):
-
-    def authorizer(self):
-        return allow()
 
     async def create(self, context) -> None:
         # State is initialized with defaults; nothing to do.
@@ -622,33 +676,137 @@ class CounterServicer(Counter.Servicer):
 
 #### Workflow Servicer
 
-Workflow methods are `@classmethod` — no `self.state` access:
+Workflow methods are `@classmethod` — no `self`, no `self.state`. To
+call back into the current instance, use the **state class**
+imported from `<name>_rbt` (e.g. `MyType.ref()`), NOT `cls`. Inside a
+Workflow, calling `<StateClass>.ref()` with no arguments is special:
+it picks up the current `state_id` from `WorkflowContext`
+automatically, so `MyType.ref()` resolves to a ref to the running
+workflow's own instance.
 
 ```python
 from datetime import timedelta
 from reboot.aio.contexts import WorkflowContext
+# Import the state class — this is what `.ref()` is called on,
+# NOT `cls`. `cls` inside the classmethod is `MyTypeBaseServicer`.
+from <pkg>.v1.<name>_rbt import MyType
 
-# In the application type's servicer:
-@classmethod
-async def do_ping_periodically(
-    cls,
-    context: WorkflowContext,
-    request: MyType.DoPingPeriodicallyRequest,
-) -> MyType.DoPingPeriodicallyResponse:
-    async for iteration in context.loop(
-        "Ping periodically",
-        interval=timedelta(seconds=request.period_seconds),
-    ):
-        await MyType.ref().do_ping(context)
-        pings_sent = iteration + 1  # iteration starts at 0
-        if pings_sent >= request.num_pings:
-            break
 
-    state = await MyType.ref().read(context)
-    return MyType.DoPingPeriodicallyResponse(
-        num_pings=state.num_pings,
-    )
+class MyTypeServicer(MyType.Servicer):
+
+    @classmethod
+    async def do_ping_periodically(
+        cls,
+        context: WorkflowContext,
+        request: MyType.DoPingPeriodicallyRequest,
+    ) -> MyType.DoPingPeriodicallyResponse:
+        async for iteration in context.loop(
+            "Ping periodically",
+            interval=timedelta(seconds=request.period_seconds),
+        ):
+            # `MyType.ref()` with no args is Workflow-only magic:
+            # it reads `state_id` from `WorkflowContext`, returning
+            # a ref to this workflow's own instance. Do NOT write
+            # `cls.ref()` or `self.ref()` here — see Critical
+            # Gotcha #19.
+            await MyType.ref().do_ping(context)
+            pings_sent = iteration + 1  # iteration starts at 0.
+            if pings_sent >= request.num_pings:
+                break
+
+        # `.read()` is only valid on the workflow's own no-arg
+        # ref; a foreign-state read like
+        # `OtherType.ref(id).read(context)` raises a "only
+        # supported within workflows" RuntimeError. Call a Reader
+        # method on the foreign type instead — see Gotcha #23.
+        state = await MyType.ref().read(context)
+        return MyType.DoPingPeriodicallyResponse(
+            num_pings=state.num_pings,
+        )
 ```
+
+**Use inline writers for workflow-only state changes.** When the
+mutation is only ever performed by this workflow, do _not_ add a
+separate `store_xxx` Writer to the API just so the workflow can
+call it. Pass an `async (state) -> ...` function to
+`.idempotently("alias").write(context, fn)`:
+
+```python
+async def increment_count(state):
+    state.num_pings += 1
+
+await MyType.ref().idempotently(
+    "Increment ping count",
+).write(context, increment_count)
+```
+
+The idempotency alias is a human-readable string that survives
+workflow restarts — the inline writer runs at most once per
+alias. Anti-pattern: defining a `store_count` Writer in the API
+just so the workflow can `await MyType.ref().store_count(context)`
+to bump a counter. That adds an unnecessary indirection.
+Reserve declared Writers for operations that are also called
+from outside the workflow.
+
+For "run every time" (e.g., re-fetching a remote value on each
+loop iteration), use `.always().write(context, fn)` instead of
+`.idempotently("...").write(...)`.
+
+#### Scheduling a Workflow from a Transaction
+
+A workflow can only be `await`-ed directly from an
+`ExternalContext` (e.g. a bootstrap script) or from another
+`WorkflowContext`. In **any** other context — most commonly a
+`TransactionContext` kicking off a workflow on a state it just
+created — the workflow must be **scheduled**, not awaited
+directly. Use `.schedule()` to fire-and-forget from a
+transaction:
+
+```python
+# In a User's Transaction method that creates a Game and wants
+# its autoplay workflow to start running:
+class UserServicer(User.Servicer):
+
+    async def create_game(
+        self,
+        context: TransactionContext,
+        request: User.CreateGameRequest,
+    ) -> User.CreateGameResponse:
+        game, _ = await Game.create(context, ...)
+        # GOOD — schedule the workflow from the transaction.
+        # Request type is empty (`AutoplayRequest`), so just
+        # pass `context`:
+        await Game.ref(game.state_id).schedule().autoplay(context)
+        # If the workflow request had fields (e.g.
+        # `do_ping_periodically(num_pings, period_seconds)`),
+        # pass them as keyword args:
+        await Game.ref(game.state_id).schedule().do_ping_periodically(
+            context,
+            num_pings=10,
+            period_seconds=1.0,
+        )
+        # BAD — wrapping in `request=` raises
+        # `TypeError: ... got an unexpected keyword argument
+        # 'request'` (Gotcha #9):
+        # await Game.ref(game.state_id).schedule().autoplay(
+        #     context, request=Game.AutoplayRequest()
+        # )
+        # BAD — awaiting a workflow directly from a Transaction
+        # raises `TypeError: ... 'Autoplay' is a workflow and
+        # must be scheduled from a 'TransactionContext' via
+        # `await [...].schedule([...]).Autoplay(context, [...])`
+        # (Gotcha #20):
+        # await Game.ref(game.state_id).autoplay(context)
+        return User.CreateGameResponse(game_id=game.state_id)
+```
+
+`.schedule(when=timedelta(...))` delays the workflow by a
+duration. `.schedule()` with no argument starts it as soon as
+the transaction commits.
+
+Same rule from a `WriterContext` or `ReaderContext`: use
+`.schedule()`. Only `ExternalContext` and `WorkflowContext` can
+await a workflow directly.
 
 ### `main.py`
 
@@ -682,6 +840,10 @@ if __name__ == "__main__":
 
 ### `web/package.json`
 
+**Use explicit per-UI build scripts as shown below. Do NOT create a
+`build.js` or any auto-discovery wrapper — use `npm run build:<name>`
+scripts directly.**
+
 ```json
 {
   "name": "<project-name>-web",
@@ -696,10 +858,10 @@ if __name__ == "__main__":
     "build:watch": "concurrently \"npm:build:watch:*\""
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "1.2.0",
-    "@modelcontextprotocol/sdk": "1.27.1",
-    "@reboot-dev/reboot-react": "0.46.0",
-    "@reboot-dev/reboot-api": "0.46.0",
+    "@modelcontextprotocol/ext-apps": "1.5.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@reboot-dev/reboot-react": "1.0.3",
+    "@reboot-dev/reboot-api": "1.0.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zod": "^3.25.0"
@@ -724,6 +886,11 @@ for each UI, and update the `build` script to chain them:
 ```
 
 ### `web/vite.config.ts`
+
+**CRITICAL: Copy this file EXACTLY. Do NOT refactor, generalize, or
+add recursive directory scanning. The flat `outDir: "dist"` and
+`output: "${name}.html"` pattern is required — nested output paths
+will break the MCP server's UI discovery.**
 
 ```typescript
 // Vite configuration for Reboot UIs.
@@ -1216,6 +1383,12 @@ Adapt the CSS module to your app's needs. The CSS variables from
    all `.py` files; `__init__.py` causes conflicts.
 3. **`Field(tag=N)` required on every field.** Tags must be unique
    within each Model class. Start at 1.
+   **Defaults:** State fields must use proto3 zero-value defaults:
+   `default=0` for int, `default=""` for str, `default=False` for
+   bool, `default_factory=list` for lists. Non-zero defaults like
+   `default="red"` or `default=1` are NOT supported (protobuf
+   limitation). Set initial values in a servicer method marked as
+   a factory instead. Request/response fields need no default.
 4. **Helper Model types are standalone imports:**
    `from <pkg>.v1.<name> import MyItem` —
    NOT `Counter.MyItem` (that doesn't exist).
@@ -1223,27 +1396,116 @@ Adapt the CSS module to your app's needs. The CSS variables from
    `.XxxRequest`, `.XxxResponse`.
 6. **React bindings use camelCase:** Python `from_index` becomes
    TypeScript `fromIndex`.
-7. **`User` methods are auto-exposed as MCP tools.** Application
-   type methods require explicit `mcp=Tool()`. Use `mcp=False` to
-   hide a method from the AI.
+7. **Every method requires explicit `mcp=`.** Use `mcp=Tool()`
+   to expose a method as an AI-callable tool (required on all
+   types, including `User`). Use `mcp=None` to hide it from
+   the AI.
 8. **Application types need `factory=True`** on their `create`
    Writer method.
-9. **`npm install` before second `rbt generate`** — React bindings
-   need `node_modules` to exist.
-10. **Generated React hook:** `use<TypeName>()` — e.g.,
+9. **Method call signatures: pass request fields as kwargs,
+   never wrap in a Request object.** This applies to every
+   call shape — factory constructors, regular Writers/Readers/
+   Transactions, and `.schedule().method()` for workflows.
+   Right shapes:
+
+   - `Type.constructor_method(context, field=val, ...)`
+   - `Type.ref(id).some_method(context, field=val, ...)`
+   - `Type.ref(id).schedule().my_workflow(context, field=val, ...)`
+   - For empty request types, omit fields entirely:
+     `Type.ref(id).schedule().autoplay(context)`.
+
+   Wrong:
+
+   - `Type.constructor_method(context, request=Type.ConstructorMethodRequest(...))`
+   - `Type.ref(id).some_method(context, request=Type.SomeMethodRequest(...))`
+
+   The `request=` kwarg raises `TypeError: ... got an unexpected keyword argument 'request'` at runtime.
+
+10. **`npm install` before second `rbt generate`** — React bindings
+    need `node_modules` to exist.
+11. **Generated React hook:** `use<TypeName>()` — e.g.,
     `useCounter()`, `useInventory()`, etc.
-11. **Generated React import path:**
+12. **Generated React import path:**
     `@api/<pkg>/v1/<name>_rbt_react`
-12. **Generated Python import path:**
+13. **Generated Python import path:**
     `from <pkg>.v1.<name>_rbt import User, Counter`
-13. **Use `--default-config=hmr`** in `.rbtrc` (not `--default=hmr`).
-14. **`UI(path="web/ui/<name>")`** — path is relative to project root.
-15. **`UI(request=<ConfigType>)`** passes config as React component
+14. **Use `--default-config=hmr`** in `.rbtrc` (not `--default=hmr`).
+15. **`UI(path="web/ui/<name>")`** — path is relative to project root.
+16. **`UI(request=<ConfigType>)`** passes config as React component
     props. `UI(request=None)` passes no props.
-16. **Register all servicers** in `main.py`:
+17. **Register all servicers** in `main.py`:
     `Application(servicers=[UserServicer, CounterServicer])`.
-17. The requests and responses on the frontend are always Zod types
+18. The requests and responses on the frontend are always Zod types
     generated from the Python Models.
+19. **Inside a Workflow classmethod, `cls` is the servicer, not the
+    state class.** To call methods on the running instance, use the
+    state class imported from `<name>_rbt`:
+    `await MyType.ref().some_method(context)`. A no-arg `.ref()`
+    inside a Workflow picks up `state_id` from `WorkflowContext`
+    automatically. **Do NOT write `cls.ref()`** — it fails with
+    `TypeError: <YourType>BaseServicer.ref() missing 1 required positional argument: 'self'`, because `ref` on the BaseServicer
+    is an instance method, not the state-class factory. `self.ref()`
+    is also wrong because there is no `self` in a classmethod.
+20. **Workflows must be scheduled, not awaited, from a
+    `TransactionContext`/`WriterContext`/`ReaderContext`.** Only
+    `ExternalContext` and `WorkflowContext` can `await` a workflow
+    directly. From a transaction that kicks off a workflow on a
+    state it just created, use `.schedule()`:
+    `await MyType.ref(id).schedule().autoplay(context)`.
+    Writing `await MyType.ref(id).autoplay(context)` from a
+    transaction raises `TypeError: ... '<Method>' is a workflow and must be scheduled from a 'TransactionContext' via `await [...].schedule([...]).<Method>(context, [...])``.
+    See the "Scheduling a Workflow from a Transaction" example
+    in the Workflow Servicer section.
+21. **Nested `Model` fields can't take `default_factory` or
+    `default`.** Two related rules — both raise `UserPydanticError`
+    at startup, not at field-construction time, so they look like
+    runtime errors but are static schema problems:
+
+    - `default_factory=` is only supported for `list` and `dict`.
+      `Field(tag=N, default_factory=MyModel)` raises
+      `Field <X> in model <Y> uses default_factory which is not supported for type <T>. Only list, dict types can have a default_factory currently.`
+    - A non-Optional `Model`-typed field also can't take
+      `default=`, even with an instance:
+      `Field <X> in model <Y> is a non-optional Model type and cannot have a default value. Use Optional for Model types with empty default.`
+
+    The fix is to declare the field optional and construct lazily,
+    e.g. `preferences: Optional[UserPreferences] = Field(tag=N, default=None)`,
+    then materialize it inside the servicer (or in a factory
+    `create` method) when the parent state is first written.
+
+22. **`.per_workflow()` is implicit; don't write it.** Inside a
+    workflow, `MyType.ref().read(context)` and
+    `MyType.ref().write(context, fn)` already pick the right
+    semantics: `.always()` inside an `until` block,
+    `.per_iteration()` inside a `context.loop`, and
+    `.per_workflow()` everywhere else. Only reach for an explicit
+    `.per_iteration()` (override the default to per-iteration when
+    _not_ inside a loop) or `.always()` (re-run every time). A
+    plain `MyType.ref().per_workflow().some_method(context)` adds
+    nothing beyond `MyType.ref().some_method(context)`.
+23. **`.read(context)` only works on the workflow's own
+    no-argument `MyType.ref()`.** Inside a workflow,
+    `MyType.ref().read(context)` reads the workflow's own state
+    via the no-argument `ref()` (picks up `state_id` from
+    `WorkflowContext`). A foreign read like
+    `OtherType.ref(other_id).read(context)` raises
+    `RuntimeError: read() is currently only supported within workflows` — the constraint isn't actually "must be inside
+    a workflow" (you are) but "must be the workflow's own
+    no-argument ref." For cross-state reads, call a Reader
+    method on the target type. The same rule applies to inline
+    `.write(context, fn)`.
+
+    ```python
+    # GOOD — workflow's own state.
+    state = await MyType.ref().read(context)
+
+    # GOOD — cross-state read via a Reader method.
+    response = await User.ref(user_id).get_history(context)
+
+    # BAD — raises the "only supported within workflows"
+    # RuntimeError despite being inside one. Use a Reader.
+    # user_state = await User.ref(user_id).read(context)
+    ```
 
 ## Update Flow
 

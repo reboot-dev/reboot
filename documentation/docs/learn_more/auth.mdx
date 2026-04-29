@@ -82,9 +82,9 @@ const [bank] = await Bank.create(
 ### From React
 
 ```tsx
-import { useRebootContext } from "@reboot-dev/reboot-react";
+import { useRebootClient } from "@reboot-dev/reboot-react";
 
-const { setBearerToken } = useRebootContext();
+const { setBearerToken } = useRebootClient();
 
 setBearerToken(token);
 ```
@@ -162,16 +162,16 @@ was valid:
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/aio/auth/token_verifiers.py&lines=30-35) -->
+(CODE:src=../../../reboot/aio/auth/token_verifiers.py&lines=26-31) -->
 <!-- The below code snippet is automatically added from ../../../reboot/aio/auth/token_verifiers.py -->
 
 ```py
+@abstractmethod
+async def verify_token(
+    self,
+    context: ReaderContext,
     token: Optional[str],
 ) -> VerifyTokenResult:
-    """Verify the bearer token.
-
-    Returns:
-        * `Auth` if the token is valid and the caller is
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->

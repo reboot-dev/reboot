@@ -1,16 +1,16 @@
+import os
 import string
 import sys
 import unittest
 from rbt.v1alpha1 import errors_pb2, tasks_pb2, tasks_pb2_grpc
 from reboot.aio.applications import Application
-from reboot.aio.auth.admin_auth import ADMIN_SECRET_NAME
 from reboot.aio.external import ExternalContext
 from reboot.aio.headers import AUTHORIZATION_HEADER
-from reboot.aio.secrets import MockSecretSource, Secrets
 from reboot.aio.tests import Reboot
 from reboot.aio.types import ApplicationId, StateRef, StateTypeName
 from reboot.controller.application_config import LocalApplicationConfig
 from reboot.server.service_descriptor_validator import ProtoValidationError
+from reboot.settings import ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
 from tests.reboot import echo_rbt
 from tests.reboot.bank import BankServicer
 from tests.reboot.echo_rbt import Echo, EchoWriterStub
@@ -21,15 +21,14 @@ from tests.reboot.greeter_servicers import MyGreeterServicer
 _ECHO_ID = 'test-5678'
 _ECHO_REF = StateRef.from_id(Echo.__state_type_name__, _ECHO_ID)
 
-TEST_ADMIN_SECRET = 'test-admin-secret'
+TEST_SECRET_REBOOT_ADMIN_TOKEN = 'test-admin-secret'
 
 
 class RebootTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
-        Secrets.set_secret_source(
-            MockSecretSource({ADMIN_SECRET_NAME: TEST_ADMIN_SECRET.encode()})
-        )
+        os.environ[ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
+                  ] = TEST_SECRET_REBOOT_ADMIN_TOKEN
 
         self.rbt = Reboot()
         await self.rbt.start()
@@ -231,7 +230,12 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
         stub = tasks_pb2_grpc.TasksStub(channel)
         list_tasks_response = await stub.ListTasks(
             tasks_pb2.ListTasksRequest(),
-            metadata=((AUTHORIZATION_HEADER, f'Bearer {TEST_ADMIN_SECRET}'),),
+            metadata=(
+                (
+                    AUTHORIZATION_HEADER,
+                    f'Bearer {TEST_SECRET_REBOOT_ADMIN_TOKEN}'
+                ),
+            ),
         )
         self.assertEqual(len(list_tasks_response.tasks), 1)
         self.assertEqual(list_tasks_response.tasks[0].task_id, task_id)
@@ -255,7 +259,12 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
         stub = tasks_pb2_grpc.TasksStub(channel)
         list_tasks_response = await stub.ListTasks(
             tasks_pb2.ListTasksRequest(),
-            metadata=((AUTHORIZATION_HEADER, f'Bearer {TEST_ADMIN_SECRET}'),),
+            metadata=(
+                (
+                    AUTHORIZATION_HEADER,
+                    f'Bearer {TEST_SECRET_REBOOT_ADMIN_TOKEN}'
+                ),
+            ),
         )
 
         self.assertEqual(len(list_tasks_response.tasks), 1)

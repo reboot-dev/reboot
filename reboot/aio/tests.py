@@ -41,6 +41,22 @@ def assert_called_twice_with(
     testcase.assertEqual(mock_obj.call_count, 2)
 
 
+def temporary_environ(
+    testcase: unittest.TestCase,
+    values: dict[str, str],
+) -> None:
+    """Set env vars for the duration of the test, restoring their
+    prior state (including removing keys that weren't set before) on
+    test cleanup.
+
+    Call from `asyncSetUp` / `setUp` before anything that reads the
+    env vars runs.
+    """
+    patcher = mock.patch.dict(os.environ, values)
+    patcher.start()
+    testcase.addCleanup(patcher.stop)
+
+
 class Reboot(reboot.aio.reboot.Reboot):
     """A testing specific version of `Reboot` that takes an `Application`
     instead of explicit keyword args."""

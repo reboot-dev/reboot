@@ -4,6 +4,7 @@ import asyncio
 import bitarray  # type: ignore[import]
 import grpc
 import hashlib
+import inspect
 import log.log
 import logging
 import math
@@ -2848,8 +2849,26 @@ class SidecarStateManager(
                             "to iterate"
                         )
 
+                    completed_iteration = task_effect.iteration
+
+                    # Call iteration-complete callables BEFORE
+                    # advancing and persisting the iteration
+                    # counter, so that if a callable raises the
+                    # exception propagates out of the iteration
+                    # body and the entire workflow method gets
+                    # retried -- including this iteration, since
+                    # we haven't yet recorded its completion. The
+                    # list is intentionally NOT cleared --
+                    # callables are persistent across iterations
+                    # of the same method invocation and only get
+                    # cleared when the method itself completes.
+                    # Async callables are awaited to completion.
+                    for callable in context._on_iteration_complete:
+                        result = callable(iteration=completed_iteration)
+                        if inspect.isawaitable(result):
+                            await result
+
                     async with self._mutator_locks[state_type][state_ref]:
-                        completed_iteration = task_effect.iteration
                         task_effect.iteration += 1
 
                         await self._store(
@@ -2919,7 +2938,26 @@ class SidecarStateManager(
         context.loop = loop
         context.within_loop = lambda: within_loop.get()
 
-        yield self.complete_task
+        retrying = True
+        try:
+            yield self.complete_task
+            retrying = False
+        finally:
+            # The workflow method body has completed. Call
+            # method-complete callables with `retrying=` indicating
+            # whether the framework is about to retry, then clear
+            # *both* callable lists so any re-invocation on this same
+            # `WorkflowContext` starts with a fresh registration. If a
+            # callable raises, the exception propagates out of the
+            # workflow method body and the entire workflow method gets
+            # retried.
+            method_callables = context._on_method_complete
+            context._on_method_complete = []
+            context._on_iteration_complete = []
+            for callable in method_callables:
+                result = callable(retrying=retrying)
+                if inspect.isawaitable(result):
+                    await result
 
     @asynccontextmanager
     async def transaction(
@@ -3146,6 +3184,22 @@ class SidecarStateManager(
         state_type_name = context.state_type_name
         state_ref = context._state_ref
 
+        # If there's an in-flight transaction for this state with a
+        # matching idempotency key, wait for it to finish rather than
+        # starting a duplicate. After it commits the normal check below
+        # will find the cached response. This avoids
+        # https://github.com/reboot-dev/mono/issues/5361.
+        transaction: Optional[StateManager.Transaction]
+        if isinstance(context, TransactionContext) and not context.nested:
+            transaction = self._participant_transactions[state_type_name].get(
+                state_ref
+            )
+            if (
+                transaction is not None and
+                transaction.idempotency_key == context.idempotency_key
+            ):
+                await transaction
+
         # Recover idempotent mutations on demand if necessary.
         #
         # NOTE: we do this even if we are within a transaction because
@@ -3181,8 +3235,8 @@ class SidecarStateManager(
         # If we haven't found an idempotent mutation and we're within
         # a transaction, check and see if the transaction includes it.
         if idempotent_mutation is None and context.transaction_ids is not None:
-            transaction: Optional[StateManager.Transaction] = (
-                self._participant_transactions[state_type_name].get(state_ref)
+            transaction = self._participant_transactions[state_type_name].get(
+                state_ref
             )
 
             if (

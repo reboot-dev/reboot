@@ -17,7 +17,7 @@ The application contains MCP functionality. Test it using MCPJam:
 
 ```
 # From the root of the Bazel repo:
-npx @mcpjam/inspector@v2.0.18 --config reboot/ping/mcp_servers.json --server ping-server
+npx @mcpjam/inspector@v2.4.0 --config reboot/ping/mcp_servers.json --server ping-server
 ```
 
 ## On the local cluster
@@ -58,5 +58,5 @@ echo "CghEZXNjcmliZQ==" | base64 -d | websocat -b ws://a7dum7c5z5d.reboot-cloud-
 ./rbt.sh cloud logs \
   --cloud-url=http://cloud.reboot-cloud-cluster.localhost:9990 \
   --api-key=OUTPUT_BY_YOUR_UP_COMMAND \
-  --name=ping
+  --application-name=ping
 ```

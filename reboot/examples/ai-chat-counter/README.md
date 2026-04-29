@@ -28,7 +28,7 @@ The project includes `mcp_servers.json` for testing with MCPJam Inspector:
 
 ```bash
 # In another terminal, run MCPJam:
-npx @mcpjam/inspector@v2.0.18 --config mcp_servers.json --server counter-server
+npx @mcpjam/inspector@2.4.0 --config mcp_servers.json --server counter-server
 ```
 
 This opens a browser-based inspector where you can test tools.

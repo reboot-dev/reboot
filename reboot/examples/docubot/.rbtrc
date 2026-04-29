@@ -33,10 +33,10 @@ generate --nodejs=api
 # or 'bundler'. We choose 'nodenext' which requires imports with file extensions.
 generate --nodejs-extensions
 
-dev run --name=docubot
+dev run --application-name=docubot
 
 dev run --nodejs
 
 dev run --application=backend/src/main.ts
 
-dev expunge --name=docubot
+dev expunge --application-name=docubot

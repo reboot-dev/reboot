@@ -50,25 +50,18 @@ async def test_chat_room(self) -> None:
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
-#### Mocking Secrets
+#### Setting Secrets
 
-Some servicers may use secrets for connecting to external services or handling
-sensitive data. You can mock secrets using
-`reboot.aio.secrets.MockSecretSource`, which lets you override the secrets with
-values you provide.
+Some servicers may use secrets for connecting to external services or
+handling sensitive data. In tests, set the required environment
+variables before starting the test harness.
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/boutique/backend/tests/full_app_test.py&lines=26-33) -->
+(CODE:src=../../../reboot/examples/boutique/backend/tests/full_app_test.py&lines=25-25) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/boutique/backend/tests/full_app_test.py -->
 
 ```py
-Secrets.set_secret_source(
-    MockSecretSource(
-        {
-            MAILGUN_API_KEY_SECRET_NAME: MAILGUN_API_KEY.encode(),
-        }
-    )
-)
+os.environ["MAILGUN_API_KEY"] = MAILGUN_API_KEY
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->

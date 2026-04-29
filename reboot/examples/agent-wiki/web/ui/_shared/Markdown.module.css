@@ -1,0 +1,178 @@
+/* Rendered markdown body. Targets child tags ReactMarkdown emits
+   so the author can write plain CommonMark/GFM without knowing
+   about CSS modules. */
+.markdown {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text);
+  background: var(--color-bg-dark);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 16px 20px;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  color: var(--color-blue);
+  margin: 20px 0 8px;
+  line-height: 1.25;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.markdown h1 {
+  font-size: 20px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.markdown h2 {
+  font-size: 16px;
+  color: var(--color-purple);
+}
+
+.markdown h3 {
+  font-size: 14px;
+  color: var(--color-green);
+}
+
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.markdown p {
+  margin: 8px 0;
+}
+
+.markdown a {
+  color: var(--color-yellow);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 176, 0, 0.4);
+  text-underline-offset: 2px;
+}
+
+.markdown a:hover {
+  text-decoration-color: var(--color-yellow);
+}
+
+.markdown strong {
+  color: var(--color-text);
+  font-weight: bold;
+}
+
+.markdown em {
+  color: var(--color-text);
+  font-style: italic;
+}
+
+.markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: rgba(0, 212, 255, 0.08);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 0 4px;
+  color: var(--color-blue);
+}
+
+.markdown pre {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 10px 0;
+}
+
+.markdown pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--color-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.markdown blockquote {
+  margin: 10px 0;
+  padding: 6px 12px;
+  border-left: 3px solid var(--color-pink);
+  color: var(--color-text-muted);
+  background: rgba(255, 42, 109, 0.05);
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 22px;
+  margin: 8px 0;
+  list-style-position: outside;
+}
+
+.markdown ul {
+  list-style: disc;
+}
+
+.markdown ol {
+  list-style: decimal;
+}
+
+.markdown li {
+  margin: 2px 0;
+}
+
+.markdown li::marker {
+  color: var(--color-blue);
+}
+
+.markdown hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 16px 0;
+}
+
+.markdown table {
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 13px;
+  width: 100%;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--color-border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.markdown th {
+  background: rgba(0, 212, 255, 0.08);
+  color: var(--color-blue);
+  font-weight: bold;
+}
+
+.markdown img {
+  max-width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
+/* GFM task list checkboxes. */
+.markdown input[type="checkbox"] {
+  accent-color: var(--color-blue);
+  margin-right: 4px;
+}

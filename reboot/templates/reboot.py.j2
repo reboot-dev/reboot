@@ -1343,25 +1343,6 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 return effects.response  # type: ignore[return-value]
         {% elif method.options.proto.kind == 'transaction' %}
             assert transaction is not None
-            # Re-check for an idempotent mutation now that we hold the
-            # transaction semaphore. This is a fix for a potential race:
-            #   https://github.com/reboot-dev/mono/issues/5361
-            #
-            # If a previous call's commit ran (updating the bloom filter
-            # and, for constructors, making the state visible in memory
-            # via `self._states`) after our initial idempotent mutation
-            # check but before we acquired the semaphore, then without
-            # this re-check, constructors could raise
-            # `StateAlreadyConstructed` and non-constructors could
-            # re-execute the mutation, potentially corrupting state.
-            idempotent_mutation = await self._state_manager.check_for_idempotent_mutation(
-                context
-            )
-            if idempotent_mutation is not None:
-                await self._state_manager.transaction_participant_abort(transaction)
-                response = {{ method.output_type }}()
-                response.ParseFromString(idempotent_mutation.response)
-                return response
             async with self._state_manager.transaction(
                 context,
                 self._servicer.__state_type__,
@@ -2778,45 +2759,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endfor %}
 {% if state.proto.uis | length > 0 %}
 
-        # UI tools — allow AI to trigger loading of UIs.
-{% set ui_suffix = "" if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED else " for " + state.proto.name %}
-{% for ui in state.proto.uis %}
-        @mcp.tool(
-            name="{{ mcp_name_prefix }}{{ ui.name }}",
-            title="Show {{ ui.title }}",
-            description="{{ ui.description if ui.description else 'Opens the ' + ui.name + ' interface' + ui_suffix + '.' }}",
-            meta={"ui": {"resourceUri": "ui://{{ state.proto.name | to_snake }}/{{ ui.name }}"}},
-        )
-{% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
-        async def {{ mcp_name_prefix }}{{ ui.name }}_tool(
-            ctx: IMPORT_mcp_server_fastmcp.Context,
-        ) -> dict:
-            _ids: dict[IMPORT_reboot_aio_types.StateTypeName, str | None] = {
-                IMPORT_reboot_aio_types.StateTypeName("{{ state.proto.full_name }}"):
-                    IMPORT_reboot_mcp_context.get_mcp_user_id(ctx),
-            }
-            # Also include all other auto-construct IDs.
-            for _auto_construct_full_name in auto_construct_state_type_full_names:
-                if _auto_construct_full_name not in _ids:
-                    _ids[_auto_construct_full_name] = (
-                        IMPORT_reboot_mcp_context.get_mcp_user_id(ctx))
-            return {"ids": _ids}
-{% else %}
-        async def {{ mcp_name_prefix }}{{ ui.name }}_tool(
-            ctx: IMPORT_mcp_server_fastmcp.Context,
-            {{ mcp_name_prefix }}id: str,
-        ) -> dict:
-            _ids: dict[IMPORT_reboot_aio_types.StateTypeName, str | None] = {
-                IMPORT_reboot_aio_types.StateTypeName("{{ state.proto.full_name }}"): {{ mcp_name_prefix }}id,
-            }
-            # Include all auto-construct IDs.
-            for _auto_construct_full_name in auto_construct_state_type_full_names:
-                _ids[_auto_construct_full_name] = (
-                    IMPORT_reboot_mcp_context.get_mcp_user_id(ctx))
-            return {"ids": _ids}
-{% endif %}
-
-{% endfor %}
         # Map UI method names to web app paths.
         _ui_app_paths: dict[str, str] = {
 {% for ui in state.proto.uis %}
@@ -2834,6 +2776,124 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endfor %}
         }
 
+        # Cache-bust tokens: content hash of each UI's built
+        # `index.html`, or a per-process random fallback if the
+        # artifact is missing. Embedded in the tool's
+        # `_meta.ui.resourceUri` below and in the `@mcp.resource`
+        # URI template so hosts that aggressively cache MCP
+        # resource reads (e.g., ChatGPT) see a fresh URI after
+        # each rebuild. Computed once at servicer setup since
+        # `--config=dist` restarts the process on deploy. The
+        # helper falls back to a per-process token (and logs)
+        # rather than raising if the project root can't be
+        # located — deploys with unusual filesystem layouts
+        # still start cleanly.
+        _ui_cache_busts: dict[str, str] = (
+            IMPORT_reboot_mcp_ui.compute_ui_cache_busts(
+                __file__,
+                _ui_app_paths,
+                _ui_artifact_paths,
+            )
+        )
+
+        # Register each UI tool's recompute inputs in the
+        # server-local registry. The patched `FastMCP.list_tools`
+        # in `reboot.mcp.factories` reads this on every
+        # `tools/list` call and rewrites `_meta.ui.resourceUri`
+        # with a freshly-hashed token so clients that re-list on
+        # new sessions (Claude, MCPJam) pick up dist-file changes
+        # without a server restart. Kept server-local — never
+        # rides on the wire in `_meta`.
+{% for ui in state.proto.uis %}
+        IMPORT_reboot_mcp_ui.register_ui_tool_for_cache_bust(
+            tool_name="{{ mcp_name_prefix }}{{ ui.name }}",
+            caller_file=__file__,
+            ui_path=_ui_app_paths["{{ ui.name }}"],
+            ui_name="{{ ui.name }}",
+            artifact_path=_ui_artifact_paths.get("{{ ui.name }}"),
+            uri_prefix=(
+                "ui://{{ state.proto.name | to_snake }}/"
+                "{{ ui.name }}/"
+            ),
+        )
+{% endfor %}
+
+        # UI tools — allow AI to trigger loading of UIs.
+{% set ui_suffix = "" if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED else " for " + state.proto.name %}
+{% for ui in state.proto.uis %}
+        @mcp.tool(
+            name="{{ mcp_name_prefix }}{{ ui.name }}",
+            title="Show {{ ui.title }}",
+            description="{{ ui.description if ui.description else 'Opens the ' + ui.name + ' interface' + ui_suffix + '.' }}",
+            meta={
+                "ui": {
+                    "resourceUri": (
+                        "ui://{{ state.proto.name | to_snake }}/{{ ui.name }}/"
+                        + _ui_cache_busts["{{ ui.name }}"]
+                    ),
+                },
+            },
+        )
+{% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
+        async def {{ mcp_name_prefix }}{{ ui.name }}_tool(
+            ctx: IMPORT_mcp_server_fastmcp.Context,
+        ) -> dict:
+            _ids: dict[IMPORT_reboot_aio_types.StateTypeName, str | None] = {
+                IMPORT_reboot_aio_types.StateTypeName("{{ state.proto.full_name }}"):
+                    IMPORT_reboot_mcp_context.get_mcp_user_id(ctx),
+            }
+            # Also include all other auto-construct IDs.
+            for _auto_construct_full_name in auto_construct_state_type_full_names:
+                if _auto_construct_full_name not in _ids:
+                    _ids[_auto_construct_full_name] = (
+                        IMPORT_reboot_mcp_context.get_mcp_user_id(ctx))
+            result: dict = {"ids": _ids}
+
+            # Invariant: the MCP server has a bearer token for this tool
+            # call because opening a UI requires an authenticated
+            # session. This is the only place where the token can be
+            # passed to the iframe, since the iframe has no other access
+            # to the MCP session credentials. The token is read by
+            # `McpConnector` from `ontoolresult` and forwarded to
+            # `RebootClientProvider` for all Reboot calls inside the
+            # app. This tool is also invoked by `McpConnector` to
+            # refresh an expired token, so the field must always be
+            # present when a token is available.
+            reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
+            if reboot_context is not None and reboot_context.bearer_token is not None:
+                result["bearer_token"] = reboot_context.bearer_token
+            return result
+{% else %}
+        async def {{ mcp_name_prefix }}{{ ui.name }}_tool(
+            ctx: IMPORT_mcp_server_fastmcp.Context,
+            {{ mcp_name_prefix }}id: str,
+        ) -> dict:
+            _ids: dict[IMPORT_reboot_aio_types.StateTypeName, str | None] = {
+                IMPORT_reboot_aio_types.StateTypeName("{{ state.proto.full_name }}"): {{ mcp_name_prefix }}id,
+            }
+            # Include all auto-construct IDs.
+            for _auto_construct_full_name in auto_construct_state_type_full_names:
+                _ids[_auto_construct_full_name] = (
+                    IMPORT_reboot_mcp_context.get_mcp_user_id(ctx))
+            result: dict = {"ids": _ids}
+
+            # Invariant: the MCP server has a bearer token for this tool
+            # call because opening a UI requires an authenticated
+            # session. This is the only place where the token can be
+            # passed to the iframe, since the iframe has no other access
+            # to the MCP session credentials. The token is read by
+            # `McpConnector` from `ontoolresult` and forwarded to
+            # `RebootClientProvider` for all Reboot calls inside the
+            # app. This tool is also invoked by `McpConnector` to
+            # refresh an expired token, so the field must always be
+            # present when a token is available.
+            reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
+            if reboot_context is not None and reboot_context.bearer_token is not None:
+                result["bearer_token"] = reboot_context.bearer_token
+            return result
+{% endif %}
+
+{% endfor %}
         def _get_reboot_url_from_request(
             ctx: IMPORT_mcp_server_fastmcp.Context,
         ) -> str:
@@ -2859,7 +2919,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             return f"{scheme}://{host}"
 
         @mcp.resource(
-            "ui://{{ state.proto.name | to_snake }}/{ui}",
+            "ui://{{ state.proto.name | to_snake }}/{ui}/{cache_bust}",
             name="{{ state.proto.name | to_snake }}-ui",
             title="{{ state.proto.name }} UI",
             description="{{ state.proto.name }} UIs.",
@@ -2868,7 +2928,15 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         def {{ state.proto.name | to_snake }}_ui_resource(
             ctx: IMPORT_mcp_server_fastmcp.Context,
             ui: str,
+            cache_bust: str,
         ) -> str:
+            # `cache_bust` comes from the URI's trailing
+            # segment: the content-hash token that `list_tools`
+            # wrote into the tool's `_meta.ui.resourceUri`. We
+            # pass it to `ui_html` so the per-process HTML
+            # cache keys on it — same token = cache hit,
+            # changed token (because the dist file changed) =
+            # cache miss = fresh read.
             reboot_url = _get_reboot_url_from_request(ctx)
             if ui not in _ui_app_paths:
                 raise ValueError(f"Unknown UI: {ui}")
@@ -2877,6 +2945,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 reboot_url,
                 ui_name=ui,
                 artifact_path=_ui_artifact_paths.get(ui),
+                cache_bust=cache_bust,
             )
 
 {% endif %}
@@ -2996,19 +3065,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 )
             ).read(context)
 
-        @IMPORT_typing.overload
-        async def write(
-            self,
-            idempotency_alias: str,
-            context: IMPORT_reboot_aio_contexts.WorkflowContext,
-            writer: {{ state.proto.name }}BaseServicer.InlineWriterCallable[None],
-            __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
-            *,
-            type: type = type(None),
-        ) -> None:
-            ...
-
-        @IMPORT_typing.overload
         async def write(
             self,
             idempotency_alias: str,
@@ -3016,25 +3072,22 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             writer: {{ state.proto.name }}BaseServicer.InlineWriterCallable[{{ state.proto.name }}BaseServicer.InlineWriterCallableResult],
             __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
             *,
-            type: type[{{ state.proto.name }}BaseServicer.InlineWriterCallableResult],
+            type: IMPORT_reboot_aio_workflows.Type | IMPORT_reboot_aio_workflows._Unset = IMPORT_reboot_aio_workflows._UNSET,
         ) -> {{ state.proto.name }}BaseServicer.InlineWriterCallableResult:
-            ...
+            """Perform an "inline write" within a workflow.
 
-        async def write(
-            self,
-            idempotency_alias: str,
-            context: IMPORT_reboot_aio_contexts.WorkflowContext,
-            writer: {{ state.proto.name }}BaseServicer.InlineWriterCallable[{{ state.proto.name }}BaseServicer.InlineWriterCallableResult],
-            __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
-            *,
-            type: type = type(None),
-        ) -> {{ state.proto.name }}BaseServicer.InlineWriterCallableResult:
-            """Perform an "inline write" within a workflow."""
+            `type=` is optional: when omitted, `writer`'s return
+            annotation is used (falling back to `type(None)` if
+            there is none).
+            """
+            type_t, _ = IMPORT_reboot_aio_workflows._resolve_callable_return_type(
+                writer, type,
+            )
             return await (
                 self.per_iteration(idempotency_alias) if context.within_loop()
                 else self.per_workflow(idempotency_alias)
             ).write(
-                context, writer, __options__, type=type
+                context, writer, __options__, type=type_t
             )
 
         class _Idempotently:
@@ -3081,14 +3134,14 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                         'are you using this class without Reboot?'
                     )
 
-                async def read():
+                async def read() -> {{ state.pb2_name }}.{{ state.proto.name }}:
                     assert servicer._middleware is not None
                     return await servicer._middleware._state_manager.read(
                         context, servicer.__state_type__
                     )
 
                 if idempotency.always:
-                    return await read()
+                    return {{ state.proto.name }}FromProto(await read())
 
                 state_type_name = IMPORT_reboot_aio_types.StateTypeName('{{ state.proto.full_name }}')
 
@@ -3130,44 +3183,26 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
                     return {{ state.proto.name }}FromProto(protobuf_state)
 
-            @IMPORT_typing.overload
-            async def write(
-                self,
-                context: IMPORT_reboot_aio_contexts.WorkflowContext,
-                writer: {{ state.proto.name }}BaseServicer.InlineWriterCallable[None],
-                __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
-                *,
-                type: type = type(None),
-                check_type: bool = True,
-            ) -> None:
-                ...
-
-            @IMPORT_typing.overload
             async def write(
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
                 writer: {{ state.proto.name }}BaseServicer.InlineWriterCallable[{{ state.proto.name }}BaseServicer.InlineWriterCallableResult],
                 __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
                 *,
-                type: type[{{ state.proto.name }}BaseServicer.InlineWriterCallableResult],
+                type: IMPORT_reboot_aio_workflows.Type | IMPORT_reboot_aio_workflows._Unset = IMPORT_reboot_aio_workflows._UNSET,
                 check_type: bool = True,
             ) -> {{ state.proto.name }}BaseServicer.InlineWriterCallableResult:
-                ...
-
-            async def write(
-                self,
-                context: IMPORT_reboot_aio_contexts.WorkflowContext,
-                writer: {{ state.proto.name }}BaseServicer.InlineWriterCallable[{{ state.proto.name }}BaseServicer.InlineWriterCallableResult],
-                __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
-                *,
-                type: type = type(None),
-                check_type: bool = True,
-            ) -> {{ state.proto.name }}BaseServicer.InlineWriterCallableResult:
+                # `type=` is optional: when omitted, `writer`'s
+                # return annotation is used (falling back to
+                # `type(None)` when there is none).
+                type_t, _ = IMPORT_reboot_aio_workflows._resolve_callable_return_type(
+                    writer, type,
+                )
                 return await self._write(
                     context,
                     writer,
                     __options__,
-                    type_result=type,
+                    type_result=type_t,
                     check_type=check_type,
                 )
 
@@ -3177,7 +3212,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 writer: {{ state.proto.name }}BaseServicer.InlineWriterCallable[{{ state.proto.name }}BaseServicer.InlineWriterCallableResult],
                 __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
                 *,
-                type_result: type,
+                type_result: IMPORT_reboot_aio_workflows.TypeT,
                 check_type: bool,
             ) -> {{ state.proto.name }}BaseServicer.InlineWriterCallableResult:
                 unidempotently = self._how == IMPORT_reboot_aio_workflows.ALWAYS
@@ -3213,7 +3248,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 writer: {{ state.proto.name }}BaseServicer.InlineWriterCallable[{{ state.proto.name }}BaseServicer.InlineWriterCallableResult],
                 __options__: IMPORT_reboot_aio_call.Options = IMPORT_reboot_aio_call.Options(),
                 *,
-                type_result: type,
+                type_result: IMPORT_reboot_aio_workflows.TypeT,
                 check_type: bool,
                 unidempotently: bool,
                 checkpoint: IMPORT_reboot_aio_idempotency.Checkpoint,
@@ -3304,10 +3339,10 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                             response.ParseFromString(idempotent_mutation.response)
                             result: {{ state.proto.name }}BaseServicer.InlineWriterCallableResult = IMPORT_pickle.loads(response.value)
 
-                            if check_type and type(result) is not type_result:
+                            if check_type and not isinstance(result, IMPORT_reboot_aio_workflows._isinstance_type(type_result)):
                                 raise TypeError(
                                     f"Stored result of type '{type(result).__name__}' from 'writer' "
-                                    f"is not of expected type '{type_result.__name__}'; have you changed "
+                                    f"is not of expected type '{IMPORT_reboot_aio_workflows._format_type(type_result)}'; have you changed "
                                     "the 'type' that you expect after having stored a result?"
                                 )
 
@@ -3338,10 +3373,10 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
                                 {{ state.proto.name }}ToProto(typed_state, protobuf_state)
 
-                                if check_type and type(result) is not type_result:
+                                if check_type and not isinstance(result, IMPORT_reboot_aio_workflows._isinstance_type(type_result)):
                                     raise TypeError(
                                         f"Result of type '{type(result).__name__}' from 'writer' is "
-                                        f"not of expected type '{type_result.__name__}'; "
+                                        f"not of expected type '{IMPORT_reboot_aio_workflows._format_type(type_result)}'; "
                                         "did you specify an incorrect 'type'?"
                                     )
 
@@ -5084,32 +5119,12 @@ class {{ client.proto.state_name }}:
             {% endif %}
 
             {% if not constants.has_write and client.state is not none %}
-            @IMPORT_typing.overload
-            async def write(
-                self,
-                context: IMPORT_reboot_aio_contexts.WorkflowContext,
-                writer: {{ client.proto.state_name }}BaseServicer.InlineWriterCallable[None],
-                *,
-                type: type = type(None),
-            ) -> None:
-                ...
-
-            @IMPORT_typing.overload
             async def write(
                 self,
                 context: IMPORT_reboot_aio_contexts.WorkflowContext,
                 writer: {{ client.proto.state_name }}BaseServicer.InlineWriterCallable[{{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult],
                 *,
-                type: type[{{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult],
-            ) -> {{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult:
-                ...
-
-            async def write(
-                self,
-                context: IMPORT_reboot_aio_contexts.WorkflowContext,
-                writer: {{ client.proto.state_name }}BaseServicer.InlineWriterCallable[{{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult],
-                *,
-                type: type = type(None),
+                type: IMPORT_reboot_aio_workflows.Type | IMPORT_reboot_aio_workflows._Unset = IMPORT_reboot_aio_workflows._UNSET,
             ) -> {{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult:
                 if self._weak_reference._servicer is None:
                     raise RuntimeError(
@@ -5118,12 +5133,18 @@ class {{ client.proto.state_name }}:
                         "is important for you!"
                     )
 
+                # `type=` is optional: when omitted, `writer`'s
+                # return annotation is used.
+                type_t, _ = IMPORT_reboot_aio_workflows._resolve_callable_return_type(
+                    writer, type,
+                )
+
                 return await {{ client.proto.state_name }}BaseServicer.WorkflowState._Idempotently._write_validating_effects(
                     self._weak_reference._servicer,
                     self._idempotency,
                     context,
                     writer,
-                    type_result=type,
+                    type_result=type_t,
                     check_type=not self._idempotency.always,
                     unidempotently=self._idempotency.always,
                     checkpoint=context.checkpoint(),
@@ -6103,34 +6124,22 @@ class {{ client.proto.state_name }}:
         {% endif %}
 
         {% if not constants.has_write and client.state is not none %}
-        @IMPORT_typing.overload
-        async def write(
-            self,
-            context: IMPORT_reboot_aio_contexts.WorkflowContext,
-            writer: {{ client.proto.state_name }}BaseServicer.InlineWriterCallable[None],
-            *,
-            type: type = type(None),
-        ) -> None:
-            ...
-
-        @IMPORT_typing.overload
         async def write(
             self,
             context: IMPORT_reboot_aio_contexts.WorkflowContext,
             writer: {{ client.proto.state_name }}BaseServicer.InlineWriterCallable[{{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult],
             *,
-            type: type[{{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult],
+            type: IMPORT_reboot_aio_workflows.Type | IMPORT_reboot_aio_workflows._Unset = IMPORT_reboot_aio_workflows._UNSET,
         ) -> {{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult:
-            ...
+            """Perform an "inline write" within a workflow.
 
-        async def write(
-            self,
-            context: IMPORT_reboot_aio_contexts.WorkflowContext,
-            writer: {{ client.proto.state_name }}BaseServicer.InlineWriterCallable[{{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult],
-            *,
-            type: type = type(None),
-        ) -> {{ client.proto.state_name }}BaseServicer.InlineWriterCallableResult:
-            """Perform an "inline write" within a workflow."""
+            `type=` is optional: when omitted, `writer`'s return
+            annotation is used.
+            """
+            # We forward `type=` along to the inner `write` (which
+            # also infers if not passed). Pass through whichever
+            # form the user supplied -- explicit class or the
+            # `_UNSET` sentinel to trigger inference downstream.
             return await (
                 self.always() if context.within_until()
                 else (
@@ -6953,6 +6962,19 @@ class {{ client.proto.state_name }}:
         {% endif %}
 
         if __idempotency__ is None:
+            __args__: tuple[IMPORT_typing.Any, ...] = (
+                __context__,
+            )
+            if __state_id__ is not None:
+                # Don't include `state_id` if it is `None`, so that
+                # we won't break the positional argument deduction.
+                __args__ += (__state_id__,)
+            __args__ += (
+                {% if method.has_non_none_request %}
+                __request__,
+                {% endif %}
+                __options__,
+            )
             if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
                 return await (
                     __cls__.always() if __context__.within_until()
@@ -6961,21 +6983,11 @@ class {{ client.proto.state_name }}:
                         else __cls__.per_workflow()
                     )
                 ).{{ method.proto.name }}(
-                    __context__,
-                    __state_id__,
-                    {% if method.has_non_none_request %}
-                    __request__,
-                    {% endif %}
-                    __options__,
+                    *__args__
                 )
             elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
                 return await __cls__.idempotently().{{ method.proto.name }}(
-                    __context__,
-                    __state_id__,
-                    {% if method.has_non_none_request %}
-                    __request__,
-                    {% endif %}
-                    __options__,
+                    *__args__
                 )
 
         __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None

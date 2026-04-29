@@ -60,8 +60,9 @@ def py_test_with_workspace_dir(
         visibility = visibility,
         main = main,
         tags = tags + [
-            # Force test to be executed unconditionally. Cached results may be
-            # old since this test tests more than what's in verstions_test.py.
+            # Force test to be executed unconditionally. Cached results
+            # may be old since this test tests things on the filesystem
+            # that aren't expressable as a Bazel dependency.
             "external",
         ],
     )

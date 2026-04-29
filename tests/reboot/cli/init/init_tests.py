@@ -21,7 +21,7 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
             argv=[
                 'rbt',
                 'init',
-                '--name=reboot_hello',
+                '--application-name=reboot_hello',
             ]
         )
 
@@ -118,7 +118,7 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
             argv=[
                 'rbt',
                 'init',
-                '--name=asyncio',
+                '--application-name=asyncio',
             ]
         )
         args, _ = parser.parse_args()
@@ -139,7 +139,7 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
             argv=[
                 'rbt',
                 'init',
-                '--name=unsupported_name',
+                '--application-name=unsupported_name',
                 '--frontend=unsupported',
             ]
         )
@@ -159,7 +159,7 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
             argv=[
                 'rbt',
                 'init',
-                '--name=unsupported_name',
+                '--application-name=unsupported_name',
                 '--backend=unsupported',
             ]
         )

@@ -366,6 +366,99 @@ class SubcommandParser(_Parser):
         super().__init__(parser=parser, cwd=cwd)
         self._subcommand = subcommand
 
+    def add_renamed_flag(
+        self,
+        old_flag: str,
+        new_flag: str,
+    ) -> None:
+        """
+        Register a renamed flag's old name as an alias.
+
+        When the old flag is used, a warning is printed directing the
+        user to the new name, but no error occurs. Both flags store
+        their input under the same name (derived from `new_flag`).
+        """
+        # Derive `dest` from `new_flag` the same way argparse does.
+        dest = new_flag.lstrip('-').replace('-', '_')
+
+        # Find the primary action so we can share its duplicate-
+        # tracking list. This ensures that using both the old and
+        # new flag is detected as a duplicate.
+        primary_action = None
+        for action in self._parser._actions:
+            if (
+                action.dest == dest and
+                isinstance(action, StoreOnceActionBase)
+            ):
+                primary_action = action
+                break
+
+        assert primary_action is not None, (
+            f"add_renamed_flag('{old_flag}', '{new_flag}'): "
+            f"'{new_flag}' must be registered before its "
+            f"old name '{old_flag}'"
+        )
+
+        # Bind to a local so mypy knows it's non-None inside the
+        # closure.
+        seen_list = primary_action._already_seen_for_namespace
+
+        # Capture `new_flag`, `seen_list`, and `primary_action` in a
+        # local class so argparse can instantiate it (argparse expects
+        # `type[Action]` for `action=`, not a factory function, so we
+        # can't pass these three values as constructor args).
+        _primary_action = primary_action
+
+        class _RenamedFlag(StoreOnceActionBase):
+
+            def __init__(self, *args: Any, **kwargs: Any):
+                super().__init__(*args, **kwargs)
+                # Share the same seen-tracking list so that using both
+                # the old and the new flag at the same time is detected
+                # as a duplicate.
+                self._already_seen_for_namespace = seen_list
+
+            def __call__(self, parser, namespace, values, option_string=None):
+                terminal.warn(
+                    f"'{option_string}' has been renamed to "
+                    f"'{new_flag}'. Please switch to using "
+                    f"'{new_flag}', as '{option_string}' will "
+                    f"be removed in the future."
+                )
+                # Satisfy the `required` check for the primary action
+                # (the new flag) so that, assuming the flag is required,
+                # passing the old name still satisfies this requirement.
+                _primary_action.required = False
+                if self._is_duplicate(namespace):
+                    parser.error(
+                        f"the flag '{new_flag}' (previously "
+                        f"'{option_string}') was set multiple times; "
+                        "it can only be set once, including "
+                        "in the `.rbtrc` file"
+                    )
+                else:
+                    self._mark_seen_and_store(namespace, values)
+
+        self._parser.add_argument(
+            old_flag,
+            dest=dest,
+            action=_RenamedFlag,
+            help=argparse.SUPPRESS,
+        )
+
+        # Mirror the new flag's type metadata so that the
+        # `--flag=VALUE` enforcement and path normalization also
+        # apply to the old flag name.
+        new_flag_type = self._argument_types.get(new_flag)
+        if new_flag_type is not None:
+            self._argument_types[old_flag] = new_flag_type
+
+        new_flag_dest = '--' + dest
+        new_flag_transformer = self._transformers.get(new_flag_dest)
+        if new_flag_transformer is not None:
+            old_flag_dest = '--' + old_flag.lstrip('-').replace('-', '_')
+            self._transformers[old_flag_dest] = new_flag_transformer
+
     def get_subparsers(self) -> argparse._SubParsersAction:
         """Create subcommand parser for the subcommand."""
         if self._subparsers is None:
@@ -436,9 +529,9 @@ class ArgumentParser(_Parser):
 
     (6) All lines are aggregated.
 
-        dev:demo --config=fullstack  # The demo is "fullstack".
-        dev:demo --name=demo         # Name of demo.
-        dev:demo --python            # Uses Python.
+        dev:demo --config=fullstack       # The demo is "fullstack".
+        dev:demo --application-name=demo  # Name of demo.
+        dev:demo --python                 # Uses Python.
 
 
     TODO(benh): move this into own file 'rc_argument_parser.py'

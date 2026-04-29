@@ -101,14 +101,18 @@ TestMethods = Methods(
         request=None,
         response=None,
         factory=True,
+        mcp=None,
     ),
     process_variant=Writer(
         request=TestRequest,
         response=TestResponse,
+        description="\"Testing escape quotes during \"rbt generate\"\"",
+        mcp=None,
     ),
     get_current_variant=Reader(
         request=None,
         response=TestResponse,
+        mcp=None,
     ),
 )
 
@@ -117,14 +121,17 @@ NestedTestMethods = Methods(
         request=None,
         response=None,
         factory=True,
+        mcp=None,
     ),
     process_nested_variant=Writer(
         request=NestedTestRequest,
         response=NestedTestResponse,
+        mcp=None,
     ),
     get_current_nested_variant=Reader(
         request=None,
         response=NestedTestResponse,
+        mcp=None,
     ),
 )
 

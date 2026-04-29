@@ -12,7 +12,7 @@ grpcio-status==1.64.3  # Matching `grpcio`.
 grpcio-tools==1.64.3 # Matching `grpcio`.
 h2==4.3.0  # For HTTP/2 low-level protocol testing.
 jinja2==3.1.2  # Latest as of 2023/03/20.
-mcp==1.26.0  # Latest as of 2026/02/12.
+mcp==1.27.0  # Latest as of 2026/04/13.
 anyio>=4.9.0  # Transitive dep of `mcp`; pinned here for wheel verification.
 starlette>=0.46.1  # Transitive dep of `mcp` and `fastapi`; pinned here for wheel verification.
 jinja2-strcase==0.0.2 # Latest as 2023/12/03.
@@ -39,4 +39,6 @@ opentelemetry-instrumentation-grpc==0.49b1 # Latest as of 2024/11/14.
 fastapi==0.115.12 # Latest as of 2025/03/30.
 uvicorn==0.34.0 # Latest as of 2025/03/30.
 pydantic>=2.7.4 # To be version compatibable with projects like `langchain`.
-bitarray==3.8.0 # Lastest as of 2025/12/14.
+bitarray==3.8.0 # Latest as of 2025/12/14.
+pydantic-ai-slim>=1.0.0 # Latest as of 2026/04/24.
+typing-extensions>=4.15.0 # Latest as of 2026/04/27.

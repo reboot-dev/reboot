@@ -1,0 +1,53 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@fremtind_rules_vitest//vitest:defs.bzl", "vitest_test")
+
+ts_project(
+    name = "state_id_change_test_ts",
+    srcs = [
+        "state_id_change.test.tsx",
+        ":package.json",
+    ],
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "jsx": "react-jsx",
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "skipLibCheck": True,
+            "target": "es2020",
+        },
+    },
+    deps = [
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@reboot-dev/reboot-react",
+        "//:node_modules/@testing-library/react",
+        "//:node_modules/@types/react",
+        "//:node_modules/@vitejs/plugin-react",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//rbt/v1alpha1:tasks_js_proto",
+        "//reboot/std/vitest:vitest_ts",
+        "//tests/reboot:greeter_js_proto",
+        "//tests/reboot:greeter_js_reboot",
+        "//tests/reboot:greeter_js_reboot_react",
+        "//tests/reboot/nodejs:greeter_ts",
+    ],
+)
+
+vitest_test(
+    name = "test",
+    timeout = "long",
+    config = "vitest.config.mjs",
+    data = [
+        ":state_id_change_test_ts",
+        "//reboot:reboot.dev",
+    ],
+    # To use a "dev" version of Reboot instead of a publicly released
+    # version of Reboot in the test, we set the 'REBOOT_WHL_FILE'
+    # environment variable to point to the Reboot wheel file to install
+    # from.
+    env = {"REBOOT_WHL_FILE": "$(rootpath //reboot:reboot.dev)"},
+    node_modules = "//:node_modules",
+    visibility = ["//visibility:public"],
+)

@@ -17,6 +17,7 @@ from tests.reboot.pydantic.methods.servicer_api import (
     ArbitraryData,
     ComplexTypesRequest,
     GetSnapshotResponse,
+    InitializeFromWorkflowRequest,
     MyError,
     RaiseDeclaredErrorRequest,
     State,
@@ -38,41 +39,10 @@ class WriteOutput(BaseModel):
 
 class TestServicer(Test.Servicer):
 
-    def authorizer(self):
-
-        def update_state_rule(
-            context: ReaderContext,
-            state: State | None,
-            request: UpdateRequest | None,
-            **kwargs,
-        ):
-            assert request is not None
-            if request.int_increment < 0:
-                return PermissionDenied()
-            return Ok()
-
-        return Test.Authorizer(
-            initialize=allow(),
-            reader_with_nones=allow(),
-            update_state=allow_if(all=[update_state_rule]),
-            get_snapshot=allow(),
-            transaction_state_update=allow(),
-            workflow=allow(),
-            transaction=allow(),
-            transaction_reader=allow(),
-            transaction_writer=allow(),
-            raise_value_error=allow(),
-            raise_declared_error=allow(),
-        )
-
-    async def initialize(
-        self,
-        context: WriterContext,
-    ) -> None:
-        assert isinstance(self.state, State)
-        # Set the required fields in the constructor.
+    def _initialize_state(self, *, str_value: str) -> None:
+        """Initialize all required state fields for factory constructors."""
         self.state.int_value = 42
-        self.state.str_value = "initialized"
+        self.state.str_value = str_value
         self.state.float_value = 3.14
         self.state.bool_value = True
         self.state.data_value = ArbitraryData(
@@ -109,6 +79,50 @@ class TestServicer(Test.Servicer):
         assert self.state.literal_default_value == "option1"
 
         self.state.literal_value = "option1"
+
+    def authorizer(self):
+
+        def update_state_rule(
+            context: ReaderContext,
+            state: State | None,
+            request: UpdateRequest | None,
+            **kwargs,
+        ):
+            assert request is not None
+            if request.int_increment < 0:
+                return PermissionDenied()
+            return Ok()
+
+        return Test.Authorizer(
+            initialize=allow(),
+            initialize_from_workflow=allow(),
+            reader_with_nones=allow(),
+            update_state=allow_if(all=[update_state_rule]),
+            get_snapshot=allow(),
+            transaction_state_update=allow(),
+            workflow=allow(),
+            transaction=allow(),
+            transaction_reader=allow(),
+            transaction_writer=allow(),
+            raise_value_error=allow(),
+            raise_declared_error=allow(),
+        )
+
+    async def initialize(
+        self,
+        context: WriterContext,
+    ) -> None:
+        assert isinstance(self.state, State)
+        self._initialize_state(str_value="initialized")
+
+    async def initialize_from_workflow(
+        self,
+        context: WriterContext,
+        request: InitializeFromWorkflowRequest,
+    ) -> None:
+        assert isinstance(self.state, State)
+        assert isinstance(request, InitializeFromWorkflowRequest)
+        self._initialize_state(str_value=request.str_value)
 
     async def reader_with_nones(
         self,
@@ -194,6 +208,31 @@ class TestServicer(Test.Servicer):
         context: WorkflowContext,
         request: UpdateRequest,
     ) -> UpdateResponse:
+        STR_VALUE = "initialized from workflow"
+        STR_VALUE_WITH_STATE_ID = "initialized from workflow with state id"
+        MY_STATE_ID = "my-state-id"
+        test_ref, _ = await Test.initialize_from_workflow(
+            context,
+            str_value=STR_VALUE,
+        )
+        test_ref_state = await test_ref.get_snapshot(context)
+        assert (test_ref_state.snapshot.current_str == STR_VALUE)
+        assert test_ref.state_id != MY_STATE_ID
+
+        test_ref_with_state_id, _ = await Test.initialize_from_workflow(
+            context,
+            MY_STATE_ID,
+            str_value=STR_VALUE_WITH_STATE_ID,
+        )
+        test_ref_with_state_id_state = await test_ref_with_state_id.get_snapshot(
+            context
+        )
+        assert (
+            test_ref_with_state_id_state.snapshot.current_str ==
+            STR_VALUE_WITH_STATE_ID
+        )
+        assert test_ref_with_state_id.state_id == MY_STATE_ID
+
         state_from_read = await Test.ref().read(context)
 
         assert isinstance(state_from_read, State)
@@ -256,6 +295,15 @@ class TestServicer(Test.Servicer):
         assert state_from_read.int_value == response.new_int
         assert state_from_read.str_value == response.new_str
         assert state_from_read.literal_value == response.new_literal_value
+
+        # When we read the state with "always" it goes through the
+        # different code path.
+        state_from_read_always = await Test.ref().always().read(context)
+
+        assert isinstance(state_from_read_always, State)
+
+        assert state_from_read.model_dump(
+        ) == state_from_read_always.model_dump()
 
         return response
 

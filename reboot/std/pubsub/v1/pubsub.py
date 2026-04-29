@@ -80,24 +80,23 @@ class TopicServicer(Topic.Servicer):
 
         async for _ in context.loop("Broker"):
 
-            async def have_items():
+            async def have_items() -> bool | tuple[list[str], list[Item]]:
 
-                async def slice_items(state):
+                async def slice_items(
+                    state,
+                ) -> bool | tuple[list[str], list[Item]]:
                     if len(state.items) > 0:
                         items = state.items[:]
                         del state.items[:]
                         return list(state.queue_ids), items
                     return False
 
-                return await Topic.ref().write(
-                    context, slice_items, type=tuple
-                )
+                return await Topic.ref().write(context, slice_items)
 
             queue_ids, items = await until(
                 "Have items",
                 context,
                 have_items,
-                type=tuple,
             )
 
             await Queue.forall(queue_ids).Enqueue(context, items=items)

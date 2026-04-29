@@ -3,7 +3,7 @@ generate --nodejs=api
 generate --react=api
 
 # Set the name of our application.
-dev run --name=counter
+dev run --application-name=counter
 
 # Declare that this is a nodejs application.
 dev run --nodejs

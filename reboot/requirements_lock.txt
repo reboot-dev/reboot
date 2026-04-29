@@ -397,7 +397,9 @@ deprecated==1.2.15 \
 exceptiongroup==1.2.2 \
     --hash=sha256:3111b9d131c238bec2f8f516e123e14ba243563fb135d3fe885990585aa7795b \
     --hash=sha256:47c2edf7c6738fafb49fd34290706d1a1a2f4d1c6df275526b62cbb4aa5393cc
-    # via anyio
+    # via
+    #   anyio
+    #   pydantic-ai-slim
 fastapi==0.115.12 \
     --hash=sha256:1e2c2a2646905f9e83d32f04a3f86aff4a286669c6c950ca95b5fd68c2602681 \
     --hash=sha256:e94613d6c05e27be7ffebdd6ea5f388112e5e430c8f7d6494a9d1d88d43e814d
@@ -467,6 +469,10 @@ frozenlist==1.4.0 \
     # via
     #   aiohttp
     #   aiosignal
+genai-prices==0.0.57 \
+    --hash=sha256:14e50fb69cdc5a06ddb2a6df5a7fe06741b9e44304ce3f1728f56abdf1856cca \
+    --hash=sha256:6e101e9c53975557ceffa237b0995787d81fe75aac12410f2898504188bcad89
+    # via pydantic-ai-slim
 googleapis-common-protos==1.65.0 \
     --hash=sha256:2972e6c496f435b92590fd54045060867f3fe9be2c82ab148fc8885035479a63 \
     --hash=sha256:334a29d07cddc3aa01dee4988f9afd9b2916ee2ff49d6b757155dc0d197852c0
@@ -474,6 +480,10 @@ googleapis-common-protos==1.65.0 \
     #   -r reboot/requirements.in
     #   grpcio-status
     #   opentelemetry-exporter-otlp-proto-grpc
+griffelib==2.0.2 \
+    --hash=sha256:3cf20b3bc470e83763ffbf236e0076b1211bac1bc67de13daf494640f2de707e \
+    --hash=sha256:925c857658fb1ba40c0772c37acbc2ab650bd794d9c1b9726922e36ea4117ea1
+    # via pydantic-ai-slim
 grpc-interceptor==0.15.4 \
     --hash=sha256:0035f33228693ed3767ee49d937bac424318db173fef4d2d0170b3215f254d9d \
     --hash=sha256:1f45c0bcb58b6f332f37c637632247c9b02bc6af0fdceb7ba7ce8d2ebbfb0926
@@ -614,7 +624,11 @@ httpcore==1.0.8 \
 httpx==0.28.1 \
     --hash=sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc \
     --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
-    # via mcp
+    # via
+    #   genai-prices
+    #   mcp
+    #   pydantic-ai-slim
+    #   pydantic-graph
 httpx-sse==0.4.3 \
     --hash=sha256:0ac1c9fe3c0afad2e0ebb25a934a59f4c7823b60792691f779fad2c5568830fc \
     --hash=sha256:9b1ed0127459a66014aec3c56bebd93da3c1bc8bb6618c8082039a44889a755d
@@ -656,6 +670,10 @@ kubernetes-asyncio==31.1.0 \
     --hash=sha256:00128a96eb0284de0cbee53bd2fe044593f2e1547c48d09901cddf9258adfd88 \
     --hash=sha256:76898fea5dee601b209fefeae4ecee2fb20bfe3ebf872b5ff37c96230fbda6cc
     # via -r reboot/requirements.in
+logfire-api==4.32.1 \
+    --hash=sha256:4b4c27cf6e27e8e26ef4b22a77f2a2988dd1d07e2d24ee70673ef34b234fb8a5 \
+    --hash=sha256:5e8714b2bb5fb5d1f4a4a833941e4ca711b75d2c1f98e76c5ad680fe6991af6a
+    # via pydantic-graph
 markupsafe==2.1.3 \
     --hash=sha256:05fb21170423db021895e1ea1e1f3ab3adb85d1c2333cbc2310f2a26bc77272e \
     --hash=sha256:0a4e4a1aff6c7ac4cd55792abf96c915634c2b97e3cc1c7129578aa68ebd754e \
@@ -718,9 +736,9 @@ markupsafe==2.1.3 \
     --hash=sha256:fec21693218efe39aa7f8599346e90c705afa52c5b31ae019b2e57e8f6542bb2 \
     --hash=sha256:ffcc3f7c66b5f5b7931a5aa68fc9cecc51e685ef90282f4a82f0f5e9b704ad11
     # via jinja2
-mcp==1.26.0 \
-    --hash=sha256:904a21c33c25aa98ddbeb47273033c435e595bbacfdb177f4bd87f6dceebe1ca \
-    --hash=sha256:db6e2ef491eecc1a0d93711a76f28dec2e05999f93afd48795da1c1137142c66
+mcp==1.27.0 \
+    --hash=sha256:5ce1fa81614958e267b21fb2aa34e0aea8e2c6ede60d52aba45fd47246b4d741 \
+    --hash=sha256:d3dc35a7eec0d458c1da4976a48f982097ddaab87e278c5511d5a4a56e852b83
     # via -r reboot/requirements.in
 multidict==6.0.4 \
     --hash=sha256:01a3a55bd90018c9c080fbb0b9f4891db37d148a0a18722b42f94694f8b6d4c9 \
@@ -814,6 +832,7 @@ opentelemetry-api==1.28.1 \
     #   opentelemetry-instrumentation-grpc
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
+    #   pydantic-ai-slim
 opentelemetry-exporter-otlp-proto-common==1.28.1 \
     --hash=sha256:56ea6cf28c90f767733f046a54525dc7271a25faff86b1955e5252b55f4e007f \
     --hash=sha256:6e55e7f5d59296cc87a74c08b8e0ddf87403f73a62302ec7ee042c1a1f4a8f70
@@ -1035,8 +1054,15 @@ pydantic==2.12.5 \
     # via
     #   -r reboot/requirements.in
     #   fastapi
+    #   genai-prices
     #   mcp
+    #   pydantic-ai-slim
+    #   pydantic-graph
     #   pydantic-settings
+pydantic-ai-slim==1.87.0 \
+    --hash=sha256:25822985ca21d6f2995310da915080fc3f75763aec82e815a3388257b06d6b84 \
+    --hash=sha256:6a9b4f9bcac3709ef47f3b3cda70446c002eb55901038a50d6224ee6743fe31a
+    # via -r reboot/requirements.in
 pydantic-core==2.41.5 \
     --hash=sha256:0177272f88ab8312479336e1d777f6b124537d47f2123f89cb37e0accea97f90 \
     --hash=sha256:01a3d0ab748ee531f4ea6c3e48ad9dac84ddba4b0d82291f87248f2f9de8d740 \
@@ -1160,6 +1186,10 @@ pydantic-core==2.41.5 \
     --hash=sha256:f41eb9797986d6ebac5e8edff36d5cef9de40def462311b3eb3eeded1431e425 \
     --hash=sha256:f547144f2966e1e16ae626d8ce72b4cfa0caedc7fa28052001c94fb2fcaa1c52
     # via pydantic
+pydantic-graph==1.87.0 \
+    --hash=sha256:0f44848f8e83908ce372491c32ef349dfaf05e29f39fade0bae9309ab4f015cd \
+    --hash=sha256:fd39e4e852808e36163474fe2af48e88a046b5e5e00596730f33c17d2429b7d2
+    # via pydantic-ai-slim
 pydantic-settings==2.12.0 \
     --hash=sha256:005538ef951e3c2a68e1c08b292b5f2e71490def8589d4221b95dab00dafcfd0 \
     --hash=sha256:fddb9fd99a5b18da837b29710391e945b1e30c135477f484084ee513adb93809
@@ -1405,6 +1435,7 @@ typing-extensions==4.15.0 \
     --hash=sha256:0cea48d173cc12fa28ecabc3b837ea3cf6f38c6d1136f85cbaaf598984861466 \
     --hash=sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548
     # via
+    #   -r reboot/requirements.in
     #   aiosignal
     #   anyio
     #   fastapi
@@ -1421,6 +1452,8 @@ typing-inspection==0.4.2 \
     # via
     #   mcp
     #   pydantic
+    #   pydantic-ai-slim
+    #   pydantic-graph
     #   pydantic-settings
 tzlocal==5.3 \
     --hash=sha256:2fafbfc07e9d8b49ade18f898d6bcd37ae88ce3ad6486842a2e4f03af68323d2 \

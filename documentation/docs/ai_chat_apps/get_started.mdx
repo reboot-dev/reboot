@@ -68,12 +68,11 @@ Naming a type \`User\` in your \`API(...)\` is special:
 - During development all users of your app are automatically
   "authenticated" with the built-in \`Anonymous\` OAuth provider, so every
   user of your app gets a \`User\` instance.
-- All methods on \`User\` are automatically callable by the AI.
 - \`User\` acts as an entry point: its methods create other state
   types (like \`Counter\`) whose IDs the AI tracks in its context
   window.
-- Methods on non-\`User\` types use \`mcp=Tool()\` to be
-  AI-callable.
+- Use \`mcp=Tool()\` on every method you want the AI to call,
+  including \`User\` methods. Use \`mcp=None\` to hide a method.
 
 `}>
 
@@ -147,6 +146,7 @@ api = API(
                 "the `counter_id`, which is not "
                 "human-readable but should be passed to "
                 "future tool calls that need it.",
+                mcp=Tool(),
             ),
             list_counters=Reader(
                 request=None,
@@ -156,6 +156,7 @@ api = API(
                 "description for each. The `counter_id` "
                 "is not human-readable, but use it when "
                 "calling tools that take a `counter_id`.",
+                mcp=Tool(),
             ),
         ),
     ),
@@ -173,6 +174,7 @@ api = API(
                 request=CreateCounterRequest,
                 response=None,
                 factory=True,
+                mcp=None,
             ),
             get=Reader(
                 request=None,
@@ -191,6 +193,7 @@ api = API(
             description=Reader(
                 request=None,
                 response=DescriptionResponse,
+                mcp=None,
             ),
         ),
     ),
@@ -241,6 +244,7 @@ and optionally a \`request\`. You access state via
 ```python
 # backend/src/servicers/counter.py
 from ai_chat_counter.v1.counter import (
+    CounterEntry,
     CreateCounterRequest,
     CreateCounterResponse,
     ListCountersResponse,
@@ -280,7 +284,7 @@ class UserServicer(User.Servicer):
         for counter_id in self.state.counter_ids:
             response = await Counter.ref(counter_id).description(context)
             counters.append(
-                User.CounterEntry(
+                CounterEntry(
                     counter_id=counter_id,
                     description=response.description,
                 )
@@ -699,7 +703,7 @@ dev run --watch=web/dist/**/*.html
 dev run --python
 
 # Save state between restarts.
-dev run --name=ai-chat-counter
+dev run --application-name=ai-chat-counter
 
 # Entrypoint.
 dev run --application=backend/src/main.py
@@ -760,9 +764,8 @@ touch mcp_servers.json
 {
   "mcpServers": {
     "counter-server": {
-      "type": "streamable-http",
       "url": "http://localhost:9991/mcp",
-      "auth": "oauth"
+      "useOAuth": true
     }
   }
 }
@@ -771,7 +774,7 @@ touch mcp_servers.json
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
 ```sh
-npx @mcpjam/inspector@v2.0.4 --config mcp_servers.json --server counter-server
+npx @mcpjam/inspector@2.4.0 --config mcp_servers.json --server counter-server
 ```
 
 </Step>

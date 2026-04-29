@@ -2,20 +2,39 @@ import os
 import reboot.cli.terminal as terminal
 import sys
 from pathlib import Path
-from reboot.cli.cloud import cloud_down, cloud_logs, cloud_up, register_cloud
-from reboot.cli.dev import dev_expunge, dev_run, register_dev
+from reboot.cli.cloud import (
+    cloud_subcommands,
+    handle_cloud_subcommand,
+    register_cloud,
+)
+from reboot.cli.dev import dev_subcommands, handle_dev_subcommand, register_dev
 from reboot.cli.export_import import (
-    do_export,
-    do_import,
+    export_and_import_subcommands,
+    handle_export_and_import_subcommand,
     register_export_and_import,
 )
-from reboot.cli.generate import generate, register_generate
-from reboot.cli.init.init import init_run, register_init
+from reboot.cli.generate import (
+    generate_subcommands,
+    handle_generate_subcommand,
+    register_generate,
+)
+from reboot.cli.init.init import (
+    handle_init_subcommand,
+    init_subcommands,
+    register_init,
+)
 from reboot.cli.rc import ArgumentParser
-from reboot.cli.secret import register_secret, secret_delete, secret_write
-from reboot.cli.serve import register_serve, serve_run
+from reboot.cli.serve import (
+    handle_serve_subcommand,
+    register_serve,
+    serve_subcommands,
+)
 from reboot.cli.subprocesses import Subprocesses
-from reboot.cli.task import register_task, task_cancel, task_list
+from reboot.cli.task import (
+    handle_task_subcommand,
+    register_task,
+    task_subcommands,
+)
 from typing import Optional
 
 
@@ -41,33 +60,21 @@ def create_parser(
     parser = ArgumentParser(
         program='rbt',
         filename='.rbtrc',
-        subcommands=[
-            'cloud down',
-            'cloud up',
-            'cloud secret delete',
-            'cloud secret write',
-            'cloud logs',
-            'dev expunge',
-            'dev run',
-            'export',
-            'import',
-            'init',
-            'generate',
-            'serve run',
-            'task list',
-            'task cancel',
-        ],
+        subcommands=(
+            cloud_subcommands() + dev_subcommands() +
+            export_and_import_subcommands() + generate_subcommands() +
+            init_subcommands() + serve_subcommands() + task_subcommands()
+        ),
         rc_file=rc_file,
         argv=argv,
     )
 
     add_global_options(parser)
 
+    register_cloud(parser)
     register_dev(parser)
     register_export_and_import(parser)
     register_generate(parser)
-    register_secret(parser)
-    register_cloud(parser)
     register_init(parser)
     register_serve(parser)
     register_task(parser)
@@ -99,50 +106,40 @@ async def cli() -> int:
 
     args, argv_after_dash_dash = parser.parse_args()
 
-    if args.subcommand == 'dev run':
-        return await dev_run(
+    if (result := await handle_cloud_subcommand(args)) is not None:
+        return result
+    elif (
+        result := await handle_dev_subcommand(
             args,
             parser=parser,
             parser_factory=lambda argv: create_parser(argv=argv),
         )
-    elif args.subcommand == 'dev expunge':
-        await dev_expunge(args, parser)
-        return 0
-    elif args.subcommand == 'export':
-        return await do_export(args)
-    elif args.subcommand == 'import':
-        return await do_import(args)
-    elif args.subcommand == 'generate':
-        return await generate(args, argv_after_dash_dash, parser=parser)
-    elif args.subcommand == 'secret write':
-        await secret_write(args)
-        return 0
-    elif args.subcommand == 'secret delete':
-        await secret_delete(args)
-        return 0
-    elif args.subcommand == 'cloud up':
-        return await cloud_up(args)
-    elif args.subcommand == 'cloud down':
-        await cloud_down(args)
-        return 0
-    elif args.subcommand == 'cloud logs':
-        await cloud_logs(args)
-        return 0
-    elif args.subcommand == 'init':
-        await init_run(args)
-        return 0
-    elif args.subcommand == 'serve run':
-        return await serve_run(
+    ) is not None:
+        return result
+    elif (
+        result := await handle_export_and_import_subcommand(args)
+    ) is not None:
+        return result
+    elif (
+        result := await handle_generate_subcommand(
+            args,
+            argv_after_dash_dash=argv_after_dash_dash,
+            parser=parser,
+        )
+    ) is not None:
+        return result
+    elif (result := await handle_init_subcommand(args)) is not None:
+        return result
+    elif (
+        result := await handle_serve_subcommand(
             args,
             parser=parser,
             parser_factory=lambda argv: create_parser(argv=argv),
         )
-    elif args.subcommand == 'task list':
-        await task_list(args)
-        return 0
-    elif args.subcommand == 'task cancel':
-        await task_cancel(args)
-        return 0
+    ) is not None:
+        return result
+    elif (result := await handle_task_subcommand(args)) is not None:
+        return result
 
     raise NotImplementedError(
         f"Subcommand '{args.subcommand}' is not implemented"

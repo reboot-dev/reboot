@@ -1,0 +1,39 @@
+# Python runtime caches and venv — rebuilt inside the image.
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+
+# Reboot runtime state (dev-only).
+.rbt/
+
+# Generated code — regenerated inside the image by `rbt
+# generate`.
+backend/api/
+web/api/
+
+# Node sources / deps / caches — we only copy `web/dist/`
+# into the image.
+web/node_modules/
+web/ui/
+web/src/
+web/package.json
+web/package-lock.json
+web/tsconfig*.json
+web/vite.config.ts
+web/index.css
+
+# VCS.
+.git/
+.gitignore
+
+# Editor / OS.
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Local-only files.
+mcp_servers.json
+README.md

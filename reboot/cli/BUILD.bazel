@@ -13,29 +13,6 @@ py_library(
 )
 
 py_library(
-    name = "cloud_py",
-    srcs = ["cloud.py"],
-    srcs_version = "PY3",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":commands_py",
-        ":rc_py",
-        ":terminal_py",
-        "//reboot:api_keys_py",
-        "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/application:application_py_reboot",
-        "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/auth:auth_py_reboot",
-        "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/organizations:organizations_py_reboot",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
-        "@com_github_reboot_dev_reboot//reboot:naming_py",
-        "@com_github_reboot_dev_reboot//reboot:settings_py",
-        "@com_github_reboot_dev_reboot//reboot:time_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:aborted_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
-        "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
-    ],
-)
-
-py_library(
     name = "commands_py",
     srcs = ["commands.py"],
     srcs_version = "PY3",
@@ -66,7 +43,6 @@ py_library(
         requirement("aiofiles"),
         requirement("pyprctl"),
         requirement("cryptography"),
-        ":cloud_py",
         ":directories_py",
         ":generate_py",
         ":monkeys_py",
@@ -150,19 +126,6 @@ py_library(
         "@com_github_reboot_dev_reboot//reboot:settings_py",
         "@com_github_reboot_dev_reboot//reboot/aio:tracing_py",
         "//reboot:version_py",
-    ],
-)
-
-py_library(
-    name = "secret_py",
-    srcs = ["secret.py"],
-    srcs_version = "PY3",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":cloud_py",
-        ":rc_py",
-        ":terminal_py",
-        "@com_github_reboot_dev_reboot//reboot:settings_py",
     ],
 )
 
@@ -255,14 +218,17 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
-        ":cloud_py",
         ":dev_py",
         ":export_import_py",
         ":generate_py",
         ":rc_py",
-        ":secret_py",
         ":serve_py",
         ":task_py",
+        "//reboot/cli/cloud:__init___py",
+        "//reboot/cli/cloud:down_py",
+        "//reboot/cli/cloud:logs_py",
+        "//reboot/cli/cloud:secrets_py",
+        "//reboot/cli/cloud:up_py",
         "//reboot/cli/init:init_py",
     ],
 )

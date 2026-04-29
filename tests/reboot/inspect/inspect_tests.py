@@ -1,4 +1,5 @@
 import grpc
+import os
 import unittest
 from google.protobuf import struct_pb2
 from log.log import get_logger
@@ -10,10 +11,9 @@ from rbt.v1alpha1.inspect.inspect_pb2 import (
 )
 from reboot.aio.applications import Application
 from reboot.aio.headers import AUTHORIZATION_HEADER, STATE_REF_HEADER
-from reboot.aio.secrets import MockSecretSource, Secrets
-from reboot.aio.tests import Reboot
+from reboot.aio.tests import Reboot, temporary_environ
 from reboot.aio.types import StateRef, StateTypeName
-from reboot.settings import ADMIN_SECRET_NAME
+from reboot.settings import ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA
 from tests.reboot.echo_rbt import Echo
 from tests.reboot.echo_servicers import MyEchoServicer
@@ -21,21 +21,23 @@ from uuid import uuid4
 
 logger = get_logger(__name__)
 
-TEST_ADMIN_SECRET = 'test-admin-secret'
+TEST_SECRET_REBOOT_ADMIN_TOKEN = 'test-admin-secret'
 
 
 def admin_auth_metadata() -> tuple:
     """Simple helper to provide the admin auth metadata."""
-    return ((AUTHORIZATION_HEADER, f'Bearer {TEST_ADMIN_SECRET}'),)
+    return (
+        (AUTHORIZATION_HEADER, f'Bearer {TEST_SECRET_REBOOT_ADMIN_TOKEN}'),
+    )
 
 
 class InspectTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
-        Secrets.set_secret_source(
-            MockSecretSource({ADMIN_SECRET_NAME: TEST_ADMIN_SECRET.encode()})
+        temporary_environ(
+            self,
+            {ENVVAR_SECRET_REBOOT_ADMIN_TOKEN: TEST_SECRET_REBOOT_ADMIN_TOKEN},
         )
-
         self.maxDiff = None
         self.rbt = Reboot()
         await self.rbt.start()
@@ -107,11 +109,10 @@ class InspectTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_state_types_admin_auth(self) -> None:
         """Test GetStateTypes RPC requires proper admin authentication."""
-        # Change the secret source to use a different secret. This
-        # should cause authentication and thus the test to fail.
-        Secrets.set_secret_source(
-            MockSecretSource({ADMIN_SECRET_NAME: 'wrong-secret'.encode()})
-        )
+        # Change the admin secret so the client's bearer token
+        # no longer matches. This should cause authentication
+        # failure.
+        os.environ[ENVVAR_SECRET_REBOOT_ADMIN_TOKEN] = 'wrong-secret'
 
         await self.rbt.up(
             Application(servicers=[MyEchoServicer]),
@@ -213,11 +214,10 @@ class InspectTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_list_states_admin_auth(self) -> None:
         """Test `ListStates` RPC requires proper admin authentication."""
-        # Change the secret source to use a different secret. This
-        # should cause authentication and thus the test to fail.
-        Secrets.set_secret_source(
-            MockSecretSource({ADMIN_SECRET_NAME: 'wrong-secret'.encode()})
-        )
+        # Change the admin secret so the client's bearer token
+        # no longer matches. This should cause authentication
+        # failure.
+        os.environ[ENVVAR_SECRET_REBOOT_ADMIN_TOKEN] = 'wrong-secret'
 
         await self.rbt.up(
             Application(servicers=[MyEchoServicer]),
@@ -396,11 +396,10 @@ class InspectTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_get_state_admin_auth(self) -> None:
         """Test GetState RPC requires proper admin authentication."""
-        # Change the secret source to use a different secret. This should cause
-        # authentication and thus the test to fail.
-        Secrets.set_secret_source(
-            MockSecretSource({ADMIN_SECRET_NAME: 'wrong-secret'.encode()})
-        )
+        # Change the admin secret so the client's bearer token
+        # no longer matches. This should cause authentication
+        # failure.
+        os.environ[ENVVAR_SECRET_REBOOT_ADMIN_TOKEN] = 'wrong-secret'
 
         await self.rbt.up(
             Application(servicers=[MyEchoServicer]),

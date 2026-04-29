@@ -23,14 +23,8 @@ from reboot.aio.auth import Auth
 from reboot.aio.auth.authorizers import Authorizer, allow_if
 from reboot.aio.call import Options
 from reboot.aio.contexts import ReaderContext, WorkflowContext, WriterContext
-from reboot.aio.secrets import (
-    EnvironmentSecretSource,
-    SecretNotFoundException,
-    Secrets,
-)
-from reboot.run_environments import on_cloud
 from reboot.thirdparty.mailgun.settings import (
-    MAILGUN_API_KEY_SECRET_NAME,
+    ENVVAR_MAILGUN_API_KEY,
     MAILGUN_EVENT_API_CONSISTENCY_DELAY_SEC,
 )
 from reboot.time import DateTimeWithTimeZone
@@ -56,57 +50,36 @@ class MailgunAPIError(RuntimeError):
 
 class _AbstractMessageServicer(Message.singleton.Servicer):
 
-    _secrets: Secrets
-
-    def __init__(self):
-        super().__init__()
-
-        # TODO: We are currently checking for kubernetes as proxy for checking
-        # for cloud, and checking for `EnvironmentSecretSource` to confirm that
-        # this is not the cloud-app (which uses a different source).
-        _AbstractMessageServicer._secrets = Secrets()
-        if on_cloud() and isinstance(
-            _AbstractMessageServicer._secrets.secret_source,
-            EnvironmentSecretSource,
-        ):
-            logger.warning("Secrets are not yet supported on the cloud!")
-
     def token_verifier(
         self,
     ) -> Optional[reboot.aio.auth.token_verifiers.TokenVerifier]:
 
         class TokenVerifier(reboot.aio.auth.token_verifiers.TokenVerifier):
 
-            def __init__(self, secrets: Secrets):
-                self._secrets = secrets
-
             async def verify_token(
                 self,
                 context: ReaderContext,
                 token: Optional[str],
             ) -> Optional[Auth]:
-
-                try:
-                    api_key = await self._secrets.get(
-                        MAILGUN_API_KEY_SECRET_NAME
-                    )
-
-                    if token == api_key.decode():
-                        return Auth(
-                            # No user ID, the secret _is_ the mailgun API key.
-                            user_id=None,
-                            properties={MAILGUN_API_KEY_VERIFIED: True},
-                        )
-                    else:
-                        return None
-                except SecretNotFoundException:
+                api_key = os.environ.get(ENVVAR_MAILGUN_API_KEY)
+                if api_key is None:
                     logger.critical(
-                        "Failed to verify token, missing secret "
-                        f"'{MAILGUN_API_KEY_SECRET_NAME}'"
+                        "Failed to verify token, missing "
+                        f"'{ENVVAR_MAILGUN_API_KEY}' env var"
                     )
                     return None
 
-        return TokenVerifier(self._secrets)
+                if token == api_key:
+                    return Auth(
+                        # No user ID, the secret _is_ the mailgun API key.
+                        user_id=None,
+                        properties={
+                            MAILGUN_API_KEY_VERIFIED: True,
+                        },
+                    )
+                return None
+
+        return TokenVerifier()
 
     def authorizer(self):
 
@@ -304,17 +277,13 @@ class _AbstractMessageServicer(Message.singleton.Servicer):
 
 class MessageServicer(_AbstractMessageServicer):
 
-    def __init__(self):
-        super().__init__()
-
     @classmethod
     async def get_api_key(cls) -> str:
-        try:
-            api_key = await cls._secrets.get(MAILGUN_API_KEY_SECRET_NAME)
-        except SecretNotFoundException as exception:
-            logger.critical(f"No secret '{MAILGUN_API_KEY_SECRET_NAME}'")
-            raise RuntimeError("No API key for mailgun") from exception
-        return api_key.decode()
+        api_key = os.environ.get(ENVVAR_MAILGUN_API_KEY)
+        if api_key is None:
+            logger.critical(f"No '{ENVVAR_MAILGUN_API_KEY}' env var")
+            raise RuntimeError("No API key for mailgun")
+        return api_key
 
     @classmethod
     async def send_email(

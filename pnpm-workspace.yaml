@@ -7,3 +7,4 @@ packages:
   - "reboot/std/"
   - "reboot/std/react/"
   - "reboot/web/"
+  - "reboot/create-ui/"

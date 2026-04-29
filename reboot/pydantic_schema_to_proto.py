@@ -27,6 +27,11 @@ from typing import Dict, List, Literal, Optional, Union, get_args, get_origin
 _PER_USER_ID = "PER_USER_ID"
 
 
+def _escape_string_for_proto(string: str) -> str:
+    """Escape a string for embedding as a proto string literal."""
+    return string.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def _pydantic_field_type_string_from_type(
     field_type: typing.Type,
     field_name: str,
@@ -171,12 +176,12 @@ async def generate(
                     ]
                     if ui.get("request_message"):
                         ui_fields.append(
-                            f'request_message: '
+                            "request_message: "
                             f'"{ui["request_message"]}"'
                         )
                     if ui.get("description"):
                         ui_fields.append(
-                            f'description: '
+                            "description: "
                             f'"{ui["description"]}"'
                         )
                     if ui.get("artifact_path"):
@@ -672,10 +677,18 @@ async def generate_proto_file_from_api(
                         'name':
                             method_name,
                         'title':
-                            ui_method.title
-                            or method_name.replace('_', ' ').title(),
+                            # The title can contain `\` character, so we
+                            # need to escape it for proto string literal.
+                            _escape_string_for_proto(ui_method.title)
+                            if ui_method.title is not None else
+                            method_name.replace('_', ' ').title(),
                         'description':
-                            ui_method.description,
+                            # The description can contain `\` character,
+                            # so we need to escape it for proto string
+                            # literal.
+                            _escape_string_for_proto(
+                                ui_method.description
+                            ) if ui_method.description is not None else None,
                         'path':
                             ui_method.path,
                         'request_message':
@@ -806,10 +819,7 @@ async def generate_proto_file_from_api(
                     )
 
                 # MCP options for exposing method as tool/resource.
-                if (
-                    method_spec.mcp is not None and
-                    method_spec.mcp is not False
-                ):
+                if method_spec.mcp is not None:
                     mcp = method_spec.mcp
                     mcp_fields = []
                     if isinstance(mcp, Tool):
@@ -817,13 +827,24 @@ async def generate_proto_file_from_api(
                     elif isinstance(mcp, Resource):
                         mcp_fields.append("resource: true")
                     if mcp.name is not None:
-                        mcp_fields.append(f'name: "{mcp.name}"')
-                    if method_spec.description is not None:
+                        # The name can contain `\` character, so we need
+                        # to escape it for proto string literal.
                         mcp_fields.append(
-                            f'description: "{method_spec.description}"'
+                            f'name: "{_escape_string_for_proto(mcp.name)}"'
+                        )
+                    if method_spec.description is not None:
+                        # The description can contain `\` character, so
+                        # we need to escape it for proto string literal.
+                        mcp_fields.append(
+                            "description: "
+                            f'"{_escape_string_for_proto(method_spec.description)}"'
                         )
                     if mcp.title is not None:
-                        mcp_fields.append(f'title: "{mcp.title}"')
+                        # The title can contain `\` character, so we need
+                        # to escape it for proto string literal.
+                        mcp_fields.append(
+                            f'title: "{_escape_string_for_proto(mcp.title)}"'
+                        )
                     if mcp_fields:
                         await proto.write(
                             f"      mcp: {{ {', '.join(mcp_fields)} }},\n"

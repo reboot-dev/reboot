@@ -29,11 +29,13 @@ TestMethods = Methods(
         request=None,
         response=None,
         factory=True,
+        mcp=None,
     ),
     raise_error=Writer(
         request=RaiseErrorRequest,
         response=None,
         errors=[MyError, AnotherError],
+        mcp=None,
     ),
 )
 
