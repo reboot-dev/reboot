@@ -30,15 +30,27 @@ logger = logging.getLogger(__name__)
 def _caller_is_owner(
     *,
     context: ReaderContext,
-    state: Union[Wiki.State, Transcript.State, Page.State],
+    state: Union[Wiki.State, Page.State, Transcript.State],
     **kwargs,
 ):
-    """Allow when the caller's `user_id` matches the stored owner ID."""
+    """Allow when the caller's `user_id` matches `state.owner_id`."""
     if context.auth is None or context.auth.user_id is None:
         return Unauthenticated()
     if state is not None and context.auth.user_id == state.owner_id:
         return Ok()
     return PermissionDenied()
+
+
+def _caller_is_authenticated(
+    *,
+    context: ReaderContext,
+    **kwargs,
+):
+    """Allow any authenticated caller. Used for factory `create` methods
+    where no state exists yet to check ownership against."""
+    if context.auth is None or context.auth.user_id is None:
+        return Unauthenticated()
+    return Ok()
 
 
 def _truncate(value: object, limit: int = 500) -> str:
@@ -309,7 +321,13 @@ class WikiServicer(Wiki.Servicer):
     `ingest` workflow that folds transcripts into it."""
 
     def authorizer(self):
-        return allow_if(any=[_caller_is_owner, is_app_internal])
+        return Wiki.Authorizer(
+            create=allow_if(any=[_caller_is_authenticated, is_app_internal]),
+            get=allow_if(any=[_caller_is_owner, is_app_internal]),
+            update=allow_if(any=[_caller_is_owner, is_app_internal]),
+            add_transcript=allow_if(any=[_caller_is_owner, is_app_internal]),
+            ingest=allow_if(any=[_caller_is_owner, is_app_internal]),
+        )
 
     async def create(
         self,
@@ -445,7 +463,11 @@ class PageServicer(Page.Servicer):
     a title."""
 
     def authorizer(self):
-        return allow_if(any=[_caller_is_owner, is_app_internal])
+        return Page.Authorizer(
+            create=allow_if(any=[_caller_is_authenticated, is_app_internal]),
+            get=allow_if(any=[_caller_is_owner, is_app_internal]),
+            update=allow_if(any=[_caller_is_owner, is_app_internal]),
+        )
 
     async def create(
         self,
@@ -479,7 +501,11 @@ class TranscriptServicer(Transcript.Servicer):
     transcript)."""
 
     def authorizer(self):
-        return allow_if(any=[_caller_is_owner, is_app_internal])
+        return Transcript.Authorizer(
+            create=allow_if(any=[_caller_is_authenticated, is_app_internal]),
+            get=allow_if(any=[_caller_is_owner, is_app_internal]),
+            update=allow_if(any=[_caller_is_owner, is_app_internal]),
+        )
 
     async def create(
         self,
