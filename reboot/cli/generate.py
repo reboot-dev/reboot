@@ -740,7 +740,8 @@ async def generate_direct(
             proto_directory += os.path.sep
         # Expand any directories to be short-form for 'directory/**/*.proto'.
         if not await aiofiles.os.path.isdir(proto_directory):
-            terminal.fail(f"Failed to find directory '{proto_directory}'")
+            terminal.error(f"Failed to find directory '{proto_directory}'")
+            return 1
         else:
             # Also add any directories given to us as part of the import path.
             common_args.append(f'--proto_path={proto_directory}')
@@ -794,9 +795,10 @@ async def generate_direct(
                     pydantic_schemas_by_directory[proto_directory].append(file)
 
             if not found_protos and not found_schemas:
-                terminal.fail(
+                terminal.error(
                     f"'{proto_directory}' did not match any '.ts', '.py' files containing schemas or '.proto' files"
                 )
+                return 1
 
     proto_files: list[str] = []
 
@@ -876,9 +878,10 @@ async def generate_direct(
                 stdout, _ = await process.communicate()
 
                 if process.returncode != 0:
-                    terminal.fail(
+                    terminal.error(
                         "Failed to generate code from schema in '.ts'"
                     )
+                    return process.returncode or 1
 
                 # Expecting 'path/to/generated/protos/directory'
                 generated_protos_directory = stdout.decode().strip()
@@ -911,11 +914,12 @@ async def generate_direct(
                 proto_files.extend(generated_protos)
 
         if not generated_proto_from_schema:
-            terminal.fail(
+            terminal.error(
                 "No '.ts' schemas found in the specified proto directories. "
                 "Please add a '.ts' file with a schema to your proto directory "
                 "which exports 'api'"
             )
+            return 1
 
         # We have to propagate the output directory of each of 'nodejs',
         # 'web', and 'react' to the 'Protoc*' plugin, so we can infer
@@ -969,7 +973,11 @@ async def generate_direct(
                 all_pydantic_files.append(
                     str(Path(file).relative_to(proto_directory))
                 )
-        global_error_models = collect_all_error_models(all_pydantic_files)
+        try:
+            global_error_models = collect_all_error_models(all_pydantic_files)
+        except Exception as e:
+            terminal.error(f"Failed to import schema file: {e}\n")
+            return 1
 
         for (proto_directory,
              schemas) in pydantic_schemas_by_directory.items():
@@ -1116,11 +1124,12 @@ async def generate_direct(
                 generated_proto_from_schema = True
 
         if not generated_proto_from_schema:
-            terminal.fail(
+            terminal.error(
                 "No '.py' schemas found in the specified proto directories. "
                 "Please add a '.py' file with a schema to your proto directory "
                 "which defines 'api'"
             )
+            return 1
 
     if not terminal.is_verbose():
         terminal.info(
