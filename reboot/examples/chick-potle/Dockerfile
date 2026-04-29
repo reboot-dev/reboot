@@ -4,7 +4,7 @@
 # locally before `docker build` so that `web/dist/` contains the
 # bundled UIs. This image copies that prebuilt bundle rather
 # than installing Node and rebuilding it here.
-FROM ghcr.io/reboot-dev/reboot-base:0.46.0
+FROM ghcr.io/reboot-dev/reboot-base:1.0.3
 
 WORKDIR /app
 

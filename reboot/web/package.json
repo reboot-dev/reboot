@@ -1,6 +1,6 @@
 {
   "name": "@reboot-dev/reboot-web",
-  "version": "0.46.0",
+  "version": "1.0.3",
   "description": "npm package for Reboot Web",
   "main": "index.js",
   "type": "module",
@@ -10,7 +10,7 @@
   },
   "author": "reboot-dev",
   "dependencies": {
-    "@reboot-dev/reboot-api": "0.46.0",
+    "@reboot-dev/reboot-api": "1.0.3",
     "@scarf/scarf": "1.4.0",
     "js-sha1": "0.7.0",
     "lru-cache-idb": "^0.5.2",
