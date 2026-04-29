@@ -9,7 +9,7 @@ from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import ModelRequestParameters, StreamedResponse
 from pydantic_ai.models.wrapper import CompletedStreamedResponse, WrapperModel
 from pydantic_ai.settings import ModelSettings
-from reboot.aio.workflows import at_least_once
+from reboot.aio.workflows import EffectValidation, at_least_once
 from typing import Any
 
 # NOTE: this file is using the `T | None` style for optional types
@@ -69,6 +69,11 @@ class _Model(WrapperModel):
             self._make_alias(),
             context,
             call,
+            # We will re-run the `call` twice to validate effects by
+            # default in the `at_least_once`, but we turn it off here
+            # to save the cost of calling the model provider multiple
+            # times.
+            effect_validation=EffectValidation.DISABLED,
         )
 
     @asynccontextmanager
@@ -98,6 +103,11 @@ class _Model(WrapperModel):
             self._make_alias(),
             context,
             call,
+            # We will re-run the `call` twice to validate effects by
+            # default in the `at_least_once`, but we turn it off here
+            # to save the cost of calling the model provider multiple
+            # times.
+            effect_validation=EffectValidation.DISABLED,
         )
 
         yield CompletedStreamedResponse(

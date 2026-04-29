@@ -136,7 +136,14 @@ _memo_cache: dict[Any, Any] = {}
 stub_workflows = types.ModuleType('reboot.aio.workflows')
 
 
-async def _stub_at_least_once(alias_or_tuple, context, callable, *, type=None):
+async def _stub_at_least_once(
+    alias_or_tuple,
+    context,
+    callable,
+    *,
+    type=None,
+    effect_validation=None,
+):
     if isinstance(alias_or_tuple, tuple):
         alias = alias_or_tuple[0]
     else:

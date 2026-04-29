@@ -15,12 +15,16 @@ from reboot.aio.internals.middleware import (
     _has_ever_explained_effect_validation,
 )
 from reboot.aio.tests import Reboot
+from reboot.aio.workflows import at_least_once
 from reboot.time import DateTimeWithTimeZone
 from tests.reboot import general_rbt
 from tests.reboot.general_rbt import General, GeneralRequest, GeneralResponse
 from tests.reboot.general_servicer import GeneralServicer
 
 _EFFECTS: list[str] = []
+# Counts how many times the callable passed to `at_least_once` with
+# `effect_validation=EffectValidation.DISABLED` is actually invoked.
+_DIRECT_CALLS: int = 0
 
 
 def record_effect() -> None:
@@ -101,6 +105,32 @@ class EffectServicer(GeneralServicer):
         await general.Reader(context)
         await general.Writer(context)
         return GeneralResponse()
+
+
+class EffectValidationPerCallDisabledServicer(EffectServicer):
+    """A servicer whose workflow explicitly calls `at_least_once` with
+    `effect_validation=EffectValidation.DISABLED` so the callable is not
+    re-run even when the context has effect validation enabled.
+    """
+
+    @classmethod
+    async def workflow(
+        cls,
+        context: WorkflowContext,
+        request: GeneralRequest,
+    ) -> GeneralResponse:
+
+        async def expensive_call() -> GeneralResponse:
+            global _DIRECT_CALLS
+            _DIRECT_CALLS += 1
+            return GeneralResponse()
+
+        return await at_least_once(
+            "expensive_call",
+            context,
+            expensive_call,
+            effect_validation=EffectValidation.DISABLED,
+        )
 
 
 class EffectValidationTestCase(unittest.IsolatedAsyncioTestCase):
@@ -296,6 +326,28 @@ class EffectValidationTestCase(unittest.IsolatedAsyncioTestCase):
             "reader",
             "reader",
         )
+
+    async def test_at_least_once_per_call_effect_validation_disabled(
+        self,
+    ) -> None:
+        # Verify that `effect_validation=EffectValidation.DISABLED` on a
+        # specific `at_least_once` call prevents the callable from being
+        # re-run even when the context has effect validation enabled
+        # globally.
+        global _DIRECT_CALLS
+        _DIRECT_CALLS = 0
+
+        await self.rbt.up(
+            Application(
+                servicers=[EffectValidationPerCallDisabledServicer],
+            ),
+            effect_validation=EffectValidation.ENABLED,
+        )
+        context = self.rbt.create_external_context(name=self.id())
+        general, _ = await General.ConstructorWriter(context)
+        await (await general.spawn().Workflow(context))
+
+        self.assertEqual(1, _DIRECT_CALLS)
 
 
 if __name__ == '__main__':
