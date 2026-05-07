@@ -1,0 +1,35 @@
+// For format details, see https://aka.ms/devcontainer.json.
+{
+  "name": "Reboot Devcontainer",
+  "image": "ghcr.io/reboot-dev/reboot-devcontainer",
+  "remoteUser": "dev",
+
+  "customizations": {
+    "vscode": {
+      // The following VS Code extensions are nice to have when developing on
+      // this Reboot application.
+      "extensions": [
+        // Python support.
+        "ms-python.python",
+        // Static type checking for Python.
+        "ms-python.mypy-type-checker",
+        // YAPF code formatter for Python.
+        "eeyore.yapf",
+        // Automatic import sorting for Python.
+        "ms-python.isort",
+        // Protocol buffer support.
+        "zxh404.vscode-proto3",
+        // Prettier code formatter.
+        "esbenp.prettier-vscode"
+      ]
+    }
+  },
+
+  // Ports from the devcontainer made available on your local machine.
+  "forwardPorts": [
+    // The HTTP port exposed by default in examples.
+    3000,
+    // The gRPC backend port exposed by default in examples.
+    9991
+  ]
+}
