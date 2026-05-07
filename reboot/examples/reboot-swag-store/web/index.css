@@ -1,0 +1,26 @@
+:root {
+  --color-bg: #f7f5ed;
+  --color-bg-card: #ffffff;
+  --color-border: #e2dfd6;
+  --color-text: #0d0d0d;
+  --color-text-secondary: #103761;
+  --color-text-muted: #6b7280;
+  --color-accent: #aedc91;
+  --color-accent-dark: #8bc46d;
+  --color-navy: #103761;
+  --color-danger: #dc2626;
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
