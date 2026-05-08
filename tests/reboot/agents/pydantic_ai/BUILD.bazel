@@ -2,11 +2,15 @@ load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
-    name = "tests_py",
-    srcs = [":tests.py"],
-    main = "tests.py",
+    name = "agent_tests_py",
+    timeout = "long",
+    srcs = [":agent_tests.py"],
+    main = "agent_tests.py",
     deps = [
+        requirement("mcp"),
         requirement("pydantic-ai-slim"),
         "//reboot/agents/pydantic_ai:python",
+        "//reboot/aio:tests_py",
+        "//tests/reboot:general_boilerplate_py_reboot",
     ],
 )
