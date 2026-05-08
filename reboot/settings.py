@@ -263,6 +263,7 @@ ENVVAR_REBOOT_USE_TTY = 'REBOOT_USE_TTY'
 # An environment variable to enable event loop lag monitoring.
 # Turned off by default, if set we will print warnings about event loop lag.
 ENVVAR_REBOOT_ENABLE_EVENT_LOOP_LAG_MONITORING = 'REBOOT_ENABLE_EVENT_LOOP_LAG_MONITORING'
+
 # An environment variable to enable the event loop blocked watchdog,
 # which detects when the event loop is completely blocked by a
 # synchronous call and logs a warning in real time.
@@ -275,6 +276,43 @@ ENVVAR_REBOOT_ENABLE_EVENT_LOOP_LAG_MONITORING = 'REBOOT_ENABLE_EVENT_LOOP_LAG_M
 # We could revisit that approach once that bug is fixed and we upgrade
 # gRPC library.
 ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG = 'REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG'
+
+# When set to a float (in seconds), enables asyncio debug mode on the
+# event loop and sets `loop.slow_callback_duration` to this value,
+# causing asyncio to log a warning (with the offending callback's
+# source location) whenever a single callback hogs the loop for longer
+# than this. Useful for tracking down coroutines that block the loop
+# (CPU-bound work, sync I/O, GC pauses, etc.). Adds non-trivial
+# overhead, so leave unset in normal operation.
+ENVVAR_REBOOT_ASYNCIO_SLOW_CALLBACK_DURATION_SECONDS = 'REBOOT_ASYNCIO_SLOW_CALLBACK_DURATION_SECONDS'
+
+# When set to "true" (case-insensitive), calls `gc.disable()` when
+# starting a server to turn off CPython's cyclic garbage collector.
+# Reference counting still frees most objects normally; only cycle
+# collection is suppressed. This is a **diagnostic-only** setting:
+# memory will grow over time as cyclic garbage accumulates with no
+# collection. Use it to A/B test whether GC pauses are responsible for
+# observed event-loop stalls — if a stall vanishes when this is set,
+# the stall was a GC pause. Never enable in production.
+ENVVAR_REBOOT_DISABLE_CYCLIC_GC = 'REBOOT_DISABLE_CYCLIC_GC'
+
+# When set to a path, launches `py-spy record` as a subprocess when
+# starting a server, targeting the server PID, and writes a flame
+# graph to the specified path. py-spy is a sampling profiler that runs
+# out-of-process via `ptrace`; it does not significantly perturb the
+# running process. Requires py-spy to be installed and ptrace
+# permissions on the host (`CAP_SYS_PTRACE`, root, or
+# `kernel.yama.ptrace_scope=0`). Diagnostic only.
+ENVVAR_REBOOT_PY_SPY_OUTPUT = 'REBOOT_PY_SPY_OUTPUT'
+
+# When `REBOOT_PY_SPY_OUTPUT` is set, controls how long py-spy records
+# for, in seconds. Default 60.
+ENVVAR_REBOOT_PY_SPY_DURATION_SECONDS = 'REBOOT_PY_SPY_DURATION_SECONDS'
+
+# When `REBOOT_PY_SPY_OUTPUT` is set, controls the py-spy sampling
+# rate in Hz. Default 100. Higher rates (e.g., 1000) catch finer
+# detail at the cost of slightly more sampling overhead.
+ENVVAR_REBOOT_PY_SPY_RATE = 'REBOOT_PY_SPY_RATE'
 
 REBOOT_DISCORD_URL = 'https://discord.gg/cRbdcS94Nr'
 REBOOT_GITHUB_ISSUES_URL = 'https://github.com/reboot-dev/reboot/issues'

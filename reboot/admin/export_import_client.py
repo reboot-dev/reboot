@@ -1,5 +1,4 @@
 import aiofiles
-import asyncio
 import grpc
 import json
 import sys
@@ -11,6 +10,7 @@ from rbt.v1alpha1.admin.export_import_pb2 import (
     ExportRequest,
     ListServersRequest,
 )
+from reboot.aio.concurrently import concurrently
 from reboot.aio.headers import AUTHORIZATION_HEADER
 from reboot.aio.types import ServerId
 from typing import AsyncIterator
@@ -70,16 +70,13 @@ async def do_export(
         ListServersRequest(),
         metadata=_with_admin_auth_metadata(admin_token),
     )
-    # TODO: Throttle the total number of outstanding requests.
-    await asyncio.gather(
-        *(
-            _export(
-                export_import,
-                server_id,
-                dest_directory / f"{server_id}.json",
-                admin_token=admin_token,
-            ) for server_id in response.server_ids
-        )
+    await concurrently(
+        _export(
+            export_import,
+            server_id,
+            dest_directory / f"{server_id}.json",
+            admin_token=admin_token,
+        ) for server_id in response.server_ids
     )
 
 
@@ -125,11 +122,9 @@ async def do_import(
     admin_token: str,
 ) -> None:
     """Import all JSON-lines files in the given directory to the server."""
-    # TODO: Throttle the number of requests and/or make a best effort to
-    # direct items at the "correct" nodes using a placement client.
-    await asyncio.gather(
-        *(
-            _import(export_import, path, admin_token=admin_token)
-            for path in src_directory.iterdir()
-        )
+    # TODO: Make a best effort to direct items at the "correct"
+    # nodes using a placement client.
+    await concurrently(
+        _import(export_import, path, admin_token=admin_token)
+        for path in src_directory.iterdir()
     )

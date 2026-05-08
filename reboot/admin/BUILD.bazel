@@ -37,6 +37,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         requirement("aiofiles"),
+        "//reboot/aio:concurrently_py",
         "//reboot/aio:headers_py",
         "//reboot/aio:types_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:export_import_py_grpc",

@@ -89,6 +89,13 @@ py_library(
 )
 
 py_library(
+    name = "concurrently_py",
+    srcs = ["concurrently.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "contexts_py",
     srcs = ["contexts.py"],
     srcs_version = "PY3",
@@ -102,6 +109,7 @@ py_library(
         ":tasks_py",
         ":types_py",
         "//reboot:time_py",
+        "//reboot:uuidv7_py",
         "//reboot/aio/auth:__init___py",
         "//reboot/aio/backoff:python",
         "//reboot/aio/internals:channel_manager_py",
@@ -165,6 +173,7 @@ py_library(
     deps = [
         requirement("grpcio"),
         requirement("grpcio-health-checking"),
+        ":concurrently_py",
         ":headers_py",
         ":types_py",
         "//reboot/aio/backoff:python",
@@ -419,6 +428,7 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        ":concurrently_py",
         ":contexts_py",
         ":once_py",
         ":placement_py",
@@ -427,6 +437,7 @@ py_library(
         requirement("bitarray"),
         ":exceptions_py",
         "//reboot:time_py",
+        "//reboot:uuidv7_py",
         "//reboot/admin:export_import_converters_py",
         "//reboot/aio/internals:channel_manager_py",
         "//reboot/aio/internals:middleware_py",
@@ -540,6 +551,7 @@ py_library(
         ":call_py",
         ":caller_id_auth_py",
         ":caller_id_py",
+        ":concurrently_py",
         ":contexts_py",
         ":directories_py",
         ":exceptions_py",

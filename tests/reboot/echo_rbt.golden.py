@@ -874,6 +874,7 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             placement_client=placement_client,
             channel_manager=channel_manager,
             effect_validation=effect_validation,
+            get_database_timestamp_ms=lambda: state_manager.latest_timestamp_ms,
         )
 
         self._servicer = servicer
@@ -3438,6 +3439,27 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             headers=context._headers, method='Reply'
         )
 
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this mutation!
         #
         # We do this _before_ calling 'transactionally()' because
@@ -3507,6 +3529,32 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
         response = tests.reboot.echo_pb2.ReplyResponse()
 
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='Reply'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this schedule! Note that
         # we need to do this for all kinds of methods because this is
         # effectively a mutation (actually a `writer`, see below).
@@ -3547,11 +3595,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context.participants.add(
                     self._servicer.__state_type_name__, context._state_ref
                 )
-
-            # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='Reply'
-            )
 
             async with self._state_manager.writer(
                 context,
@@ -3899,6 +3942,27 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             headers=context._headers, method='Replay'
         )
 
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
 
         async with self._state_manager.transactionally(
             context,
@@ -3943,6 +4007,32 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
         response = tests.reboot.echo_pb2.ReplayResponse()
 
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='Replay'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this schedule! Note that
         # we need to do this for all kinds of methods because this is
         # effectively a mutation (actually a `writer`, see below).
@@ -3983,11 +4073,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context.participants.add(
                     self._servicer.__state_type_name__, context._state_ref
                 )
-
-            # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='Replay'
-            )
 
             async with self._state_manager.writer(
                 context,
@@ -4332,6 +4417,27 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             headers=context._headers, method='WaitFor'
         )
 
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
 
         async with self._state_manager.transactionally(
             context,
@@ -4376,6 +4482,32 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
         response = tests.reboot.echo_pb2.WaitForResponse()
 
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='WaitFor'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this schedule! Note that
         # we need to do this for all kinds of methods because this is
         # effectively a mutation (actually a `writer`, see below).
@@ -4416,11 +4548,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context.participants.add(
                     self._servicer.__state_type_name__, context._state_ref
                 )
-
-            # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='WaitFor'
-            )
 
             async with self._state_manager.writer(
                 context,
@@ -4750,6 +4877,27 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             headers=context._headers, method='Stream'
         )
 
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
 
         async with self._state_manager.transactionally(
             context,
@@ -5047,6 +5195,27 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         # Try to verify the token if a token verifier exists.
         context.auth = await self._maybe_verify_token(
             headers=context._headers, method='RegexStream'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
         )
 
 
@@ -5370,6 +5539,27 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             headers=context._headers, method='SearchAndReplace'
         )
 
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this mutation!
         #
         # We do this _before_ calling 'transactionally()' because
@@ -5439,6 +5629,32 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
         response = tests.reboot.echo_pb2.SearchAndReplaceResponse()
 
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='SearchAndReplace'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this schedule! Note that
         # we need to do this for all kinds of methods because this is
         # effectively a mutation (actually a `writer`, see below).
@@ -5479,11 +5695,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context.participants.add(
                     self._servicer.__state_type_name__, context._state_ref
                 )
-
-            # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='SearchAndReplace'
-            )
 
             async with self._state_manager.writer(
                 context,
@@ -5836,6 +6047,27 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             headers=context._headers, method='FailOnceShouldBeRetried'
         )
 
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this mutation!
         #
         # We do this _before_ calling 'transactionally()' because
@@ -5905,6 +6137,32 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
         response = tests.reboot.echo_pb2.FailOnceShouldBeRetriedResponse()
 
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='FailOnceShouldBeRetried'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this schedule! Note that
         # we need to do this for all kinds of methods because this is
         # effectively a mutation (actually a `writer`, see below).
@@ -5945,11 +6203,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context.participants.add(
                     self._servicer.__state_type_name__, context._state_ref
                 )
-
-            # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='FailOnceShouldBeRetried'
-            )
 
             async with self._state_manager.writer(
                 context,
@@ -6297,6 +6550,32 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
         response = tests.reboot.echo_pb2.FailOnceShouldBeRetriedWorkflowResponse()
 
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='FailOnceShouldBeRetriedWorkflow'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this schedule! Note that
         # we need to do this for all kinds of methods because this is
         # effectively a mutation (actually a `writer`, see below).
@@ -6337,11 +6616,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context.participants.add(
                     self._servicer.__state_type_name__, context._state_ref
                 )
-
-            # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='FailOnceShouldBeRetriedWorkflow'
-            )
 
             async with self._state_manager.writer(
                 context,
@@ -6681,6 +6955,27 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             headers=context._headers, method='TooManyTasks'
         )
 
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this mutation!
         #
         # We do this _before_ calling 'transactionally()' because
@@ -6750,6 +7045,32 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
         response = tests.reboot.echo_pb2.TooManyTasksResponse()
 
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='TooManyTasks'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this schedule! Note that
         # we need to do this for all kinds of methods because this is
         # effectively a mutation (actually a `writer`, see below).
@@ -6790,11 +7111,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context.participants.add(
                     self._servicer.__state_type_name__, context._state_ref
                 )
-
-            # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='TooManyTasks'
-            )
 
             async with self._state_manager.writer(
                 context,
@@ -7142,6 +7458,32 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
         response = tests.reboot.echo_pb2.HangingResponse()
 
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='Hanging'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this schedule! Note that
         # we need to do this for all kinds of methods because this is
         # effectively a mutation (actually a `writer`, see below).
@@ -7182,11 +7524,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context.participants.add(
                     self._servicer.__state_type_name__, context._state_ref
                 )
-
-            # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='Hanging'
-            )
 
             async with self._state_manager.writer(
                 context,
@@ -7521,6 +7858,32 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
         response = tests.reboot.echo_pb2.ReactiveWorkflowResponse()
 
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='ReactiveWorkflow'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this schedule! Note that
         # we need to do this for all kinds of methods because this is
         # effectively a mutation (actually a `writer`, see below).
@@ -7561,11 +7924,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context.participants.add(
                     self._servicer.__state_type_name__, context._state_ref
                 )
-
-            # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='ReactiveWorkflow'
-            )
 
             async with self._state_manager.writer(
                 context,
@@ -7900,6 +8258,32 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
         response = tests.reboot.echo_pb2.ControlLoopResponse()
 
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='ControlLoop'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this schedule! Note that
         # we need to do this for all kinds of methods because this is
         # effectively a mutation (actually a `writer`, see below).
@@ -7940,11 +8324,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context.participants.add(
                     self._servicer.__state_type_name__, context._state_ref
                 )
-
-            # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='ControlLoop'
-            )
 
             async with self._state_manager.writer(
                 context,
@@ -8279,6 +8658,32 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
         response = tests.reboot.echo_pb2.AtMostOnceWorkflowResponse()
 
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='AtMostOnceWorkflow'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this schedule! Note that
         # we need to do this for all kinds of methods because this is
         # effectively a mutation (actually a `writer`, see below).
@@ -8319,11 +8724,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context.participants.add(
                     self._servicer.__state_type_name__, context._state_ref
                 )
-
-            # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='AtMostOnceWorkflow'
-            )
 
             async with self._state_manager.writer(
                 context,
@@ -8658,6 +9058,32 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
         response = tests.reboot.echo_pb2.WorkflowCallingWorkflowResponse()
 
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='WorkflowCallingWorkflow'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this schedule! Note that
         # we need to do this for all kinds of methods because this is
         # effectively a mutation (actually a `writer`, see below).
@@ -8698,11 +9124,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context.participants.add(
                     self._servicer.__state_type_name__, context._state_ref
                 )
-
-            # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='WorkflowCallingWorkflow'
-            )
 
             async with self._state_manager.writer(
                 context,
@@ -9042,6 +9463,27 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             headers=context._headers, method='RaiseValueError'
         )
 
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this mutation!
         #
         # We do this _before_ calling 'transactionally()' because
@@ -9111,6 +9553,32 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
         response = tests.reboot.echo_pb2.RaiseValueErrorResponse()
 
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='RaiseValueError'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this schedule! Note that
         # we need to do this for all kinds of methods because this is
         # effectively a mutation (actually a `writer`, see below).
@@ -9151,11 +9619,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context.participants.add(
                     self._servicer.__state_type_name__, context._state_ref
                 )
-
-            # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='RaiseValueError'
-            )
 
             async with self._state_manager.writer(
                 context,
@@ -9508,6 +9971,27 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             headers=context._headers, method='RaiseSpecifiedError'
         )
 
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this mutation!
         #
         # We do this _before_ calling 'transactionally()' because
@@ -9577,6 +10061,32 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
         response = tests.reboot.echo_pb2.RaiseSpecifiedErrorResponse()
 
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='RaiseSpecifiedError'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this schedule! Note that
         # we need to do this for all kinds of methods because this is
         # effectively a mutation (actually a `writer`, see below).
@@ -9617,11 +10127,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context.participants.add(
                     self._servicer.__state_type_name__, context._state_ref
                 )
-
-            # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='RaiseSpecifiedError'
-            )
 
             async with self._state_manager.writer(
                 context,
@@ -9969,6 +10474,32 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         )
         response = tests.reboot.echo_pb2.FailingWorkflowResponse()
 
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='FailingWorkflow'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this schedule! Note that
         # we need to do this for all kinds of methods because this is
         # effectively a mutation (actually a `writer`, see below).
@@ -10009,11 +10540,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context.participants.add(
                     self._servicer.__state_type_name__, context._state_ref
                 )
-
-            # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='FailingWorkflow'
-            )
 
             async with self._state_manager.writer(
                 context,
@@ -10650,6 +11176,7 @@ class EchoWriterStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -10790,6 +11317,7 @@ class EchoWriterStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -10830,6 +11358,7 @@ class EchoWriterStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -10871,6 +11400,7 @@ class EchoWriterStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -10916,6 +11446,7 @@ class EchoWriterStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -10956,6 +11487,7 @@ class EchoWriterStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11017,6 +11549,7 @@ class EchoWorkflowStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11159,6 +11692,7 @@ class EchoWorkflowStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11201,6 +11735,7 @@ class EchoWorkflowStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11244,6 +11779,7 @@ class EchoWorkflowStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11291,6 +11827,7 @@ class EchoWorkflowStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11333,6 +11870,7 @@ class EchoWorkflowStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11395,6 +11933,7 @@ class EchoTasksStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11447,6 +11986,7 @@ class EchoTasksStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11499,6 +12039,7 @@ class EchoTasksStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11551,6 +12092,7 @@ class EchoTasksStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11603,6 +12145,7 @@ class EchoTasksStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11655,6 +12198,7 @@ class EchoTasksStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11707,6 +12251,7 @@ class EchoTasksStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11759,6 +12304,7 @@ class EchoTasksStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11811,6 +12357,7 @@ class EchoTasksStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11863,6 +12410,7 @@ class EchoTasksStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11915,6 +12463,7 @@ class EchoTasksStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -11967,6 +12516,7 @@ class EchoTasksStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12019,6 +12569,7 @@ class EchoTasksStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12071,6 +12622,7 @@ class EchoTasksStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -12123,6 +12675,7 @@ class EchoTasksStub(_EchoStub):
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -13532,7 +14085,6 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 return await self._read(
                     self._servicer,
                     context.idempotency(
-                        key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
                         how=IMPORT_reboot_aio_idempotency.ALWAYS,
                     ) if self._how == IMPORT_reboot_aio_workflows.ALWAYS else context.idempotency(
                         alias=self._alias,
@@ -13640,7 +14192,6 @@ class EchoBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 unidempotently = self._how == IMPORT_reboot_aio_workflows.ALWAYS
                 idempotency = (
                     context.idempotency(
-                        key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
                         how=IMPORT_reboot_aio_idempotency.ALWAYS,
                     ) if unidempotently else context.idempotency(
                         alias=self._alias,
@@ -21809,7 +22360,6 @@ class Echo:
 
         def always(self):
             return self.idempotently(
-                key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
                 how=IMPORT_reboot_aio_idempotency.ALWAYS,
             )
 
@@ -28256,7 +28806,6 @@ class Echo:
     @classmethod
     def always(cls):
         return cls.idempotently(
-            key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
             how=IMPORT_reboot_aio_idempotency.ALWAYS,
         )
 

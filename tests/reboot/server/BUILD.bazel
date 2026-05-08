@@ -77,3 +77,12 @@ cc_test(
         },
     ),
 )
+
+cc_test(
+    name = "monotonic_clock_tests",
+    srcs = ["monotonic_clock_tests.cc"],
+    deps = [
+        "//reboot/server:database_cc",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)

@@ -1948,15 +1948,15 @@ export class {{ client.proto.state_name }}WeakReference {
       // TODO: pass along initial intent rather than deducing it here.
       let how: reboot.How = (
         () => {
-          if (this.#options.idempotency.key !== undefined) {
-            if (!this.#options.idempotency.always) {
-              throw new Error(
-                "`.read()` must be called with one of `.perWorkflow()`, " +
-                  "`.perIteration()`, or `.always()`; `.idempotently()` is not " +
-                  "(currently) supported"
-              );
-            }
+          if (this.#options.idempotency.always) {
             return reboot.ALWAYS;
+          }
+          if (this.#options.idempotency.key !== undefined) {
+            throw new Error(
+              "`.read()` must be called with one of `.perWorkflow()`, " +
+                "`.perIteration()`, or `.always()`; `.idempotently()` is not " +
+                "(currently) supported"
+            );
           }
           return this.#options.idempotency.perIteration
             ? reboot.PER_ITERATION
@@ -2002,15 +2002,15 @@ export class {{ client.proto.state_name }}WeakReference {
       // TODO: pass along initial intent rather than deducing it here.
       let how: reboot.How = (
         () => {
-          if (this.#options.idempotency.key !== undefined) {
-            if (!this.#options.idempotency.always) {
-              throw new Error(
-                "`.write()` must be called with one of `.perWorkflow()`, " +
-                  "`.perIteration()`, or `.always()`; `.idempotently()` is not " +
-                  "(currently) supported"
-              );
-            }
+          if (this.#options.idempotency.always) {
             return reboot.ALWAYS;
+          }
+          if (this.#options.idempotency.key !== undefined) {
+            throw new Error(
+              "`.write()` must be called with one of `.perWorkflow()`, " +
+                "`.perIteration()`, or `.always()`; `.idempotently()` is not " +
+                "(currently) supported"
+            );
           }
           return this.#options.idempotency.perIteration
             ? reboot.PER_ITERATION
@@ -2105,7 +2105,7 @@ export class {{ client.proto.state_name }}WeakReference {
   }
 
   public always() {
-    return this.idempotently({ key: uuid.v4(), always: true });
+    return this.idempotently({ always: true });
   }
 
   static _Schedule = class {
@@ -2427,7 +2427,7 @@ export class {{ client.proto.state_name }} {
 
   public static always() {
     return {{ client.proto.state_name }}
-      .idempotently({ key: uuid.v4(), always: true });
+      .idempotently({ always: true });
   }
 
   static _ConstructIdempotently = class {

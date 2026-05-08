@@ -127,12 +127,12 @@ enum class TestOnlyLongRunningRPCHookSite {
   // that the new data came after the snapshot is taken won't be part
   // of the export.
   EXPORT_RIGHT_AFTER_IMPLICIT_SNAPSHOT,
-  // `Recover`: immediately after `mutex_` is acquired, so that we know
-  // the server has started processing the RPC.
-  RECOVER_RIGHT_AFTER_MUTEX_ACQUIRE,
-  // `RecoverIdempotentMutations`: immediately after `mutex_` is
-  // acquired, so that we know the server has started processing the RPC.
-  RECOVER_IDEMPOTENT_MUTATIONS_RIGHT_AFTER_MUTEX_ACQUIRE,
+  // `Recover`: immediately after entering, so that we know the server
+  // has started processing the RPC.
+  RECOVER_ENTERED,
+  // `RecoverIdempotentMutations`: immediately after entering, so that
+  // we know the server has started processing the RPC.
+  RECOVER_IDEMPOTENT_MUTATIONS_ENTERED,
 };
 
 void SetTestOnlyHookForLongRunningRPC(

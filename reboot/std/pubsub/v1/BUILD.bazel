@@ -8,6 +8,7 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//reboot/aio:concurrently_py",
         "//reboot/aio:contexts_py",
         "//reboot/std/collections/queue/v1:queue_py",
         "//reboot/std/item/v1:item_py",

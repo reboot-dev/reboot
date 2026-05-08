@@ -60,8 +60,9 @@ test("Use orderedMap and node servicers", async (t) => {
     });
 
     await node.insert(context, {
-      key: "50",
-      value: Value.fromJson("fifty").toBinary(),
+      entries: {
+        "50": Value.fromJson("fifty").toBinary(),
+      },
     });
 
     const entry = await node.search(context, { key: "50" });

@@ -9,6 +9,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//reboot/aio:applications_py",
+        "//reboot/aio:concurrently_py",
         "//reboot/aio:contexts_py",
         "@com_github_reboot_dev_reboot//rbt/std/collections/ordered_map/v1:ordered_map_py_reboot",
     ],

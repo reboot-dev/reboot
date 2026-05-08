@@ -5,6 +5,7 @@ from reboot.aio.auth.admin_auth import (
     AdminAuthMixin,
     auth_metadata_from_metadata,
 )
+from reboot.aio.concurrently import concurrently
 from reboot.aio.headers import SERVER_ID_HEADER, Headers
 from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.internals.middleware import Middleware
@@ -131,12 +132,8 @@ class TasksServicer(
 
         async def call_other_server(
             server_id: ServerId,
-            list_pending_tasks_responses: list[tasks_pb2.ListTasksResponse],
-        ):
-            """
-            Calls 'ListTasks' on the given server and appends the
-            response to 'list_pending_tasks_responses'.
-            """
+        ) -> tasks_pb2.ListTasksResponse:
+            """Call `ListTasks` on the given server."""
             channel = self._channel_manager.get_channel_to(
                 self._placement_client.address_for_server(server_id)
             )
@@ -144,30 +141,20 @@ class TasksServicer(
             metadata = auth_metadata_from_metadata(grpc_context) + (
                 (SERVER_ID_HEADER, server_id),
             )
-            response = await stub.ListTasks(
+            return await stub.ListTasks(
                 tasks_pb2.ListTasksRequest(only_server_id=server_id),
                 metadata=metadata,
             )
-            list_pending_tasks_responses.append(response)
-
-        list_pending_tasks_responses: list[tasks_pb2.ListTasksResponse] = []
 
         server_ids = self._placement_client.known_servers(self._application_id)
 
-        await asyncio.gather(
-            *(
-                call_other_server(
-                    server_id,
-                    list_pending_tasks_responses,
-                ) for server_id in server_ids
-            )
+        return tasks_pb2.ListTasksResponse(
+            tasks=[
+                task async for response in concurrently(
+                    call_other_server(server_id) for server_id in server_ids
+                ) for task in response.tasks
+            ]
         )
-
-        result = tasks_pb2.ListTasksResponse()
-        for response in list_pending_tasks_responses:
-            result.tasks.extend(response.tasks)
-
-        return result
 
     async def ListTasks(
         self,

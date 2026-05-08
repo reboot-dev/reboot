@@ -251,8 +251,11 @@ class EffectValidationTestCase(unittest.IsolatedAsyncioTestCase):
 
         await (await general.spawn().Reader(context))
 
+        # The reader is an internal call (spawned from a context),
+        # so it skips its own effect-validation re-run; the
+        # caller's re-run will re-invoke it.
         self.assert_effects(
-            "constructor_writer", "constructor_writer", "reader", "reader"
+            "constructor_writer", "constructor_writer", "reader"
         )
 
     async def test_task_writer(self) -> None:

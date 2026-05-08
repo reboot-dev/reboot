@@ -5,8 +5,14 @@ load("@rules_python//python:defs.bzl", "py_library")
 
 cc_library(
     name = "database_cc",
-    srcs = ["database.cc"],
-    hdrs = ["database.h"],
+    srcs = [
+        "database.cc",
+        "monotonic_clock.cc",
+    ],
+    hdrs = [
+        "database.h",
+        "monotonic_clock.h",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//reboot:settings_cc",

@@ -171,6 +171,8 @@ class DatabaseTest : public TemporaryDirectoryTest {
     if (!status.ok()) {
       throw std::runtime_error(status.error_message());
     }
+
+    EXPECT_TRUE(response.has_timestamp());
   }
 
   // Attempts to 'Load' an actor state. Returns 'nullopt' if no
@@ -190,6 +192,7 @@ class DatabaseTest : public TemporaryDirectoryTest {
     grpc::Status status = stub->Load(&context, request, &response);
 
     EXPECT_TRUE(status.ok());
+    EXPECT_TRUE(response.has_timestamp());
 
     if (response.actors().size() == 0) {
       // This actor doesn't exist yet.
@@ -221,6 +224,8 @@ class DatabaseTest : public TemporaryDirectoryTest {
 
     grpc::Status status = reader->Finish();
     CHECK(status.ok()) << status.error_message();
+
+    EXPECT_TRUE(response.has_timestamp());
 
     return response;
   }
@@ -420,6 +425,8 @@ class TwoShardDatabaseTest : public DatabaseTest {
     if (!status.ok()) {
       throw std::runtime_error(status.error_message());
     }
+
+    EXPECT_TRUE(response.has_timestamp());
   }
 
   inline void transaction_participant_commit(
@@ -437,6 +444,8 @@ class TwoShardDatabaseTest : public DatabaseTest {
     if (!status.ok()) {
       throw std::runtime_error(status.error_message());
     }
+
+    EXPECT_TRUE(response.has_timestamp());
   }
 
   inline void transaction_participant_abort(
@@ -463,7 +472,7 @@ class TwoShardDatabaseTest : public DatabaseTest {
       std::map<std::string, std::set<std::string>>&& should_commit) {
     v1alpha1::TransactionCoordinatorPreparedRequest request;
     request.set_transaction_id(transaction_id);
-    auto* coordinator = request.mutable_prepared_transaction_coordinator();
+    auto* coordinator = request.mutable_transaction_coordinator();
     coordinator->set_state_ref(coordinator_state_ref);
     for (const auto& [state_type, state_refs] : should_commit) {
       (*(coordinator->mutable_participants()
@@ -1100,7 +1109,9 @@ TEST_F(TwoShardDatabaseTest, TransactionParticipantCommitMissingTransaction) {
 ////////////////////////////////////////////////////////////////////////
 
 TEST_F(TwoShardDatabaseTest, TransactionParticipantAbortMissingTransaction) {
-  // Test that we can't abort a transaction that doesn't exist.
+  // Test that aborting a transaction that doesn't exist is a no-op.
+  // A server may call abort without knowing whether it has successfully
+  // prepared, so abort must be idempotent.
 
   const std::string state_type = "Greeter";
   const std::string state_ref = make_state_ref("test_1234");
@@ -1112,17 +1123,9 @@ TEST_F(TwoShardDatabaseTest, TransactionParticipantAbortMissingTransaction) {
 
   store({actor}, {});
 
-  EXPECT_THAT(
-      [&]() {
-        transaction_participant_abort(
-            stout::copy(state_type),
-            stout::copy(state_ref));
-      },
-      ThrowsMessage<std::runtime_error>(HasSubstr(
-          fmt::format(
-              "Missing transaction for state type '{}' actor '{}'",
-              state_type,
-              state_ref))));
+  EXPECT_NO_THROW(transaction_participant_abort(
+      stout::copy(state_type),
+      stout::copy(state_ref)));
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -1985,12 +1988,12 @@ TEST_F(TwoShardDatabaseTest, RecoverTransactionsWithPrepared) {
       participant_transaction.uncommitted_idempotent_mutations(0).key(),
       idempotent_mutation_id.toBytes());
 
-  EXPECT_EQ(response.prepared_transaction_coordinators_size(), 1);
+  EXPECT_EQ(response.transaction_coordinators_size(), 1);
 
-  ASSERT_TRUE(response.prepared_transaction_coordinators().contains(
-      transaction_id.toString()));
+  ASSERT_TRUE(
+      response.transaction_coordinators().contains(transaction_id.toString()));
 
-  const auto& participants = response.prepared_transaction_coordinators()
+  const auto& participants = response.transaction_coordinators()
                                  .at(transaction_id.toString())
                                  .participants()
                                  .should_commit();
@@ -2676,7 +2679,7 @@ TEST_F(TwoShardDatabaseTest, RecoverWithShardFiltering) {
     EXPECT_EQ(2, response.participant_transactions().size());
     EXPECT_EQ(2, response.idempotent_mutations().size());
     // Now we have 2 coordinator transactions (one per shard)
-    EXPECT_EQ(2, response.prepared_transaction_coordinators().size());
+    EXPECT_EQ(2, response.transaction_coordinators().size());
   }
 
   // Test 2: Recover with shard0 filter.
@@ -2710,9 +2713,9 @@ TEST_F(TwoShardDatabaseTest, RecoverWithShardFiltering) {
     EXPECT_EQ(1, response.idempotent_mutations().size());
     EXPECT_EQ(shard0_ref, response.idempotent_mutations(0).state_ref());
 
-    // Verify prepared_transaction_coordinators ARE filtered by shard.
+    // Verify transaction_coordinators ARE filtered by shard.
     // Each shard only tracks coordinator transactions it owns.
-    EXPECT_EQ(1, response.prepared_transaction_coordinators().size());
+    EXPECT_EQ(1, response.transaction_coordinators().size());
   }
 
   // Test 3: Recover with shard1 filter.
@@ -2746,8 +2749,8 @@ TEST_F(TwoShardDatabaseTest, RecoverWithShardFiltering) {
     EXPECT_EQ(1, response.idempotent_mutations().size());
     EXPECT_EQ(shard1_ref, response.idempotent_mutations(0).state_ref());
 
-    // Verify prepared_transaction_coordinators ARE filtered by shard.
-    EXPECT_EQ(1, response.prepared_transaction_coordinators().size());
+    // Verify transaction_coordinators ARE filtered by shard.
+    EXPECT_EQ(1, response.transaction_coordinators().size());
   }
 }
 
@@ -3033,9 +3036,7 @@ TEST_F(TwoShardDatabaseTest, RecoverCancelled) {
   SetTestOnlyHookForLongRunningRPC(
       server->TestOnly_GetService(),
       [&](TestOnlyLongRunningRPCHookSite site) {
-        ASSERT_EQ(
-            site,
-            TestOnlyLongRunningRPCHookSite::RECOVER_RIGHT_AFTER_MUTEX_ACQUIRE);
+        ASSERT_EQ(site, TestOnlyLongRunningRPCHookSite::RECOVER_ENTERED);
         mutex_acquired.set_value();
         cancelled.get_future().wait();
       });
@@ -3082,7 +3083,7 @@ TEST_F(TwoShardDatabaseTest, RecoverIdempotentMutationsCancelled) {
         ASSERT_EQ(
             site,
             TestOnlyLongRunningRPCHookSite::
-                RECOVER_IDEMPOTENT_MUTATIONS_RIGHT_AFTER_MUTEX_ACQUIRE);
+                RECOVER_IDEMPOTENT_MUTATIONS_ENTERED);
         mutex_acquired.set_value();
         cancelled.get_future().wait();
       });
@@ -3158,8 +3159,8 @@ class LegacyToModernDatabaseTest : public DatabaseTest {
     request.set_transaction_id(transaction_id.toBytes());
 
     // Use the new transaction_coordinator field (modern format).
-    v1alpha1::PreparedTransactionCoordinator* coordinator =
-        request.mutable_prepared_transaction_coordinator();
+    v1alpha1::TransactionCoordinator* coordinator =
+        request.mutable_transaction_coordinator();
     coordinator->set_state_ref(coordinator_state_ref);
 
     std::set<std::string> actors = {
@@ -3320,12 +3321,12 @@ TEST_F(LegacyToModernDatabaseTest, BackwardsCompatibilityWithLegacyFormat) {
   {
     v1alpha1::RecoverResponse response = recover_all_shards();
 
-    ASSERT_EQ(2, response.prepared_transaction_coordinators().size());
+    ASSERT_EQ(2, response.transaction_coordinators().size());
 
     // Both transaction IDs should be present.
     std::set<std::string> transaction_ids;
     for (const auto& [tid, participants] :
-         response.prepared_transaction_coordinators()) {
+         response.transaction_coordinators()) {
       transaction_ids.insert(tid);
     }
 
@@ -3341,9 +3342,9 @@ TEST_F(LegacyToModernDatabaseTest, BackwardsCompatibilityWithLegacyFormat) {
   {
     v1alpha1::RecoverResponse response = recover_all_shards();
 
-    ASSERT_EQ(1, response.prepared_transaction_coordinators().size());
+    ASSERT_EQ(1, response.transaction_coordinators().size());
     EXPECT_TRUE(
-        response.prepared_transaction_coordinators().count(
+        response.transaction_coordinators().count(
             modern_transaction_id.toString())
         > 0)
         << "Modern transaction should still be present after legacy cleanup";
@@ -3355,7 +3356,7 @@ TEST_F(LegacyToModernDatabaseTest, BackwardsCompatibilityWithLegacyFormat) {
   {
     v1alpha1::RecoverResponse response = recover_all_shards();
 
-    EXPECT_EQ(0, response.prepared_transaction_coordinators().size())
+    EXPECT_EQ(0, response.transaction_coordinators().size())
         << "No transactions should remain after cleanup";
   }
 }
@@ -3381,11 +3382,11 @@ TEST_F(
     v1alpha1::RecoverResponse response = recover("s000000000");  // First shard.
 
     // Should recover the legacy transaction.
-    ASSERT_EQ(1, response.prepared_transaction_coordinators().size());
+    ASSERT_EQ(1, response.transaction_coordinators().size());
 
     std::set<std::string> transaction_ids;
     for (const auto& [tid, participants] :
-         response.prepared_transaction_coordinators()) {
+         response.transaction_coordinators()) {
       transaction_ids.insert(tid);
     }
 
@@ -3399,7 +3400,7 @@ TEST_F(
         recover("s000000001");  // Second shard.
 
     // Should recover no transactions.
-    EXPECT_EQ(0, response.prepared_transaction_coordinators().size())
+    EXPECT_EQ(0, response.transaction_coordinators().size())
         << "Second shard should not recover any transactions in this test";
   }
 }
@@ -3520,7 +3521,7 @@ TEST_F(ManyShardDatabaseTest, BasicRecoverWithManyShards) {
   // Should start with no data
   EXPECT_EQ(0, response.pending_tasks().size());
   EXPECT_EQ(0, response.participant_transactions().size());
-  EXPECT_EQ(0, response.prepared_transaction_coordinators().size());
+  EXPECT_EQ(0, response.transaction_coordinators().size());
   EXPECT_EQ(0, response.idempotent_mutations().size());
 }
 

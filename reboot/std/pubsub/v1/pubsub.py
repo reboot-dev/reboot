@@ -9,6 +9,7 @@ from rbt.std.pubsub.v1.pubsub_rbt import (
     Topic,
 )
 from reboot.aio.auth.authorizers import allow
+from reboot.aio.concurrently import concurrently
 from reboot.aio.contexts import WorkflowContext, WriterContext
 from reboot.aio.workflows import until
 from reboot.std.collections.queue.v1 import queue
@@ -99,7 +100,10 @@ class TopicServicer(Topic.Servicer):
                 have_items,
             )
 
-            await Queue.forall(queue_ids).Enqueue(context, items=items)
+            await concurrently(
+                Queue.ref(queue_id).Enqueue(context, items=items)
+                for queue_id in queue_ids
+            )
 
         return BrokerResponse()
 

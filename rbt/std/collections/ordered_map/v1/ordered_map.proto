@@ -4,6 +4,7 @@ package rbt.std.collections.ordered_map.v1;
 
 import "google/protobuf/any.proto";
 import "google/protobuf/struct.proto";
+import "rbt/std/item/v1/item.proto";
 import "rbt/v1alpha1/options.proto";
 
 ////////////////////////////////////////////////////////////////////////
@@ -101,26 +102,39 @@ message NodeSearchResponse {
 ////////////////////////////////////////////////////////////////////////
 
 message NodeInsertRequest {
-  string key = 1;
-  // NOTE: this is a message of type `Value`, but for performance
-  // reasons we don't bother deserializing it except when a user is
-  // calling into the `OrderedMap` type directly.
-  bytes value = 2;
+  reserved 1, 2;
+  reserved "key", "value";
+  // Map of key to serialized `Value` bytes.
+  map<string, bytes> entries = 3;
 }
 
 message NodeInsertResponse {
-  bool split = 1;
-  string promoted_key = 2;
-  string new_child_id = 3;
+  reserved 1, 2, 3, 4;
+  reserved "split", "promoted_key", "new_child_id", "inserted";
+  // Promoted keys from splits.
+  repeated string promoted_keys = 5;
+  // New child IDs from splits.
+  repeated string new_child_ids = 6;
+  // Count of newly inserted keys (excludes updates
+  // of existing keys).
+  uint32 inserted_count = 7;
 }
 
 ////////////////////////////////////////////////////////////////////////
 
 message NodeRemoveRequest {
-  string key = 1;
+  reserved 1;
+  reserved "key";
+  // Keys to remove.
+  repeated string keys = 2;
 }
 
-message NodeRemoveResponse {}
+message NodeRemoveResponse {
+  reserved 1;
+  reserved "removed";
+  // Count of keys that existed and were removed.
+  uint32 removed_count = 2;
+}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -237,12 +251,24 @@ message OrderedMap {
 
   uint32 degree = 1;
   string root_id = 2;
+  // Total number of entries. Only maintained when `maintain_size` is
+  // true.
+  uint32 size = 3;
+  bool maintain_size = 4;
 }
 
 ////////////////////////////////////////////////////////////////////////
 
 message OrderedMapCreateRequest {
-  uint32 degree = 1;
+  // If not set, the default degree will be used (i.e., 128 at the
+  // time of writing this comment).
+  optional uint32 degree = 1;
+  // When true, the map tracks the total number of
+  // entries. This requires a write to the root on
+  // every insert/remove, which serializes all
+  // mutations. When false (default), `total_size` in
+  // range responses will not be set.
+  bool maintain_size = 2;
 }
 
 message OrderedMapCreateResponse {}
@@ -286,6 +312,14 @@ message OrderedMapInsertRequest {
   optional google.protobuf.Value value = 2;
   optional bytes bytes = 3;
   optional google.protobuf.Any any = 4;
+  // Bulk insert. If non-empty, single-key fields
+  // (key, value, bytes, any) must all be unset.
+  map<string, rbt.std.item.v1.Item> entries = 5;
+  // Construction options (used on implicit construction, i.e., first
+  // `Insert` without a prior `Create`). After construction, if set,
+  // these are validated to match the existing configuration.
+  optional uint32 degree = 6;
+  optional bool maintain_size = 7;
 }
 
 message OrderedMapInsertResponse {}
@@ -294,6 +328,8 @@ message OrderedMapInsertResponse {}
 
 message OrderedMapRemoveRequest {
   string key = 1;
+  // Bulk remove: keys to remove.
+  repeated string keys = 2;
 }
 
 message OrderedMapRemoveResponse {}
@@ -311,6 +347,9 @@ message OrderedMapRangeRequest {
 
 message OrderedMapRangeResponse {
   repeated Entry entries = 1;
+  // Total entries in map, regardless of size of `entries`. Only set
+  // when the map was constructed with `maintain_size = true`.
+  optional uint32 total_size = 2;
 }
 
 ////////////////////////////////////////////////////////////////////////

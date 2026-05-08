@@ -56,3 +56,13 @@ py_test(
         "//reboot/aio:types_py",
     ],
 )
+
+py_test(
+    name = "concurrently_test_py",
+    timeout = "short",
+    srcs = [":concurrently_test.py"],
+    main = "concurrently_test.py",
+    deps = [
+        "//reboot/aio:concurrently_py",
+    ],
+)

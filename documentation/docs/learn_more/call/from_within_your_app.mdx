@@ -169,20 +169,14 @@ You can make concurrent calls using
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
-<!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/bank-pydantic/backend/src/bank_servicer.py&lines=105-110) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/bank-pydantic/backend/src/bank_servicer.py -->
-
 ```py
-all_customer_balances: list[CustomerAccounts] = await asyncio.gather(
+balances = await asyncio.gather(
     *[
-        customer_accounts(entry.value.decode())
-        for entry in customer_ids.entries
+        Account.ref(account_id).balance(context)
+        for account_id in account_ids
     ]
 )
 ```
-
-<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
@@ -208,6 +202,162 @@ return {
 Using concurrent calls can significantly improve
 performance when gathering data from multiple state instances.
 :::
+
+### `concurrently` (Python)
+
+For Python applications, Reboot provides a `concurrently` helper
+that improves on `asyncio.gather` in several ways:
+
+- **Adaptive concurrency limits** — automatically discovers the
+  optimal number of in-flight operations based on measured latency,
+  rather than launching everything at once.
+- **Streaming results** — use `async for` to process results as
+  they complete, rather than waiting for all of them.
+- **Built-in logging** — pass `log=True` to see what the
+  adaptive limiter is doing.
+
+#### Generator expressions and iterables
+
+The simplest usage passes a generator expression of awaitables:
+
+```python
+from reboot.aio.concurrently import concurrently
+
+# Collect all results into a list (like `asyncio.gather`):
+balances = await concurrently(
+    Account.ref(account_id).balance(context)
+    for account_id in account_ids
+)
+```
+
+Use `async for` to process results as they complete:
+
+```python
+async for balance in concurrently(
+    Account.ref(account_id).balance(context)
+    for account_id in account_ids
+):
+    process(balance)
+```
+
+You can also pass any iterable of awaitables, such as a list:
+
+```python
+balances = await concurrently([
+    Account.ref(account_id).balance(context)
+    for account_id in account_ids
+])
+```
+
+#### Async generators
+
+When the work to produce each awaitable is more complex (e.g.,
+multi-step logic, or the source of awaitables is itself async),
+pass an async generator directly:
+
+```python
+async def fetch_balances():
+    for customer in customers:
+        account_id = get_account_id(customer)
+        yield Account.ref(account_id).balance(context)
+
+balances = await concurrently(fetch_balances())
+```
+
+Awaitables are consumed lazily — only as many as the adaptive
+concurrency limit allows at a time.
+
+#### `for_each` — pairing elements with results
+
+When you need to associate each input element with its result
+(e.g., building a `dict`), use the `for_each` parameter with a
+callable. Each iteration yields `(element, result)` tuples,
+which works well in dictionary comprehensions:
+
+```python
+balances_by_account_id = {
+    account_id: balance
+    async for account_id, balance in concurrently(
+        lambda account_id: Account.ref(account_id).balance(context),
+        for_each=account_ids,
+    )
+}
+```
+
+With `await`, you get a list of the same `(element, result)` tuples:
+
+```python
+balances = await concurrently(
+    lambda account_id: Account.ref(account_id).balance(context),
+    for_each=account_ids,
+)
+
+for account_id, balance in balances:
+    process(account_id, balance)
+```
+
+If you just want the results without elements, use a generator
+expression instead of `for_each`:
+
+```python
+balances = await concurrently(
+    Account.ref(account_id).balance(context)
+    for account_id in account_ids
+)
+```
+
+The `for_each` parameter also accepts an async generator for
+lazy streaming sources like database cursors or paginated APIs:
+
+```python
+async def account_ids():
+    async for page in paginated_api():
+        for account_id in page:
+            yield account_id
+
+balances_by_id = {
+    account_id: balance
+    async for account_id, balance in concurrently(
+        lambda account_id: Account.ref(account_id).balance(context),
+        for_each=account_ids(),
+    )
+}
+```
+
+#### Error handling
+
+By default, exceptions are raised immediately (like
+`asyncio.gather`). Pass `return_exceptions=True` to return them
+as values instead — each item becomes `result | BaseException`,
+matching `asyncio.gather(return_exceptions=True)`. This works
+with both `await` and `async for`, and enables tools like mypy
+to do `isinstance` narrowing for type-safe error handling:
+
+```python
+# With `await`:
+balances = await concurrently(
+    (Account.ref(account_id).balance(context) for account_id in account_ids),
+    return_exceptions=True,
+)
+for balance in balances:
+    if isinstance(balance, BaseException):
+        handle_error(balance)
+    else:
+        process(balance)  # mypy narrows the type correctly!
+```
+
+```python
+# With `async for` and `for_each`:
+async for account_id, balance in concurrently(
+    lambda account_id: Account.ref(account_id).balance(context),
+    for_each=account_ids,
+    return_exceptions=True,
+):
+    if isinstance(balance, BaseException):
+        handle_error(account_id, balance)
+    else:
+        process(account_id, balance)  # mypy narrows the type correctly!
+```
 
 ## Context constraints
 

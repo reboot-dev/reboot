@@ -660,6 +660,12 @@ async def _run_jaeger():
         'receivers.otlp.protocols.http.endpoint=0.0.0.0:4318',
         '--set',
         'receivers.otlp.protocols.grpc.endpoint=0.0.0.0:4317',
+        # Disable clock skew adjustments, this is all running on the
+        # same host so even though it is across processes we shouldn't
+        # expect any clock skew and without this Jaeger adjusts some
+        # spans to completely incorrect and misleading places.
+        '--set',
+        'extensions.jaeger_query.max_clock_skew_adjust=0s',
         # Suppress all output from Jaeger; its logs are not
         # developer-facing.
         stdout=asyncio.subprocess.DEVNULL,

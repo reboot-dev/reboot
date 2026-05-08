@@ -944,6 +944,12 @@ export type IdempotencyOptions =
       key: string;
       perIteration?: undefined;
       always?: boolean;
+    }
+  | {
+      alias?: undefined;
+      key?: undefined;
+      perIteration?: undefined;
+      always: true;
     };
 
 export type ScheduleOptions = { when: Date };

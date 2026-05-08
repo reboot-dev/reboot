@@ -4,6 +4,7 @@ import os
 import sys
 import uuid
 from cffi import FFI
+from google.protobuf.timestamp_pb2 import Timestamp
 from rbt.v1alpha1 import (
     application_metadata_pb2,
     database_pb2,
@@ -232,6 +233,36 @@ class DatabaseClient:
         assert response.actors[0].HasField('state')
         return response.actors[0].state
 
+    async def preload(
+        self,
+        state_type: StateTypeName,
+        state_ref: StateRef,
+        *,
+        skip_state: bool = False,
+        skip_idempotent_mutations: bool = False,
+    ) -> database_pb2.PreloadResponse:
+        """Combined preload of state and idempotent mutations in a
+        single round-trip to the database.
+
+        The server-streaming response is aggregated into a single
+        `PreloadResponse`.
+
+        Pass `skip_state=True` or `skip_idempotent_mutations=True`
+        to ask the database to skip the corresponding scan when the
+        server already has that data cached or being loaded.
+        """
+        stub = await self._get_database_stub()
+        request = database_pb2.PreloadRequest(
+            state_type=state_type,
+            state_ref=state_ref.to_str(),
+            skip_state=skip_state,
+            skip_idempotent_mutations=skip_idempotent_mutations,
+        )
+        response = database_pb2.PreloadResponse()
+        async for partial in stub.Preload(request):
+            response.MergeFrom(partial)
+        return response
+
     async def load_task_response(
         self,
         task_id: tasks_pb2.TaskId,
@@ -286,8 +317,11 @@ class DatabaseClient:
         transaction: Optional[database_pb2.Transaction] = None,
         idempotent_mutation: Optional[database_pb2.IdempotentMutation] = None,
         sync: bool = True,
-    ) -> None:
-        """Store actor state and task upserts after method completion."""
+    ) -> Optional[Timestamp]:
+        """Store actor state and task upserts after method
+        completion. Returns the piggybacked database timestamp,
+        or None if no RPC was made.
+        """
         # Don't bother making an expensive call if there isn't
         # anything to be done, which may be possible for inline
         # writers that are not idempotent and haven't modified their
@@ -298,7 +332,7 @@ class DatabaseClient:
             len(ensure_state_types_created) == 0 and transaction is None and
             idempotent_mutation is None
         ):
-            return
+            return None
 
         stub = await self._get_database_stub()
 
@@ -312,7 +346,9 @@ class DatabaseClient:
             sync=sync,
         )
 
-        await stub.Store(request)
+        response = await stub.Store(request)
+
+        return response.timestamp if response.HasField("timestamp") else None
 
     @overload
     async def find(
@@ -390,30 +426,69 @@ class DatabaseClient:
         response: database_pb2.FindResponse = await stub.Find(request)
         return [StateRef(ref) for ref in response.state_refs]
 
+    async def transaction_coordinator_prepare(
+        self,
+        transaction_id: uuid.UUID,
+        transaction_coordinator_state_ref: StateRef,
+        participants: Participants,
+    ) -> Optional[Timestamp]:
+        """Called by a transaction coordinator to record the
+        participant list before all participants have been
+        prepared. This can run concurrently with participant
+        prepares. Records a 'preparing' state that recovery can
+        use to re-run prepare if the coordinator fails.
+
+        Returns the piggybacked database timestamp, or None
+        if the database does not support this field.
+        """
+        stub = await self._get_database_stub()
+
+        response = await stub.TransactionCoordinatorPrepare(
+            database_pb2.TransactionCoordinatorPrepareRequest(
+                transaction_id=transaction_id.bytes,
+                transaction_coordinator=database_pb2.TransactionCoordinator(
+                    state_ref=transaction_coordinator_state_ref.to_str(),
+                    participants=participants.to_sidecar(),
+                    preparing=True,
+                ),
+            )
+        )
+
+        return response.timestamp if response.HasField("timestamp") else None
+
     async def transaction_coordinator_prepared(
         self,
         transaction_id: uuid.UUID,
         transaction_coordinator_state_ref: StateRef,
         participants: Participants,
-    ) -> None:
-        """Called by a transaction coordinator after it has successfully
-        prepared a transaction, i.e., completed the first phase of two
-        phase commit. After this RPC returns we should always be able
-        to tell all the transaction participants that the transaction
-        has committed.
+    ) -> Optional[Timestamp]:
+        """Called by a transaction coordinator after it has
+        successfully prepared a transaction, i.e., completed the
+        first phase of two phase commit. After this RPC returns
+        we should always be able to tell all the transaction
+        participants that the transaction has committed.
+
+        Overwrites the 'preparing' record (if any) written by
+        `transaction_coordinator_prepare()` with
+        `preparing=False`, marking the transaction as fully
+        prepared.
+
+        Returns the piggybacked database timestamp, or None
+        if the database does not support this field.
         """
         stub = await self._get_database_stub()
 
-        await stub.TransactionCoordinatorPrepared(
+        response = await stub.TransactionCoordinatorPrepared(
             database_pb2.TransactionCoordinatorPreparedRequest(
                 transaction_id=transaction_id.bytes,
-                prepared_transaction_coordinator=database_pb2.
-                PreparedTransactionCoordinator(
+                transaction_coordinator=database_pb2.TransactionCoordinator(
                     state_ref=transaction_coordinator_state_ref.to_str(),
                     participants=participants.to_sidecar(),
                 ),
             )
         )
+
+        return response.timestamp if response.HasField("timestamp") else None
 
     async def transaction_coordinator_cleanup(
         self,
@@ -439,39 +514,68 @@ class DatabaseClient:
         await stub.TransactionCoordinatorCleanup(request)
 
     async def transaction_participant_prepare(
-        self, state_type: StateTypeName, state_ref: StateRef
-    ) -> None:
+        self,
+        state_type: StateTypeName,
+        state_ref: StateRef,
+        transaction: Optional[database_pb2.Transaction] = None,
+        *,
+        state: Optional[bytes] = None,
+        task_upserts: Optional[list[database_pb2.Task]] = None,
+        idempotent_mutations: Optional[list[database_pb2.IdempotentMutation]
+                                      ] = None,
+    ) -> Optional[Timestamp]:
         """Called by a transaction participant when they are
         prepared. Guarantees that the preparedness of this participant
         is persisted when the RPC returns, meaning that until
         'TransactionParticipantCommit()' or '...Abort()' is called,
         any call to 'Recover()' is guaranteed to return this
         transaction's information.
+
+        When using restart detection, all intermediate writes within
+        the transaction are deferred and passed here via `state`,
+        `task_upserts`, and `idempotent_mutations`. The `state_type`
+        and `state_ref` for `state` is taken from the `transaction`
+        field.
+
+        Returns the piggybacked database timestamp, or None
+        if the database does not support this field.
         """
         stub = await self._get_database_stub()
 
-        await stub.TransactionParticipantPrepare(
+        response = await stub.TransactionParticipantPrepare(
             database_pb2.TransactionParticipantPrepareRequest(
-                state_type=state_type, state_ref=state_ref.to_str()
+                state_type=state_type,
+                state_ref=state_ref.to_str(),
+                transaction=transaction,
+                state=state,
+                task_upserts=task_upserts or [],
+                idempotent_mutations=idempotent_mutations or [],
             )
         )
 
+        return response.timestamp if response.HasField("timestamp") else None
+
     async def transaction_participant_commit(
         self, state_type: StateTypeName, state_ref: StateRef
-    ) -> None:
+    ) -> Optional[Timestamp]:
         """Called by a transaction participant to commit its given
         transaction. The transaction must previously have been
         prepared via 'TransactionParticipantPrepare()'. The
         transaction is guaranteed to be persisted as committed when
         the RPC returns.
+
+        Returns the piggybacked database timestamp, or None
+        if the database does not support this field.
         """
         stub = await self._get_database_stub()
 
-        await stub.TransactionParticipantCommit(
+        response = await stub.TransactionParticipantCommit(
             database_pb2.TransactionParticipantCommitRequest(
                 state_type=state_type, state_ref=state_ref.to_str()
             )
         )
+
+        return response.timestamp if response.HasField("timestamp") else None
 
     async def transaction_participant_abort(
         self, state_type: StateTypeName, state_ref: StateRef
@@ -596,6 +700,14 @@ class DatabaseClient:
         await stub.StoreApplicationMetadata(
             database_pb2.StoreApplicationMetadataRequest(metadata=metadata)
         )
+
+    async def refresh_timestamp(self) -> Timestamp:
+        """Get the current timestamp from the database's clock."""
+        stub = await self._get_database_stub()
+        response = await stub.RefreshTimestamp(
+            database_pb2.RefreshTimestampRequest()
+        )
+        return response.timestamp
 
     @classmethod
     async def _make_database_channel(cls, target: str) -> grpc.aio.Channel:

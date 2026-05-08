@@ -18,6 +18,7 @@ from chatbot.v1.chatbot_rbt import (
 from langchain.chat_models import init_chat_model
 from pydantic import BaseModel
 from reboot.aio.auth.authorizers import allow
+from reboot.aio.concurrently import concurrently
 from reboot.aio.contexts import (
     ReaderContext,
     TransactionContext,
@@ -145,16 +146,13 @@ class ChatbotServicer(Chatbot.Servicer):
             # Expecting a bunch of message IDs.
             message_ids = [as_str(item.value) for item in dequeue.items]
 
-            # Get each message's "details".
+            # Get each message's details and filter out messages from
+            # us.
             messages = [
-                get.details
-                for get in await Message.forall(message_ids).get(context)
-            ]
-
-            # Filter out messages from us.
-            messages = [
-                message for message in messages
-                if message.author != request.name
+                response.details async for response in concurrently(
+                    Message.ref(message_id).get(context)
+                    for message_id in message_ids
+                ) if response.details.author != request.name
             ]
 
             # Check if there are any messages excluding those from us.

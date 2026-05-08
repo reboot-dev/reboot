@@ -15,6 +15,7 @@ Differences
 """
 import os
 import time
+from typing import Optional
 from uuid import UUID, SafeUUID
 
 _UINT_128_MAX = (1 << 128) - 1
@@ -33,10 +34,21 @@ def _uuid7_get_counter_and_tail():
     return counter, tail
 
 
-def uuid7():
-    """Generate a UUID from a Unix timestamp in milliseconds and random bits.
+def uuid7_timestamp_ms(uuid: UUID) -> int:
+    """Extract the 48-bit millisecond timestamp from a UUIDv7."""
+    assert uuid.version == 7, "Expecting a UUIDv7 "
+    # UUIDv7 stores timestamp in milliseconds in big-endian format.
+    return int.from_bytes(uuid.bytes[:6], byteorder='big')
+
+
+def uuid7(timestamp_ms: Optional[int] = None):
+    """Generate a UUID from a Unix timestamp in milliseconds
+    and random bits.
 
     UUIDv7 objects feature monotonicity within a millisecond.
+
+    If `timestamp_ms` is provided, it is used instead of the current
+    system time.
 
     Returns a UUID object. Not safe for use from multiple threads.
     """
@@ -56,8 +68,9 @@ def uuid7():
     global _last_timestamp_v7
     global _last_counter_v7
 
-    nanoseconds = time.time_ns()
-    timestamp_ms = nanoseconds // 1_000_000
+    if timestamp_ms is None:
+        nanoseconds = time.time_ns()
+        timestamp_ms = nanoseconds // 1_000_000
 
     if _last_timestamp_v7 is None or timestamp_ms > _last_timestamp_v7:
         counter, tail = _uuid7_get_counter_and_tail()

@@ -1,7 +1,12 @@
 import unittest
 from google.protobuf.any_pb2 import Any
 from google.protobuf.struct_pb2 import Value
-from rbt.v1alpha1.errors_pb2 import PermissionDenied, StateAlreadyConstructed
+from rbt.std.item.v1.item_pb2 import Item
+from rbt.v1alpha1.errors_pb2 import (
+    InvalidArgument,
+    PermissionDenied,
+    StateAlreadyConstructed,
+)
 from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow, deny
 from reboot.aio.tests import Reboot
@@ -32,6 +37,7 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
         await ordered_map.Create(
             context,
             degree=degree,
+            maintain_size=True,
         )
 
         await ordered_map.Insert(
@@ -77,7 +83,7 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
         )
 
         ordered_map = OrderedMap.ref("test-map")
-        await ordered_map.Create(context, degree=4)
+        await ordered_map.Create(context, degree=4, maintain_size=True)
 
         await ordered_map.Insert(
             context,
@@ -221,7 +227,7 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
         )
 
         ordered_map = OrderedMap.ref("test-map")
-        await ordered_map.Create(context, degree=4)
+        await ordered_map.Create(context, degree=4, maintain_size=True)
 
         await ordered_map.Insert(
             context,
@@ -403,7 +409,7 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
         )
 
         ordered_map = OrderedMap.ref("test-map")
-        await ordered_map.Create(context, degree=4)
+        await ordered_map.Create(context, degree=4, maintain_size=True)
 
         response = await ordered_map.Search(context, key="a")
         self.assertFalse(response.found)
@@ -679,7 +685,7 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
         )
 
         ordered_map = OrderedMap.ref("test-map")
-        await ordered_map.Create(context, degree=4)
+        await ordered_map.Create(context, degree=4, maintain_size=True)
 
         await ordered_map.Insert(
             context,
@@ -879,7 +885,7 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
         )
 
         ordered_map = OrderedMap.ref("test-map")
-        await ordered_map.Create(context, degree=4)
+        await ordered_map.Create(context, degree=4, maintain_size=True)
 
         await ordered_map.Insert(
             context,
@@ -911,7 +917,7 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
         )
 
         ordered_map = OrderedMap.ref("test-map")
-        await ordered_map.Create(context, degree=4)
+        await ordered_map.Create(context, degree=4, maintain_size=True)
 
         await ordered_map.Insert(
             context,
@@ -1018,9 +1024,10 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(entry.HasField("value"))
                 self.assertEqual(as_str(entry.value), expected_value)
 
-    async def test_two_creates(self) -> None:
+    async def test_two_creates_same_options(self) -> None:
         """
-        Test what happens if you run two creates on the same ID
+        Test that calling `Create` twice with the same options is
+        idempotent — it succeeds without error.
         """
         await self.rbt.up(Application(
             libraries=[ordered_map_library()],
@@ -1032,13 +1039,58 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
         )
 
         ordered_map = OrderedMap.ref("test-map")
-        await ordered_map.Create(context, degree=4)
+        await ordered_map.Create(context, degree=4, maintain_size=True)
+        await ordered_map.Create(context, degree=4, maintain_size=True)
+
+    async def test_two_creates_different_degree(self) -> None:
+        """
+        Test that calling `Create` with a different degree
+        raises `StateAlreadyConstructed`.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-map-diff-degree")
+        await ordered_map.Create(context, degree=4, maintain_size=True)
 
         with self.assertRaises(OrderedMap.CreateAborted) as aborted:
-            await ordered_map.Create(context, degree=4)
-            self.assertEqual(
-                type(aborted.exception.error), StateAlreadyConstructed
-            )
+            await ordered_map.Create(context, degree=8, maintain_size=True)
+
+        self.assertEqual(
+            type(aborted.exception.error),
+            StateAlreadyConstructed,
+        )
+
+    async def test_two_creates_different_maintain_size(self) -> None:
+        """
+        Test that calling `Create` with a different
+        `maintain_size` raises `StateAlreadyConstructed`.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-map-diff-maintain")
+        await ordered_map.Create(context, degree=4, maintain_size=True)
+
+        with self.assertRaises(OrderedMap.CreateAborted) as aborted:
+            await ordered_map.Create(context, degree=4, maintain_size=False)
+
+        self.assertEqual(
+            type(aborted.exception.error),
+            StateAlreadyConstructed,
+        )
 
     async def test_implicit_construction_from_insert(self) -> None:
         """
@@ -1060,6 +1112,31 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
             key="b",
             value=from_str("B"),
         )
+
+    async def test_implicit_construction_from_remove(self) -> None:
+        """
+        Test that removing from a not-yet-created
+        OrderedMap implicitly constructs it (as a no-op)
+        rather than failing.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("implicit-remove-test")
+
+        # Remove on a map that doesn't exist yet should succeed as a
+        # no-op.
+        await ordered_map.Remove(context, key="nonexistent")
+
+        # The map should now be implicitly constructed and usable.
+        response = await ordered_map.Search(context, key="a")
+        self.assertFalse(response.found)
 
     async def test_overriding_auth(self) -> None:
         """
@@ -1100,6 +1177,714 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
         #       but there are snags that prevent that; see discussion at
         #         https://github.com/reboot-dev/mono/pull/4601#issuecomment-2989091840
         self.assertEqual(type(aborted.exception.error), PermissionDenied)
+
+    async def test_bulk_insert_basic(self) -> None:
+        """
+        Test that a small bulk insert populates the map and
+        entries are searchable.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-bulk")
+        await ordered_map.Create(context, degree=4, maintain_size=True)
+
+        entries = {
+            "b": Item(value=from_str("B")),
+            "a": Item(value=from_str("A")),
+            "c": Item(value=from_str("C")),
+        }
+        await ordered_map.Insert(context, entries=entries)
+
+        response = await ordered_map.Stringify(context)
+        self.assertEqual(response.value, "Leaf: ['a', 'b', 'c']\n")
+
+        for key, value in [("a", "A"), ("b", "B"), ("c", "C")]:
+            response = await ordered_map.Search(
+                context,
+                key=key,
+            )
+            self.assertTrue(response.found)
+            self.assertEqual(as_str(response.value), value)
+
+        # Verify size is correct.
+        response = await ordered_map.Range(context, limit=10)
+        self.assertEqual(response.total_size, 3)
+
+    async def test_bulk_insert_causes_splits(self) -> None:
+        """
+        Test that a bulk insert with enough entries triggers
+        leaf and inner node splits.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-bulk-split")
+        await ordered_map.Create(context, degree=4, maintain_size=True)
+
+        # Insert enough entries to trigger splits with
+        # degree=4 (split at 4 keys, mid=2).
+        entries = {}
+        for ch in "abcdefgh":
+            entries[ch] = Item(value=from_str(ch.upper()))
+
+        await ordered_map.Insert(context, entries=entries)
+
+        # Verify all keys are searchable.
+        for ch in "abcdefgh":
+            response = await ordered_map.Search(
+                context,
+                key=ch,
+            )
+            self.assertTrue(response.found)
+            self.assertEqual(as_str(response.value), ch.upper())
+
+        # Verify size.
+        response = await ordered_map.Range(context, limit=100)
+        self.assertEqual(response.total_size, 8)
+        self.assertEqual(len(response.entries), 8)
+
+    async def test_bulk_insert_with_existing_data(self) -> None:
+        """
+        Test bulk insert merges with pre-existing entries.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-bulk-merge")
+        await ordered_map.Create(context, degree=4, maintain_size=True)
+
+        # Insert some initial entries.
+        await ordered_map.Insert(
+            context,
+            key="b",
+            value=from_str("B"),
+        )
+        await ordered_map.Insert(
+            context,
+            key="d",
+            value=from_str("D"),
+        )
+
+        # Bulk insert more entries that interleave.
+        entries = {
+            "a": Item(value=from_str("A")),
+            "c": Item(value=from_str("C")),
+            "e": Item(value=from_str("E")),
+        }
+        await ordered_map.Insert(context, entries=entries)
+
+        # Verify all 5 keys exist.
+        for ch in "abcde":
+            response = await ordered_map.Search(
+                context,
+                key=ch,
+            )
+            self.assertTrue(response.found)
+            self.assertEqual(
+                as_str(response.value),
+                ch.upper(),
+            )
+
+        response = await ordered_map.Range(
+            context,
+            limit=100,
+        )
+        self.assertEqual(response.total_size, 5)
+
+    async def test_bulk_insert_duplicates_update(self) -> None:
+        """
+        Test that bulk-inserting existing keys updates their
+        values without incrementing size.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-bulk-dup")
+        await ordered_map.Create(context, degree=4, maintain_size=True)
+
+        # Insert initial entries.
+        await ordered_map.Insert(
+            context,
+            key="a",
+            value=from_str("A"),
+        )
+        await ordered_map.Insert(
+            context,
+            key="b",
+            value=from_str("B"),
+        )
+
+        # Bulk insert: update 'a', add 'c'.
+        entries = {
+            "a": Item(value=from_str("A2")),
+            "c": Item(value=from_str("C")),
+        }
+        await ordered_map.Insert(context, entries=entries)
+
+        # 'a' should be updated.
+        response = await ordered_map.Search(
+            context,
+            key="a",
+        )
+        self.assertTrue(response.found)
+        self.assertEqual(as_str(response.value), "A2")
+
+        # 'b' should be unchanged.
+        response = await ordered_map.Search(
+            context,
+            key="b",
+        )
+        self.assertTrue(response.found)
+        self.assertEqual(as_str(response.value), "B")
+
+        # Size should be 3 (a, b, c), not 4.
+        response = await ordered_map.Range(
+            context,
+            limit=100,
+        )
+        self.assertEqual(response.total_size, 3)
+
+    async def test_bulk_insert_validates_fields(self) -> None:
+        """
+        Test that entries + single-key fields raises
+        InvalidArgument.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-bulk-validate")
+        await ordered_map.Create(context, degree=4, maintain_size=True)
+
+        entries = {
+            "a": Item(value=from_str("A")),
+        }
+
+        with self.assertRaises(OrderedMap.InsertAborted) as aborted:
+            await ordered_map.Insert(
+                context,
+                key="conflict",
+                value=from_str("X"),
+                entries=entries,
+            )
+        self.assertEqual(
+            type(aborted.exception.error),
+            InvalidArgument,
+        )
+
+    async def test_bulk_insert_implicit_construction(self) -> None:
+        """
+        Test that bulk insert works on an uncreated
+        OrderedMap via implicit construction.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-bulk-implicit")
+
+        entries = {
+            "x": Item(value=from_str("X")),
+            "y": Item(value=from_str("Y")),
+        }
+        await ordered_map.Insert(context, entries=entries)
+
+        response = await ordered_map.Search(
+            context,
+            key="x",
+        )
+        self.assertTrue(response.found)
+        self.assertEqual(as_str(response.value), "X")
+
+        response = await ordered_map.Search(
+            context,
+            key="y",
+        )
+        self.assertTrue(response.found)
+        self.assertEqual(as_str(response.value), "Y")
+
+    async def test_bulk_insert_all_types(self) -> None:
+        """
+        Test bulk insert with value, bytes, and any Item
+        types.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-bulk-types")
+        await ordered_map.Create(context, degree=4, maintain_size=True)
+
+        any_value = Any()
+        any_value.Pack(from_str("Any Value"))
+
+        entries = {
+            "val_key": Item(value=from_str("Value")),
+            "bytes_key": Item(bytes=b"Bytes Value"),
+            "any_key": Item(any=any_value),
+        }
+        await ordered_map.Insert(context, entries=entries)
+
+        response = await ordered_map.Search(
+            context,
+            key="val_key",
+        )
+        self.assertTrue(response.found)
+        self.assertTrue(response.HasField("value"))
+        self.assertEqual(as_str(response.value), "Value")
+
+        response = await ordered_map.Search(
+            context,
+            key="bytes_key",
+        )
+        self.assertTrue(response.found)
+        self.assertTrue(response.HasField("bytes"))
+        self.assertEqual(response.bytes, b"Bytes Value")
+
+        response = await ordered_map.Search(
+            context,
+            key="any_key",
+        )
+        self.assertTrue(response.found)
+        self.assertTrue(response.HasField("any"))
+        unpacked = Value()
+        response.any.Unpack(unpacked)
+        self.assertEqual(as_str(unpacked), "Any Value")
+
+    async def test_bulk_insert_large_batch(self) -> None:
+        """
+        Test bulk insert with hundreds of entries using a
+        realistic degree to verify multi-level splits
+        without creating pathologically many nodes.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-bulk-large")
+        # Use degree=16 so 200 entries creates ~25 leaves
+        # and a few inner-node levels, rather than ~150
+        # nodes at degree=4.
+        await ordered_map.Create(context, degree=16, maintain_size=True)
+
+        count = 200
+        entries = {}
+        for i in range(count):
+            key = f"key-{i:04d}"
+            entries[key] = Item(
+                value=from_str(f"value-{i:04d}"),
+            )
+        await ordered_map.Insert(context, entries=entries)
+
+        # Verify size.
+        response = await ordered_map.Range(context, limit=1)
+        self.assertEqual(response.total_size, count)
+
+        # Spot-check some keys across the tree.
+        for i in [0, 50, 99, 150, 199]:
+            key = f"key-{i:04d}"
+            response = await ordered_map.Search(
+                context,
+                key=key,
+            )
+            self.assertTrue(
+                response.found,
+                f"Key {key} not found",
+            )
+            self.assertEqual(
+                as_str(response.value),
+                f"value-{i:04d}",
+            )
+
+        # Verify range ordering.
+        response = await ordered_map.Range(
+            context,
+            limit=count,
+        )
+        self.assertEqual(len(response.entries), count)
+        keys = [e.key for e in response.entries]
+        self.assertEqual(keys, sorted(keys))
+
+    async def test_bulk_remove_basic(self) -> None:
+        """
+        Test that a small bulk remove deletes the expected
+        keys and leaves the rest intact.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-bulk-remove")
+        await ordered_map.Create(context, degree=4, maintain_size=True)
+
+        entries = {
+            "a": Item(value=from_str("A")),
+            "b": Item(value=from_str("B")),
+            "c": Item(value=from_str("C")),
+            "d": Item(value=from_str("D")),
+        }
+        await ordered_map.Insert(context, entries=entries)
+
+        # Bulk remove two keys.
+        await ordered_map.Remove(context, keys=["a", "c"])
+
+        # Verify removed keys are gone.
+        for key in ["a", "c"]:
+            response = await ordered_map.Search(
+                context,
+                key=key,
+            )
+            self.assertFalse(response.found)
+
+        # Verify remaining keys are intact.
+        for key, value in [("b", "B"), ("d", "D")]:
+            response = await ordered_map.Search(
+                context,
+                key=key,
+            )
+            self.assertTrue(response.found)
+            self.assertEqual(
+                as_str(response.value),
+                value,
+            )
+
+        # Verify size is correct.
+        response = await ordered_map.Range(context, limit=10)
+        self.assertEqual(response.total_size, 2)
+
+    async def test_bulk_remove_with_splits(self) -> None:
+        """
+        Test bulk remove on a tree with multiple levels
+        (inner nodes) to exercise the concurrent inner-node
+        dispatch path.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-bulk-remove-split")
+        await ordered_map.Create(context, degree=4, maintain_size=True)
+
+        # Insert enough to create inner nodes.
+        entries = {}
+        for ch in "abcdefghijklmnop":
+            entries[ch] = Item(
+                value=from_str(ch.upper()),
+            )
+        await ordered_map.Insert(context, entries=entries)
+
+        # Remove keys spread across different children.
+        await ordered_map.Remove(
+            context,
+            keys=["a", "d", "h", "m", "p"],
+        )
+
+        # Verify removed keys are gone.
+        for key in ["a", "d", "h", "m", "p"]:
+            response = await ordered_map.Search(
+                context,
+                key=key,
+            )
+            self.assertFalse(
+                response.found,
+                f"Key {key} should have been removed",
+            )
+
+        # Verify remaining keys are still present.
+        remaining = set("abcdefghijklmnop") - {
+            "a",
+            "d",
+            "h",
+            "m",
+            "p",
+        }
+        for key in remaining:
+            response = await ordered_map.Search(
+                context,
+                key=key,
+            )
+            self.assertTrue(
+                response.found,
+                f"Key {key} should still exist",
+            )
+
+        # Verify size.
+        response = await ordered_map.Range(context, limit=100)
+        self.assertEqual(response.total_size, 11)
+
+    async def test_bulk_remove_nonexistent_keys(self) -> None:
+        """
+        Test that bulk-removing keys that don't exist is a
+        no-op and does not affect size.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-bulk-remove-noop")
+        await ordered_map.Create(context, degree=4, maintain_size=True)
+
+        entries = {
+            "a": Item(value=from_str("A")),
+            "b": Item(value=from_str("B")),
+        }
+        await ordered_map.Insert(context, entries=entries)
+
+        # Remove keys that don't exist.
+        await ordered_map.Remove(
+            context,
+            keys=["x", "y", "z"],
+        )
+
+        # Size should be unchanged.
+        response = await ordered_map.Range(
+            context,
+            limit=10,
+        )
+        self.assertEqual(response.total_size, 2)
+
+        # Original keys still present.
+        for key in ["a", "b"]:
+            response = await ordered_map.Search(
+                context,
+                key=key,
+            )
+            self.assertTrue(response.found)
+
+    async def test_bulk_remove_mix_existing_and_nonexistent(self) -> None:
+        """
+        Test bulk remove with a mix of existing and
+        nonexistent keys only removes the existing ones.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-bulk-remove-mix")
+        await ordered_map.Create(context, degree=4, maintain_size=True)
+
+        entries = {
+            "a": Item(value=from_str("A")),
+            "b": Item(value=from_str("B")),
+            "c": Item(value=from_str("C")),
+        }
+        await ordered_map.Insert(context, entries=entries)
+
+        # Remove a mix: "a" exists, "x" doesn't, "c" exists.
+        await ordered_map.Remove(
+            context,
+            keys=["a", "x", "c"],
+        )
+
+        # "a" and "c" gone, "b" remains.
+        self.assertFalse((await ordered_map.Search(context, key="a")).found)
+        self.assertTrue((await ordered_map.Search(context, key="b")).found)
+        self.assertFalse((await ordered_map.Search(context, key="c")).found)
+
+        # Size should be 1.
+        response = await ordered_map.Range(
+            context,
+            limit=10,
+        )
+        self.assertEqual(response.total_size, 1)
+
+    async def test_bulk_remove_validates_fields(self) -> None:
+        """
+        Test that passing both `keys` and `key` raises
+        `InvalidArgument`.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref(
+            "test-bulk-remove-validate",
+        )
+        await ordered_map.Create(context, degree=4, maintain_size=True)
+
+        with self.assertRaises(
+            OrderedMap.RemoveAborted,
+        ) as aborted:
+            await ordered_map.Remove(
+                context,
+                key="a",
+                keys=["b", "c"],
+            )
+        self.assertEqual(
+            type(aborted.exception.error),
+            InvalidArgument,
+        )
+
+    async def test_bulk_remove_large_batch(self) -> None:
+        """
+        Test bulk remove with a large number of entries to
+        exercise multi-level tree traversal.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref(
+            "test-bulk-remove-large",
+        )
+        await ordered_map.Create(context, degree=16, maintain_size=True)
+
+        count = 200
+        entries = {}
+        for i in range(count):
+            key = f"key-{i:04d}"
+            entries[key] = Item(
+                value=from_str(f"value-{i:04d}"),
+            )
+        await ordered_map.Insert(context, entries=entries)
+
+        # Remove every other key.
+        keys_to_remove = [f"key-{i:04d}" for i in range(0, count, 2)]
+        await ordered_map.Remove(
+            context,
+            keys=keys_to_remove,
+        )
+
+        # Verify size.
+        response = await ordered_map.Range(context, limit=1)
+        self.assertEqual(response.total_size, count // 2)
+
+        # Verify removed keys are gone.
+        for i in range(0, count, 2):
+            key = f"key-{i:04d}"
+            response = await ordered_map.Search(
+                context,
+                key=key,
+            )
+            self.assertFalse(
+                response.found,
+                f"Key {key} should have been removed",
+            )
+
+        # Verify remaining keys are present.
+        for i in range(1, count, 2):
+            key = f"key-{i:04d}"
+            response = await ordered_map.Search(
+                context,
+                key=key,
+            )
+            self.assertTrue(
+                response.found,
+                f"Key {key} should still exist",
+            )
+
+    async def test_maintain_size_false(self) -> None:
+        """
+        With `maintain_size=False`, inserts and removes don't update
+        `state.size`, and `Range` leaves the `optional total_size`
+        field unset rather than reporting a stale or zero count.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-maintain-size-false")
+        await ordered_map.Create(context, degree=4, maintain_size=False)
+
+        # Insert a handful of entries.
+        entries = {
+            f"key-{i:02d}": Item(value=from_str(f"value-{i:02d}"))
+            for i in range(5)
+        }
+        await ordered_map.Insert(context, entries=entries)
+
+        # `total_size` should be left unset even though we just
+        # inserted 5 entries.
+        response = await ordered_map.Range(context, limit=1)
+        self.assertFalse(response.HasField("total_size"))
+
+        # Same expectation after a remove.
+        await ordered_map.Remove(
+            context,
+            keys=["key-00", "key-01"],
+        )
+        response = await ordered_map.Range(context, limit=1)
+        self.assertFalse(response.HasField("total_size"))
 
 
 if __name__ == '__main__':

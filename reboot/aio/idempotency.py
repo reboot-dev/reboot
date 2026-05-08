@@ -404,6 +404,13 @@ class IdempotencyManager:
         """Ensures that either all RPCs are performed idempotently or
         raises in the face of uncertainty about a mutation to avoid a
         possible undesired mutation."""
+        # `.always()` explicitly opts out of idempotency — skip
+        # key generation, `_rpcs` tracking, and uncertainty
+        # tracking entirely.
+        if idempotency is not None and idempotency.always:
+            yield None
+            return
+
         if idempotency is None:
             if self._required:
                 assert self._required_reason is not None
