@@ -210,7 +210,7 @@ class TestQueue(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(as_str(bulk_items.items[0].value), "apple")
         self.assertEqual(as_str(bulk_items.items[1].value), "gum")
 
-    async def test_try_dequeue_before_enqueue(self) -> None:
+    async def test_try_dequeue(self) -> None:
         """
         Test that we can dequeue (non-blocking) before we enqueue.
         """
@@ -230,9 +230,22 @@ class TestQueue(unittest.IsolatedAsyncioTestCase):
 
         queue = Queue.ref("test-queue")
 
-        # Attempt to dequeue.
-        response = await queue.try_dequeue(context, bulk=True)
+        # Attempt to dequeue. print() and if/else is for examples in documentation.
+        response = await queue.try_dequeue(context)
+        if response == DequeueResponse():
+            print("The queue is empty.")
+        else:
+            # Something was in the queue; handle it.
+            pass
+
         self.assertEquals(response, DequeueResponse())
+
+        # Add an item and `try_dequeue()` it.
+        await queue.enqueue(context, value=from_str("tree"))
+        response = await queue.try_dequeue(context)
+
+        # Verify correct item.
+        self.assertEquals(as_str(response.value), "tree")
 
     async def test_dequeue_bulk_default_at_most(self) -> None:
         """
@@ -324,6 +337,44 @@ class TestQueue(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             has_dequeued, "Should have dequeued after items were enqueued."
         )
+
+    async def test_empty(self) -> None:
+        """
+        Test that Queue.empty returns whether or not the Queue has items.
+        """
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    queue_library(),
+                    sorted_map_library(),
+                ],
+            )
+        )
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        queue = Queue.ref("test-queue")
+
+        # Need to construct state before reading.
+        await queue.try_dequeue(context)
+
+        # Check `empty()` returns `True` when the queue has no items.
+        # `print()` below is for example code in documentation.
+        response = await queue.empty(context)
+        if response.empty:
+            print("The queue is empty.")
+
+        self.assertTrue(response.empty)
+
+        # Add an item.
+        await queue.enqueue(context, value=from_str("tree"))
+
+        # Check that `empty()` returns `False``.
+        response = await queue.empty(context)
+        self.assertFalse(response.empty)
 
     async def test_example_code_for_documentation(self) -> None:
         """
