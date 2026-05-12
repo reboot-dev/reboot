@@ -84,15 +84,18 @@ from reboot.wait_for_tasks import wait_for_tasks
 from struct import pack, unpack
 from typing import (
     Any,
+    AsyncContextManager,
     AsyncGenerator,
     AsyncIterator,
     Awaitable,
     Callable,
+    Literal,
     Optional,
     Set,
     TypeAlias,
     TypeVar,
     cast,
+    overload,
 )
 
 logger = log.log.get_logger(__name__)
@@ -157,6 +160,33 @@ class Effects:
         self.error = error
         self.tasks = tasks
         self._colocated_upserts = _colocated_upserts
+
+    def requires_exclusive(
+        self,
+        *,
+        initial_state_bytes: Optional[bytes],
+    ) -> bool:
+        """Returns `True` iff applying these effects require the
+        exclusive transaction lock, i.e., the state has been mutated,
+        tasks were scheduled, or there are colocated keys.
+
+        `initial_state_bytes` is the serialized state loaded for the
+        transaction (or `None` if the state wasn't constructed yet).
+        """
+        if self.tasks:
+            return True
+        if self._colocated_upserts:
+            return True
+        if self.state is not None:
+            if initial_state_bytes is None:
+                # Going from no-state to state (i.e., an explicit or
+                # implicit constructor) is a mutation.
+                return True
+            if initial_state_bytes != self.state.SerializeToString(
+                deterministic=True,
+            ):
+                return True
+        return False
 
 
 # An entry in a streaming reader queue.
@@ -317,6 +347,24 @@ class StateManager(ABC):
             # Whether restart detection is being used for this
             # transaction.
             self.using_restart_detection = using_restart_detection
+
+            # The mode in which this transaction currently holds the
+            # per-actor Lock for `(state_type, state_ref)`. Starts
+            # at `"shared"` when joined via a `ReaderContext`,
+            # otherwise `"exclusive"`. A shared-then-exclusive
+            # transaction transitions to `"exclusive"` after a
+            # successful `Lock.upgrade()`.
+            self.mode: Lock.Mode = "exclusive"
+
+            # Resolved by the first method called on the state as part
+            # of this transaction once the per-state lock has been
+            # acquired. Concurrent calls in the same transaction on
+            # the same state `await` this before proceeding. If the
+            # first acquire fails the future is resolved with the same
+            # exception so concurrent calls propagate it.
+            self.acquired_lock: asyncio.Future[None] = (
+                asyncio.get_event_loop().create_future()
+            )
 
             # Whether or not we should abort this transaction when
             # asked by the coordinator.
@@ -823,6 +871,316 @@ try:
 except RuntimeError:
     asyncio.run(validate_semaphore_semantics_once())
 
+# Default seconds we will wait to acquire one of the per-state locks
+# before raising `Unavailable`.
+LOCK_ACQUIRE_DEADLINE_DEFAULT_SECONDS = 30.0
+
+
+class Lock:
+    """Async per-state shared/exclusive lock with in-place upgrade.
+
+    - `upgrade(...)` allows a caller that already holds `shared` to be
+      promoted to `exclusive`. A caller can upgrade and skip other
+      `exclusive` waiters, preserving the upgrading transaction's
+      shared-consistent view of state. However, at most one upgrade
+      may be pending per lock; a second `upgrade(...)` raises
+      `SystemAborted(Unavailable())` immediately to avoid the deadlock
+      where two shared holders both want to upgrade.
+
+    - Waiters are FIFO among themselves and a new `shared` request
+      does NOT jump the FIFO queue and join an active shared cohort if
+      an exclusive waiter is queued, to guard against exclusive-waiter
+      starvation.
+
+    - Acquires that exceed `deadline` raise
+      `SystemAborted(Unavailable())`; callers retry the surrounding
+      transaction. Passing `deadline=None` means wait forever or until
+      the task is cancelled.
+
+    The lock is not `asyncio.Task` aware because it is meant to be
+    used across multiple different calls on the same state, i.e.,
+    across transactions. Instead, it tracks shared as a count and
+    ensures a single exclusive holder.
+    """
+
+    Mode: TypeAlias = Literal["shared", "exclusive"]
+
+    class _Waiter:
+
+        __slots__ = ("mode", "future")
+
+        def __init__(self, mode: Lock.Mode) -> None:
+            self.mode = mode
+            self.future: asyncio.Future[None] = (
+                asyncio.get_event_loop().create_future()
+            )
+
+    def __init__(self) -> None:
+        # Number of shared holders.
+        self._shared: int = 0
+        # `True` while a holder is in exclusive mode.
+        self._exclusive: bool = False
+        # Pending upgrader, if any.
+        self._upgrader: Optional[Lock._Waiter] = None
+        # FIFO of shared / exclusive waiters; new arrivals append, the
+        # head is granted next.
+        self._waiters: list[Lock._Waiter] = []
+
+    def is_shared_locked(self) -> bool:
+        return self._shared > 0
+
+    def is_exclusive_locked(self) -> bool:
+        return self._exclusive
+
+    def is_locked(self) -> bool:
+        """`True` if the lock is currently held in any mode."""
+        return self.is_shared_locked() or self.is_exclusive_locked()
+
+    async def acquire_shared(
+        self,
+        deadline_seconds: Optional[float] = (
+            LOCK_ACQUIRE_DEADLINE_DEFAULT_SECONDS
+        ),
+    ) -> None:
+        if self.try_acquire_shared():
+            return
+        await self._wait(mode="shared", deadline_seconds=deadline_seconds)
+
+    async def acquire_exclusive(
+        self,
+        deadline_seconds: Optional[float] = (
+            LOCK_ACQUIRE_DEADLINE_DEFAULT_SECONDS
+        ),
+    ) -> None:
+        if self.try_acquire_exclusive():
+            return
+        await self._wait(mode="exclusive", deadline_seconds=deadline_seconds)
+
+    async def upgrade(
+        self,
+        deadline_seconds: Optional[float] = (
+            LOCK_ACQUIRE_DEADLINE_DEFAULT_SECONDS
+        ),
+    ) -> None:
+        """Atomically promote a held shared hold to exclusive.
+
+        Caller MUST already hold a shared hold. On success the
+        shared hold is consumed and the caller now holds exclusive.
+        On failure (another upgrade pending, or deadline exceeded),
+        the caller still holds the shared.
+        """
+        assert self._shared > 0, (
+            "upgrade() requires the caller to already hold shared"
+        )
+        # If we are the only shared holder, the upgrade is immediate.
+        # (An upgrader pending here is impossible: an upgrader also
+        # holds a shared, so `self._shared == 1` rules out any other
+        # upgrader.)
+        if self._shared == 1 and not self._exclusive:
+            self._shared = 0
+            self._exclusive = True
+            return
+        # Otherwise lets `_wait` as an upgrade.
+        await self._wait(upgrade=True, deadline_seconds=deadline_seconds)
+
+    def release_shared(self) -> None:
+        assert self._shared > 0
+        self._shared -= 1
+        self._maybe_grant_next(released="shared")
+
+    def release_exclusive(self) -> None:
+        assert self._exclusive
+        self._exclusive = False
+        self._maybe_grant_next(released="exclusive")
+
+    @asynccontextmanager
+    async def shared(
+        self,
+        deadline_seconds: Optional[float] = (
+            LOCK_ACQUIRE_DEADLINE_DEFAULT_SECONDS
+        ),
+    ) -> AsyncIterator[None]:
+        await self.acquire_shared(deadline_seconds)
+        try:
+            yield
+        finally:
+            self.release_shared()
+
+    @asynccontextmanager
+    async def exclusive(
+        self,
+        deadline_seconds: Optional[float] = (
+            LOCK_ACQUIRE_DEADLINE_DEFAULT_SECONDS
+        ),
+    ) -> AsyncIterator[None]:
+        await self.acquire_exclusive(deadline_seconds)
+        try:
+            yield
+        finally:
+            self.release_exclusive()
+
+    def try_acquire_shared(self) -> bool:
+        if self._exclusive or self._upgrader is not None:
+            return False
+        # Exclusive-waiter-starvation guard.
+        if any(waiter.mode == "exclusive" for waiter in self._waiters):
+            return False
+        self._shared += 1
+        return True
+
+    def try_acquire_exclusive(self) -> bool:
+        if self._exclusive or self._shared > 0 or self._upgrader is not None:
+            return False
+        self._exclusive = True
+        return True
+
+    def _remove_waiter(self, waiter: Lock._Waiter) -> None:
+        try:
+            self._waiters.remove(waiter)
+        except ValueError:
+            pass
+
+    @overload
+    async def _wait(
+        self,
+        *,
+        mode: Lock.Mode,
+        deadline_seconds: Optional[float],
+    ) -> None:
+        ...
+
+    @overload
+    async def _wait(
+        self,
+        *,
+        upgrade: Literal[True],
+        deadline_seconds: Optional[float],
+    ) -> None:
+        ...
+
+    async def _wait(
+        self,
+        *,
+        mode: Optional[Lock.Mode] = None,
+        upgrade: bool = False,
+        deadline_seconds: Optional[float],
+    ) -> None:
+        """
+        Construct a waiter and block until it is granted by
+        `_maybe_grant_next`.
+        """
+        assert (mode is None) == upgrade
+        if upgrade:
+            mode = "exclusive"
+        assert mode is not None
+
+        waiter = Lock._Waiter(mode)
+
+        if upgrade:
+            if self._upgrader is not None:
+                raise SystemAborted(
+                    Unavailable(),
+                    message=(
+                        "Cannot upgrade shared lock to exclusive: "
+                        "another transaction is already upgrading "
+                        "the same state; retry the transaction."
+                    ),
+                )
+            self._upgrader = waiter
+        else:
+            self._waiters.append(waiter)
+
+        try:
+            await asyncio.wait_for(waiter.future, timeout=deadline_seconds)
+        except asyncio.TimeoutError:
+            if upgrade:
+                self._upgrader = None
+            else:
+                self._remove_waiter(waiter)
+            raise SystemAborted(
+                Unavailable(),
+                message=(
+                    f"Timed out waiting {deadline_seconds:.1f}s to "
+                    f"{'upgrade to' if upgrade else 'acquire'} "
+                    f"{mode} lock; retry the transaction."
+                ),
+            )
+        except BaseException:
+            # Cancellation or other exception, but we may have already
+            # been granted and thus must release before re-raising.
+            if (
+                waiter.future.done() and not waiter.future.cancelled() and
+                waiter.future.exception() is None
+            ):
+                if mode == "shared":
+                    self.release_shared()
+                else:
+                    self.release_exclusive()
+            elif upgrade:
+                self._upgrader = None
+            else:
+                self._remove_waiter(waiter)
+            raise
+
+    def _maybe_grant_next(self, *, released: Lock.Mode) -> None:
+        """Try to grant the next waiter(s) compatible with the
+        current lock state.
+
+        `released` documents which release happened so we can better
+        capture the invariants that follow.
+        """
+        # Either we just released a shared hold or the exclusive hold,
+        # either way there should not be an exclusive hold.
+        assert not self._exclusive
+
+        if self._upgrader is not None:
+            # If we have an upgrader then we must have just released a
+            # shared hold (because an upgrader should already have a
+            # shared hold). An upgrader can be granted if there are no
+            # other remaining shared holders, bypassing any queued
+            # exclusive waiters.
+            assert released == "shared"
+            if self._shared == 1:
+                upgrader = self._upgrader
+                self._upgrader = None
+                self._shared = 0
+                self._exclusive = True
+                if not upgrader.future.done():
+                    upgrader.future.set_result(None)
+            # While we have an upgrader nothing else gets granted.
+            return
+
+        # Nothing to do if we released a shared hold but still have
+        # shared holders.
+        if released == "shared" and self._shared > 0:
+            return
+
+        # Otherwise we just released exclusive or we just released the
+        # last shared hold.
+        assert released == "exclusive" or self._shared == 0
+
+        # Grant waiters in FIFO ordering.
+        while self._waiters:
+            waiter = self._waiters[0]
+            if waiter.mode == "exclusive":
+                # We may have granted a shared waiter below if the
+                # _first_ waiter was not exclusive and thus we've now
+                # hit an exclusive waiter and need to return.
+                if self._shared > 0:
+                    return
+                self._waiters.pop(0)
+                self._exclusive = True
+                if not waiter.future.done():
+                    waiter.future.set_result(None)
+                return
+            # mode == "shared"
+            self._waiters.pop(0)
+            self._shared += 1
+            if not waiter.future.done():
+                waiter.future.set_result(None)
+            # Continue granting a cohort of shared waiters up until
+            # the first exclusive waiter.
+
 
 class BloomFilter:
     """
@@ -1315,36 +1673,33 @@ class SidecarStateManager(
         self._actors_list_maybe_changed_events: list[asyncio.Event] = []
 
         # TODO(benh): add a helper class, e.g., ActorData, that
-        # encapsulates all of '_states', '_mutator_locks', etc.
+        # encapsulates all of '_states', '_locks', etc.
         self._states: defaultdict[StateTypeName,
                                   dict[StateRef,
                                        Message]] = defaultdict(lambda: {})
 
-        # A "mutator" is either a writer or a transaction.
+        # A "mutator" is either a writer or a transaction. Now a
+        # read/write lock so that read-only transactions on the same
+        # state can run concurrently while writers and write-mode
+        # transactions remain exclusive.
         #
         # TODO(benh): replace this with a semaphore so that we can
         # free up memory for state_types, actors that are no longer
         # active.
-        self._mutator_locks: defaultdict[StateTypeName, defaultdict[
-            StateRef,
-            asyncio.Lock]] = defaultdict(lambda: defaultdict(asyncio.Lock))
+        self._locks: defaultdict[StateTypeName, defaultdict[
+            StateRef, Lock]] = defaultdict(lambda: defaultdict(Lock))
 
         # Transactions that actors of this state manager are
-        # participating in.
+        # participating in. Each `(state_type, state_ref)` may have
+        # multiple concurrent read-mode transactions or at most one
+        # write-mode transaction; the inner dict is keyed by
+        # `transaction.root_id` so callers look up "their" transaction
+        # by `context.transaction_root_id`.
         self._participant_transactions: defaultdict[StateTypeName, dict[
-            StateRef, StateManager.Transaction]] = defaultdict(lambda: {})
-
-        # Semaphore used to get transactions to queue while another
-        # transaction is executing. This provides a more "fair"
-        # approach that also prevents a "thundering herd" everytime a
-        # transaction completes. We use a semaphore instead of a lock
-        # so that we can check if there are waiters so we can clean up
-        # the semaphore when there are no waiters.
-        self._participant_transactions_semaphore: defaultdict[
-            StateTypeName,
-            defaultdict[StateRef, asyncio.Semaphore]] = defaultdict(
-                lambda: defaultdict(asyncio.Semaphore)
-            )
+            StateRef, dict[
+                uuid.UUID,
+                StateManager.Transaction,
+            ]]] = defaultdict(lambda: {})
 
         # Map from transaction UUID to a Future with the
         # participants of the transaction that have been prepared, or
@@ -1455,6 +1810,62 @@ class SidecarStateManager(
     def latest_timestamp_ms(self) -> Optional[int]:
         return self._latest_timestamp_ms
 
+    def _lookup_participant_transactions(
+        self,
+        state_type: StateTypeName,
+        state_ref: StateRef,
+    ) -> dict[uuid.UUID, StateManager.Transaction]:
+        """Returns the transactions currently joined on `(state_type,
+        state_ref)`, keyed by their `root_id`. Returns an empty dict
+        if none. Never inserts a new entry.
+        """
+        return self._participant_transactions[state_type].get(state_ref, {})
+
+    def _lookup_participant_transaction(
+        self,
+        state_type: StateTypeName,
+        state_ref: StateRef,
+        transaction_root_id: uuid.UUID,
+    ) -> Optional[StateManager.Transaction]:
+        """Lookup a single transaction by its root id on `(state_type,
+        state_ref)`. Returns `None` if absent.
+        """
+        return self._lookup_participant_transactions(
+            state_type,
+            state_ref,
+        ).get(transaction_root_id)
+
+    def _complete_participant_transaction(
+        self,
+        state_type: StateTypeName,
+        state_ref: StateRef,
+        transaction: StateManager.Transaction,
+    ) -> None:
+        """Pop the transaction from `_participant_transactions` and
+        release the mutator lock in the mode the transaction held it.
+        """
+        transactions = self._participant_transactions[state_type].get(
+            state_ref
+        )
+        assert transactions is not None, (
+            f"No participant transactions for "
+            f"'{state_type}'/'{state_ref.id}'"
+        )
+        popped = transactions.pop(transaction.root_id, None)
+        assert popped is transaction, (
+            f"Participant transaction '{transaction.root_id}' for "
+            f"'{state_type}'/'{state_ref.id}' was not the one we "
+            "expected to remove"
+        )
+        if len(transactions) == 0:
+            del self._participant_transactions[state_type][state_ref]
+
+        lock = self._locks[state_type][state_ref]
+        if transaction.mode == "exclusive":
+            lock.release_exclusive()
+        else:
+            lock.release_shared()
+
     def _can_use_restart_detection(
         self,
         root_transaction_id: uuid.UUID,
@@ -1560,9 +1971,10 @@ class SidecarStateManager(
 
         # Cancel all participant watch tasks.
         for state_type_transactions in self._participant_transactions.values():
-            for transaction in state_type_transactions.values():
-                if transaction.watch_task is not None:
-                    transaction.watch_task.cancel()
+            for transactions in state_type_transactions.values():
+                for transaction in transactions.values():
+                    if transaction.watch_task is not None:
+                        transaction.watch_task.cancel()
 
     async def wait(self) -> None:
         """Waits for this state manager to be fully shut down."""
@@ -1574,12 +1986,13 @@ class SidecarStateManager(
 
         # Wait for all participant watch tasks to complete.
         for state_type_transactions in self._participant_transactions.values():
-            for transaction in state_type_transactions.values():
-                if transaction.watch_task is not None:
-                    try:
-                        await transaction.watch_task
-                    except asyncio.CancelledError:
-                        pass
+            for transactions in state_type_transactions.values():
+                for transaction in transactions.values():
+                    if transaction.watch_task is not None:
+                        try:
+                            await transaction.watch_task
+                        except asyncio.CancelledError:
+                            pass
 
     async def shutdown_and_wait(self):
         await self.shutdown()
@@ -1639,7 +2052,9 @@ class SidecarStateManager(
         *,
         sync: bool = True,
     ) -> None:
-        async with self._mutator_locks[state_type][state_ref]:
+        async with self._locks[state_type][state_ref].exclusive(
+            deadline_seconds=None
+        ):
             pending_task_effect = (
                 None if task.status == database_pb2.Task.Status.COMPLETED else
                 self._get_task_effect_from_sidecar_task(middleware, task)
@@ -1665,7 +2080,9 @@ class SidecarStateManager(
         *,
         sync: bool = True,
     ) -> None:
-        async with self._mutator_locks[state_type][state_ref]:
+        async with self._locks[state_type][state_ref].exclusive(
+            deadline_seconds=None
+        ):
             await self._store(
                 state_type=state_type,
                 state_ref=state_ref,
@@ -1713,7 +2130,9 @@ class SidecarStateManager(
             _colocated_upserts=[(state_id, state)],
         )
 
-        async with self._mutator_locks[state_type][state_ref]:
+        async with self._locks[state_type][state_ref].exclusive(
+            deadline_seconds=None
+        ):
             await self._store(
                 state_type=state_type,
                 state_ref=state_ref,
@@ -1729,7 +2148,9 @@ class SidecarStateManager(
         *,
         sync: bool = True,
     ) -> None:
-        async with self._mutator_locks[state_type][state_ref]:
+        async with self._locks[state_type][state_ref].exclusive(
+            deadline_seconds=None
+        ):
             # Recover idempotent mutations before trying to import any
             # since there is an invariant that we won't do a store on
             # a state before recovering its idempotent mutations.
@@ -1934,26 +2355,39 @@ class SidecarStateManager(
                 span_name="reboot.aio.state_managers._load() - "
                 "awaiting 'ongoing_transaction'"
             ):
-                ongoing_transaction: Optional[
-                    StateManager.Transaction] = self._participant_transactions[
-                        state_type_name].get(state_ref)
-                if ongoing_transaction is not None and ongoing_transaction.prepared(
-                ):
-                    # There is a transaction ongoing, and it has been prepared. We
-                    # need to wait for it to complete.
-                    try:
-                        await ongoing_transaction
-                    except asyncio.CancelledError:
-                        # Don't swallow cancellations, so the parent
-                        # task can be cancelled properly.
-                        raise
-                    except:
-                        # Any errors coming from the transaction do not concern us
-                        # here.
-                        pass
+                # With multiple concurrent transactions allowed per
+                # state, look for a *prepared* exclusive transaction
+                # whose changes we may need to wait for. Shared
+                # transactions have no changes pending, so they don't
+                # gate this read.
+                for ongoing_transaction in self._lookup_participant_transactions(
+                    state_type_name, state_ref
+                ).values():
+                    if (
+                        ongoing_transaction.mode == "exclusive" and
+                        ongoing_transaction.prepared()
+                    ):
+                        # There is an exclusive transaction ongoing
+                        # and it has been prepared. Wait for it to
+                        # complete (the lock guarantees at most one
+                        # such transaction exists).
+                        try:
+                            await ongoing_transaction
+                        except asyncio.CancelledError:
+                            # Don't swallow cancellations, so the parent
+                            # task can be cancelled properly.
+                            raise
+                        except:
+                            # Any errors coming from the transaction
+                            # do not concern us here.
+                            pass
+                        break
         else:
-            transaction = self._participant_transactions[state_type_name].get(
-                state_ref
+            assert context.transaction_root_id is not None
+            transaction = self._lookup_participant_transaction(
+                state_type_name,
+                state_ref,
+                context.transaction_root_id,
             )
             assert transaction is not None and not transaction.prepared(
             ) and not transaction.finished(
@@ -2242,7 +2676,7 @@ class SidecarStateManager(
             #
             # TODO(benh): better yet would be to check that the current
             # asyncio context holds the lock ... maybe use a contextvar?
-            assert self._mutator_locks[state_type][state_ref].locked()
+            assert self._locks[state_type][state_ref].is_locked()
 
             if effects.state is not None:
                 state_copy = type(effects.state)()
@@ -2504,15 +2938,30 @@ class SidecarStateManager(
         assert context.transaction_parent_ids is not None
         assert context.transaction_coordinator_state_type is not None
         assert context.transaction_coordinator_state_ref is not None
+        assert context.transaction_root_id is not None
 
-        transaction: Optional[
-            StateManager.Transaction
-        ] = self._participant_transactions[state_type].get(state_ref)
+        # Look up an existing transaction on this state by its root
+        # id. Sibling / parent / nested conflicts all share the same
+        # root id with us, so a single lookup catches them all; truly
+        # unrelated transactions (different root) coexist via the
+        # Lock without further coordination here.
+        transaction: Optional[StateManager.Transaction
+                             ] = self._lookup_participant_transaction(
+                                 state_type,
+                                 state_ref,
+                                 context.transaction_root_id,
+                             )
 
         if (
             transaction is not None and
             context.transaction_id == transaction.started_id
         ):
+            # Another method on this state within the same transaction
+            # has already started (i.e., calls were made
+            # concurrently). We must wait for that first call to
+            # acquire the per-state lock before we continue here.
+            await transaction.acquired_lock
+
             if transaction.finished():
                 # TODO(benh): add a test case for this!
                 committed_or_aborted = "committed" if transaction.committed(
@@ -2623,24 +3072,52 @@ class SidecarStateManager(
                         ),
                     )
 
-            # Acquire semaphore which might mean we queue until our turn.
-            await self._participant_transactions_semaphore[state_type][
-                state_ref].acquire()
-
-            assert self._participant_transactions[state_type].get(
-                state_ref
-            ) is None
-
             transaction = StateManager.Transaction.from_context(
                 context,
                 tasks_dispatcher,
                 using_restart_detection=using_restart_detection,
             )
 
-            self._participant_transactions[state_type][state_ref] = transaction
+            # Mode is determined by the kind of method we're initially
+            # calling as part of this transaction. A `writer` is
+            # always exclusive, a `reader` and `transaction` start
+            # shared, but we may upgrade if we either determine that
+            # the transaction requires exclusive or if we later call a
+            # `writer`.
+            transaction.mode = (
+                "exclusive" if isinstance(context, WriterContext) else "shared"
+            )
 
-            # Wait for any non-transactional writers!
-            await self._mutator_locks[state_type][state_ref].acquire()
+            # Insert into `_participant_transactions` BEFORE acquiring
+            # the lock so that any concurrent calls for the same
+            # transaction can wait until we've acquired the lock.  The
+            # check above and this insert have no `await` between
+            # them, so we cannot race with another caller.
+            transactions = self._participant_transactions[
+                state_type].setdefault(state_ref, {})
+            assert transaction.root_id not in transactions
+            transactions[transaction.root_id] = transaction
+
+            # Wait for any incompatible holders to release. Shared
+            # mode parallelizes; exclusive mode is exclusive (and
+            # queues FIFO behind any queued exclusive waiters). On
+            # success / failure we resolve `transaction.acquired_lock`
+            # so concurrent callers on the same transaction can
+            # proceed (or propagate our failure).
+            try:
+                if transaction.mode == "shared":
+                    await self._locks[state_type][state_ref].acquire_shared()
+                else:
+                    await self._locks[state_type][state_ref].acquire_exclusive(
+                    )
+            except BaseException as e:
+                transaction.acquired_lock.set_exception(e)
+                del transactions[transaction.root_id]
+                if len(transactions) == 0:
+                    del self._participant_transactions[state_type][state_ref]
+                raise
+            else:
+                transaction.acquired_lock.set_result(None)
 
         assert transaction is not None
 
@@ -2773,8 +3250,11 @@ class SidecarStateManager(
         transaction: Optional[StateManager.Transaction] = None
 
         if context.transaction_ids is not None:
-            transaction = self._participant_transactions[state_type_name].get(
-                state_ref
+            assert context.transaction_root_id is not None
+            transaction = self._lookup_participant_transaction(
+                state_type_name,
+                state_ref,
+                context.transaction_root_id,
             )
             assert transaction is not None
 
@@ -3017,14 +3497,29 @@ class SidecarStateManager(
         # writer lock" so that only one writer will execute at a time
         # within a transaction.
         if transaction is not None:
-            assert self._mutator_locks[state_type_name][state_ref].locked()
+            assert self._locks[state_type_name][state_ref].is_locked()
+            # If the transaction joined this state in `"shared"` mode
+            # (because the first call was a reader), upgrade to
+            # `"exclusive"` so we serialize against any other holder.
+            # `upgrade()` beats exclusive waiters queued for the lock,
+            # preserving the transaction's initial read of state.
+            if transaction.mode == "shared":
+                await self._locks[state_type_name][state_ref].upgrade()
+                transaction.mode = "exclusive"
 
-        mutator_or_transaction_writer_lock: asyncio.Lock = (
-            self._mutator_locks[state_type_name][state_ref]
-            if transaction is None else
-            self._transaction_writer_locks[state_type_name][state_ref]
-        )
-        async with mutator_or_transaction_writer_lock:
+        # Outside a transaction we need the per-state exclusive lock
+        # for the duration of the writer call. Inside a transaction
+        # the transaction already holds the exclusive lock for the
+        # state (we may have upgraded above); we just need the
+        # intra-transaction writer lock to serialize concurrent
+        # writers.
+        if transaction is None:
+            lock: AsyncContextManager[None] = (
+                self._locks[state_type_name][state_ref].exclusive()
+            )
+        else:
+            lock = self._transaction_writer_locks[state_type_name][state_ref]
+        async with lock:
             # Every reader/writer gets a copy of their own state so
             # that they can execute concurrently.
             loaded_result = await self._load(
@@ -3097,7 +3592,9 @@ class SidecarStateManager(
         state_ref = StateRef(task_effect.task_id.state_ref)
         response, status = response_or_status
 
-        async with self._mutator_locks[state_type][state_ref]:
+        async with self._locks[state_type][state_ref].exclusive(
+            deadline_seconds=None
+        ):
             # Store response and mark this Task as completed in
             # persistent storage. Even though we're writing here, we're
             # not writing the actor's state.
@@ -3262,7 +3759,9 @@ class SidecarStateManager(
                         if inspect.isawaitable(result):
                             await result
 
-                    async with self._mutator_locks[state_type][state_ref]:
+                    async with self._locks[state_type][state_ref].exclusive(
+                        deadline_seconds=None
+                    ):
                         task_effect.iteration += 1
 
                         await self._store(
@@ -3370,11 +3869,11 @@ class SidecarStateManager(
 
         # At this point we should already be executing
         # "transactionally".
-        assert self._participant_transactions[state_type_name][state_ref
-                                                              ] == transaction
+        assert self._participant_transactions[state_type_name][state_ref][
+            transaction.root_id] is transaction
 
-        # We should already hold the mutator lock!
-        assert self._mutator_locks[state_type_name][state_ref].locked()
+        # We should already hold the lock.
+        assert self._locks[state_type_name][state_ref].is_locked()
 
         # And we shouldn't have a transaction that must abort, e.g., a
         # transaction that was recovered but not prepared.
@@ -3387,6 +3886,12 @@ class SidecarStateManager(
         # failure as soon as possible.
         assert not transaction.must_abort
 
+        # We store a byte snapshot of the state, set after `_load()`
+        # returns and before the user body runs; in order to be able
+        # to determine in `complete()` whether or not the state was
+        # mutated and we need to upgrade our lock to exclusive.
+        initial_state_bytes: Optional[bytes] = None
+
         async def complete(effects: Effects) -> None:
             # Currently, we always need to store, even if
             # `transaction.stored`, because the state may have been
@@ -3396,6 +3901,20 @@ class SidecarStateManager(
             # state when we do a 2PC prepare, we might still need to
             # store here to record the idempotent mutation!
             async with transaction.lock:
+                # Upgrade the lock if we're currently only holding the
+                # lock as shared but we've got effects that need to be
+                # persisted. Push the mode flip into
+                # `context.participants` too so trailing metadata
+                # reports this entry as exclusive.
+                if transaction.mode == "shared" and effects.requires_exclusive(
+                    initial_state_bytes=initial_state_bytes,
+                ):
+                    await self._locks[state_type_name][state_ref].upgrade()
+                    transaction.mode = "exclusive"
+                    context.participants.mark_exclusive(
+                        state_type_name,
+                        state_ref,
+                    )
                 await self._store(
                     state_type=state_type_name,
                     state_ref=state_ref,
@@ -3434,6 +3953,13 @@ class SidecarStateManager(
                 from_constructor=from_constructor,
                 requires_constructor=requires_constructor,
             )
+
+            # Snapshot the loaded state's bytes for the check in
+            # `complete()`.
+            if state is not None:
+                initial_state_bytes = state.SerializeToString(
+                    deterministic=True
+                )
 
             yield (state, complete)
 
@@ -3582,14 +4108,15 @@ class SidecarStateManager(
         # https://github.com/reboot-dev/mono/issues/5361.
         transaction: Optional[StateManager.Transaction]
         if isinstance(context, TransactionContext) and not context.nested:
-            transaction = self._participant_transactions[state_type_name].get(
-                state_ref
-            )
-            if (
-                transaction is not None and
-                transaction.idempotency_key == context.idempotency_key
-            ):
-                await transaction
+            # Need to check every in-flight transaction on this state
+            # for a matching idempotency key because under a shared
+            # lock multiple transactions may coexist.
+            for transaction in self._lookup_participant_transactions(
+                state_type_name, state_ref
+            ).values():
+                if transaction.idempotency_key == context.idempotency_key:
+                    await transaction
+                    break
 
         # Recover idempotent mutations on demand if necessary.
         #
@@ -3707,8 +4234,11 @@ class SidecarStateManager(
         # If we haven't found an idempotent mutation and we're within
         # a transaction, check and see if the transaction includes it.
         if idempotent_mutation is None and context.transaction_ids is not None:
-            transaction = self._participant_transactions[state_type_name].get(
-                state_ref
+            assert context.transaction_root_id is not None
+            transaction = self._lookup_participant_transaction(
+                state_type_name,
+                state_ref,
+                context.transaction_root_id,
             )
 
             if (
@@ -4226,7 +4756,9 @@ class SidecarStateManager(
         state_type = self._state_type_for_state_ref(state_ref)
 
         transaction_id = uuid.UUID(bytes=request.transaction_id)
-        transaction = self._participant_transactions[state_type].get(state_ref)
+        transaction = self._lookup_participant_transaction(
+            state_type, state_ref, transaction_id
+        )
         if transaction is None:
             if (
                 self._can_use_restart_detection(transaction_id, state_type) and
@@ -4321,7 +4853,9 @@ class SidecarStateManager(
         state_type = self._state_type_for_state_ref(state_ref)
 
         transaction_id = uuid.UUID(bytes=request.transaction_id)
-        transaction = self._participant_transactions[state_type].get(state_ref)
+        transaction = self._lookup_participant_transaction(
+            state_type, state_ref, transaction_id
+        )
 
         # It's possible the transaction was already committed from
         # watching, and we might even be on to another transaction, so
@@ -4360,7 +4894,9 @@ class SidecarStateManager(
         state_type = self._state_type_for_state_ref(state_ref)
 
         transaction_id = uuid.UUID(bytes=request.transaction_id)
-        transaction = self._participant_transactions[state_type].get(state_ref)
+        transaction = self._lookup_participant_transaction(
+            state_type, state_ref, transaction_id
+        )
 
         # It's possible the transaction was already aborted from
         # watching, and we might even be on to another transaction, so
@@ -4576,27 +5112,9 @@ class SidecarStateManager(
 
                     transaction.commit()
 
-                    _ = self._participant_transactions[state_type].pop(
-                        state_ref
+                    self._complete_participant_transaction(
+                        state_type, state_ref, transaction
                     )
-
-                    semaphore = self._participant_transactions_semaphore[
-                        state_type][state_ref]
-
-                    semaphore.release()
-
-                    if not semaphore.locked():
-                        del self._participant_transactions_semaphore[
-                            state_type][state_ref]
-                        if len(
-                            self.
-                            _participant_transactions_semaphore[state_type]
-                        ) == 0:
-                            del self._participant_transactions_semaphore[
-                                state_type]
-
-                    assert self._mutator_locks[state_type][state_ref].locked()
-                    self._mutator_locks[state_type][state_ref].release()
                 except BaseException as e:
                     print(
                         "##### WOW! YOU'VE FOUND A BUG IN REBOOT! #####\n"
@@ -4656,27 +5174,9 @@ class SidecarStateManager(
 
                     transaction.abort()
 
-                    _ = self._participant_transactions[state_type].pop(
-                        state_ref
+                    self._complete_participant_transaction(
+                        state_type, state_ref, transaction
                     )
-
-                    semaphore = self._participant_transactions_semaphore[
-                        state_type][state_ref]
-
-                    semaphore.release()
-
-                    if not semaphore.locked():
-                        del self._participant_transactions_semaphore[
-                            state_type][state_ref]
-                        if len(
-                            self.
-                            _participant_transactions_semaphore[state_type]
-                        ) == 0:
-                            del self._participant_transactions_semaphore[
-                                state_type]
-
-                    assert self._mutator_locks[state_type][state_ref].locked()
-                    self._mutator_locks[state_type][state_ref].release()
                 except BaseException as e:
                     print(
                         "##### WOW! YOU'VE FOUND A BUG IN REBOOT! #####\n"
@@ -4855,24 +5355,28 @@ class SidecarStateManager(
                 sidecar_transaction, middleware
             )
 
-            # This transaction should NOT already be recovered!
-            assert transaction.state_ref not in self._participant_transactions[
-                transaction.state_type]
+            # Mark recovered transactions exclusive-mode. In an
+            # upcoming commit we'll never recover transactions that
+            # were read-only.
+            transaction.mode = "exclusive"
 
-            self._participant_transactions[transaction.state_type][
-                transaction.state_ref] = transaction
-
-            await self._participant_transactions_semaphore[
-                transaction.state_type][transaction.state_ref].acquire()
+            # This transaction should NOT already be recovered. There
+            # may not yet be ANY transactions for this state.
+            transactions = self._participant_transactions[
+                transaction.state_type].setdefault(transaction.state_ref, {})
+            assert transaction.root_id not in transactions
+            transactions[transaction.root_id] = transaction
 
             # The mutator lock should not be held yet as recovery
-            # _must_ occur before we start serving and as we asserted
-            # above there are not multiple transactions per actor!
-            assert not self._mutator_locks[transaction.state_type][
-                transaction.state_ref].locked()
+            # _must_ occur before we start serving and we expect at
+            # most one transaction per state during recovery!
+            assert not self._locks[transaction.state_type][
+                transaction.state_ref].is_locked()
 
-            await self._mutator_locks[transaction.state_type
-                                     ][transaction.state_ref].acquire()
+            await self._locks[transaction.state_type][transaction.state_ref
+                                                     ].acquire_exclusive(
+                                                         deadline_seconds=None,
+                                                     )
 
             # TODO(benh): don't just "watch" the transaction, also
             # proactively tell the coordinator if this transaction
