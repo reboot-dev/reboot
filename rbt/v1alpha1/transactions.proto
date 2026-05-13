@@ -16,6 +16,15 @@ message PrepareRequest {
   // coordinators leave it false (the default) and the participant
   // falls back to the legacy semantics.
   bool abort_via_response = 2;
+  // When true, the coordinator promises to persist the read-only
+  // subset of participants in its `Participants` record and to skip
+  // those participants entirely on recovery (no re-`Prepare`, no
+  // `Commit`). This is the participant's signal that it is safe to
+  // elide its prepare/commit disk writes and release its shared lock
+  // immediately. New coordinators set this; old coordinators leave it
+  // false (the default) and new participants fall back to writing to
+  // disk for prepare/commit.
+  bool read_only_aware = 3;
 }
 
 ////////////////////////////////////////////////////////////////////////

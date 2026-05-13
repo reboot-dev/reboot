@@ -835,6 +835,303 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(transferrable_response.transferrable)
 
+    async def test_read_only_transaction_elides_account_participants(
+        self,
+    ) -> None:
+        """A read-only transaction (`Bank.Transferrable`) classifies its
+        account sub-participants as read-only (mode='shared', no
+        idempotency key on the reader sub-RPC, restart-detection
+        eligible). At Prepare time those accounts hit the elision
+        branch in `transaction_participant_prepare`: they commit
+        themselves in memory, release the shared lock, and forget the
+        transaction. The coordinator's commit-phase
+        (`participants.should_commit()`) excludes them, so they never
+        receive a `Commit` RPC.
+
+        The `Bank` itself does have an idempotency key (this is a
+        user-initiated RPC), so its idempotent mutation must be
+        persisted — it goes through the normal Prepare + Commit
+        cycle.
+        """
+        prepare = SidecarStateManager.Prepare
+        commit = SidecarStateManager.Commit
+
+        # We know exactly which Prepare/Commit RPCs the Transferrable
+        # transaction should produce: one Prepare each on 'alice',
+        # 'bob', and the Bank, and one Commit on the Bank only (the
+        # accounts are elided at Prepare and must never receive a
+        # Commit). Each expected RPC gets an event that is set on
+        # arrival; any Prepare/Commit that isn't expected — wrong
+        # state, or a duplicate — is recorded in `unexpected` and
+        # fails the test. The expectations are populated only once the
+        # setup transactions below have drained (and only then is
+        # `track` set).
+        expected_prepares: dict[StateRef, asyncio.Event] = {}
+        expected_commits: dict[StateRef, asyncio.Event] = {}
+        unexpected: list[str] = []
+        track = False
+
+        async def mock_prepare(state_manager, request, grpc_context):
+            if track:
+                state_ref = Headers.from_grpc_context(grpc_context).state_ref
+                event = expected_prepares.get(state_ref)
+                if event is None or event.is_set():
+                    unexpected.append(f"Prepare on '{state_ref.to_str()}'")
+                else:
+                    event.set()
+            return await prepare(state_manager, request, grpc_context)
+
+        async def mock_commit(state_manager, request, grpc_context):
+            if track:
+                state_ref = Headers.from_grpc_context(grpc_context).state_ref
+                event = expected_commits.get(state_ref)
+                if event is None or event.is_set():
+                    unexpected.append(f"Commit on '{state_ref.to_str()}'")
+                else:
+                    event.set()
+            return await commit(state_manager, request, grpc_context)
+
+        alice_account_ref = StateRef.from_id(
+            Account.__state_type_name__, 'alice'
+        )
+        bob_account_ref = StateRef.from_id(Account.__state_type_name__, 'bob')
+
+        with mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager.Prepare',
+            mock_prepare,
+        ), mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager.Commit',
+            mock_commit,
+        ):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer]),
+            )
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+            await bank.SignUp(
+                context, account_id=alice_account_ref.id, initial_deposit=100
+            )
+            await bank.SignUp(
+                context, account_id=bob_account_ref.id, initial_deposit=200
+            )
+
+            # Reading a state waits for any prepared-but-not-yet-
+            # committed transaction on it to complete, and
+            # `AssetsUnderManagement` reads the Bank and every
+            # account, so once it returns the setup transactions'
+            # commit phases have fully drained and no further
+            # Prepare/Commit RPCs are coming from them.
+            await bank.AssetsUnderManagement(
+                context,
+                wait_for_amount_at_least=0,
+            )
+
+            expected_prepares[alice_account_ref] = asyncio.Event()
+            expected_prepares[bob_account_ref] = asyncio.Event()
+
+            expected_prepares[bank._state_ref] = asyncio.Event()
+            expected_commits[bank._state_ref] = asyncio.Event()
+
+            track = True
+
+            response = await bank.Transferrable(
+                context,
+                from_account_id=alice_account_ref.id,
+                to_account_id=bob_account_ref.id,
+                amount=50,
+            )
+            self.assertTrue(response.transferrable)
+
+            # Every Prepare runs before `Transferrable` returns.
+            for state_ref, event in expected_prepares.items():
+                self.assertTrue(
+                    event.is_set(),
+                    f"Expected a Prepare on '{state_ref.to_str()}'",
+                )
+
+            # The Bank's Commit (it's a write committer: its
+            # idempotent mutation must persist) runs in the
+            # coordinator's fire-and-forget commit control loop;
+            # wait for it.
+            await expected_commits[bank._state_ref].wait()
+
+            self.assertEqual([], unexpected)
+
+    async def test_recovery_skips_re_prepare_for_elided_read_only_participants(
+        self,
+    ) -> None:
+        """A read-only-transaction's account participants have elided
+        and forgotten the transaction by the time Prepare returned, so
+        recovery must never contact them again: they would respond
+        with `abort=True restart_detected` (no in-memory transaction
+        matches), falsely aborting the whole transaction. The
+        `Participants.read_only` map persisted at Prepare time is what
+        protects them: recovery's commit phase only contacts
+        `participants.should_commit()`, which excludes them.
+
+        This test exercises that path: it pins commit to fail (so the
+        coordinator's commit-loop keeps retrying), runs a
+        `Transferrable`, then kills and restarts the coordinator
+        server. By the time the first Commit was attempted the
+        transaction was durably prepared (the commit control loop
+        writes `preparing=False` before any Commit), so recovery
+        skips re-Prepare entirely and proceeds straight to the commit
+        phase, committing the Bank (the only write committer). The
+        account must see no further Prepare or Commit traffic at all;
+        any such RPC lands in `unexpected` and fails the test.
+        """
+        prepare = SidecarStateManager.Prepare
+        commit = SidecarStateManager.Commit
+
+        # Exact expected Prepare/Commit RPCs, as in
+        # `test_read_only_transaction_elides_account_participants`:
+        # each expected RPC gets an event that is set on arrival;
+        # any Prepare/Commit that isn't expected — wrong state, or
+        # a duplicate — is recorded in `unexpected` and fails the
+        # test. The Transferrable below should produce one Prepare
+        # each on the account and the Bank; recovery then goes
+        # straight to the commit phase (the transaction is durably
+        # prepared by the time the first Commit was attempted), so
+        # the only other expected RPC is the Bank's single
+        # successful Commit after the restart.
+        expected_prepares: dict[StateRef, asyncio.Event] = {}
+        expected_commits: dict[StateRef, asyncio.Event] = {}
+        unexpected: list[str] = []
+        track = False
+
+        async def mock_prepare(state_manager, request, grpc_context):
+            if track:
+                state_ref = Headers.from_grpc_context(grpc_context).state_ref
+                event = expected_prepares.get(state_ref)
+                if event is None or event.is_set():
+                    unexpected.append(f"Prepare on '{state_ref.to_str()}'")
+                else:
+                    event.set()
+            return await prepare(state_manager, request, grpc_context)
+
+        # Fail commit so the coordinator's commit-loop retries
+        # indefinitely until we kill the server. This keeps the
+        # crash window for recovery open. We only enable failure
+        # once the setup transactions have fully drained (see the
+        # `AssetsUnderManagement` read below), so the only commit
+        # we ever fail is the Transferrable transaction's.
+        # `commit_failed` proves the Bank's commit was actually
+        # attempted, so we know we kill the server in the right
+        # window.
+        fail_commit = False
+        commit_failed = asyncio.Event()
+
+        async def mock_commit(state_manager, request, grpc_context):
+            state_ref = Headers.from_grpc_context(grpc_context).state_ref
+            if fail_commit:
+                if state_ref in expected_commits:
+                    commit_failed.set()
+                raise RuntimeError('Mock commit failure')
+            if track:
+                event = expected_commits.get(state_ref)
+                if event is None or event.is_set():
+                    unexpected.append(f"Commit on '{state_ref.to_str()}'")
+                else:
+                    event.set()
+            return await commit(state_manager, request, grpc_context)
+
+        account_ref = StateRef.from_id(
+            Account.__state_type_name__, 'jonathan-2345'
+        )
+
+        with mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager.Prepare',
+            mock_prepare,
+        ), mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager.Commit',
+            mock_commit,
+        ):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer]),
+                local_envoy=True,
+                local_envoy_tls=True,
+                servers=2,
+            )
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+            # Bank and Account on different servers (the existing
+            # recovery tests rely on this and we want the same
+            # topology so killing the bank server doesn't also kill
+            # the account server).
+            bank_server_id, account_server_id = (
+                await self.rbt.unique_servers(
+                    bank._state_ref,
+                    account_ref,
+                )
+            )
+
+            await bank.SignUp(context, account_id=account_ref.id)
+
+            # Reading a state waits for any prepared-but-not-yet-
+            # committed transaction on it to complete, and
+            # `AssetsUnderManagement` reads the Bank and the account,
+            # so once it returns the setup transactions' commit phases
+            # have fully drained and no further Prepare/Commit RPCs
+            # are coming from them.
+            await bank.AssetsUnderManagement(
+                context,
+                wait_for_amount_at_least=0,
+            )
+
+            expected_prepares[account_ref] = asyncio.Event()
+            expected_prepares[bank._state_ref] = asyncio.Event()
+            expected_commits[bank._state_ref] = asyncio.Event()
+
+            track = True
+            fail_commit = True
+
+            response = await bank.Transferrable(
+                context,
+                from_account_id=account_ref.id,
+                to_account_id=account_ref.id,
+                amount=0,
+            )
+            self.assertTrue(response.transferrable)
+
+            # Both Prepares ran before `Transferrable` returned
+            # (the account's exactly once — a duplicate would have
+            # landed in `unexpected`).
+            for state_ref, event in expected_prepares.items():
+                self.assertTrue(
+                    event.is_set(),
+                    f"Expected a Prepare on '{state_ref.to_str()}'",
+                )
+
+            # Wait for the commit loop to have failed at least
+            # once (proving Bank's commit was actually attempted)
+            # so we know we're killing the server in the right
+            # window.
+            await commit_failed.wait()
+
+            # Kill the coordinator's server (Bank). Account stays
+            # up so a buggy recovery that DOES try to re-Prepare
+            # (or Commit) it would actually reach the account, and
+            # — since the account's expected-Prepare event is
+            # already set — we'd see it in `unexpected`.
+            bank_server = await self.rbt.server_stop(bank_server_id)
+
+            # Disable the commit-failure switch so recovery can
+            # complete normally once Bank's server comes back up.
+            fail_commit = False
+            await self.rbt.server_start(bank_server)
+
+            # Recovery has completed once the Bank's commit for
+            # the Transferrable transaction succeeds.
+            await expected_commits[bank._state_ref].wait()
+
+        # The account must not have been re-Prepared during
+        # recovery (nor any other unexpected Prepare/Commit
+        # observed).
+        self.assertEqual([], unexpected)
+
     async def test_transaction_recovery_after_coordinator_preparing(
         self,
     ) -> None:

@@ -3126,6 +3126,40 @@ class SidecarStateManager(
         if not transaction.using_restart_detection:
             await self.transaction_participant_store(transaction)
 
+        # Add ourselves as a read-only transaction participant iff
+        # we have acquired the shared lock AND we have no
+        # idempotency key AND we are using restart detection.
+        # These mirror the gate in `transaction_participant_prepare`'s
+        # elision branch: we must only flag ourselves as read-only
+        # in the coordinator's `Participants` if Prepare will
+        # actually elide and release on the participant side.
+        #
+        # If we mark ourselves read-only while the elision won't
+        # fire (e.g., `SortedMap` participants, which always have
+        # `using_restart_detection == False`), the coordinator
+        # would persist us as read-only and then skip us on
+        # recovery's re-prepare (`skip_read_only=True`) — even
+        # though the legacy non-restart-detection path actually
+        # wrote a record to disk at join time and went through
+        # normal Prepare. That would strand the participant in
+        # an unconfirmed state across coordinator restarts.
+        #
+        # If we later upgrade the lock, e.g., because a `writer()`
+        # on this state gets called or a `transaction()` has
+        # effects that require the exclusive lock, then we'll
+        # update `context.participants` to indicate that this
+        # participant is not read-only which correctly wins/taints
+        # as we merge participants back up to the coordinator.
+        context.participants.add(
+            state_type,
+            state_ref,
+            read_only=(
+                transaction.mode == "shared" and
+                context.idempotency_key is None and
+                transaction.using_restart_detection
+            ),
+        )
+
         try:
             yield transaction
 
@@ -3506,6 +3540,13 @@ class SidecarStateManager(
             if transaction.mode == "shared":
                 await self._locks[state_type_name][state_ref].upgrade()
                 transaction.mode = "exclusive"
+                # And now `context.participants` should no longer
+                # propagate this participant as read-only.
+                context.participants.add(
+                    state_type_name,
+                    state_ref,
+                    read_only=False,
+                )
 
         # Outside a transaction we need the per-state exclusive lock
         # for the duration of the writer call. Inside a transaction
@@ -3902,18 +3943,19 @@ class SidecarStateManager(
             # store here to record the idempotent mutation!
             async with transaction.lock:
                 # Upgrade the lock if we're currently only holding the
-                # lock as shared but we've got effects that need to be
-                # persisted. Push the mode flip into
-                # `context.participants` too so trailing metadata
-                # reports this entry as exclusive.
+                # lock as shared but we've got effects that need
+                # exclusive.
                 if transaction.mode == "shared" and effects.requires_exclusive(
                     initial_state_bytes=initial_state_bytes,
                 ):
                     await self._locks[state_type_name][state_ref].upgrade()
                     transaction.mode = "exclusive"
-                    context.participants.mark_exclusive(
+                    # And now `context.participants` should no longer
+                    # propagate this participant as read-only.
+                    context.participants.add(
                         state_type_name,
                         state_ref,
+                        read_only=False,
                     )
                 await self._store(
                     state_type=state_type_name,
@@ -4307,6 +4349,7 @@ class SidecarStateManager(
         channel_manager: _ChannelManager,
         transaction_id: uuid.UUID,
         participants: Participants,
+        skip_read_only: bool = False,
     ):
         """Sends `Prepare` RPCs to all participants concurrently, retrying
         each participant individually until getting a definitive
@@ -4378,6 +4421,14 @@ class SidecarStateManager(
                         transactions_pb2.PrepareRequest(
                             transaction_id=transaction_id.bytes,
                             abort_via_response=True,
+                            # Tell the participant we will durably
+                            # record which participants are read-only
+                            # and skip them on recovery so it is safe
+                            # for them to elide disk writes and
+                            # release the read lock immediately upon
+                            # `Prepare`. Old participants ignore this
+                            # field and do the disk-writes.
+                            read_only_aware=True,
                         ),
                         metadata=Headers(
                             application_id=application_id,
@@ -4429,8 +4480,11 @@ class SidecarStateManager(
                 ) from None
 
         await concurrently(
-            prepare(state_type, state_ref)
-            for (state_type, state_ref) in participants.should_prepare()
+            prepare(state_type, state_ref) for (state_type, state_ref) in
+            # On re-prepare `skip_read_only=True` because by then
+            # read-only participants may have already forgotten the
+            # transaction.
+            participants.should_prepare(skip_read_only=skip_read_only)
         )
 
     async def _transaction_coordinator_commit(
@@ -4661,6 +4715,14 @@ class SidecarStateManager(
                 )
 
                 if not watch_response.aborted:
+                    # It is worth noting here that if this participant
+                    # was read-only then
+                    # `transaction_participant_commit` will be a no-op
+                    # because the only way a transaction commits is if
+                    # it was prepared and thus this read-only
+                    # participant must have prepared so
+                    # `transaction_participant_commit` will find a
+                    # `finished` transaction.
                     await self.transaction_participant_commit(transaction)
                 else:
                     await self.transaction_participant_abort(transaction)
@@ -4719,7 +4781,13 @@ class SidecarStateManager(
                 self._coordinator_participants[transaction_id]
             )
 
-            for (state_type, state_ref) in participants.should_commit():
+            # We may get a `Watch` from both participants that should
+            # commit AND read-only participants, so we need to iterate
+            # through both here.
+            for (state_type, state_ref) in itertools.chain(
+                participants.should_commit(),
+                participants.read_only(),
+            ):
                 if request.state_type != state_type:
                     continue
                 if request.state_ref == state_ref.to_str():
@@ -4839,7 +4907,10 @@ class SidecarStateManager(
                 # Legacy path for old coordinators.
                 raise RuntimeError('Transaction must abort')
 
-            await self.transaction_participant_prepare(transaction)
+            await self.transaction_participant_prepare(
+                transaction,
+                read_only_aware=request.read_only_aware,
+            )
 
             return transactions_pb2.PrepareResponse()
 
@@ -4946,12 +5017,46 @@ class SidecarStateManager(
     async def transaction_participant_prepare(
         self,
         transaction: StateManager.Transaction,
+        *,
+        read_only_aware: bool = False,
     ):
         state_type = transaction.state_type
         state_ref = transaction.state_ref
 
         async with transaction.lock:
             if not transaction.finished():
+                # If the coordinator is `read_only_aware` and this
+                # participant was read-only (i.e., only ever needed
+                # the shared lock AND has nothing that needs
+                # persisting, e.g., no idempotent mutations, no tasks,
+                # and is using restart detection and hasn't already
+                # written something to disk) then we can skip all disk
+                # writes for prepare and commit, mark the transaction
+                # prepared + committed in memory, and release the read
+                # lock immediately.
+                if (
+                    transaction.mode == "shared" and
+                    # NOTE: at this point if
+                    # `transaction.idempotency_key is not None` then
+                    # `len(transaction.idempotent_mutations) > 0`.
+                    len(transaction.idempotent_mutations) == 0 and
+                    transaction.using_restart_detection and read_only_aware
+                ):
+                    # Tasks always trigger a lock upgrade via
+                    # `Effects.requires_exclusive()`, so a shared-mode
+                    # transaction can never have tasks.
+                    assert len(
+                        transaction.tasks
+                    ) == 0, ("A read-only transaction unexpectedly has tasks")
+                    transaction.prepare()
+                    transaction.commit()
+                    # Release the shared lock and drop the participant
+                    # entry. The coordinator skips us in commit, so we
+                    # never need to be contacted again.
+                    self._complete_participant_transaction(
+                        state_type, state_ref, transaction
+                    )
+                    return
                 # When using restart detection, all intermediate
                 # writes were deferred (no database calls). Now at
                 # prepare time we derive what we need from the
@@ -4985,7 +5090,13 @@ class SidecarStateManager(
                         ),
                         state=(
                             transaction.state.SerializeToString()
-                            if transaction.state is not None else None
+                            if transaction.state is not None and
+                            # Only persist the state when we actually
+                            # mutated it. A transaction holding a
+                            # shared lock means its
+                            # `transaction.state` has not been
+                            # mutated!
+                            transaction.mode == "exclusive" else None
                         ),
                         task_upserts=[
                             task.to_sidecar_task()
@@ -5493,6 +5604,12 @@ class SidecarStateManager(
                     channel_manager=channel_manager,
                     transaction_id=transaction_id,
                     participants=participants,
+                    # Read-only participants may have already elided
+                    # their disk writes and released their locks
+                    # during the original `Prepare` and re-preparing
+                    # now may cause an abort because they have no
+                    # in-memory transaction!
+                    skip_read_only=True,
                 )
                 prepared = True
                 break

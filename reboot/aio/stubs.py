@@ -9,7 +9,12 @@ from log.log import get_logger
 from reboot.aio.aborted import Aborted
 from reboot.aio.backoff import Backoff
 from reboot.aio.caller_id import CallerID
-from reboot.aio.contexts import Context, Participants, WorkflowContext
+from reboot.aio.contexts import (
+    Context,
+    Participants,
+    TransactionContext,
+    WorkflowContext,
+)
 from reboot.aio.external import ExternalContext, InitializeContext
 from reboot.aio.headers import IDEMPOTENCY_KEY_HEADER, Headers
 from reboot.aio.idempotency import (
@@ -182,6 +187,8 @@ class Stub:
 
         workflow_iteration: Optional[int] = None
 
+        coordinator_read_only_aware: bool = False
+
         if context is not None:
             caller_id = CallerID(application_id=context.application_id)
 
@@ -195,6 +202,22 @@ class Stub:
             transaction_ids = context.transaction_ids
             transaction_coordinator_state_type = context.transaction_coordinator_state_type
             transaction_coordinator_state_ref = context.transaction_coordinator_state_ref
+
+            # If we are the transaction coordinator then let our
+            # participants know that are are read-only aware.
+            #
+            # NOTE: we MUST NOT set `coordinator_read_only_aware =
+            # True` unless we are the coordinator because otherwise we
+            # might set it in _participant_ that is aware of read-only
+            # but an upstream caller might _not_ be aware and thus we
+            # may propagate read-only participants that get dropped!
+            if isinstance(context, TransactionContext) and not context.nested:
+                coordinator_read_only_aware = True
+            else:
+                # Propagate the read-only-aware flag from the inbound RPC.
+                coordinator_read_only_aware = (
+                    context._headers.coordinator_read_only_aware
+                )
         else:
             # When we're creating a `Stub` via an `ExternalContext`,
             # we use the application ID from the asyncio context
@@ -216,6 +239,7 @@ class Stub:
             bearer_token=bearer_token,
             caller_id=caller_id,
             internal_call=context is not None,
+            coordinator_read_only_aware=coordinator_read_only_aware,
         )
 
     def _should_call_retry_unavailable(

@@ -78,3 +78,16 @@ py_test(
         "//reboot/aio:concurrently_py",
     ],
 )
+
+py_test(
+    name = "participants_test_py",
+    timeout = "short",
+    srcs = [":participants_test.py"],
+    main = "participants_test.py",
+    deps = [
+        "//rbt/v1alpha1:database_py_proto",
+        "//reboot/aio:contexts_py",
+        "//reboot/aio:headers_py",
+        "//reboot/aio:types_py",
+    ],
+)
