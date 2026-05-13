@@ -385,6 +385,16 @@ py_test(
 )
 
 py_test(
+    name = "uuidv7_test_py",
+    timeout = "short",
+    srcs = [":uuidv7_test.py"],
+    main = "uuidv7_test.py",
+    deps = [
+        "//reboot:uuidv7_py",
+    ],
+)
+
+py_test(
     name = "state_manager_tests_py",
     srcs = [":state_manager_tests.py"],
     main = "state_manager_tests.py",

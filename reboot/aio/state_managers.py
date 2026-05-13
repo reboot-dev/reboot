@@ -4239,6 +4239,11 @@ class SidecarStateManager(
                     f"recovered at {recovery_time})."
                 )
             if request.abort_via_response:
+                logger.warning(
+                    f"Failed to prepare transaction '{transaction_id}': "
+                    f"No pending transaction for state type '{state_type}' "
+                    f"state '{state_ref.id}'"
+                )
                 return transactions_pb2.PrepareResponse(abort=True)
             # Legacy path for old coordinators.
             raise RuntimeError(
@@ -4247,6 +4252,10 @@ class SidecarStateManager(
             )
         if transaction.root_id != transaction_id:
             if request.abort_via_response:
+                logger.warning(
+                    f"Failed to prepare transaction '{transaction_id}': "
+                    "Pending transaction id differs"
+                )
                 return transactions_pb2.PrepareResponse(abort=True)
             # Legacy path for old coordinators.
             raise RuntimeError('Pending transaction id differs')
@@ -4266,6 +4275,10 @@ class SidecarStateManager(
 
             if transaction.must_abort:
                 if request.abort_via_response:
+                    logger.warning(
+                        f"Failed to prepare transaction '{transaction_id}': "
+                        "Transaction must abort"
+                    )
                     return transactions_pb2.PrepareResponse(abort=True)
                 # Legacy path for old coordinators.
                 raise RuntimeError('Transaction must abort')

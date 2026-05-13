@@ -36,7 +36,7 @@ def _uuid7_get_counter_and_tail():
 
 def uuid7_timestamp_ms(uuid: UUID) -> int:
     """Extract the 48-bit millisecond timestamp from a UUIDv7."""
-    assert uuid.version == 7, "Expecting a UUIDv7 "
+    assert uuid.version == 7, "Expecting a UUIDv7"
     # UUIDv7 stores timestamp in milliseconds in big-endian format.
     return int.from_bytes(uuid.bytes[:6], byteorder='big')
 
@@ -45,12 +45,27 @@ def uuid7(timestamp_ms: Optional[int] = None):
     """Generate a UUID from a Unix timestamp in milliseconds
     and random bits.
 
-    UUIDv7 objects feature monotonicity within a millisecond.
+    Two modes:
 
-    If `timestamp_ms` is provided, it is used instead of the current
-    system time.
+    - **Auto timestamp** (`timestamp_ms is None`): uses the current
+      system time and maintains monotonicity within a millisecond
+      via a 42-bit counter. If multiple UUIDs are generated within
+      the same millisecond, the counter's LSB is incremented by 1;
+      on overflow the timestamp is bumped and the counter is reset
+      to a random 42-bit integer with MSB set to 0. Consults and
+      mutates the module-level monotonicity state
+      (`_last_timestamp_v7`, `_last_counter_v7`). Not safe for use
+      from multiple threads.
 
-    Returns a UUID object. Not safe for use from multiple threads.
+    - **Explicit timestamp** (`timestamp_ms` is given): embeds the
+      provided millisecond verbatim. The counter and tail are filled
+      with fresh randomness; the monotonicity globals are neither
+      consulted nor mutated. Callers that pass an explicit timestamp
+      typically need the embedded value to equal exactly what they
+      passedand would be broken by silent counter-overflow or
+      "monotonicity catch-up" bumps.
+
+    Returns a UUID object.
     """
     # --- 48 ---   -- 4 --   --- 12 ---   -- 2 --   --- 30 ---   - 32 -
     # unix_ts_ms | version | counter_hi | variant | counter_lo | random
@@ -59,33 +74,42 @@ def uuid7(timestamp_ms: Optional[int] = None):
     # with Method 1 of RFC 9562, §6.2, and its MSB is set to 0.
     #
     # 'random' is a 32-bit random value regenerated for every new UUID.
-    #
-    # If multiple UUIDs are generated within the same millisecond, the LSB
-    # of 'counter' is incremented by 1. When overflowing, the timestamp is
-    # advanced and the counter is reset to a random 42-bit integer with MSB
-    # set to 0.
-
-    global _last_timestamp_v7
-    global _last_counter_v7
-
     if timestamp_ms is None:
+        global _last_timestamp_v7
+        global _last_counter_v7
+
         nanoseconds = time.time_ns()
         timestamp_ms = nanoseconds // 1_000_000
 
-    if _last_timestamp_v7 is None or timestamp_ms > _last_timestamp_v7:
-        counter, tail = _uuid7_get_counter_and_tail()
-    else:
-        if timestamp_ms < _last_timestamp_v7:
-            timestamp_ms = _last_timestamp_v7 + 1
-        # advance the 42-bit counter
-        counter = _last_counter_v7 + 1
-        if counter > 0x3ff_ffff_ffff:
-            # advance the 48-bit timestamp
-            timestamp_ms += 1
+        # If no explicit timestamp is passed and multiple UUIDs are
+        # generated within the same millisecond, the LSB of the
+        # counter is incremented by 1. When overflowing, the timestamp
+        # is advanced and the counter is reset to a random 42-bit
+        # integer with MSB set to 0.
+        if _last_timestamp_v7 is None or timestamp_ms > _last_timestamp_v7:
             counter, tail = _uuid7_get_counter_and_tail()
         else:
-            # 32-bit random data
-            tail = int.from_bytes(os.urandom(4), byteorder='big')
+            if timestamp_ms < _last_timestamp_v7:
+                timestamp_ms = _last_timestamp_v7 + 1
+            # advance the 42-bit counter
+            counter = _last_counter_v7 + 1
+            if counter > 0x3ff_ffff_ffff:
+                # advance the 48-bit timestamp
+                timestamp_ms += 1
+                counter, tail = _uuid7_get_counter_and_tail()
+            else:
+                # 32-bit random data
+                tail = int.from_bytes(os.urandom(4), byteorder='big')
+
+        # defer global update until all computations are done
+        _last_timestamp_v7 = timestamp_ms
+        _last_counter_v7 = counter
+    else:
+        # Explicit timestamp: embed verbatim, fill the rest with fresh
+        # randomness, and do NOT touch the monotonicity
+        # globals. Callers rely on the embedded timestamp matching
+        # what they passed.
+        counter, tail = _uuid7_get_counter_and_tail()
 
     unix_ts_ms = timestamp_ms & 0xffff_ffff_ffff
     counter_msbs = counter >> 30
@@ -104,10 +128,6 @@ def uuid7(timestamp_ms: Optional[int] = None):
     int_uuid_7 |= tail
     # by construction, the variant and version bits are already cleared
     int_uuid_7 |= _RFC_4122_VERSION_7_FLAGS
-
-    # defer global update until all computations are done
-    _last_timestamp_v7 = timestamp_ms
-    _last_counter_v7 = counter
 
     # Construct UUID via `_from_int` (the internal path used by
     # 3.14). The 3.10 `UUID()` constructor rejects version=7.
