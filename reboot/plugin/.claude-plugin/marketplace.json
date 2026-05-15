@@ -1,5 +1,5 @@
 {
-  "name": "reboot-skills",
+  "name": "reboot-plugin",
   "owner": {
     "name": "Reboot",
     "email": "team@reboot.dev"
@@ -10,11 +10,11 @@
   },
   "plugins": [
     {
-      "name": "reboot-chat-app",
+      "name": "reboot",
       "description": "Use Reboot to build AI Chat Apps (MCP Apps) for ChatGPT, Claude, VSCode, Goose, and others.",
       "source": "./",
       "strict": false,
-      "skills": ["./skills/reboot-chat-app"]
+      "skills": ["./skills/chat-app"]
     }
   ]
 }

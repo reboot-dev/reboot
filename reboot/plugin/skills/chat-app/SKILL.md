@@ -1,5 +1,5 @@
 ---
-name: reboot-chat-app
+name: chat-app
 description: Use Reboot to build AI Chat Apps (MCP Apps) for ChatGPT, Claude, VSCode, Goose, and others.
 argument-hint: [<app-description>]
 # Scaffolding requires file creation, shell commands (uv, npm,
@@ -7,7 +7,7 @@ argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
 
-# /reboot-chat-app — Build Reboot AI Chat Apps
+# /chat-app — Build Reboot AI Chat Apps
 
 Build complete Reboot AI Chat Apps from a user description.
 
@@ -19,10 +19,10 @@ Add the Reboot skills marketplace and install the plugin:
 
 ```bash
 # 1. Add the marketplace (one-time).
-claude plugin marketplace add reboot-dev/reboot-skills
+claude plugin marketplace add reboot-dev/reboot-plugin
 
 # 2. Install the plugin.
-claude plugin install reboot-chat-app@reboot-skills
+claude plugin install reboot@reboot-plugin
 ```
 
 If you install the plugin within `claude` with `/plugin` you need to restart for
@@ -34,25 +34,25 @@ are automatically offered the plugin on first use:
 ```json
 {
   "extraKnownMarketplaces": {
-    "reboot-skills": {
+    "reboot-plugin": {
       "source": {
         "source": "github",
-        "repo": "reboot-dev/reboot-skills"
+        "repo": "reboot-dev/reboot-plugin"
       }
     }
   },
   "enabledPlugins": {
-    "reboot-chat-app@reboot-skills": true
+    "reboot@reboot-plugin": true
   }
 }
 ```
 
 ### Local (repo checked out)
 
-If you have the `reboot-skills` repo cloned locally:
+If you have the `reboot-plugin` repo cloned locally:
 
 ```bash
-claude --plugin-dir /path/to/reboot-skills
+claude --plugin-dir /path/to/reboot-plugin
 ```
 
 ## When to Use
