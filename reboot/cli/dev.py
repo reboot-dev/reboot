@@ -737,22 +737,39 @@ async def _read_until(
 
     When the function is done reading, it should set the result of the future to complete.
     """
-    fd = file_handle.fileno()
+    future: asyncio.Future[ResultT] = asyncio.Future()
+
+    # The file handle may be unpollable: closed, or redirected from
+    # a regular file (Linux `epoll` rejects those with
+    # `PermissionError`). In that case, block forever; callers run
+    # us inside `_wait_for_first_completed` and will cancel us when
+    # a sibling task fires.
+    try:
+        fd = file_handle.fileno()
+    except (OSError, ValueError):
+        return await future
+
     loop = asyncio.get_running_loop()
 
     def read(future: asyncio.Future[ResultT]):
-        value = file_handle.read(1)
+        try:
+            value = file_handle.read(1)
+        except (OSError, ValueError):
+            loop.remove_reader(fd)
+            return
         if not value:
-            # The input is closed, and will never be readable. Remove our reader
-            # rather than continuing to poll it.
+            # The input is closed, and will never be readable.
+            # Remove our reader rather than continuing to poll it.
             loop.remove_reader(fd)
         f(value, future)
 
-    future: asyncio.Future[ResultT] = asyncio.Future()
-
     # Add an async file descriptor reader to our running event
     # loop so that we know when a key has been pressed.
-    loop.add_reader(fd, read, future)
+    try:
+        loop.add_reader(fd, read, future)
+    except OSError:
+        return await future
+
     try:
         return await future
     finally:
