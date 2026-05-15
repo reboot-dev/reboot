@@ -1,0 +1,15 @@
+#!/usr/bin/env sh
+#
+# Reboot Claude Code plugin: `envoy` bootstrap shim.
+#
+# Claude Code prepends this script's directory to the agent's `PATH`, so
+# the agent's `envoy ...` invocations land here. Delegates
+# to `lib/install_envoy.sh` and execs the cached `envoy` binary.
+
+set -eu
+
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname -- "$0")/.." && pwd)}"
+
+ENVOY_DIR="$("$PLUGIN_ROOT/lib/install_envoy.sh")"
+
+exec "$ENVOY_DIR/envoy" "$@"

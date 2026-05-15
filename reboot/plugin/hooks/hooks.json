@@ -1,0 +1,15 @@
+{
+  "description": "Prepend the plugin's bin/ to the agent's PATH so our shims take precedence over system-installed binaries.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/session-start.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}
