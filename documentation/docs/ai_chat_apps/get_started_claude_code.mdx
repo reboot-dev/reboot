@@ -15,15 +15,30 @@ installed.
 
 ## Install the Reboot skill
 
-Add the Reboot skills marketplace and install the
-`reboot-chat-app` skill using Claude Code:
+### Quick install (recommended)
+
+Install the Reboot plugin for Claude Code with a single
+command:
+
+```sh
+curl -fsSL https://reboot.dev/install.sh | bash
+```
+
+This registers the Reboot marketplace, installs the plugin,
+and pre-installs its pinned dependencies so your first build
+runs without waiting on downloads.
+
+### Manual install
+
+Or add the marketplace and install the plugin yourself with
+Claude Code:
 
 ```
-claude plugin marketplace add reboot-dev/reboot-skills
+claude plugin marketplace add reboot-dev/reboot-plugin
 ```
 
 ```
-claude plugin install reboot-chat-app@reboot-skills
+claude plugin install reboot@reboot-plugin
 ```
 
 :::note
@@ -37,15 +52,15 @@ project's `.claude/settings.json`:
 ```json
 {
   "extraKnownMarketplaces": {
-    "reboot-skills": {
+    "reboot-plugin": {
       "source": {
         "source": "github",
-        "repo": "reboot-dev/reboot-skills"
+        "repo": "reboot-dev/reboot-plugin"
       }
     }
   },
   "enabledPlugins": {
-    "reboot-chat-app@reboot-skills": true
+    "reboot@reboot-plugin": true
   }
 }
 ```
@@ -55,7 +70,7 @@ project's `.claude/settings.json`:
 Once installed, invoke the skill with a description of your app:
 
 ```
-/reboot-chat-app Build a counter app with an interactive clicker UI
+/chat-app Build a counter app with an interactive clicker UI
 ```
 
 The skill enters **plan mode** first. It will:
@@ -122,7 +137,7 @@ Goose), see [From an MCP client](/learn_more/call/from_mcp_client).
 You can also use the skill to modify an existing app:
 
 ```
-/reboot-chat-app Add a reset button that sets the counter back to zero
+/chat-app Add a reset button that sets the counter back to zero
 ```
 
 The skill reads your current code, plans the changes, and waits
