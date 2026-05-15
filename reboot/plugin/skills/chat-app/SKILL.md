@@ -224,27 +224,20 @@ application directory.**
 11. `cd web && npm run build`
 12. Create `mcp_servers.json` with
     `{"mcpServers":{"<name>":{"url":"http://localhost:9991/mcp","useOAuth":true}}}`
-13. **STOP.** Do NOT run the app yourself. Print the
-    following run instructions exactly, then wait:
-
-    ```
-    Project directory: <absolute path to the current working directory>
-
-    To run (each in a separate terminal, from the project directory):
-
-      uv run rbt dev run          # start backend
-      cd web && npm run dev        # HMR frontend (separate terminal)
-
-    To test with MCP inspector (separate terminal):
-
-      npx @mcpjam/inspector@2.4.0 --config mcp_servers.json --server <name>
-    ```
-
-    Replace `<name>` with the actual server name from
-    `mcp_servers.json`. Print the real absolute path of the
-    project directory (not the literal placeholder). Then
-    suggest a first prompt the user can try in the inspector
-    (e.g., "Create a new todo list and show it to me").
+13. Run the app, by doing each of the following in a separate shell in the background:
+    - run the backend: `uv run rbt dev run --no-chaos` - FYI, the `--no-chaos`
+      disables the Chaos Monkey, which is a useful feature to catch bugs but
+      would be confusing to developers that don't themselves see the terminal
+      with the information that Chaos Monkey is running.
+    - serve the frontend with hot module reloading: `cd web && npm run dev`
+14. Check the logs of the backend and frontend to validate that they are up and
+    running. Wait until the backend logs indicate that a health check has passed,
+    at which point it must have printed the URL of its inspect page.
+15. Run the MCPJam inspector:
+    `npx @mcpjam/inspector@2.4.0 --config mcp_servers.json --server <name>`
+    Replace `<name>` with the actual server name from `mcp_servers.json`.
+16. Give the user the URLs for the application's own inspect page, and for the MCPJam inspector.
+17. suggest a first prompt the user can try in the inspector (e.g., "Create a new todo list and show it to me").
 
 ## Inline Patterns
 
