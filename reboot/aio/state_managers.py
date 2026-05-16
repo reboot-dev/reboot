@@ -1775,6 +1775,11 @@ class SidecarStateManager(
         # they complete.
         self._preload_tasks: set[asyncio.Task] = set()
 
+        # Strong references to in-flight read-only coordinator
+        # complete tasks. Same garbage-collection concern as
+        # `_preload_tasks` above.
+        self._readonly_coordinator_complete_tasks: set[asyncio.Task] = set()
+
         # Any streaming readers. We're explicitly using a 'dict' as
         # the value instead of a 'defaultdict' because we don't want
         # to construct memory every time we "check" if there is a
@@ -4331,12 +4336,63 @@ class SidecarStateManager(
         participants: Participants,
     ) -> None:
         """Drive the coordinator side of two-phase commit for
-        `transaction_id`: concurrently write the participant list
-        to disk and fan out `Prepare` RPCs; on success schedule
-        the commit-control-loop task.
+        `transaction_id`. The shape of the work is determined by
+        the participants list:
 
-        On failure the exception propagates and the caller is
-        responsible for calling `_transaction_coordinator_abort`."""
+        - If every participant is read-only (nothing in
+          `should_commit()` or `should_abort()`) we elide the
+          durable `transaction_coordinator_prepare` write and
+          the commit phase. The Prepare fan-out runs as a
+          fire-and-forget background task so the caller's
+          `await` returns immediately; each participant's Prepare
+          response releases its shared lock in the read-only
+          elision branch (no Commit to follow). Errors here only
+          manifest as briefly stuck shared locks (released on
+          participant timeout / restart), not as wrong responses.
+
+        - Otherwise we run the full sync 2PC: concurrently write
+          the coordinator's participant list to disk and fan out
+          `Prepare` RPCs; on success schedule the
+          commit-control-loop task; on failure the exception
+          propagates and the caller is responsible for calling
+          `_transaction_coordinator_abort`."""
+        all_read_only = (
+            next(participants.should_commit(), None) is None and
+            next(participants.should_abort(), None) is None
+        )
+
+        if all_read_only:
+
+            async def fire_and_forget() -> None:
+                try:
+                    await self._transaction_coordinator_prepare(
+                        application_id=application_id,
+                        channel_manager=channel_manager,
+                        transaction_id=transaction_id,
+                        participants=participants,
+                    )
+                finally:
+                    # Resolve and clean up the coordinator-participants
+                    # future so any in-flight participant `Watch`
+                    # calls observe a consistent finished state.
+                    future = self._coordinator_participants.get(transaction_id)
+                    if future is not None and not future.done():
+                        future.set_result(participants)
+                    self._coordinator_participants.pop(transaction_id, None)
+
+            task = asyncio.create_task(
+                fire_and_forget(),
+                name=(
+                    f'_transaction_coordinator_complete read-only fan-out('
+                    f'{transaction_id}) in {__name__}'
+                ),
+            )
+            self._readonly_coordinator_complete_tasks.add(task)
+            task.add_done_callback(
+                self._readonly_coordinator_complete_tasks.discard
+            )
+            return
+
         # Two phase commit: (1) prepare.
         #
         # Concurrently write the participant list to the database
