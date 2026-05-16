@@ -73,6 +73,7 @@ from reboot.aio.types import (
     assert_type,
     state_type_tag_for_name,
 )
+from reboot.helpers import wait_for_tasks
 from reboot.server.database import (
     SORTED_MAP_ENTRY_TYPE_NAME,
     SORTED_MAP_TYPE_NAME,
@@ -1826,6 +1827,10 @@ class SidecarStateManager(
                 # to a network issue, can retry and consume the
                 # preload it previously started.
                 await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                # Don't swallow cancellations, so the parent
+                # task can be cancelled properly.
+                raise
             except:
                 # Preloading is best-effort, so just set an exception
                 # to signal to any waiters that they should try and
@@ -1918,6 +1923,10 @@ class SidecarStateManager(
                     # need to wait for it to complete.
                     try:
                         await ongoing_transaction
+                    except asyncio.CancelledError:
+                        # Don't swallow cancellations, so the parent
+                        # task can be cancelled properly.
+                        raise
                     except:
                         # Any errors coming from the transaction do not concern us
                         # here.
@@ -2901,7 +2910,11 @@ class SidecarStateManager(
 
                         assert context.react is not None
                         context.react.event.set()
-            except BaseException as exception:
+            except asyncio.CancelledError as error:
+                # Don't swallow cancellations, so the parent
+                # task can be cancelled properly.
+                raise error
+            except Exception as exception:
                 state_or_exception.exception = exception
 
                 assert context.react is not None
@@ -2940,38 +2953,25 @@ class SidecarStateManager(
         try:
             yield states
         finally:
-            watch_state_task.cancel()
+            # Tear down in order: fully stop the `watch_state()`
+            # before cancelling `React.Query` calls, so
+            # the two don't race on `context.react`'s queriers.
             try:
-                await watch_state_task
-            except asyncio.CancelledError:
-                pass
-            except:
-                print(
-                    'Failed to cancel "watch state" task',
-                    file=sys.stderr,
-                )
-                pass
-
-            # Make sure we stop all transitive `React.Query` calls.
-            # Use `asyncio.shield()` so that if this task is being
-            # cancelled (e.g., the gRPC client disconnected), the
-            # cleanup still runs to completion.
-            context_react_cancel_task = asyncio.ensure_future(
-                context.react.cancel(),
-            )
-            try:
-                await asyncio.shield(context_react_cancel_task)
-            except asyncio.CancelledError:
-                # Wait for `react.cancel()`` to actually finish.
-                await context_react_cancel_task
-                # Propagate so the outer task actually cancels.
-                raise
+                await wait_for_tasks([watch_state_task], cancel=True)
             finally:
-                # We've already invalidated the `context.react` as part
-                # of `context.react.cancel()`, so now it is safe to set
-                # it to `None` to allow the GC to clean up any resources
-                # associated with it.
-                context.react = None
+                # Still execute the `React.Query` cancellation and
+                # cleanup even if we were cancelled while waiting for
+                # `watch_state()`.
+                react_cancel_task = asyncio.ensure_future(
+                    context.react.cancel()
+                )
+                try:
+                    await wait_for_tasks(
+                        [react_cancel_task],
+                        cancel=False,
+                    )
+                finally:
+                    context.react = None
 
     @asynccontextmanager_span(
         # We expect an `EffectValidationRetry` exception; that's not an error.
@@ -4038,6 +4038,10 @@ class SidecarStateManager(
                         state_ref=state_ref,
                     ).to_grpc_metadata(),
                 )
+            except asyncio.CancelledError:
+                # Don't swallow cancellations, so the parent task can
+                # be cancelled properly.
+                raise
             except:
                 # NOTE: aborting is best effort abort, each
                 # participant is responsible for checking back in with

@@ -23,6 +23,7 @@ from reboot.aio.types import (
     StateTypeTag,
     state_type_tag_for_name,
 )
+from reboot.helpers import wait_for_tasks
 from reboot.nodejs.python import should_print_stacktrace
 from reboot.settings import EVERY_LOCAL_NETWORK_ADDRESS
 from typing import AsyncIterable, Optional
@@ -98,12 +99,10 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
 
     async def stop(self):
         self._stop_websockets_serve.set()
-        try:
-            await self._websockets_serve_task
-        except:
-            # We're trying to stop so no need to propagate any
-            # exceptions.
-            pass
+        # The task stops on its own once the event above is set, so
+        # pass `cancel=False`. Any `CancelledError` raised here is
+        # this task's own cancellation and is propagated.
+        await wait_for_tasks([self._websockets_serve_task], cancel=False)
 
     async def serve(self, websocket):
         # Actually serve within an asyncio task while also creating

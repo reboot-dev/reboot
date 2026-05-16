@@ -45,6 +45,7 @@ from reboot.aio.types import (
     StateRef,
     StateTypeName,
 )
+from reboot.helpers import wait_for_tasks
 from reboot.time import DateTimeWithTimeZone
 from reboot.uuidv7 import uuid7
 from typing import (
@@ -512,23 +513,23 @@ class React:
                 if task in used_tasks:
                     self._tasks[serialized_request] = task
                 else:
-                    task.cancel()
                     unused_tasks.add(task)
 
-            for task in unused_tasks:
-                try:
-                    await task
-                except:
-                    pass
-                # Remove all references to the task object and its
-                # associated gRPC call so they can be garbage-collected.
-                # Using `pop` instead of `del`, since it could be a case
-                # when the task is cancelled before it makes a gRPC call
-                # and thus doesn't have an entry in `self._calls`,
-                # `self._responses` and `self._used_response`.
-                self._calls.pop(task, None)
-                self._responses.pop(task, None)
-                self._used_response.pop(task, None)
+            try:
+                await wait_for_tasks(unused_tasks, cancel=True)
+            finally:
+                for task in unused_tasks:
+                    # Remove all references to the task object and its
+                    # associated gRPC call so they can be
+                    # garbage-collected. Using `pop` instead of `del`,
+                    # since it could be a case when the task is
+                    # cancelled before it makes a gRPC call and thus
+                    # doesn't have an entry in `self._calls`,
+                    # `self._responses` and `self._used_response`.
+                    self._calls.pop(task, None)
+                    self._responses.pop(task, None)
+                    self._used_response.pop(task, None)
+                unused_tasks.clear()
 
     _channel_manager: _ChannelManager
     _queriers: dict[str, Querier]
