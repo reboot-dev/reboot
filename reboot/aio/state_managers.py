@@ -3088,77 +3088,14 @@ class SidecarStateManager(
                 "exclusive" if isinstance(context, WriterContext) else "shared"
             )
 
-            # Insert into `_participant_transactions` BEFORE acquiring
-            # the lock so that any concurrent calls for the same
-            # transaction can wait until we've acquired the lock.  The
-            # check above and this insert have no `await` between
-            # them, so we cannot race with another caller.
-            transactions = self._participant_transactions[
-                state_type].setdefault(state_ref, {})
-            assert transaction.root_id not in transactions
-            transactions[transaction.root_id] = transaction
-
-            # Wait for any incompatible holders to release. Shared
-            # mode parallelizes; exclusive mode is exclusive (and
-            # queues FIFO behind any queued exclusive waiters). On
-            # success / failure we resolve `transaction.acquired_lock`
-            # so concurrent callers on the same transaction can
-            # proceed (or propagate our failure).
-            try:
-                if transaction.mode == "shared":
-                    await self._locks[state_type][state_ref].acquire_shared()
-                else:
-                    await self._locks[state_type][state_ref].acquire_exclusive(
-                    )
-            except BaseException as e:
-                transaction.acquired_lock.set_exception(e)
-                del transactions[transaction.root_id]
-                if len(transactions) == 0:
-                    del self._participant_transactions[state_type][state_ref]
-                raise
-            else:
-                transaction.acquired_lock.set_result(None)
+            await self._transaction_participant_start(
+                context,
+                state_type,
+                state_ref,
+                transaction,
+            )
 
         assert transaction is not None
-
-        # When restart detection is not being used, store the
-        # transaction to disk at join time (the legacy behavior).
-        if not transaction.using_restart_detection:
-            await self.transaction_participant_store(transaction)
-
-        # Add ourselves as a read-only transaction participant iff
-        # we have acquired the shared lock AND we have no
-        # idempotency key AND we are using restart detection.
-        # These mirror the gate in `transaction_participant_prepare`'s
-        # elision branch: we must only flag ourselves as read-only
-        # in the coordinator's `Participants` if Prepare will
-        # actually elide and release on the participant side.
-        #
-        # If we mark ourselves read-only while the elision won't
-        # fire (e.g., `SortedMap` participants, which always have
-        # `using_restart_detection == False`), the coordinator
-        # would persist us as read-only and then skip us on
-        # recovery's re-prepare (`skip_read_only=True`) — even
-        # though the legacy non-restart-detection path actually
-        # wrote a record to disk at join time and went through
-        # normal Prepare. That would strand the participant in
-        # an unconfirmed state across coordinator restarts.
-        #
-        # If we later upgrade the lock, e.g., because a `writer()`
-        # on this state gets called or a `transaction()` has
-        # effects that require the exclusive lock, then we'll
-        # update `context.participants` to indicate that this
-        # participant is not read-only which correctly wins/taints
-        # as we merge participants back up to the coordinator.
-        context.participants.add(
-            state_type,
-            state_ref,
-            read_only=(
-                transaction.mode == "shared" and
-                context.idempotency_key is None and
-                transaction.using_restart_detection
-            ),
-        )
 
         try:
             yield transaction
@@ -3969,17 +3906,16 @@ class SidecarStateManager(
                 )
 
         if not context.nested:
-            # We're starting a new transaction here, so we should have
-            # a unique identifier, and it should not already be
-            # tracked as a transaction that we're coordinating.
-            assert transaction.root_id not in self._coordinator_participants
-
-            # We need to add the participants future _before_ we try and
-            # `_load()` the actor in case that raises and _before_ we
-            # yield control to the servicer so any participants that it
-            # calls will be able to start their watch control loops.
-            self._coordinator_participants[transaction.root_id
-                                          ] = asyncio.Future()
+            # We're starting a new transaction here, so we should
+            # have a unique identifier, and it should not already
+            # be tracked as a transaction that we're coordinating.
+            #
+            # We need to register as the coordinator _before_ we
+            # try and `_load()` the actor in case that raises and
+            # _before_ we yield control to the servicer so any
+            # participants that it calls will be able to start
+            # their watch control loops.
+            self._transaction_coordinator_start(transaction.root_id)
 
         try:
             # Need to try and load the state to handle non-constructor
@@ -4042,90 +3978,38 @@ class SidecarStateManager(
             if context.transaction_must_abort or transaction.must_abort:
                 raise RuntimeError('Transaction must abort')
 
-            # Two phase commit: (1) prepare.
-            #
-            # Concurrently write the participant list to the database
-            # ("coordinator prepare") and send `Prepare` RPCs to all
-            # participants ("participants prepare").
-            #
-            # In addition to the participant list the coordinator also
-            # writes `preparing=True` to the database so it can
-            # "re-prepare" if the server crashes and recovers. Once
-            # the coordinator determines that the transaction is
-            # prepared it will update the database with
-            # `preparing=False` so that it doesn't need to keep
-            # re-preparing if the server keeps crashing.
-            coordinator_prepare_timestamp, _ = await asyncio.gather(
-                self._database_client.transaction_coordinator_prepare(
-                    transaction_id=transaction.root_id,
-                    transaction_coordinator_state_ref=state_ref,
-                    participants=context.participants,
-                ),
-                self._transaction_coordinator_prepare(
-                    application_id=context.application_id,
-                    channel_manager=context.channel_manager,
-                    transaction_id=transaction.root_id,
-                    participants=context.participants,
-                ),
-            )
-
-            if coordinator_prepare_timestamp is not None:
-                self._update_latest_timestamp(coordinator_prepare_timestamp)
-
-            participants = self._coordinator_participants[transaction.root_id]
-
-            # Not expecting `participants` to ever be cancelled, see:
-            # https://github.com/reboot-dev/mono/issues/3241
-            assert not participants.cancelled()
-
-            participants.set_result(context.participants)
-        except:
-            if context.nested:
-                # Mark all the participants as needing to be aborted,
-                # then raise the exception up to the outermost
-                # transaction so the coordinator can handle the
-                # failure (including participants abort, database
-                # coordinator record cleanup, etc).
-                context.participants.abort()
-                raise
-
-            await self._transaction_coordinator_abort(
+            await self._transaction_coordinator_complete(
                 application_id=context.application_id,
                 channel_manager=context.channel_manager,
                 transaction_id=transaction.root_id,
-                participants=context.participants,
                 coordinator_state_ref=state_ref,
+                participants=context.participants,
             )
-
-            raise
-        else:
-            # Two phase commit: (2) commit
-            #
-            # TODO(benh): remove these tasks once they complete!
-            self._coordinator_commit_control_loop_tasks[
-                transaction.root_id
-            ] = asyncio.create_task(
-                self._transaction_coordinator_commit_control_loop(
+        except:
+            if context.nested:
+                # Mark all the participants as needing to be
+                # aborted, then raise the exception up to the
+                # outermost transaction so the coordinator can
+                # handle the failure (including participants
+                # abort, database coordinator record cleanup,
+                # etc.).
+                context.participants.abort()
+            else:
+                # Drive Abort RPCs so participants release their
+                # locks and forget the transaction. Covers
+                # failures from `_load` / the body / validation /
+                # `must_abort` / `_transaction_coordinator_complete`'s
+                # Prepare phase — `_transaction_coordinator_complete`
+                # itself never calls abort so this path is the
+                # single place that does.
+                await self._transaction_coordinator_abort(
                     application_id=context.application_id,
                     channel_manager=context.channel_manager,
                     transaction_id=transaction.root_id,
                     participants=context.participants,
                     coordinator_state_ref=state_ref,
-                    durably_prepared=False,
-                ),
-                name=
-                f'self._transaction_coordinator_commit_control_loop(...) in {__name__}',
-            )
-            # If this coordinator is shutting down now (that may have happened
-            # while we were waiting for the participants to prepare) then we
-            # must immediately cancel the commit control loop again, since the
-            # `shutdown()` method would have already done this for the other
-            # commit control loops. We prefer this create-and-cancel approach
-            # over never starting the commit control loop, since this way its
-            # cleanup logic can run in the usual way.
-            if self._shutting_down:
-                self._coordinator_commit_control_loop_tasks[transaction.root_id
-                                                           ].cancel()
+                )
+            raise
 
     async def check_for_idempotent_mutation(
         self,
@@ -4341,6 +4225,183 @@ class SidecarStateManager(
         state_copy = state_type()
         state_copy.CopyFrom(state)
         return state_copy
+
+    async def _transaction_participant_start(
+        self,
+        context: ReaderContext | WriterContext | TransactionContext,
+        state_type: StateTypeName,
+        state_ref: StateRef,
+        transaction: StateManager.Transaction,
+    ) -> None:
+        """Register `transaction` as a participant transaction on
+        (`state_type`, `state_ref`): insert into
+        `_participant_transactions`, acquire the shared/exclusive
+        lock based on `transaction.mode`, resolve
+        `transaction.acquired_lock`, persist the legacy
+        non-restart-detection record, and add the participant to
+        `context.participants` with the correct read-only
+        classification."""
+        # Insert into `_participant_transactions` BEFORE acquiring
+        # the lock so that any concurrent calls for the same
+        # transaction can wait until we've acquired the lock. The
+        # caller's check and this insert have no `await` between
+        # them, so we cannot race with another caller.
+        transactions = self._participant_transactions[state_type].setdefault(
+            state_ref, {}
+        )
+        assert transaction.root_id not in transactions
+        transactions[transaction.root_id] = transaction
+
+        # Wait for any incompatible holders to release. Shared
+        # mode parallelizes; exclusive mode is exclusive (and
+        # queues FIFO behind any queued exclusive waiters). On
+        # success / failure we resolve `transaction.acquired_lock`
+        # so concurrent callers on the same transaction can
+        # proceed (or propagate our failure).
+        try:
+            if transaction.mode == "shared":
+                await self._locks[state_type][state_ref].acquire_shared()
+            else:
+                await self._locks[state_type][state_ref].acquire_exclusive()
+        except BaseException as exception:
+            transaction.acquired_lock.set_exception(exception)
+            del transactions[transaction.root_id]
+            if len(transactions) == 0:
+                del self._participant_transactions[state_type][state_ref]
+            raise
+        else:
+            transaction.acquired_lock.set_result(None)
+
+        # When restart detection is not being used, store the
+        # transaction to disk at join time (the legacy behavior).
+        if not transaction.using_restart_detection:
+            await self.transaction_participant_store(transaction)
+
+        # Add ourselves as a read-only transaction participant iff
+        # we have acquired the shared lock AND we have no
+        # idempotency key AND we are using restart detection.
+        # These mirror the gate in `transaction_participant_prepare`'s
+        # elision branch: we must only flag ourselves as read-only
+        # in the coordinator's `Participants` if Prepare will
+        # actually elide and release on the participant side.
+        #
+        # If we mark ourselves read-only while the elision won't
+        # fire (e.g., `SortedMap` participants, which always have
+        # `using_restart_detection == False`), the coordinator
+        # would persist us as read-only and then skip us on
+        # recovery's re-prepare (`skip_read_only=True`) — even
+        # though the legacy non-restart-detection path actually
+        # wrote a record to disk at join time and went through
+        # normal Prepare. That would strand the participant in
+        # an unconfirmed state across coordinator restarts.
+        #
+        # If we later upgrade the lock, e.g., because a `writer()`
+        # on this state gets called or a `transaction()` has
+        # effects that require the exclusive lock, then we'll
+        # update `context.participants` to indicate that this
+        # participant is not read-only which correctly wins/taints
+        # as we merge participants back up to the coordinator.
+        context.participants.add(
+            state_type,
+            state_ref,
+            read_only=(
+                transaction.mode == "shared" and
+                context.idempotency_key is None and
+                transaction.using_restart_detection
+            ),
+        )
+
+    def _transaction_coordinator_start(
+        self,
+        transaction_id: uuid.UUID,
+    ) -> None:
+        """Register `transaction_id` as a transaction this server
+        is the coordinator for. Called by `transaction()` for a
+        top-level transaction call."""
+        assert transaction_id not in self._coordinator_participants
+        self._coordinator_participants[transaction_id] = asyncio.Future()
+
+    async def _transaction_coordinator_complete(
+        self,
+        *,
+        application_id: ApplicationId,
+        channel_manager: _ChannelManager,
+        transaction_id: uuid.UUID,
+        coordinator_state_ref: StateRef,
+        participants: Participants,
+    ) -> None:
+        """Drive the coordinator side of two-phase commit for
+        `transaction_id`: concurrently write the participant list
+        to disk and fan out `Prepare` RPCs; on success schedule
+        the commit-control-loop task.
+
+        On failure the exception propagates and the caller is
+        responsible for calling `_transaction_coordinator_abort`."""
+        # Two phase commit: (1) prepare.
+        #
+        # Concurrently write the participant list to the database
+        # ("coordinator prepare") and send `Prepare` RPCs to all
+        # participants ("participants prepare").
+        #
+        # In addition to the participant list the coordinator also
+        # writes `preparing=True` to the database so it can
+        # "re-prepare" if the server crashes and recovers. Once
+        # the coordinator determines that the transaction is
+        # prepared it will update the database with
+        # `preparing=False` so that it doesn't need to keep
+        # re-preparing if the server keeps crashing.
+        coordinator_prepare_timestamp, _ = await asyncio.gather(
+            self._database_client.transaction_coordinator_prepare(
+                transaction_id=transaction_id,
+                transaction_coordinator_state_ref=coordinator_state_ref,
+                participants=participants,
+            ),
+            self._transaction_coordinator_prepare(
+                application_id=application_id,
+                channel_manager=channel_manager,
+                transaction_id=transaction_id,
+                participants=participants,
+            ),
+        )
+
+        if coordinator_prepare_timestamp is not None:
+            self._update_latest_timestamp(coordinator_prepare_timestamp)
+
+        future = self._coordinator_participants[transaction_id]
+
+        # Not expecting `future` to ever be cancelled, see:
+        # https://github.com/reboot-dev/mono/issues/3241
+        assert not future.cancelled()
+
+        future.set_result(participants)
+
+        # Two phase commit: (2) commit.
+        #
+        # TODO(benh): remove these tasks once they complete!
+        self._coordinator_commit_control_loop_tasks[
+            transaction_id
+        ] = asyncio.create_task(
+            self._transaction_coordinator_commit_control_loop(
+                application_id=application_id,
+                channel_manager=channel_manager,
+                transaction_id=transaction_id,
+                participants=participants,
+                coordinator_state_ref=coordinator_state_ref,
+                durably_prepared=False,
+            ),
+            name=
+            f'self._transaction_coordinator_commit_control_loop(...) in {__name__}',
+        )
+        # If this coordinator is shutting down now (that may have happened
+        # while we were waiting for the participants to prepare) then we
+        # must immediately cancel the commit control loop again, since the
+        # `shutdown()` method would have already done this for the other
+        # commit control loops. We prefer this create-and-cancel approach
+        # over never starting the commit control loop, since this way its
+        # cleanup logic can run in the usual way.
+        if self._shutting_down:
+            self._coordinator_commit_control_loop_tasks[transaction_id].cancel(
+            )
 
     async def _transaction_coordinator_prepare(
         self,
