@@ -14,7 +14,6 @@ from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from log.log import get_logger
 from pathlib import Path
 from reboot.aio.types import ApplicationId
-from reboot.helpers import wait_for_tasks
 from reboot.routing.envoy_config import ServerInfo
 from reboot.server.local_envoy import LocalEnvoy
 from reboot.settings import (
@@ -27,6 +26,7 @@ from reboot.settings import (
     REBOOT_DISCORD_URL,
     REBOOT_GITHUB_ISSUES_URL,
 )
+from reboot.wait_for_tasks import wait_for_tasks
 from typing import Optional
 
 logger = get_logger(__name__)

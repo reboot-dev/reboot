@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI  # type: ignore[import]
 from reboot.aio.external import ExternalContext
 from reboot.aio.internals.channel_manager import _ChannelManager
 from reboot.aio.types import ServerId
-from reboot.helpers import wait_for_tasks
+from reboot.wait_for_tasks import wait_for_tasks
 from starlette.requests import Request  # type: ignore[import]
 from starlette.types import Receive, Scope, Send  # type: ignore[import]
 from typing import (

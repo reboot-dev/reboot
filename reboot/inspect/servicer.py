@@ -31,7 +31,7 @@ from reboot.aio.placement import PlacementClient
 from reboot.aio.state_managers import StateManager
 from reboot.aio.types import ApplicationId, ServerId, StateTypeName
 from reboot.controller.settings import ENVVAR_REBOOT_REPLICA_INDEX
-from reboot.helpers import wait_for_tasks
+from reboot.wait_for_tasks import wait_for_tasks
 from typing import AsyncIterator, Optional
 
 logger = get_logger(__name__)

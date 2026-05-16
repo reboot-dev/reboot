@@ -137,6 +137,7 @@ py_library(
         ":local_envoy_py",
         "//reboot:helpers_py",
         "//reboot:settings_py",
+        "//reboot:wait_for_tasks_py",
         "//reboot/aio:headers_py",
         "//reboot/aio:servicers_py",
         "//reboot/aio:signals_py",

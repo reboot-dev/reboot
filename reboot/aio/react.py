@@ -23,9 +23,9 @@ from reboot.aio.types import (
     StateTypeTag,
     state_type_tag_for_name,
 )
-from reboot.helpers import wait_for_tasks
 from reboot.nodejs.python import should_print_stacktrace
 from reboot.settings import EVERY_LOCAL_NETWORK_ADDRESS
+from reboot.wait_for_tasks import wait_for_tasks
 from typing import AsyncIterable, Optional
 
 logger = get_logger(__name__)

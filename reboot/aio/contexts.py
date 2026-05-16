@@ -45,9 +45,9 @@ from reboot.aio.types import (
     StateRef,
     StateTypeName,
 )
-from reboot.helpers import wait_for_tasks
 from reboot.time import DateTimeWithTimeZone
 from reboot.uuidv7 import uuid7
+from reboot.wait_for_tasks import wait_for_tasks
 from typing import (
     TYPE_CHECKING,
     Any,

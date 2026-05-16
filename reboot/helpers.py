@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import re
 from google.api import annotations_pb2, http_pb2
@@ -14,7 +13,7 @@ from reboot.aio.servicers import Routable
 from reboot.aio.types import ServiceName
 from reboot.server.service_descriptor_validator import ProtoValidationError
 # TODO: Generated code. See https://github.com/reboot-dev/mono/issues/1698
-from typing import Iterable, Optional, TypeVar
+from typing import Optional, TypeVar
 
 RoutableT = TypeVar('RoutableT', bound=Routable)
 
@@ -306,41 +305,3 @@ def base64_serialize_proto_descriptor_set(
     file_descriptor_set: FileDescriptorSet
 ) -> bytes:
     return base64.b64encode(file_descriptor_set.SerializeToString())
-
-
-async def wait_for_tasks(
-    tasks: Iterable[Optional[asyncio.Task]],
-    *,
-    cancel: bool,
-) -> None:
-    """Wait for every (non-`None`) task in `tasks` to finish. When
-    `cancel` is `True`, cancel them first; when `False`, just wait -
-    for tasks that stop on their own, e.g. a server stopped via an
-    event/flag rather than `.cancel()`, or a cleanup task that must
-    run to completion.
-
-    If THIS (parent) task was cancelled while waiting, raise
-    `CancelledError` once every task has finished.
-
-    `asyncio.wait()` never raises a child task's own exception; it only
-    raises `CancelledError` if the awaiting (parent) task is itself
-    cancelled. So a `CancelledError` observed here unambiguously means
-    the parent was cancelled, and must be propagated.
-    """
-    non_none_tasks = [task for task in tasks if task is not None]
-
-    if cancel:
-        for task in non_none_tasks:
-            task.cancel()
-
-    parent_was_cancelled = False
-    pending = [task for task in non_none_tasks if not task.done()]
-    while pending:
-        try:
-            await asyncio.wait(pending)
-        except asyncio.CancelledError:
-            parent_was_cancelled = True
-        pending = [task for task in non_none_tasks if not task.done()]
-
-    if parent_was_cancelled:
-        raise asyncio.CancelledError()

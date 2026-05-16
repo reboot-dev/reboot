@@ -73,7 +73,6 @@ from reboot.aio.types import (
     assert_type,
     state_type_tag_for_name,
 )
-from reboot.helpers import wait_for_tasks
 from reboot.server.database import (
     SORTED_MAP_ENTRY_TYPE_NAME,
     SORTED_MAP_TYPE_NAME,
@@ -81,6 +80,7 @@ from reboot.server.database import (
 )
 from reboot.time import DateTimeWithTimeZone
 from reboot.uuidv7 import uuid7_timestamp_ms
+from reboot.wait_for_tasks import wait_for_tasks
 from struct import pack, unpack
 from typing import (
     Any,
