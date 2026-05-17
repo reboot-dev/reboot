@@ -4,9 +4,11 @@ The `reboot` Claude Code plugin for building on [Reboot](https://reboot.dev).
 
 ## Included Skills
 
-| Skill                          | Description                                                                                |
-| ------------------------------ | ------------------------------------------------------------------------------------------ |
-| [`chat-app`](skills/chat-app/) | Use Reboot to build AI Chat Apps (MCP Apps) for ChatGPT, Claude, VSCode, Goose, and others |
+| Skill                          | Description                                                                                                            |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| [`chat-app`](skills/chat-app/) | (Original, monolithic.) Build AI Chat Apps (MCP Apps) for ChatGPT, Claude, VSCode, Goose, and others                   |
+| [`python`](skills/python/)     | Reboot Python framework reference: proto- or pydantic-defined APIs, Servicers, contexts, refs, scheduling, and testing |
+| [`chat`](skills/chat/)         | (Newer.) MCP Chat Apps layered on top of `python` — chat-app structure + React/MCP-UI scaffolding only                 |
 
 ## Installation
 
@@ -71,8 +73,16 @@ plugin/
 │   └── marketplace.json
 ├── README.md
 └── skills/
-    └── chat-app/
-        └── SKILL.md
+    ├── chat-app/
+    │   └── SKILL.md
+    ├── python/
+    │   ├── SKILL.md
+    │   ├── AGENTS.md
+    │   ├── CLAUDE.md
+    │   └── references/
+    └── chat/
+        ├── SKILL.md
+        └── references/
 ```
 
 The plugin directory contains:

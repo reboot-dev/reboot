@@ -880,10 +880,15 @@ for each UI, and update the `build` script to chain them:
 
 ### `web/vite.config.ts`
 
-**CRITICAL: Copy this file EXACTLY. Do NOT refactor, generalize, or
-add recursive directory scanning. The flat `outDir: "dist"` and
-`output: "${name}.html"` pattern is required — nested output paths
-will break the MCP server's UI discovery.**
+**CRITICAL: Copy this file EXACTLY.** Don't try to "flatten" the HTML
+output. The MCP server resolves the UI artifact at
+`web/dist/<ui-path>/index.html` (where `<ui-path>` matches the
+`path=` you set in `UI(...)`) — i.e. the **nested** Vite default.
+The `entryFileNames` / `assetFileNames` overrides in this config
+flatten the JS/CSS bundle names (which `viteSingleFile` then inlines
+into the HTML), but the HTML itself stays at its source-relative
+path. If you see `Web artifact 'web/dist/ui/<name>/index.html' is missing`, the fix is `cd web && npm run build`, **not** rewriting
+this file to emit `dist/<name>.html`.
 
 ```typescript
 // Vite configuration for Reboot UIs.
