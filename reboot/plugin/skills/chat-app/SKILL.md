@@ -1,9 +1,7 @@
 ---
 name: chat-app
-description: Use Reboot to build AI Chat Apps (MCP Apps) for ChatGPT, Claude, VSCode, Goose, and others.
+description: Build complete Reboot AI Chat Apps (MCP Apps) for ChatGPT, Claude, VSCode, Goose, and other MCP hosts. Layers on top of the python skill for backend mechanics; covers what's specific to MCP Chat Apps — the User-type front door, MCP tool exposure, the UI() method type, and the full React/Vite scaffolding.
 argument-hint: [<app-description>]
-# Scaffolding requires file creation, shell commands (uv, npm,
-# rbt), and code edits across ~15 files.
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
 
@@ -11,11 +9,19 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 
 Build complete Reboot AI Chat Apps from a user description.
 
+> **Reads from `python`.** This skill is the MCP-App + React
+> layer on top of the Reboot Python framework. Anything about
+> Servicers, Reboot contexts, refs, scheduling primitives, error
+> types, the testing harness, the `.rbtrc` shape, or pydantic API
+> defaults belongs in `python` — load those references for
+> those concerns. This skill covers what's _specific_ to MCP Chat
+> Apps: the `User`-type front door, MCP tool exposure, the `UI()`
+> method type, the React/Vite scaffolding, and the cross-cutting
+> rules unique to that layer.
+
 ## Installation
 
 ### From GitHub
-
-Add the Reboot skills marketplace and install the plugin:
 
 ```bash
 # 1. Add the marketplace (one-time).
@@ -25,20 +31,17 @@ claude plugin marketplace add reboot-dev/reboot-plugin
 claude plugin install reboot@reboot-plugin
 ```
 
-If you install the plugin within `claude` with `/plugin` you need to restart for
-the configuration and skill to load correctly.
+If you install the plugin within `claude` with `/plugin`, restart for
+the configuration and skill to load.
 
-Or add to your project's `.claude/settings.json` so teammates
-are automatically offered the plugin on first use:
+Add to your project's `.claude/settings.json` so teammates are
+automatically offered the plugin:
 
 ```json
 {
   "extraKnownMarketplaces": {
     "reboot-plugin": {
-      "source": {
-        "source": "github",
-        "repo": "reboot-dev/reboot-plugin"
-      }
+      "source": { "source": "github", "repo": "reboot-dev/reboot-plugin" }
     }
   },
   "enabledPlugins": {
@@ -48,8 +51,6 @@ are automatically offered the plugin on first use:
 ```
 
 ### Local (repo checked out)
-
-If you have the `reboot-plugin` repo cloned locally:
 
 ```bash
 claude --plugin-dir /path/to/reboot-plugin
@@ -61,27 +62,86 @@ claude --plugin-dir /path/to/reboot-plugin
 - Adding features, state, or UI to an existing Reboot AI Chat App
 - Modifying state model, methods, or React UI in a Reboot AI Chat App
 
+## Read These From `python` First
+
+Before scaffolding, load the references that cover the backend
+mechanics. The patterns in this skill assume you've read them and just
+show the chat-app-specific shape on top.
+
+**Always relevant:**
+
+- `python` references/`patterns-common-gotchas.md` — recurring
+  trips (`self.ref().state_id`, kwargs convention, `--name` vs.
+  `--application-name`, etc.).
+- `python` references/`api-pydantic.md` — pydantic API rules
+  (every Field needs a zero-value default; `list[<Model>]` is silently
+  dropped on the proto-flavored path; non-Optional `Model`-typed
+  fields can't take defaults).
+
+**Defining the API:**
+
+- `python` references/`api-methods.md` — marker → context type
+  mapping (Reader/Writer/Transaction/Workflow).
+- `python` references/`api-errors.md` — typed errors.
+
+**Implementing Servicers:**
+
+- `python` references/`servicer-{reader,writer,transaction, constructor,authorizer}.md` — one per context type.
+- `python` references/`rpc-refs.md` — `self.ref().state_id`
+  (never `self.state_id`); `self.ref().schedule(...)`.
+- `python` references/`rpc-calls.md` — kwargs not Request
+  wrappers.
+- `python` references/`rpc-constructor-calls.md` —
+  `Service.create(context, id)` semantics.
+
+**Workflows:**
+
+- `python` references/`workflow-method.md` (start here — has
+  the When-to-Pick decision table for the rest), then the specific
+  primitive references for `at_most_once` / `at_least_once` / `until` /
+  `until_changes` / `loop` / `state-write` / `idempotency-scopes`.
+
+**Project shell:**
+
+- `python` references/`lifecycle-{project-setup,rbtrc, application-entry,initialize-hook}.md` — the canonical layout, the
+  CLI flags, the `Application(...)` constructor, the `initialize` hook.
+
+## This Skill's References
+
+Chat-app–specific topics, organized by layer. Read them on demand
+the same way you would any other skill reference — the patterns
+they cover aren't restated inline below.
+
+| Reference                                                            | What's in it                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`references/project-shell.md`](references/project-shell.md)         | `.python-version`, `.rbtrc` deltas (HMR + dist configs), `pyproject.toml` extras, `main.py` shape, durable-state setup.                                                                                                                                                                                                                                                              |
+| [`references/api-method-types.md`](references/api-method-types.md)   | The pydantic API file. `User`-type front door, `mcp=Tool()` / `mcp=None`, `UI()` (including parameterized UI props), `factory=True` on `create`, `Workflow(...)` declaration shape. Full Counter API example.                                                                                                                                                                        |
+| [`references/api-state-shapes.md`](references/api-state-shapes.md)   | Two recurring state shapes: `list[Item]` with `default_factory=list`; single nested `Model` sub-objects as `Optional[X] = Field(tag=N, default=None)` hydrated in factory `create` (Gotcha #13). The state-inside-state regression and how to compose state actors via string ID + `ref(id)`.                                                                                        |
+| [`references/servicer-patterns.md`](references/servicer-patterns.md) | Servicer-side patterns: `UserServicer` calling `<X>.create(context)`, Workflow Servicer with `MyType.ref()` (no-arg) magic, inline writers via `.idempotently("alias").write(context, fn)` / `.always().write(...)`, scheduling a workflow from a Transaction with `.schedule()`.                                                                                                    |
+| [`references/react-scaffolding.md`](references/react-scaffolding.md) | The `web/` shell: `package.json` (per-UI `build:<name>` scripts, no auto-discovery wrappers), `vite.config.ts` (load-bearing — copy exactly), `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json`, `index.css` theme variables, `ui/<name>/index.html`, `ui/<name>/main.tsx`.                                                                                               |
+| [`references/react-app-tsx.md`](references/react-app-tsx.md)         | `App.tsx` — generated `use<Type>()` hook usage (reader subscriptions + mutation calls), Python-snake → TypeScript-camel field naming, Zod-validated request/response types. Full Counter `App.tsx` + `App.module.css` example.                                                                                                                                                       |
+| [`references/gotchas.md`](references/gotchas.md)                     | The numbered MCP-Chat-App–specific trip list (1–19): `mcp=Tool()`/`mcp=None` required, `factory=True` on app-type `create`, `MyType.ref()` not `cls.ref()`/`self.ref()` in workflows, `.schedule()` from a Transaction, Optional+`default=None` for nested Models, `.read()` only on no-arg ref inside a workflow, method-name PascalCase → generated `<Type>.<Method>Request`, etc. |
+
 ## Workflow: Plan First, Then Build
 
-**Always enter plan mode before writing code.** The state model is
-the foundation — getting entities, field types, or method types
-wrong means regenerating everything across 12+ files.
+**Always enter plan mode before writing code.** The state model is the
+foundation — getting entities, field types, or method types wrong
+means regenerating everything across 12+ files.
 
 ### Plan Phase
 
 1. Analyze the user's description using the State Model Assessment
-   below
-2. Enter plan mode (`EnterPlanMode`)
+   below.
+2. Enter plan mode (`EnterPlanMode`).
 3. Present the proposed design:
-   - User type and its methods (as the MCP front door to the
-     application types discussed below, creating new ones and
-     locating existing ones)
-   - Application types: state shape (fields, types, tags)
-   - Method map: which operations, which method type (Reader/
-     Writer/Transaction/Workflow), which get UI()
-   - Tool surface: what the AI will see as callable tools
-4. Get user approval before writing any files
-5. Then execute the Step-by-Step Build Flow
+   - `User` type and its methods (the MCP front door for creating new
+     application-type instances and locating existing ones).
+   - Application types: state shape (fields, types, tags).
+   - Method map: which operations, which method type
+     (Reader/Writer/Transaction/Workflow), which get `UI()`.
+   - Tool surface: what the AI will see as callable tools.
+4. Get user approval before writing any files.
+5. Then execute the Step-by-Step Build Flow.
 
 For updates to existing apps, still plan: read current state, propose
 changes, confirm, then modify.
@@ -91,90 +151,92 @@ changes, confirm, then modify.
 Before writing code, analyze the user's request:
 
 1. **Application types**: What primary things is the user managing?
-   (counter, inventory, chat thread, etc.) Each becomes
-   its own `Type` with its own state.
-2. **User methods**: How does the AI create instances of
-   application types? Each gets a `Transaction` on `User`
-   that calls `<Type>.create(context)`.
-3. **State shape**: Fields, types — lists, nested objects,
-   primitives. Each gets `Field(tag=N)`. **Nested Model
-   subobjects** (preferences, profile, config — owned 1:1 by a
-   parent state) must be `Optional[X] = Field(tag=N, default=None)`
-   and hydrated in the parent's factory `create` Writer; nested
-   Models can't take `default=` or `default_factory=` (Gotcha #21).
-   For collections, prefer `list[Item]` with `default_factory=list`
-   over a single-nested wrapper.
+   (counter, inventory, chat thread, etc.) Each becomes its own `Type`
+   with its own state.
+2. **User methods**: How does the AI create instances of application
+   types? Each gets a `Transaction` on `User` that calls
+   `<Type>.create(context)`.
+3. **State shape**: Fields, types — lists, nested objects, primitives.
+   Each gets `Field(tag=N)`. **Nested `Model` sub-objects** owned 1:1
+   by a parent state must be `Optional[X] = Field(tag=N, default=None)`
+   and hydrated in the parent's factory `create` Writer (Gotcha #13);
+   non-Optional `Model`-typed fields reject `default=` /
+   `default_factory=`. For collections, prefer `list[Item]` with
+   `default_factory=list`. Full rules + examples in
+   [`references/api-state-shapes.md`](references/api-state-shapes.md).
 4. **Operations**: Map to the right method type:
-   - `Reader` — read-only queries
-   - `Writer` — single-state mutations
-   - `Transaction` — multi-state atomic operations (e.g.,
-     transfer between two accounts, or User creating an
-     application type instance)
-   - `Workflow` — long-running control flows with loops,
-     scheduling, and idempotency helpers
-5. **Tool surface**: Which operations need UIs (`UI()`)?
-   Which need explicit tool exposure (`mcp=Tool()`)?
-6. **Identity**: Single default instance vs multiple instances?
-7. **Cross-state coordination**: Does any operation touch
-   multiple state instances? If yes, use `Transaction`.
+   - `Reader` — read-only queries.
+   - `Writer` — single-state mutations.
+   - `Transaction` — multi-state atomic operations (e.g. transfer
+     between two accounts, or User creating an application-type
+     instance).
+   - `Workflow` — long-running control flows with loops, scheduling,
+     and idempotency helpers.
+5. **Tool surface**: Which operations need UIs (`UI()`)? Which need
+   explicit tool exposure (`mcp=Tool()`)?
+6. **Identity**: Single default instance vs. multiple instances?
+7. **Cross-state coordination**: Does any operation touch multiple
+   state instances? If yes, use `Transaction`.
 
-## Key Framework Concepts
+## Key Framework Concepts (MCP Chat App–specific)
 
-### User and Application Types
+### `User` and Application Types
 
-Every AI Chat App has a `User` type and one or more application
-types:
+Every AI Chat App has a `User` type and one or more application types:
 
 - **`User`** is auto-constructed for each authenticated user. Its
-  state is typically empty. Its methods are `Transaction`s that
-  create instances of application types, or `Reader`s that find
-  the IDs of existing application type instances in indexes that
-  have well-known IDs of their own.
-- **Application types** (e.g., `Counter`) hold the
-  actual application state. They need a `create` Writer with
-  `factory=True` for construction.
+  state is typically empty. Its methods are `Transaction`s that create
+  instances of application types, or `Reader`s that find the IDs of
+  existing application-type instances in indexes that have well-known
+  IDs of their own.
+- **Application types** (e.g. `Counter`) hold the actual state. They
+  need a `create` Writer with `factory=True` for construction.
+
+Full pydantic shape in
+[`references/api-method-types.md`](references/api-method-types.md);
+the `UserServicer` + `<X>.create(context)` pattern in
+[`references/servicer-patterns.md`](references/servicer-patterns.md).
 
 ### Tool Exposure Control
 
 Every method must explicitly declare its MCP exposure:
 
-- **`mcp=Tool()`**: Expose the method as an AI-callable tool.
-  Required on every method — including `User` methods — that
-  the AI should be able to call.
-- **`mcp=None`**: Hide the method from the AI. Use for
-  human-only actions or to reduce context bloat.
-- **`Tool()` options**: `Tool(name="custom_name", title="Title")`
-  to override the default tool name or add a human-readable title.
+- **`mcp=Tool()`** — expose the method as an AI-callable tool.
+  Required on every method (including `User` methods) the AI should
+  be able to call.
+- **`mcp=None`** — hide the method from the AI. Use for human-only
+  actions or to reduce context bloat.
+- **`Tool(name="...", title="...")`** — override the default tool
+  name or add a human-readable title.
 
 ### Method Types
 
-- **`UI()`**: Opens a React UI in the AI chat interface. Takes
-  `request=` (config type or `None`), `path=` (web dir relative
-  to project root), `title=`, `description=`. No servicer
-  implementation needed — the React app IS the implementation.
-  When `request=` is a Model type, its fields are passed to the
-  React component as props.
-- **`Writer`**: Single-state mutations. Context: `WriterContext`.
-  Use `factory=True` on the `create` method of application types.
-- **`Reader`**: Read-only queries. Context: `ReaderContext`.
-- **`Transaction`**: Multi-state atomic operations. Context:
-  `TransactionContext`. Use when an operation must modify multiple
-  state instances atomically, or when User creates application
-  type instances.
-- **`Workflow`**: Long-running control flows. Context:
-  `WorkflowContext`. Implemented as `@classmethod` (not instance
-  method). Support `context.loop()` for periodic/reactive loops,
-  scheduling with `timedelta`, and idempotency helpers.
+The `Reader` / `Writer` / `Transaction` / `Workflow` markers come from
+`reboot.api` and behave exactly as `python`'s `api-methods.md`
+describes (each fixes the Servicer's context type). The MCP Chat App
+adds one more:
+
+- **`UI()`** — opens a React UI in the AI chat interface. Takes
+  `request=` (config type or `None`), `path=` (web dir relative to
+  project root), `title=`, `description=`. **No servicer
+  implementation needed** — the React app _is_ the implementation.
+  When `request=` is a `Model`, its fields become props on the React
+  component.
+
+`factory=True` on an application type's `create` Writer is the
+chat-app spelling of a constructor (see `python`'s
+`servicer-constructor.md` for the underlying mechanic).
 
 ### Declarative, Not Decorator
 
-All MCP surface is defined in the API file. `main.py` is minimal.
-No `@mcp.tool()` decorators.
+All MCP surface is defined in the API file. `main.py` is minimal. No
+`@mcp.tool()` decorators.
 
-### State is Durable
+### State Is Durable
 
-State survives restarts. Set `dev run --application-name=<name>` in `.rbtrc` to
-persist across dev restarts. Use `uv run rbt dev expunge --application-name=<name>` to reset.
+State survives restarts. `dev run --application-name=<name>` in
+`.rbtrc` (see [`references/project-shell.md`](references/project-shell.md))
+is what makes that work.
 
 ## Project Structure
 
@@ -211,19 +273,32 @@ persist across dev restarts. Use `uv run rbt dev expunge --application-name=<nam
 **Only execute after plan approval. All commands run from the
 application directory.**
 
-1. Create `.python-version`, `pyproject.toml`, `.rbtrc`
-2. `uv sync`
-3. Write API definition (`api/<pkg>/v1/<name>.py`)
-4. `uv run rbt generate`
-5. Write servicer (`backend/src/servicers/<name>.py`)
-6. Write `main.py`
-7. `npm create @reboot-dev/ui`
-8. `cd web && npm install`
-9. `uv run rbt generate` (React bindings need `node_modules`)
-10. Customize React UIs: edit `App.tsx` files in `web/ui/*/`
-11. `cd web && npm run build`
+1. Create `.python-version`, `pyproject.toml`, `.rbtrc` — see
+   [`references/project-shell.md`](references/project-shell.md).
+2. `uv sync`.
+3. Write API definition (`api/<pkg>/v1/<name>.py`) — see
+   [`references/api-method-types.md`](references/api-method-types.md)
+   and [`references/api-state-shapes.md`](references/api-state-shapes.md);
+   field-level pydantic rules in `python`
+   references/`api-pydantic.md`.
+4. `uv run rbt generate`.
+5. Write servicer (`backend/src/servicers/<name>.py`) — see
+   [`references/servicer-patterns.md`](references/servicer-patterns.md);
+   context-type rules in `python` references/`servicer-*.md`.
+6. Write `main.py` — see
+   [`references/project-shell.md`](references/project-shell.md) and
+   `python` references/`lifecycle-application-entry.md`.
+7. `npm create @reboot-dev/ui`.
+8. `cd web && npm install`.
+9. `uv run rbt generate` (React bindings need `node_modules`).
+10. Customize React UIs — see
+    [`references/react-scaffolding.md`](references/react-scaffolding.md)
+    for the `web/` shell and
+    [`references/react-app-tsx.md`](references/react-app-tsx.md) for
+    `App.tsx` patterns.
+11. `cd web && npm run build`.
 12. Create `mcp_servers.json` with
-    `{"mcpServers":{"<name>":{"url":"http://localhost:9991/mcp","useOAuth":true}}}`
+    `{"mcpServers":{"<name>":{"url":"http://localhost:9991/mcp","useOAuth":true}}}`.
 13. Run the app, by doing each of the following in a separate shell in the background:
     - run the backend: `uv run rbt dev run --no-chaos` - FYI, the `--no-chaos`
       disables the Chaos Monkey, which is a useful feature to catch bugs but
@@ -239,1279 +314,15 @@ application directory.**
 16. Give the user the URLs for the application's own inspect page, and for the MCPJam inspector.
 17. suggest a first prompt the user can try in the inspector (e.g., "Create a new todo list and show it to me").
 
-## Inline Patterns
-
-All patterns below are complete and copy-paste-ready. Replace
-`<project-name>`, `<pkg>`, `<name>`, `<ui-name>` with actual values.
-
-### `.python-version`
-
-```
-3.10
-```
-
-### `.rbtrc`
-
-Line-based config. NOT YAML!
-
-```
-# Find API definitions in 'api/'.
-generate api/
-
-# Tell `rbt generate` where to put generated files.
-generate --python=backend/api/
-
-# Generate React bindings for web apps (into "web/api/").
-generate --react=web/api
-generate --react-extensions
-
-# Watch if any source files are modified.
-dev run --watch=backend/**/*.py
-
-# Tell `rbt` that this is a Python application.
-dev run --python
-
-# Save state between restarts.
-dev run --application-name=<project-name>
-
-# Run the application!
-dev run --application=backend/src/main.py
-
-# Default to HMR mode when no --config is specified.
-dev run --default-config=hmr
-
-# Hot Module Replacement (HMR): Vite dev server proxied through Envoy.
-# Run Vite in a separate terminal: cd web && npm run dev
-# Envoy routes "/__/web/**" to Vite for HMR support.
-dev run:hmr --mcp-frontend-host=http://localhost:4444
-
-# Dist mode: serve pre-built artifacts from "web/dist/" (no Vite HMR).
-# Usage: uv run rbt dev run --config=dist
-# Requires: cd web && npm run build
-dev run:dist --mcp-frontend-host=""
-
-# When expunging, expunge that state we've saved.
-dev expunge --application-name=<project-name>
-```
-
-### `pyproject.toml`
-
-```toml
-[project]
-name = "<project-name>"
-version = "0.1.0"
-requires-python = ">= 3.10"
-dependencies = [
-    "httpx>=0.27,<1.0",
-    "uuid7>=0.1.0",
-    "anyio>=4.0.0",
-    "reboot>=1.0.4",
-]
-
-[tool.rye]
-dev-dependencies = [
-    "mypy==1.18.1",
-    "types-protobuf>=4.24.0.20240129",
-    "reboot>=1.0.4",
-]
-
-virtual = true
-managed = true
-```
-
-### API Definition (`api/<pkg>/v1/<name>.py`)
-
-Rules:
-
-- Import only the method types you use from `reboot.api`
-- Helper Model types as standalone classes
-- State model with `Field(tag=N)` on every field
-- `User` type with empty state and `Transaction` methods
-  that create application type instances
-- Application types with their own state and methods
-- All methods need explicit `mcp=Tool()` (AI-callable) or
-  `mcp=None` (hidden from AI)
-- Application types need a `create` Writer with `factory=True`
-- `api = API(User=Type(...), <AppType>=Type(...))`
-
-#### Simple Example (Counter)
-
-```python
-from reboot.api import (
-    API,
-    UI,
-    Field,
-    Methods,
-    Model,
-    Reader,
-    Tool,
-    Transaction,
-    Type,
-    Writer,
-)
-
-
-# -- User models. --
-
-
-class CreateCounterResponse(Model):
-    counter_id: str = Field(tag=1)
-
-
-class UserState(Model):
-    pass
-
-
-# -- Counter models. --
-
-
-class CounterState(Model):
-    value: int = Field(tag=1, default=0)
-    description: str = Field(tag=2, default="")
-
-
-class ValueResponse(Model):
-    value: int = Field(tag=1)
-
-
-class AmountRequest(Model):
-    """Request with an amount parameter."""
-    amount: int = Field(tag=1)
-
-
-api = API(
-    User=Type(
-        state=UserState,
-        methods=Methods(
-            create_counter=Transaction(
-                request=None,
-                response=CreateCounterResponse,
-                description="Create a new Counter. Returns "
-                "the ID of the new counter. That ID is not "
-                "human-readable; pass it to future tool "
-                "calls where needed, but no need to tell "
-                "the human what it is.",
-                mcp=Tool(),
-            ),
-        ),
-    ),
-    Counter=Type(
-        state=CounterState,
-        methods=Methods(
-            show_clicker=UI(
-                request=None,
-                path="web/ui/clicker",
-                title="Counter Clicker",
-                description="Interactive clicker UI for "
-                "the counter.",
-            ),
-            create=Writer(
-                request=None,
-                response=None,
-                factory=True,
-                mcp=None,
-            ),
-            get=Reader(
-                request=None,
-                response=ValueResponse,
-                description="Get the current counter value.",
-                mcp=Tool(),
-            ),
-            increment=Writer(
-                request=AmountRequest,
-                response=None,
-                description="Increment the counter by the "
-                "specified amount.",
-                mcp=Tool(),
-            ),
-            decrement=Writer(
-                request=AmountRequest,
-                response=None,
-                description="Decrement the counter by the "
-                "specified amount.",
-                mcp=Tool(),
-            ),
-        ),
-    ),
-)
-```
-
-#### Parameterized UI Example
-
-When the AI should pass parameters to a React UI (e.g., a
-personalized message or configuration), use `request=` with a
-Model type. The fields become React component props:
-
-```python
-class DashboardConfig(Model):
-    """Configuration passed by the AI."""
-    personalized_message: str = Field(tag=1)
-
-
-# In the application type's Methods():
-show_dashboard=UI(
-    # The AI provides a DashboardConfig when opening this UI.
-    # The fields are passed to the React component as props.
-    request=DashboardConfig,
-    path="web/ui/dashboard",
-    title="Counter Dashboard",
-    description="Dashboard UI. Use `personalized_message` to "
-    "impart wisdom on the topic of counting things.",
-),
-```
-
-The React component receives the config fields as props:
-
-```tsx
-import {
-  type DashboardConfig,
-  useCounter,
-} from "@api/<pkg>/v1/<name>_rbt_react";
-
-export const DashboardApp: FC<DashboardConfig> = ({ personalizedMessage }) => {
-  const counter = useCounter();
-  const { response } = counter.useGet();
-  // personalizedMessage is available as a prop.
-  return (
-    <div>
-      {personalizedMessage}: {response?.value ?? 0}
-    </div>
-  );
-};
-```
-
-#### mcp=None Example
-
-Hide a method from the AI (e.g., for human-only actions):
-
-```python
-# In an application type's Methods():
-# Only callable from the React UI, not by the AI.
-confirm_dangerous_action=Writer(
-    request=ConfirmRequest,
-    response=None,
-    description="Confirm a dangerous action.",
-    mcp=None,
-),
-```
-
-#### List State Patterns
-
-For application types with list-based state (items, entries,
-messages, etc.):
-
-- Define helper Model types as standalone classes (e.g.,
-  `class Item(Model)`) — NOT nested on the application type
-- Use `list[Item]` in the state with `default_factory=list`
-- Add CRUD Writers: add, remove, toggle, reorder as needed
-- Each Writer validates indices before mutating
-- The `reorder` pattern uses `pop` + `insert`
-- In the servicer, import helpers standalone:
-  `from <pkg>.v1.<name> import Item`
-
-The counter example above shows the full User + application
-type pattern. Apply the same structure for any application type,
-adding whatever Writers and Readers your app needs.
-
-#### Nested Model State Patterns
-
-For application types that own a single nested `Model`
-sub-object (preferences blob, profile, config, etc.):
-
-- Declare the field as `Optional[Sub] = Field(tag=N, default=None)`.
-  Nested non-Optional `Model` types reject both `default=` and
-  `default_factory=` (Gotcha #21).
-- Hydrate the sub-object in the parent's factory `create`
-  Writer, so callers never observe the `None`:
-
-```python
-from reboot.api import API, Field, Methods, Model, Transaction, Type, User as RbtUser, Writer
-from typing import Optional
-
-class GuestPreferences(Model):
-    meal_type: str = Field(tag=1, default="")
-    calorie_level: str = Field(tag=2, default="")
-    dietary_restrictions: str = Field(tag=3, default="")
-
-class Guest(Model):
-    name: str = Field(tag=1, default="")
-    # Single nested Model: Optional + default=None, populated
-    # by the factory `create` below.
-    preferences: Optional[GuestPreferences] = Field(tag=2, default=None)
-
-class CreateRequest(Model):
-    name: str = Field(tag=1)
-    meal_type: str = Field(tag=2, default="")
-    calorie_level: str = Field(tag=3, default="")
-    dietary_restrictions: str = Field(tag=4, default="")
-
-# Servicer side (in `backend/src/servicers/<name>.py`):
-class GuestServicer(Guest.Servicer):
-    async def create(self, context, *, name, meal_type, calorie_level, dietary_restrictions):
-        self.state.name = name
-        self.state.preferences = GuestPreferences(
-            meal_type=meal_type,
-            calorie_level=calorie_level,
-            dietary_restrictions=dietary_restrictions,
-        )
-```
-
-If the prompt suggests _plural_ sub-objects ("each guest's
-preferences"), prefer `list[GuestPreferences]` with
-`default_factory=list` — lists are exempt from this rule.
-
-#### Workflow Example (Long-Running)
-
-Use `Workflow` for periodic or long-running operations:
-
-```python
-from reboot.api import (
-    API,
-    Field,
-    Methods,
-    Model,
-    Tool,
-    Type,
-    Workflow,
-)
-
-
-class DoPingPeriodicallyRequest(Model):
-    num_pings: int = Field(tag=1)
-    period_seconds: float = Field(tag=2)
-
-
-class DoPingPeriodicallyResponse(Model):
-    num_pings: int = Field(tag=1)
-
-
-# In an application type's Methods():
-do_ping_periodically=Workflow(
-    request=DoPingPeriodicallyRequest,
-    response=DoPingPeriodicallyResponse,
-)
-```
-
-### Servicer (`backend/src/servicers/<name>.py`)
-
-Rules:
-
-- Import helper types standalone:
-  `from <pkg>.v1.<name> import MyItem`
-- Import generated classes:
-  `from <pkg>.v1.<name>_rbt import User, Counter`
-- Each type gets its own servicer class
-  (e.g., `UserServicer`, `CounterServicer`)
-- `User.Servicer` / `Counter.Servicer` base
-- Context types from `reboot.aio.contexts`:
-  - `ReaderContext` — read-only
-  - `WriterContext` — single-state mutation
-  - `TransactionContext` — multi-state atomic
-  - `WorkflowContext` — long-running (`@classmethod`)
-- Access state via `self.state.<field>`
-- Request types: `Counter.XxxRequest`,
-  response: `Counter.XxxResponse`
-
-#### Simple Servicer (Counter)
-
-```python
-from ai_chat_counter.v1.counter_rbt import Counter, User
-from reboot.aio.contexts import (
-    ReaderContext,
-    TransactionContext,
-    WriterContext,
-)
-
-
-class UserServicer(User.Servicer):
-
-    async def create_counter(
-        self,
-        context: TransactionContext,
-    ) -> User.CreateCounterResponse:
-        """Create a new Counter and return its ID."""
-        # Factory create: pass request fields as keyword args
-        # directly — do NOT wrap in a Request object.
-        # No-args: Counter.create(context)
-        # With args: Counter.create(context, title="...", count=0)
-        counter, _ = await Counter.create(context)
-        return User.CreateCounterResponse(
-            counter_id=counter.state_id,
-        )
-
-
-class CounterServicer(Counter.Servicer):
-
-    async def create(self, context) -> None:
-        # State is initialized with defaults; nothing to do.
-        pass
-
-    async def increment(
-        self,
-        context: WriterContext,
-        request: Counter.IncrementRequest,
-    ) -> None:
-        self.state.value += request.amount
-
-    async def decrement(
-        self,
-        context: WriterContext,
-        request: Counter.DecrementRequest,
-    ) -> None:
-        self.state.value -= request.amount
-
-    async def get(
-        self,
-        context: ReaderContext,
-    ) -> Counter.GetResponse:
-        return Counter.GetResponse(value=self.state.value)
-```
-
-#### Workflow Servicer
-
-Workflow methods are `@classmethod` — no `self`, no `self.state`. To
-call back into the current instance, use the **state class**
-imported from `<name>_rbt` (e.g. `MyType.ref()`), NOT `cls`. Inside a
-Workflow, calling `<StateClass>.ref()` with no arguments is special:
-it picks up the current `state_id` from `WorkflowContext`
-automatically, so `MyType.ref()` resolves to a ref to the running
-workflow's own instance.
-
-```python
-from datetime import timedelta
-from reboot.aio.contexts import WorkflowContext
-# Import the state class — this is what `.ref()` is called on,
-# NOT `cls`. `cls` inside the classmethod is `MyTypeBaseServicer`.
-from <pkg>.v1.<name>_rbt import MyType
-
-
-class MyTypeServicer(MyType.Servicer):
-
-    @classmethod
-    async def do_ping_periodically(
-        cls,
-        context: WorkflowContext,
-        request: MyType.DoPingPeriodicallyRequest,
-    ) -> MyType.DoPingPeriodicallyResponse:
-        async for iteration in context.loop(
-            "Ping periodically",
-            interval=timedelta(seconds=request.period_seconds),
-        ):
-            # `MyType.ref()` with no args is Workflow-only magic:
-            # it reads `state_id` from `WorkflowContext`, returning
-            # a ref to this workflow's own instance. Do NOT write
-            # `cls.ref()` or `self.ref()` here — see Critical
-            # Gotcha #19.
-            await MyType.ref().do_ping(context)
-            pings_sent = iteration + 1  # iteration starts at 0.
-            if pings_sent >= request.num_pings:
-                break
-
-        # `.read()` is only valid on the workflow's own no-arg
-        # ref; a foreign-state read like
-        # `OtherType.ref(id).read(context)` raises a "only
-        # supported within workflows" RuntimeError. Call a Reader
-        # method on the foreign type instead — see Gotcha #23.
-        state = await MyType.ref().read(context)
-        return MyType.DoPingPeriodicallyResponse(
-            num_pings=state.num_pings,
-        )
-```
-
-**Use inline writers for workflow-only state changes.** When the
-mutation is only ever performed by this workflow, do _not_ add a
-separate `store_xxx` Writer to the API just so the workflow can
-call it. Pass an `async (state) -> ...` function to
-`.idempotently("alias").write(context, fn)`:
-
-```python
-async def increment_count(state):
-    state.num_pings += 1
-
-await MyType.ref().idempotently(
-    "Increment ping count",
-).write(context, increment_count)
-```
-
-The idempotency alias is a human-readable string that survives
-workflow restarts — the inline writer runs at most once per
-alias. Anti-pattern: defining a `store_count` Writer in the API
-just so the workflow can `await MyType.ref().store_count(context)`
-to bump a counter. That adds an unnecessary indirection.
-Reserve declared Writers for operations that are also called
-from outside the workflow.
-
-For "run every time" (e.g., re-fetching a remote value on each
-loop iteration), use `.always().write(context, fn)` instead of
-`.idempotently("...").write(...)`.
-
-#### Scheduling a Workflow from a Transaction
-
-A workflow can only be `await`-ed directly from an
-`ExternalContext` (e.g. a bootstrap script) or from another
-`WorkflowContext`. In **any** other context — most commonly a
-`TransactionContext` kicking off a workflow on a state it just
-created — the workflow must be **scheduled**, not awaited
-directly. Use `.schedule()` to fire-and-forget from a
-transaction:
-
-```python
-# In a User's Transaction method that creates a Game and wants
-# its autoplay workflow to start running:
-class UserServicer(User.Servicer):
-
-    async def create_game(
-        self,
-        context: TransactionContext,
-        request: User.CreateGameRequest,
-    ) -> User.CreateGameResponse:
-        game, _ = await Game.create(context, ...)
-        # GOOD — schedule the workflow from the transaction.
-        # Request type is empty (`AutoplayRequest`), so just
-        # pass `context`:
-        await Game.ref(game.state_id).schedule().autoplay(context)
-        # If the workflow request had fields (e.g.
-        # `do_ping_periodically(num_pings, period_seconds)`),
-        # pass them as keyword args:
-        await Game.ref(game.state_id).schedule().do_ping_periodically(
-            context,
-            num_pings=10,
-            period_seconds=1.0,
-        )
-        # BAD — wrapping in `request=` raises
-        # `TypeError: ... got an unexpected keyword argument
-        # 'request'` (Gotcha #9):
-        # await Game.ref(game.state_id).schedule().autoplay(
-        #     context, request=Game.AutoplayRequest()
-        # )
-        # BAD — awaiting a workflow directly from a Transaction
-        # raises `TypeError: ... 'Autoplay' is a workflow and
-        # must be scheduled from a 'TransactionContext' via
-        # `await [...].schedule([...]).Autoplay(context, [...])`
-        # (Gotcha #20):
-        # await Game.ref(game.state_id).autoplay(context)
-        return User.CreateGameResponse(game_id=game.state_id)
-```
-
-`.schedule(when=timedelta(...))` delays the workflow by a
-duration. `.schedule()` with no argument starts it as soon as
-the transaction commits.
-
-Same rule from a `WriterContext` or `ReaderContext`: use
-`.schedule()`. Only `ExternalContext` and `WorkflowContext` can
-await a workflow directly.
-
-### `main.py`
-
-Register all servicers (User + application types):
-
-```python
-import asyncio
-import logging
-from reboot.aio.applications import Application
-from servicers.<name> import (
-    CounterServicer,
-    UserServicer,
-)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-
-
-async def main() -> None:
-    application = Application(
-        servicers=[UserServicer, CounterServicer],
-    )
-    await application.run()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-### `web/package.json`
-
-**Use explicit per-UI build scripts as shown below. Do NOT create a
-`build.js` or any auto-discovery wrapper — use `npm run build:<name>`
-scripts directly.**
-
-```json
-{
-  "name": "<project-name>-web",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build:<ui-name>": "vite build --mode <ui-name>",
-    "build:watch:<ui-name>": "vite build --mode <ui-name> --watch",
-    "build": "tsc --noEmit && npm run build:<ui-name>",
-    "build:watch": "concurrently \"npm:build:watch:*\""
-  },
-  "dependencies": {
-    "@modelcontextprotocol/ext-apps": "1.5.0",
-    "@modelcontextprotocol/sdk": "1.29.0",
-    "@reboot-dev/reboot-react": "1.0.4",
-    "@reboot-dev/reboot-api": "1.0.4",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "zod": "^3.25.0"
-  },
-  "devDependencies": {
-    "@types/react": "^18.2.67",
-    "@types/react-dom": "^18.2.22",
-    "@vitejs/plugin-react": "^4.7.0",
-    "concurrently": "^9.1.2",
-    "typescript": "^5.9.2",
-    "vite": "^6.3.5",
-    "vite-plugin-singlefile": "^2.0.3"
-  }
-}
-```
-
-For multiple UIs, add `build:<name>` and `build:watch:<name>` entries
-for each UI, and update the `build` script to chain them:
-
-```
-"build": "tsc --noEmit && npm run build:ui1 && npm run build:ui2"
-```
-
-### `web/vite.config.ts`
-
-**CRITICAL: Copy this file EXACTLY.** Don't try to "flatten" the HTML
-output. The MCP server resolves the UI artifact at
-`web/dist/<ui-path>/index.html` (where `<ui-path>` matches the
-`path=` you set in `UI(...)`) — i.e. the **nested** Vite default.
-The `entryFileNames` / `assetFileNames` overrides in this config
-flatten the JS/CSS bundle names (which `viteSingleFile` then inlines
-into the HTML), but the HTML itself stays at its source-relative
-path. If you see `Web artifact 'web/dist/ui/<name>/index.html' is missing`, the fix is `cd web && npm run build`, **not** rewriting
-this file to emit `dist/<name>.html`.
-
-```typescript
-// Vite configuration for Reboot UIs.
-import fs from "fs";
-import path from "path";
-import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
-import { viteSingleFile } from "vite-plugin-singlefile";
-
-// Auto-discover UIs from ui/ directory.
-const uiDir = path.resolve(__dirname, "ui");
-const uis: Record<string, { input: string; output: string }> =
-  Object.fromEntries(
-    fs
-      .readdirSync(uiDir)
-      .filter((d) => fs.existsSync(path.join(uiDir, d, "index.html")))
-      .map((name) => [
-        name,
-        { input: `ui/${name}/index.html`, output: `${name}.html` },
-      ])
-  );
-
-export default defineConfig(({ command, mode }) => {
-  // Path alias for API imports (@api/... -> ./api/...).
-  const resolve = {
-    alias: {
-      "@api": path.resolve(__dirname, "./api"),
-    },
-    dedupe: ["react", "react-dom", "zod"],
-  };
-
-  // Dev server configuration.
-  //
-  // UIs use a double iframe architecture:
-  //   MCP Host -> srcdoc (origin=null) -> iframe (origin=localhost:9991)
-  //
-  // The inner iframe loads from Envoy ("/__/web/**"), which proxies
-  // to Vite. Because the inner iframe has a real origin, Vite's URLs
-  // work normally. `base: "/__/web/"` ensures all paths route through
-  // Envoy.
-  //
-  // Hot Module Replacement works automatically: Vite's client connects
-  // to the page's origin, and Envoy proxies WebSocket upgrades to
-  // Vite. This also works with tunnels (ngrok) since the tunnel
-  // points to Envoy.
-  if (command === "serve") {
-    const port = parseInt(process.env.RBT_VITE_PORT || "4444", 10);
-
-    return {
-      plugins: [react()],
-      root: ".",
-      resolve,
-      base: "/__/web/",
-      server: {
-        port,
-        strictPort: true,
-        // Listen on all interfaces since requests come through
-        // Envoy (and tunnels).
-        host: true,
-        allowedHosts: true,
-      },
-    };
-  }
-
-  // Build mode: `vite build --mode <ui-name>`
-  const ui = uis[mode];
-  if (!ui) {
-    const valid = Object.keys(uis).join(", ");
-    throw new Error(`Unknown UI: ${mode}. Use --mode with: ${valid}`);
-  }
-
-  return {
-    plugins: [react(), viteSingleFile()],
-    build: {
-      outDir: "dist",
-      emptyOutDir: false,
-      assetsInlineLimit: 100000000,
-      cssCodeSplit: false,
-      rollupOptions: {
-        input: ui.input,
-        output: {
-          inlineDynamicImports: true,
-          entryFileNames: ui.output.replace(".html", ".js"),
-          assetFileNames: ui.output.replace(".html", ".[ext]"),
-        },
-      },
-    },
-    resolve,
-  };
-});
-```
-
-### `web/tsconfig.json`
-
-```json
-{
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
-  ]
-}
-```
-
-### `web/tsconfig.app.json`
-
-```json
-{
-  "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
-    "target": "ES2022",
-    "useDefineForClassFields": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "skipLibCheck": true,
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "moduleDetection": "force",
-    "noEmit": true,
-    "jsx": "react-jsx",
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "baseUrl": ".",
-    "paths": {
-      "@api/*": ["./api/*"]
-    }
-  },
-  "include": ["ui"]
-}
-```
-
-### `web/tsconfig.node.json`
-
-```json
-{
-  "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
-    "target": "ES2023",
-    "lib": ["ES2023"],
-    "module": "ESNext",
-    "skipLibCheck": true,
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "moduleDetection": "force",
-    "noEmit": true,
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
-  },
-  "include": ["vite.config.ts"]
-}
-```
-
-### `web/index.css`
-
-```css
-:root {
-  --color-bg: #1a1a2e;
-  --color-bg-dark: #0f0f1a;
-  --color-border: #2d2d4a;
-  --color-text: #e0e0e0;
-  --color-text-muted: #888899;
-  --color-green: #4ade80;
-  --color-blue: #60a5fa;
-  --color-yellow: #fbbf24;
-  --color-pink: #f472b6;
-  --color-purple: #a78bfa;
-  --color-orange: #fb923c;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
-    monospace;
-}
-
-[data-theme="light"] {
-  --color-bg: #f8f9fa;
-  --color-bg-dark: #e9ecef;
-  --color-border: #dee2e6;
-  --color-text: #212529;
-  --color-text-muted: #6c757d;
-  --color-green: #16a34a;
-  --color-blue: #2563eb;
-  --color-yellow: #ca8a04;
-  --color-pink: #db2777;
-  --color-purple: #7c3aed;
-  --color-orange: #ea580c;
-}
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-body {
-  font-family: var(--font-mono);
-  background: var(--color-bg);
-  color: var(--color-text);
-}
-```
-
-### `web/ui/<ui-name>/index.html`
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title><UI Title></title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="./main.tsx"></script>
-  </body>
-</html>
-```
-
-### `web/ui/<ui-name>/main.tsx`
-
-```tsx
-import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
-import { RebootClientProvider } from "@reboot-dev/reboot-react";
-import { ClickerApp } from "./App";
-import "../../index.css";
-
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <RebootClientProvider>
-      <ClickerApp />
-    </RebootClientProvider>
-  </StrictMode>
-);
-```
-
-### `web/ui/<ui-name>/App.tsx`
-
-Generated hook usage — `use<Type>()` returns reader hooks and
-mutation functions. Both reads and writes go directly to the
-Reboot backend:
-
-```tsx
-import { useCounter } from "@api/<pkg>/v1/<name>_rbt_react";
-
-// useCounter() connects to the Counter state instance.
-const counter = useCounter();
-
-// Reader (WebSocket subscription, auto-updates):
-const { response, isLoading } = counter.useGet();
-const value = response?.value ?? 0;
-
-// Writer (direct call to Reboot backend):
-await counter.increment({ amount: 1 });
-```
-
-For list state, the same pattern applies — use the generated
-hook for the application type and call its methods:
-
-```tsx
-// Python from_index -> TypeScript fromIndex (camelCase)
-await myType.reorderItem({ fromIndex: 0, toIndex: 1 });
-await myType.addItem({ text: "New item" });
-```
-
-#### Full Counter App.tsx Example
-
-```tsx
-import { useEffect, useRef, useState, type FC } from "react";
-import { useCounter } from "@api/ai_chat_counter/v1/counter_rbt_react";
-import css from "./App.module.css";
-
-export const ClickerApp: FC = () => {
-  const [isPending, setIsPending] = useState(false);
-  const counter = useCounter();
-  const { response, isLoading } = counter.useGet();
-
-  const prevValueRef = useRef<number | null>(null);
-  const [trend, setTrend] = useState<"up" | "down" | "same" | null>(null);
-
-  const value = response?.value ?? 0;
-
-  useEffect(() => {
-    if (response?.value !== undefined) {
-      if (prevValueRef.current !== null) {
-        if (response.value > prevValueRef.current) {
-          setTrend("up");
-        } else if (response.value < prevValueRef.current) {
-          setTrend("down");
-        } else {
-          setTrend("same");
-        }
-      }
-      prevValueRef.current = response.value;
-    }
-  }, [response?.value]);
-
-  const handleIncrement = async () => {
-    setIsPending(true);
-    try {
-      await counter.increment({ amount: 1 });
-    } finally {
-      setIsPending(false);
-    }
-  };
-
-  const handleDecrement = async () => {
-    setIsPending(true);
-    try {
-      await counter.decrement({ amount: 1 });
-    } finally {
-      setIsPending(false);
-    }
-  };
-
-  const trendIcon = trend === "up" ? "↑" : trend === "down" ? "↓" : "→";
-  const trendClass =
-    trend === "up" ? css.trendUp : trend === "down" ? css.trendDown : "";
-
-  if (isLoading && response === undefined) {
-    return (
-      <div className={css.container}>
-        <div className={css.loading}>loading...</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className={css.container}>
-      <div className={css.row}>
-        <button
-          onClick={handleDecrement}
-          disabled={isPending}
-          className={css.buttonDecrement}
-        >
-          −
-        </button>
-        <div className={css.valueGroup}>
-          <div
-            className={`${css.counter} ${trendClass} ${
-              isPending ? css.pending : ""
-            }`}
-          >
-            {value}
-          </div>
-          {trend && (
-            <span className={`${css.trend} ${trendClass}`}>{trendIcon}</span>
-          )}
-        </div>
-        <button
-          onClick={handleIncrement}
-          disabled={isPending}
-          className={css.buttonIncrement}
-        >
-          +
-        </button>
-      </div>
-      <span className={`${css.syncStatus} ${isPending ? css.visible : ""}`}>
-        syncing...
-      </span>
-    </div>
-  );
-};
-```
-
-### `web/ui/<ui-name>/App.module.css`
-
-```css
-.container {
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: var(--font-mono);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px 20px 16px;
-  gap: 12px;
-}
-
-.row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.valueGroup {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  min-width: 80px;
-  justify-content: center;
-}
-
-.counter {
-  font-size: 36px;
-  font-weight: bold;
-  color: var(--color-text);
-  transition: color 0.15s ease, opacity 0.15s ease;
-}
-
-.counter.pending {
-  opacity: 0.7;
-}
-
-.counter.trendUp {
-  color: var(--color-green);
-  text-shadow: 0 0 12px rgba(74, 222, 128, 0.25);
-}
-
-.counter.trendDown {
-  color: var(--color-pink);
-  text-shadow: 0 0 12px rgba(244, 114, 182, 0.25);
-}
-
-.trend {
-  font-size: 18px;
-  font-weight: bold;
-  transition: color 0.15s ease;
-}
-
-.trendUp {
-  color: var(--color-green);
-}
-
-.trendDown {
-  color: var(--color-pink);
-}
-
-.button {
-  width: 40px;
-  height: 40px;
-  font-size: 20px;
-  font-family: var(--font-mono);
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.buttonIncrement {
-  composes: button;
-  background: var(--color-green);
-  color: var(--color-bg-dark);
-}
-
-.buttonDecrement {
-  composes: button;
-  background: var(--color-pink);
-  color: var(--color-bg-dark);
-}
-
-.syncStatus {
-  color: var(--color-yellow);
-  font-size: 11px;
-  height: 14px;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.syncStatus.visible {
-  opacity: 1;
-}
-
-.loading {
-  color: var(--color-text-muted);
-  font-size: 12px;
-}
-```
-
-Adapt the CSS module to your app's needs. The CSS variables from
-`index.css` provide consistent theming.
-
-## Critical Gotchas
-
-1. **`.rbtrc` is line-based, NOT YAML.** Each line is a command with
-   flags. Comments start with `#`.
-2. **No `__init__.py` in `api/` directories.** The generator scans
-   all `.py` files; `__init__.py` causes conflicts.
-3. **`Field(tag=N)` required on every field.** Tags must be unique
-   within each Model class. Start at 1.
-   **Defaults:** State fields must use proto3 zero-value defaults:
-   `default=0` for int, `default=""` for str, `default=False` for
-   bool, `default_factory=list` for lists. Non-zero defaults like
-   `default="red"` or `default=1` are NOT supported (protobuf
-   limitation). Set initial values in a servicer method marked as
-   a factory instead. Request/response fields need no default.
-4. **Helper Model types are standalone imports:**
-   `from <pkg>.v1.<name> import MyItem` —
-   NOT `Counter.MyItem` (that doesn't exist).
-5. **Generated class only has:** `.State`, `.Servicer`,
-   `.XxxRequest`, `.XxxResponse`.
-6. **React bindings use camelCase:** Python `from_index` becomes
-   TypeScript `fromIndex`.
-7. **Every method requires explicit `mcp=`.** Use `mcp=Tool()`
-   to expose a method as an AI-callable tool (required on all
-   types, including `User`). Use `mcp=None` to hide it from
-   the AI.
-8. **Application types need `factory=True`** on their `create`
-   Writer method.
-9. **Method call signatures: pass request fields as kwargs,
-   never wrap in a Request object.** This applies to every
-   call shape — factory constructors, regular Writers/Readers/
-   Transactions, and `.schedule().method()` for workflows.
-   Right shapes:
-
-   - `Type.constructor_method(context, field=val, ...)`
-   - `Type.ref(id).some_method(context, field=val, ...)`
-   - `Type.ref(id).schedule().my_workflow(context, field=val, ...)`
-   - For empty request types, omit fields entirely:
-     `Type.ref(id).schedule().autoplay(context)`.
-
-   Wrong:
-
-   - `Type.constructor_method(context, request=Type.ConstructorMethodRequest(...))`
-   - `Type.ref(id).some_method(context, request=Type.SomeMethodRequest(...))`
-
-   The `request=` kwarg raises `TypeError: ... got an unexpected keyword argument 'request'` at runtime.
-
-10. **`npm install` before second `rbt generate`** — React bindings
-    need `node_modules` to exist.
-11. **Generated React hook:** `use<TypeName>()` — e.g.,
-    `useCounter()`, `useInventory()`, etc.
-12. **Generated React import path:**
-    `@api/<pkg>/v1/<name>_rbt_react`
-13. **Generated Python import path:**
-    `from <pkg>.v1.<name>_rbt import User, Counter`
-14. **Use `--default-config=hmr`** in `.rbtrc` (not `--default=hmr`).
-15. **`UI(path="web/ui/<name>")`** — path is relative to project root.
-16. **`UI(request=<ConfigType>)`** passes config as React component
-    props. `UI(request=None)` passes no props.
-17. **Register all servicers** in `main.py`:
-    `Application(servicers=[UserServicer, CounterServicer])`.
-18. The requests and responses on the frontend are always Zod types
-    generated from the Python Models.
-19. **Inside a Workflow classmethod, `cls` is the servicer, not the
-    state class.** To call methods on the running instance, use the
-    state class imported from `<name>_rbt`:
-    `await MyType.ref().some_method(context)`. A no-arg `.ref()`
-    inside a Workflow picks up `state_id` from `WorkflowContext`
-    automatically. **Do NOT write `cls.ref()`** — it fails with
-    `TypeError: <YourType>BaseServicer.ref() missing 1 required positional argument: 'self'`, because `ref` on the BaseServicer
-    is an instance method, not the state-class factory. `self.ref()`
-    is also wrong because there is no `self` in a classmethod.
-20. **Workflows must be scheduled, not awaited, from a
-    `TransactionContext`/`WriterContext`/`ReaderContext`.** Only
-    `ExternalContext` and `WorkflowContext` can `await` a workflow
-    directly. From a transaction that kicks off a workflow on a
-    state it just created, use `.schedule()`:
-    `await MyType.ref(id).schedule().autoplay(context)`.
-    Writing `await MyType.ref(id).autoplay(context)` from a
-    transaction raises `TypeError: ... '<Method>' is a workflow and must be scheduled from a 'TransactionContext' via `await [...].schedule([...]).<Method>(context, [...])``.
-    See the "Scheduling a Workflow from a Transaction" example
-    in the Workflow Servicer section.
-21. **Nested `Model` fields can't take `default_factory` or
-    `default`.** Two related rules — both raise `UserPydanticError`
-    at startup, not at field-construction time, so they look like
-    runtime errors but are static schema problems:
-
-    - `default_factory=` is only supported for `list` and `dict`.
-      `Field(tag=N, default_factory=MyModel)` raises
-      `Field <X> in model <Y> uses default_factory which is not supported for type <T>. Only list, dict types can have a default_factory currently.`
-    - A non-Optional `Model`-typed field also can't take
-      `default=`, even with an instance:
-      `Field <X> in model <Y> is a non-optional Model type and cannot have a default value. Use Optional for Model types with empty default.`
-
-    The fix is to declare the field optional and construct lazily,
-    e.g. `preferences: Optional[UserPreferences] = Field(tag=N, default=None)`,
-    then materialize it inside the servicer (or in a factory
-    `create` method) when the parent state is first written.
-
-22. **`.per_workflow()` is implicit; don't write it.** Inside a
-    workflow, `MyType.ref().read(context)` and
-    `MyType.ref().write(context, fn)` already pick the right
-    semantics: `.always()` inside an `until` block,
-    `.per_iteration()` inside a `context.loop`, and
-    `.per_workflow()` everywhere else. Only reach for an explicit
-    `.per_iteration()` (override the default to per-iteration when
-    _not_ inside a loop) or `.always()` (re-run every time). A
-    plain `MyType.ref().per_workflow().some_method(context)` adds
-    nothing beyond `MyType.ref().some_method(context)`.
-23. **`.read(context)` only works on the workflow's own
-    no-argument `MyType.ref()`.** Inside a workflow,
-    `MyType.ref().read(context)` reads the workflow's own state
-    via the no-argument `ref()` (picks up `state_id` from
-    `WorkflowContext`). A foreign read like
-    `OtherType.ref(other_id).read(context)` raises
-    `RuntimeError: read() is currently only supported within workflows` — the constraint isn't actually "must be inside
-    a workflow" (you are) but "must be the workflow's own
-    no-argument ref." For cross-state reads, call a Reader
-    method on the target type. The same rule applies to inline
-    `.write(context, fn)`.
-
-    ```python
-    # GOOD — workflow's own state.
-    state = await MyType.ref().read(context)
-
-    # GOOD — cross-state read via a Reader method.
-    response = await User.ref(user_id).get_history(context)
-
-    # BAD — raises the "only supported within workflows"
-    # RuntimeError despite being inside one. Use a Reader.
-    # user_state = await User.ref(user_id).read(context)
-    ```
-
 ## Update Flow
 
 When modifying an existing app:
 
-1. Read `.rbtrc`, API definition, servicer, `main.py`
-2. Assess state model changes
-3. Update API definition -> re-run `uv run rbt generate`
-4. Update servicer methods
-5. Update React components
-6. `cd web && npm run build`
+1. Read `.rbtrc`, API definition, servicer, `main.py`.
+2. Assess state model changes.
+3. Update API definition → re-run `uv run rbt generate`.
+4. Update servicer methods.
+5. Update React components.
+
+Specific patterns and file shapes live in the references above —
+read them on demand based on what's changing.
