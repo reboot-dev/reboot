@@ -1,3 +1,6 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
 # Get Started (with Claude Code)
 
 Build an AI Chat App using
@@ -15,7 +18,8 @@ installed.
 
 ## Install the Reboot skill
 
-### Quick install (recommended)
+<Tabs groupId="install-method">
+  <TabItem value="quick" label="Quick install">
 
 Install the Reboot plugin for Claude Code with a single
 command:
@@ -28,9 +32,10 @@ This registers the Reboot marketplace, installs the plugin,
 and pre-installs its pinned dependencies so your first build
 runs without waiting on downloads.
 
-### Manual install
+  </TabItem>
+  <TabItem value="manual" label="Manual install">
 
-Or add the marketplace and install the plugin yourself with
+Add the marketplace and install the plugin yourself with
 Claude Code:
 
 ```
@@ -64,6 +69,9 @@ project's `.claude/settings.json`:
   }
 }
 ```
+
+  </TabItem>
+</Tabs>
 
 ## Use the skill
 
