@@ -16,8 +16,6 @@ tags: pydantic, api, Model, Methods, Reader, Writer, Transaction, factory
 >    `False`, empty list/dict). Non-zero defaults raise
 >    `UserPydanticError` at import. Set domain defaults inside the
 >    constructor or a `start`-style writer, not on the Field.
-> 3. `list[<Model>]` and `dict[str, <Model>]` are **silently dropped**
->    by the codegen — encode records as `list[str]` (JSON) instead.
 
 Reboot accepts API definitions in **either** `.proto` files or pydantic
 `.py` files. Both feed the same `rbt generate` flow and produce the same
@@ -296,15 +294,12 @@ rather than letting you wonder later why your declared default didn't
 show up. Set domain defaults at write time (in the constructor or a
 reset writer) instead.
 
-## `list[<Model>]` Is Not Yet Supported
+## Collections of Nested Models Are Supported
 
-Current pydantic codegen (as of `reboot==1.0.4`) silently **drops**
-fields whose type is a list of nested `Model` subclasses. The field
-won't appear on the generated state object and reads/writes will raise
-`AttributeError`. Until the codegen supports it, encode nested-record
-collections yourself.
-
-**Incorrect (list of nested Models is dropped):**
+`list[<Model>]` and `dict[str, <Model>]` are first-class field types
+— the codegen lowers them to `repeated <Message>` and `map<string, <Message>>` in the generated proto. Same defaulting rules as any
+other collection: use `default_factory=list` / `default_factory=dict`
+so the field is constructible.
 
 ```python
 class Move(Model):
@@ -313,29 +308,12 @@ class Move(Model):
 
 
 class GameState(Model):
-    history: list[Move] = Field(tag=1, default_factory=list)  # dropped
+    history: list[Move] = Field(tag=1, default_factory=list)
+    moves_by_id: dict[str, Move] = Field(tag=2, default_factory=dict)
 ```
 
-**Correct (encode each entry as a string or scalar):**
-
-```python
-class GameState(Model):
-    # JSON-encoded move records, capped to the last N entries.
-    history: list[str] = Field(tag=1, default_factory=list)
-
-
-# In the servicer:
-import json
-
-state.history.append(json.dumps({
-    "from_row": step.from_row,
-    "to_row": step.to_row,
-    ...
-}))
-```
-
-`list[str]`, `list[int]`, `list[float]`, `list[bool]`, `dict[str, str]`
-all work; `list[<Model>]` and `dict[str, <Model>]` do not.
+`list[str]`, `list[int]`, `list[float]`, `list[bool]`,
+`dict[str, str]`, `list[<Model>]`, and `dict[str, <Model>]` all work.
 
 ## State Class Is a Separate `Model`
 

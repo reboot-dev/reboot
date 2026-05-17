@@ -62,8 +62,8 @@ mechanics. The patterns in this skill assume you've read them.
   (`self.ref().state_id`, kwargs convention, `--name` vs.
   `--application-name`, etc.).
 - `python` references/`api-pydantic.md` — pydantic API rules (every
-  Field needs a zero-value default; `list[<Model>]` is silently
-  dropped; non-Optional `Model`-typed fields can't take defaults).
+  Field needs a zero-value default; non-Optional `Model`-typed fields
+  can't take defaults).
 
 **Defining the API:**
 

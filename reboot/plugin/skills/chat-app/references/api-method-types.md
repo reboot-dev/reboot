@@ -7,10 +7,10 @@ tags: api, pydantic, ui, tool, mcp, reader, writer, transaction, workflow, facto
 
 ## API Definition — Method Types and Tool Exposure
 
-The pydantic API rules — zero-value defaults, `list[<Model>]` not
-supported, `Optional[<Model>]` + `default=None` for nested Models —
-are in `python` references/`api-pydantic.md`. The marker →
-context type mapping is in `api-methods.md`.
+The pydantic API rules — zero-value defaults, `Optional[<Model>]` +
+`default=None` for nested Models — are in `python`
+references/`api-pydantic.md`. The marker → context type mapping is
+in `api-methods.md`.
 
 What's _MCP-Chat-App-specific_ about these files:
 

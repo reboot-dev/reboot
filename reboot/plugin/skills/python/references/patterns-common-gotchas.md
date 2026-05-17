@@ -140,20 +140,13 @@ async def open(
         self.state.move_delay_seconds = 1.0
 ```
 
-### 15. Pydantic Codegen Doesn't Support `list[<Model>]`
-
-Lists of nested `Model` subclasses are silently dropped by the current
-codegen. Encode collections of records as `list[str]` (e.g. JSON) until
-the codegen catches up. `list[str]`, `list[int]`, `list[float]`,
-`list[bool]`, `dict[str, str]` are fine.
-
-### 16. `self.state_id` Doesn't Exist; Use `self.ref().state_id`
+### 15. `self.state_id` Doesn't Exist; Use `self.ref().state_id`
 
 Inside a Servicer (writer/reader/transaction), get the actor's ID via
 `self.ref().state_id`. Inside a workflow `@classmethod`, use
 `context.state_id`. Plain `self.state_id` raises `AttributeError: 'XServicer' object has no attribute 'state_id'`.
 
-### 17. Generated Request/Response Names Come From the Method Name
+### 16. Generated Request/Response Names Come From the Method Name
 
 `<Type>.<MethodPascalCase>Request` and
 `<Type>.<MethodPascalCase>Response` — the source class names you
@@ -163,7 +156,7 @@ passed to `request=`/`response=` are **internal**. A method
 name. Mismatching the method PascalCase raises `AttributeError: type object '<Type>' has no attribute '<WrongName>'`. See
 `api-pydantic.md` for the full rule.
 
-### 18. `Workflow(...)` Needs `mcp=` Just Like the Other Factories
+### 17. `Workflow(...)` Needs `mcp=` Just Like the Other Factories
 
 Easy to miss because workflows are rarely AI-callable. Missing it:
 
@@ -175,7 +168,7 @@ mcp
 
 Set `mcp=None` for non-tool workflows.
 
-### 19. Inline Writer Parameter Must Be Named `state`
+### 18. Inline Writer Parameter Must Be Named `state`
 
 The runtime calls the writer as `writer(state=typed_state)`. Renaming
 the parameter raises `TypeError: ... got an unexpected keyword argument 'state'`. Always:

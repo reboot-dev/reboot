@@ -199,9 +199,6 @@ surface either way.
   domain defaults (`turn="r"`, `delay=1.0`, etc.) inside the
   constructor method, not on the Field. Applies to state,
   request/response, and error Models.
-- Pydantic codegen does **not** support `list[<Model>]` (or
-  `dict[str, <Model>]`) — those fields are silently dropped. Encode
-  records as `list[str]` (e.g. JSON) instead.
 - Cross-actor and external-service calls belong in `TransactionContext`
   (one-shot) or `WorkflowContext` (durable, long-running).
 - Pass arguments to actor methods as **kwargs**, not as Request wrappers:
@@ -248,8 +245,7 @@ Read **all** of these before writing the body:
 
 - `references/api-proto-basics.md` (proto) **or**
   `references/api-pydantic.md` (pydantic) — **always read pydantic if
-  you're using it**: zero-default rule and `list[<Model>]` limitation
-  bite at import time
+  you're using it**: the zero-default rule bites at import time
 - `references/api-state-message.md` (proto) — state message shape
 - `references/api-methods.md` — `reader` / `writer` / `transaction` /
   `workflow` markers and constructor option
@@ -307,9 +303,9 @@ with "unknown actor type."
 ### Always relevant
 
 - `references/patterns-common-gotchas.md` — the consolidated trip-list
-  including the pydantic zero-default rule, `list[<Model>]` limitation,
-  `self.state_id` non-existence, and `--name` vs.
-  `--application-name`. Read it once per task.
+  including the pydantic zero-default rule, `self.state_id`
+  non-existence, and `--name` vs. `--application-name`. Read it once
+  per task.
 
 ## References
 

@@ -78,6 +78,40 @@ class TestServicer(Test.Servicer):
         assert self.state.another_model_default_value is None
         assert self.state.literal_default_value == "option1"
 
+        # Confirm that `default_factory=list`/`default_factory=dict`
+        # works for collections of Models — i.e., that codegen lowers
+        # nested-repeated and nested-map message fields rather than
+        # silently dropping them. Then exercise a round-trip
+        # write/read to ensure those fields are actually backed by
+        # the generated state object.
+        assert self.state.data_list_default_value == []
+        assert self.state.data_dict_default_value == {}
+        self.state.data_list_default_value = [
+            ArbitraryData(
+                str_list_value=["from", "default_factory=list"],
+                optional_str_list_value=None,
+            ),
+        ]
+        self.state.data_dict_default_value = {
+            "key":
+                ArbitraryData(
+                    str_list_value=["from", "default_factory=dict"],
+                    optional_str_list_value=None,
+                ),
+        }
+        assert len(self.state.data_list_default_value) == 1
+        assert (
+            self.state.data_list_default_value[0].str_list_value == [
+                "from", "default_factory=list"
+            ]
+        )
+        assert set(self.state.data_dict_default_value.keys()) == {"key"}
+        assert (
+            self.state.data_dict_default_value["key"].str_list_value == [
+                "from", "default_factory=dict"
+            ]
+        )
+
         self.state.literal_value = "option1"
 
     def authorizer(self):

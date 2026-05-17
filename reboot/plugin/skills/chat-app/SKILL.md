@@ -74,8 +74,7 @@ show the chat-app-specific shape on top.
   trips (`self.ref().state_id`, kwargs convention, `--name` vs.
   `--application-name`, etc.).
 - `python` references/`api-pydantic.md` — pydantic API rules
-  (every Field needs a zero-value default; `list[<Model>]` is silently
-  dropped on the proto-flavored path; non-Optional `Model`-typed
+  (every Field needs a zero-value default; non-Optional `Model`-typed
   fields can't take defaults).
 
 **Defining the API:**

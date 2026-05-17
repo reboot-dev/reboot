@@ -7,11 +7,6 @@ tags: state, collections, repeated, SortedMap, stdlib
 
 ## Pick the Right Collection: `repeated` vs. `SortedMap`
 
-> **Critical:** in pydantic API definitions, `list[<Model>]` is
-> silently dropped by the codegen — use `list[str]` (JSON-encoded)
-> for record collections. Scalar `list[str]` / `list[int]` /
-> `list[float]` / `list[bool]` work in both proto and pydantic.
-
 Reboot offers two ways to model a collection inside an actor:
 
 1. **proto `repeated <T>`** — an in-state list. Lives entirely inside the

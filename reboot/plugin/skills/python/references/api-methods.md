@@ -116,8 +116,7 @@ work end-to-end:
 - **Pydantic users**: `api-pydantic.md`. The marker → factory mapping
   is different (`Reader(...)`, `Writer(...)`, `Transaction(...)`,
   `Workflow(...)`, with `factory=True` for constructors), and
-  pydantic-only rules apply (zero-default Fields,
-  `list[<Model>]` not supported).
+  pydantic-only rules apply (zero-default Fields).
 - **Implementation per marker** — read the matching servicer file:
   - `reader: {}` → `servicer-reader.md`
   - `writer: {}` → `servicer-writer.md`

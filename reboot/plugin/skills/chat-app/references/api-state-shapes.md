@@ -7,11 +7,11 @@ tags: state, list, nested, sub-object, optional, model, default, default_factory
 
 ## API State Shapes — List and Nested Sub-Objects
 
-The pydantic foundation rules (zero-value defaults; `list[<Model>]`
-is silently dropped; non-Optional `Model`-typed fields reject
-defaults) are in `python` references/`api-pydantic.md`. This
-file covers the two chat-app state shapes that come up most often:
-list-based state and single-nested-Model state.
+The pydantic foundation rules (zero-value defaults; non-Optional
+`Model`-typed fields reject defaults) are in `python`
+references/`api-pydantic.md`. This file covers the two chat-app
+state shapes that come up most often: list-based state and
+single-nested-Model state.
 
 ## List State Patterns
 
@@ -26,12 +26,6 @@ etc.):
 - The `reorder` pattern uses `pop` + `insert`.
 - In the servicer, import helpers standalone:
   `from <pkg>.v1.<name> import Item`.
-
-`list[<Model>]` IS supported (this is the chat-app exception to
-the python `list[<Model>]` warning — that warning is about
-pydantic codegen silently dropping it; the reboot-chat layer
-treats `list[<Model>]` as a first-class state shape because the
-codegen handles it differently from the proto-flavored path).
 
 ## Nested Model State Patterns
 

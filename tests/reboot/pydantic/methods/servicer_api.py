@@ -135,6 +135,18 @@ class State(Model):
         default="option1",
     )
 
+    # `list[<Model>]` and `dict[str, <Model>]` with empty-collection
+    # defaults — we want to ensure codegen handles nested-repeated and
+    # nested-map message fields rather than silently dropping them.
+    data_list_default_value: list[ArbitraryData] = Field(
+        tag=19,
+        default_factory=list,
+    )
+    data_dict_default_value: dict[str, ArbitraryData] = Field(
+        tag=20,
+        default_factory=dict,
+    )
+
 
 # Have a separate class which uses nested model class as a field to test
 # nested message generation.
