@@ -2910,11 +2910,11 @@ class SidecarStateManager(
 
                         assert context.react is not None
                         context.react.event.set()
-            except asyncio.CancelledError as error:
+            except asyncio.CancelledError:
                 # Don't swallow cancellations, so the parent
                 # task can be cancelled properly.
-                raise error
-            except Exception as exception:
+                raise
+            except BaseException as exception:
                 state_or_exception.exception = exception
 
                 assert context.react is not None

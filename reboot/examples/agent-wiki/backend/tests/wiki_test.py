@@ -79,6 +79,8 @@ class _WikiTestBase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self) -> None:
         self._original_model = wiki_module.librarian.wrapped.model
+        # Overwrite the librarian's model within the test, so any calls
+        # to LLM become deterministic.
         wiki_module.librarian.wrapped.model = self._make_librarian_model()
 
         self.rbt = Reboot()
@@ -264,14 +266,9 @@ class ScriptedLibrarian:
 
     def __init__(self) -> None:
         self.page_id: str | None = None
-        # Capture the loop now (we're called from `asyncSetUp`,
-        # so a loop is running). `step()` may be invoked from a
-        # worker thread, so we need `call_soon_threadsafe` to
-        # signal the event safely.
-        self._loop = asyncio.get_running_loop()
         self.done = asyncio.Event()
 
-    def step(
+    async def step(
         self,
         messages: list[ModelMessage],
         info: AgentInfo,
@@ -333,7 +330,7 @@ class ScriptedLibrarian:
         # the librarian has already executed `update_wiki` and the
         # wiki's content is updated by the time any test code waiting on
         # `done` wakes up.
-        self._loop.call_soon_threadsafe(self.done.set)
+        self.done.set()
         return ModelResponse(parts=[TextPart(content="Done.")])
 
 
@@ -341,11 +338,11 @@ class IngestWorkflowTest(_WikiTestBase):
     """End-to-end test of the `Wiki.ingest` librarian
     workflow with the LLM replaced by a `FunctionModel`."""
 
-    async def asyncSetUp(self) -> None:
-        self.script = ScriptedLibrarian()
-        await super().asyncSetUp()
+    script = ScriptedLibrarian()
 
     def _make_librarian_model(self) -> FunctionModel:
+        # Scripted model that drives the librarian through a fixed
+        # sequence of tool calls.
         return FunctionModel(self.script.step)
 
     async def test_ingest_creates_page_and_updates_wiki(

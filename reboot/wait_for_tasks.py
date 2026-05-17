@@ -15,11 +15,6 @@ async def wait_for_tasks(
 
     If THIS (parent) task was cancelled while waiting, raise
     `CancelledError` once every task has finished.
-
-    `asyncio.wait()` never raises a child task's own exception; it only
-    raises `CancelledError` if the awaiting (parent) task is itself
-    cancelled. So a `CancelledError` observed here unambiguously means
-    the parent was cancelled, and must be propagated.
     """
     non_none_tasks = [task for task in tasks if task is not None]
 
@@ -28,13 +23,16 @@ async def wait_for_tasks(
             task.cancel()
 
     parent_was_cancelled = False
-    pending = [task for task in non_none_tasks if not task.done()]
-    while pending:
+    while (pending := [task for task in non_none_tasks if not task.done()]):
         try:
+            # `asyncio.wait()` never raises a child task's own
+            # exception; it only raises `CancelledError` if the awaiting
+            # (parent) task is itself cancelled. So a `CancelledError`
+            # observed here unambiguously means the parent was
+            # cancelled, and must be propagated.
             await asyncio.wait(pending)
         except asyncio.CancelledError:
             parent_was_cancelled = True
-        pending = [task for task in non_none_tasks if not task.done()]
 
     if parent_was_cancelled:
         raise asyncio.CancelledError()
