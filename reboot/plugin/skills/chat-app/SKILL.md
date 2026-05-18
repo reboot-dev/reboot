@@ -86,7 +86,7 @@ show the chat-app-specific shape on top.
   the app has any "list of X" concept.** Decides whether each X
   should be its own state `Type` (most of the time, yes) and picks
   between in-state `list[Sub]`, in-state `list[str]` of foreign
-  IDs, or a `SortedMap`/`OrderedMap` of foreign IDs. The trap is
+  IDs, or an `OrderedMap` of foreign IDs. The trap is
   defaulting to `list[Person]`/`list[Post]`/`list[Task]` on `User`
   for entity collections — see Step 1 of that reference.
 - `python/references/state-nested-models.md` — the same rule from
@@ -193,11 +193,11 @@ Before writing code, analyze the user's request:
    - `list[str]` of foreign state IDs — when the collection of
      entity IDs is bounded (low hundreds, occasionally low
      thousands) and you always read it whole.
-   - `SortedMap` / `OrderedMap` of foreign state IDs — when the
-     collection grows without bound, needs pagination, range
-     queries, or ordered iteration. The default choice for any
-     "list of things the user keeps adding to" (people in a PRM,
-     posts on a blog, messages in a thread).
+   - `OrderedMap` of foreign state IDs — when the collection
+     grows without bound, needs pagination, range queries, or
+     ordered iteration. The default choice for any "list of
+     things the user keeps adding to" (people in a PRM, posts
+     on a blog, messages in a thread).
 3. **User methods**: How does the AI create instances of application
    types? Each gets a `Transaction` on `User` that calls
    `<Type>.create(context)`, then registers the new ID in the

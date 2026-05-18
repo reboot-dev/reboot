@@ -7,7 +7,7 @@ metadata:
   version: "1.0.0"
   organization: Reboot
   date: April 2026
-  abstract: Comprehensive guide for building Reboot Python applications. Covers pydantic API definitions, the Servicer pattern, reader/writer/transaction/workflow contexts, durable workflow primitives (at_most_once / at_least_once / until / until_changes), actor refs, scheduling, the standard library (SortedMap), and testing.
+  abstract: Comprehensive guide for building Reboot Python applications. Covers pydantic API definitions, the Servicer pattern, reader/writer/transaction/workflow contexts, durable workflow primitives (at_most_once / at_least_once / until / until_changes), actor refs, scheduling, the standard library (OrderedMap, Queue, PubSub, Presence, Item), and testing.
 ---
 
 # Reboot Python Best Practices
@@ -32,7 +32,7 @@ Reference these guidelines when:
 - Building a durable workflow with `WorkflowContext` and the `at_most_once`
   / `at_least_once` / `until` / `until_changes` primitives
 - Scheduling work via `ref.schedule(when=...).method(context)`
-- Using the standard library (`SortedMap`, mailgun, etc.)
+- Using the standard library (`OrderedMap`, mailgun, etc.)
 - Writing tests with the `Reboot()` harness
 
 ## Rule Categories by Priority
@@ -179,11 +179,11 @@ messages nested as attributes, the `Servicer` base class, and the
 - Pass arguments to actor methods as **kwargs**, not as Request wrappers:
   `await ref.deposit(context, amount=10)`, not
   `await ref.deposit(context, DepositRequest(amount=10))`.
-- **`Queue`, `Topic`, `SortedMap`, `OrderedMap`, `Presence`,
-  `Item` are stdlib actor names — use them, don't redefine
-  them.** If a design or task names any of these (e.g. "publish
-  to a `Topic`", "track members in an `OrderedMap`", "subscribe
-  a `Queue`", "presence shows who's online"), the answer is to
+- **`Queue`, `Topic`, `OrderedMap`, `Presence`, `Item` are
+  stdlib actor names — use them, don't redefine them.** If a
+  design or task names any of these (e.g. "publish to a
+  `Topic`", "track members in an `OrderedMap`", "subscribe a
+  `Queue`", "presence shows who's online"), the answer is to
   _import_ the stdlib actor — not to declare a pydantic `Model`
   with the same name. Defining your own `Topic` / `Queue` /
   etc. forfeits durability, ordering, blocking semantics, and
@@ -226,8 +226,8 @@ Read **all** of these before writing the body:
 - `references/state-collections.md` — **always read when modeling
   any collection**: decide whether each contained item should be
   its own state `Type`, and pick between in-state `list[Sub]`,
-  in-state `list[str]` of foreign IDs, or a `SortedMap`/`OrderedMap`
-  of foreign IDs. The most common modeling mistake — packing an
+  in-state `list[str]` of foreign IDs, or an `OrderedMap` of
+  foreign IDs. The most common modeling mistake — packing an
   entity collection like `list[Person]` into one parent's state —
   fails silently in demos and forces a full rewrite later.
 - `references/state-nested-models.md` — same rule from the nested-
@@ -254,14 +254,13 @@ Read **all** of these before writing the body:
 If your design calls for any of the concepts in the left column,
 the stdlib already provides the canonical actor. Read the
 reference **before** writing your own actor type — defining your
-own `Queue` / `SortedMap` / etc. is almost always wrong
+own `Queue` / `OrderedMap` / etc. is almost always wrong
 and forfeits durability, ordering, and concurrency guarantees:
 
 | You need...                                  | Use          | Reference               |
 | -------------------------------------------- | ------------ | ----------------------- |
 | Durable FIFO — work queue, job queue, intake | `Queue`      | `stdlib-queue.md`       |
-| Sorted key-value, modest size                | `SortedMap`  | `stdlib-sorted-map.md`  |
-| Sorted key-value, heavy concurrent writes    | `OrderedMap` | `stdlib-ordered-map.md` |
+| Sorted key-value with pagination / ordering  | `OrderedMap` | `stdlib-ordered-map.md` |
 | Presence — who's online / connected          | `Presence`   | `stdlib-presence.md`    |
 | Pubsub / broadcast / fan-out to subscribers  | `PubSub`     | `stdlib-pubsub.md`      |
 | Item builder for `Queue` / `PubSub` payloads | `Item`       | `stdlib-item.md`        |
@@ -296,7 +295,7 @@ Reference files live in `references/` and are named
 `{prefix}-{topic}.md` (e.g., `workflow-at-most-once.md`). Load only
 the files relevant to the current task; the "How to Use" section
 above lists the right ones grouped by task type. The full catalog
-of 46 files across 11 categories:
+of 45 files across 11 categories:
 
 **Lifecycle** (`lifecycle-`):
 
@@ -334,7 +333,6 @@ of 46 files across 11 categories:
 
 **Stdlib** (`stdlib-`):
 
-- `references/stdlib-sorted-map.md`
 - `references/stdlib-ordered-map.md`
 - `references/stdlib-queue.md`
 - `references/stdlib-pubsub.md`

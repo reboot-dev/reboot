@@ -2,7 +2,7 @@
 title: Pick the Right Shape for Each Collection
 impact: HIGH
 impactDescription: Putting an unbounded collection in-state, or flattening an entity into `list[Sub]` when it has its own identity, forces a full data-model rewrite once the app grows.
-tags: state, collections, list, dict, SortedMap, OrderedMap, decomposition, sub-records, entity, ids
+tags: state, collections, list, dict, OrderedMap, decomposition, sub-records, entity, ids
 ---
 
 ## Pick the Right Shape for Each Collection
@@ -51,11 +51,11 @@ Three shapes show up. They differ along two axes: **what's stored**
 (sub-records vs. IDs of other state actors) and **how big the
 collection can get**.
 
-| Shape                                                       | When to pick                                                                                                                                                                                            | Pitfalls                                                                                |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| **A. `list[Sub]` / `dict[str, Sub]` of non-state `Model`s** | Sub-records with **no identity of their own** that live and die with the parent. Bounded — dozens at most. E.g. line items on an Order, tags on a Post, fields in a Config blob.                        | Every write rewrites the full list. No pagination. Cannot grow without bound.           |
-| **B. `list[str]` / `dict[str, str]` of foreign state IDs**  | Items are their own state `Type` (Step 1 said yes) **and** the collection stays bounded — typically a few hundred, low thousands at most. You almost always read the whole index. No pagination needed. | Each parent write rewrites the full list of IDs. Doesn't scale past low thousands.      |
-| **C. `SortedMap` / `OrderedMap` of foreign state IDs**      | Items are their own state `Type` **and** the collection grows without bound, **or** needs pagination, range queries, or ordered iteration. Prefer `OrderedMap` when concurrent writes need to scale.    | Extra hop to a stdlib actor. Values are `bytes`. `range`/`reverse_range` need `limit=`. |
+| Shape                                                       | When to pick                                                                                                                                                                                            | Pitfalls                                                                                                      |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **A. `list[Sub]` / `dict[str, Sub]` of non-state `Model`s** | Sub-records with **no identity of their own** that live and die with the parent. Bounded — dozens at most. E.g. line items on an Order, tags on a Post, fields in a Config blob.                        | Every write rewrites the full list. No pagination. Cannot grow without bound.                                 |
+| **B. `list[str]` / `dict[str, str]` of foreign state IDs**  | Items are their own state `Type` (Step 1 said yes) **and** the collection stays bounded — typically a few hundred, low thousands at most. You almost always read the whole index. No pagination needed. | Each parent write rewrites the full list of IDs. Doesn't scale past low thousands.                            |
+| **C. `OrderedMap` of foreign state IDs**                    | Items are their own state `Type` **and** the collection grows without bound, **or** needs pagination, range queries, or ordered iteration.                                                              | Extra hop to a stdlib actor. Entry values use the `value` / `bytes` / `any` envelope. `range` needs `limit=`. |
 
 Shapes B and C agree on the underlying decomposition — items are
 their own state `Type` referenced by ID. They differ only in **how
@@ -127,22 +127,22 @@ state grows linearly with member count, which is fine up to low
 thousands. Past that, the per-add write cost of rewriting the full
 list becomes noticeable — switch to Shape C.
 
-#### Shape C — `SortedMap` / `OrderedMap` of Foreign State IDs
+#### Shape C — `OrderedMap` of Foreign State IDs
 
 When the collection can grow without bound, needs pagination, or
 needs ordered iteration. The parent stores the **map's ID** (once,
 at construction) and forwards reads/writes through the map:
 
 ```python
-from reboot.std.collections.v1.sorted_map import (
-    SortedMap, sorted_map_library,
+from reboot.std.collections.ordered_map.v1.ordered_map import (
+    OrderedMap, ordered_map_library,
 )
 from uuid import uuid4
 from uuid7 import create as uuid7
 
 
 class UserState(Model):
-    # ID of the SortedMap actor that indexes this user's People.
+    # ID of the OrderedMap actor that indexes this user's People.
     # Allocated once at User construction; never changes.
     people_index_id: str = Field(tag=1, default="")
 
@@ -151,10 +151,9 @@ class UserServicer(User.Servicer):
 
     async def create(self, context: WriterContext) -> None:
         if context.constructor:
+            # Just allocate the ID — the OrderedMap is constructed
+            # implicitly on the first `insert`.
             self.state.people_index_id = str(uuid4())
-            await SortedMap.ref(self.state.people_index_id).insert(
-                context, entries={},
-            )
 
     async def add_person(
         self,
@@ -169,9 +168,10 @@ class UserServicer(User.Servicer):
         )
         # UUIDv7 keys give time-ordered iteration for free; for
         # name-sorted iteration, use a name-prefixed key instead.
-        await SortedMap.ref(self.state.people_index_id).insert(
+        await OrderedMap.ref(self.state.people_index_id).insert(
             context,
-            entries={str(uuid7()): person.state_id.encode()},
+            key=str(uuid7()),
+            bytes=person.state_id.encode(),
         )
         return User.AddPersonResponse(person_id=person.state_id)
 
@@ -180,22 +180,22 @@ class UserServicer(User.Servicer):
         context: ReaderContext,
         request: User.ListPeopleRequest,
     ) -> User.ListPeopleResponse:
-        page = await SortedMap.ref(
+        page = await OrderedMap.ref(
             self.state.people_index_id,
         ).range(
             context, start_key=request.cursor, limit=32,
         )
         return User.ListPeopleResponse(
-            person_ids=[e.value.decode() for e in page.entries],
+            person_ids=[e.bytes.decode() for e in page.entries],
             next_cursor=(
                 page.entries[-1].key if page.entries else ""
             ),
         )
 ```
 
-Register `sorted_map_library()` in `Application(libraries=[...])` —
-see `stdlib-sorted-map.md`. Use `OrderedMap` instead when concurrent
-writes need to scale — see `stdlib-ordered-map.md`.
+Register `ordered_map_library()` in `Application(libraries=[...])`
+— see `stdlib-ordered-map.md` for the full method surface and the
+value-field options (`value` / `bytes` / `any`).
 
 ### Decision Flow (Summary)
 
@@ -206,9 +206,7 @@ writes need to scale — see `stdlib-ordered-map.md`.
    - Bounded, ≲ low thousands, always read whole → **Shape B**
      (`list[str]` of IDs).
    - Unbounded, or needs pagination / range / ordered iteration →
-     **Shape C** (`SortedMap` / `OrderedMap`).
-3. **Heavy concurrent writes to the index?** Inside Shape C, prefer
-   `OrderedMap` over `SortedMap`.
+     **Shape C** (`OrderedMap`).
 
 ### Anti-Patterns
 
@@ -224,7 +222,7 @@ writes need to scale — see `stdlib-ordered-map.md`.
   simpler". It is, until it isn't — and the migration rewrites
   every method that touches the parent. Use Shape C from the start
   if the collection can grow without bound.
-- **`SortedMap` for a clearly bounded, sub-dozen collection.** The
+- **`OrderedMap` for a clearly bounded, sub-dozen collection.** The
   extra hop is wasted; `list[Sub]` (Shape A) or `list[str]`
   (Shape B) is fine.
 
@@ -232,8 +230,8 @@ writes need to scale — see `stdlib-ordered-map.md`.
 
 - `state-nested-models.md` — the same "state inside state" rule
   from the nested-`Model` angle.
-- `stdlib-sorted-map.md` / `stdlib-ordered-map.md` — concrete API
-  for Shape C, library registration, pagination details.
+- `stdlib-ordered-map.md` — concrete API for Shape C, library
+  registration, pagination details.
 - `chat-app/references/api-state-shapes.md` (chat-app skill) — the
   chat-app-specific corollary: `list[Item]` is for sub-records,
   not for application-type instances.

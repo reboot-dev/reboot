@@ -53,15 +53,16 @@ async def open(
 
 ## Use UUIDv7 IDs for Insertable Records
 
-When inserting into a `SortedMap` keyed by time, prefer UUIDv7 over UUIDv4
+When inserting into an `OrderedMap` keyed by time, prefer UUIDv7 over UUIDv4
 so iteration is naturally ordered:
 
 ```python
 from uuid7 import create as uuid7
 
-await SortedMap.ref(self.state.account_ids_map_id).insert(
+await OrderedMap.ref(self.state.account_ids_map_id).insert(
     context,
-    entries={str(uuid7()): account_id.encode()},
+    key=str(uuid7()),
+    bytes=account_id.encode(),
 )
 ```
 

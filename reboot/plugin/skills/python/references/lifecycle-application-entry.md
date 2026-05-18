@@ -9,7 +9,7 @@ tags: main, application, asyncio, servicers, libraries
 
 > **Critical:** pass Servicer **classes** to `Application(servicers=[...])`,
 > not instances. `[ChatRoomServicer()]` is wrong; `[ChatRoomServicer]`
-> is right. Stdlib types need `libraries=[sorted_map_library(), ...]`
+> is right. Stdlib types need `libraries=[ordered_map_library(), ...]`
 > registered alongside their `servicers()`.
 
 Every Reboot Python application has an `async def main()` that constructs an
@@ -78,21 +78,21 @@ await Application(servicers=[ChatRoomServicer]).run()
 ## Multiple Servicers and Stdlib Libraries
 
 Combine Servicer classes from your code with stdlib `servicers()` factories
-and `libraries=[...]` for stdlib state types. Pattern from
-[`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic),
-`backend/src/main.py`:
+and `libraries=[...]` for stdlib state types:
 
 ```python
 import reboot.thirdparty.mailgun
 from reboot.aio.applications import Application
-from reboot.std.collections.v1.sorted_map import sorted_map_library
+from reboot.std.collections.ordered_map.v1.ordered_map import (
+    ordered_map_library,
+)
 
 
 async def main():
     await Application(
         servicers=[AccountServicer, BankServicer]
         + reboot.thirdparty.mailgun.servicers(),
-        libraries=[sorted_map_library()],
+        libraries=[ordered_map_library()],
         initialize=initialize,
     ).run()
 ```
@@ -105,12 +105,12 @@ places: its `servicers()` list goes into `servicers=[...]`, and its
 either gives a runtime "unknown actor type" error. The references for
 each type call out exactly what to register:
 
-- `stdlib-sorted-map.md` — `sorted_map.servicers()` + `sorted_map_library()`
 - `stdlib-ordered-map.md` — `ordered_map.servicers()` + `ordered_map_library()`
-- `stdlib-queue.md` — `queue.servicers()` (transitively pulls
-  `sorted_map.servicers()`) + `sorted_map_library()`
+- `stdlib-queue.md` — `queue.servicers()` + the stdlib map library
+  (`Queue` uses a stdlib sorted-map actor under the hood — see the
+  reference for the exact import)
 - `stdlib-pubsub.md` — `pubsub.servicers()` (transitively pulls
-  `queue.servicers()` + `sorted_map.servicers()`) + `sorted_map_library()`
+  `queue.servicers()`) + the stdlib map library
 - `stdlib-presence.md` — `presence.servicers()` (returns three
   Servicers; no library factory)
 

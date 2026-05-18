@@ -79,7 +79,7 @@ unauthenticated) or stop trying entirely (denied).
 
 ## Stdlib Uses It Internally
 
-`SortedMapServicer` defaults to
+`OrderedMapServicer` defaults to
 `allow_if(all=[is_app_internal])` — only other Reboot code in the same
 app can call it. Apply the same pattern when a stdlib-style helper
 shouldn't be reachable from outside.

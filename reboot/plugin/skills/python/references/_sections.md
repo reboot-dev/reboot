@@ -27,12 +27,12 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 5. Stdlib (stdlib)
 
 **Impact:** HIGH
-**Description:** First-class stdlib state types shipped with Reboot — `SortedMap`, `OrderedMap`, `Queue`, `Topic` (PubSub), `Presence`, and the `Item` value envelope. One reference per type with method surface and library registration.
+**Description:** First-class stdlib state types shipped with Reboot — `OrderedMap`, `Queue`, `Topic` (PubSub), `Presence`, and the `Item` value envelope. One reference per type with method surface and library registration.
 
 ## 6. State (state)
 
 **Impact:** HIGH
-**Description:** Modeling state with scalar fields, collections (`list[T]` / `dict[str, T]`, `SortedMap`), and nested `Model`s. Default-value rules and access patterns.
+**Description:** Modeling state with scalar fields, collections (`list[T]` / `dict[str, T]`, `OrderedMap`), and nested `Model`s. Default-value rules and access patterns.
 
 ## 7. Auth (auth)
 

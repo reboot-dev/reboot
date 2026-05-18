@@ -107,7 +107,7 @@ mechanics. The patterns in this skill assume you've read them.
   the app has any "list of X" concept.** Decides whether each X
   should be its own state `Type` (most of the time, yes) and picks
   between in-state `list[Sub]`, in-state `list[str]` of foreign
-  IDs, or a `SortedMap`/`OrderedMap` of foreign IDs. The trap is
+  IDs, or an `OrderedMap` of foreign IDs. The trap is
   defaulting to `list[Todo]`/`list[Document]`/etc. on one parent
   for entity collections — see Step 1 of that reference.
 - `python/references/state-nested-models.md` — the same rule from
@@ -204,10 +204,10 @@ Before writing code, analyze the user's request:
    - `list[str]` of foreign state IDs — bounded entity collection
      (low hundreds, occasionally low thousands) you always read
      whole.
-   - `SortedMap` / `OrderedMap` of foreign state IDs — collection
-     grows without bound, needs pagination / range queries /
-     ordered iteration. The default choice for any "list of things
-     the user keeps adding to".
+   - `OrderedMap` of foreign state IDs — collection grows without
+     bound, needs pagination / range queries / ordered iteration.
+     The default choice for any "list of things the user keeps
+     adding to".
 4. **State shape (per type)**: Fields, types — lists, nested
    objects, primitives. Each gets `Field(tag=N)`. Nested `Model`
    sub-objects owned 1:1 by a parent state must be

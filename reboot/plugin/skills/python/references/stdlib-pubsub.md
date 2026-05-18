@@ -21,7 +21,8 @@ tags: stdlib, Topic, pubsub, publish, subscribe, broker, fan-out
 >
 > Other implementation rules:
 >
-> - `Topic` depends on `Queue` depends on `SortedMap` — register
+> - `Topic` is built on `Queue`, which is in turn backed by an
+>   internal stdlib sorted-map actor — register
 >   `pubsub.servicers()` (transitively pulls Queue's servicers)
 >   AND `sorted_map_library()`.
 > - The internal `broker` workflow auto-schedules on first
@@ -45,7 +46,8 @@ topic's buffer into each subscriber's queue.
 
 ### Register the Library
 
-`Topic` depends on `Queue` (which depends on `SortedMap`):
+`Topic` is built on `Queue`, which is itself backed by an internal
+stdlib sorted-map actor:
 
 ```python
 from reboot.std.pubsub.v1 import pubsub
@@ -60,7 +62,10 @@ async def main():
 ```
 
 `pubsub.servicers()` returns `[TopicServicer] + queue.servicers()`, so
-you don't need to add `queue.servicers()` separately.
+you don't need to add `queue.servicers()` separately. The
+`sorted_map_library()` registration is the only place you mention
+the backing sorted-map actor — for a user-facing sorted key/value
+collection, use `OrderedMap` (see `stdlib-ordered-map.md`).
 
 ### Subscribe a Queue to a Topic
 

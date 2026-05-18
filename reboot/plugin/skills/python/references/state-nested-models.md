@@ -77,5 +77,5 @@ lifecycle, or methods (i.e. `X` would be a state `Type`), don't
 inline them — make `X` its own `Type(state=X)` and have the parent
 hold IDs instead of `X` instances. The three container shapes for
 holding those IDs (in-state `list[str]`, `dict[str, str]`, or a
-stdlib `SortedMap`/`OrderedMap`) and the decision flow between them
-are in `state-collections.md`.
+stdlib `OrderedMap`) and the decision flow between them are in
+`state-collections.md`.

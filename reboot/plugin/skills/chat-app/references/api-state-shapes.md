@@ -11,10 +11,10 @@ The pydantic foundation rules (zero-value defaults; non-Optional
 `Model`-typed fields reject defaults) are in
 `python/references/api-pydantic.md`. The full three-way decision
 between in-state `list[Sub]`, in-state `list[str]` of foreign IDs,
-and a stdlib `SortedMap`/`OrderedMap` of foreign IDs — including
-when to **decompose** an entity collection into its own state
-`Type` — lives in `python/references/state-collections.md`. **Read
-it before settling on a list-based state shape.** This file covers
+and a stdlib `OrderedMap` of foreign IDs — including when to
+**decompose** an entity collection into its own state `Type` —
+lives in `python/references/state-collections.md`. **Read it
+before settling on a list-based state shape.** This file covers
 the chat-app-specific corollaries.
 
 ## List State Patterns (for Bounded Sub-Records Only)
@@ -44,9 +44,9 @@ identity of their own:
 
 If the items are themselves entities (Step 1 of `state-collections.md`
 came out "yes"), promote them to their own state `Type` and pick
-between in-state `list[str]` of IDs (bounded) or a `SortedMap` /
-`OrderedMap` of IDs (unbounded or paginated) — full code patterns
-in `python/references/state-collections.md`.
+between in-state `list[str]` of IDs (bounded) or an `OrderedMap`
+of IDs (unbounded or paginated) — full code patterns in
+`python/references/state-collections.md`.
 
 ## Nested Model State Patterns
 
@@ -131,6 +131,6 @@ nested actor via `<Type>.ref(<id>)`. A Model referenced as
 The corollary is that **collections of state actors** also live in
 the parent as collections-of-IDs, not collections-of-objects: in
 the parent's state you store `list[str]`, `dict[str, str]`, or the
-ID of a stdlib `SortedMap`/`OrderedMap` — never `list[<StateModel>]`.
-See `python/references/state-collections.md` for the three shapes
-and when to pick each.
+ID of a stdlib `OrderedMap` — never `list[<StateModel>]`. See
+`python/references/state-collections.md` for the three shapes and
+when to pick each.

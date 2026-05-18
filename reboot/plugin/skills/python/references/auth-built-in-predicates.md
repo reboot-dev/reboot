@@ -50,7 +50,7 @@ Returns `Ok` when the call originates from inside the same Reboot app
 helpers.
 
 ```python
-# The SortedMap servicer's default:
+# The OrderedMap servicer's default:
 return allow_if(all=[is_app_internal])
 ```
 

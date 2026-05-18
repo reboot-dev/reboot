@@ -44,9 +44,7 @@ The actor ID is whatever string the caller chooses. Common patterns:
 from uuid import uuid4
 
 self.state.account_ids_map_id = str(uuid4())
-await SortedMap.ref(self.state.account_ids_map_id).insert(
-    context, entries={},
-)
+# OrderedMap is constructed implicitly on the first `insert`.
 ```
 
 ## `self.ref()` Inside a Servicer Refers to the Current Actor
@@ -96,8 +94,8 @@ async def control_loop(cls, context: WorkflowContext, request):
     ...
 ```
 
-This is also why composite-key patterns (e.g. naming a `SortedMap` after
-the parent actor) reach for `self.ref().state_id` from a writer/
+This is also why composite-key patterns (e.g. naming an `OrderedMap`
+after the parent actor) reach for `self.ref().state_id` from a writer/
 transaction and `context.state_id` from a workflow.
 
 ## Refs Don't Materialize Actors

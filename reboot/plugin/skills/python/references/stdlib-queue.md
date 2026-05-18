@@ -18,10 +18,11 @@ impactDescription: Workflows pulling work from a Queue is the canonical "consume
 > - `dequeue` is a **workflow** method — blocks until an item is
 >   available; only callable from a `WorkflowContext`.
 > - For a non-blocking pull from a transaction, use `try_dequeue`.
-> - Register `queue.servicers()` (transitively pulls in
->   `sorted_map.servicers()`) AND `sorted_map_library()` in your
->   `Application(...)`. Forgetting either fails at boot with
->   "unknown actor type."
+> - Register `queue.servicers()` AND `sorted_map_library()` in
+>   your `Application(...)`. `Queue` uses an internal stdlib
+>   sorted-map actor to back its storage; you don't interact with
+>   it directly, but its library still needs to be registered.
+>   Forgetting either fails at boot with "unknown actor type."
 
 `Queue` (`reboot.std.collections.queue.v1.queue`) is a durable FIFO of
 `Item` values. Producers `enqueue` from any context; consumers `dequeue`
@@ -40,8 +41,9 @@ available). A `try_dequeue` exists for one-shot non-blocking pulls from
 
 ### Register the Library
 
-`Queue` depends on `SortedMap`, so its servicers list pulls
-`sorted_map.servicers()` in. Use the `queue.servicers()` helper:
+`Queue` is backed by an internal stdlib sorted-map actor — its
+servicers list pulls those in, and the matching library factory
+must be registered. Use the `queue.servicers()` helper:
 
 ```python
 from reboot.std.collections.queue.v1 import queue
@@ -54,6 +56,11 @@ async def main():
         libraries=[sorted_map_library()],
     ).run()
 ```
+
+The `sorted_map_library()` registration is the only place you
+mention the backing sorted-map actor — you should not reach for
+its types directly in application code. For a user-facing sorted
+key/value collection, use `OrderedMap` (see `stdlib-ordered-map.md`).
 
 ### Producer Pattern
 
@@ -146,8 +153,7 @@ mid-implementation:
   non-trivial per-item processing where you want memoization across
   replays.
 - `lifecycle-application-entry.md` — register `queue.servicers()`
-  (transitively pulls `sorted_map.servicers()`) and
-  `sorted_map_library()`.
+  and `sorted_map_library()` (Queue's internal storage actor).
 
 For the producer side, any context that mutates state can `enqueue` —
 no workflow needed there.

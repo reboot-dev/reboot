@@ -93,9 +93,10 @@ it in a constructor method using `context.constructor`.
 
 ### 12. Register Stdlib Libraries
 
-`SortedMap` requires `libraries=[sorted_map_library()]` in the
+`OrderedMap` requires `libraries=[ordered_map_library()]` in the
 `Application(...)` call. Forgetting it gives a runtime error about
-unknown actor type.
+unknown actor type. The same shape applies to every stdlib state
+type with a `<thing>_library()` factory.
 
 ### 13. Servicer Class, Not Instance, in `Application(...)`
 
