@@ -51,6 +51,39 @@ Backend mechanics (state, methods, Servicers, workflows, refs,
 scheduling, stdlib actors, errors, auth predicates, testing) are
 **unchanged** — load them from `python`.
 
+## Auth in Web Apps
+
+Web apps wire identity via
+`Application(token_verifier=<TokenVerifier>)`, integrating with an
+external IdP (Auth0, Firebase, your own JWT issuer, …). Standing
+that up is a real piece of work — and until it's done, no caller
+has a `context.auth.user_id`, so authorizer rules that depend on
+identity can't be satisfied.
+
+> **Don't use `Application(oauth=...)` for web apps.** The `oauth=`
+> slot (including `Anonymous()`) is currently MCP-chat-app-only and
+> doesn't work for browser-served web apps. For a web app, leave
+> `oauth=` unset and use the `token_verifier=` path below. (Web-app
+> support for `oauth=` is planned but not yet available.)
+
+Recommended sequence:
+
+1. **Early development (no verifier yet):** **omit `authorizer()`**
+   on Servicers. `rbt dev` allows the calls and logs a 60-second
+   warning naming every unauthorized method — that warning is your
+   TODO list. Do **not** paper this over with `allow()`; `allow()`
+   means "public, unauthenticated internet endpoint" and survives
+   into production.
+2. **Before `rbt serve` / Reboot Cloud:** install a `TokenVerifier`,
+   then add `allow_if(...)` rules to every Servicer that should be
+   externally reachable. See
+   `python/references/servicer-authorizer.md`,
+   `python/references/auth-allow-if.md`, and
+   `python/references/auth-built-in-predicates.md`.
+3. **Public, unauthenticated endpoints** (health checks, public
+   sign-up, public catalog reads): mark these explicitly with
+   `allow()`. That's the one legitimate use.
+
 ## Read These From `python` First
 
 Before scaffolding, load the references that cover the backend
@@ -58,48 +91,53 @@ mechanics. The patterns in this skill assume you've read them.
 
 **Always relevant:**
 
-- `python` references/`patterns-common-gotchas.md` — recurring trips
+- `python/references/patterns-common-gotchas.md` — recurring trips
   (`self.ref().state_id`, kwargs convention, `--name` vs.
   `--application-name`, etc.).
-- `python` references/`api-pydantic.md` — pydantic API rules (every
-  Field needs a zero-value default; non-Optional `Model`-typed fields
-  can't take defaults).
+- `python/references/api-pydantic.md` — pydantic API rules (every
+  Field needs a zero-value default; non-Optional `Model`-typed
+  fields can't take defaults).
 
 **Defining the API:**
 
-- `python` references/`api-methods.md` — factory → context type
+- `python/references/api-methods.md` — factory → context type
   mapping (Reader/Writer/Transaction/Workflow).
-- `python` references/`api-errors.md` — typed errors.
+- `python/references/api-errors.md` — typed errors.
 
 **Implementing Servicers:**
 
-- `python` references/`servicer-{reader,writer,transaction, constructor,authorizer}.md` — one per context type.
-- `python` references/`rpc-refs.md` — `self.ref().state_id` (never
+- `python/references/servicer-{reader,writer,transaction,constructor,authorizer}.md` — one per context type.
+- `python/references/rpc-refs.md` — `self.ref().state_id` (never
   `self.state_id`); `self.ref().schedule(...)`.
-- `python` references/`rpc-calls.md` — kwargs not Request wrappers.
-- `python` references/`rpc-constructor-calls.md` —
+- `python/references/rpc-calls.md` — kwargs not Request wrappers.
+- `python/references/rpc-constructor-calls.md` —
   `Service.create(context, id)` semantics.
 
 **Workflows:**
 
-- `python` references/`workflow-method.md` (start here — has the
+- `python/references/workflow-method.md` (start here — has the
   When-to-Pick decision table), then the specific primitive
   references for `at_most_once` / `at_least_once` / `until` /
   `until_changes` / `loop` / `state-write` / `idempotency-scopes`.
 
 **Project shell:**
 
-- `python` references/`lifecycle-{project-setup,rbtrc, application-entry,initialize-hook}.md` — the canonical layout,
+- `python/references/lifecycle-{project-setup,rbtrc,application-entry,initialize-hook}.md` — the canonical layout,
   the CLI flags, the `Application(...)` constructor, the
   `initialize` hook.
 
-**Auth (browser users):**
+**Auth (browser users — see "Auth in Web Apps" below for the dev-vs-prod sequence):**
 
-- `python` references/`auth-allow-deny.md`,
-  `auth-allow-if.md`, `auth-built-in-predicates.md`,
-  `auth-custom-predicates.md` — authorization for browser-issued
-  RPCs. The same predicate machinery as chat-app; the difference is
-  only who's calling.
+- `python/references/servicer-authorizer.md` — **start here**.
+  Explains the `token_verifier=` vs. `oauth=` distinction and when
+  to defer writing `authorizer()` vs. write rules from day one.
+- `python/references/auth-allow-if.md`,
+  `python/references/auth-built-in-predicates.md`,
+  `python/references/auth-custom-predicates.md` — the predicate
+  machinery once you're ready to write rules.
+- `python/references/auth-allow-deny.md` — narrow uses of
+  unconditional rules; specifically, when **not** to reach for
+  `allow()`.
 
 ## Workflow: Plan First, Then Build
 
@@ -143,7 +181,7 @@ Before writing code, analyze the user's request:
    and hydrated in the parent's factory `create` Writer; non-Optional
    `Model`-typed fields reject `default=` / `default_factory=`. For
    collections, prefer `list[Item]` with `default_factory=list`. Full
-   rules in `python` references/`api-pydantic.md`.
+   rules in `python/references/api-pydantic.md`.
 4. **Operations**: Map to the right method type:
    - `Reader` — read-only queries.
    - `Writer` — single-state mutations.
@@ -154,7 +192,7 @@ Before writing code, analyze the user's request:
    each page call? React hooks generated by `rbt generate --react=...`
    wrap the calls.
 6. **Auth**: Anonymous-only, public-read + authed-write, fully
-   gated, …? See `python` references/`auth-*.md`.
+   gated, …? See `python/references/auth-*.md`.
 
 ## Project Layout
 
@@ -202,21 +240,23 @@ Key differences from a `chat-app` layout:
 application directory.**
 
 1. Create `.python-version`, `pyproject.toml`, `.rbtrc` — same
-   shape as in `python` references/`lifecycle-{project-setup,rbtrc}.md`.
-   In `.rbtrc`, point the React codegen at `web/src/api`:
+   shape as in
+   `python/references/lifecycle-{project-setup,rbtrc}.md`. In
+   `.rbtrc`, point the React codegen at `web/src/api`:
    ```sh
    generate --react=web/src/api
    generate --web=web/src/api
    ```
 2. `uv sync`.
 3. Write the API definition (`api/<pkg>/v1/<name>.py`). Pydantic
-   rules live in `python` references/`api-pydantic.md`; method
-   marker → context-type rules in `python` references/`api-methods.md`.
-   Do **not** add `mcp=Tool()` or `UI()` — those are chat-app only.
+   rules live in `python/references/api-pydantic.md`; method
+   marker → context-type rules in
+   `python/references/api-methods.md`. Do **not** add `mcp=Tool()`
+   or `UI()` — those are chat-app only.
 4. `uv run rbt generate`.
 5. Write the servicer (`backend/src/servicers/<name>.py`) —
-   context-type patterns in `python` references/`servicer-*.md`.
-6. Write `main.py` — `python` references/`lifecycle-application-entry.md`.
+   context-type patterns in `python/references/servicer-*.md`.
+6. Write `main.py` — `python/references/lifecycle-application-entry.md`.
 7. Initialize the React app at `web/` with your preferred tool
    (e.g. `npm create vite@latest web -- --template react-ts`) or
    a Reboot-provided template if one exists for plain web apps.
@@ -254,5 +294,6 @@ When modifying an existing app:
 4. Update servicer methods.
 5. Update React components and routes.
 
-Specific patterns and file shapes live in `python` references and
-the table above — read them on demand based on what's changing.
+Specific patterns and file shapes live in the `python` skill's
+references and the table above — read them on demand based on
+what's changing.

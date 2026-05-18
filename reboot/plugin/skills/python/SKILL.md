@@ -62,14 +62,14 @@ second argument; that type is determined by the API method factory
 
 ```python
 from chat_room.v1.chat_room_rbt import ChatRoom
-from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import ReaderContext, WriterContext
 
 
 class ChatRoomServicer(ChatRoom.Servicer):
-
-    def authorizer(self):
-        return allow()
+    # No `authorizer()` defined — fine for `rbt dev` (the runtime
+    # warns and allows). Before going to production, add a
+    # `TokenVerifier` and a real `authorizer()` rule (see
+    # references/servicer-authorizer.md).
 
     async def messages(
         self,

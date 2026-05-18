@@ -70,40 +70,51 @@ show the chat-app-specific shape on top.
 
 **Always relevant:**
 
-- `python` references/`patterns-common-gotchas.md` — recurring
-  trips (`self.ref().state_id`, kwargs convention, `--name` vs.
+- `python/references/patterns-common-gotchas.md` — recurring trips
+  (`self.ref().state_id`, kwargs convention, `--name` vs.
   `--application-name`, etc.).
-- `python` references/`api-pydantic.md` — pydantic API rules
-  (every Field needs a zero-value default; non-Optional `Model`-typed
+- `python/references/api-pydantic.md` — pydantic API rules (every
+  Field needs a zero-value default; non-Optional `Model`-typed
   fields can't take defaults).
 
 **Defining the API:**
 
-- `python` references/`api-methods.md` — factory → context type
+- `python/references/api-methods.md` — factory → context type
   mapping (Reader/Writer/Transaction/Workflow).
-- `python` references/`api-errors.md` — typed errors.
+- `python/references/api-errors.md` — typed errors.
 
 **Implementing Servicers:**
 
-- `python` references/`servicer-{reader,writer,transaction, constructor,authorizer}.md` — one per context type.
-- `python` references/`rpc-refs.md` — `self.ref().state_id`
-  (never `self.state_id`); `self.ref().schedule(...)`.
-- `python` references/`rpc-calls.md` — kwargs not Request
-  wrappers.
-- `python` references/`rpc-constructor-calls.md` —
+- `python/references/servicer-{reader,writer,transaction,constructor,authorizer}.md` — one per context type.
+- `python/references/rpc-refs.md` — `self.ref().state_id` (never
+  `self.state_id`); `self.ref().schedule(...)`.
+- `python/references/rpc-calls.md` — kwargs not Request wrappers.
+- `python/references/rpc-constructor-calls.md` —
   `Service.create(context, id)` semantics.
+
+**Auth (write rules from day one — see "Auth" under Key Framework Concepts):**
+
+- `python/references/auth-allow-if.md`,
+  `python/references/auth-built-in-predicates.md`,
+  `python/references/auth-custom-predicates.md` — the predicate
+  machinery. Chat apps use `oauth=` for identity, so real rules are
+  viable immediately.
+- `python/references/auth-allow-deny.md` — narrow uses of
+  unconditional rules; specifically, when **not** to reach for
+  `allow()`.
 
 **Workflows:**
 
-- `python` references/`workflow-method.md` (start here — has
-  the When-to-Pick decision table for the rest), then the specific
+- `python/references/workflow-method.md` (start here — has the
+  When-to-Pick decision table for the rest), then the specific
   primitive references for `at_most_once` / `at_least_once` / `until` /
   `until_changes` / `loop` / `state-write` / `idempotency-scopes`.
 
 **Project shell:**
 
-- `python` references/`lifecycle-{project-setup,rbtrc, application-entry,initialize-hook}.md` — the canonical layout, the
-  CLI flags, the `Application(...)` constructor, the `initialize` hook.
+- `python/references/lifecycle-{project-setup,rbtrc,application-entry,initialize-hook}.md` — the canonical layout,
+  the CLI flags, the `Application(...)` constructor, the
+  `initialize` hook.
 
 ## This Skill's References
 
@@ -111,15 +122,16 @@ Chat-app–specific topics, organized by layer. Read them on demand
 the same way you would any other skill reference — the patterns
 they cover aren't restated inline below.
 
-| Reference                                                            | What's in it                                                                                                                                                                                                                                                                                                                                                                         |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`references/project-shell.md`](references/project-shell.md)         | `.python-version`, `.rbtrc` deltas (HMR + dist configs), `pyproject.toml` extras, `main.py` shape, durable-state setup.                                                                                                                                                                                                                                                              |
-| [`references/api-method-types.md`](references/api-method-types.md)   | The pydantic API file. `User`-type front door, `mcp=Tool()` / `mcp=None`, `UI()` (including parameterized UI props), `factory=True` on `create`, `Workflow(...)` declaration shape. Full Counter API example.                                                                                                                                                                        |
-| [`references/api-state-shapes.md`](references/api-state-shapes.md)   | Two recurring state shapes: `list[Item]` with `default_factory=list`; single nested `Model` sub-objects as `Optional[X] = Field(tag=N, default=None)` hydrated in factory `create` (Gotcha #13). The state-inside-state regression and how to compose state actors via string ID + `ref(id)`.                                                                                        |
-| [`references/servicer-patterns.md`](references/servicer-patterns.md) | Servicer-side patterns: `UserServicer` calling `<X>.create(context)`, Workflow Servicer with `MyType.ref()` (no-arg) magic, inline writers via `.idempotently("alias").write(context, fn)` / `.always().write(...)`, scheduling a workflow from a Transaction with `.schedule()`.                                                                                                    |
-| [`references/react-scaffolding.md`](references/react-scaffolding.md) | The `web/` shell: `package.json` (per-UI `build:<name>` scripts, no auto-discovery wrappers), `vite.config.ts` (load-bearing — copy exactly), `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json`, `index.css` theme variables, `ui/<name>/index.html`, `ui/<name>/main.tsx`.                                                                                               |
-| [`references/react-app-tsx.md`](references/react-app-tsx.md)         | `App.tsx` — generated `use<Type>()` hook usage (reader subscriptions + mutation calls), Python-snake → TypeScript-camel field naming, Zod-validated request/response types. Full Counter `App.tsx` + `App.module.css` example.                                                                                                                                                       |
-| [`references/gotchas.md`](references/gotchas.md)                     | The numbered MCP-Chat-App–specific trip list (1–19): `mcp=Tool()`/`mcp=None` required, `factory=True` on app-type `create`, `MyType.ref()` not `cls.ref()`/`self.ref()` in workflows, `.schedule()` from a Transaction, Optional+`default=None` for nested Models, `.read()` only on no-arg ref inside a workflow, method-name PascalCase → generated `<Type>.<Method>Request`, etc. |
+| Reference                                                                  | What's in it                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`references/project-shell.md`](references/project-shell.md)               | `.python-version`, `.rbtrc` deltas (HMR + dist configs), `pyproject.toml` extras, `main.py` shape, durable-state setup.                                                                                                                                                                                                                                                              |
+| [`references/api-method-types.md`](references/api-method-types.md)         | The pydantic API file. `User`-type front door, `mcp=Tool()` / `mcp=None`, `UI()` (including parameterized UI props), `factory=True` on `create`, `Workflow(...)` declaration shape. Full Counter API example.                                                                                                                                                                        |
+| [`references/api-state-shapes.md`](references/api-state-shapes.md)         | Two recurring state shapes: `list[Item]` with `default_factory=list`; single nested `Model` sub-objects as `Optional[X] = Field(tag=N, default=None)` hydrated in factory `create` (Gotcha #13). The state-inside-state regression and how to compose state actors via string ID + `ref(id)`.                                                                                        |
+| [`references/servicer-patterns.md`](references/servicer-patterns.md)       | Servicer-side patterns: `UserServicer` calling `<X>.create(context)`, Workflow Servicer with `MyType.ref()` (no-arg) magic, inline writers via `.idempotently("alias").write(context, fn)` / `.always().write(...)`, scheduling a workflow from a Transaction with `.schedule()`.                                                                                                    |
+| [`references/react-scaffolding.md`](references/react-scaffolding.md)       | The `web/` shell: `package.json` (per-UI `build:<name>` scripts, no auto-discovery wrappers), `vite.config.ts` (load-bearing — copy exactly), `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json`, `index.css` theme variables, `ui/<name>/index.html`, `ui/<name>/main.tsx`.                                                                                               |
+| [`references/react-app-tsx.md`](references/react-app-tsx.md)               | `App.tsx` — generated `use<Type>()` hook usage (reader subscriptions + mutation calls), Python-snake → TypeScript-camel field naming, Zod-validated request/response types. Full Counter `App.tsx` + `App.module.css` example.                                                                                                                                                       |
+| [`references/gotchas.md`](references/gotchas.md)                           | The numbered MCP-Chat-App–specific trip list (1–19): `mcp=Tool()`/`mcp=None` required, `factory=True` on app-type `create`, `MyType.ref()` not `cls.ref()`/`self.ref()` in workflows, `.schedule()` from a Transaction, Optional+`default=None` for nested Models, `.read()` only on no-arg ref inside a workflow, method-name PascalCase → generated `<Type>.<Method>Request`, etc. |
+| [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md) | Upgrading `Application(oauth=...)` from `Anonymous()` to `Google` / `GitHub` before going to production. The one-line code swap, where credentials come from, and the user-ID-namespace gotcha that makes post-launch migrations infeasible — lean hard on doing this **before** real users have state.                                                                              |
 
 ## Workflow: Plan First, Then Build
 
@@ -226,6 +238,44 @@ adds one more:
 chat-app spelling of a constructor (see `python`'s
 `servicer-constructor.md` for the underlying mechanic).
 
+### Auth: `oauth=Anonymous()` and Real Authorizers from Day One
+
+MCP Chat Apps wire identity via `Application(oauth=...)` — typically
+`oauth=Anonymous()` during early development. `Anonymous()` is a real
+OAuth provider: every caller is issued a verified `anon-{ULID}`
+`context.auth.user_id`, no external IdP or sign-in UI required. The
+same `oauth=` slot later accepts Google / GitHub / etc. providers
+without changing servicer-side code.
+
+> **Before going to production: upgrade to a real provider.** See
+> [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md).
+> The swap is one line, but `Anonymous()` and real providers issue
+> identities in different namespaces — anything keyed on user ID is
+> stranded after the swap. Migrating is rarely viable; do this
+> **before** real users have state.
+
+Consequences for authorizers:
+
+- **Write `authorizer()` on every Servicer from day one.** Don't
+  defer it "until prod." Identity is wired the same in dev and prod,
+  so production-shaped rules (`allow_if(all=[state_id_is_user_id])`,
+  `allow_if(all=[has_verified_token])`, etc.) work immediately.
+- **Don't use `allow()` as a default.** It declares "this endpoint
+  is public on the internet, no identity required" — not what you
+  want for app-state methods.
+- **`User`-type Servicers don't need a custom `authorizer()`.** The
+  framework's default rule (`state_id_is_user_id` + `is_app_internal`)
+  is production-worthy already.
+- **Application-type Servicers (`Counter`, `TodoList`, …)** typically
+  use `allow_if(all=[state_id_is_user_id])` when the state belongs to
+  one user, or compose other predicates (`has_verified_token`,
+  custom) when state is shared.
+
+Backend mechanics — predicate composition, custom predicates, the
+function-vs-instance footgun — live in `python/references/auth-*.md`
+and `python/references/servicer-authorizer.md`. The chat-app delta
+is just **which mode you're in**: `oauth=` + real rules from day one.
+
 ### Declarative, Not Decorator
 
 All MCP surface is defined in the API file. `main.py` is minimal. No
@@ -278,15 +328,15 @@ application directory.**
 3. Write API definition (`api/<pkg>/v1/<name>.py`) — see
    [`references/api-method-types.md`](references/api-method-types.md)
    and [`references/api-state-shapes.md`](references/api-state-shapes.md);
-   field-level pydantic rules in `python`
-   references/`api-pydantic.md`.
+   field-level pydantic rules in
+   `python/references/api-pydantic.md`.
 4. `uv run rbt generate`.
 5. Write servicer (`backend/src/servicers/<name>.py`) — see
    [`references/servicer-patterns.md`](references/servicer-patterns.md);
-   context-type rules in `python` references/`servicer-*.md`.
+   context-type rules in `python/references/servicer-*.md`.
 6. Write `main.py` — see
    [`references/project-shell.md`](references/project-shell.md) and
-   `python` references/`lifecycle-application-entry.md`.
+   `python/references/lifecycle-application-entry.md`.
 7. `npm create @reboot-dev/ui`.
 8. `cd web && npm install`.
 9. `uv run rbt generate` (React bindings need `node_modules`).
