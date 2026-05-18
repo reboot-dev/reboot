@@ -14,7 +14,13 @@
       "description": "Use Reboot to build AI Chat Apps (MCP Apps) for ChatGPT, Claude, VSCode, Goose, and others.",
       "source": "./",
       "strict": false,
-      "skills": ["./skills/chat-app", "./skills/python"]
+      "skills": [
+        "./skills/app",
+        "./skills/chat-app",
+        "./skills/web-app",
+        "./skills/run",
+        "./skills/python"
+      ]
     }
   ]
 }

@@ -1,6 +1,6 @@
 ---
 name: python
-description: Reboot Python framework for building transactional microservices with durable actor state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, implementing Servicers, calling actor refs across services, scheduling work, building durable workflows with `at_most_once`/`at_least_once`/`until` primitives, or testing Reboot applications with the `Reboot()` test harness.
+description: Reboot Python framework for building transactional microservices with durable actor state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, implementing Servicers, calling actor refs across services, scheduling work, building durable workflows with `at_most_once`/`at_least_once`/`until` primitives, calling an LLM / building an AI agent in the backend via the durable `reboot.agents.pydantic_ai.Agent`, or testing Reboot applications with the `Reboot()` test harness.
 license: Apache-2.0
 metadata:
   author: reboot
@@ -32,6 +32,8 @@ Reference these guidelines when:
 - Building a durable workflow with `WorkflowContext` and the `at_most_once`
   / `at_least_once` / `until` / `until_changes` primitives
 - Scheduling work via `ref.schedule(when=...).method(context)`
+- Calling an LLM or building an AI agent in the backend via the
+  durable `reboot.agents.pydantic_ai.Agent`
 - Using the standard library (`OrderedMap`, mailgun, etc.)
 - Writing tests with the `Reboot()` harness
 
@@ -43,13 +45,14 @@ Reference these guidelines when:
 | 2        | API        | CRITICAL   | `api-`        |
 | 3        | Servicer   | HIGH       | `servicer-`   |
 | 4        | Workflow   | HIGH       | `workflow-`   |
-| 5        | Stdlib     | HIGH       | `stdlib-`     |
-| 6        | State      | HIGH       | `state-`      |
-| 7        | Auth       | HIGH       | `auth-`       |
-| 8        | RPC        | MEDIUM     | `rpc-`        |
-| 9        | Scheduling | MEDIUM     | `scheduling-` |
-| 10       | Testing    | LOW-MEDIUM | `testing-`    |
-| 11       | Patterns   | LOW-MEDIUM | `patterns-`   |
+| 5        | Agent      | HIGH       | `agent-`      |
+| 6        | Stdlib     | HIGH       | `stdlib-`     |
+| 7        | State      | HIGH       | `state-`      |
+| 8        | Auth       | HIGH       | `auth-`       |
+| 9        | RPC        | MEDIUM     | `rpc-`        |
+| 10       | Scheduling | MEDIUM     | `scheduling-` |
+| 11       | Testing    | LOW-MEDIUM | `testing-`    |
+| 12       | Patterns   | LOW-MEDIUM | `patterns-`   |
 
 ## Critical Rules
 
@@ -216,6 +219,25 @@ Read **all** of these before writing the body:
 - `references/workflow-state-write.md` — workflows have no
   `self.state`; mutate via `Service.ref().write(context, fn)`
 
+### Calling an LLM / building an AI agent
+
+Backend LLM calls — chat completions, AI agents, tool-using
+assistants — go through the durable `reboot.agents.pydantic_ai.Agent`,
+**never** a raw `anthropic` / `openai` SDK or a bare
+`pydantic_ai.Agent`. A raw call re-hits (and re-bills) the provider
+on every workflow replay. Read both before writing agent code:
+
+- `references/agent-pydantic-ai.md` — **always read** for any
+  backend LLM work: constructing the `Agent`, the required
+  `name=`, running it inside a `WorkflowContext`, `variant=` for
+  repeated runs, and the streaming / replay caveats
+- `references/agent-tools.md` — `@agent.tool` /
+  `@agent.tool_plain` so the agent can read and mutate Reboot
+  state
+
+The `Agent` runs only inside a `WorkflowContext`, so also read the
+"Building a workflow" references above.
+
 ### Defining an API
 
 - `references/api-pydantic.md` — **always read**: the zero-default
@@ -301,7 +323,7 @@ Reference files live in `references/` and are named
 `{prefix}-{topic}.md` (e.g., `workflow-at-most-once.md`). Load only
 the files relevant to the current task; the "How to Use" section
 above lists the right ones grouped by task type. The full catalog
-of 46 files across 11 categories:
+of 48 files across 12 categories:
 
 **Lifecycle** (`lifecycle-`):
 
@@ -336,6 +358,11 @@ of 46 files across 11 categories:
 - `references/workflow-until-changes.md`
 - `references/workflow-idempotency-scopes.md`
 - `references/workflow-state-write.md`
+
+**Agent** (`agent-`):
+
+- `references/agent-pydantic-ai.md`
+- `references/agent-tools.md`
 
 **Stdlib** (`stdlib-`):
 

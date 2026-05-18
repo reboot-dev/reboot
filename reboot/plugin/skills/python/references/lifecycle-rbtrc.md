@@ -48,6 +48,10 @@ dev run --python
 dev run --application-name=chat-room
 dev expunge --application-name=chat-room
 
+# Load secrets from a git-ignored env file (see "`--env-file` Loads
+# Secrets" below).
+dev run --env-file=.env
+
 # Run the application!
 dev run --application=backend/src/main.py
 ```
@@ -74,6 +78,36 @@ Treat the warning as real — when writing fresh `.rbtrc` (or fixing
 an old one), use `--application-name=<name>`. Don't be fooled by
 older skill examples or third-party tutorials that still show
 `--name`.
+
+## `--env-file` Loads Secrets Into `rbt dev run`
+
+`dev run --env-file=<path>` reads a file of `KEY=VALUE` lines and
+sets each as an environment variable before launching the
+application, so the app reads them with `os.environ`. It is the
+recommended way to deliver secrets in local development: keep one
+`.env` file, name it once in `.rbtrc`, and every `rbt dev run`
+picks it up.
+
+```sh
+dev run --env-file=.env
+```
+
+- The file uses standard `.env` syntax (parsed by `python-dotenv`):
+  `KEY=VALUE` lines, `#` comments, blank lines, optional `export `
+  prefixes, and quoted values are all supported.
+- `--env-file` is **only** available for `dev run` — not `rbt serve`
+  or Reboot Cloud. Values passed with `--env=KEY=VALUE` override
+  values from the file.
+- A missing env file is a non-fatal warning, not an error — an app
+  that needs no secrets yet can keep the `.rbtrc` line.
+- Editing the env file while `rbt dev run` is running restarts
+  the application automatically, so updated values take effect
+  without a manual restart — just as editing a `--watch`ed
+  source file does.
+
+Keep the `.env` file out of git — add it to `.gitignore`. Full
+secrets guidance — including Reboot Cloud — is in
+`lifecycle-secrets.md`.
 
 ## Named Configs
 

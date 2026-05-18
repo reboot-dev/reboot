@@ -6,7 +6,10 @@ The `reboot` Claude Code plugin for building on [Reboot](https://reboot.dev).
 
 | Skill                          | Description                                                                                                            |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| [`app`](skills/app/)           | Build a Reboot app from a description — routes to `chat-app` or `web-app`                                              |
 | [`chat-app`](skills/chat-app/) | Build AI Chat Apps (MCP Apps) for ChatGPT, Claude, VSCode, Goose, and others — layers on top of `python`               |
+| [`web-app`](skills/web-app/)   | Build standalone Reboot Web Apps — a Reboot backend behind a browser-facing React frontend — layers on top of `python` |
+| [`run`](skills/run/)           | Run an existing Reboot app — detects MCP Chat App vs. Web App and starts every process it needs                        |
 | [`python`](skills/python/)     | Reboot Python framework reference: proto- or pydantic-defined APIs, Servicers, contexts, refs, scheduling, and testing |
 
 ## Installation
@@ -72,9 +75,15 @@ plugin/
 │   └── marketplace.json
 ├── README.md
 └── skills/
+    ├── app/
+    │   └── SKILL.md
     ├── chat-app/
     │   ├── SKILL.md
     │   └── references/
+    ├── web-app/
+    │   └── SKILL.md
+    ├── run/
+    │   └── SKILL.md
     └── python/
         ├── SKILL.md
         ├── AGENTS.md

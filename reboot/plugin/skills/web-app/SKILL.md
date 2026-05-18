@@ -12,10 +12,11 @@ backend behind a standalone React frontend served at a normal URL.
 
 > **Reads from `python`.** This skill is the standalone-web-frontend
 > layer on top of the Reboot Python framework. Anything about
-> Servicers, Reboot contexts, refs, scheduling primitives, error
-> types, the testing harness, the `.rbtrc` shape, or pydantic API
-> defaults belongs in `python` — load those references for those
-> concerns. This skill covers what's _specific_ to standalone Web
+> Servicers, Reboot contexts, refs, scheduling primitives,
+> backend LLM / agent calls, error types, the testing harness,
+> the `.rbtrc` shape, or pydantic API defaults belongs in
+> `python` — load those references for those concerns. This
+> skill covers what's _specific_ to standalone Web
 > Apps: a plain React SPA at `web/`, the generated TypeScript hooks
 > from `rbt generate --react=...`, regular auth flows (login form /
 > cookies / OAuth), and the cross-cutting rules unique to that
@@ -33,6 +34,9 @@ backend behind a standalone React frontend served at a normal URL.
 - Building a new Reboot Web App from a description.
 - Adding features, state, or UI to an existing Reboot Web App.
 - Modifying state model, methods, or React UI in a Reboot Web App.
+- Running an existing Reboot Web App — e.g. at the start of a new
+  session: load the [`run` skill](../run/SKILL.md), which detects
+  the app type and starts the backend and frontend.
 
 ## How a Web App Differs From a Chat App
 
@@ -324,18 +328,12 @@ application directory.**
     step until every user-story test passes — these tests are
     the gate that catches contract bugs before the user opens
     the browser.
-13. Run the app, each in a separate shell in the background:
-    - Backend: `uv run rbt dev run --no-chaos` (the `--no-chaos`
-      flag disables the Chaos Monkey, which is a useful feature to
-      catch bugs but would be confusing to developers that don't
-      see the terminal with the Chaos Monkey output).
-    - Frontend with HMR: `cd web && npm run dev`.
-14. Check the logs of the backend and frontend to confirm they're
-    up. Wait until the backend logs indicate a health check has
-    passed and the inspect page URL has printed.
-15. Give the user the URLs for the backend inspect page and the
-    frontend dev server, plus a first thing to click / a first
-    page to open.
+13. Run the app — load the [`run` skill](../run/SKILL.md) and
+    follow it. It is the single canonical "start the app"
+    procedure: it makes sure dependencies and secrets are in
+    place, starts the backend and frontend dev server, waits for
+    them to come up, and hands the user the URLs plus a first page
+    to open.
 
 ## Update Flow
 
@@ -347,6 +345,12 @@ When modifying an existing app:
 3. Update the API definition → re-run `uv run rbt generate`.
 4. Update servicer methods.
 5. Update React components and routes.
+6. If the app isn't already running, bring it up with the
+   [`run` skill](../run/SKILL.md). If it is already running under
+   `rbt dev run`, the `--watch` globs reload it automatically — no
+   restart needed. Editing `.env` likewise triggers a restart, so
+   a new or changed secret is re-read by `--env-file` without a
+   manual relaunch.
 
 Specific patterns and file shapes live in the `python` skill's
 references and the table above — read them on demand based on

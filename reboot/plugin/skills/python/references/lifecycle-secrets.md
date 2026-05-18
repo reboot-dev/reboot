@@ -8,10 +8,11 @@ tags: secrets, env, environment-variables, rbt-cloud, oauth, api-key, client-sec
 ## Set Secrets — Env Vars in Dev, `rbt cloud secret set` in Cloud
 
 > **Rule of thumb:** the application always reads secrets the same
-> way — `os.environ["KEY"]`. What differs is how the value gets into
-> the environment: in **`rbt dev run`** it's a shell environment
-> variable; in **Reboot Cloud** it's set with `rbt cloud secret set`.
-> Same name, same access path, two different delivery mechanisms.
+> way — `os.environ["KEY"]`. What differs is how the value gets
+> into the environment: in **`rbt dev run`** it comes from the
+> `--env-file` named in `.rbtrc`; in **Reboot Cloud** it's set with
+> `rbt cloud secret set`. Same name, same access path, two
+> different delivery mechanisms.
 
 Secrets in a Reboot application are always plain environment
 variables at runtime. Every secret (OAuth client secret, third-party
@@ -26,45 +27,57 @@ STRIPE_API_KEY = os.environ["STRIPE_API_KEY"]
 
 Two delivery mechanisms put the value there:
 
-| Where the app runs | Mechanism                                                                                              | Where the value lives                |
-| ------------------ | ------------------------------------------------------------------------------------------------------ | ------------------------------------ |
-| `rbt dev run`      | Shell env var inherited by the process (`export KEY=...`), or `rbt dev run --env=KEY=VALUE` on the CLI | The developer's shell / launch flags |
-| Reboot Cloud       | `rbt cloud secret set KEY` (reads value from the operator's shell env)                                 | The application's secret store       |
+| Where the app runs | Mechanism                                                                                                                   | Where the value lives                                |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `rbt dev run`      | A `--env-file=<path>` of `KEY=VALUE` lines named in `.rbtrc`; or `--env=KEY=VALUE` on the CLI; or an exported shell env var | A git-ignored `.env` file / launch flags / the shell |
+| Reboot Cloud       | `rbt cloud secret set KEY` (reads value from the operator's shell env)                                                      | The application's secret store                       |
 
 The two never share storage. Setting a Cloud secret does not affect
 local `rbt dev run`, and exporting a shell variable does not push it
 to Cloud — each environment is configured independently with the
 mechanism for that environment.
 
-## In Dev: Shell Env Vars for `rbt dev run`
+## In Dev: An `--env-file` for `rbt dev run`
 
-`rbt dev run` inherits the shell environment, so the simplest path
-is to `export` the value before running:
+The recommended way to deliver secrets to `rbt dev run` is the
+`--env-file` flag, configured once in `.rbtrc`. Keep every secret
+as a `KEY=VALUE` line in a single `.env` file at the project root:
 
 ```sh
-export STRIPE_API_KEY=sk_test_...
-export GOOGLE_OAUTH_CLIENT_ID=...
-export GOOGLE_OAUTH_CLIENT_SECRET=...
-
-uv run rbt dev run
+STRIPE_API_KEY=sk_test_...
+GOOGLE_OAUTH_CLIENT_ID=...
+GOOGLE_OAUTH_CLIENT_SECRET=...
 ```
 
-Equivalently, `--env=KEY=VALUE` (repeatable) sets vars on the CLI
-without exporting them in the shell — useful in one-off runs or
-in `.rbtrc` for non-sensitive flags:
+and point `.rbtrc` at it (see `lifecycle-rbtrc.md`):
+
+```sh
+dev run --env-file=.env
+```
+
+Every `rbt dev run` then sets those variables before launching the
+app, and editing the file while `rbt dev run` is running restarts
+the app so updated secrets take effect right away. The file uses
+standard `.env` syntax — `KEY=VALUE` lines, `#` comments, blank
+lines, optional `export ` prefixes, and quoted values are all
+supported. Add `.env` to `.gitignore` so the secrets are never
+committed. `--env-file` is a `dev run`-only convenience — it is
+not available for `rbt serve` or Reboot Cloud.
+
+For one-off values, `--env=KEY=VALUE` (repeatable) sets a variable
+on the CLI without a file; `--env=` values override anything also
+set by `--env-file`. Variables exported in the launching shell are
+also still inherited by `rbt dev run`.
 
 ```sh
 uv run rbt dev run --env=FEATURE_FLAG=on
 ```
 
 **Don't commit secrets to `.rbtrc`.** `.rbtrc` is checked into git
-(see `lifecycle-rbtrc.md`); `--env=` lines in `.rbtrc` are fine for
-non-sensitive config but never for credentials.
-
-**Don't commit `.env` files either.** Reboot doesn't auto-load
-`.env` files — but if you keep one locally for convenience, add it
-to `.gitignore` and source it manually
-(`set -a; source .env; set +a; uv run rbt dev run`).
+(see `lifecycle-rbtrc.md`). The `dev run --env-file=.env` line is
+fine — it is only a path — but never put a literal
+`--env=KEY=secret` line there. The `.env` file the path points at
+stays git-ignored.
 
 ## In Cloud: `rbt cloud secret set KEY`
 
@@ -136,10 +149,12 @@ provider-swap story.
 - **Don't hard-code secrets in `main.py`, servicer code, or any
   other source file.** Anything checked into git is leaked.
 - **Don't put secrets in `.rbtrc`.** `.rbtrc` is checked in;
-  `--env=KEY=VALUE` lines there are visible in history forever.
-- **Don't expect a `.env` file to be auto-loaded.** Reboot does
-  not parse `.env`; if you use one locally, source it explicitly
-  before `rbt dev run`.
+  `--env=KEY=VALUE` lines there are visible in history forever. A
+  `dev run --env-file=.env` line is fine — it's only a path.
+- **Don't rely on a bare `.env` being auto-loaded.** Reboot reads
+  `.env` only when `rbt dev run` is given `--env-file=.env` (in
+  `.rbtrc` or on the CLI); a `.env` with no `--env-file` does
+  nothing.
 - **Don't reuse `REBOOT_*` or `RBT_*` prefixes.** They're reserved
   by the platform — `rbt cloud secret set REBOOT_X` will fail.
 - **Don't assume Cloud and dev share secrets.** Setting a value in

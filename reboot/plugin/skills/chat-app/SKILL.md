@@ -11,10 +11,11 @@ Build complete Reboot AI Chat Apps from a user description.
 
 > **Reads from `python`.** This skill is the MCP-App + React
 > layer on top of the Reboot Python framework. Anything about
-> Servicers, Reboot contexts, refs, scheduling primitives, error
-> types, the testing harness, the `.rbtrc` shape, or pydantic API
-> defaults belongs in `python` — load those references for
-> those concerns. This skill covers what's _specific_ to MCP Chat
+> Servicers, Reboot contexts, refs, scheduling primitives,
+> backend LLM / agent calls, error types, the testing harness,
+> the `.rbtrc` shape, or pydantic API defaults belongs in
+> `python` — load those references for those concerns. This
+> skill covers what's _specific_ to MCP Chat
 > Apps: the `User`-type front door, MCP tool exposure, the `UI()`
 > method type, the React/Vite scaffolding, and the cross-cutting
 > rules unique to that layer.
@@ -61,6 +62,10 @@ claude --plugin-dir /path/to/reboot-plugin
 - Building a new Reboot AI Chat App from a description
 - Adding features, state, or UI to an existing Reboot AI Chat App
 - Modifying state model, methods, or React UI in a Reboot AI Chat App
+- Running an existing Reboot AI Chat App — e.g. at the start of a
+  new session. This needs no Plan or Build phase: load the
+  [`run` skill](../run/SKILL.md), which detects the app type and
+  starts the backend, frontend, and MCPJam inspector.
 
 ## Read These From `python` First
 
@@ -403,24 +408,11 @@ application directory.**
     them in MCPJam.
 13. Create `mcp_servers.json` with
     `{"mcpServers":{"<name>":{"url":"http://localhost:9991/mcp","useOAuth":true}}}`.
-14. Run the app, by doing each of the following in a separate shell in the background:
-    - run the backend: `uv run rbt dev run --no-chaos` - FYI, the `--no-chaos`
-      disables the Chaos Monkey, which is a useful feature to catch bugs but
-      would be confusing to developers that don't themselves see the terminal
-      with the information that Chaos Monkey is running.
-    - serve the frontend with hot module reloading: `cd web && npm run dev`
-15. Check the logs of the backend and frontend to validate that they are up and
-    running. Wait until the backend logs indicate that a health check has passed,
-    at which point it must have printed the URL of its inspect page.
-16. Run the MCPJam inspector in a separate background shell:
-    `mcpjam-inspector --config mcp_servers.json --server <name>`
-    Replace `<name>` with the actual server name from `mcp_servers.json`.
-    MCPJam's launcher orphans the server on `SIGTERM`, so the
-    plugin's `SessionEnd` hook reaps it when the user exits Claude
-    Code.
-17. Give the user the URLs for the application's own inspect page, and
-    for the MCPJam inspector (`http://localhost:6274`).
-18. suggest a first prompt the user can try in the inspector (e.g., "Create a new todo list and show it to me").
+14. Run the app — load the [`run` skill](../run/SKILL.md) and
+    follow it. It is the single canonical "start the app"
+    procedure: it detects the app type, makes sure dependencies
+    and secrets are in place, and starts the backend, frontend,
+    and MCPJam inspector.
 
 ## Update Flow
 
@@ -431,6 +423,12 @@ When modifying an existing app:
 3. Update API definition → re-run `uv run rbt generate`.
 4. Update servicer methods.
 5. Update React components.
+6. If the app isn't already running, bring it up with the
+   [`run` skill](../run/SKILL.md). If it is already running under
+   `rbt dev run`, the `--watch` globs reload it automatically — no
+   restart needed. Editing `.env` likewise triggers a restart, so
+   a new or changed secret is re-read by `--env-file` without a
+   manual relaunch.
 
 Specific patterns and file shapes live in the references above —
 read them on demand based on what's changing.

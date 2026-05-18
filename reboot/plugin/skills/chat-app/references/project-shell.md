@@ -44,6 +44,11 @@ dev run --python
 # Save state between restarts.
 dev run --application-name=<project-name>
 
+# Load secrets from a git-ignored env file. Put one KEY=VALUE line
+# per secret in `.env`, and add `.env` to `.gitignore`. See
+# `python/references/lifecycle-secrets.md`.
+dev run --env-file=.env
+
 # Run the application!
 dev run --application=backend/src/main.py
 
