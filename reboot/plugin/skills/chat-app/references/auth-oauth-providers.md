@@ -44,21 +44,22 @@ async def main():
     ).run()
 
 # After (Google):
+import os
 from reboot.aio.auth.oauth_providers import Google
 
 async def main():
     await Application(
         servicers=[UserServicer, CounterServicer],
         oauth=Google(
-            client_id=...,      # from project config / secrets store.
-            client_secret=...,  # from project config / secrets store.
+            client_id=os.environ["GOOGLE_OAUTH_CLIENT_ID"],
+            client_secret=os.environ["GOOGLE_OAUTH_CLIENT_SECRET"],
         ),
     ).run()
 ```
 
-GitHub is the same shape — `GitHub(client_id=..., client_secret=...)`.
-Servicer code, API definitions, React components, and authorizer
-rules don't change.
+GitHub is the same shape — `GitHub(client_id=..., client_secret=...)`,
+reading both values from `os.environ`. Servicer code, API
+definitions, React components, and authorizer rules don't change.
 
 ## Where Credentials Come From
 
@@ -79,10 +80,23 @@ For both providers, register the callback URL Reboot serves
 (`<your-app-base-url>/oauth/callback`) when the registration flow
 asks for an authorized redirect URI.
 
-**Never** hard-code these in `main.py` or check them into git. Load
-them via whatever mechanism the project uses for app secrets — the
-deployment infrastructure is responsible for delivering them to the
-running process.
+**Never** hard-code the client ID or client secret in `main.py` and
+never check them into git. Deliver them to the running process as
+environment variables — read them in `main.py` with
+`os.environ["GOOGLE_OAUTH_CLIENT_ID"]` etc. (any uppercase
+environment-style name you pick; `REBOOT_*` and `RBT_*` are
+reserved). Set the values:
+
+- **Locally under `rbt dev run`:** `export GOOGLE_OAUTH_CLIENT_ID=...` in the shell before launching, or
+  pass `--env=GOOGLE_OAUTH_CLIENT_ID=...` on the CLI. Don't put
+  the values in `.rbtrc` (it's checked into git).
+- **On Reboot Cloud:** `rbt cloud secret set GOOGLE_OAUTH_CLIENT_ID` (reads the value from your shell env so
+  it doesn't appear in shell history) — see
+  `python/references/lifecycle-reboot-cloud.md` for the full
+  command shape.
+
+Full secrets reference (rules, gotchas, the reserved-prefix list,
+the "don't" list): `python/references/lifecycle-secrets.md`.
 
 ## Why You Must Do This Before Production
 

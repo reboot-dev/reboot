@@ -91,6 +91,12 @@ recent calls.
 
 ## Secrets: `rbt cloud secret set/list/delete`
 
+> **Cross-reference:** `lifecycle-secrets.md` is the canonical
+> secrets doc — it covers both delivery mechanisms (`rbt dev run`
+> shell env vars vs. Cloud's `rbt cloud secret set`) and the
+> "don't" list (no secrets in `.rbtrc`, no `REBOOT_*`/`RBT_*`
+> names, etc.). This section is the Cloud-side detail.
+
 Secrets are application-scoped and surfaced to the app as
 environment variables. Names must be uppercase environment-style
 identifiers (letters, digits, underscores; not starting with a
