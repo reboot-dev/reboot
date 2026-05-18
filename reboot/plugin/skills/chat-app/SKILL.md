@@ -82,6 +82,15 @@ show the chat-app-specific shape on top.
 - `python/references/api-methods.md` — factory → context type
   mapping (Reader/Writer/Transaction/Workflow).
 - `python/references/api-errors.md` — typed errors.
+- `python/references/state-collections.md` — **always read when
+  the app has any "list of X" concept.** Decides whether each X
+  should be its own state `Type` (most of the time, yes) and picks
+  between in-state `list[Sub]`, in-state `list[str]` of foreign
+  IDs, or a `SortedMap`/`OrderedMap` of foreign IDs. The trap is
+  defaulting to `list[Person]`/`list[Post]`/`list[Task]` on `User`
+  for entity collections — see Step 1 of that reference.
+- `python/references/state-nested-models.md` — the same rule from
+  the nested-`Model` angle.
 
 **Implementing Servicers:**
 
@@ -161,21 +170,47 @@ changes, confirm, then modify.
 
 Before writing code, analyze the user's request:
 
-1. **Application types**: What primary things is the user managing?
-   (counter, inventory, chat thread, etc.) Each becomes its own `Type`
-   with its own state.
-2. **User methods**: How does the AI create instances of application
+1. **Application types — decompose aggressively.** List every
+   distinct entity the user is going to add / edit / list / find
+   over time (people, posts, tasks, events, documents, accounts,
+   …). **Each entity becomes its own `Type` with its own state**,
+   even when "each User only has a few of them". Anything you can
+   imagine the user `add`-ing / `remove`-ing / `find`-ing by name
+   has its own identity and belongs in its own actor. The default
+   wrong move is packing everything into `User`'s state as
+   `list[Person]` (or `list[Post]`, `list[Task]`, …) — that
+   flattens N actors into one, prevents per-entity auth/methods,
+   and forces a full rewrite when the collection grows. See
+   `python/references/state-collections.md` Step 1 for the full
+   decomposition signal list.
+2. **Container shape for each collection.** Once an entity is its
+   own `Type`, the parent (typically `User`) stores **references**,
+   not objects. Three shapes (full table + worked PRM example in
+   `python/references/state-collections.md`):
+   - `list[Sub]` of non-state `Model`s — for bounded sub-records
+     that genuinely belong with the parent (line items on an Order,
+     tags on a Post). NOT for entity collections.
+   - `list[str]` of foreign state IDs — when the collection of
+     entity IDs is bounded (low hundreds, occasionally low
+     thousands) and you always read it whole.
+   - `SortedMap` / `OrderedMap` of foreign state IDs — when the
+     collection grows without bound, needs pagination, range
+     queries, or ordered iteration. The default choice for any
+     "list of things the user keeps adding to" (people in a PRM,
+     posts on a blog, messages in a thread).
+3. **User methods**: How does the AI create instances of application
    types? Each gets a `Transaction` on `User` that calls
-   `<Type>.create(context)`.
-3. **State shape**: Fields, types — lists, nested objects, primitives.
-   Each gets `Field(tag=N)`. **Nested `Model` sub-objects** owned 1:1
-   by a parent state must be `Optional[X] = Field(tag=N, default=None)`
-   and hydrated in the parent's factory `create` Writer (Gotcha #13);
-   non-Optional `Model`-typed fields reject `default=` /
-   `default_factory=`. For collections, prefer `list[Item]` with
-   `default_factory=list`. Full rules + examples in
+   `<Type>.create(context)`, then registers the new ID in the
+   appropriate container (Shape B or C above).
+4. **State shape (per type)**: Fields, types — lists, nested
+   objects, primitives. Each gets `Field(tag=N)`. **Nested `Model`
+   sub-objects** owned 1:1 by a parent state must be
+   `Optional[X] = Field(tag=N, default=None)` and hydrated in the
+   parent's factory `create` Writer (Gotcha #13); non-Optional
+   `Model`-typed fields reject `default=` / `default_factory=`.
+   Full rules + examples in
    [`references/api-state-shapes.md`](references/api-state-shapes.md).
-4. **Operations**: Map to the right method type:
+5. **Operations**: Map to the right method type:
    - `Reader` — read-only queries.
    - `Writer` — single-state mutations.
    - `Transaction` — multi-state atomic operations (e.g. transfer
@@ -183,10 +218,10 @@ Before writing code, analyze the user's request:
      instance).
    - `Workflow` — long-running control flows with loops, scheduling,
      and idempotency helpers.
-5. **Tool surface**: Which operations need UIs (`UI()`)? Which need
+6. **Tool surface**: Which operations need UIs (`UI()`)? Which need
    explicit tool exposure (`mcp=Tool()`)?
-6. **Identity**: Single default instance vs. multiple instances?
-7. **Cross-state coordination**: Does any operation touch multiple
+7. **Identity**: Single default instance vs. multiple instances?
+8. **Cross-state coordination**: Does any operation touch multiple
    state instances? If yes, use `Transaction`.
 
 ## Key Framework Concepts (MCP Chat App–specific)

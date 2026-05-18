@@ -1,31 +1,52 @@
 ---
 title: API State Shapes — List and Nested Sub-Objects
 impact: HIGH
-impactDescription: Two recurring chat-app state patterns. Lists are straightforward (`list[Item]` with `default_factory=list`); single nested `Model` sub-objects must be `Optional` with `default=None` and hydrated in the factory `create` Writer — non-Optional `Model`-typed fields reject both `default=` and `default_factory=` (Gotcha #13).
-tags: state, list, nested, sub-object, optional, model, default, default_factory, gotcha-13
+impactDescription: Two recurring chat-app state patterns. `list[Item]` of non-state Models is for **bounded sub-records** that have no identity of their own; entity collections (people, posts, messages, anything addressable on its own) must be promoted to their own state `Type`. Single nested `Model` sub-objects must be `Optional` with `default=None` and hydrated in the factory `create` Writer — non-Optional `Model`-typed fields reject both `default=` and `default_factory=` (Gotcha #13).
+tags: state, list, nested, sub-object, optional, model, default, default_factory, gotcha-13, decomposition
 ---
 
 ## API State Shapes — List and Nested Sub-Objects
 
 The pydantic foundation rules (zero-value defaults; non-Optional
 `Model`-typed fields reject defaults) are in
-`python/references/api-pydantic.md`. This file covers the two chat-app
-state shapes that come up most often: list-based state and
-single-nested-Model state.
+`python/references/api-pydantic.md`. The full three-way decision
+between in-state `list[Sub]`, in-state `list[str]` of foreign IDs,
+and a stdlib `SortedMap`/`OrderedMap` of foreign IDs — including
+when to **decompose** an entity collection into its own state
+`Type` — lives in `python/references/state-collections.md`. **Read
+it before settling on a list-based state shape.** This file covers
+the chat-app-specific corollaries.
 
-## List State Patterns
+## List State Patterns (for Bounded Sub-Records Only)
 
-For application types with list-based state (items, entries, messages,
-etc.):
+> **Don't reach for `list[Item]` to model an entity collection.** If
+> "Item" has its own identity, lifecycle, or methods (e.g. `Person`,
+> `Post`, `Message`, `Task`, `Account`, `Event`), it must be its own
+> `Type(state=ItemState, methods=...)`. The parent then stores IDs,
+> not full objects. Putting an entity collection in-state as
+> `list[Item]` works in a 10-row demo and falls over the moment the
+> collection grows or items need their own auth/methods — see
+> `python/references/state-collections.md`.
+
+For application types whose state actually is a **bounded sub-record
+list** — line items on an Order, tags on a Post, fields in a Config
+blob, attachments on a single Message — and where the items have no
+identity of their own:
 
 - Define helper Model types as standalone classes (e.g.
-  `class Item(Model)`) — NOT nested on the application type.
-- Use `list[Item]` in the state with `default_factory=list`.
+  `class LineItem(Model)`) — NOT nested on the application type.
+- Use `list[LineItem]` in the state with `default_factory=list`.
 - Add CRUD Writers: `add`, `remove`, `toggle`, `reorder` as needed.
 - Each Writer validates indices before mutating.
 - The `reorder` pattern uses `pop` + `insert`.
 - In the servicer, import helpers standalone:
-  `from <pkg>.v1.<name> import Item`.
+  `from <pkg>.v1.<name> import LineItem`.
+
+If the items are themselves entities (Step 1 of `state-collections.md`
+came out "yes"), promote them to their own state `Type` and pick
+between in-state `list[str]` of IDs (bounded) or a `SortedMap` /
+`OrderedMap` of IDs (unbounded or paginated) — full code patterns
+in `python/references/state-collections.md`.
 
 ## Nested Model State Patterns
 
@@ -106,3 +127,10 @@ another, store its **string ID** in the parent and reach the
 nested actor via `<Type>.ref(<id>)`. A Model referenced as
 `state=X` in `Type(...)` should never also appear as
 `<field>: X = Field(...)` on another state Model.
+
+The corollary is that **collections of state actors** also live in
+the parent as collections-of-IDs, not collections-of-objects: in
+the parent's state you store `list[str]`, `dict[str, str]`, or the
+ID of a stdlib `SortedMap`/`OrderedMap` — never `list[<StateModel>]`.
+See `python/references/state-collections.md` for the three shapes
+and when to pick each.

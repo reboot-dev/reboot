@@ -223,6 +223,16 @@ Read **all** of these before writing the body:
 - `references/api-methods.md` — `Reader` / `Writer` / `Transaction` /
   `Workflow` factories and the `factory=True` constructor option
 - `references/api-errors.md` — typed error declaration
+- `references/state-collections.md` — **always read when modeling
+  any collection**: decide whether each contained item should be
+  its own state `Type`, and pick between in-state `list[Sub]`,
+  in-state `list[str]` of foreign IDs, or a `SortedMap`/`OrderedMap`
+  of foreign IDs. The most common modeling mistake — packing an
+  entity collection like `list[Person]` into one parent's state —
+  fails silently in demos and forces a full rewrite later.
+- `references/state-nested-models.md` — same rule from the nested-
+  `Model` angle: state Models never appear as fields of other
+  state Models
 
 ### Implementing a Servicer
 

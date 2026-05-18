@@ -1,101 +1,239 @@
 ---
-title: Pick the Right Collection — `list[T]` / `dict[str, T]` vs. `SortedMap`
-impact: MEDIUM
-impactDescription: Wrong choice degrades scalability or makes queries impossible
-tags: state, collections, list, dict, SortedMap, stdlib
+title: Pick the Right Shape for Each Collection
+impact: HIGH
+impactDescription: Putting an unbounded collection in-state, or flattening an entity into `list[Sub]` when it has its own identity, forces a full data-model rewrite once the app grows.
+tags: state, collections, list, dict, SortedMap, OrderedMap, decomposition, sub-records, entity, ids
 ---
 
-## Pick the Right Collection — `list[T]` / `dict[str, T]` vs. `SortedMap`
+## Pick the Right Shape for Each Collection
 
-Reboot offers two ways to model a collection inside an actor:
+> **Critical:** if a contained item has its own identity, lifecycle,
+> or methods, it must be its **own state `Type`** — not a nested
+> `Model` inside the parent. The parent then stores **IDs**, not the
+> full objects. Choosing `list[X]` for an entity collection ("each
+> user has many People") works in a 10-row demo but forces a full
+> data-model rewrite the moment the collection grows or each entity
+> grows its own methods / auth / lifecycle.
 
-1. **In-state collections** (`list[T]`, `dict[str, T]`) — lives entirely
-   inside the one actor's state. Best for **bounded**, small-to-medium
-   collections.
-2. **`SortedMap` (from `reboot.std.collections.v1`)** — a separate
-   distributed actor that stores ordered key/value entries. Use when the
-   collection is large, paginated, or shared.
+### Step 1: Decompose Before Choosing a Container
 
-**Use in-state collections for bounded lists / maps:**
+Before picking a container shape, consider whether the **item** wants to
+be its own state `Type`. If **any** of these is true, it does:
+
+- It has a lifecycle of its own (created, edited, deleted on its
+  own schedule independent of the parent).
+- It has methods you'd want to call on it directly
+  (`Person.add_event(...)`, `Account.deposit(...)`).
+- It needs its own authorizer (different auth from the parent).
+- Multiple parents could reference it.
+- It has nested collections of its own that will grow over time.
+- It's a noun your domain talks about (`Person`, `Order`, `Post`,
+  `Account`, `Message`, `Event`) rather than a field group
+  (`Address`, `Preferences`, `LineItem`).
+
+If yes → declare `Type(state=ItemState, methods=...)` for it and
+have the parent reference items by their **string IDs**. Each
+container mutation then touches only the parent's index, not the
+full payload of every item; each item edit touches only that item.
+
+If no — the item is a flat sub-record that lives and dies with the
+parent (an address on an Order, tags on a Post, a preferences blob
+on a Guest) — keep it inline. See `state-nested-models.md`.
+
+> **Warning signs in prompts.** Nouns combined with verbs like "add /
+> remove / list / find / show one" is almost always its own state
+> `Type`. "Each user has N of them" = **N actors**, not N rows on one
+> actor.
+
+### Step 2: Pick the Container Shape
+
+Three shapes show up. They differ along two axes: **what's stored**
+(sub-records vs. IDs of other state actors) and **how big the
+collection can get**.
+
+| Shape                                                       | When to pick                                                                                                                                                                                            | Pitfalls                                                                                |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| **A. `list[Sub]` / `dict[str, Sub]` of non-state `Model`s** | Sub-records with **no identity of their own** that live and die with the parent. Bounded — dozens at most. E.g. line items on an Order, tags on a Post, fields in a Config blob.                        | Every write rewrites the full list. No pagination. Cannot grow without bound.           |
+| **B. `list[str]` / `dict[str, str]` of foreign state IDs**  | Items are their own state `Type` (Step 1 said yes) **and** the collection stays bounded — typically a few hundred, low thousands at most. You almost always read the whole index. No pagination needed. | Each parent write rewrites the full list of IDs. Doesn't scale past low thousands.      |
+| **C. `SortedMap` / `OrderedMap` of foreign state IDs**      | Items are their own state `Type` **and** the collection grows without bound, **or** needs pagination, range queries, or ordered iteration. Prefer `OrderedMap` when concurrent writes need to scale.    | Extra hop to a stdlib actor. Values are `bytes`. `range`/`reverse_range` need `limit=`. |
+
+Shapes B and C agree on the underlying decomposition — items are
+their own state `Type` referenced by ID. They differ only in **how
+the parent indexes** them. Migrating B → C later is a real piece of
+work (every method that touches the index changes shape); choose C
+up front if the collection might grow without bound. Migrating A →
+B/C is much harder still — every method moves to a different actor.
+
+#### Shape A — `list[Sub]` of Non-State `Model`s
+
+For sub-records that conceptually belong **to** the parent and have
+no identity of their own:
 
 ```python
-class ChatRoomState(Model):
-    messages: list[str] = Field(tag=1, default_factory=list)
+from reboot.api import API, Field, Methods, Model, Reader, Type, Writer
+
+
+class LineItem(Model):
+    sku: str = Field(tag=1, default="")
+    quantity: int = Field(tag=2, default=0)
+
+
+class OrderState(Model):
+    items: list[LineItem] = Field(tag=1, default_factory=list)
 ```
 
 ```python
-async def send(
-    self, context: WriterContext, request: ChatRoom.SendRequest,
+async def add_item(
+    self, context: WriterContext, request: Order.AddItemRequest,
 ) -> None:
-    self.state.messages.append(request.message)
+    self.state.items.append(
+        LineItem(sku=request.sku, quantity=request.quantity),
+    )
 ```
 
-**Use `SortedMap` for a distributed, paginated map (matches `bank-pydantic`):**
+OK because an Order's line items have no lifecycle of their own,
+are bounded in practice, and are always read alongside the parent.
 
-`api/bank/v1/pydantic/bank.py`:
+#### Shape B — `list[str]` / `dict[str, str]` of Foreign State IDs
 
-```python
-class BankState(Model):
-    # ID of the underlying SortedMap actor.
-    account_ids_map_id: str = Field(tag=1, default="")
-```
-
-`main.py`:
+When each item is its own state `Type` **and** the collection is
+naturally bounded — e.g. board members of an Organization (single
+digits to low hundreds), the rooms a House has (dozens), accounts
+a Bank seeded at startup (fixed set):
 
 ```python
-from reboot.std.collections.v1.sorted_map import SortedMap, sorted_map_library
-from uuid7 import create as uuid7
-from uuid import uuid4
+class OrgState(Model):
+    member_user_ids: list[str] = Field(tag=1, default_factory=list)
 
 
-class BankServicer(Bank.Servicer):
+class OrgServicer(Org.Servicer):
 
-    async def create(
-        self, context: TransactionContext,
+    async def add_member(
+        self, context: TransactionContext, request: Org.AddMemberRequest,
     ) -> None:
-        self.state.account_ids_map_id = str(uuid4())
-        await SortedMap.ref(self.state.account_ids_map_id).insert(
-            context, entries={},
-        )
+        # `User` is its own state Type.
+        self.state.member_user_ids.append(request.user_id)
 
-    async def sign_up(
-        self, context: TransactionContext, request: Bank.SignUpRequest,
-    ) -> None:
-        # ... open account, etc.
-        # Use a UUIDv7 key for time-ordered iteration.
-        await SortedMap.ref(self.state.account_ids_map_id).insert(
-            context,
-            entries={str(uuid7()): request.account_id.encode()},
-        )
-
-    async def account_balances(
+    async def members(
         self, context: ReaderContext,
-    ) -> Bank.AccountBalancesResponse:
-        account_ids_map = SortedMap.ref(self.state.account_ids_map_id)
-        # First "page" of 32 entries.
-        account_ids = await account_ids_map.range(context, limit=32)
-        ...
+    ) -> Org.MembersResponse:
+        return Org.MembersResponse(
+            user_ids=self.state.member_user_ids,
+        )
 ```
 
-## Register `sorted_map_library()` in `Application(...)`
+Each member is fully addressable as `User.ref(user_id)`. The Org's
+state grows linearly with member count, which is fine up to low
+thousands. Past that, the per-add write cost of rewriting the full
+list becomes noticeable — switch to Shape C.
 
-To use `SortedMap`, register the library when constructing the
-`Application`:
+#### Shape C — `SortedMap` / `OrderedMap` of Foreign State IDs
+
+When the collection can grow without bound, needs pagination, or
+needs ordered iteration. The parent stores the **map's ID** (once,
+at construction) and forwards reads/writes through the map:
 
 ```python
-await Application(
-    servicers=[AccountServicer, BankServicer],
-    libraries=[sorted_map_library()],
-    initialize=initialize,
-).run()
+from reboot.std.collections.v1.sorted_map import (
+    SortedMap, sorted_map_library,
+)
+from uuid import uuid4
+from uuid7 import create as uuid7
+
+
+class UserState(Model):
+    # ID of the SortedMap actor that indexes this user's People.
+    # Allocated once at User construction; never changes.
+    people_index_id: str = Field(tag=1, default="")
+
+
+class UserServicer(User.Servicer):
+
+    async def create(self, context: WriterContext) -> None:
+        if context.constructor:
+            self.state.people_index_id = str(uuid4())
+            await SortedMap.ref(self.state.people_index_id).insert(
+                context, entries={},
+            )
+
+    async def add_person(
+        self,
+        context: TransactionContext,
+        request: User.AddPersonRequest,
+    ) -> User.AddPersonResponse:
+        # `Person` is its own state Type with `factory=True` `create`.
+        person, _ = await Person.create(
+            context,
+            name=request.name,
+            birthday=request.birthday,
+        )
+        # UUIDv7 keys give time-ordered iteration for free; for
+        # name-sorted iteration, use a name-prefixed key instead.
+        await SortedMap.ref(self.state.people_index_id).insert(
+            context,
+            entries={str(uuid7()): person.state_id.encode()},
+        )
+        return User.AddPersonResponse(person_id=person.state_id)
+
+    async def list_people(
+        self,
+        context: ReaderContext,
+        request: User.ListPeopleRequest,
+    ) -> User.ListPeopleResponse:
+        page = await SortedMap.ref(
+            self.state.people_index_id,
+        ).range(
+            context, start_key=request.cursor, limit=32,
+        )
+        return User.ListPeopleResponse(
+            person_ids=[e.value.decode() for e in page.entries],
+            next_cursor=(
+                page.entries[-1].key if page.entries else ""
+            ),
+        )
 ```
 
-Without the library registration the actor type is unknown and calls fail.
+Register `sorted_map_library()` in `Application(libraries=[...])` —
+see `stdlib-sorted-map.md`. Use `OrderedMap` instead when concurrent
+writes need to scale — see `stdlib-ordered-map.md`.
 
-## When to Switch from In-State Lists to `SortedMap`
+### Decision Flow (Summary)
 
-Move to `SortedMap` when any of:
+1. **Does the item have identity / lifecycle / its own methods?**
+   - **No** → Shape A (`list[Sub]` of non-state `Model`s).
+   - **Yes** → Make it its own `Type(state=...)`, then continue.
+2. **How many?**
+   - Bounded, ≲ low thousands, always read whole → **Shape B**
+     (`list[str]` of IDs).
+   - Unbounded, or needs pagination / range / ordered iteration →
+     **Shape C** (`SortedMap` / `OrderedMap`).
+3. **Heavy concurrent writes to the index?** Inside Shape C, prefer
+   `OrderedMap` over `SortedMap`.
 
-- The collection grows unboundedly.
-- You need pagination/range queries (`range(context, limit=N)`).
-- Multiple actors need to share or scan the collection.
+### Anti-Patterns
+
+- **`UserState.people: list[Person]`** when `Person` looks like a
+  domain entity (has methods, lifecycle, nested events). Flattens
+  N actors into one. Promote `Person` to its own `Type` and switch
+  to Shape B or C.
+- **`Type(state=X)` _and_ `list[X]` (or `dict[str, X]`) somewhere
+  as a state field.** The "state inside state" regression —
+  `state-nested-models.md` covers the same rule from the nested-
+  Models angle.
+- **`list[str]` for an unbounded collection** because "it's
+  simpler". It is, until it isn't — and the migration rewrites
+  every method that touches the parent. Use Shape C from the start
+  if the collection can grow without bound.
+- **`SortedMap` for a clearly bounded, sub-dozen collection.** The
+  extra hop is wasted; `list[Sub]` (Shape A) or `list[str]`
+  (Shape B) is fine.
+
+### See Also
+
+- `state-nested-models.md` — the same "state inside state" rule
+  from the nested-`Model` angle.
+- `stdlib-sorted-map.md` / `stdlib-ordered-map.md` — concrete API
+  for Shape C, library registration, pagination details.
+- `chat-app/references/api-state-shapes.md` (chat-app skill) — the
+  chat-app-specific corollary: `list[Item]` is for sub-records,
+  not for application-type instances.
