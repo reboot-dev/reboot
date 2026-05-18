@@ -14,11 +14,11 @@ tags: patterns, errors, MethodAborted, raise, catch
 > returns or `ValueError`s — the framework's typed-error contract is
 > what callers depend on.
 
-Reboot has one canonical failure mode for typed business errors: declare
-the error message in the proto, list it in `errors: [...]` on the method,
-and `raise <Service>.<Method>Aborted(<ErrorMessage>(...))` from inside the
-Servicer. Callers catch the same `<Method>Aborted` class and inspect
-`.error`.
+Reboot has one canonical failure mode for typed business errors:
+declare the error `Model` in the API file, list it in `errors=[...]`
+on the method factory, and `raise <Service>.<Method>Aborted(<ErrorModel>(...))`
+from inside the Servicer. Callers catch the same `<Method>Aborted`
+class and inspect `.error`.
 
 **Incorrect (smuggling errors as `None` returns):**
 
@@ -27,34 +27,31 @@ async def withdraw(self, context, request):
     if self.state.balance < request.amount:
         return None  # ambiguous, untyped
     self.state.balance -= request.amount
-    return WithdrawResponse()
 ```
 
 **Correct (typed error):**
 
-```proto
-rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {
-  option (rbt.v1alpha1.method) = {
-    writer: {},
-    errors: [ "OverdraftError" ],
-  };
-}
+```python
+class OverdraftError(Model):
+    amount: int = Field(tag=1, default=0)
 
-message OverdraftError {
-  uint64 amount = 1;
-}
+withdraw=Writer(
+    request=WithdrawRequest,
+    response=None,
+    errors=[OverdraftError],
+    mcp=None,
+),
 ```
 
 ```python
 async def withdraw(
-    self, context: WriterContext, request: WithdrawRequest,
-) -> WithdrawResponse:
+    self, context: WriterContext, request: Account.WithdrawRequest,
+) -> None:
     self.state.balance -= request.amount
     if self.state.balance < 0:
         raise Account.WithdrawAborted(
             OverdraftError(amount=-self.state.balance)
         )
-    return WithdrawResponse()
 ```
 
 ## Catching at the Caller

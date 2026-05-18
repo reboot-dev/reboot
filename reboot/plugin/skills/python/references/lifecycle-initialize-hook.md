@@ -31,12 +31,12 @@ class BankServicer(Bank.Servicer):
         Bank.create(...)  # also: no context here
 ```
 
-**Correct (matches the [`reboot-bank`](https://github.com/reboot-dev/reboot-bank) example, `backend/src/main.py`):**
+**Correct (matches the [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) example, `backend/src/main.py`):**
 
 ```python
 from reboot.aio.applications import Application
 from reboot.aio.external import InitializeContext
-from bank.v1.bank_rbt import Bank
+from bank.v1.pydantic.bank_rbt import Bank
 
 SINGLETON_BANK_ID = 'SVB'
 
@@ -54,10 +54,10 @@ async def main():
 
 ## Implicit Constructor on First Write
 
-If a state type does **not** have a constructor method in its proto, Reboot
-will implicitly create the actor on the first writer call. The chat-room
-example uses this — no explicit `ChatRoom.create(...)` is needed because
-`Send` is a writer:
+If a `Type` does **not** declare a `factory=True` method, Reboot will
+implicitly create the actor on the first writer call. A simple chat
+room can use this — no explicit `ChatRoom.create(...)` is needed when
+`send` is a `Writer`:
 
 ```python
 async def initialize(context: InitializeContext):
@@ -66,6 +66,6 @@ async def initialize(context: InitializeContext):
     await chat_room.send(context, message="Hello, World!")
 ```
 
-When the proto **does** define a constructor (`writer: { constructor: {} }`
-or `transaction: { constructor: {} }`), call it explicitly via
-`Service.create(context, id)`.
+When the API **does** declare a factory (`Writer(... factory=True ...)`
+or `Transaction(... factory=True ...)`), call it explicitly via
+`Service.create(context, id)` or `Service.<CtorMethod>(context, id, ...)`.

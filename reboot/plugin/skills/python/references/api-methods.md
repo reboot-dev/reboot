@@ -1,128 +1,142 @@
 ---
-title: Mark Methods as `reader`, `writer`, `transaction`, or `workflow`
+title: Pick a Method Factory — `Reader`, `Writer`, `Transaction`, or `Workflow`
 impact: CRITICAL
-impactDescription: The marker drives the context type, isolation, and access semantics
-tags: method, reader, writer, transaction, workflow, constructor, options
+impactDescription: The factory drives the context type, isolation, and access semantics
+tags: method, reader, writer, transaction, workflow, factory, constructor
 ---
 
-## Mark Methods as `reader`, `writer`, `transaction`, or `workflow`
+## Pick a Method Factory — `Reader`, `Writer`, `Transaction`, or `Workflow`
 
-> **Critical:** the marker fixes the Servicer method's context type:
-> `reader: {}` → `ReaderContext`; `writer: {}` → `WriterContext`;
-> `transaction: {}` → `TransactionContext`; `workflow: {}` →
-> `WorkflowContext` (and the implementation must be a `@classmethod`,
-> with no `self.state`). Wrong context type = runtime error.
+> **Critical:** the factory you choose for a method fixes the
+> Servicer method's context type: `Reader(...)` → `ReaderContext`;
+> `Writer(...)` → `WriterContext`; `Transaction(...)` →
+> `TransactionContext`; `Workflow(...)` → `WorkflowContext` (and the
+> implementation must be a `@classmethod`, with no `self.state`).
+> Wrong context type = runtime error.
 
-Every RPC inside a state's service block must carry one of four method
-markers. The marker chooses the context type passed to the Servicer method
-and the isolation level applied:
+Every method in a `Methods(...)` block uses one of four factories from
+`reboot.api`. The factory chooses the context type passed to the
+Servicer method and the isolation level applied:
 
-- **`reader: {}`** — read-only access to `self.state`. Multiple readers
+- **`Reader(...)`** — read-only access to `self.state`. Multiple readers
   may run concurrently. Servicer signature: `context: ReaderContext`.
-- **`writer: {}`** — mutates `self.state` for one actor. Serialized with
+- **`Writer(...)`** — mutates `self.state` for one actor. Serialized with
   other writes/transactions on that actor. Signature: `context: WriterContext`.
-- **`transaction: {}`** — atomic across multiple actors and external
+- **`Transaction(...)`** — atomic across multiple actors and external
   effects. Signature: `context: TransactionContext`.
-- **`workflow: {}`** — durable, long-running, restartable. Implemented as
+- **`Workflow(...)`** — durable, long-running, restartable. Implemented as
   a `@classmethod` (no `self.state`). Signature: `context: WorkflowContext`.
   See the `workflow-*` reference category for the primitives
   (`at_most_once`, `at_least_once`, `until`, `until_changes`,
   `context.loop`, and state mutation via `ref().write(context, fn)`).
 
-**Incorrect (no marker — code-gen will error):**
+**Incorrect (missing factory):**
 
-```proto
-service AccountMethods {
-  rpc Balance(BalanceRequest) returns (BalanceResponse) {}
-}
+```python
+# DON'T — every entry must be a Reader/Writer/Transaction/Workflow.
+AccountMethods = Methods(
+    balance=BalanceResponse,   # WRONG — not a factory call
+)
 ```
 
-**Correct (matches the [`reboot-bank`](https://github.com/reboot-dev/reboot-bank) example, `api/bank/v1/bank.proto`):**
+**Correct (matches the [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) example):**
 
-```proto
-service AccountMethods {
-  rpc Balance(BalanceRequest) returns (BalanceResponse) {
-    option (rbt.v1alpha1.method) = { reader: {} };
-  }
+```python
+from reboot.api import (
+    API, Field, Methods, Model, Reader, Transaction, Type, Writer,
+)
 
-  rpc Deposit(DepositRequest) returns (DepositResponse) {
-    option (rbt.v1alpha1.method) = { writer: {} };
-  }
-}
+AccountMethods = Methods(
+    balance=Reader(
+        request=None, response=BalanceResponse, mcp=None,
+    ),
+    deposit=Writer(
+        request=DepositRequest, response=None, mcp=None,
+    ),
+)
 
-service BankMethods {
-  rpc Transfer(TransferRequest) returns (TransferResponse) {
-    option (rbt.v1alpha1.method) = { transaction: {} };
-  }
-}
+BankMethods = Methods(
+    transfer=Transaction(
+        request=TransferRequest, response=TransferResponse, mcp=None,
+    ),
+)
 ```
 
-## `constructor: {}` Marks the Creation Method
+## `factory=True` Marks the Creation Method
 
-A `writer` or `transaction` method nested under `constructor: {}` is the
-explicit creation path for the actor. The Servicer can branch on
+A `Writer` or `Transaction` with `factory=True` is the explicit
+creation path for the actor. The Servicer can branch on
 `context.constructor` to set initial state:
 
-```proto
-rpc Open(OpenRequest) returns (OpenResponse) {
-  option (rbt.v1alpha1.method) = {
-    writer: {
-      constructor: {},
-    },
-  };
-}
+```python
+open=Writer(
+    request=OpenRequest,
+    response=None,
+    factory=True,
+    mcp=None,
+),
 ```
 
-A state without an explicit constructor is created implicitly on first
-write (see `lifecycle-initialize-hook.md`).
+`Reader` and `Workflow` reject `factory=True` at codegen time — see
+`api-pydantic.md` ("`factory=True` Only Works on `Writer` and
+`Transaction`"). To kick off a workflow on actor creation, make the
+factory a `Writer(factory=True)` / `Transaction(factory=True)` and
+schedule the workflow from its body.
 
-## Pick the Right Marker
+A `Type` without an explicit factory method is created implicitly on
+first write (see `lifecycle-initialize-hook.md`).
 
-- Reading `self.state` only? → `reader`
-- Mutating `self.state` for **one** actor, no calls to other actors? → `writer`
+## Pick the Right Factory
+
+- Reading `self.state` only? → `Reader`
+- Mutating `self.state` for **one** actor, no calls to other actors? → `Writer`
 - Mutating across multiple actors, calling external services, or both,
-  in a single one-shot transaction? → `transaction`
+  in a single one-shot transaction? → `Transaction`
 - Long-running, durable, restartable work (control loops, agents,
-  multi-step orchestration)? → `workflow`
+  multi-step orchestration)? → `Workflow`
 
-Wrong-marker symptoms include "context type mismatch" runtime errors and
-deadlocks when a `writer` tries to call into another actor.
+Wrong-factory symptoms include "context type mismatch" runtime errors and
+deadlocks when a `Writer` tries to call into another actor.
 
-## `errors: [...]` Declares Typed Errors
+## `errors=[...]` Declares Typed Errors
 
-Error message types declared elsewhere in the proto can be attached to a
+Error `Model`s declared elsewhere in the API file can be attached to a
 method, making them part of the typed contract:
 
-```proto
-rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {
-  option (rbt.v1alpha1.method) = {
-    writer: {},
-    errors: [ "OverdraftError" ],
-  };
-}
+```python
+class OverdraftError(Model):
+    amount: float = Field(tag=1, default=0.0)
 
-message OverdraftError {
-  uint64 amount = 1;
-}
+withdraw=Writer(
+    request=WithdrawRequest,
+    response=None,
+    errors=[OverdraftError],
+    mcp=None,
+),
 ```
 
 See `api-errors.md` for raising and catching them.
 
+## Every Factory Takes `mcp=`
+
+All four factories require an explicit `mcp=` keyword. Use
+`mcp=None` when the method should not be exposed as an MCP tool;
+use `mcp=Tool(...)` in MCP-Apps projects. See `api-pydantic.md` for
+the full rule.
+
 ## See Also
 
-After choosing markers, load the references that make those choices
+After choosing factories, load the references that make those choices
 work end-to-end:
 
-- **Pydantic users**: `api-pydantic.md`. The marker → factory mapping
-  is different (`Reader(...)`, `Writer(...)`, `Transaction(...)`,
-  `Workflow(...)`, with `factory=True` for constructors), and
-  pydantic-only rules apply (zero-default Fields).
-- **Implementation per marker** — read the matching servicer file:
-  - `reader: {}` → `servicer-reader.md`
-  - `writer: {}` → `servicer-writer.md`
-  - `transaction: {}` → `servicer-transaction.md`
-  - `workflow: {}` → `workflow-method.md` (the entire `workflow-*`
+- **Pydantic field rules**: `api-pydantic.md`. The zero-default rule
+  bites at import time.
+- **Implementation per factory** — read the matching servicer file:
+  - `Reader(...)` → `servicer-reader.md`
+  - `Writer(...)` → `servicer-writer.md`
+  - `Transaction(...)` → `servicer-transaction.md`
+  - `Workflow(...)` → `workflow-method.md` (the entire `workflow-*`
     family covers the durable primitives)
-  - `constructor: {}` → `servicer-constructor.md`
+  - `factory=True` → `servicer-constructor.md`
 - **Calling these methods**: `rpc-calls.md` (kwargs convention) and
   `rpc-refs.md` (`self.ref().state_id`, never `self.state_id`).

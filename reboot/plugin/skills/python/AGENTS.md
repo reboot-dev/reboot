@@ -4,7 +4,7 @@
 
 ## Overview
 
-Reboot Python framework for building transactional microservices with proto-defined APIs and durable actor state. Use this skill when writing Python code for a Reboot application, defining `.proto` APIs with reader/writer/transaction methods, implementing Servicers, calling actor refs across services, scheduling work, or testing Reboot applications with the `Reboot()` test harness.
+Reboot Python framework for building transactional microservices with pydantic-defined APIs and durable actor state. Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction methods, implementing Servicers, calling actor refs across services, scheduling work, or testing Reboot applications with the `Reboot()` test harness.
 
 ## Structure
 
@@ -51,9 +51,7 @@ Reference files are named `{prefix}-{topic}.md` (e.g., `workflow-at-most-once.md
 
 **API** (`api-`):
 
-- `references/api-proto-basics.md`
 - `references/api-pydantic.md`
-- `references/api-state-message.md`
 - `references/api-methods.md`
 - `references/api-errors.md`
 
@@ -89,7 +87,7 @@ Reference files are named `{prefix}-{topic}.md` (e.g., `workflow-at-most-once.md
 
 - `references/state-scalar-fields.md`
 - `references/state-collections.md`
-- `references/state-nested-messages.md`
+- `references/state-nested-models.md`
 
 **Auth** (`auth-`):
 
@@ -123,4 +121,4 @@ Reference files are named `{prefix}-{topic}.md` (e.g., `workflow-at-most-once.md
 
 ---
 
-_46 reference files across 11 categories_
+_44 reference files across 11 categories_

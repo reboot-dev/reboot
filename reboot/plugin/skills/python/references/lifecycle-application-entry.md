@@ -27,7 +27,7 @@ if __name__ == '__main__':
     ChatRoomServicer().serve()  # not how Reboot starts
 ```
 
-**Correct (matches the [`reboot-hello`](https://github.com/reboot-dev/reboot-hello) example, `backend/src/main.py`):**
+**Correct (canonical entry shape):**
 
 ```python
 import asyncio
@@ -79,7 +79,8 @@ await Application(servicers=[ChatRoomServicer]).run()
 
 Combine Servicer classes from your code with stdlib `servicers()` factories
 and `libraries=[...]` for stdlib state types. Pattern from
-[`reboot-bank`](https://github.com/reboot-dev/reboot-bank), `backend/src/main.py`:
+[`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic),
+`backend/src/main.py`:
 
 ```python
 import reboot.thirdparty.mailgun

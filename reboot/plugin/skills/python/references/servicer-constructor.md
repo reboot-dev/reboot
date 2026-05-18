@@ -13,10 +13,10 @@ tags: servicer, constructor, context.constructor, create, initialization
 > semantics. Inside the implementation, branch on
 > `context.constructor` for set-once initial state.
 
-A proto method marked with `constructor: {}` (nested under `writer` or
-`transaction`) is the explicit creation path for an actor. The Servicer
-implementation is just an ordinary writer/transaction method — the
-_constructor-ness_ shows up in two places:
+A method declared with `factory=True` on its `Writer(...)` or
+`Transaction(...)` factory is the explicit creation path for an actor.
+The Servicer implementation is just an ordinary writer/transaction
+method — the _constructor-ness_ shows up in two places:
 
 1. **Caller side**: use `await Service.create(context, id)` (not
    `Service.ref(id).method(...)`) to invoke it.
@@ -35,14 +35,15 @@ class AccountServicer(Account.Servicer):
 
 **Correct (set initial state in the constructor method):**
 
-`bank.proto`:
+`api/bank/v1/pydantic/account.py`:
 
-```proto
-rpc Open(OpenRequest) returns (OpenResponse) {
-  option (rbt.v1alpha1.method) = {
-    writer: { constructor: {} },
-  };
-}
+```python
+open=Writer(
+    request=OpenRequest,
+    response=None,
+    factory=True,
+    mcp=None,
+),
 ```
 
 `account_servicer.py`:
@@ -56,19 +57,18 @@ class AccountServicer(Account.Servicer):
     async def open(
         self,
         context: WriterContext,
-        request: OpenRequest,
-    ) -> OpenResponse:
+        request: Account.OpenRequest,
+    ) -> None:
         if context.constructor:
             self.state.name = request.name
             self.state.balance = 0
-        return OpenResponse()
 ```
 
 ## `context.constructor` Distinguishes Create from Re-Open
 
-A constructor method may also be invokable on an existing actor (depending
-on proto/options); branch on `context.constructor` so set-once fields
-aren't overwritten on a second call.
+A constructor method may also be invokable on an existing actor; branch
+on `context.constructor` so set-once fields aren't overwritten on a
+second call.
 
 ## Calling from Initialize
 
@@ -86,12 +86,12 @@ A transaction can create and operate on a new actor in one atomic step:
 
 ```python
 async def sign_up(
-    self, context: TransactionContext, request: SignUpRequest,
-) -> SignUpResponse:
+    self, context: TransactionContext, request: Bank.SignUpRequest,
+) -> None:
     account, _ = await Account.open(context, request.account_id)
     await account.deposit(context, amount=request.initial_deposit)
-    return SignUpResponse()
 ```
 
-`Account.open(context, id)` here is the constructor (the proto's `Open`
-method) and returns the actor reference plus the response message.
+`Account.open(context, id)` here is the constructor (the `open` method
+declared `factory=True`) and returns the actor reference plus the
+response (or `None` when `response=None`).

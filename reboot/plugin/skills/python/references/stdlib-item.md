@@ -19,7 +19,7 @@ and `Topic`. It carries exactly one of three fields:
 | ------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `value` | `google.protobuf.Value` | JSON-shaped data (numbers, strings, lists, dicts, bools). Best ergonomics in TypeScript and for ad-hoc structures. |
 | `bytes` | `bytes`                 | Opaque payloads. Use for raw binary or pre-serialized data.                                                        |
-| `any`   | `google.protobuf.Any`   | A typed proto message. Best when both ends know the same proto schema.                                             |
+| `any`   | `google.protobuf.Any`   | A typed wire-format message. Best when both ends know the same schema.                                             |
 
 Single-item `enqueue`/`publish` calls accept a top-level `value=` /
 `bytes=` / `any=` keyword (whichever you set, only one). Bulk calls take
@@ -31,7 +31,7 @@ Single-item `enqueue`/`publish` calls accept a top-level `value=` /
 from reboot.std.collections.queue.v1.queue import Queue
 from google.protobuf.struct_pb2 import Value
 from google.protobuf.any_pb2 import Any
-from my.api.v1.things_rbt import ThingProto
+from my.api.v1.things_rbt import Thing
 
 
 # Plain JSON-shaped value:
@@ -40,9 +40,9 @@ await Queue.ref(qid).enqueue(context, value=Value(string_value="hello"))
 # Opaque bytes:
 await Queue.ref(qid).enqueue(context, bytes=b"raw payload")
 
-# Typed proto:
+# Typed message:
 typed = Any()
-typed.Pack(ThingProto(name="foo"))
+typed.Pack(Thing(name="foo"))
 await Queue.ref(qid).enqueue(context, any=typed)
 ```
 
@@ -68,7 +68,7 @@ for item in batch.items:
     elif item.HasField("bytes"):
         ...  # bytes
     elif item.HasField("any"):
-        ...  # google.protobuf.Any — Unpack into your proto type
+        ...  # google.protobuf.Any — Unpack into your message type
 ```
 
 ### Helper: `reboot.protobuf` for `Value` <-> Python

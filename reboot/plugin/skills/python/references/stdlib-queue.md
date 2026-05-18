@@ -9,7 +9,7 @@ impactDescription: Workflows pulling work from a Queue is the canonical "consume
 
 > **Critical:** Reach for the stdlib `Queue` for any durable FIFO —
 > work queues, job queues, intake queues, jobs-pulled-off-a-queue.
-> Do **not** define your own `Queue` proto type or hand-roll a
+> Do **not** define your own `Queue` `Type` or hand-roll a
 > list-as-queue on actor state — both lose durability, ordering,
 > and the blocking-`dequeue` consumer pattern. The stdlib `Queue` > _is_ the primitive.
 >

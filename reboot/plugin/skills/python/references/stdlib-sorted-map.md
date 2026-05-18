@@ -97,9 +97,9 @@ class BankServicer(Bank.Servicer):
 ### Encode Values as Bytes
 
 The value type is `bytes`. For strings use `value.encode()` /
-`value.decode()`; for proto messages use `.SerializeToString()` /
-`.FromString(...)`. The JSON-as-string convention works fine for ad-hoc
-schemas.
+`value.decode()`; for structured payloads, serialize/deserialize as
+needed (e.g. `json.dumps(...).encode()` and `json.loads(...)`). The
+JSON-as-string convention works fine for ad-hoc schemas.
 
 ### Pagination
 

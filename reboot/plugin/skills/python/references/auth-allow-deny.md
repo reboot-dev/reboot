@@ -48,7 +48,7 @@ For everything else, prefer `allow_if` with explicit predicates (see
 ## `deny()` for Locked-Out Methods
 
 `deny()` blocks all callers. It's primarily useful when temporarily
-disabling a method without removing it from the proto, or when a method
+disabling a method without removing it from the API file, or when a method
 should be reachable only through internal app flow (and a different
 Servicer's authorizer covers that flow already).
 

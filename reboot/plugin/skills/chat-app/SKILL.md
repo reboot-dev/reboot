@@ -79,7 +79,7 @@ show the chat-app-specific shape on top.
 
 **Defining the API:**
 
-- `python` references/`api-methods.md` — marker → context type
+- `python` references/`api-methods.md` — factory → context type
   mapping (Reader/Writer/Transaction/Workflow).
 - `python` references/`api-errors.md` — typed errors.
 

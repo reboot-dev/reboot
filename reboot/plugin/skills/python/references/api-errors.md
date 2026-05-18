@@ -12,10 +12,10 @@ tags: errors, MethodAborted, errors-list, typed-failures
 > `<Method>Aborted` inside a writer/transaction rolls back its
 > mutations automatically — no compensating undo needed.
 
-Typed errors in Reboot are ordinary proto messages, listed in a method's
-`errors: [...]` option. The generated code produces a `<Method>Aborted`
-exception class on the Servicer — raise that from inside the method to
-fail with a typed payload.
+Typed errors in Reboot are ordinary pydantic `Model`s, listed in a
+method's `errors=[...]` argument. The generated code produces a
+`<Method>Aborted` exception class on the Servicer — raise that from
+inside the method to fail with a typed payload.
 
 **Incorrect (untyped exception):**
 
@@ -26,29 +26,38 @@ async def withdraw(self, context: WriterContext, request: WithdrawRequest):
     ...
 ```
 
-**Correct (matches the [`reboot-bank`](https://github.com/reboot-dev/reboot-bank) example):**
+**Correct (matches the [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) example):**
 
-`bank.proto`:
-
-```proto
-rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {
-  option (rbt.v1alpha1.method) = {
-    writer: {},
-    errors: [ "OverdraftError" ],
-  };
-}
-
-message OverdraftError {
-  uint64 amount = 1;
-}
-```
-
-`account_servicer.py`:
+`api/bank/v1/pydantic/account.py`:
 
 ```python
-from bank.v1.bank_rbt import (
-    Account, OverdraftError, WithdrawRequest, WithdrawResponse,
+from reboot.api import API, Field, Methods, Model, Type, Writer
+
+
+class OverdraftError(Model):
+    amount: float = Field(tag=1, default=0.0)
+
+
+class WithdrawRequest(Model):
+    amount: float = Field(tag=1, default=0.0)
+
+
+AccountMethods = Methods(
+    withdraw=Writer(
+        request=WithdrawRequest,
+        response=None,
+        errors=[OverdraftError],
+        mcp=None,
+    ),
+    # ... other methods ...
 )
+```
+
+`backend/src/account_servicer.py`:
+
+```python
+from bank.v1.pydantic.account import OverdraftError
+from bank.v1.pydantic.account_rbt import Account
 from reboot.aio.contexts import WriterContext
 
 
@@ -57,20 +66,20 @@ class AccountServicer(Account.Servicer):
     async def withdraw(
         self,
         context: WriterContext,
-        request: WithdrawRequest,
-    ) -> WithdrawResponse:
+        request: Account.WithdrawRequest,
+    ) -> None:
         self.state.balance -= request.amount
         if self.state.balance < 0:
             raise Account.WithdrawAborted(
                 OverdraftError(amount=-self.state.balance)
             )
-        return WithdrawResponse()
 ```
 
 ## `<Method>Aborted` Is Generated Per Method
 
-For each `rpc Withdraw(...)` with `errors: ["OverdraftError"]`, the codegen
-emits `Account.WithdrawAborted(OverdraftError(...))`. The exception class is
+For each `Writer(...)` (or other factory) that declares
+`errors=[OverdraftError]`, the codegen emits
+`Account.WithdrawAborted(OverdraftError(...))`. The exception class is
 named after the method, not the error.
 
 ## Catching Typed Errors at the Call Site
@@ -86,6 +95,6 @@ except Account.WithdrawAborted as e:
 
 ## Errors Roll Back
 
-A `<Method>Aborted` raised inside a `writer` or `transaction` rolls back any
-state changes made by that method. Code that has already mutated
-`self.state` doesn't need to undo it manually.
+A `<Method>Aborted` raised inside a `Writer` or `Transaction` rolls
+back any state changes made by that method. Code that has already
+mutated `self.state` doesn't need to undo it manually.

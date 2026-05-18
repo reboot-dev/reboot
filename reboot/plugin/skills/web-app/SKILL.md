@@ -67,7 +67,7 @@ mechanics. The patterns in this skill assume you've read them.
 
 **Defining the API:**
 
-- `python` references/`api-methods.md` — marker → context type
+- `python` references/`api-methods.md` — factory → context type
   mapping (Reader/Writer/Transaction/Workflow).
 - `python` references/`api-errors.md` — typed errors.
 

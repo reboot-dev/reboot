@@ -12,8 +12,8 @@ tags: rpc, constructor, create, factory
 > for default constructors and `await Service.<CtorMethod>(context, id, ...)`
 > for named ones. Both return a `(ref, response)` tuple.
 
-A method declared in proto with `constructor: {}` is the actor's creation
-path. Invoke it via the generated factory call:
+A method declared with `factory=True` is the actor's creation path.
+Invoke it via the generated factory call:
 
 - `await Service.create(context, id)` — for the implicit/default
   constructor (e.g., `Bank.create(context, SINGLETON_BANK_ID)`).
@@ -29,16 +29,17 @@ Both return a `(ref, response)` tuple.
 await Account.ref(account_id).open(context)
 ```
 
-**Correct (matches the [`reboot-bank`](https://github.com/reboot-dev/reboot-bank) example):**
+**Correct (matches the [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) example):**
 
-`bank.proto`:
+`api/bank/v1/pydantic/account.py`:
 
-```proto
-rpc Open(OpenRequest) returns (OpenResponse) {
-  option (rbt.v1alpha1.method) = {
-    writer: { constructor: {} },
-  };
-}
+```python
+open=Writer(
+    request=OpenRequest,
+    response=None,
+    factory=True,
+    mcp=None,
+),
 ```
 
 `main.py`:
@@ -50,8 +51,8 @@ await account.deposit(context, amount=request.initial_deposit)
 
 ## `Service.create(context, id)` Is the Idempotent Default
 
-When the proto has a default constructor (no extra fields), use
-`Service.create` from the `initialize` hook:
+When the `Type` has no explicit factory (no `factory=True` method),
+use `Service.create` from the `initialize` hook:
 
 ```python
 async def initialize(context: InitializeContext):

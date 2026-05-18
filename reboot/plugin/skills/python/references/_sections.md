@@ -12,7 +12,7 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 2. API (api)
 
 **Impact:** CRITICAL
-**Description:** `.proto` file structure, state messages, reader/writer/transaction method markers, constructor markers, and error message types. The proto is the source of truth; everything else is generated from it.
+**Description:** Pydantic API definition — state models, reader/writer/transaction method factories, the `factory=True` constructor option, and typed error models. The pydantic API file is the source of truth; everything else is generated from it.
 
 ## 3. Servicer (servicer)
 
@@ -32,7 +32,7 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 6. State (state)
 
 **Impact:** HIGH
-**Description:** Modeling state with scalar fields, collections (proto `repeated`, `SortedMap`), and nested messages. Default-value rules and access patterns.
+**Description:** Modeling state with scalar fields, collections (`list[T]` / `dict[str, T]`, `SortedMap`), and nested `Model`s. Default-value rules and access patterns.
 
 ## 7. Auth (auth)
 

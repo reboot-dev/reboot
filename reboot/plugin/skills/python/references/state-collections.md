@@ -1,46 +1,43 @@
 ---
-title: Pick the Right Collection: `repeated` vs. `SortedMap`
+title: Pick the Right Collection — `list[T]` / `dict[str, T]` vs. `SortedMap`
 impact: MEDIUM
 impactDescription: Wrong choice degrades scalability or makes queries impossible
-tags: state, collections, repeated, SortedMap, stdlib
+tags: state, collections, list, dict, SortedMap, stdlib
 ---
 
-## Pick the Right Collection: `repeated` vs. `SortedMap`
+## Pick the Right Collection — `list[T]` / `dict[str, T]` vs. `SortedMap`
 
 Reboot offers two ways to model a collection inside an actor:
 
-1. **proto `repeated <T>`** — an in-state list. Lives entirely inside the
-   one actor's state. Best for **bounded**, small-to-medium collections.
+1. **In-state collections** (`list[T]`, `dict[str, T]`) — lives entirely
+   inside the one actor's state. Best for **bounded**, small-to-medium
+   collections.
 2. **`SortedMap` (from `reboot.std.collections.v1`)** — a separate
    distributed actor that stores ordered key/value entries. Use when the
    collection is large, paginated, or shared.
 
-**Use `repeated` for bounded, in-state lists (matches `chat-room`):**
+**Use in-state collections for bounded lists / maps:**
 
-```proto
-message ChatRoom {
-  option (rbt.v1alpha1.state) = {};
-  repeated string messages = 1;
-}
+```python
+class ChatRoomState(Model):
+    messages: list[str] = Field(tag=1, default_factory=list)
 ```
 
 ```python
 async def send(
-    self, context: WriterContext, request: SendRequest,
-) -> SendResponse:
-    self.state.messages.extend([request.message])
-    return SendResponse()
+    self, context: WriterContext, request: ChatRoom.SendRequest,
+) -> None:
+    self.state.messages.append(request.message)
 ```
 
-**Use `SortedMap` for a distributed, paginated map (matches `bank`):**
+**Use `SortedMap` for a distributed, paginated map (matches `bank-pydantic`):**
 
-`bank.proto`:
+`api/bank/v1/pydantic/bank.py`:
 
-```proto
-message Bank {
-  option (rbt.v1alpha1.state) = {};
-  string account_ids_map_id = 1;  // ID of the underlying SortedMap actor.
-}
+```python
+class BankState(Model):
+    # ID of the underlying SortedMap actor.
+    account_ids_map_id: str = Field(tag=1, default="")
 ```
 
 `main.py`:
@@ -54,28 +51,26 @@ from uuid import uuid4
 class BankServicer(Bank.Servicer):
 
     async def create(
-        self, context: TransactionContext, request: CreateRequest,
-    ) -> CreateResponse:
+        self, context: TransactionContext,
+    ) -> None:
         self.state.account_ids_map_id = str(uuid4())
         await SortedMap.ref(self.state.account_ids_map_id).insert(
             context, entries={},
         )
-        return CreateResponse()
 
     async def sign_up(
-        self, context: TransactionContext, request: SignUpRequest,
-    ) -> SignUpResponse:
+        self, context: TransactionContext, request: Bank.SignUpRequest,
+    ) -> None:
         # ... open account, etc.
         # Use a UUIDv7 key for time-ordered iteration.
         await SortedMap.ref(self.state.account_ids_map_id).insert(
             context,
             entries={str(uuid7()): request.account_id.encode()},
         )
-        return SignUpResponse()
 
     async def account_balances(
-        self, context: ReaderContext, request: AccountBalancesRequest,
-    ) -> AccountBalancesResponse:
+        self, context: ReaderContext,
+    ) -> Bank.AccountBalancesResponse:
         account_ids_map = SortedMap.ref(self.state.account_ids_map_id)
         # First "page" of 32 entries.
         account_ids = await account_ids_map.range(context, limit=32)
@@ -97,7 +92,7 @@ await Application(
 
 Without the library registration the actor type is unknown and calls fail.
 
-## When to Switch from `repeated` to `SortedMap`
+## When to Switch from In-State Lists to `SortedMap`
 
 Move to `SortedMap` when any of:
 

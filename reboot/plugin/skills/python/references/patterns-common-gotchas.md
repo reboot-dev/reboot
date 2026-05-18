@@ -67,12 +67,12 @@ def authorizer(self): return allow()
 ### 7. Reader Methods Cannot Mutate `self.state`
 
 Mutations inside a `ReaderContext` raise. If you need to mutate, the
-proto method needs to be `writer` or `transaction`.
+method needs to be a `Writer` or `Transaction`.
 
 ### 8. Cross-Actor Calls Need a Transaction
 
-A `writer` can only mutate one actor (its own). Cross-actor work or
-external side effects belong in a method marked `transaction: {}`.
+A `Writer` can only mutate one actor (its own). Cross-actor work or
+external side effects belong in a `Transaction(...)` method.
 
 ### 9. `initialize` Runs on Every Restart
 
@@ -81,12 +81,14 @@ It's idempotent only if **you** make it so. Use `Service.create` and
 
 ### 10. Don't Hand-Edit `*_rbt.py`
 
-Any change you make to a generated file is overwritten the next time `rbt generate` runs (which `rbt dev run` does on file change). Edit the proto
-instead.
+Any change you make to a generated file is overwritten the next time
+`rbt generate` runs (which `rbt dev run` does on file change). Edit
+the API definition file instead.
 
-### 11. State Defaults Are Proto3 Zero-Values
+### 11. State Defaults Must Be the Type's Zero Value
 
-You cannot declare `[default = X]` in proto3. To seed non-zero state, do
+You cannot declare a non-zero `default=` on a `Field(tag=N)` —
+non-zero defaults are rejected at import. To seed non-zero state, do
 it in a constructor method using `context.constructor`.
 
 ### 12. Register Stdlib Libraries

@@ -95,14 +95,14 @@ The fix is to declare the field optional and construct lazily —
 — then materialize it inside the factory `create` method when the
 parent state is first written.
 
-## Avoid `(rbt.v1alpha1.state)` on Sub-Objects
+## Don't Nest State `Model`s Inside Other State `Model`s
 
 State actors (whatever has `Type(state=<X>)` registered in your
 `API(...)`) must NOT appear as nested fields on other state
 actors. That's the same rule covered in `python`
-references/`state-nested-messages.md` — only **non-state**
-messages may be nested fields. To compose one state actor into
+references/`state-nested-models.md` — only **non-state**
+`Model`s may be nested fields. To compose one state actor into
 another, store its **string ID** in the parent and reach the
-nested actor via `<Type>.ref(<id>)`. In pydantic terms: a Model
-referenced as `state=X` in `Type(...)` should never also appear
-as `<field>: X = Field(...)` on another state Model.
+nested actor via `<Type>.ref(<id>)`. A Model referenced as
+`state=X` in `Type(...)` should never also appear as
+`<field>: X = Field(...)` on another state Model.

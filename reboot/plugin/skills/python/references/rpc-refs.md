@@ -104,6 +104,6 @@ transaction and `context.state_id` from a workflow.
 
 Calling `Service.ref(id)` does **not** create the actor. The actor exists
 when its constructor (explicit or implicit) has been called. A reader call
-on a non-existent actor returns the proto3 zero-valued state; a writer
+on a non-existent actor returns the zero-valued state; a writer
 call against a state without an explicit constructor implicitly creates
 the actor and proceeds.

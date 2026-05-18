@@ -1,20 +1,20 @@
 ---
 name: python
-description: Reboot Python framework for building transactional microservices with durable actor state. APIs can be defined in `.proto` or in pydantic Python. Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, implementing Servicers, calling actor refs across services, scheduling work, building durable workflows with `at_most_once`/`at_least_once`/`until` primitives, or testing Reboot applications with the `Reboot()` test harness.
+description: Reboot Python framework for building transactional microservices with durable actor state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, implementing Servicers, calling actor refs across services, scheduling work, building durable workflows with `at_most_once`/`at_least_once`/`until` primitives, or testing Reboot applications with the `Reboot()` test harness.
 license: Apache-2.0
 metadata:
   author: reboot
   version: "1.0.0"
   organization: Reboot
   date: April 2026
-  abstract: Comprehensive guide for building Reboot Python applications. Covers proto and pydantic API definitions, the Servicer pattern, reader/writer/transaction/workflow contexts, durable workflow primitives (at_most_once / at_least_once / until / until_changes), actor refs, scheduling, the standard library (SortedMap), and testing.
+  abstract: Comprehensive guide for building Reboot Python applications. Covers pydantic API definitions, the Servicer pattern, reader/writer/transaction/workflow contexts, durable workflow primitives (at_most_once / at_least_once / until / until_changes), actor refs, scheduling, the standard library (SortedMap), and testing.
 ---
 
 # Reboot Python Best Practices
 
 Guide for building transactional microservices in Python with the Reboot
-framework. Reboot APIs are defined in **either `.proto` files or pydantic
-Python (`reboot.api`)** and code-generated into typed Servicer base classes;
+framework. Reboot APIs are defined in pydantic Python
+(`reboot.api`) and code-generated into typed Servicer base classes;
 you implement `async` methods that receive a typed context
 (`ReaderContext`, `WriterContext`, `TransactionContext`, or
 `WorkflowContext`).
@@ -25,7 +25,7 @@ Reference these guidelines when:
 
 - Scaffolding a new Reboot Python project (`.rbtrc`, `pyproject.toml`,
   application entry point)
-- Defining or modifying an API in `.proto` or in pydantic Python (state,
+- Defining or modifying an API in pydantic Python (state,
   reader/writer/transaction/workflow methods, errors, constructors)
 - Implementing or modifying a Servicer
 - Calling another actor via `Service.ref(id).method(context, ...)`
@@ -55,15 +55,13 @@ Reference these guidelines when:
 
 ### Servicer Pattern
 
-A Reboot Servicer subclasses the generated `<State>.Servicer` base class and
+A Reboot Servicer subclasses the generated `<Type>.Servicer` base class and
 implements one `async def` per RPC. Each method takes a typed context as the
-second argument; that type is determined by the proto method marker
-(`reader`/`writer`/`transaction`):
+second argument; that type is determined by the API method factory
+(`Reader`/`Writer`/`Transaction`/`Workflow`):
 
 ```python
-from chat_room.v1.chat_room_rbt import (
-    ChatRoom, MessagesRequest, MessagesResponse, SendRequest, SendResponse,
-)
+from chat_room.v1.chat_room_rbt import ChatRoom
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import ReaderContext, WriterContext
 
@@ -76,17 +74,15 @@ class ChatRoomServicer(ChatRoom.Servicer):
     async def messages(
         self,
         context: ReaderContext,
-        request: MessagesRequest,
-    ) -> MessagesResponse:
-        return MessagesResponse(messages=self.state.messages)
+    ) -> ChatRoom.MessagesResponse:
+        return ChatRoom.MessagesResponse(messages=self.state.messages)
 
     async def send(
         self,
         context: WriterContext,
-        request: SendRequest,
-    ) -> SendResponse:
-        self.state.messages.extend([request.message])
-        return SendResponse()
+        request: ChatRoom.SendRequest,
+    ) -> None:
+        self.state.messages.append(request.message)
 ```
 
 ### Application Entry
@@ -118,30 +114,10 @@ if __name__ == '__main__':
     asyncio.run(main())
 ```
 
-### Proto or Pydantic Drives Code Generation
+### The API File Drives Code Generation
 
-Never hand-edit generated `*_rbt.py` files. The API definition file is the
-source of truth — pick proto **or** pydantic per project:
-
-**Proto:**
-
-```proto
-message ChatRoom {
-  option (rbt.v1alpha1.state) = {};
-  repeated string messages = 1;
-}
-
-service ChatRoomMethods {
-  rpc Messages(MessagesRequest) returns (MessagesResponse) {
-    option (rbt.v1alpha1.method).reader = {};
-  }
-  rpc Send(SendRequest) returns (SendResponse) {
-    option (rbt.v1alpha1.method).writer = {};
-  }
-}
-```
-
-**Pydantic** (see `references/api-pydantic.md`):
+Never hand-edit generated `*_rbt.py` files. The pydantic API definition
+file is the source of truth (see `references/api-pydantic.md`):
 
 ```python
 from reboot.api import API, Field, Methods, Model, Reader, Type, Writer
@@ -161,25 +137,24 @@ api = API(
     ChatRoom=Type(
         state=ChatRoomState,
         methods=Methods(
-            messages=Reader(request=None, response=MessagesResponse),
-            send=Writer(request=SendRequest, response=None),
+            messages=Reader(request=None, response=MessagesResponse, mcp=None),
+            send=Writer(request=SendRequest, response=None, mcp=None),
         ),
     ),
 )
 ```
 
 `rbt generate` (run automatically by `rbt dev run`) emits
-`<pkg>/<v>/<name>_rbt.py` with the `<State>` class, request/response messages,
-the `Servicer` base class, and the `.ref(id)` factory — the same import
-surface either way.
+`<pkg>/<v>/<name>_rbt.py` with the `<Type>` class, request/response
+messages nested as attributes, the `Servicer` base class, and the
+`.ref(id)` factory.
 
 ### Key Constraints
 
-- The context type in each method **must match** the API method marker. A
-  method marked `reader: {}` (or `Reader(...)` in pydantic) requires
-  `ReaderContext`; `writer: {}` / `Writer(...)` requires `WriterContext`;
-  `transaction: {}` / `Transaction(...)` requires `TransactionContext`;
-  `workflow: {}` / `Workflow(...)` requires `WorkflowContext`.
+- The context type in each method **must match** the API method
+  factory. `Reader(...)` requires `ReaderContext`; `Writer(...)`
+  requires `WriterContext`; `Transaction(...)` requires
+  `TransactionContext`; `Workflow(...)` requires `WorkflowContext`.
 - `self.state` is read-only inside `ReaderContext`. Mutate it only inside
   `WriterContext` or `TransactionContext`. Workflows mutate state by
   calling `Service.ref().write(context, callback)` — not `self.state` —
@@ -190,9 +165,9 @@ surface either way.
 - The actor's ID is `self.ref().state_id` inside writer/reader/
   transaction methods, and `context.state_id` inside workflows.
   `self.state_id` does not exist and raises `AttributeError`.
-- **Pydantic API definitions: every `Field(tag=N)` needs an explicit
-  zero-value default** (`default=""`, `default=0`, `default=0.0`,
-  `default=False`, `default_factory=list`, etc.). Two layered rules:
+- **Every `Field(tag=N)` needs an explicit zero-value default**
+  (`default=""`, `default=0`, `default=0.0`, `default=False`,
+  `default_factory=list`, etc.). Two layered rules:
   (1) `model_construct()` drops fields lacking declared defaults, so
   reads `AttributeError`; (2) only the type's zero value is accepted —
   non-zero defaults raise `UserPydanticError` at import time. Set
@@ -209,12 +184,12 @@ surface either way.
   them.** If a design or task names any of these (e.g. "publish
   to a `Topic`", "track members in an `OrderedMap`", "subscribe
   a `Queue`", "presence shows who's online"), the answer is to
-  _import_ the stdlib actor — not to declare a proto/pydantic
-  type with the same name. Defining your own proto-level `Topic`
-  / `Queue` / etc. forfeits durability, ordering, blocking
-  semantics, and concurrency guarantees the stdlib already
-  provides. See the trigger table under "How to Use → Using
-  stdlib state types" below.
+  _import_ the stdlib actor — not to declare a pydantic `Model`
+  with the same name. Defining your own `Topic` / `Queue` /
+  etc. forfeits durability, ordering, blocking semantics, and
+  concurrency guarantees the stdlib already provides. See the
+  trigger table under "How to Use → Using stdlib state types"
+  below.
 
 ## How to Use
 
@@ -243,12 +218,10 @@ Read **all** of these before writing the body:
 
 ### Defining an API
 
-- `references/api-proto-basics.md` (proto) **or**
-  `references/api-pydantic.md` (pydantic) — **always read pydantic if
-  you're using it**: the zero-default rule bites at import time
-- `references/api-state-message.md` (proto) — state message shape
-- `references/api-methods.md` — `reader` / `writer` / `transaction` /
-  `workflow` markers and constructor option
+- `references/api-pydantic.md` — **always read**: the zero-default
+  rule bites at import time
+- `references/api-methods.md` — `Reader` / `Writer` / `Transaction` /
+  `Workflow` factories and the `factory=True` constructor option
 - `references/api-errors.md` — typed error declaration
 
 ### Implementing a Servicer
@@ -263,7 +236,7 @@ Read **all** of these before writing the body:
 - `references/rpc-constructor-calls.md` — **always read** when the
   agent invokes a constructor: use `<X>.create(context, id, ...)` or
   `<X>.<CtorMethod>(context, id, ...)`, NEVER `<X>.ref(id).<ctor>(...)`
-  (the trap that skips creation semantics). The proto-declaration
+  (the trap that skips creation semantics). The factory-declaration
   side is `servicer-constructor.md`; the call-site side is here
 
 ### Using stdlib state types
@@ -271,7 +244,7 @@ Read **all** of these before writing the body:
 If your design calls for any of the concepts in the left column,
 the stdlib already provides the canonical actor. Read the
 reference **before** writing your own actor type — defining your
-own `Queue` / `SortedMap` / etc. proto is almost always wrong
+own `Queue` / `SortedMap` / etc. is almost always wrong
 and forfeits durability, ordering, and concurrency guarantees:
 
 | You need...                                  | Use          | Reference               |
@@ -310,9 +283,5 @@ with "unknown actor type."
 ## References
 
 - https://docs.reboot.dev/
-- Public examples (one repo each):
-  - https://github.com/reboot-dev/reboot-hello (proto, simplest reader/writer)
-  - https://github.com/reboot-dev/reboot-bank (proto, transactions + scheduling + SortedMap)
+- Public examples:
   - https://github.com/reboot-dev/reboot-bank-pydantic (pydantic API definition)
-  - https://github.com/reboot-dev/reboot-counter (proto, minimal transaction)
-  - https://github.com/reboot-dev/reboot-boutique (proto, multi-service)

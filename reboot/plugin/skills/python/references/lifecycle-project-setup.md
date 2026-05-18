@@ -7,10 +7,9 @@ tags: project-setup, pyproject, python-version, dependencies, layout
 
 ## Set Up a Reboot Python Project
 
-> **Critical:** the `api/` directory holds API definition files
-> (`.proto` or pydantic `.py`); generated `*_rbt.py` lives under
-> `backend/api/`. Never hand-edit a generated file. No `__init__.py`
-> inside `api/`.
+> **Critical:** the `api/` directory holds pydantic API definition
+> files (`.py`); generated `*_rbt.py` lives under `backend/api/`.
+> Never hand-edit a generated file. No `__init__.py` inside `api/`.
 
 A Reboot Python project has a fixed top-level layout. The CLI (`rbt`) reads
 `.rbtrc` from the project root, `rbt generate` writes generated code into
@@ -23,18 +22,18 @@ A Reboot Python project has a fixed top-level layout. The CLI (`rbt`) reads
 my-app/
   src/
     server.py        # arbitrary entry point
-  protos/            # nonstandard proto location
-    api.proto
+  schemas/           # nonstandard API definition location
+    api.py
 ```
 
-**Correct (canonical layout, matches the [`reboot-hello`](https://github.com/reboot-dev/reboot-hello) example):**
+**Correct (canonical layout, matches the [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) example):**
 
 ```
 my-app/
   .rbtrc                 # required: per-project rbt CLI config
   pyproject.toml         # required: Python deps
-  api/                   # proto root (referenced from .rbtrc)
-    <pkg>/v1/<name>.proto
+  api/                   # API definition root (referenced from .rbtrc)
+    <pkg>/v1/<name>.py
   backend/
     api/                 # rbt generate --python output
     src/
@@ -69,8 +68,8 @@ managed = true
 
 ## Do Not Create `__init__.py` Inside `api/`
 
-The `api/` directory holds `.proto` files only. Adding `__init__.py` will
-confuse `rbt generate`'s package detection.
+The `api/` directory holds pydantic API definition files only. Adding
+`__init__.py` will confuse `rbt generate`'s package detection.
 
 ## Generated Code Lives Under `backend/`
 

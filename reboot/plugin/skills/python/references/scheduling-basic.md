@@ -31,20 +31,17 @@ import asyncio
 asyncio.create_task(self._fire_later())  # disappears on restart
 ```
 
-**Correct (matches the [`reboot-bank`](https://github.com/reboot-dev/reboot-bank) example, `backend/src/main.py`):**
+**Correct (matches the [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) example, `backend/src/main.py`):**
 
-`bank.proto`:
+`api/bank/v1/pydantic/account.py`:
 
-```proto
-rpc Open(OpenRequest) returns (OpenResponse) {
-  option (rbt.v1alpha1.method) = {
-    writer: { constructor: {} },
-  };
-}
-
-rpc Interest(InterestRequest) returns (InterestResponse) {
-  option (rbt.v1alpha1.method) = { writer: {} };
-}
+```python
+open=Writer(
+    request=OpenRequest, response=None, factory=True, mcp=None,
+),
+interest=Writer(
+    request=None, response=None, mcp=None,
+),
 ```
 
 `main.py`:
@@ -56,10 +53,9 @@ from datetime import timedelta
 class AccountServicer(Account.Servicer):
 
     async def open(
-        self, context: WriterContext, request: OpenRequest,
-    ) -> OpenResponse:
+        self, context: WriterContext, request: Account.OpenRequest,
+    ) -> None:
         await self.ref().schedule(when=timedelta(seconds=1)).interest(context)
-        return OpenResponse()
 ```
 
 ## Schedule Other Actors, Not Just `self`

@@ -1,11 +1,11 @@
 ---
-title: Define APIs in Pydantic (alternative to `.proto`)
+title: Define APIs in Pydantic
 impact: CRITICAL
-impactDescription: Pydantic-defined APIs let you stay in Python end-to-end; same generation flow, different source
+impactDescription: The pydantic API file is the source of truth; everything else is generated from it
 tags: pydantic, api, Model, Methods, Reader, Writer, Transaction, factory
 ---
 
-## Define APIs in Pydantic (alternative to `.proto`)
+## Define APIs in Pydantic
 
 > **Critical:**
 >
@@ -17,28 +17,26 @@ tags: pydantic, api, Model, Methods, Reader, Writer, Transaction, factory
 >    `UserPydanticError` at import. Set domain defaults inside the
 >    constructor or a `start`-style writer, not on the Field.
 
-Reboot accepts API definitions in **either** `.proto` files or pydantic
-`.py` files. Both feed the same `rbt generate` flow and produce the same
-`<name>_rbt.py` import surface; the choice is purely about whether you
-prefer staying in Python or in proto.
+Reboot APIs are defined in pydantic `.py` files. `rbt generate`
+consumes them and produces a `<name>_rbt.py` module with the typed
+`<Type>` class (request/response messages nested as attributes), the
+`<Type>.Servicer` base class, and the `<Type>.ref(id)` factory.
 
-Use the pydantic form when the project is Python-only and you'd rather
-avoid maintaining proto + protobuf tooling. The bank-pydantic example is
-the canonical reference.
+The [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic)
+repository is the canonical example.
 
-**Incorrect (mixing pydantic decls with stray hand-written `Servicer`
-attributes):**
+**Incorrect (free-floating decls that aren't wired up via `API(...)`):**
 
 ```python
-# DON'T — Methods is the binding from name to method type; don't add
-# attributes outside it.
+# DON'T — Methods is the binding from name to method type; declarations
+# outside of an API(...) block never reach the generator.
 from reboot.api import API, Field, Methods, Model, Writer
 
 class AccountState(Model):
-    balance: float = Field(tag=1)
+    balance: float = Field(tag=1, default=0.0)
 
 class DepositRequest(Model):
-    amount: float = Field(tag=1)
+    amount: float = Field(tag=1, default=0.0)
 
 # Free-floating, never wired up:
 deposit_request = DepositRequest
@@ -51,23 +49,23 @@ from reboot.api import API, Field, Methods, Model, Reader, Type, Writer
 
 
 class AccountState(Model):
-    balance: float = Field(tag=1)
+    balance: float = Field(tag=1, default=0.0)
 
 
 class BalanceResponse(Model):
-    amount: float = Field(tag=1)
+    amount: float = Field(tag=1, default=0.0)
 
 
 class DepositRequest(Model):
-    amount: float = Field(tag=1)
+    amount: float = Field(tag=1, default=0.0)
 
 
 class WithdrawRequest(Model):
-    amount: float = Field(tag=1)
+    amount: float = Field(tag=1, default=0.0)
 
 
 class OverdraftError(Model):
-    amount: float = Field(tag=1)
+    amount: float = Field(tag=1, default=0.0)
 
 
 AccountMethods = Methods(
@@ -109,34 +107,28 @@ api = API(
 )
 ```
 
-## Mapping from Pydantic to Proto
+## Method Factories
 
-| Proto                                            | Pydantic                                 |
-| ------------------------------------------------ | ---------------------------------------- |
-| `message <Name>`                                 | `class <Name>(Model)`                    |
-| `<type> <field> = N;`                            | `<field>: <type> = Field(tag=N)`         |
-| `option (rbt.v1alpha1.state) = {};`              | `Type(state=<NameState>, methods=...)`   |
-| `option (rbt.v1alpha1.method).reader = {};`      | `Reader(request=..., response=...)`      |
-| `option (rbt.v1alpha1.method).writer = {};`      | `Writer(request=..., response=...)`      |
-| `option (rbt.v1alpha1.method).transaction = {};` | `Transaction(request=..., response=...)` |
-| `option (rbt.v1alpha1.method).workflow = {};`    | `Workflow(request=..., response=...)`    |
-| `constructor: {}`                                | `factory=True`                           |
-| `errors: ["X"]`                                  | `errors=[X]`                             |
+| Factory            | Context type         | Use for                                                 |
+| ------------------ | -------------------- | ------------------------------------------------------- |
+| `Reader(...)`      | `ReaderContext`      | Read-only access to `self.state`                        |
+| `Writer(...)`      | `WriterContext`      | Mutate `self.state` for one actor                       |
+| `Transaction(...)` | `TransactionContext` | Atomic mutations across multiple actors / external work |
+| `Workflow(...)`    | `WorkflowContext`    | Durable, long-running, restartable methods              |
+
+Attach typed errors via `errors=[ErrorModel, ...]`. Mark a method as a
+constructor with `factory=True` (only valid on `Writer` and
+`Transaction`, see below).
 
 ### `factory=True` Only Works on `Writer` and `Transaction`
 
-`factory=True` is **only supported on `Writer` and
-`Transaction`** — those are the proto-level method types whose
-options carry a `constructor` field. `Reader` and `Workflow`
-options don't, and `rbt generate` rejects the proto with:
+`factory=True` is **only supported on `Writer` and `Transaction`**.
+`Reader` and `Workflow` are rejected by `rbt generate`:
 
 ```text
 Error while parsing option value for "method": Message type
 "rbt.v1alpha1.WorkflowMethodOptions" has no field named "constructor".
 ```
-
-(Pydantic's `factory: bool` on the base class is permissive at
-type-check time but the proto codegen rejects the bad shape.)
 
 ```python
 # OK
@@ -150,7 +142,8 @@ get=Reader(... factory=True ...),        # codegen error
 
 To kick off a workflow on actor creation, make the factory a
 `Writer(factory=True)` or `Transaction(factory=True)` and have
-its body call `self.ref().schedule().<workflow_name>(context, ...)`. See `workflow-method.md` for the full pattern.
+its body call `self.ref().schedule().<workflow_name>(context, ...)`.
+See `workflow-method.md` for the full pattern.
 
 Calling `<Type>.<MethodPascalCase>(ctx, <state-id>, **kwargs)`
 both creates the actor AND runs the factory method. Don't try
@@ -184,7 +177,7 @@ tool-callable directly, so the `mcp=` argument is easy to forget.
 
 ## Field Tags Are Required
 
-`Field(tag=N)` corresponds to proto field numbers. They're required on
+`Field(tag=N)` is the wire-level field number. Tags are required on
 every field and must be unique within a `Model`.
 
 ## Every Field Needs an Explicit Default
@@ -226,8 +219,8 @@ Models — anywhere `model_construct` may run.
 
 ### `default=` Must Be the Type's Zero Value
 
-The codegen mirrors proto3: the only legal `default=` is the field
-type's **zero value**. Non-zero defaults raise
+The only legal `default=` is the field type's **zero value**. Non-zero
+defaults raise
 `reboot.api.UserPydanticError: Field 'X' in model 'Y' uses 'default' with an unsupported value. Supported default value for <type> is <zero>.`
 
 **Incorrect (non-zero defaults are rejected at import time):**
@@ -285,21 +278,20 @@ async def open(
         self.state.move_delay_seconds = DEFAULT_MOVE_DELAY
 ```
 
-**Why this rule exists**: Reboot's API definition compiles to a
-protobuf schema, and the protobuf schema has nowhere to store a
-per-field default value. A non-zero `default=` on the pydantic Field
-has no representation in the generated schema and would silently never
-take effect — so the codegen rejects it eagerly with a clear error
-rather than letting you wonder later why your declared default didn't
-show up. Set domain defaults at write time (in the constructor or a
-reset writer) instead.
+**Why this rule exists**: the wire format Reboot uses has nowhere to
+store a per-field default value. A non-zero `default=` on the pydantic
+Field has no way to survive a round trip and would silently never take
+effect — so the codegen rejects it eagerly with a clear error rather
+than letting you wonder later why your declared default didn't show
+up. Set domain defaults at write time (in the constructor or a reset
+writer) instead.
 
 ## Collections of Nested Models Are Supported
 
-`list[<Model>]` and `dict[str, <Model>]` are first-class field types
-— the codegen lowers them to `repeated <Message>` and `map<string, <Message>>` in the generated proto. Same defaulting rules as any
-other collection: use `default_factory=list` / `default_factory=dict`
-so the field is constructible.
+`list[<Model>]` and `dict[str, <Model>]` are first-class field types.
+Same defaulting rules as any other collection: use
+`default_factory=list` / `default_factory=dict` so the field is
+constructible.
 
 ```python
 class Move(Model):
@@ -393,10 +385,12 @@ shows up at runtime is `<Type>.<MethodPascalCase>{Request,Response}`.
 
 ## Servicer Methods Use Nested Request/Response Names
 
-Pydantic-style Servicers reference request/response classes through the
-generated `<Name>` namespace, and methods that have `request=None` /
-`response=None` simply skip the corresponding parameter or return value.
-Pattern from [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic), `backend/src/account_servicer.py`:
+Servicers reference request/response classes through the generated
+`<Name>` namespace, and methods that have `request=None` /
+`response=None` simply skip the corresponding parameter or return
+value. Pattern from
+[`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic),
+`backend/src/account_servicer.py`:
 
 ```python
 from bank.v1.pydantic.account import OverdraftError
@@ -424,8 +418,7 @@ class AccountServicer(Account.Servicer):
             )
 ```
 
-## `.rbtrc` Is the Same
+## `.rbtrc`
 
-`generate api/` finds both `.proto` and `.py` API definition files; the
-rest of `.rbtrc` is identical to a proto-based project (see
-`lifecycle-rbtrc.md`).
+`generate api/` picks up pydantic `.py` API definition files from `api/`.
+See `lifecycle-rbtrc.md` for the rest.

@@ -11,9 +11,10 @@ tags: servicer, reader, ReaderContext, state, async
 > it raises at runtime. Multiple readers on the same actor run
 > concurrently — they're blocked only by an in-flight writer/transaction.
 
-A method marked `reader: {}` in the proto receives a `ReaderContext` and
-must return its declared response type. Inside a reader, `self.state` is
-read-only — mutations are not allowed and will fail.
+A method declared with `Reader(...)` in the API file receives a
+`ReaderContext` and must return its declared response type (or `None`
+if `response=None`). Inside a reader, `self.state` is read-only —
+mutations are not allowed and will fail.
 
 **Incorrect (mutating state in a reader):**
 
@@ -21,18 +22,15 @@ read-only — mutations are not allowed and will fail.
 async def messages(
     self,
     context: ReaderContext,
-    request: MessagesRequest,
-) -> MessagesResponse:
+) -> ChatRoom.MessagesResponse:
     self.state.messages.append("seen")  # NEVER mutate in a reader
-    return MessagesResponse(messages=self.state.messages)
+    return ChatRoom.MessagesResponse(messages=self.state.messages)
 ```
 
-**Correct (matches the [`reboot-hello`](https://github.com/reboot-dev/reboot-hello) example, `backend/src/chat_room_servicer.py`):**
+**Correct (canonical reader shape):**
 
 ```python
-from chat_room.v1.chat_room_rbt import (
-    ChatRoom, MessagesRequest, MessagesResponse,
-)
+from chat_room.v1.chat_room_rbt import ChatRoom
 from reboot.aio.contexts import ReaderContext
 
 
@@ -41,17 +39,17 @@ class ChatRoomServicer(ChatRoom.Servicer):
     async def messages(
         self,
         context: ReaderContext,
-        request: MessagesRequest,
-    ) -> MessagesResponse:
-        return MessagesResponse(messages=self.state.messages)
+    ) -> ChatRoom.MessagesResponse:
+        return ChatRoom.MessagesResponse(messages=self.state.messages)
 ```
 
-## Method Signature Matches the Proto
+## Method Signature Matches the API File
 
-The Python method name is the proto RPC name in `snake_case`. For a proto
-RPC `Messages`, the Servicer method is `messages`. Arguments are always
-`(self, context, request)` and the return type is the declared response
-message.
+The Servicer method name matches the entry name in the
+`Methods(...)` block exactly. Arguments are `(self, context)` when
+`request=None`, or `(self, context, request)` when a request type
+was bound, and the return type is the declared response (`None` if
+`response=None`).
 
 ## Readers Run Concurrently
 
@@ -62,11 +60,11 @@ actor and resume after it completes.
 ## Calling Other Actors Is Allowed (But Read-Only)
 
 A reader may call `await Service.ref(other_id).reader_method(context)` —
-the call propagates the `ReaderContext`. Calling a `writer` or
-`transaction` from a `reader` is a category error; use a `transaction`
-method if the work is genuinely cross-actor.
+the call propagates the `ReaderContext`. Calling a `Writer` or
+`Transaction` method from a reader is a category error; use a
+`Transaction` method if the work is genuinely cross-actor.
 
-[`reboot-bank`](https://github.com/reboot-dev/reboot-bank), `backend/src/main.py`, shows fan-out reads from a
+A reader of a `Bank` actor calling into per-account readers, run from a
 transaction context (which can also call readers):
 
 ```python

@@ -15,9 +15,9 @@ tags: workflow, WorkflowContext, classmethod, durable, replay
 
 A workflow is a long-running, durable function attached to an actor. The
 runtime persists progress so the workflow can resume after a restart from
-where it left off. Mark the method with `workflow: {}` in proto (or
-`Workflow(...)` in pydantic), and implement it as a `@classmethod` on the
-Servicer that takes a `WorkflowContext`.
+where it left off. Declare the method with `Workflow(...)` in the API
+file, and implement it as a `@classmethod` on the Servicer that takes
+a `WorkflowContext`.
 
 **Incorrect (instance method, regular Servicer signature):**
 
@@ -25,29 +25,27 @@ Servicer that takes a `WorkflowContext`.
 async def control_loop(
     self,
     context: WriterContext,  # WRONG — workflows need WorkflowContext
-    request: ControlLoopRequest,
-) -> ControlLoopResponse:
+    request: Chatbot.ControlLoopRequest,
+) -> None:
     ...
 ```
 
 **Correct (canonical workflow shape):**
 
-`chatbot.proto`:
-
-```proto
-rpc ControlLoop(ControlLoopRequest) returns (ControlLoopResponse) {
-  option (rbt.v1alpha1.method) = {
-    workflow: {},
-  };
-}
-```
-
-`chatbot.py`:
+`api/chatbot/v1/chatbot.py`:
 
 ```python
-from chatbot.v1.chatbot_rbt import (
-    Chatbot, ControlLoopRequest, ControlLoopResponse,
-)
+control_loop=Workflow(
+    request=ControlLoopRequest,
+    response=None,
+    mcp=None,
+),
+```
+
+`chatbot_servicer.py`:
+
+```python
+from chatbot.v1.chatbot_rbt import Chatbot
 from reboot.aio.contexts import WorkflowContext
 
 
@@ -57,8 +55,8 @@ class ChatbotServicer(Chatbot.Servicer):
     async def control_loop(
         cls,
         context: WorkflowContext,
-        request: ControlLoopRequest,
-    ):
+        request: Chatbot.ControlLoopRequest,
+    ) -> None:
         # Workflow body — durable, restartable, can run for hours.
         ...
 ```
@@ -106,12 +104,10 @@ async def create(
 
 ## Workflows Cannot Be Factories — Schedule From a Constructor
 
-`factory=True` is **not supported on Workflow** —
-`WorkflowMethodOptions` has no `constructor` field in the proto
-schema, and `rbt generate` rejects the proto with
-`Message type "rbt.v1alpha1.WorkflowMethodOptions" has no field named "constructor"`. (Pydantic's `factory: bool` on the base
-class is permissive at type-check time but the proto codegen
-rejects it.)
+`factory=True` is **not supported on Workflow** — `rbt generate`
+rejects it with
+`Message type "rbt.v1alpha1.WorkflowMethodOptions" has no field named "constructor"`. (`factory: bool` on the base class is permissive at
+type-check time but the codegen rejects the bad shape.)
 
 To make actor creation kick off a workflow, use a
 `Writer(factory=True)` or `Transaction(factory=True)` constructor
@@ -145,14 +141,13 @@ Caller-side: `await Greeter.Hello(ctx, "alice", name="alice")`
 both creates the actor and (by virtue of the schedule call)
 kicks off `run_hello`.
 
-## Pydantic Workflows Often Have No Response
+## Workflows Often Have No Response
 
-In pydantic API definitions, `Workflow(... response=None ...)` is
-common — workflows are usually fire-and-forget durable functions
-whose effects are observed via state changes, not return values.
-The method's return type is then `-> None` and the body has no
-`return` statement. See `api-pydantic.md` for the cross-method
-rule.
+`Workflow(... response=None ...)` is common — workflows are usually
+fire-and-forget durable functions whose effects are observed via
+state changes, not return values. The method's return type is then
+`-> None` and the body has no `return` statement. See
+`api-pydantic.md` for the cross-method rule.
 
 ## Read These Next If You're Building a Workflow
 

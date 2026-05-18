@@ -26,7 +26,7 @@ class ChatRoomServicer(ChatRoom.Servicer):
     # Missing `authorizer()` — calls will be denied.
 ```
 
-**Correct (matches the [`reboot-hello`](https://github.com/reboot-dev/reboot-hello) example, `backend/src/chat_room_servicer.py`):**
+**Correct (canonical authorizer shape):**
 
 ```python
 from reboot.aio.auth.authorizers import allow
@@ -38,9 +38,9 @@ class ChatRoomServicer(ChatRoom.Servicer):
         return allow()
 
     async def messages(
-        self, context: ReaderContext, request: MessagesRequest,
-    ) -> MessagesResponse:
-        return MessagesResponse(messages=self.state.messages)
+        self, context: ReaderContext,
+    ) -> ChatRoom.MessagesResponse:
+        return ChatRoom.MessagesResponse(messages=self.state.messages)
 ```
 
 ## `allow()` Is the Default for Examples and Local Dev
@@ -49,6 +49,13 @@ Production applications should compose authorizers that gate based on the
 caller's identity, the actor ID, or method-level rules. The Reboot
 authorizer module exposes the building blocks; the local-dev shortcut is
 `allow()`.
+
+## One Authorizer per Servicer
+
+`def authorizer(self)` returns a single rule that applies to every
+method on the Servicer. Per-method differentiation (e.g. allow reads but
+gate writes) requires a custom authorizer subclass — see
+`auth-custom-predicates.md`.
 
 ## `authorizer()` Returns an Instance, Not a Class
 

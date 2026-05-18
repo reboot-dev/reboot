@@ -69,7 +69,7 @@ async def main():
 
 ### Connection Lifecycle
 
-The intended dance, per the proto comments:
+The intended dance, per the type's docs:
 
 1. Client `Subscriber.create(context, subscriber_id)` — once.
 2. Client opens a long-lived `Subscriber.ref(id).connect(context)`

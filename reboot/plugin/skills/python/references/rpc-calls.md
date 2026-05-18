@@ -15,7 +15,7 @@ tags: rpc, call, kwargs, context, await
 
 Actor methods are called as `await ref.method(context, **kwargs)`. The
 context is always positional; the request fields are passed as **keyword
-arguments** matching the proto request message. Do not construct and pass
+arguments** matching the request `Model`. Do not construct and pass
 a `Request` wrapper.
 
 **Incorrect (passing a Request wrapper):**
@@ -43,7 +43,7 @@ on any actor.
 
 ## Returns the Response Message
 
-`await ref.method(...)` returns the proto response message. Read its
+`await ref.method(...)` returns the response `Model`. Read its
 fields directly:
 
 ```python

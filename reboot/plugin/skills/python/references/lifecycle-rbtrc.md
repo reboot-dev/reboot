@@ -26,10 +26,10 @@ dev:
     python: true
 ```
 
-**Correct (line-based, matches the [`reboot-hello`](https://github.com/reboot-dev/reboot-hello) example's `.rbtrc`):**
+**Correct (line-based, matches the [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) example's `.rbtrc`):**
 
 ```sh
-# Find '.proto' files in 'api/'.
+# Find API definition files in 'api/'.
 generate api/
 
 # Tell `rbt` where to output its generated files.
