@@ -280,7 +280,94 @@ with "unknown actor type."
   non-existence, and `--name` vs. `--application-name`. Read it once
   per task.
 
-## References
+## Available Reference Files
+
+Reference files live in `references/` and are named
+`{prefix}-{topic}.md` (e.g., `workflow-at-most-once.md`). Load only
+the files relevant to the current task; the "How to Use" section
+above lists the right ones grouped by task type. The full catalog
+of 46 files across 11 categories:
+
+**Lifecycle** (`lifecycle-`):
+
+- `references/lifecycle-project-setup.md`
+- `references/lifecycle-rbtrc.md`
+- `references/lifecycle-application-entry.md`
+- `references/lifecycle-initialize-hook.md`
+- `references/lifecycle-secrets.md`
+- `references/lifecycle-reboot-cloud.md`
+
+**API** (`api-`):
+
+- `references/api-pydantic.md`
+- `references/api-methods.md`
+- `references/api-errors.md`
+
+**Servicer** (`servicer-`):
+
+- `references/servicer-reader.md`
+- `references/servicer-writer.md`
+- `references/servicer-transaction.md`
+- `references/servicer-constructor.md`
+- `references/servicer-authorizer.md`
+
+**Workflow** (`workflow-`):
+
+- `references/workflow-method.md`
+- `references/workflow-loop.md`
+- `references/workflow-at-most-once.md`
+- `references/workflow-at-least-once.md`
+- `references/workflow-until.md`
+- `references/workflow-until-changes.md`
+- `references/workflow-idempotency-scopes.md`
+- `references/workflow-state-write.md`
+
+**Stdlib** (`stdlib-`):
+
+- `references/stdlib-sorted-map.md`
+- `references/stdlib-ordered-map.md`
+- `references/stdlib-queue.md`
+- `references/stdlib-pubsub.md`
+- `references/stdlib-presence.md`
+- `references/stdlib-item.md`
+
+**State** (`state-`):
+
+- `references/state-scalar-fields.md`
+- `references/state-collections.md`
+- `references/state-nested-models.md`
+
+**Auth** (`auth-`):
+
+- `references/auth-allow-deny.md`
+- `references/auth-allow-if.md`
+- `references/auth-built-in-predicates.md`
+- `references/auth-custom-predicates.md`
+
+**RPC** (`rpc-`):
+
+- `references/rpc-refs.md`
+- `references/rpc-calls.md`
+- `references/rpc-constructor-calls.md`
+- `references/rpc-forall.md`
+
+**Scheduling** (`scheduling-`):
+
+- `references/scheduling-basic.md`
+- `references/scheduling-recurring.md`
+
+**Testing** (`testing-`):
+
+- `references/testing-harness.md`
+- `references/testing-external-context.md`
+
+**Patterns** (`patterns-`):
+
+- `references/patterns-error-handling.md`
+- `references/patterns-idempotency.md`
+- `references/patterns-common-gotchas.md`
+
+## External References
 
 - https://docs.reboot.dev/
 - Public examples:
