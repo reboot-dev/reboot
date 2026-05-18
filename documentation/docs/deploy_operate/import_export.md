@@ -4,7 +4,7 @@ Reboot supports importing and exporting your application's data via the `rbt imp
 
 ## Use cases
 
-Once your application is [deployed to production](/deploy_operate/where), importing and exporting data is critical for creating backups, as well as for exporting data into analytics (OLAP) systems for executing offline queries.
+Once your application is [deployed to production](/deploy_on_your_own), importing and exporting data is critical for creating backups, as well as for exporting data into analytics (OLAP) systems for executing offline queries.
 
 Because Reboot's support for import/export operates on "logical" snapshots (i.e. with no assumptions about the "physical" storage/filesystem layout that is in use), imports are also a great way to adopt Reboot for a new application, upsize or downsize your hosting, or to create test instances.
 

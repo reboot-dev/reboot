@@ -152,7 +152,7 @@ const sidebars = {
     // {
     //   type: "category",
     //   label: "Deploy & operate",
-    //   items: ["deploy_operate/where", "deploy_operate/import_export"],
+    //   items: ["deploy_operate/import_export"],
     // },
     // TODO: #3363.
 

@@ -48,6 +48,7 @@ Reference files are named `{prefix}-{topic}.md` (e.g., `workflow-at-most-once.md
 - `references/lifecycle-rbtrc.md`
 - `references/lifecycle-application-entry.md`
 - `references/lifecycle-initialize-hook.md`
+- `references/lifecycle-reboot-cloud.md`
 
 **API** (`api-`):
 
@@ -121,4 +122,4 @@ Reference files are named `{prefix}-{topic}.md` (e.g., `workflow-at-most-once.md
 
 ---
 
-_44 reference files across 11 categories_
+_45 reference files across 11 categories_
