@@ -237,8 +237,14 @@ async def _serve_ui_asset(
 def create_mcp_factory(
     *,
     server: FastMCP,
-    new_session_hooks: Sequence[Callable[[ExternalContext, Optional[str]],
-                                         Awaitable[None]]],
+    new_session_hooks: Sequence[Callable[
+        [ExternalContext, Optional[str]],
+        Awaitable[None],
+    ]],
+    per_request_hooks: Sequence[Callable[
+        [ExternalContext, Optional[str], Request],
+        Awaitable[None],
+    ]] = (),
     token_verifier: Optional[Any],
 ) -> Callable[
     [Callable[[Request], Any]],
@@ -252,6 +258,11 @@ def create_mcp_factory(
         new_session_hooks: Async callables to invoke when a new
             MCP session starts (e.g. to auto-construct state). Arguments
            passed: (external_context, user_id_or_none).
+        per_request_hooks: Async callables to invoke on *every*
+            inbound MCP request, regardless of session boundary.
+            Arguments passed: (external_context, user_id_or_none,
+            request) — the Starlette `Request` lets hooks inspect
+            headers (e.g., `x-forwarded-host`).
         token_verifier: Optional MCP SDK `TokenVerifier`
             (from `mcp.server.auth.provider`). When set, it can reject
             requests with missing or expired bearer tokens with an HTTP
@@ -404,6 +415,25 @@ def create_mcp_factory(
                 user_id = _get_user_id(request)
                 for hook in new_session_hooks:
                     await hook(external_context, user_id)
+
+            # Per-request hooks fire on every inbound MCP
+            # call. Failures are logged and swallowed — these hooks
+            # are meant to be observational, so a backend hiccup in a
+            # hook must never break the user-visible MCP call.
+            if per_request_hooks:
+                user_id_for_per_request = _get_user_id(request)
+                for per_request_hook in per_request_hooks:
+                    try:
+                        await per_request_hook(
+                            external_context,
+                            user_id_for_per_request,
+                            request,
+                        )
+                    except Exception:
+                        logger.exception(
+                            f"[{ui_id}] per-request hook "
+                            f"{per_request_hook.__name__!r} raised; continuing"
+                        )
 
             logger.debug(f"[{ui_id}] {request.method} {request.url.path}")
 

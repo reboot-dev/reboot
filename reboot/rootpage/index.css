@@ -1,0 +1,985 @@
+/* Reboot brand tokens — mirror `marketing/reboot.dev-3.0/src/index.css`. */
+:root {
+  --cream: #f7f5ed;
+  --navy: #103761;
+  --green: #aedc91;
+  --tan: #a39382;
+  --teal: #007367;
+
+  /* Derived UI tokens. */
+  --muted: #3b577f;
+  --border: #e7e1cf;
+  --surface: #ffffff;
+  --surface-sunken: #f0eddf;
+  --code-bg: #ede6d4;
+  --code-text: var(--navy);
+  --highlight: #b9e1b4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--cream);
+  color: var(--navy);
+  overflow-x: hidden;
+  font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  font-feature-settings: "ss01" on;
+}
+
+/* Full-page splash shown until the first `Application.get` response
+   arrives — the Reboot logo with a spinner beside it. */
+.loading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.loading__logo {
+  height: 28px;
+  width: auto;
+}
+
+.loading__spinner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(16, 55, 97, 0.2);
+  border-top-color: var(--navy);
+  animation: loading-spin 0.7s linear infinite;
+}
+
+@keyframes loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+a {
+  color: var(--teal);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+code,
+pre {
+  font-family: "DM Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Inline `<code>` inside body copy. The dedicated code blocks
+   (`.inline-code`, `.code-block`) opt out by sitting in their own
+   class scope and not matching any of these selectors. */
+p code,
+li code,
+.step__intro code,
+.substep__title code,
+.substep__hint code {
+  background: rgba(16, 55, 97, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--navy);
+  font-size: 0.92em;
+}
+
+/* ---------------- Top nav ---------------- */
+
+.top-nav {
+  max-width: 992px;
+  margin: 0 auto;
+  padding: 32px 32px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.top-nav__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--navy);
+  letter-spacing: -0.01em;
+}
+
+.top-nav__brand img {
+  height: 20px;
+  width: auto;
+}
+
+.top-nav__divider {
+  color: var(--tan);
+  font-weight: 400;
+}
+
+.top-nav__app-name {
+  color: var(--navy);
+}
+
+.top-nav__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.button {
+  font: inherit;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 9px 18px;
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.button--ghost {
+  background: transparent;
+  color: var(--navy);
+  border-color: transparent;
+}
+.button--ghost:hover {
+  background: rgba(16, 55, 97, 0.08);
+}
+
+.button--outline {
+  background: transparent;
+  color: var(--navy);
+  border-color: var(--navy);
+}
+.button--outline:hover {
+  background: var(--navy);
+  color: var(--cream);
+}
+
+.button--primary {
+  background: var(--navy);
+  color: var(--cream);
+  border-color: var(--navy);
+}
+.button--primary:hover {
+  background: #0c2d57;
+}
+
+.button--small {
+  font-size: 12.5px;
+  padding: 7px 14px;
+}
+
+.button:disabled,
+.button[disabled] {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* ---------------- Wizard wrapper + hero ---------------- */
+
+.wizard {
+  max-width: 992px;
+  margin: 0 auto;
+  padding: 24px 32px 96px;
+}
+
+.hero {
+  padding: 48px 0 32px;
+}
+
+.hero__title {
+  margin: 0;
+  font-size: 72px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.036em;
+  color: var(--navy);
+}
+
+.hero__title em,
+.step__title em {
+  font-style: normal;
+  background: var(--highlight);
+  padding: 0 8px;
+  border-radius: 4px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.hero__subtitle {
+  margin: 20px 0 36px;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--navy);
+  max-width: 640px;
+}
+
+.app-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  background: var(--surface);
+  border: 1.5px solid var(--navy);
+  border-radius: 14px;
+  padding: 18px 22px;
+  /* Same brand drop-shadow as the picker cards — keeps the page's
+     "block" cards visually consistent. */
+  box-shadow: 6px 6px 0 0 var(--navy);
+}
+
+.app-info__main {
+  min-width: 0;
+}
+
+.app-info__name {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 4px;
+  letter-spacing: -0.005em;
+}
+
+.app-info__description {
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--muted);
+  margin: 0;
+}
+
+.app-info__placeholder {
+  font-style: italic;
+  color: var(--tan);
+}
+
+.pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* App is responding — ✓ glyph and text both in green. */
+.pill--connected {
+  color: var(--success-text, #1f7a52);
+}
+
+/* Reader is (still) trying to (re)connect to the app — ✗ glyph
+   and text both in red so the developer notices the broken
+   state. */
+.pill--connecting {
+  color: #c53030;
+}
+
+/* ---------------- Step cards ---------------- */
+
+.step {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  column-gap: 48px;
+  border-top: 1.5px solid var(--navy);
+  padding: 64px 0;
+}
+
+.step__index {
+  align-self: start;
+}
+
+.step__number {
+  font-size: 64px;
+  font-weight: 700;
+  color: var(--navy);
+  line-height: 0.9;
+  letter-spacing: -0.031em;
+  font-feature-settings: "tnum" on;
+}
+
+.step__label {
+  margin-top: 12px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.157em;
+}
+
+.step__body {
+  min-width: 0;
+}
+
+.step__title {
+  margin: 0;
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  color: var(--navy);
+}
+
+.step__intro {
+  margin: 16px 0 28px;
+  font-size: 15.5px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 560px;
+}
+
+/* ---------------- Radio group (shared) ---------------- */
+
+.radio-group {
+  display: grid;
+  /* Column count is set inline by the RadioGroup component to match
+     the option count; mobile breakpoint below collapses it to 1. */
+  grid-template-columns: repeat(var(--radio-columns, 3), 1fr);
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.radio-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1.5px solid var(--navy);
+  border-radius: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  min-height: 56px;
+  color: var(--navy);
+  /* Hard offset shadow — navy block under each unselected card. */
+  box-shadow: 4px 4px 0 0 var(--navy);
+  transition: background-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+/* Only the unselected cards behave like clickable buttons; the
+   selected one is the current state, so dim the affordance. */
+.radio-card:not(.radio-card--selected):hover {
+  transform: translate(1px, 1px);
+}
+
+.radio-card--selected {
+  background: var(--navy);
+  color: var(--cream);
+  cursor: default;
+  /* Selected card gets a green shadow instead of navy. */
+  box-shadow: 4px 4px 0 0 var(--green);
+}
+
+.radio-card__name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: inherit;
+  flex: 1;
+  text-align: center;
+}
+
+.radio-card__pip {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--tan);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.radio-card--selected .radio-card__pip {
+  border-color: var(--green);
+}
+
+.radio-card--selected .radio-card__pip::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--green);
+}
+
+/* ---------------- Substeps ---------------- */
+
+.substep {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 22px 26px;
+  margin-top: 14px;
+}
+
+.substep__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.substep__header-body {
+  flex: 1;
+  min-width: 0;
+  /* Title and hint are `<span>`s (so the interactive header can be
+     a real `<button>`); stack them with flex-column instead of
+     relying on block defaults. */
+  display: flex;
+  flex-direction: column;
+}
+
+/* When the substep is collapsible, the header is a real `<button>`
+   so it gets native keyboard / focus / activation semantics. Reset
+   the browser's default button chrome so it visually matches the
+   non-interactive `<div>` header. */
+.substep__header--interactive {
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  width: 100%;
+}
+
+.substep__header--interactive:focus-visible {
+  outline: 2px solid var(--navy);
+  outline-offset: 4px;
+}
+
+.substep__chevron {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  margin-top: 1px;
+  transition: transform 0.18s ease;
+}
+
+.substep__chevron--expanded {
+  transform: rotate(180deg);
+}
+
+.substep__icon {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--surface-sunken);
+  color: var(--tan);
+  margin-top: 1px;
+}
+
+.substep__icon--done {
+  background: var(--highlight);
+  color: var(--navy);
+}
+
+.substep__title {
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--navy);
+  margin: 0;
+  letter-spacing: -0.005em;
+}
+
+.substep__hint {
+  font-size: 13.5px;
+  color: var(--muted);
+  margin: 4px 0 0;
+}
+
+.substep__body {
+  margin-top: 16px;
+  padding-left: 36px;
+}
+
+.substep__body-text {
+  font-size: 13.5px;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+
+/* ---------------- Screenshot ---------------- */
+
+/* Bordered, full-width container for screenshot or GIF assets. */
+.screenshot {
+  margin: 14px 0 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface-sunken);
+}
+
+.screenshot img,
+.screenshot video {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* ---------------- Inline / code blocks ---------------- */
+
+.inline-code {
+  display: flex;
+  align-items: center;
+  background: var(--code-bg);
+  color: var(--code-text);
+  border-radius: 8px;
+  padding: 4px 6px 4px 14px;
+  font-family: "DM Mono", "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  gap: 12px;
+}
+
+.inline-code__text {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 0;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.code-block {
+  background: var(--code-bg);
+  color: var(--code-text);
+  border-radius: 10px;
+  padding: 18px 20px;
+  font-family: "DM Mono", "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre;
+  overflow-x: auto;
+  margin: 0;
+}
+
+.copy-button {
+  font: inherit;
+  background: var(--surface);
+  border: 1px solid var(--navy);
+  color: var(--navy);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.copy-button:hover {
+  background: var(--navy);
+  color: var(--cream);
+}
+.copy-button--copied {
+  background: var(--green);
+  color: var(--navy);
+  border-color: var(--navy);
+}
+.copy-button--failed,
+.copy-button--failed:hover {
+  background: var(--surface);
+  color: #c53030;
+  border-color: #c53030;
+}
+
+.code-block-wrap {
+  position: relative;
+}
+
+.code-block-wrap .copy-button {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+/* ---------------- MCP app config fields ---------------- */
+
+/* Stacked label + copyable value, used inside the ChatGPT
+   install substep so the user can grab the connector name and
+   MCP URL independently. */
+.mcp-config-field {
+  margin-bottom: 12px;
+}
+
+.mcp-config-field:last-child {
+  margin-bottom: 0;
+}
+
+.mcp-config-field__label {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.157em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+/* ---------------- Breadcrumb disclosure ---------------- */
+
+/* Inline "How did we get here ▼" toggle that sits next to a CTA
+   button inside an `.actions` flex row. The drawer body is also
+   a child of that flex row but uses `flex-basis: 100%` (below) to
+   wrap onto its own line, so opening it doesn't stretch the row's
+   other items. */
+.breadcrumb-disclosure__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--muted);
+  user-select: none;
+}
+
+.breadcrumb-disclosure__toggle:hover {
+  color: var(--navy);
+}
+
+.breadcrumb-disclosure__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.18s ease;
+}
+
+.breadcrumb-disclosure__chevron--open {
+  transform: rotate(180deg);
+}
+
+.breadcrumb-disclosure__body {
+  /* Force the body onto its own flex line inside `.actions` and
+     take the full row width — same visual result as when this
+     element was a sibling of `.actions`, but now the toggle + body
+     share state inside a single React component. */
+  flex-basis: 100%;
+  margin-top: 4px;
+  padding: 8px 12px;
+  background: var(--surface-sunken);
+  border-radius: 6px;
+  font-family: "DM Mono", "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--navy);
+}
+
+/* ---------------- Tunnel status ---------------- */
+
+.tunnel-status__url-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 8px 0 4px;
+}
+
+.tunnel-status__url-row .inline-code {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Editable variant — the input is the URL display, with Submit /
+   Copy / Clear / reachability badge all inline. */
+.tunnel-status__editor {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 8px 0 4px;
+}
+
+.tunnel-status__editor .tunnel-status__input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.tunnel-status__input {
+  flex: 1;
+  font: inherit;
+  font-size: 13.5px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--cream);
+  color: var(--navy);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.tunnel-status__input:focus {
+  border-color: var(--navy);
+}
+
+.reachability {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12.5px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* Warning callout shown inside the tunnel-status substep when
+   the detected URL is a free ngrok one — the interstitial it
+   serves blocks Claude in the browser. Red + bold to really
+   call it out: the user otherwise spends minutes wondering why
+   their Claude integration silently doesn't work. */
+.tunnel-status__warning {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #c53030;
+  background: #fef2f2;
+  border-radius: 8px;
+  color: #991b1b;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+/* Three-dot ellipsis that cycles ".", "..", "...", "" once per
+   ~1.4s — a lightweight "we're waiting" indicator next to the
+   tunnel substep title. */
+.waiting-dots {
+  display: inline-block;
+  width: 1.2em;
+  text-align: left;
+  white-space: pre;
+}
+
+/* Hide visually but keep in the accessibility tree — for `<label>`
+   elements paired to controls whose visual styling supplies the
+   affordance (placeholder, icon, surrounding copy) but which still
+   need a programmatic name for screen readers. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.waiting-dots::after {
+  content: "";
+  animation: waiting-dots 1.4s steps(4, end) infinite;
+}
+
+@keyframes waiting-dots {
+  0% {
+    content: "";
+  }
+  25% {
+    content: ".";
+  }
+  50% {
+    content: "..";
+  }
+  75% {
+    content: "...";
+  }
+}
+
+.reachability--ok {
+  color: var(--success-text, #1f7a52);
+}
+
+.reachability--bad {
+  color: #c53030;
+}
+
+.reachability--pending {
+  color: var(--muted);
+}
+
+/* ---------------- Sample prompts ---------------- */
+
+.prompt-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.prompt-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.prompt-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prompt-card__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--navy);
+}
+
+/* Ordered list of chat turns in a multi-step sample. We render
+   our own numbering via `::before` so the index sits in a
+   styled pill outside the turn body. */
+.prompt-card__turns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  counter-reset: prompt-turn;
+}
+
+.prompt-card__turn {
+  counter-increment: prompt-turn;
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.prompt-card__turn::before {
+  content: counter(prompt-turn);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--navy);
+  color: var(--cream);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.prompt-card__prompt {
+  margin: 0;
+  font-size: 14px;
+  color: var(--navy);
+  line-height: 1.4;
+}
+
+.prompt-card__empty {
+  grid-column: 1 / -1;
+  font-size: 13.5px;
+  color: var(--muted);
+  font-style: italic;
+  text-align: center;
+  padding: 32px 16px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+}
+
+/* ---------------- Decorative shapes ---------------- */
+
+/* Reuses the brand SVG from `marketing/reboot.dev-3.0/src/assets/
+   decorative-shapes.svg` (mix of tan / green / teal half-rings).
+   Anchored to the right gutter and allowed to spill past the page
+   edge — body's `overflow-x: hidden` handles the clip. Hidden on
+   narrow viewports where it'd crowd the content. */
+.decorations {
+  position: absolute;
+  top: 96px;
+  right: -120px;
+  width: 360px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.decorations__shapes {
+  width: 360px;
+  height: auto;
+  display: block;
+}
+
+@media (max-width: 1280px) {
+  .decorations {
+    display: none;
+  }
+}
+
+/* ---------------- Footer ---------------- */
+
+.footer {
+  margin-top: 24px;
+  padding: 28px 0 0;
+  border-top: 1px solid var(--border);
+  font-size: 13.5px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ---------------- Responsive ---------------- */
+
+@media (max-width: 900px) {
+  .step {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .radio-group {
+    --radio-columns: 1;
+  }
+  .prompt-grid {
+    grid-template-columns: 1fr;
+  }
+  .hero__title {
+    font-size: 44px;
+    letter-spacing: -0.03em;
+  }
+  .step__title {
+    font-size: 30px;
+  }
+  .step__number {
+    font-size: 48px;
+  }
+}

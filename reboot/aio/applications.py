@@ -5,11 +5,13 @@ import colorama
 import os
 import reboot.aio.memoize
 import reboot.aio.workflows
+import reboot.application
 import sys
 import traceback
 from log.log import get_logger
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
+from rbt.v1alpha1.application.application_pb2 import ExamplePrompt
 from reboot.aio.auth.oauth_providers import (
     OAuthProviderByEnvironment,
     OAuthProviderSelector,
@@ -37,7 +39,9 @@ from reboot.nodejs.python import should_print_stacktrace
 from reboot.run_environments import (
     InvalidRunEnvironment,
     RunEnvironment,
+    application_name,
     detect_run_environment,
+    running_rbt_dev,
     within_nodejs_server,
     within_python_server,
 )
@@ -53,7 +57,7 @@ from reboot.settings import (
     ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
 )
-from typing import Awaitable, Callable, NoReturn, Optional
+from typing import Any, Awaitable, Callable, NoReturn, Optional
 
 logger = get_logger(__name__)
 
@@ -184,6 +188,9 @@ class Application:
         initialize_bearer_token: Optional[str] = None,
         token_verifier: Optional[TokenVerifier] = None,
         oauth: Optional[OAuthProviderSelector] = None,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        example_prompts: Optional[list[ExamplePrompt]] = None,
     ):
         """
         :param servicers: the types of Reboot-powered servicers that
@@ -213,6 +220,12 @@ class Application:
             application has a `User`-typed auto-construct servicer. `None`
             is equivalent to `OAuthProviderByEnvironment(dev=None,
             prod=None)`. Mutually exclusive with `token_verifier`.
+        :param title: a human-readable name for the application.
+            Defaults to `application_name()` if unset.
+        :param description: a human-readable description of the
+            application.
+        :param example_prompts: a list of `ExamplePrompt` instances
+            for using this application in a chat client.
 
         TODO(benh): update the initialize function to be run in a
         transaction and ensure that the transaction has finished before
@@ -325,6 +338,9 @@ class Application:
         self._token_verifier = token_verifier
         self._initialize_bearer_token = initialize_bearer_token
         self._oauth = oauth
+        self._title = title
+        self._description = description
+        self._example_prompts = example_prompts or []
 
         # Validate MCP configuration eagerly at construction time so
         # errors are raised consistently regardless of run environment.
@@ -383,8 +399,6 @@ class Application:
             # cluster!
             return
 
-        self._name: Optional[str] = os.environ.get(ENVVAR_RBT_NAME)
-
         state_directory: Optional[str] = os.environ.get(
             ENVVAR_RBT_STATE_DIRECTORY
         )
@@ -394,8 +408,16 @@ class Application:
 
         # NOTE: we construct a 'Reboot' instance here so that it can
         # perform any process wide initialization as early as possible.
+        #
+        # We pass the raw `ENVVAR_RBT_NAME` value (which may be `None`)
+        # rather than `application_name()`: `Reboot` relies on a `None`
+        # name to know that this run is unnamed and therefore may use a
+        # throwaway temporary state directory. `application_name()`
+        # falls back to a non-`None` default, which would violate that
+        # invariant. The human-facing default name is applied to
+        # `title` below instead.
         self._rbt = Reboot(
-            application_name=self._name,
+            application_name=os.environ.get(ENVVAR_RBT_NAME),
             state_directory=self._state_directory,
             # Don't initialize tracing for the 'Reboot' instance, if
             # we're starting a server.
@@ -410,8 +432,12 @@ class Application:
 
     @property
     def servicers(self):
-        # Always include `memoize` servicers.
-        return (self._servicers or []) + reboot.aio.memoize.servicers()
+        # Always include `memoize` servicers and `ApplicationServicer`
+        # for storing runtime information about the application.
+        return (
+            (self._servicers or []) + reboot.aio.memoize.servicers() +
+            reboot.application.servicers()
+        )
 
     @property
     def legacy_grpc_servicers(self):
@@ -454,7 +480,14 @@ class Application:
         connections and explain what's missing.
         """
         auto_construct_state_type_full_names: list[StateTypeName] = []
-        new_session_hooks = []
+        new_session_hooks: list[Callable[
+            [ExternalContext, Optional[str]],
+            Awaitable[None],
+        ]] = []
+        per_request_hooks: list[Callable[
+            [ExternalContext, Optional[str], Any],
+            Awaitable[None],
+        ]] = []
 
         # Wire up auto-construction of states for every authenticated user.
         for servicer_cls in servicers:
@@ -476,6 +509,46 @@ class Application:
                     await _cls._auto_construct(context, state_id=user_id)
 
                 new_session_hooks.append(maybe_auto_construct_based_on_user_id)
+
+        # Record MCP connections made into this application — but only
+        # in dev mode.
+        if running_rbt_dev():
+            # We dedupe so we can skip the RPC entirely for the
+            # overwhelmingly-common case of repeated calls on an
+            # established connection.
+            seen_connections: set[tuple[str, str]] = set()
+
+            async def record_connection(
+                context: ExternalContext,
+                user_id: Optional[str],
+                request,
+            ) -> None:
+                forwarded_host = (
+                    request.headers.get("x-forwarded-host") or
+                    request.headers.get("host") or None
+                )
+                user_agent = request.headers.get("user-agent") or None
+                if forwarded_host is None or user_agent is None:
+                    # A connection is only meaningful if we have both
+                    # `forwarded_host` and `user_agent`; skip if
+                    # either is absent.
+                    return
+                connection = (forwarded_host, user_agent)
+                if connection in seen_connections:
+                    return
+                seen_connections.add(connection)
+                await reboot.application.ref().record_connection(
+                    context,
+                    forwarded_host=forwarded_host,
+                    user_agent=user_agent,
+                )
+
+            # NOTE: even though we have session hooks we want to check
+            # for connections per-request because (a) MCP is dropping
+            # sessions and (b) after an expunge we will still want to
+            # track which clients have connected and the only way to
+            # do that is by looking at each request.
+            per_request_hooks.append(record_connection)
 
         # Create MCP server and register all servicers' tools/resources.
         server = FastMCP(name="reboot-mcp")
@@ -521,6 +594,7 @@ class Application:
             factory=create_mcp_factory(  # type: ignore[arg-type]
                 server=server,
                 new_session_hooks=new_session_hooks,
+                per_request_hooks=per_request_hooks,
                 token_verifier=mcp_sdk_token_verifier,
             ),
         )
@@ -549,13 +623,34 @@ class Application:
             'Expecting server count from `rbt dev` or `rbt serve`'
         )
 
+        async def initialize(context: InitializeContext) -> None:
+            # Construct/refresh the `Application` singleton on every
+            # boot so we get latest values (`title`, `description`,
+            # etc.), hence `.always()`. An `InitializeContext` is
+            # app-internal, which is what `Application.initialize`'s
+            # authorizer requires.
+            await reboot.application.ref().always().initialize(
+                context,
+                title=self._title or application_name(),
+                description=self._description,
+                port=local_envoy_port,
+                mcp=any(
+                    servicer._mcp_tool_names()
+                    for servicer in (self._servicers or [])
+                ),
+                example_prompts=self._example_prompts,
+            )
+
+            if self._initialize is not None:
+                await self._initialize(context)
+
         await self._rbt.up(
             servicers=self.servicers,
             libraries=self.libraries,
             legacy_grpc_servicers=self.legacy_grpc_servicers,
             web_framework=self.web_framework,
             token_verifier=self.token_verifier,
-            initialize=self._initialize,
+            initialize=initialize,
             initialize_bearer_token=self._initialize_bearer_token,
             local_envoy=local_envoy,
             local_envoy_port=local_envoy_port,

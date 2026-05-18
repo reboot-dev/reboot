@@ -1959,7 +1959,14 @@ class GreeterInstance {
                         }
                         return;
                     }
-                    reader.setIsLoading(false);
+                    // Intentionally leave `isLoading: true` here. The outer
+                    // `retryForever(...)` will run another attempt and call
+                    // `reader.setIsLoading(true)` again at the top of the
+                    // try block, but if we cleared it to `false` here first
+                    // consumers would observe a brief `false → true → false
+                    // → true ...` flip-flop on every retry while we're
+                    // actually still trying to (re)connect. Once a response
+                    // finally arrives the success path sets it to `false`.
                     if (e instanceof reboot_api.Status) {
                         reader.setStatus(e);
                     }

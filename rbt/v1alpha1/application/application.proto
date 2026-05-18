@@ -1,0 +1,165 @@
+syntax = "proto3";
+
+package rbt.v1alpha1.application;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+// Per-application state that we want to expose, e.g., for web or MCP
+// apps. There is exactly one of these per Reboot application, keyed
+// by the name used when running the application (e.g., from `rbt dev
+// run --name=...`).
+//
+// Currently these are only created during development.
+message Application {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  // Human-readable name of the application, set by the developer via
+  // the `title=` kwarg on `reboot.aio.applications.Application`.
+  string title = 1;
+  // Human-readable description, set by the developer via the
+  // `description=` kwarg on `reboot.aio.applications.Application`.
+  optional string description = 2;
+  // Public URLs of the cloudflared and ngrok tunnels forwarding to
+  // this application's port, discovered by polling ngrok's local
+  // management API and cloudflared's `/quicktunnel` metrics endpoint.
+  //
+  // These are unset when they aren't running or have no tunnel for
+  // our application's port.
+  //
+  // We track ngrok and cloudflared in separate fields so the wizard
+  // can offer whichever is detected (or both — they can run
+  // side-by-side on different metrics ports).
+  optional string ngrok_public_url = 3;
+  optional string cloudflared_public_url = 4;
+  // Every distinct `(x-forwarded-host, user-agent)` pair the
+  // framework has observed on an inbound MCP request, grouped by
+  // host.
+  repeated HostConnection connections = 5;
+  // Example chat prompts for trying out the application.
+  repeated ExamplePrompt example_prompts = 6;
+  // Whether this application exposes any MCP tools or resources.
+  bool mcp = 7;
+  // Local port of the application.
+  int32 port = 8;
+  // Whether the `WatchTunnels` workflow has already been scheduled.
+  bool watch_tunnels_scheduled = 9;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// All distinct `user-agent` values observed against a single
+// `x-forwarded-host`. Stored in insertion order — first seen first.
+message HostConnection {
+  string forwarded_host = 1;
+  repeated string user_agents = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// An "example prompt" is a short, named scenario to provide to users
+// of the app. Each example can contain multiple sequenced prompts —
+// e.g., "Create a counter for tracking my coffee intake." followed by
+// "Now increment my coffee counter." — that together exercise a flow
+// through the app's MCP tools and resources.
+message ExamplePrompt {
+  // Human-readable label for the example. Acts as the identity key,
+  // prompts with the same `title` replace any existing entry.
+  string title = 1;
+  // The actual prompt strings, in the order the user should send
+  // them, one per chat turn.
+  repeated string prompts = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message InitializeRequest {
+  string title = 1;
+  optional string description = 2;
+  // Local port the application is serving on.
+  int32 port = 3;
+  // Whether the application exposes any MCP tools or resources.
+  bool mcp = 4;
+  // Current example prompts.
+  repeated ExamplePrompt example_prompts = 5;
+}
+
+message InitializeResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message GetRequest {}
+
+// Explicitly enumerates which fields of `Application` state are safe
+// to expose. We DO NOT return the full `Application` message — that
+// way, if the state ever gets a field that's privileged or otherwise
+// shouldn't leak, it stays opt-in.
+message GetResponse {
+  string title = 1;
+  optional string description = 2;
+  optional string ngrok_public_url = 3;
+  optional string cloudflared_public_url = 4;
+  // Every distinct `(x-forwarded-host, user-agent)` pairs the app has
+  // observed on an inbound MCP request, grouped by host.
+  repeated HostConnection connections = 5;
+  repeated ExamplePrompt example_prompts = 6;
+  // Whether the application exposes any MCP tools or resources.
+  bool mcp = 7;
+  // Whether the app is running under `rbt dev`.
+  bool dev = 8;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message RecordConnectionRequest {
+  // The `x-forwarded-host` (or `host`) header and the `user-agent`
+  // header observed on the request. Both are required and must be
+  // non-empty — a connection is only meaningful if we have both.
+  string forwarded_host = 1;
+  string user_agent = 2;
+}
+
+message RecordConnectionResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message WatchTunnelsRequest {}
+
+message WatchTunnelsResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+service ApplicationMethods {
+  // Store the latest state (`title`, `description`, `mcp`, etc) from
+  // the started `Application(...)`. The state is implicitly
+  // default-constructed on this first writer call (we declare no
+  // explicit constructor), so `Initialize` can be called fresh on
+  // every boot whether or not the state already exists.
+  rpc Initialize(InitializeRequest) returns (InitializeResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Returns a view of the `Application` state.
+  rpc Get(GetRequest) returns (GetResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  // Record a connection — a `(x-forwarded-host, user-agent)` pair
+  // observed on an inbound MCP request.
+  rpc RecordConnection(RecordConnectionRequest)
+      returns (RecordConnectionResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Long-running workflow that polls the local management APIs of
+  // every supported tunnel provider every few seconds.
+  rpc WatchTunnels(WatchTunnelsRequest) returns (WatchTunnelsResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+}

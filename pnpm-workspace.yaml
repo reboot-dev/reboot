@@ -4,6 +4,7 @@ packages:
   - "reboot/inspect/"
   - "reboot/nodejs/"
   - "reboot/react/"
+  - "reboot/rootpage/"
   - "reboot/std/"
   - "reboot/std/react/"
   - "reboot/web/"

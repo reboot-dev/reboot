@@ -12,10 +12,29 @@ service RootPage {
   rpc RootPage(RootPageRequest) returns (google.api.HttpBody) {
     option (google.api.http) = {
       get: "/"
+      additional_bindings { get: "/__/rootpage/{file=**}" }
+    };
+  }
+
+  // Tiny connectivity endpoint the rootpage frontend uses to verify
+  // any found tunnels correctly forward to this process.
+  rpc Probe(ProbeRequest) returns (ProbeResponse) {
+    option (google.api.http) = {
+      get: "/__/probe"
     };
   }
 }
 
 ////////////////////////////////////////////////////////////////////////
 
-message RootPageRequest {}
+message RootPageRequest {
+  // Set to the requested file under `/__/rootpage/`; empty when the
+  // root path `/` is requested.
+  string file = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message ProbeRequest {}
+
+message ProbeResponse {}

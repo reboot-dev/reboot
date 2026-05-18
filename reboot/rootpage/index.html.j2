@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reboot Application</title>
+    <link rel="icon" type="image/svg+xml" href="/__/rootpage/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap"
+    />
+    <link href="/__/rootpage/bundle.css" rel="stylesheet" />
+    <script type="module" defer="defer">
+      import { render } from "/__/rootpage/bundle.js";
+      {# Doing `application_id | tojson` adds the correct quotes, as well
+         "escapes" any odd characters in `application_id`
+         (e.g., `"`, `\`, `        </script>`). Note that these escaped
+         characters will be "unescaped" by the browser's JS parser back
+         to the original string. #}
+      render(window.location.origin, {{ application_id | tojson }});
+    </script>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+  </body>
+</html>

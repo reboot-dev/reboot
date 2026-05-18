@@ -7,9 +7,11 @@ submodules/
 node_modules/
 rbt/v1alpha1/node_modules/
 rbt/std/node_modules/
+reboot/create-ui/node_modules/
 reboot/inspect/node_modules/
 reboot/nodejs/node_modules/
 reboot/react/node_modules/
+reboot/rootpage/node_modules/
 reboot/std/node_modules/
 reboot/std/react/node_modules/
 reboot/web/node_modules/

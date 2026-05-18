@@ -711,7 +711,13 @@ def _filter_http_connection_manager(
                         ],
                         allow_methods="GET, PUT, DELETE, POST, OPTIONS",
                         allow_headers=
-                        f"{APPLICATION_ID_HEADER},{STATE_REF_HEADER},{SERVER_ID_HEADER},{IDEMPOTENCY_KEY_HEADER},{WORKFLOW_ID_HEADER},keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,grpc-timeout,{AUTHORIZATION_HEADER}",
+                        f"{APPLICATION_ID_HEADER},{STATE_REF_HEADER},{SERVER_ID_HEADER},{IDEMPOTENCY_KEY_HEADER},{WORKFLOW_ID_HEADER},keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,grpc-timeout,{AUTHORIZATION_HEADER}"
+                        +
+                        # `ngrok-skip-browser-warning` is needed so
+                        # HTML fetches when using ngrok tunnels will
+                        # not get the free-tier interstitial that
+                        # blocks CORS preflight.
+                        ",ngrok-skip-browser-warning",
                         max_age="1728000",
                         expose_headers="grpc-status,grpc-message",
                     ),

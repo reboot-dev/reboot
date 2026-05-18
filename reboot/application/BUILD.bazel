@@ -1,0 +1,22 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "application_py",
+    srcs = [
+        "__init__.py",
+        "servicer.py",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("aiohttp"),
+        "//rbt/v1alpha1/application:application_py_proto",
+        "//rbt/v1alpha1/application:application_py_reboot",
+        "//reboot:run_environments_py",
+        "//reboot/aio:contexts_py",
+        "//reboot/aio:workflows_py",
+        "//reboot/aio/auth:authorizers_py",
+        "@com_github_reboot_dev_reboot//log:log_py",
+    ],
+)

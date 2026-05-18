@@ -18,3 +18,6 @@ dev-dependencies = [
 # This project only uses `rye` to provide `python` and its dependencies.
 virtual = true
 managed = true
+
+[tool.uv.sources]
+reboot = { path = "/home/vscode/.cache/bazel/_bazel_vscode/a9b253284b980bca505cc94af834ed27/execroot/com_github_reboot_dev_reboot/bazel-out/k8-fastbuild/bin/reboot/force_reinstall_dev_reboot.runfiles/com_github_reboot_dev_reboot/reboot/reboot-1.0.4-py3-none-linux_x86_64.whl" }
