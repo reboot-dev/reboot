@@ -154,3 +154,13 @@ case "$tool" in
         ) && emit_allow
         ;;
 esac
+
+# Always exit 0: this hook either emits an "allow" decision JSON or
+# silently defers to the normal permission prompt. A non-zero status
+# would surface as a "PreToolUse hook error" in Claude Code, even
+# though the intent is just "no decision". Several branches above can
+# fall through with a non-zero last-command status (e.g. `is_in_plugin
+# … && emit_allow` when the path is not in the plugin, or the Bash
+# subshell exiting 1 to signal "did not match the allowlist"); this
+# normalizes all of those to a clean defer.
+exit 0
