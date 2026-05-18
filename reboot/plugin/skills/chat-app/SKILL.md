@@ -393,12 +393,13 @@ application directory.**
     running. Wait until the backend logs indicate that a health check has passed,
     at which point it must have printed the URL of its inspect page.
 15. Run the MCPJam inspector in a separate background shell:
-    `npx @mcpjam/inspector@2.4.0 --config mcp_servers.json --server <name>`
+    `mcpjam-inspector --config mcp_servers.json --server <name>`
     Replace `<name>` with the actual server name from `mcp_servers.json`.
-    The inspector binds a fixed port (6274); its launcher orphans the
-    server on `SIGTERM`, so the plugin's `SessionEnd` hook reaps it when
-    the user exits Claude Code.
-16. Give the user the URLs for the application's own inspect page, and for the MCPJam inspector.
+    MCPJam's launcher orphans the server on `SIGTERM`, so the
+    plugin's `SessionEnd` hook reaps it when the user exits Claude
+    Code.
+16. Give the user the URLs for the application's own inspect page, and
+    for the MCPJam inspector (`http://localhost:6274`).
 17. suggest a first prompt the user can try in the inspector (e.g., "Create a new todo list and show it to me").
 
 ## Update Flow

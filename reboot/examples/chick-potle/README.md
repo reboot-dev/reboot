@@ -85,7 +85,7 @@ pytest backend/
 `mcp_servers.json` is pre-configured. In another terminal:
 
 ```bash
-npx @mcpjam/inspector@v2.4.0 --config mcp_servers.json --server chick-potle
+npx @mcpjam/inspector@v2.5.0 --config mcp_servers.json --server chick-potle
 ```
 
 Try these prompts to exercise each capability:
