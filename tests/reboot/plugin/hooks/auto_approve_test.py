@@ -262,6 +262,98 @@ CASES: list[tuple[str, str, dict, Decision]] = [
         Decision.APPROVE,
     ),
 
+    # ----- Bash: pipes to stdin-only filter commands. -----
+    (
+        "Bash: ls | head -50 (real reported case)",
+        "Bash",
+        {
+            "command": f"ls {PLUGIN_ROOT}/skills/python/references/ | head -50"
+        },
+        Decision.APPROVE,
+    ),
+    (
+        "Bash: ls | head (no args)",
+        "Bash",
+        {
+            "command": f"ls {PLUGIN_ROOT}/skills/python/ | head"
+        },
+        Decision.APPROVE,
+    ),
+    (
+        "Bash: ls | head -n 50",
+        "Bash",
+        {
+            "command": f"ls {PLUGIN_ROOT}/skills/python/ | head -n 50"
+        },
+        Decision.APPROVE,
+    ),
+    (
+        "Bash: ls | tail -20",
+        "Bash",
+        {
+            "command": f"ls {PLUGIN_ROOT}/skills/python/ | tail -20"
+        },
+        Decision.APPROVE,
+    ),
+    (
+        "Bash: ls | wc -l",
+        "Bash",
+        {
+            "command": f"ls {PLUGIN_ROOT}/skills/python/ | wc -l"
+        },
+        Decision.APPROVE,
+    ),
+    (
+        "Bash: cat | sort",
+        "Bash",
+        {
+            "command": f"cat {PLUGIN_ROOT}/skills/python/SKILL.md | sort"
+        },
+        Decision.APPROVE,
+    ),
+    (
+        "Bash: find | head",
+        "Bash",
+        {
+            "command": f"find {PLUGIN_ROOT}/skills/ | head -100"
+        },
+        Decision.APPROVE,
+    ),
+
+    # ----- Bash: pipes where RHS is dangerous. -----
+    (
+        "Bash: ls | sh (pipe to shell)",
+        "Bash",
+        {
+            "command": f"ls {PLUGIN_ROOT}/skills/ | sh"
+        },
+        Decision.REJECT,
+    ),
+    (
+        "Bash: ls | xargs cat (xargs not a pure filter)",
+        "Bash",
+        {
+            "command": f"ls {PLUGIN_ROOT}/skills/ | xargs cat"
+        },
+        Decision.REJECT,
+    ),
+    (
+        "Bash: ls | head /etc/passwd (filter with absolute path)",
+        "Bash",
+        {
+            "command": f"ls {PLUGIN_ROOT}/skills/ | head /etc/passwd"
+        },
+        Decision.REJECT,
+    ),
+    (
+        "Bash: ls | head bar.txt (filter with relative path arg)",
+        "Bash",
+        {
+            "command": f"ls {PLUGIN_ROOT}/skills/ | head bar.txt"
+        },
+        Decision.REJECT,
+    ),
+
     # ----- Bash: chaining where one part is unsafe. -----
     (
         "Bash: safe ls || ls outside plugin",

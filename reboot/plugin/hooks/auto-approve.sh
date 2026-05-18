@@ -75,26 +75,38 @@ case "$tool" in
         cmd=$(field command)
         has_traversal "$cmd" && exit 0
         # Normalize: strip known-safe I/O redirects, then split chained
-        # commands (`&&`, `||`, `;`) into one-per-line. Each resulting
-        # part must be a safe read-only op on a plugin path. Anything
-        # still containing risky metacharacters after normalization
-        # (single `|`, single `&`, `<`, `>`, `` ` ``, `$`, `(`, `)`, `\`)
-        # falls through to a normal permission prompt.
+        # commands (`&&`, `||`, `|`, `;`) into one-per-line. Each part
+        # is then validated independently. Anything still containing
+        # risky metacharacters after normalization (`&`, `<`, `>`,
+        # `` ` ``, `$`, `(`, `)`, `\`) falls through to a normal
+        # permission prompt.
         parts=$(printf '%s' "$cmd" | sed \
             -e 's/[[:space:]]*2>&1//g' \
             -e 's/[[:space:]]*2>\/dev\/null//g' \
             -e 's/[[:space:]]*>\/dev\/null//g' \
             -e 's/&&/\n/g' \
             -e 's/||/\n/g' \
+            -e 's/|/\n/g' \
             -e 's/;/\n/g')
         case "$parts" in
-            *\|* | *\&* | *\<* | *\>* | *\`* | *\$* | *\(* | *\)* | *\\* )
+            *\&* | *\<* | *\>* | *\`* | *\$* | *\(* | *\)* | *\\* )
                 exit 0
                 ;;
         esac
         # Iterate each part. Approve only if at least one non-empty
         # part is a safe read-only op on a path inside this plugin AND
-        # no part is unsafe.
+        # no part is unsafe. A part is "safe" if it is either:
+        #
+        #   (a) one of the safe read-only binaries followed by a path
+        #       inside this plugin (the producer side of a pipeline,
+        #       or a standalone op), or
+        #
+        #   (b) a pure stdin filter — head, tail, wc, sort, uniq —
+        #       with no arguments, or with arguments that are ALL
+        #       flags (`-x`, `--long`) or numerics. This covers
+        #       `… | head -50`, `… | wc -l`, etc., but rejects
+        #       `… | head bar.txt` and `… | head /etc/passwd` because
+        #       those args are paths, not flags/numerics.
         printf '%s\n' "$parts" | (
             approved=0
             while IFS= read -r part; do
@@ -110,6 +122,28 @@ case "$tool" in
                     'file '*"${CLAUDE_PLUGIN_ROOT}/skills/"* | \
                     'stat '*"${CLAUDE_PLUGIN_ROOT}/skills/"* )
                         approved=$((approved + 1))
+                        ;;
+                    head | tail | wc | sort | uniq)
+                        # Stdin filter with no args.
+                        approved=$((approved + 1))
+                        ;;
+                    'head '* | 'tail '* | 'wc '* | 'sort '* | 'uniq '*)
+                        # Stdin filter with args — every arg must be a
+                        # flag (`-X` / `--long`) or numeric.
+                        cmd_name="${trimmed%% *}"
+                        cmd_args="${trimmed#${cmd_name} }"
+                        args_ok=1
+                        for arg in $cmd_args; do
+                            case "$arg" in
+                                -* | [0-9]*) ;;
+                                *) args_ok=0; break ;;
+                            esac
+                        done
+                        if [ "$args_ok" = "1" ]; then
+                            approved=$((approved + 1))
+                        else
+                            exit 1
+                        fi
                         ;;
                     *)
                         exit 1
