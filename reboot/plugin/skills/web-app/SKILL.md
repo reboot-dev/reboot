@@ -303,16 +303,37 @@ application directory.**
     Python-snake → TypeScript-camel; request/response types are
     Zod-validated.
 11. `cd web && npm run build` (sanity check the bundle).
-12. Run the app, each in a separate shell in the background:
+12. **Write and run backend unit tests covering each user-facing
+    user story before handing the app off.** Enumerate the user
+    stories from the plan — every action the user should be able
+    to _do_ in the UI (e.g. "sign up and see my profile",
+    "submit the form and see the result on the dashboard",
+    "delete an item and have it disappear"). Write one test
+    method per user story in
+    `backend/tests/<servicer>_test.py`, following the patterns
+    in `python/references/testing-project-setup.md`,
+    `python/references/testing-harness.md`, and
+    `python/references/testing-external-context.md`. Use one
+    `IsolatedAsyncioTestCase`, one external context per test
+    (`name=f"test-{self.id()}"`), and
+    `Service.ref(id).method(context, ...)` for all calls —
+    never instantiate Servicers directly. If any servicer has a
+    real `authorizer()`, use the permissive-subclass pattern
+    from `testing-harness.md`. Run `cd backend && uv run pytest`
+    and fix anything that fails. Do not proceed to the next
+    step until every user-story test passes — these tests are
+    the gate that catches contract bugs before the user opens
+    the browser.
+13. Run the app, each in a separate shell in the background:
     - Backend: `uv run rbt dev run --no-chaos` (the `--no-chaos`
       flag disables the Chaos Monkey, which is a useful feature to
       catch bugs but would be confusing to developers that don't
       see the terminal with the Chaos Monkey output).
     - Frontend with HMR: `cd web && npm run dev`.
-13. Check the logs of the backend and frontend to confirm they're
+14. Check the logs of the backend and frontend to confirm they're
     up. Wait until the backend logs indicate a health check has
     passed and the inspect page URL has printed.
-14. Give the user the URLs for the backend inspect page and the
+15. Give the user the URLs for the backend inspect page and the
     frontend dev server, plus a first thing to click / a first
     page to open.
 

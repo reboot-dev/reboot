@@ -279,8 +279,14 @@ with "unknown actor type."
 
 ### Testing
 
-- `references/testing-harness.md` — `Reboot()` test harness
-- `references/testing-external-context.md` — `create_external_context`
+- `references/testing-project-setup.md` — `backend/tests/` layout,
+  `.pytest.ini`, dev-deps, `uv run pytest`
+- `references/testing-harness.md` — `Reboot()` harness, multi-servicer
+  `Application(...)`, permissive authorizers, bearer tokens,
+  `_auto_construct`
+- `references/testing-external-context.md` — `create_external_context`,
+  asserting on `<Method>Aborted`, waiting on tasks/workflows, mocking
+  external services / LLMs, one-test-per-user-story
 
 ### Always relevant
 
@@ -295,7 +301,7 @@ Reference files live in `references/` and are named
 `{prefix}-{topic}.md` (e.g., `workflow-at-most-once.md`). Load only
 the files relevant to the current task; the "How to Use" section
 above lists the right ones grouped by task type. The full catalog
-of 45 files across 11 categories:
+of 46 files across 11 categories:
 
 **Lifecycle** (`lifecycle-`):
 
@@ -366,6 +372,7 @@ of 45 files across 11 categories:
 
 **Testing** (`testing-`):
 
+- `references/testing-project-setup.md`
 - `references/testing-harness.md`
 - `references/testing-external-context.md`
 

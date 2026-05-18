@@ -381,26 +381,46 @@ application directory.**
     [`references/react-app-tsx.md`](references/react-app-tsx.md) for
     `App.tsx` patterns.
 11. `cd web && npm run build`.
-12. Create `mcp_servers.json` with
+12. **Write and run backend unit tests covering each user-facing
+    user story before handing the app off.** Enumerate the user
+    stories from the plan — every action the user should be able
+    to _do_ through the MCP tool surface (e.g. "create a new
+    todo list", "add an item and see it listed", "rename a
+    list"). Write one test method per user story in
+    `backend/tests/<servicer>_test.py`, following the patterns
+    in `python/references/testing-project-setup.md`,
+    `python/references/testing-harness.md`, and
+    `python/references/testing-external-context.md`. Use one
+    `IsolatedAsyncioTestCase`, one external context per test
+    (`name=f"test-{self.id()}"`), and
+    `Service.ref(id).method(context, ...)` for all calls —
+    never instantiate Servicers directly. If any servicer has a
+    real `authorizer()`, use the permissive-subclass pattern
+    from `testing-harness.md`. Run `cd backend && uv run pytest`
+    and fix anything that fails. Do not proceed to the next
+    step until every user-story test passes — these tests are
+    the gate that catches contract bugs before the user sees
+    them in MCPJam.
+13. Create `mcp_servers.json` with
     `{"mcpServers":{"<name>":{"url":"http://localhost:9991/mcp","useOAuth":true}}}`.
-13. Run the app, by doing each of the following in a separate shell in the background:
+14. Run the app, by doing each of the following in a separate shell in the background:
     - run the backend: `uv run rbt dev run --no-chaos` - FYI, the `--no-chaos`
       disables the Chaos Monkey, which is a useful feature to catch bugs but
       would be confusing to developers that don't themselves see the terminal
       with the information that Chaos Monkey is running.
     - serve the frontend with hot module reloading: `cd web && npm run dev`
-14. Check the logs of the backend and frontend to validate that they are up and
+15. Check the logs of the backend and frontend to validate that they are up and
     running. Wait until the backend logs indicate that a health check has passed,
     at which point it must have printed the URL of its inspect page.
-15. Run the MCPJam inspector in a separate background shell:
+16. Run the MCPJam inspector in a separate background shell:
     `mcpjam-inspector --config mcp_servers.json --server <name>`
     Replace `<name>` with the actual server name from `mcp_servers.json`.
     MCPJam's launcher orphans the server on `SIGTERM`, so the
     plugin's `SessionEnd` hook reaps it when the user exits Claude
     Code.
-16. Give the user the URLs for the application's own inspect page, and
+17. Give the user the URLs for the application's own inspect page, and
     for the MCPJam inspector (`http://localhost:6274`).
-17. suggest a first prompt the user can try in the inspector (e.g., "Create a new todo list and show it to me").
+18. suggest a first prompt the user can try in the inspector (e.g., "Create a new todo list and show it to me").
 
 ## Update Flow
 
