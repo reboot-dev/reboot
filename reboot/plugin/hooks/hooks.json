@@ -1,5 +1,5 @@
 {
-  "description": "Prepend the plugin's bin/ to the agent's PATH so our shims take precedence over system-installed binaries.",
+  "description": "SessionStart prepends the plugin's bin/ to the agent's PATH so our shims take precedence over system-installed binaries. SessionEnd reaps the MCPJam inspector the chat-app skill leaves running. PreToolUse auto-approves this plugin's own skills and read-only calls on its files.",
   "hooks": {
     "SessionStart": [
       {
@@ -7,6 +7,16 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/session-start.sh\""
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/session-end.sh\""
           }
         ]
       }

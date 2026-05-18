@@ -9,8 +9,8 @@ tags: servicer, user, transaction, workflow, ref, schedule, classmethod, inline-
 
 The base Servicer pattern, context types, and core trips
 (`self.ref().state_id` not `self.state_id`, kwargs not Request
-wrappers, raise typed `<Method>Aborted`) are in `python`
-references/`servicer-*.md`, `rpc-refs.md`, `rpc-calls.md`,
+wrappers, raise typed `<Method>Aborted`) are in
+`python/references/servicer-*.md`, `rpc-refs.md`, `rpc-calls.md`,
 `api-errors.md`. What's _MCP-Chat-App-specific_:
 
 - One Servicer class per type — `UserServicer` plus one per
@@ -158,7 +158,7 @@ The inline writer's parameter must be named **`state`** — the
 runtime calls the callback as `writer(state=typed_state)`, so
 `async def make_move(s):` raises
 `TypeError: ... got an unexpected keyword argument 'state'`. See
-also `python` references/`workflow-state-write.md`.
+also `python/references/workflow-state-write.md`.
 
 ## Scheduling a Workflow from a Transaction
 

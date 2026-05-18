@@ -71,10 +71,13 @@ If any call inside a transaction fails (raises a `<Method>Aborted`), the
 runtime rolls back **all** the mutations made within that transaction —
 across every actor it touched.
 
-## External Side Effects Belong in Transactions
+## External Side Effects: Transaction or Workflow?
 
-Transactions are also the right place for calls that leave the system —
-sending email, hitting third-party APIs, etc. The pattern from
+A transaction can make calls that leave the system — sending email,
+hitting a third-party API. That is the right tool **only when the call
+is idempotent** (safe to run more than once): the runtime may retry a
+transaction, so every side effect inside it can run more than once for
+a single logical request. The pattern from
 [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic):
 
 ```python
@@ -96,6 +99,36 @@ async def sign_up(
     await account.deposit(context, amount=request.initial_deposit)
     return SignUpResponse()
 ```
+
+### Billed or non-idempotent effects belong in a `Workflow`
+
+Because a transaction body **may be retried** (see the `Critical` note
+at the top of this file), it is the **wrong** place for a side effect
+that is billed, non-idempotent, or hard to undo — most importantly an
+**LLM / model API call**, but also payment charges and similar. A
+retried transaction silently double-bills, and a transaction has no
+memoization to stop it.
+
+Put those in a **`Workflow`** and wrap the call in `at_least_once` /
+`at_most_once` (see `workflow-method.md` and
+`workflow-at-least-once.md`). The primitive **memoizes the result**: a
+workflow replay reuses the cached outcome instead of re-executing the
+call — the only way Reboot can give you "ran at most once" for an
+external effect.
+
+How to wire it up:
+
+- Make the external call inside a `Workflow` method, wrapped in
+  `at_least_once("alias", context, call)`. For an LLM call, let `call`
+  catch its own errors and return them as data, so a permanent failure
+  (e.g. a bad API key) is not retried forever.
+- To trigger it on demand — from a tool, another method, or a UI
+  button — expose a `Writer`/`Transaction` that only **schedules** the
+  workflow (`await self.ref().schedule().<workflow_method>(context)`),
+  never one that performs the external call itself.
+
+Rule of thumb: **if you would be unhappy to see the call happen twice,
+it does not belong in a transaction.**
 
 ## Use `asyncio.gather` for Concurrent Sub-Calls
 

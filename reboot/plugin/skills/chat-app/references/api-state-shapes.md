@@ -8,8 +8,8 @@ tags: state, list, nested, sub-object, optional, model, default, default_factory
 ## API State Shapes — List and Nested Sub-Objects
 
 The pydantic foundation rules (zero-value defaults; non-Optional
-`Model`-typed fields reject defaults) are in `python`
-references/`api-pydantic.md`. This file covers the two chat-app
+`Model`-typed fields reject defaults) are in
+`python/references/api-pydantic.md`. This file covers the two chat-app
 state shapes that come up most often: list-based state and
 single-nested-Model state.
 
@@ -99,8 +99,8 @@ parent state is first written.
 
 State actors (whatever has `Type(state=<X>)` registered in your
 `API(...)`) must NOT appear as nested fields on other state
-actors. That's the same rule covered in `python`
-references/`state-nested-models.md` — only **non-state**
+actors. That's the same rule covered in
+`python/references/state-nested-models.md` — only **non-state**
 `Model`s may be nested fields. To compose one state actor into
 another, store its **string ID** in the parent and reach the
 nested actor via `<Type>.ref(<id>)`. A Model referenced as

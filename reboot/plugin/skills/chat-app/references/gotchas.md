@@ -11,7 +11,7 @@ For the rest of the trip-list — `.rbtrc` line-based, no `__init__.py`
 in `api/`, pydantic Field zero-default rule, `self.ref().state_id`
 not `self.state_id`, kwargs not Request wrappers, generated import
 paths, `Service.create(context, id)` semantics, register-all-Servicers
-— see `python` references/`patterns-common-gotchas.md` and
+— see `python/references/patterns-common-gotchas.md` and
 the per-topic references.
 
 The list below is what's specific to the MCP-Chat-App layer:
@@ -24,8 +24,8 @@ The list below is what's specific to the MCP-Chat-App layer:
    including `User`). Use `mcp=None` to hide it from the AI.
 
 3. **Application types need `factory=True`** on their `create`
-   Writer method. (Underlying mechanic: see `python`
-   references/`servicer-constructor.md`.)
+   Writer method. (Underlying mechanic: see
+   `python/references/servicer-constructor.md`.)
 
 4. **`npm install` before second `rbt generate`** — React bindings
    need `node_modules` to exist when `rbt generate` produces them.
@@ -129,8 +129,8 @@ The list below is what's specific to the MCP-Chat-App layer:
     `User.CreateCheckersGameResponse`, even if you named your
     `Model` class something else. Mismatching the method PascalCase
     raises `AttributeError: type object '<Type>' has no attribute '<WrongName>'`.
-    (The full rule is in `python`
-    references/`api-pydantic.md`.)
+    (The full rule is in
+    `python/references/api-pydantic.md`.)
 
 17. **`Workflow(...)` requires `mcp=`, just like every other method
     factory.** Easy to miss because workflows are usually internal
@@ -142,8 +142,8 @@ The list below is what's specific to the MCP-Chat-App layer:
     calls the writer callback as `writer(state=typed_state)`, so
     `async def make_move(s):` raises
     `TypeError: ... got an unexpected keyword argument 'state'`.
-    Always use `async def fn(state): ...`. (See `python`
-    references/`workflow-state-write.md`.)
+    Always use `async def fn(state): ...`. (See
+    `python/references/workflow-state-write.md`.)
 
 19. **`web/dist/ui/<name>/index.html` is the right location** for
     the built MCP UI — that's where the MCP server's
@@ -155,3 +155,21 @@ The list below is what's specific to the MCP-Chat-App layer:
     `Web artifact 'web/dist/ui/<name>/index.html' is missing`, run
     `cd web && npm run build` — do **not** rewrite the Vite config
     to emit a flat `dist/<name>.html`; that breaks discovery.
+
+20. **LLM / model API calls go in a `Workflow`, never a
+    `Transaction`.** Chat apps routinely call a model (to summarize,
+    rank, classify, generate). Reboot **retries transactions**, so a
+    model call inside one is billed multiple times for a single
+    logical request — and a transaction has no memoization to prevent
+    it. Put the call in a `Workflow` and wrap it in `at_least_once` /
+    `at_most_once`; the result is memoized, so a workflow replay reuses
+    it instead of re-billing the provider. Pass
+    `effect_validation=EffectValidation.DISABLED` to `at_least_once`
+    (both from `reboot.aio.workflows`) so its effect-validation re-run
+    does not double-call the provider. Expose any on-demand "do it
+    now" tool as a `Writer`/`Transaction` that only **schedules** the
+    workflow (`await self.ref().schedule().<workflow_method>(context)`)
+    — never one that makes the model call itself. Full rationale in
+    `python/references/servicer-transaction.md` (§External Side
+    Effects: Transaction or Workflow?) and
+    `python/references/workflow-method.md`.

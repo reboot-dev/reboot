@@ -8,8 +8,8 @@ tags: api, pydantic, ui, tool, mcp, reader, writer, transaction, workflow, facto
 ## API Definition — Method Types and Tool Exposure
 
 The pydantic API rules — zero-value defaults, `Optional[<Model>]` +
-`default=None` for nested Models — are in `python`
-references/`api-pydantic.md`. The marker → context type mapping is
+`default=None` for nested Models — are in
+`python/references/api-pydantic.md`. The marker → context type mapping is
 in `api-methods.md`.
 
 What's _MCP-Chat-App-specific_ about these files:
@@ -261,4 +261,4 @@ Bound source classes (whatever you pass to `request=` /
 `User.CreateCheckersGameResponse`, even if you named your `Model`
 class something else. Mismatching the method PascalCase raises
 `AttributeError: type object '<Type>' has no attribute '<WrongName>'`.
-The full rule is in `python` references/`api-pydantic.md`.
+The full rule is in `python/references/api-pydantic.md`.

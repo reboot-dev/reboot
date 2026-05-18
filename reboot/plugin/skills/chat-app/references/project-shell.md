@@ -19,7 +19,7 @@ The `python` skill covers the canonical project shape
 
 ### `.rbtrc`
 
-Same shape as `python` references/`lifecycle-rbtrc.md`. Chat
+Same shape as `python/references/lifecycle-rbtrc.md`. Chat
 apps add `--default-config=hmr` plus `:hmr` and `:dist` named
 configs that route Envoy to a Vite dev server (HMR) or a built
 `web/dist/` (production):
@@ -95,7 +95,7 @@ managed = true
 ### `main.py`
 
 Register all servicers (User + application types). Shape per
-`python` references/`lifecycle-application-entry.md`:
+`python/references/lifecycle-application-entry.md`:
 
 ```python
 import asyncio
@@ -130,8 +130,8 @@ created on demand by `User`'s Transaction methods.
 ### State Is Durable
 
 State survives restarts. `dev run --application-name=<name>` in
-`.rbtrc` (above) is what makes that work — see `python`
-references/`lifecycle-rbtrc.md` (`--application-name` is canonical
-on `reboot>=1.0.4`; the older `--name` still works as a deprecated
-alias but warns). `uv run rbt dev expunge --application-name=<name>`
+`.rbtrc` (above) is what makes that work — see
+`python/references/lifecycle-rbtrc.md` (`--application-name` is
+canonical on `reboot>=1.0.4`; the older `--name` still works as a
+deprecated alias but warns). `uv run rbt dev expunge --application-name=<name>`
 resets persisted state.
