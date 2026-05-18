@@ -14,6 +14,7 @@ import tty
 from colorama import Fore
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
+from dotenv import dotenv_values
 from enum import Enum
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 from opentelemetry.sdk.environment_variables import (
@@ -96,6 +97,15 @@ class EnvTransformer(BaseTransformer):
         return value.split('=', 1)
 
 
+def _load_env_file(path: str) -> dict[str, str]:
+    """Read a `--env-file` into a dict of environment variables.
+    """
+    return {
+        key: value if value is not None else ''
+        for key, value in dotenv_values(path).items()
+    }
+
+
 def add_application_options(subcommand: SubcommandParser) -> None:
     """Helper that adds options used to run Reboot applications."""
     subcommand.add_argument(
@@ -146,6 +156,17 @@ def _register_dev_run(parser: ArgumentParser):
     add_working_directory_options(parser.subcommand('dev run'))
 
     add_application_options(parser.subcommand('dev run'))
+
+    parser.subcommand('dev run').add_argument(
+        '--env-file',
+        type=str,
+        help=(
+            "path to a '.env' file whose 'KEY=VALUE' lines are set "
+            "as environment variables before running the "
+            "application; standard '.env' syntax is supported."
+        ),
+        non_empty_string=True,
+    )
 
     parser.subcommand('dev run').add_argument(
         '--application-name',
@@ -1361,17 +1382,38 @@ async def __dev_run(
         env[OTEL_EXPORTER_OTLP_TRACES_ENDPOINT] = "localhost:4317"
         env[OTEL_EXPORTER_OTLP_TRACES_INSECURE] = "true"
 
-    # Also include all environment variables from '--env='.
-    for (key, value) in args.env or []:
-        env[key] = value
+    # Compose the environment for an application run. Rebuilding from
+    # the frozen base `env` ensures that keys removed from the file are
+    # removed from the result.
+    def compose_env() -> dict[str, str]:
+        composed = env.copy()
 
-    # If 'PYTHONPATH' is not explicitly set, we'll set it to the
-    # specified generated code directory.
-    if 'PYTHONPATH' not in env and generate_python_directory is not None:
-        pythonpath = generate_python_directory
-        for proto_directory in generate_proto_directories or []:
-            pythonpath = pythonpath + os.pathsep + proto_directory
-        env['PYTHONPATH'] = pythonpath
+        # Include environment variables from `--env-file=`. The
+        # `--env=` values below override anything also set here. A
+        # missing file is ignored here.
+        if args.env_file is not None and os.path.isfile(args.env_file):
+            composed.update(_load_env_file(args.env_file))
+
+        # Also include all environment variables from '--env='.
+        for (key, value) in args.env or []:
+            composed[key] = value
+
+        # If 'PYTHONPATH' is not explicitly set, we'll set it to the
+        # specified generated code directory.
+        if (
+            'PYTHONPATH' not in composed and
+            generate_python_directory is not None
+        ):
+            pythonpath = generate_python_directory
+            for proto_directory in generate_proto_directories or []:
+                pythonpath = pythonpath + os.pathsep + proto_directory
+            composed['PYTHONPATH'] = pythonpath
+
+        return composed
+
+    # Warn once, at startup, if `--env-file` points at a missing file.
+    if args.env_file is not None and not os.path.isfile(args.env_file):
+        terminal.warn(f"'--env-file' '{args.env_file}' does not exist.")
 
     if not args.chaos:
         # When running with '--terminate-after-health-check', we
@@ -1451,7 +1493,14 @@ async def __dev_run(
 
             # NOTE: we don't want to watch `application` yet as it
             # might be getting generated if we're using `transpile`.
-            async with watcher.watch(args.watch or []) as watch_event_task:
+            #
+            # We also watch the `--env-file` (if any) as its own event
+            # task so that editing it triggers an application restart.
+            async with watcher.watch(
+                args.watch or []
+            ) as watch_event_task, watcher.watch(
+                [args.env_file] if args.env_file is not None else []
+            ) as env_file_event_task:
 
                 # Transpile TypeScript if requested.
                 if args.transpile is not None:
@@ -1471,6 +1520,7 @@ async def __dev_run(
                             )
                             completed = await _wait_for_first_completed(
                                 watch_event_task,
+                                env_file_event_task,
                                 protos_event_task,
                                 rc_file_event_task,
                             )
@@ -1530,6 +1580,7 @@ async def __dev_run(
                             completed = await _wait_for_first_completed(
                                 application_event_task,
                                 watch_event_task,
+                                env_file_event_task,
                                 protos_event_task,
                                 rc_file_event_task,
                             )
@@ -1617,7 +1668,7 @@ async def __dev_run(
                     [application] if not auto_transpilation else ts_input_paths
                 ) as application_event_task, _run(
                     application if not auto_transpilation else str(bundle),
-                    env=env,
+                    env=compose_env(),
                     launcher=launcher,
                     subprocesses=subprocesses,
                     application_started_event=application_started_event,
@@ -1642,6 +1693,7 @@ async def __dev_run(
                     completed = await _wait_for_first_completed(
                         application_event_task,
                         watch_event_task,
+                        env_file_event_task,
                         protos_event_task,
                         process_wait_task,
                         induce_chaos_task,
@@ -1698,6 +1750,7 @@ async def __dev_run(
                     completed = await _wait_for_first_completed(
                         application_event_task,
                         watch_event_task,
+                        env_file_event_task,
                         protos_event_task,
                         rc_file_event_task,
                         expunge_task,
