@@ -593,6 +593,7 @@ sh_library(
         "stage_and_publish_local.sh",
     ],
     data = [
+        "retag_wheel.py",
         ":reboot.dev",
         "//rbt/v1alpha1:reboot-dev-reboot-api",
         "//reboot/create-ui:reboot-dev-create-ui",
@@ -610,6 +611,7 @@ sh_binary(
         "stage_and_publish_local.sh",
     ],
     data = [
+        "retag_wheel.py",
         ":reboot.dev",
         "//rbt/v1alpha1:reboot-dev-reboot-api",
         "//reboot/create-ui:reboot-dev-create-ui",
