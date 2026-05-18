@@ -1,21 +1,22 @@
 ---
 title: Implement Transaction Methods
 impact: HIGH
-impactDescription: Cross-actor and external-effect work requires a transaction
+impactDescription: Cross-actor atomic work requires a transaction
 tags: servicer, transaction, TransactionContext, atomic, multi-actor
 ---
 
 ## Implement Transaction Methods
 
-> **Critical:** transactions are **atomic across actors and external
-> side effects** — any `<Method>Aborted` rolls back **all** mutations
-> in the transaction. Reboot may retry transactions internally, so the
-> body must be safe to re-run with the same input.
+> **Critical:** transactions are **all-or-nothing across actors** —
+> any `<Method>Aborted` rolls back **all** mutations in the
+> transaction. Reboot may also retry transactions internally, so the
+> body must be safe to re-run with the same input — and must **never**
+> call outside the system (see below).
 
 A method declared with `Transaction(...)` in the API file receives a
 `TransactionContext` and is the only place where you can atomically
-mutate multiple actors, call external services, or both. The runtime
-serializes transactions that touch overlapping actors.
+mutate multiple actors. The runtime serializes transactions that touch
+overlapping actors.
 
 **Incorrect (multi-actor work in a writer):**
 
@@ -71,14 +72,23 @@ If any call inside a transaction fails (raises a `<Method>Aborted`), the
 runtime rolls back **all** the mutations made within that transaction —
 across every actor it touched.
 
-## External Side Effects: Transaction or Workflow?
+## External Calls Belong in a Workflow, Not a Transaction
 
-A transaction can make calls that leave the system — sending email,
-hitting a third-party API. That is the right tool **only when the call
-is idempotent** (safe to run more than once): the runtime may retry a
-transaction, so every side effect inside it can run more than once for
-a single logical request. The pattern from
-[`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic):
+A transaction is **all-or-nothing**: if it aborts, the semantics are
+that **no effect has taken place** — every mutation it made is rolled
+back. A call that leaves the system — sending email, hitting a
+third-party API, an **LLM / model API call**, charging a payment —
+**cannot be rolled back**. A transaction making such a call directly
+breaks that guarantee: the transaction can still abort, but the
+external call already happened. Reboot may also retry a transaction
+internally, which would run the call more than once.
+
+So a transaction must **never** make an external call itself. It may
+freely call other **in-system actors**, and the correct pattern is for
+one of those actors to **schedule a `Workflow`** that performs the
+external call. The
+[`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic)
+`sign_up` transaction sends a welcome email this way:
 
 ```python
 async def sign_up(
@@ -100,20 +110,18 @@ async def sign_up(
     return SignUpResponse()
 ```
 
-### Billed or non-idempotent effects belong in a `Workflow`
+`mailgun.Message.send` is a `Writer` on an in-system mailgun actor — it
+does not hit the network itself; it **schedules a workflow** that makes
+the actual HTTP send. So the transaction only ever issues in-system
+RPCs, and the un-rollback-able external call lives safely in that
+workflow.
 
-Because a transaction body **may be retried** (see the `Critical` note
-at the top of this file), it is the **wrong** place for a side effect
-that is billed, non-idempotent, or hard to undo — most importantly an
-**LLM / model API call**, but also payment charges and similar. A
-retried transaction silently double-bills, and a transaction has no
-memoization to stop it.
-
-Put those in a **`Workflow`** and wrap the call in `at_least_once` /
-`at_most_once` (see `workflow-method.md` and
-`workflow-at-least-once.md`). The primitive **memoizes the result**: a
-workflow replay reuses the cached outcome instead of re-executing the
-call — the only way Reboot can give you "ran at most once" for an
+When _you_ are the one making the external call — an LLM / model API
+call, a payment charge — put it in a `Workflow` method and wrap it in
+`at_least_once` / `at_most_once` (see `workflow-method.md` and
+`workflow-at-least-once.md`). That primitive **memoizes the result**:
+a workflow replay reuses the cached outcome instead of re-executing
+the call — the only way Reboot can give you "ran at most once" for an
 external effect.
 
 How to wire it up:
@@ -122,13 +130,13 @@ How to wire it up:
   `at_least_once("alias", context, call)`. For an LLM call, let `call`
   catch its own errors and return them as data, so a permanent failure
   (e.g. a bad API key) is not retried forever.
-- To trigger it on demand — from a tool, another method, or a UI
-  button — expose a `Writer`/`Transaction` that only **schedules** the
-  workflow (`await self.ref().schedule().<workflow_method>(context)`),
-  never one that performs the external call itself.
+- A `Transaction` (or `Writer`) reaches that workflow only by
+  **scheduling** it —
+  `await self.ref().schedule().<workflow_method>(context)` — never by
+  performing the external call itself.
 
-Rule of thumb: **if you would be unhappy to see the call happen twice,
-it does not belong in a transaction.**
+Rule of thumb: **if a call leaves the system, it belongs in a
+workflow, not a transaction.**
 
 ## Use `asyncio.gather` for Concurrent Sub-Calls
 
