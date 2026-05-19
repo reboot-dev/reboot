@@ -428,10 +428,21 @@ def _pydantic_to_proto(
         assert len(list_args) == 1
         list_item_type = list_args[0]
 
+        list_item_origin = get_origin(list_item_type)
+
         for list_item in input:
-            # For 'RepeatedScalarContainer' there is not 'add' method,
-            # so we need to handle primitive type containers separately.
-            if list_item_type not in (int, float, str, bool):
+            # For 'RepeatedScalarContainer' there is no 'add' method, so
+            # we need to handle scalar containers separately.
+            if list_item_type in (int, float, str, bool):
+                # Primitive type, we can append directly.
+                output.items.append(list_item)
+            elif list_item_origin is Literal:
+                # 'Literal' items become a 'repeated' Protobuf 'enum', so
+                # append the literal's index like a plain scalar.
+                output.items.append(
+                    _pydantic_to_proto(list_item, list_item_type, int)
+                )
+            else:
                 output_item = output.items.add()
                 nested_output = _pydantic_to_proto(
                     list_item,
@@ -440,9 +451,6 @@ def _pydantic_to_proto(
                 )
                 assert isinstance(nested_output, Message)
                 output_item.CopyFrom(nested_output)
-            else:
-                # Primitive type, we can append directly.
-                output.items.append(list_item)
         return output
     elif input_type_or_origin is dict:
         # Ensure 'output_type' is a class (not a Union of primitive
@@ -462,11 +470,22 @@ def _pydantic_to_proto(
         assert len(dict_args) == 2
         dict_value_type = dict_args[1]
 
+        dict_value_origin = get_origin(dict_value_type)
+
         for key, value in input.items():
             # For map fields, we use dictionary-style assignment instead
             # of 'add()' or 'append()'. Scalar map values use direct
             # assignment while message map values should use 'CopyFrom()'.
-            if dict_value_type not in (int, float, str, bool):
+            if dict_value_type in (int, float, str, bool):
+                # Primitive type, we can assign directly.
+                output.record[key] = value
+            elif dict_value_origin is Literal:
+                # 'Literal' values become a 'map' with a Protobuf
+                # 'enum' value type; assign the literal's index.
+                output.record[key] = _pydantic_to_proto(
+                    value, dict_value_type, int
+                )
+            else:
                 output_value = output.record[key]
                 nested_output = _pydantic_to_proto(
                     value,
@@ -475,9 +494,6 @@ def _pydantic_to_proto(
                 )
                 assert isinstance(nested_output, Message)
                 output_value.CopyFrom(nested_output)
-            else:
-                # Primitive type, we can assign directly.
-                output.record[key] = value
         return output
     elif issubclass(input_type_or_origin, Model):
         assert isinstance(output_type, type(Message))

@@ -68,6 +68,11 @@ class ComplexTypesRequest(Model):
     optional_data_list_primitive: Optional[list[int]] = Field(tag=8)
     data_dict_primitive: dict[str, float] = Field(tag=9)
     optional_data_dict_primitive: Optional[dict[str, float]] = Field(tag=10)
+    data_list_literal: list[LiteralType] = Field(tag=11)
+    optional_data_list_literal: Optional[list[LiteralType]] = Field(tag=12)
+    data_dict_literal: dict[str, LiteralType] = Field(tag=13)
+    optional_data_dict_literal: Optional[dict[str,
+                                              LiteralType]] = Field(tag=14)
 
 
 class State(Model):
@@ -97,6 +102,11 @@ class State(Model):
     data_dict_value: dict[str, ArbitraryData] = Field(tag=9)
     optional_data_dict_value: Optional[dict[str,
                                             ArbitraryData]] = Field(tag=10)
+    # `list[<Literal>]` — a repeated `enum` field; we want to ensure
+    # codegen lowers it and that the runtime round-trips it.
+    literal_list_value: list[LiteralType] = Field(tag=21)
+    # `dict[str, <Literal>]` — a `map` with `enum` values.
+    literal_dict_value: dict[str, LiteralType] = Field(tag=22)
 
     ### Empty default values. ###
     str_default_value: str = Field(

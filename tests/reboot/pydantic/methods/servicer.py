@@ -114,6 +114,26 @@ class TestServicer(Test.Servicer):
 
         self.state.literal_value = "option1"
 
+        # Exercise `list[<Literal>]` (a repeated `enum`): set it, read
+        # it back to confirm the proto round-trip preserves order.
+        self.state.literal_list_value = ["option3", "option1", "option2"]
+        assert self.state.literal_list_value == [
+            "option3",
+            "option1",
+            "option2",
+        ]
+
+        # Exercise `dict[str, <Literal>]` (a `map` with `enum` values):
+        # set it, read it back to confirm the proto round-trip.
+        self.state.literal_dict_value = {
+            "a": "option2",
+            "b": "option1",
+        }
+        assert self.state.literal_dict_value == {
+            "a": "option2",
+            "b": "option1",
+        }
+
     def authorizer(self):
 
         def update_state_rule(
