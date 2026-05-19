@@ -322,8 +322,7 @@ with "unknown actor type."
 Reference files live in `references/` and are named
 `{prefix}-{topic}.md` (e.g., `workflow-at-most-once.md`). Load only
 the files relevant to the current task; the "How to Use" section
-above lists the right ones grouped by task type. The full catalog
-of 48 files across 12 categories:
+above lists the right ones grouped by task type. The full catalog:
 
 **Lifecycle** (`lifecycle-`):
 
@@ -332,6 +331,7 @@ of 48 files across 12 categories:
 - `references/lifecycle-application-entry.md`
 - `references/lifecycle-initialize-hook.md`
 - `references/lifecycle-secrets.md`
+- `references/lifecycle-dockerfile.md`
 - `references/lifecycle-reboot-cloud.md`
 
 **API** (`api-`):

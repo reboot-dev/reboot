@@ -52,7 +52,9 @@ Contact Reboot via the Discord community or
 ## Deploying: `rbt cloud up`
 
 The app needs a `Dockerfile` at the project root that builds the
-backend image. `rbt cloud up` builds it, pushes it to Reboot's
+backend image — see
+[`lifecycle-dockerfile.md`](lifecycle-dockerfile.md) for the
+canonical layout. `rbt cloud up` builds it, pushes it to Reboot's
 managed registry, and rolls out a new revision:
 
 ```sh
