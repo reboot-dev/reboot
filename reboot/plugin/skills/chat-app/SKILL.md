@@ -93,7 +93,11 @@ show the chat-app-specific shape on top.
   between in-state `list[Sub]`, in-state `list[str]` of foreign
   IDs, or an `OrderedMap` of foreign IDs. The trap is
   defaulting to `list[Person]`/`list[Post]`/`list[Task]` on `User`
-  for entity collections — see Step 1 of that reference.
+  for entity collections — see Step 1 of that reference. A second
+  trap: a collection **synced or scraped from an external system**
+  (a repo's issues, a mailbox, an RSS feed) is unbounded by
+  definition — model it as an `OrderedMap`; a size cap never makes
+  it bounded.
 - `python/references/state-nested-models.md` — the same rule from
   the nested-`Model` angle.
 
@@ -246,13 +250,18 @@ Before writing code, analyze the user's request:
    wrong move is packing everything into `User`'s state as
    `list[Person]` (or `list[Post]`, `list[Task]`, …) — that
    flattens N actors into one, prevents per-entity auth/methods,
-   and forces a full rewrite when the collection grows. See
+   and forces a full rewrite when the collection grows. A
+   collection your app **syncs or scrapes from an external
+   system** (a GitHub repo's issues, a mailbox, an RSS feed) is an
+   entity collection too — and unbounded by definition — even
+   though the user never "adds" to it directly. See
    `python/references/state-collections.md` Step 1 for the full
    decomposition signal list.
 2. **Container shape for each collection.** Once an entity is its
    own `Type`, the parent (typically `User`) stores **references**,
    not objects. Three shapes (full table + worked PRM example in
    `python/references/state-collections.md`):
+
    - `list[Sub]` of non-state `Model`s — for bounded sub-records
      that genuinely belong with the parent (line items on an Order,
      tags on a Post). NOT for entity collections.
@@ -263,7 +272,17 @@ Before writing code, analyze the user's request:
      grows without bound, needs pagination, range queries, or
      ordered iteration. The default choice for any "list of
      things the user keeps adding to" (people in a PRM, posts
-     on a blog, messages in a thread).
+     on a blog, messages in a thread) and for anything synced
+     from an external source (a repo's issues, a mailbox).
+
+   **Boundedness is a domain fact, not a number you pick.** If you
+   catch yourself adding a size cap (`MAX_ITEMS = 40`) so a
+   collection counts as "bounded" and qualifies for `list[Sub]` or
+   `list[str]`, it is unbounded — use `OrderedMap`. Externally-
+   synced collections are always `OrderedMap`. The boundedness
+   guard in `python/references/state-collections.md` has the full
+   rule.
+
 3. **User methods**: How does the AI create instances of application
    types? Each gets a `Transaction` on `User` that calls
    `<Type>.create(context)`, then registers the new ID in the
@@ -301,6 +320,34 @@ Before writing code, analyze the user's request:
 8. **Identity**: Single default instance vs. multiple instances?
 9. **Cross-state coordination**: Does any operation touch multiple
    state instances? If yes, use `Transaction`.
+
+## When Correct Decomposition Fights the UI
+
+The React references in this skill show **one `use<Type>()`
+subscription per UI** — one hook, one actor, one live feed. That
+is the easy, documented path, and it quietly pressures you to
+flatten an entity collection into `list[Item]` on a single actor
+just so the dashboard can read it in one subscription.
+
+**Resolve the tension the other way: the data model wins.** When
+a collection is its own entity type (Assessment step 1) or
+unbounded (step 2, Shape C), keep it decomposed — one actor per
+item, an `OrderedMap` index on the parent — even though that is
+more than one actor. Do **not** collapse the model to fit the
+single-subscription pattern. A demo-correct `list[Item]` that
+must be torn apart the moment a real data source is pointed at it
+is the exact failure this skill exists to prevent.
+
+The UI still gets its single subscription. Add a **composing
+reader** on the front-door type: a `Reader` that ranges the
+parent's `OrderedMap` for one page of IDs, reads each item actor,
+and returns a page of fully-hydrated objects plus a `next_cursor`.
+The React UI subscribes to that one reader and pages by cursor —
+the fan-out across item actors happens server-side, inside the
+reader. The composing-reader pattern (backend reader + React
+subscription) is in
+[`references/react-app-tsx.md`](references/react-app-tsx.md);
+Shape C is in `python/references/state-collections.md`.
 
 ## Key Framework Concepts (MCP Chat App–specific)
 

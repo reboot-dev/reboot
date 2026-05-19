@@ -28,6 +28,19 @@ the chat-app-specific corollaries.
 > collection grows or items need their own auth/methods — see
 > `python/references/state-collections.md`.
 
+> **"Bounded" means the domain bounds it — not that you added a
+> cap.** `list[Sub]` is correct only when the collection cannot
+> grow past a few dozen _by its nature_ (an order has a handful
+> of line items; a config blob has a fixed field set). If you are
+> adding a `MAX_ITEMS` constant to keep a collection small enough
+> for `list[Sub]`, the collection is unbounded and this is the
+> wrong shape — see the boundedness guard in
+> `python/references/state-collections.md`. A collection **synced
+> or scraped from an external system** (issues in a repo, mail in
+> a mailbox, entries in a feed) is never Shape A: it is an
+> unbounded entity collection and belongs in an `OrderedMap` of
+> IDs.
+
 For application types whose state actually is a **bounded sub-record
 list** — line items on an Order, tags on a Post, fields in a Config
 blob, attachments on a single Message — and where the items have no

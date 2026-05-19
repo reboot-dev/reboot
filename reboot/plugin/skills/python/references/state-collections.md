@@ -45,6 +45,18 @@ on a Guest) — keep it inline. See `state-nested-models.md`.
 > `Type`. "Each user has N of them" = **N actors**, not N rows on one
 > actor.
 
+> **Externally-synced collections are unbounded — and the verb
+> test above misses them.** A collection mirrored from an outside
+> source — a GitHub repo's issues and PRs, a mailbox's messages,
+> an RSS feed's entries, rows pulled from a third-party API —
+> never shows up with the user "add"-ing to it, so none of the
+> verbs above fire. It is still an entity collection, and it is
+> unbounded by definition: size it to the **source** (a repo has
+> thousands of issues; an inbox has tens of thousands of
+> messages), never to the demo you happen to test against. Each
+> synced item is its own state `Type`; the parent indexes them
+> with Shape C below.
+
 ### Step 2: Pick the Container Shape
 
 Three shapes show up. They differ along two axes: **what's stored**
@@ -56,6 +68,18 @@ collection can get**.
 | **A. `list[Sub]` / `dict[str, Sub]` of non-state `Model`s** | Sub-records with **no identity of their own** that live and die with the parent. Bounded — dozens at most. E.g. line items on an Order, tags on a Post, fields in a Config blob.                        | Every write rewrites the full list. No pagination. Cannot grow without bound.                                 |
 | **B. `list[str]` / `dict[str, str]` of foreign state IDs**  | Items are their own state `Type` (Step 1 said yes) **and** the collection stays bounded — typically a few hundred, low thousands at most. You almost always read the whole index. No pagination needed. | Each parent write rewrites the full list of IDs. Doesn't scale past low thousands.                            |
 | **C. `OrderedMap` of foreign state IDs**                    | Items are their own state `Type` **and** the collection grows without bound, **or** needs pagination, range queries, or ordered iteration.                                                              | Extra hop to a stdlib actor. Entry values use the `value` / `bytes` / `any` envelope. `range` needs `limit=`. |
+
+> **"Bounded" is a domain fact, not a knob you control.** You do
+> not get to make a collection bounded by adding a size cap. If
+> you are reaching for `MAX_ITEMS = 40` or "keep only the latest
+> 50" so a collection qualifies as bounded and lands in Shape A
+> or B, stop — it is **unbounded**. The cap is a product decision
+> (how much to _show_ the user), not a data-modeling one, and it
+> belongs in a reader or view, never in the state shape. A
+> genuine bound is one the domain itself fixes: a board has 9
+> cells, an order has at most 100 line items. An invented cap is
+> a Shape C collection in disguise — model it as Shape C and let
+> the product decide later whether to display only the first 40.
 
 Shapes B and C agree on the underlying decomposition — items are
 their own state `Type` referenced by ID. They differ only in **how
@@ -222,6 +246,17 @@ value-field options (`value` / `bytes` / `any`).
   simpler". It is, until it isn't — and the migration rewrites
   every method that touches the parent. Use Shape C from the start
   if the collection can grow without bound.
+- **Inventing a size cap to qualify for Shape A or B.** Adding a
+  `MAX_ITEMS` constant to a synced or open-ended collection so it
+  "fits" a `list`. The cap truncates the collection; it does not
+  make the domain bounded. Model as Shape C and cap the _view_ in
+  a reader, never the _state_.
+- **An externally-synced collection held in-state.** A repo's
+  issues, an inbox's mail, or a feed's entries as `list[Sub]` on
+  one parent actor: every sync rewrites the whole list, editing
+  one item rewrites all of them, and the parent actor grows
+  toward Reboot's per-actor state-size limit. Promote each synced
+  item to its own `Type` and index them with Shape C.
 - **`OrderedMap` for a clearly bounded, sub-dozen collection.** The
   extra hop is wasted; `list[Sub]` (Shape A) or `list[str]`
   (Shape B) is fine.

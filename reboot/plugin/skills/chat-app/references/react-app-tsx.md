@@ -2,7 +2,7 @@
 title: React App.tsx — Generated Hooks and Component Patterns
 impact: HIGH
 impactDescription: The generated `use<Type>()` hook returns reader subscriptions and mutation functions; both go directly to the Reboot backend. Reboot snake_case Python field names become camelCase in TypeScript. Each `App.tsx` lives next to a CSS module and consumes the per-UI props passed via `UI(request=...)`.
-tags: react, app-tsx, hooks, useType, css-module, snake-camel, app-tsx-example
+tags: react, app-tsx, hooks, useType, css-module, snake-camel, app-tsx-example, composing-reader, pagination, ordered-map, multi-actor
 ---
 
 ## React App.tsx — Generated Hooks and Component Patterns
@@ -310,3 +310,109 @@ export const ClickerApp: FC = () => {
 
 Adapt the CSS module to your app's needs. The CSS variables from
 `index.css` provide consistent theming.
+
+## Reading Across Many Actors — the Composing Reader
+
+The Counter example above is the single-actor case: one
+`use<Type>()` hook, one actor, one live feed. It does **not**
+generalize to a collection that has been correctly decomposed —
+each item its own state `Type`, indexed by an `OrderedMap` on the
+parent (Shape C in `python/references/state-collections.md`).
+There each item is a separate actor, and there is no
+`use<Item>()` call that renders the whole list at once.
+
+The wrong fix is to flatten the model back into `list[Item]` on
+one actor so the dashboard regains a single subscription — see
+"When Correct Decomposition Fights the UI" in
+[`SKILL.md`](../SKILL.md). The right fix keeps the decomposition
+and gives the front-door type a **composing reader**: the UI
+still has exactly one subscription, and the fan-out across item
+actors happens server-side.
+
+### Backend: a composing `Reader` on the front-door type
+
+The reader ranges the parent's `OrderedMap` for one page of IDs,
+reads each item actor, and returns a page of hydrated objects
+plus a cursor for the next page:
+
+```python
+# In the front-door type's Servicer. `Item` is the per-item state
+# Type; `items_index_id` is the OrderedMap ID stored on the parent.
+async def dashboard(
+    self,
+    context: ReaderContext,
+    request: User.DashboardRequest,
+) -> User.DashboardResponse:
+    page = await OrderedMap.ref(self.state.items_index_id).range(
+        context, start_key=request.cursor, limit=32,
+    )
+    items = []
+    for entry in page.entries:
+        item_id = entry.bytes.decode()
+        # A Reader may call other Readers — the fan-out is
+        # server-side. See `python/references/servicer-reader.md`.
+        view = await Item.ref(item_id).get(context)
+        items.append(
+            User.DashboardItem(
+                item_id=item_id,
+                title=view.title,
+                status=view.status,
+            )
+        )
+    return User.DashboardResponse(
+        items=items,
+        next_cursor=(page.entries[-1].key if page.entries else ""),
+    )
+```
+
+Declare it `mcp=None` — it feeds the UI, not the AI. The
+`OrderedMap` `range` / cursor mechanics (including the inclusive
+`start_key` caveat) are in
+`python/references/stdlib-ordered-map.md`, and the Shape C
+example in `python/references/state-collections.md` shows the
+parent allocating and writing the index.
+
+### Frontend: one subscription, cursor pagination
+
+The UI keeps a single `use<FrontDoorType>()` subscription — the
+same shape as the Counter example — and pages by cursor:
+
+```tsx
+import { useState, type FC } from "react";
+import { useUser } from "@api/<pkg>/v1/<name>_rbt_react";
+
+export const Dashboard: FC = () => {
+  const user = useUser();
+  const [cursor, setCursor] = useState("");
+
+  // One reader subscription. The composing reader fans out across
+  // the item actors server-side, so the UI still sees one live
+  // feed — no per-item hooks.
+  const { response, isLoading } = user.useDashboard({ cursor });
+
+  const items = response?.items ?? [];
+  const nextCursor = response?.nextCursor ?? "";
+
+  if (isLoading && response === undefined) {
+    return <div>loading...</div>;
+  }
+
+  return (
+    <div>
+      {items.map((item) => (
+        <div key={item.itemId}>
+          {item.title} — {item.status}
+        </div>
+      ))}
+      {nextCursor && (
+        <button onClick={() => setCursor(nextCursor)}>Load more</button>
+      )}
+    </div>
+  );
+};
+```
+
+`setCursor(nextCursor)` advances the subscription to the next
+page. To render an ever-growing list rather than one page at a
+time, accumulate `response.items` into component state on each
+change instead of rendering `response.items` directly.
