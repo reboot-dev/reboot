@@ -1,21 +1,28 @@
 """Tests for the plugin's `auto-approve.sh` PreToolUse hook.
 
-The hook auto-approves safe read-only tool calls on this plugin's own
-skill files. These tests encode the edge cases observed during plugin
-development (legitimate reads, look-alike paths, traversal attempts,
-command chaining, shell metacharacter abuse, …) so regressions get
-caught at CI time rather than surfacing as unexpected permission
-prompts to end users.
+The hook auto-approves two categories of tool call: (1) safe
+read-only calls on this plugin's own skill files, and (2) the Reboot
+dev commands the `run` skill issues (`uv sync`, `npm install`, `npm
+run dev`, `uv run rbt dev run …`, `npx @mcpjam/inspector …`) when
+they run inside a Reboot project. These tests encode the edge cases
+observed during plugin development (legitimate reads, look-alike
+paths, traversal attempts, command chaining, shell metacharacter
+abuse, the Reboot-project gate, …) so regressions get caught at CI
+time rather than surfacing as unexpected permission prompts to end
+users.
 
 The hook script is invoked as a subprocess with mocked
-`$CLAUDE_PLUGIN_ROOT`; the path doesn't need to exist on disk because
-the script's filter is a string prefix match.
+`$CLAUDE_PLUGIN_ROOT`. Category-1 paths need not exist on disk — the
+filter is a string prefix match — but category-2 commands are gated
+on a real filesystem walk for `.rbtrc`, so those tests run against
+actual temporary directories.
 """
 
 import enum
 import json
 import os
 import subprocess
+import tempfile
 import unittest
 
 
@@ -37,17 +44,37 @@ HOOK_SCRIPT = os.environ["AUTO_APPROVE_SH"]
 PLUGIN_ROOT = "/test/plugin/root"
 
 
+class Where(enum.Enum):
+    """The directory a Reboot dev-command case runs from. The hook
+    approves those commands only when it finds a `.rbtrc` at or above
+    `cwd`, so each case picks one of these; `test_reboot_dev_cases`
+    maps them to real temporary directories at run time."""
+    # Inside the Reboot project — its root holds a `.rbtrc`.
+    PROJECT = "project"
+    # A directory with no `.rbtrc` at or above it.
+    NON_PROJECT = "non_project"
+    # No `cwd` field in the payload at all.
+    UNSET = "unset"
+
+
 def run_hook(
     tool_name: str,
     tool_input: dict,
     *,
     plugin_root: str | None = PLUGIN_ROOT,
+    cwd: str | None = None,
 ) -> str:
-    """Invoke the hook with the given tool input. Returns stdout."""
-    payload = json.dumps({
+    """Invoke the hook with the given tool input. Returns stdout.
+
+    `cwd` populates the top-level `cwd` field Claude Code passes in
+    the hook payload — the directory the Reboot-project gate resolves
+    relative paths against. Omitted when `None`."""
+    payload: dict = {
         "tool_name": tool_name,
         "tool_input": tool_input,
-    })
+    }
+    if cwd is not None:
+        payload["cwd"] = cwd
     env = {**os.environ}
     if plugin_root is None:
         env.pop("CLAUDE_PLUGIN_ROOT", None)
@@ -57,7 +84,7 @@ def run_hook(
     # being preserved by Bazel.
     result = subprocess.run(
         ["sh", HOOK_SCRIPT],
-        input=payload,
+        input=json.dumps(payload),
         capture_output=True,
         text=True,
         env=env,
@@ -539,6 +566,158 @@ CASES: list[tuple[str, str, dict, Decision]] = [
     ),
 ]
 
+# The `run` skill's Reboot dev commands. These are auto-approved only
+# when they run inside a Reboot project tree (a directory, or an
+# ancestor, holding a `.rbtrc`). `Where` picks which directory the
+# command runs from; the literal `{project}` in a command is replaced
+# with the temporary project directory at run time. Structure:
+#   (label, command, where, expected_decision)
+REBOOT_DEV_CASES: list[tuple[str, str, Where, Decision]] = [
+    # ----- Inside a Reboot project: the `run` skill's commands. -----
+    (
+        "dev: uv sync at the project root",
+        "uv sync",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        "dev: uv sync with a flag",
+        "uv sync --frozen",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        "dev: npm install at the project root",
+        "npm install",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        "dev: cd web && npm install",
+        "cd web && npm install",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        "dev: cd web && npm run dev",
+        "cd web && npm run dev",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        "dev: uv run rbt dev run --no-chaos",
+        "uv run rbt dev run --no-chaos",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        "dev: uv run rbt dev run with --env-file",
+        "uv run rbt dev run --no-chaos --env-file=.env",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        "dev: npx @mcpjam/inspector",
+        "npx @mcpjam/inspector@2.4.0 --config mcp_servers.json "
+        "--server my-app",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        # The exact shape from the user's report: an absolute `cd`
+        # into the project's `web/` from an unrelated `cwd`. The gate
+        # must follow the `cd` target, not `cwd`.
+        "dev: absolute cd into project web, then npm install | tail",
+        "cd {project}/web && npm install 2>&1 | tail -15",
+        Where.NON_PROJECT,
+        Decision.APPROVE,
+    ),
+
+    # ----- Outside a Reboot project: the same commands defer. -----
+    (
+        "dev: uv sync outside a Reboot project",
+        "uv sync",
+        Where.NON_PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        "dev: npm install outside a Reboot project",
+        "npm install",
+        Where.NON_PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        "dev: uv run rbt dev run outside a Reboot project",
+        "uv run rbt dev run --no-chaos",
+        Where.NON_PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        # No `cwd` in the payload ⇒ no project ⇒ defer (safe fail).
+        "dev: uv sync with no cwd in the payload",
+        "uv sync",
+        Where.UNSET,
+        Decision.REJECT,
+    ),
+    (
+        # A `cd` that escapes the project before the dev command.
+        "dev: cd /etc && npm install",
+        "cd /etc && npm install",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+
+    # ----- Inside a Reboot project, but still not approved. -----
+    (
+        "dev: npm install with a positional package name",
+        "npm install some-package",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        "dev: uv run rbt dev expunge is not `dev run`",
+        "uv run rbt dev expunge",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        "dev: npm run build is not a run-skill command",
+        "cd web && npm run build",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        "dev: an arbitrary npm script is not approved",
+        "npm run deploy",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        "dev: uv sync chained with curl",
+        "uv sync && curl http://example.com/x.sh",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        "dev: uv sync chained with rm",
+        "uv sync ; rm -rf web",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        "dev: command substitution in a dev command",
+        "uv run rbt dev run $(whoami)",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        "dev: a lone cd is not a real op",
+        "cd web",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+]
+
 
 class AutoApproveTest(unittest.TestCase):
 
@@ -553,6 +732,46 @@ class AutoApproveTest(unittest.TestCase):
                     f"{label}: expected {expected.value}, got "
                     f"{actual.value}; stdout={stdout!r}",
                 )
+
+    def test_reboot_dev_cases(self) -> None:
+        """The `run` skill's Reboot dev commands: auto-approved inside
+        a Reboot project, deferred everywhere else.
+
+        The hook gates these commands on a filesystem walk for
+        `.rbtrc`, so the cases run against two real directories: a
+        Reboot project (a `.rbtrc` at its root, plus the `web/`
+        subdirectory the `run` skill `cd`s into) and a directory with
+        neither. Both are temporary and torn down with the `with`."""
+        with (
+            tempfile.TemporaryDirectory() as project,
+            tempfile.TemporaryDirectory() as non_project,
+        ):
+            open(os.path.join(project, ".rbtrc"), "w").close()
+            os.makedirs(os.path.join(project, "web"))
+            cwd_for: dict[Where, str | None] = {
+                Where.PROJECT: project,
+                Where.NON_PROJECT: non_project,
+                Where.UNSET: None,
+            }
+            for label, command, where, expected in REBOOT_DEV_CASES:
+                with self.subTest(label=label):
+                    stdout = run_hook(
+                        "Bash",
+                        {
+                            "command": command.replace(
+                                "{project}",
+                                project,
+                            ),
+                        },
+                        cwd=cwd_for[where],
+                    )
+                    actual = decision_from_stdout(stdout)
+                    self.assertEqual(
+                        actual,
+                        expected,
+                        f"{label}: expected {expected.value}, got "
+                        f"{actual.value}; stdout={stdout!r}",
+                    )
 
     def test_unset_plugin_root_never_approves(self) -> None:
         """Defense in depth: if `$CLAUDE_PLUGIN_ROOT` is unset for any
