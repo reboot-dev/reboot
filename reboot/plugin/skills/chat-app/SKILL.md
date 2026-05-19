@@ -171,6 +171,67 @@ means regenerating everything across 12+ files.
 For updates to existing apps, still plan: read current state, propose
 changes, confirm, then modify.
 
+### Writing the Plan for Human Review
+
+The plan is read by a **human who has not read the skill files**.
+They are evaluating the design — entities, collections, methods,
+auth — not verifying that you followed the skill. Write so the
+plan stands on its own.
+
+**Don't quote skill-internal terms** when presenting the plan.
+They mean nothing outside this skill:
+
+- `Shape A` / `Shape B` / `Shape C` — name the actual data
+  structure: `list[Sub]` of inline sub-records, `list[str]` of
+  foreign state IDs, `OrderedMap` of foreign state IDs.
+- "non-state `Model`" — say "a flat sub-record that lives and
+  dies with the parent" or "no identity of its own", in domain
+  terms.
+- `Gotcha #N` and filenames like `state-collections.md` /
+  `api-state-shapes.md` / `gotchas.md` — drop the citation; if
+  the rule matters to the design, explain it inline.
+- `factory=True`, `Field(tag=N)`, raw pydantic spellings — fine
+  to mention briefly when the spelling itself is the design
+  decision, but never as the explanation.
+
+**For every design choice, give the what + the why.** The _what_
+is the concrete data structure or method type. The _why_ is a
+one-clause reason rooted in the user's domain ("grows without
+bound, so we need pagination"; "no methods or auth of its own,
+so it lives inline").
+
+**Examples.**
+
+Collection shape — BAD:
+
+> `people_index_id: str` — ID of an OrderedMap actor that
+> holds this user's Persons (Shape C from state-collections.md
+> — unbounded; PRM is explicitly called out as a Shape C case).
+
+Collection shape — GOOD:
+
+> `people_index_id: str` — points to an OrderedMap that holds
+> this user's Persons. An OrderedMap (rather than an inline
+> list) because a PRM grows without bound and the UI will
+> paginate / sort by recency.
+
+Nested model — BAD:
+
+> Relationship and Event are non-state Models — Shape A.
+
+Nested model — GOOD:
+
+> Relationship and Event live inline on Person as
+> `list[Relationship]` / `list[Event]`. They don't get their
+> own state actors because they have no lifecycle, methods, or
+> auth independent of the Person they belong to.
+
+**Escape hatch.** When the precise type name _is_ what the user
+needs to see ("I'm proposing `OrderedMap` here, not `list[str]`"),
+name the type — but pair it with the plain-English reason in the
+same sentence. The rule is "no bare jargon", not "no technical
+terms".
+
 ## State Model Assessment
 
 Before writing code, analyze the user's request:
