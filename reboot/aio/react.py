@@ -31,6 +31,22 @@ from typing import AsyncIterable, Optional
 logger = get_logger(__name__)
 
 
+class _SuppressInvalidHandshakeFilter(logging.Filter):
+    """Drop spurious `opening handshake failed` logs from non-WebSocket
+    probes (e.g., HEAD requests or half-open TCP connections from a
+    devcontainer/Codespaces port forwarder) so they don't appear during
+    normal operation or shutdown. The `websockets` library logs every
+    failed handshake at `ERROR` with a full stack trace; legitimate
+    clients never produce `InvalidMessage`, so it's safe to filter."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.exc_info is not None:
+            exception = record.exc_info[1]
+            if isinstance(exception, websockets.exceptions.InvalidMessage):
+                return False
+        return True
+
+
 class ReactServicer(react_pb2_grpc.ReactServicer):
     """System service for serving requests from our code generated react
     readers.
@@ -75,6 +91,11 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
 
             # We set the log level to `ERROR` on this logger because websockets is chatty!
             logger.setLevel(logging.ERROR)
+
+            # Also filter out `opening handshake failed` errors from
+            # clients that aren't speaking WebSocket (e.g., HEAD probes
+            # or half-open connections from a port forwarder).
+            logger.addFilter(_SuppressInvalidHandshakeFilter())
 
             async with websockets.serve(
                 self.serve,
