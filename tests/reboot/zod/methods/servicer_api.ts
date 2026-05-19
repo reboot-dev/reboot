@@ -14,6 +14,11 @@ export const Test = {
     data: z.string().meta({ tag: 1 }),
     literalValue: LiteralValueType.meta({ tag: 2 }),
 
+    // `z.array`/`z.record` of `z.literal` -- a repeated `enum` and a
+    // `map` with `enum` values.
+    literalArrayValue: z.array(LiteralValueType).meta({ tag: 8 }),
+    literalRecordValue: z.record(z.string(), LiteralValueType).meta({ tag: 9 }),
+
     // Empty default values.
     stringDefaultValue: z.string().default("").meta({ tag: 3 }),
     booleanDefaultValue: z.boolean().default(false).meta({ tag: 4 }),

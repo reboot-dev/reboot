@@ -320,6 +320,8 @@ const generate = (
         return "int64";
       } else if (valueType instanceof z.ZodBoolean) {
         return "bool";
+      } else if (valueType instanceof z.ZodLiteral) {
+        return "Value";
       } else if (valueType instanceof z.ZodObject) {
         return "Value";
       } else if (valueType instanceof z.ZodRecord) {
@@ -370,6 +372,36 @@ const generate = (
         path: `${path}.[value]`,
         name: typeName,
       });
+    } else if (valueType instanceof z.ZodLiteral) {
+      proto.write(`enum ${typeName} {`);
+
+      let i = 0;
+
+      for (const literal of valueType._zod.def.values) {
+        if (typeof literal !== "string") {
+          console.error(
+            chalk.stderr.bold.red(
+              `Record at '${path}' has a non-'string' literal '${literal}'; only 'string' literals are currently supported`
+            )
+          );
+          process.exit(-1);
+        }
+
+        // According to Protobuf `enum` rules:
+        // `enum` values use C++ scoping rules, meaning that
+        // `enum` values are siblings of their type, not
+        // children of it.
+        // That means we need to prefix the `enum` values
+        // with the `enum` type name to avoid name conflicts.
+        // It is safe here, since we preserve the original
+        // order of the literals and during the conversion
+        // from Pydantic model to Protobuf and back we
+        // operate with the indexes of the literals, not
+        // their names.
+        proto.write(`${typeName}_${literal} = ${i++};`);
+      }
+
+      proto.write(`}`);
     }
 
     proto.write(`map <string, ${typeName}> record = 1;`);
@@ -403,6 +435,8 @@ const generate = (
         return "int64";
       } else if (item instanceof z.ZodBoolean) {
         return "bool";
+      } else if (item instanceof z.ZodLiteral) {
+        return "Item";
       } else if (item instanceof z.ZodObject) {
         return "Item";
       } else if (item instanceof z.ZodRecord) {
@@ -453,6 +487,36 @@ const generate = (
         path: `${path}.[item]`,
         name: typeName,
       });
+    } else if (item instanceof z.ZodLiteral) {
+      proto.write(`enum ${typeName} {`);
+
+      let i = 0;
+
+      for (const literal of item._zod.def.values) {
+        if (typeof literal !== "string") {
+          console.error(
+            chalk.stderr.bold.red(
+              `Array at '${path}' has a non-'string' literal '${literal}'; only 'string' literals are currently supported`
+            )
+          );
+          process.exit(-1);
+        }
+
+        // According to Protobuf `enum` rules:
+        // `enum` values use C++ scoping rules, meaning that
+        // `enum` values are siblings of their type, not
+        // children of it.
+        // That means we need to prefix the `enum` values
+        // with the `enum` type name to avoid name conflicts.
+        // It is safe here, since we preserve the original
+        // order of the literals and during the conversion
+        // from Pydantic model to Protobuf and back we
+        // operate with the indexes of the literals, not
+        // their names.
+        proto.write(`${typeName}_${literal} = ${i++};`);
+      }
+
+      proto.write(`}`);
     }
 
     proto.write(`repeated ${typeName} items = 1;`);
