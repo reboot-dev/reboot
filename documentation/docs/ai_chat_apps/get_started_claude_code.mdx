@@ -93,27 +93,30 @@ then builds and runs it.
 
 ## What gets created
 
-The skill generates a complete Reboot AI Chat App:
+The skill generates a complete Reboot AI Chat App. The most relevant
+files are:
 
 ```
 my-app/
+├── .rbtrc                    # Reboot CLI config
+├── pyproject.toml            # Python deps (uv)
 ├── api/
 │   └── my_app/v1/
-│       └── app.py           # API definition (Pydantic)
+│       └── my_app.py         # API definition (Pydantic)
 ├── backend/
 │   └── src/
 │       ├── main.py           # Application entrypoint
 │       └── servicers/
-│           └── app.py        # Servicer implementation
-├── web/
-│   └── ui/
-│       └── my-ui/
-│           ├── index.html
-│           ├── main.tsx      # RebootClientProvider entry
-│           ├── App.tsx       # React component
-│           └── App.module.css
-├── .rbtrc                    # Reboot CLI config
-└── pyproject.toml
+│           └── my_app.py     # Servicer implementation
+└── web/
+    ├── package.json
+    ├── index.css             # Styling
+    └── ui/
+        └── my-ui/
+            ├── index.html
+            ├── main.tsx      # RebootClientProvider entry
+            ├── App.tsx       # React component
+            └── App.module.css
 ```
 
 The API definition uses the same `User` + application type
@@ -125,27 +128,18 @@ by the AI.
 
 ## Test your app
 
-After the skill finishes building, it starts the app with
-`uv run rbt dev run`. You can test it with
-[MCPJam Inspector](https://mcpjam.com):
+Once the build succeeds, Claude will run the program for you. You'll see
+a link, click it to try your app out! 
 
-```sh
-npx @mcpjam/inspector@2.5.0 \
-  --config mcp_servers.json --server my-app
-```
-
-See the [hand-written guide](/ai_chat_apps/get_started) for details
-on what to try in the inspector.
-
-To connect from other AI clients (VS Code, ChatGPT, Claude,
-Goose), see [From an MCP client](/learn_more/call/from_mcp_client).
+Claude will also write unit tests for your app, which help to make sure
+that your app works - and keeps working.
 
 ## Iterate on your app
 
 You can also use the skill to modify an existing app:
 
 ```
-/chat-app Add a reset button that sets the counter back to zero
+/app Add a reset button that sets the counter back to zero
 ```
 
 The skill reads your current code, plans the changes, and waits
