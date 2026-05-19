@@ -34,6 +34,43 @@ await myType.reorderItem({ fromIndex: 0, toIndex: 1 });
 await myType.addItem({ text: "New item" });
 ```
 
+## Actor ID Resolution: Zero-Arg `use<Type>()` for UIs on the Type
+
+For a `UI()` declared on an application `Type` (e.g.
+`Person.show=UI(...)`, `Counter.show_clicker=UI(...)`), call the
+generated `use<Type>()` hook with **no arguments**:
+
+```tsx
+// Counter.show_clicker=UI(...) → `useCounter()` auto-resolves.
+const counter = useCounter();
+
+// Person.show=UI(...) → `usePerson()` auto-resolves.
+const person = usePerson();
+```
+
+The hook reads the actor ID from `toolData.ids["<pkg>.<Type>"]`,
+which the framework populates from the MCP tool call's target.
+That target is the state ID the AI passes when invoking the
+generated `<type>_<method>` tool — so the React UI always
+materializes for exactly the entity the AI asked about. No
+props plumbing, no risk of cross-wiring entity IDs.
+
+For UIs declared on `User`, or any component that needs to talk
+to a different entity than the tool-call target, pass an
+explicit `{id: ...}`:
+
+```tsx
+// Reading a related Person whose ID came from the current
+// Person's relationships list.
+const relatedPerson = usePerson({ id: relationship.otherPersonId });
+```
+
+If you need direct access to the tool-call inputs (e.g. for a
+follow-up read or to follow a navigation chain to another
+entity of the same Type), `useMcpToolData()` from
+`@reboot-dev/reboot-react` returns the raw `{ids, ...}` object
+the framework received.
+
 ## Naming Convention: snake_case → camelCase
 
 The generated React bindings convert Python snake_case field names

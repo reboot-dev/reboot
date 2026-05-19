@@ -42,7 +42,17 @@ The list below is what's specific to the MCP-Chat-App layer:
    root.
 
 9. **`UI(request=<ConfigType>)`** passes config as React component
-   props. `UI(request=None)` passes no props.
+   props. `UI(request=None)` passes no props. `request=<Model>` is
+   for **free-form configuration** (a personalisation string, a
+   dashboard hint) — never for entity IDs. A UI about one specific
+   entity belongs on that entity's `Type` with `request=None`; the
+   tool-call target becomes the actor ID automatically, and the
+   generated `use<Type>()` hook resolves it with no arguments. See
+   "UI Placement" in `api-method-types.md`. Putting
+   `show_person=UI(request=ShowPersonProps(person_id: str))` on
+   `User` is the canonical wrong shape — it surfaces in MCPJam as
+   a tool with a leaky entity-ID input, forces props plumbing, and
+   de-co-locates the UI from every other per-entity method.
 
 10. **Frontend request/response types are Zod** — generated from
     the Python Models.

@@ -53,6 +53,53 @@ React component.
 chat-app spelling of a constructor (see `python`'s
 `servicer-constructor.md` for the underlying mechanic).
 
+## UI Placement: On the Entity Type, Not on `User`
+
+**A UI that shows or edits a specific entity belongs on that
+entity's `Type` — not on `User`.**
+
+The rule:
+
+- **Per-entity UI** ("show this Person", "edit this Task",
+  "view this Document") → `UI()` on the entity's `Type`. The
+  actor ID is the tool call's target, implicit — no `request=`
+  needed.
+- **User-scoped UI** ("show my dashboard", "browse all my
+  Persons") → `UI()` on `User`. The actor is the user itself.
+
+**Why the entity-Type placement works.** When a `UI()` lives
+on a `Type`, the generated MCP tool takes that Type's state ID
+as its argument and the generated `use<Type>()`
+React hook used in the UI's component auto-resolves its target with
+no arguments needed. The actor reference is end-to-end implicit:
+the AI calls `person_show(person_id=...)`, the React UI
+materializes for that exact `Person`, no props plumbing, no risk
+of mixing up which entity ID goes where. (Mechanism documented
+in [`react-app-tsx.md`](react-app-tsx.md).)
+
+**Why the `User`-placement anti-pattern fails.** If you put
+`show_person=UI(request=ShowPersonProps)` on `User`, where
+`ShowPersonProps` carries a `person_id: str` field, you are
+re-implementing a worse version of the entity-Type pattern:
+the AI now has to plumb the entity ID through a request Model,
+the React component receives it as a prop and must call
+`usePerson({ id: personId })` explicitly, and every other
+per-Person operation already lives on `Person` — so the UI is
+the one method that doesn't fit. The framing of "the User is
+the front door" is for **creating and locating** entity
+instances. Once the AI has an entity's ID, _everything_
+specific to that entity — Readers, Writers, UIs — belongs on
+that entity's `Type`.
+
+**Decision shortcut.** For each UI, ask: "is the AI passing me
+an entity ID for this UI to operate on?" If yes, the UI goes
+on that entity's `Type` (with `request=None`). If the answer
+is "no, the UI is parameterized by free-form config the AI
+fills in" (e.g. a personalization string, a dashboard layout
+hint), use `request=<Model>` on whichever Type the UI conceptually
+belongs to. Entity IDs are **never** the right thing to put in
+a `request=<Model>` field.
+
 ## Simple Example (Counter)
 
 ```python
@@ -116,6 +163,12 @@ api = API(
     Counter=Type(
         state=CounterState,
         methods=Methods(
+            # `show_clicker` lives on `Counter` (not `User`)
+            # because it shows ONE specific Counter. The AI calls
+            # the generated `counter_show_clicker` tool with the
+            # target Counter's state ID; the React hook resolves
+            # that ID automatically. See the "UI Placement"
+            # section above for the full rule.
             show_clicker=UI(
                 request=None,
                 path="web/ui/clicker",
@@ -151,22 +204,28 @@ api = API(
 )
 ```
 
-## Parameterized UI Example
+## Parameterized UI Example — Free-Form Config Only
 
-When the AI should pass parameters to a React UI (e.g. a personalized
-message or configuration), use `request=` with a Model type. The
-fields become React component props:
+`request=<Model>` is for **free-form configuration the AI fills
+in at call time** — a personalisation string, a dashboard
+layout hint, a temperature for a generated greeting. It is
+**not** the mechanism for "which entity is this UI about"; see
+the "UI Placement" section above for that case.
+
+A legitimate parameterized-UI use case: the AI greets the user
+with a contextual message it composes on the fly.
 
 ```python
 class DashboardConfig(Model):
-    """Configuration passed by the AI."""
+    """Configuration the AI provides when opening the dashboard."""
     personalized_message: str = Field(tag=1, default="")
 
 
-# In the application type's Methods():
+# On `Counter`: still operates on one specific Counter (placement
+# rule unchanged) — `request=DashboardConfig` only carries the
+# personalization string, NOT a Counter ID. The Counter ID is
+# still the tool-call target, implicit.
 show_dashboard=UI(
-    # The AI provides a DashboardConfig when opening this UI.
-    # The fields are passed to the React component as props.
     request=DashboardConfig,
     path="web/ui/dashboard",
     title="Counter Dashboard",
@@ -184,6 +243,8 @@ import {
 } from "@api/<pkg>/v1/<name>_rbt_react";
 
 export const DashboardApp: FC<DashboardConfig> = ({ personalizedMessage }) => {
+  // No `id` argument — the Counter ID is auto-resolved from
+  // the tool-call target. See `react-app-tsx.md`.
   const counter = useCounter();
   const { response } = counter.useGet();
   // personalizedMessage is available as a prop.
@@ -194,6 +255,54 @@ export const DashboardApp: FC<DashboardConfig> = ({ personalizedMessage }) => {
   );
 };
 ```
+
+### Anti-Pattern: Entity ID in `request=<Model>`
+
+Do **not** use `request=<Model>` to pass an entity ID into a
+UI. If you find yourself writing this:
+
+```python
+# BAD — `User` should not have a UI that operates on one Person.
+class ShowPersonProps(Model):
+    person_id: str = Field(tag=1, default="")
+
+User=Type(
+    state=UserState,
+    methods=Methods(
+        show_person=UI(
+            request=ShowPersonProps,
+            path="web/ui/person",
+            ...
+        ),
+    ),
+),
+```
+
+…stop, and move the UI to the entity's `Type` instead:
+
+```python
+# GOOD — UI lives on `Person`, no `request=` needed. The AI
+# calls `person_show(person_id=...)`; the React `usePerson()`
+# hook auto-resolves from the tool-call target.
+Person=Type(
+    state=PersonState,
+    methods=Methods(
+        show=UI(
+            request=None,
+            path="web/ui/person",
+            title="Person",
+            description="Open the visual UI for this Person.",
+        ),
+        ...
+    ),
+),
+```
+
+The "BAD" shape forces props plumbing, leaves the entity ID
+sitting in a tool-input field where the AI can confuse it with
+another entity's ID, and de-co-locates per-Person operations
+(`get`, `set_bio`, etc. already live on `Person`). The "GOOD"
+shape matches every other per-entity tool the AI already calls.
 
 ## `mcp=None` Example
 

@@ -284,10 +284,22 @@ Before writing code, analyze the user's request:
      instance).
    - `Workflow` — long-running control flows with loops, scheduling,
      and idempotency helpers.
-6. **Tool surface**: Which operations need UIs (`UI()`)? Which need
-   explicit tool exposure (`mcp=Tool()`)?
-7. **Identity**: Single default instance vs. multiple instances?
-8. **Cross-state coordination**: Does any operation touch multiple
+6. **Tool surface**: Which operations need explicit tool exposure
+   (`mcp=Tool()`)? Default Servicer methods to `mcp=Tool()` if the
+   AI should call them, `mcp=None` otherwise.
+7. **UI placement** — for each UI in the app: **is the AI passing
+   in an entity ID for this UI to operate on, or is the UI about
+   the user as a whole?** Per-entity UIs (`show_person`,
+   `edit_task`, `view_document`) go on the entity's own `Type`
+   with `request=None` — the AI's tool-call target becomes the
+   actor ID automatically, and the generated `use<Type>()` hook
+   resolves it with no arguments. User-scoped UIs (a dashboard,
+   a global browser) go on `User`. Putting a per-entity UI on
+   `User` with the entity ID inside a `request=<Model>` field is
+   an antipattern; see "UI Placement" in
+   [`references/api-method-types.md`](references/api-method-types.md).
+8. **Identity**: Single default instance vs. multiple instances?
+9. **Cross-state coordination**: Does any operation touch multiple
    state instances? If yes, use `Transaction`.
 
 ## Key Framework Concepts (MCP Chat App–specific)
@@ -296,13 +308,27 @@ Before writing code, analyze the user's request:
 
 Every AI Chat App has a `User` type and one or more application types:
 
-- **`User`** is auto-constructed for each authenticated user. Its
-  state is typically empty. Its methods are `Transaction`s that create
-  instances of application types, or `Reader`s that find the IDs of
-  existing application-type instances in indexes that have well-known
-  IDs of their own.
-- **Application types** (e.g. `Counter`) hold the actual state. They
-  need a `create` Writer with `factory=True` for construction.
+- **`User`** is the AI's front door for **creating and locating**
+  application-type instances. It is used to store simple per-user state,
+  or (more commonly) to refer to instances of application types. Typical
+  methods are `Transaction`s that create application-type instances, or
+  `Reader`s that find existing instances' IDs - either in the `User`'s
+  state directly, or in indexes whose IDs are stored in the `User`
+  state. `User`-scoped UIs (a dashboard spanning the whole user, a
+  global browser) also live here.
+- **Application types** (e.g. `Counter`, `Person`, `Task`) hold
+  most of the actual entity state. They typically need a `create`
+  Writer with `factory=True` for construction. **Once an entity exists,
+  anything specific to that entity — Readers, Writers, UIs —
+  lives on that entity's `Type`**, never on `User`. The actor
+  ID is then implicit in every call: the AI passes the entity
+  ID to the tool, and the generated `use<Type>()` React hook
+  auto-resolves the same ID with no arguments.
+
+The most common scaffolding mistake is putting a per-entity UI
+(e.g. `show_person`) on `User` with the entity ID stuffed into a
+`request=<Model>` field. Don't — see "UI Placement" in
+[`references/api-method-types.md`](references/api-method-types.md).
 
 Full pydantic shape in
 [`references/api-method-types.md`](references/api-method-types.md);
