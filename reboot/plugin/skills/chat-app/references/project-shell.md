@@ -67,6 +67,16 @@ dev run:dist --mcp-frontend-host=""
 
 # When expunging, expunge that state we've saved.
 dev expunge --application-name=<project-name>
+
+# Production config used by `rbt serve run` (and therefore by Reboot
+# Cloud, whose containers run `CMD ["rbt", "serve", "run"]` — see
+# `python/references/lifecycle-dockerfile.md`). Mirrors the `dev run`
+# block above, minus the dev-only knobs (`--watch`, `--env-file`,
+# the `:hmr`/`:dist` configs).
+serve run --python
+serve run --application=backend/src/main.py
+serve run --application-name=<project-name>
+serve run --tls=external
 ```
 
 ### `pyproject.toml`

@@ -43,16 +43,6 @@ dev expunge --application-name=ai-chat-counter
 serve run --python
 serve run --application=backend/src/main.py
 
-# Make both the generated code directory (`backend/api/`) and the
-# schema source directory (`api/`) importable. `rbt serve run` only
-# auto-adds the `--python=` directory to `PYTHONPATH`; for apps that
-# define their schemas in Pydantic modules under `api/` (and import
-# from them directly, e.g. `from ai_chat_counter.v1.counter import
-# CreateCounterRequest`), `api/` needs to be on the path too. Setting
-# `--env=PYTHONPATH=...` overrides the auto-set, so include both.
-# (`rbt dev run` does this automatically; `rbt serve run` does not.)
-serve run --env=PYTHONPATH=backend/api:api
-
 # Reboot Cloud terminates TLS at the external load balancer, so the app
 # itself only exposes a non-TLS port.
 serve run --tls=external

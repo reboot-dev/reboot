@@ -119,11 +119,6 @@ serve run --application-name=<app>
 
 # Reboot Cloud terminates TLS at the load balancer.
 serve run --tls=external
-
-# Only needed if your schemas live in `api/` AND your code imports
-# from them directly: `--env=` overrides the auto-set PYTHONPATH, so
-# include both the generated and source dirs.
-serve run --env=PYTHONPATH=backend/api:api
 ```
 
 Do not duplicate these on the `CMD` line — splitting truth across

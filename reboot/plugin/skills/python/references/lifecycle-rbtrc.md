@@ -109,6 +109,32 @@ Keep the `.env` file out of git — add it to `.gitignore`. Full
 secrets guidance — including Reboot Cloud — is in
 `lifecycle-secrets.md`.
 
+## `serve run` Lines: Production Config
+
+`.rbtrc` also holds the flags for `rbt serve run` — the command the
+Cloud image's `CMD ["rbt", "serve", "run"]` invokes, as well as any
+on-prem `rbt serve` deploy. Same line-based syntax; one subcommand
+per line:
+
+```sh
+serve run --python
+serve run --application=backend/src/main.py
+serve run --application-name=<app>
+serve run --tls=external
+```
+
+Same `--application-name` value as the `dev run` lines — that name
+keys state in both local dev and production. See
+[`lifecycle-dockerfile.md`](lifecycle-dockerfile.md) for the full
+production block (including when `--tls=external` is correct) and
+[`lifecycle-reboot-cloud.md`](lifecycle-reboot-cloud.md) for the
+deploy workflow.
+
+`--env-file` is **dev-only** (see "`--env-file` Loads Secrets" above).
+Production secrets are delivered via `rbt cloud secret set` — see
+[`lifecycle-secrets.md`](lifecycle-secrets.md), or by the environment in
+self-hosted `rbt serve` deployments.
+
 ## Named Configs
 
 A `<subcommand>:<config>` line only applies when `--config=<config>` is on
