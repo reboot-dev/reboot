@@ -265,6 +265,11 @@ value-field options (`value` / `bytes` / `any`).
 
 - `state-nested-models.md` — the same "state inside state" rule
   from the nested-`Model` angle.
+- `state-actor-decomposition.md` — the orthogonal decomposition:
+  splitting **one actor** that has accreted multiple unrelated
+  concerns into one `Type` per concern. Same "store the ID, not the
+  object" principle, applied to responsibilities rather than
+  collection items.
 - `stdlib-ordered-map.md` — concrete API for Shape C, library
   registration, pagination details.
 - `chat-app/references/api-state-shapes.md` (chat-app skill) — the

@@ -100,6 +100,12 @@ show the chat-app-specific shape on top.
   it bounded.
 - `python/references/state-nested-models.md` — the same rule from
   the nested-`Model` angle.
+- `python/references/state-actor-decomposition.md` — the orthogonal
+  decomposition: when one state `Type` has accreted multiple
+  unrelated concerns (auth/session, persona, background-engine,
+  transient cache), split each into its own `Type`. Critical for the
+  `User` front door, which otherwise turns into a God actor and
+  serializes unrelated writers.
 
 **Implementing Servicers:**
 
@@ -356,13 +362,17 @@ Shape C is in `python/references/state-collections.md`.
 Every AI Chat App has a `User` type and one or more application types:
 
 - **`User`** is the AI's front door for **creating and locating**
-  application-type instances. It is used to store simple per-user state,
-  or (more commonly) to refer to instances of application types. Typical
-  methods are `Transaction`s that create application-type instances, or
-  `Reader`s that find existing instances' IDs - either in the `User`'s
-  state directly, or in indexes whose IDs are stored in the `User`
-  state. `User`-scoped UIs (a dashboard spanning the whole user, a
-  global browser) also live here.
+  application-type instances. **"Front door" means entry point +
+  delegation, not container for all application state.** `User`
+  holds identity (e.g. display name) and **IDs of the concern-
+  specific actors it owns**; per-concern state (auth/session,
+  background-engine config, persona config, transient caches) lives
+  on its own `Type` and is referenced by ID from `User`. Typical
+  `User` methods are `Transaction`s that create application-type
+  instances, or `Reader`s that locate existing instances' IDs —
+  either directly or via indexes whose IDs are stored on `User`.
+  `User`-scoped UIs (a dashboard spanning the whole user, a global
+  browser) also live here.
 - **Application types** (e.g. `Counter`, `Person`, `Task`) hold
   most of the actual entity state. They typically need a `create`
   Writer with `factory=True` for construction. **Once an entity exists,
@@ -376,6 +386,16 @@ The most common scaffolding mistake is putting a per-entity UI
 (e.g. `show_person`) on `User` with the entity ID stuffed into a
 `request=<Model>` field. Don't — see "UI Placement" in
 [`references/api-method-types.md`](references/api-method-types.md).
+
+A second, equally common mistake is letting `User`'s state accrete
+unrelated concerns — auth/session fields alongside persona config
+alongside a background engine's configuration alongside a UI cache.
+That turns the front door into a God actor and, because writers on
+the same actor serialize, makes a login step contend with a persona
+edit and a background workflow's state writes. Split each concern
+into its own `Type` and have `User` reference it by ID. The signals
+that warn you are accreting concerns, and the split pattern, are in
+`python/references/state-actor-decomposition.md`.
 
 Full pydantic shape in
 [`references/api-method-types.md`](references/api-method-types.md);
