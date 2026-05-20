@@ -7,15 +7,19 @@ tags: servicer, writer, WriterContext, state, mutation
 
 ## Implement Writer Methods
 
-> **Critical:** writer scope is **one actor**. Cross-actor mutations
-> belong in a `transaction` method. **Non-idempotent** external side
-> effects — SMS, email, payment, third-party write APIs, LLM/model
-> calls — must go in a `Workflow` wrapped in `at_most_once`: a writer
-> body may re-execute (retries and dev-mode effect validation), so a
-> non-idempotent call inside a writer fires more than once. The
-> on-demand entry point is a writer/transaction that only
-> `schedule()`s the workflow. A writer calling another actor's writer
-> is a category error.
+> **Critical:** writer scope is **mutating one actor**. Cross-actor
+> mutations belong in a `transaction` method (a writer may still
+> call readers on other actors — cross-actor reads are fine). **No
+> external side effects in a writer — none, not even idempotent
+> ones.** Two reasons stack: (a) a writer can be invoked inside a
+> `Transaction`, and a transaction is all-or-nothing — if it aborts,
+> every mutation rolls back but the external call already happened,
+> breaking atomicity; (b) writer bodies also re-execute under
+> retries and dev-mode effect validation, so any external call
+> fires more than once. External calls — SMS, email, payment,
+> LLM/model — belong in a `Workflow` wrapped in `at_most_once`; the
+> writer only `schedule()`s the workflow. A writer calling another
+> actor's writer is a category error.
 
 A method declared with `Writer(...)` in the API file receives a
 `WriterContext` and is the only legal place to mutate `self.state`
@@ -26,9 +30,9 @@ The runtime may re-execute a writer's body — both on transient
 retries and, in development, as part of **effect validation**, which
 re-runs the body and asserts the state mutations match. So a
 writer body must be safe to run more than once: confine it to
-`self.state` mutations and in-system calls, and push any
-non-idempotent external work to a `Workflow` wrapped in
-`at_most_once` (see `workflow-at-most-once.md`).
+`self.state` mutations and in-system calls (including readers on
+other actors), and push any external work to a `Workflow` wrapped
+in `at_most_once` (see `workflow-at-most-once.md`).
 
 **Incorrect (calling another actor's writer from inside a writer):**
 
@@ -37,7 +41,8 @@ async def deposit(
     self, context: WriterContext, request: Account.DepositRequest,
 ) -> None:
     self.state.balance += request.amount
-    # WRONG — cross-actor calls require a transaction.
+    # WRONG — cross-actor mutation requires a transaction (cross-actor
+    # reads are fine; this call mutates another actor).
     await Account.ref("audit-log").record(context, ...)
 ```
 
@@ -71,17 +76,23 @@ async def send(
     self.state.messages.append(request.message)
 ```
 
-## Writer Scope Is One Actor
+## Writer Scope Is Mutating One Actor
 
 A writer can read its own state freely, mutate its own state, and
-schedule work on itself. It **cannot** reach into another actor's
-state — for cross-actor mutation use a `Transaction` method (see
-`servicer-transaction.md`). For **non-idempotent** external calls
-(SMS, email, payment, third-party write APIs, LLM/model calls),
-schedule a `Workflow` that wraps the call in `at_most_once` (see
-`workflow-at-most-once.md`); the writer must not make the call
-itself, because writer bodies re-execute under retries and
-effect validation, firing the call more than once.
+schedule work on itself. It **can** call **readers** on other
+actors — cross-actor reads are fine. It **cannot** mutate another
+actor's state — for cross-actor mutation use a `Transaction` method
+(see `servicer-transaction.md`).
+
+A writer also **cannot** make external calls — network, filesystem,
+third-party APIs — **even idempotent ones**. Writers can be invoked
+inside a `Transaction`, so an external call here breaks
+transactional atomicity (the transaction may still abort and roll
+back state, but the external call already happened); writer bodies
+also re-execute under retries and effect validation. External calls
+belong in a `Workflow` wrapped in `at_most_once` (see
+`workflow-at-most-once.md`); the writer only `schedule()`s the
+workflow.
 
 A writer **can** call `ref.schedule(...).method(context)` on its own actor
 to defer work (see `scheduling-basic.md`).
@@ -127,6 +138,7 @@ async def increment(
   pattern for deferred work driven from a writer.
 - `servicer-transaction.md` — when a writer can't (cross-actor
   mutation).
-- `workflow-at-most-once.md` — the home for **non-idempotent**
-  external side effects; writers/transactions only `schedule()` it.
+- `workflow-at-most-once.md` — the home for **all** external side
+  effects (even idempotent ones); writers/transactions only
+  `schedule()` it.
 - `api-errors.md` — typed errors that roll back state automatically.

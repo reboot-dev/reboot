@@ -88,8 +88,8 @@ class TelegramSessionState(Model):
 class MonitoringManagerState(Model):
     active: bool = Field(tag=1, default=False)
     poll_interval_seconds: int = Field(tag=2, default=0)
-    # IDs of monitored chats; the chats themselves are their own
-    # `Type` if they have lifecycle/methods.
+    # IDs of monitored chats; chats are their own `Type` when they have
+    # lifecycle/methods.
     monitored_chat_ids_index_id: str = Field(tag=3, default="")
 
 

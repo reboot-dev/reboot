@@ -257,9 +257,8 @@ Invoice actor) and to every stdlib state type (`OrderedMap`,
 
 ```python
 class UserState(Model):
-    # The reference is a first-class field. Allocated once in
-    # `create`; persisted forever; visible in `rbt inspect` and the
-    # cloud console.
+    # The reference is a first-class field. Allocated once in `create`;
+    # persisted forever; visible in `rbt inspect` and the cloud console.
     profile_id: str = Field(tag=1, default="")
     drafts_index_id: str = Field(tag=2, default="")
     inbox_queue_id: str = Field(tag=3, default="")

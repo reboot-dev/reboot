@@ -69,25 +69,39 @@ def authorizer(self): return allow()
 Mutations inside a `ReaderContext` raise. If you need to mutate, the
 method needs to be a `Writer` or `Transaction`.
 
-### 8. Cross-Actor Mutations Need a Transaction; Non-Idempotent External Calls Need a Workflow
+### 8. Cross-Actor Mutations Need a Transaction; All External Calls Need a Workflow
 
 A `Writer` can only mutate one actor (its own). Cross-actor
-mutations belong in a `Transaction(...)` method.
+mutations belong in a `Transaction(...)` method. A writer or
+transaction **may** call readers on other actors — cross-actor
+reads are fine.
 
-**Non-idempotent** external side effects — SMS, email, payment,
-third-party write APIs, LLM/model calls — must go in a `Workflow`
-wrapped in `at_most_once`. Neither a `Writer` nor a `Transaction`
-is a safe home: both bodies may re-execute (transient retries and
-dev-mode **effect validation**, which re-runs the body to confirm
-mutations are deterministic). Re-execution fires a non-idempotent
-external call more than once — a real bug, e.g. an SMS login code
-sent twice and the first code invalidated. The on-demand "do it
+External side effects — any call that leaves the system: SMS,
+email, payment, third-party APIs, LLM/model calls, filesystem
+writes — must **not** happen in a `Writer` or a `Transaction`,
+**even when the external call is idempotent**. Two reasons stack:
+
+- **Atomicity.** A `Writer` may be invoked inside a `Transaction`,
+  and a transaction is all-or-nothing — if it aborts, every
+  mutation rolls back, but the external call already happened.
+  The same applies to a transaction that makes the call directly.
+- **Re-execution.** Writer and transaction bodies may also
+  re-execute under transient retries and dev-mode **effect
+  validation** (which re-runs the body to assert state mutations
+  are deterministic), firing the external call more than once.
+  A real bug: an SMS login code sent twice with the first code
+  invalidated.
+
+Put the external call in a `Workflow` wrapped in `at_most_once`
+(or `at_least_once` with
+`effect_validation=EffectValidation.DISABLED` when the call is
+idempotent but expensive, e.g. an LLM call). The on-demand "do it
 now" entry point is a `Writer`/`Transaction` that only
 **schedules** the workflow
 (`await self.ref().schedule().<workflow_method>(context)`); the
 external call itself lives in the workflow. See
-`workflow-at-most-once.md` and the "External Calls Belong in a
-Workflow, Not a Transaction" section of `servicer-transaction.md`.
+`workflow-at-most-once.md` and "External Calls Belong in a
+Workflow, Not a Transaction" in `servicer-transaction.md`.
 
 ### 9. `initialize` Runs on Every Restart
 
