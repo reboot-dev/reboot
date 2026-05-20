@@ -155,7 +155,29 @@ list becomes noticeable — switch to Shape C.
 
 When the collection can grow without bound, needs pagination, or
 needs ordered iteration. The parent stores the **map's ID** (once,
-at construction) and forwards reads/writes through the map:
+at construction) and forwards reads/writes through the map.
+
+> **Anti-pattern — do not synthesize the map ID inline from the
+> parent's `state_id`** (e.g.
+> `OrderedMap.ref(f"{self.ref().state_id}-people")` or
+> `OrderedMap.ref(f"{context.state_id}-people")` inside a workflow).
+> Even though this "works", it hides the parent → map relationship
+> from the state schema: nothing on `UserState` says this user owns
+> a People index, so `rbt inspect` and the cloud console see only
+> scalar fields and the relationship lives as a string-formatting
+> convention inside the servicer. It also repeats the magic string
+> at every callsite — every reader, writer, and workflow that
+> touches the map — so renaming the suffix, sharding the index, or
+> migrating to a per-concern owner actor (see
+> `state-actor-decomposition.md`) becomes a grep-the-codebase
+> exercise. And it silently skips the constructor allocation step:
+> no place in the code marks "this `User` owns a People index",
+> only an eventual implicit construction on the first `insert`.
+> **Always** add a `<thing>_index_id: str` field to the parent's
+> state, allocate it once in the constructor (`uuid4()`), and
+> reference the map via `OrderedMap.ref(self.state.<id>)`. The
+> general rule — for any cross-`Type` reference — is in
+> "Relationships Between State Types" below.
 
 ```python
 from reboot.std.collections.ordered_map.v1.ordered_map import (
@@ -221,6 +243,83 @@ Register `ordered_map_library()` in `Application(libraries=[...])`
 — see `stdlib-ordered-map.md` for the full method surface and the
 value-field options (`value` / `bytes` / `any`).
 
+### Relationships Between State Types
+
+The rule for `OrderedMap` IDs is one instance of a general rule:
+**any reference from one state `Type` to another must be a persisted
+ID field on the parent — never a string derived inline from the
+owner's `state_id`.** This applies equally to user-defined `Type`s
+(a User pointing at a Profile actor; an Order pointing at an
+Invoice actor) and to every stdlib state type (`OrderedMap`,
+`Queue`, `Item`, `Presence`, `Topic`).
+
+**Correct (the reference lives in the schema):**
+
+```python
+class UserState(Model):
+    # The reference is a first-class field. Allocated once in
+    # `create`; persisted forever; visible in `rbt inspect` and the
+    # cloud console.
+    profile_id: str = Field(tag=1, default="")
+    drafts_index_id: str = Field(tag=2, default="")
+    inbox_queue_id: str = Field(tag=3, default="")
+
+
+class UserServicer(User.Servicer):
+
+    async def create(self, context: WriterContext) -> None:
+        if context.constructor:
+            self.state.profile_id = str(uuid4())
+            self.state.drafts_index_id = str(uuid4())
+            self.state.inbox_queue_id = str(uuid4())
+
+    async def add_draft(
+        self, context: TransactionContext, request: User.AddDraftRequest,
+    ) -> None:
+        await OrderedMap.ref(self.state.drafts_index_id).insert(
+            context, key=str(uuid7()), bytes=request.draft_id.encode(),
+        )
+```
+
+**Wrong (the reference only exists as a string-formatting
+convention in the servicer source):**
+
+```python
+# Nothing on `UserState` says this user owns a drafts index.
+await OrderedMap.ref(
+    f"{self.ref().state_id}-drafts",
+).insert(context, ...)
+
+# Same anti-pattern inside a workflow.
+await OrderedMap.ref(
+    f"{context.state_id}-drafts",
+).insert(context, ...)
+```
+
+Why the persisted-ID rule is load-bearing, even though the inline
+form runs:
+
+1. **The state schema documents the actor graph.** Reading
+   `UserState` should be enough to see which other actors this user
+   owns or points at. `rbt inspect` and the cloud console show the
+   state, not the servicer source — without a persisted ID, the
+   relationship is invisible at runtime.
+2. **One place to change, not N.** The persisted ID centralizes
+   the parent → child edge in a single field. Renaming, sharding,
+   or moving the index to a per-concern owner (see
+   `state-actor-decomposition.md`) is one edit. The inline form
+   spreads `f"{state_id}-<suffix>"` across every reader, writer,
+   and workflow that touches it.
+3. **Multiple references scale.** A `User` that owns drafts,
+   monitored chats, and a profile actor naturally degrades under
+   the inline convention to `"-drafts"`, `"-monitored"`,
+   `"-profile"` suffixes pasted at every callsite. With persisted
+   IDs they're three first-class fields.
+4. **Construction is an event.** Allocating `uuid4()` in the
+   constructor marks "this actor now owns that one." The inline
+   convention has no such moment; the related actor springs into
+   existence on whichever method happens to touch it first.
+
 ### Decision Flow (Summary)
 
 1. **Does the item have identity / lifecycle / its own methods?**
@@ -260,6 +359,15 @@ value-field options (`value` / `bytes` / `any`).
 - **`OrderedMap` for a clearly bounded, sub-dozen collection.** The
   extra hop is wasted; `list[Sub]` (Shape A) or `list[str]`
   (Shape B) is fine.
+- **Synthesizing a related actor's ID inline from the parent's
+  `state_id`** — `OrderedMap.ref(f"{self.ref().state_id}-drafts")`
+  / `OrderedMap.ref(f"{context.state_id}-drafts")`. Hides the
+  parent → map edge from the state schema, repeats the magic
+  string at every callsite, and skips the constructor allocation
+  that marks ownership. Add a `<thing>_index_id` field and
+  reference via `OrderedMap.ref(self.state.<id>)`. The same rule
+  applies to every cross-`Type` reference, stdlib or user-defined
+  — see "Relationships Between State Types" above.
 
 ### See Also
 

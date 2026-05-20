@@ -61,6 +61,16 @@ between in-state `list[str]` of IDs (bounded) or an `OrderedMap`
 of IDs (unbounded or paginated) — full code patterns in
 `python/references/state-collections.md`.
 
+> **The `OrderedMap`'s ID is a persisted field on the parent**
+> (e.g. `items_index_id: str`), allocated once in the parent's
+> constructor and referenced via
+> `OrderedMap.ref(self.state.items_index_id)`. **Do not** synthesize
+> it inline from the parent's `state_id`
+> (`OrderedMap.ref(f"{self.ref().state_id}-items")`). Same rule for
+> any cross-`Type` reference, stdlib or user-defined — full
+> rationale and code in "Relationships Between State Types" in
+> `python/references/state-collections.md`.
+
 ## Nested Model State Patterns
 
 For application types that own a single nested `Model` sub-object

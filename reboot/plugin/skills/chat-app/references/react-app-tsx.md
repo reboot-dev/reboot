@@ -337,7 +337,13 @@ plus a cursor for the next page:
 
 ```python
 # In the front-door type's Servicer. `Item` is the per-item state
-# Type; `items_index_id` is the OrderedMap ID stored on the parent.
+# Type; `items_index_id` is the OrderedMap ID **persisted as a
+# field on the parent's state**, allocated once in the parent's
+# constructor. Never synthesize the map ID inline from
+# `self.ref().state_id` / `context.state_id` — see "Relationships
+# Between State Types" in
+# `python/references/state-collections.md` for the full
+# anti-pattern callout.
 async def dashboard(
     self,
     context: ReaderContext,

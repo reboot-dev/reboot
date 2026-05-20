@@ -19,8 +19,21 @@ a B-tree-backed sorted `(string key → value)` map. It stores entries
 across many `Node` actors so concurrent writes scale, and exposes
 single-key and bulk variants of `insert` / `remove`, plus `search`,
 `range`, and `reverse_range`. Each `OrderedMap` is its own actor
-identified by a string ID — your code stores the ID in your own
-state and references the map via `OrderedMap.ref(id)`.
+identified by a string ID — your code **must** persist that ID as a
+field on the parent's state (e.g. `<thing>_index_id: str`),
+allocate it once in the parent's constructor, and reference the map
+via `OrderedMap.ref(self.state.<id>)`.
+
+> **Anti-pattern — do not synthesize the map ID inline from the
+> owner's `state_id`** (e.g.
+> `OrderedMap.ref(f"{self.ref().state_id}-drafts")` or
+> `OrderedMap.ref(f"{context.state_id}-drafts")` inside a workflow).
+> It "works" but hides the parent → map relationship from the state
+> schema, repeats the magic string at every callsite, and skips the
+> constructor allocation that marks ownership. The full rationale,
+> and the generalization to every cross-`Type` reference (stdlib or
+> user-defined), is in `state-collections.md`'s "Relationships
+> Between State Types" section.
 
 ### Methods
 
