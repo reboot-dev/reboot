@@ -1,0 +1,15 @@
+#!/usr/bin/env sh
+#
+# Reboot Claude Code plugin: `cloudflared` bootstrap shim.
+#
+# Claude Code prepends this script's directory to the agent's `PATH`,
+# so the agent's `cloudflared ...` invocations land here. Delegates
+# to `lib/install_cloudflared.sh` and execs the cached binary.
+
+set -eu
+
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname -- "$0")/.." && pwd)}"
+
+CLOUDFLARED_DIR="$("$PLUGIN_ROOT/lib/install_cloudflared.sh")"
+
+exec "$CLOUDFLARED_DIR/cloudflared" "$@"

@@ -40,7 +40,7 @@ claude plugin install reboot@reboot-plugin
 PLUGIN_DIR="$HOME/.claude/plugins/marketplaces/reboot-plugin"
 log "Pre-installing dependencies..."
 if [ -d "$PLUGIN_DIR/bin" ]; then
-    for tool in uv uvx node npm envoy rbt; do
+    for tool in uv uvx node npm envoy cloudflared rbt; do
         sh "$PLUGIN_DIR/bin/$tool" --version >/dev/null 2>&1 \
             || log "Could not pre-install $tool; it loads on first use."
     done
