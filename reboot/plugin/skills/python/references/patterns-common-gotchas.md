@@ -69,10 +69,25 @@ def authorizer(self): return allow()
 Mutations inside a `ReaderContext` raise. If you need to mutate, the
 method needs to be a `Writer` or `Transaction`.
 
-### 8. Cross-Actor Calls Need a Transaction
+### 8. Cross-Actor Mutations Need a Transaction; Non-Idempotent External Calls Need a Workflow
 
-A `Writer` can only mutate one actor (its own). Cross-actor work or
-external side effects belong in a `Transaction(...)` method.
+A `Writer` can only mutate one actor (its own). Cross-actor
+mutations belong in a `Transaction(...)` method.
+
+**Non-idempotent** external side effects — SMS, email, payment,
+third-party write APIs, LLM/model calls — must go in a `Workflow`
+wrapped in `at_most_once`. Neither a `Writer` nor a `Transaction`
+is a safe home: both bodies may re-execute (transient retries and
+dev-mode **effect validation**, which re-runs the body to confirm
+mutations are deterministic). Re-execution fires a non-idempotent
+external call more than once — a real bug, e.g. an SMS login code
+sent twice and the first code invalidated. The on-demand "do it
+now" entry point is a `Writer`/`Transaction` that only
+**schedules** the workflow
+(`await self.ref().schedule().<workflow_method>(context)`); the
+external call itself lives in the workflow. See
+`workflow-at-most-once.md` and the "External Calls Belong in a
+Workflow, Not a Transaction" section of `servicer-transaction.md`.
 
 ### 9. `initialize` Runs on Every Restart
 

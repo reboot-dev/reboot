@@ -77,11 +77,13 @@ across every actor it touched.
 A transaction is **all-or-nothing**: if it aborts, the semantics are
 that **no effect has taken place** — every mutation it made is rolled
 back. A call that leaves the system — sending email, hitting a
-third-party API, an **LLM / model API call**, charging a payment —
-**cannot be rolled back**. A transaction making such a call directly
-breaks that guarantee: the transaction can still abort, but the
-external call already happened. Reboot may also retry a transaction
-internally, which would run the call more than once.
+third-party API, an **LLM / model API call**, charging a payment, an
+SMS login code — **cannot be rolled back**. A transaction making
+such a call directly breaks that guarantee: the transaction can
+still abort, but the external call already happened. Reboot may
+also retry a transaction internally, and in development re-run its
+body for **effect validation** (asserting the mutations are
+deterministic) — both fire the external call more than once.
 
 So a transaction must **never** make an external call itself. It may
 freely call other **in-system actors**, and the correct pattern is for

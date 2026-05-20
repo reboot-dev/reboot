@@ -7,15 +7,28 @@ tags: servicer, writer, WriterContext, state, mutation
 
 ## Implement Writer Methods
 
-> **Critical:** writer scope is **one actor**. Cross-actor calls or
-> external side effects belong in a `transaction` method (atomic
-> across actors) or `workflow` (durable, long-running). A writer
-> calling another actor's writer is a category error.
+> **Critical:** writer scope is **one actor**. Cross-actor mutations
+> belong in a `transaction` method. **Non-idempotent** external side
+> effects — SMS, email, payment, third-party write APIs, LLM/model
+> calls — must go in a `Workflow` wrapped in `at_most_once`: a writer
+> body may re-execute (retries and dev-mode effect validation), so a
+> non-idempotent call inside a writer fires more than once. The
+> on-demand entry point is a writer/transaction that only
+> `schedule()`s the workflow. A writer calling another actor's writer
+> is a category error.
 
 A method declared with `Writer(...)` in the API file receives a
 `WriterContext` and is the only legal place to mutate `self.state`
 for **one** actor. Writers on the same actor are serialized; writers
 across actors run independently.
+
+The runtime may re-execute a writer's body — both on transient
+retries and, in development, as part of **effect validation**, which
+re-runs the body and asserts the state mutations match. So a
+writer body must be safe to run more than once: confine it to
+`self.state` mutations and in-system calls, and push any
+non-idempotent external work to a `Workflow` wrapped in
+`at_most_once` (see `workflow-at-most-once.md`).
 
 **Incorrect (calling another actor's writer from inside a writer):**
 
@@ -60,10 +73,15 @@ async def send(
 
 ## Writer Scope Is One Actor
 
-A writer can read its own state freely, mutate its own state, and schedule
-work on itself. It **cannot** reach into another actor's state or call
-external services synchronously — for those cases use a `Transaction`
-method (see `servicer-transaction.md`).
+A writer can read its own state freely, mutate its own state, and
+schedule work on itself. It **cannot** reach into another actor's
+state — for cross-actor mutation use a `Transaction` method (see
+`servicer-transaction.md`). For **non-idempotent** external calls
+(SMS, email, payment, third-party write APIs, LLM/model calls),
+schedule a `Workflow` that wraps the call in `at_most_once` (see
+`workflow-at-most-once.md`); the writer must not make the call
+itself, because writer bodies re-execute under retries and
+effect validation, firing the call more than once.
 
 A writer **can** call `ref.schedule(...).method(context)` on its own actor
 to defer work (see `scheduling-basic.md`).
@@ -107,6 +125,8 @@ async def increment(
 - `rpc-calls.md` — kwargs convention for calling other actors.
 - `scheduling-basic.md` / `scheduling-recurring.md` — the canonical
   pattern for deferred work driven from a writer.
-- `servicer-transaction.md` — when a writer can't (cross-actor work or
-  external side effects).
+- `servicer-transaction.md` — when a writer can't (cross-actor
+  mutation).
+- `workflow-at-most-once.md` — the home for **non-idempotent**
+  external side effects; writers/transactions only `schedule()` it.
 - `api-errors.md` — typed errors that roll back state automatically.
