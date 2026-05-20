@@ -120,7 +120,7 @@ Then read the server name from `mcp_servers.json` and start the
 inspector:
 
 ```sh
-npx @mcpjam/inspector@2.4.0 --config mcp_servers.json --server <name>
+npx @mcpjam/inspector@2.4.12 --config mcp_servers.json --server <name>
 ```
 
 If `mcp_servers.json` is missing, create it first (the server name

@@ -618,7 +618,7 @@ REBOOT_DEV_CASES: list[tuple[str, str, Where, Decision]] = [
     ),
     (
         "dev: npx @mcpjam/inspector",
-        "npx @mcpjam/inspector@2.4.0 --config mcp_servers.json "
+        "npx @mcpjam/inspector@2.4.12 --config mcp_servers.json "
         "--server my-app",
         Where.PROJECT,
         Decision.APPROVE,
