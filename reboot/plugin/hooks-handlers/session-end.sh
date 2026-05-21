@@ -32,13 +32,33 @@ elif command -v fuser >/dev/null 2>&1; then
     pids=$(fuser "${PORT}/tcp" 2>/dev/null || true)
 fi
 
-# Nothing on the port — either the inspector was never started or it
-# already exited cleanly.
-[ -n "${pids}" ] || exit 0
+# If something is on the inspector's port, kill it gracefully first
+# and then force anything that ignored `SIGTERM`. Empty `pids` is
+# expected when the inspector was never started or already exited.
+if [ -n "${pids}" ]; then
+    kill ${pids} 2>/dev/null || true
+    sleep 0.3
+    kill -9 ${pids} 2>/dev/null || true
+fi
 
-# Graceful first; then force anything that ignored `SIGTERM`.
-kill ${pids} 2>/dev/null || true
-sleep 0.3
-kill -9 ${pids} 2>/dev/null || true
+# Reap the `cloudflared` quick tunnel started by `SessionStart`. The
+# PID file may be stale (e.g. this session's start raced a
+# concurrent session and lost the `:4040` bind), so verify the
+# PID is both alive AND actually `cloudflared` before killing —
+# otherwise PID reuse could make us terminate an unrelated
+# process. If no live cloudflared remains, just remove the file.
+CLOUDFLARED_PID_FILE="$HOME/.claude/plugins/data/reboot/cloudflared.pid"
+if [ -s "${CLOUDFLARED_PID_FILE}" ]; then
+    cf_pid=$(cat "${CLOUDFLARED_PID_FILE}" 2>/dev/null || true)
+    if [ -n "${cf_pid}" ] && kill -0 "${cf_pid}" 2>/dev/null; then
+        cf_comm=$(ps -p "${cf_pid}" -o comm= 2>/dev/null | tr -d ' ')
+        if [ "${cf_comm}" = "cloudflared" ]; then
+            kill "${cf_pid}" 2>/dev/null || true
+            sleep 0.3
+            kill -9 "${cf_pid}" 2>/dev/null || true
+        fi
+    fi
+    rm -f "${CLOUDFLARED_PID_FILE}"
+fi
 
 exit 0

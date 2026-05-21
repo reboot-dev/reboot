@@ -1,5 +1,5 @@
 {
-  "description": "SessionStart prepends the plugin's bin/ to the agent's PATH so our shims take precedence over system-installed binaries. SessionEnd reaps the MCPJam inspector the chat-app skill leaves running. PreToolUse auto-approves this plugin's own skills, read-only calls on its files, and the run skill's Reboot dev commands when they run inside a Reboot project.",
+  "description": "SessionStart prepends the plugin's bin/ to the agent's PATH so our shims take precedence over system-installed binaries, and launches a cloudflared quick tunnel against the local Reboot dev server (metrics on :4040, --url http://localhost:9991). SessionEnd reaps the MCPJam inspector the chat-app skill leaves running and the cloudflared tunnel SessionStart spawned. PreToolUse auto-approves this plugin's own skills, read-only calls on its files, and the run skill's Reboot dev commands when they run inside a Reboot project.",
   "hooks": {
     "SessionStart": [
       {
