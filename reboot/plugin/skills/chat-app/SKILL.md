@@ -155,7 +155,7 @@ they cover aren't restated inline below.
 | [`references/react-scaffolding.md`](references/react-scaffolding.md)       | The `web/` shell: `package.json` (per-UI `build:<name>` scripts, no auto-discovery wrappers), `vite.config.ts` (load-bearing — copy exactly), `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json`, `index.css` theme variables, `ui/<name>/index.html`, `ui/<name>/main.tsx`.                                                                                               |
 | [`references/react-app-tsx.md`](references/react-app-tsx.md)               | `App.tsx` — generated `use<Type>()` hook usage (reader subscriptions + mutation calls), Python-snake → TypeScript-camel field naming, Zod-validated request/response types. Full Counter `App.tsx` + `App.module.css` example.                                                                                                                                                       |
 | [`references/gotchas.md`](references/gotchas.md)                           | The numbered MCP-Chat-App–specific trip list (1–19): `mcp=Tool()`/`mcp=None` required, `factory=True` on app-type `create`, `MyType.ref()` not `cls.ref()`/`self.ref()` in workflows, `.schedule()` from a Transaction, Optional+`default=None` for nested Models, `.read()` only on no-arg ref inside a workflow, method-name PascalCase → generated `<Type>.<Method>Request`, etc. |
-| [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md) | Upgrading `Application(oauth=...)` from `Anonymous()` to `Google` / `GitHub` before going to production. The one-line code swap, where credentials come from, and the user-ID-namespace gotcha that makes post-launch migrations infeasible — lean hard on doing this **before** real users have state.                                                                              |
+| [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md) | Choosing your `Application(oauth=...)` provider via `OAuthProviderByEnvironment(dev=..., prod=...)` (the recommended `dev=Development(), prod=Google(...)` shape; a selected `None` arm fails startup), where credentials come from, and the user-ID-namespace gotcha that makes switching providers after launch infeasible — choose deliberately **before** real users have state. |
 
 ## Workflow: Plan First, Then Build
 
@@ -432,21 +432,29 @@ adds one more:
 chat-app spelling of a constructor (see `python`'s
 `servicer-constructor.md` for the underlying mechanic).
 
-### Auth: `oauth=Anonymous()` and Real Authorizers from Day One
+### Auth: `oauth=` Provider Selection and Real Authorizers from Day One
 
-MCP Chat Apps wire identity via `Application(oauth=...)` — typically
-`oauth=Anonymous()` during early development. `Anonymous()` is a real
-OAuth provider: every caller is issued a verified `anon-{ULID}`
-`context.auth.user_id`, no external IdP or sign-in UI required. The
-same `oauth=` slot later accepts Google / GitHub / etc. providers
-without changing servicer-side code.
+MCP Chat Apps wire identity via `Application(oauth=...)`, which takes an
+`OAuthProviderSelector`. The typical shape is
+`oauth=OAuthProviderByEnvironment(dev=Development(), prod=Google(...))`:
+under `rbt dev` you get `Development()` — a real provider that shows a
+fake account picker and issues every caller a verified, stable
+`dev-{hash}` `context.auth.user_id`, no external IdP — while every other
+environment (`rbt serve`, Reboot Cloud, or anything unrecognized) gets
+the real provider. Both arms are required; either may be `None`, and a
+selected `None` arm makes the app **fail to start** with a clear
+message, so you can't silently ship without sensible auth.
+Servicer-side code doesn't change between providers. (In unit tests you
+use `reboot.aio.tests.Application(oauth_provider=...)`, not this
+selector.)
 
-> **Before going to production: upgrade to a real provider.** See
+> **Choose your production provider deliberately.** See
 > [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md).
-> The swap is one line, but `Anonymous()` and real providers issue
-> identities in different namespaces — anything keyed on user ID is
-> stranded after the swap. Migrating is rarely viable; do this
-> **before** real users have state.
+> Each provider issues user IDs in its own namespace, so switching
+> providers after launch strands every user-keyed piece of state.
+> `Development` is dev-only — replace it before shipping — and don't
+> launch on a throwaway like `Anonymous` planning to "upgrade later";
+> do it **before** real users have state.
 
 Consequences for authorizers:
 

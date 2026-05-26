@@ -1,61 +1,100 @@
 ---
-title: OAuth Providers — Upgrading from `Anonymous()` Before Production
+title: OAuth Providers — Choosing a Production Provider
 impact: HIGH
-impactDescription: The swap is one line, but the user-ID namespace changes — do it before production to avoid an unwinnable state-migration problem
-tags: auth, oauth, anonymous, google, github, provider, upgrade, migration, production
+impactDescription: The provider you launch with fixes your user-ID namespace; switching providers later strands all user-keyed state, so choose deliberately before you have production users
+tags: auth, oauth, development, anonymous, google, github, provider, production, migration
 ---
 
-## OAuth Providers — Upgrading from `Anonymous()` Before Production
+## OAuth Providers — Choosing a Production Provider
 
-> **Critical:** swap providers **before** you have production users
-> with real state. After the swap, every caller is identified by the
-> new provider's ID space (Google `sub`, GitHub numeric ID) — none of
-> which match the `anon-{ULID}` IDs minted under `Anonymous()`.
-> State scoped to user IDs (anything gated by
-> `state_id_is_user_id`, anything created with a user ID as its state
-> ID) is **unreachable** after the swap. Cross-namespace migration is
-> app-specific, error-prone, and usually infeasible — don't paint
-> yourself into that corner.
+> **Critical:** the provider you launch with **fixes your user-ID
+> namespace**. Each provider identifies callers in its own ID space
+> (Google `sub`, GitHub numeric ID, …) with no mapping between them.
+> Switch providers once you have real users and every user-keyed piece
+> of state — anything gated by `state_id_is_user_id`, anything created
+> with a user ID as its state ID — becomes unreachable. Choose your
+> production provider **deliberately, before you have production
+> state**, and don't launch on a throwaway intending to "upgrade
+> later."
 
-`Application(oauth=<OAuthProvider>)` is the identity slot for an MCP
-Chat App. Three providers ship in
+`Application(oauth=...)` is the identity slot for an MCP Chat App. It
+takes an **`OAuthProviderSelector`** — not a provider directly — so the
+provider can depend on the run environment. The selector that ships is
+`OAuthProviderByEnvironment(dev=..., prod=...)`.
+
+The **providers** you place in the `dev` / `prod` arms ship in
 `reboot.aio.auth.oauth_providers`:
 
-| Provider      | Construction                               | Identity issued                          | When to use                                                              |
-| ------------- | ------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------ |
-| `Anonymous()` | `Anonymous()` — no args                    | `anon-{ULID}` per session, no sign-in UI | Local dev and early scaffolding; demos that don't need durable identity. |
-| `Google(...)` | `Google(client_id=..., client_secret=...)` | Google account's OIDC `sub` claim        | Production apps where users sign in with Google.                         |
-| `GitHub(...)` | `GitHub(client_id=..., client_secret=...)` | GitHub user's numeric ID (as `str`)      | Production apps where users sign in with GitHub.                         |
+| Provider        | Construction                               | Identity issued                                          | When to use                                      |
+| --------------- | ------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------ |
+| `Development()` | `Development()` — no args                  | stable `dev-{hash}` per fake identity, account-picker UI | Local dev only; **never in production**.         |
+| `Google(...)`   | `Google(client_id=..., client_secret=...)` | Google account's OIDC `sub` claim                        | Production apps where users sign in with Google. |
+| `GitHub(...)`   | `GitHub(client_id=..., client_secret=...)` | GitHub user's numeric ID (as `str`)                      | Production apps where users sign in with GitHub. |
+
+There is also an `Anonymous()` provider that mints a fresh
+`anon-{ULID}` per OAuth flow with no sign-in UI. It's a real provider
+that populates `context.auth.user_id`, but **don't launch on it** — see
+"Your provider choice is effectively permanent" below.
+
+**Choosing per environment.**
+`OAuthProviderByEnvironment(dev=..., prod=...)` returns its `dev` arm
+only under `rbt dev run`, and its `prod` arm everywhere else — `rbt serve`, Reboot Cloud, and any environment it can't classify (which
+defaults to the more secure `prod`, never the local-dev arm). Both arms
+are **required** (so the choice for each environment is deliberate), but
+either may be `None`: if the selected arm is `None`, the application
+**fails to start** with a clear message — so an app that never chose a
+provider for the current environment can't silently ship without
+sensible auth. (The selector is resolved only when the app has a
+`User`-typed auto-construct servicer that actually needs identity.)
+`oauth=None` is equivalent to
+`OAuthProviderByEnvironment(dev=None, prod=None)` — no provider in any
+environment. In unit tests you use the `OAuthProviderForTest(provider)`
+selector, with `Anonymous` a reasonable default provider to go with.
 
 Servicers and authorizer rules are **provider-agnostic** — the same
 `allow_if(all=[state_id_is_user_id])` works under every provider.
 Only `main.py` changes.
 
+## Replace `Development` Before Production
+
+This part is obvious: `Development` is a local-development convenience.
+It shows a fake account picker ("Alice", "Ben", …) and issues stable
+but fake `dev-{hash}` IDs (reset on `rbt dev expunge`). Real customers
+must never see it — swap it for a real provider (`Google` / `GitHub`)
+before you ship. The subtler, more important trap is further down.
+
 ## The Code Swap
 
+The recommended pattern keeps the friendly fake sign-in locally and
+uses your real provider everywhere else — one `main.py`, no
+environment-conditional code:
+
 ```python
-# Before:
-from reboot.aio.auth.oauth_providers import Anonymous
-
-async def main():
-    await Application(
-        servicers=[UserServicer, CounterServicer],
-        oauth=Anonymous(),
-    ).run()
-
-# After (Google):
 import os
-from reboot.aio.auth.oauth_providers import Google
+from reboot.aio.auth.oauth_providers import (
+    Development,
+    Google,
+    OAuthProviderByEnvironment,
+)
 
 async def main():
     await Application(
         servicers=[UserServicer, CounterServicer],
-        oauth=Google(
-            client_id=os.environ["GOOGLE_OAUTH_CLIENT_ID"],
-            client_secret=os.environ["GOOGLE_OAUTH_CLIENT_SECRET"],
+        oauth=OAuthProviderByEnvironment(
+            dev=Development(),
+            prod=Google(
+                client_id=os.environ["GOOGLE_OAUTH_CLIENT_ID"],
+                client_secret=os.environ["GOOGLE_OAUTH_CLIENT_SECRET"],
+            ),
         ),
     ).run()
 ```
+
+Under `rbt dev` you get the fake account picker (no real Google
+credentials needed locally); everywhere else — including `rbt serve`,
+Reboot Cloud, and any unrecognized environment — you get Google. If
+you'd rather exercise the real provider locally too, set `dev=Google(...)`
+as well (you'll then need its credentials in dev).
 
 GitHub is the same shape — `GitHub(client_id=..., client_secret=...)`,
 reading both values from `os.environ`. Servicer code, API
@@ -98,58 +137,66 @@ reserved). Set the values:
 Full secrets reference (rules, gotchas, the reserved-prefix list,
 the "don't" list): `python/references/lifecycle-secrets.md`.
 
-## Why You Must Do This Before Production
+## Your Provider Choice Is Effectively Permanent
 
-`Anonymous()` mints a fresh `anon-{ULID}` user ID per OAuth flow.
-Real providers issue stable IDs tied to a real account. The two ID
-spaces don't overlap and have no mapping between them. Anything in
-your app keyed on user ID — directly or indirectly — is affected:
+This is the non-obvious part, and it's why the choice matters before
+launch — not just that `Development` is fake. A user's ID comes from
+the provider, and providers don't share an ID space:
 
-- **State keyed by `user_id`.** If your app creates `Counter` actors
-  with `state_id=user_id` (the typical chat-app pattern), the state
-  is stranded under `anon-{ULID}` keys after the swap. A user who
-  signs in with Google will land on a fresh, empty `Counter`.
-- **`state_id_is_user_id` authorizers.** They keep working
-  syntactically (every caller still has a `user_id`), but they now
-  guard a different set of identities. The post-swap user can't
-  reach pre-swap state, and pre-swap callers (long-lived MCP
-  sessions still holding anon tokens) won't reach post-swap state.
-- **Anything stored inside `User`-typed actors.** Same story — the
-  `User` actor's state ID was the user's ID at creation time.
-- **Index actors keyed on user ID.** Same story.
+- `Google` issues the OIDC `sub`.
+- `GitHub` issues a numeric account ID.
+- `Anonymous()` issues a fresh `anon-{ULID}` per flow.
+- `Development()` issues a `dev-{hash}` per fake identity.
 
-Cross-namespace migration is rarely viable:
+Switching from one to another — Google→GitHub, and especially
+`Anonymous` → a real provider — changes **every** user's ID. Anything
+keyed on user ID is then stranded:
 
-- You'd need a way to tell the user "the data you created under your
-  anonymous session belongs to _this_ Google account" — but there's
-  no reliable, secure way to make that linkage without a session
-  cookie or out-of-band proof that survived the swap.
-- Anonymous IDs are by design unmemorable and unauthenticated, so
-  even if you build a manual claim flow, it's hand-jobs at best and
-  identity theft at worst.
+- **State keyed by `user_id`.** A `Counter` created with
+  `state_id=user_id` (the typical chat-app pattern) lives under the old
+  ID; after the switch the same human signs in with a new ID and lands
+  on a fresh, empty `Counter`.
+- **`state_id_is_user_id` authorizers.** Still valid syntactically
+  (every caller still has a `user_id`), but they now guard a different
+  set of identities — pre-switch callers can't reach post-switch state
+  and vice versa.
+- **Anything stored inside `User`-typed actors, or in index actors
+  keyed on user ID.** Same story — the state ID was the user's ID at
+  creation time.
 
-**The right plan is to swap providers before launch.** Specifically:
+And the migration back is rarely viable: there's no reliable, secure
+way to prove "the data under this old ID belongs to that new account"
+without a session cookie or out-of-band proof that survived the
+switch. With `Anonymous` it's worse — the old IDs are unauthenticated
+throwaways, so any "claim your data" flow is guesswork at best and
+identity theft at worst.
 
-1. While building, use `oauth=Anonymous()` so the developer loop is
-   frictionless.
-2. As soon as the app is something users would create real state in
-   — even an internal pilot — swap to `Google` / `GitHub`. Throw
-   away the `anon-{ULID}` state from dev (start clean) and proceed
-   with the real provider for the rest of the app's lifetime.
-3. Treat the provider choice as **a one-way decision after launch**.
-   Adding additional providers later (e.g. start with Google, add
-   GitHub) is a separate, harder topic — the framework today
-   accepts a single `oauth=` provider, so multi-provider support
-   needs deliberate design and isn't covered here.
+This is exactly why **launching on `Anonymous` "for now" is a trap**:
+it issues real, durable-looking IDs, so it's tempting to ship with it
+and "add real sign-in later" — but that later swap strands everything
+your early users created. The right plan:
+
+1. While building, use the default `Development` provider (no sign-in
+   friction, and it lets you exercise multiple identities). `Anonymous`
+   is fine here too — both are throwaway state you can wipe.
+2. Before you have production users with real state — even an internal
+   pilot — pick your real provider (`Google` / `GitHub`) and launch on
+   it. Start clean; don't carry dev or anonymous state forward.
+3. Treat that production provider as a **one-way decision**. Adding a
+   second provider later (e.g. Google _and_ GitHub) is a separate,
+   harder problem — the framework accepts a single `oauth=` provider
+   today, so multi-provider support needs deliberate design and isn't
+   covered here.
 
 ## Verifying the Swap
 
 After deploying with the new provider:
 
-1. Run through the OAuth flow as a real user. The provider's
-   sign-in page should appear (it does **not** under `Anonymous()`).
+1. Run through the OAuth flow as a real user. The provider's real
+   sign-in page should appear (under `Development()` you instead saw a
+   fake account picker).
 2. Check that `context.auth.user_id` in a Servicer reads as the
    provider-issued ID (Google `sub` looks like `1234567890`; GitHub
-   IDs are short integer strings) — not `anon-{ULID}`.
+   IDs are short integer strings) — not `dev-{hash}`.
 3. Confirm `state_id_is_user_id`–protected methods accept the
    logged-in user and reject other callers as expected.

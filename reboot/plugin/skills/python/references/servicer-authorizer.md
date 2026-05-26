@@ -18,18 +18,20 @@ instance (e.g. `allow_if(all=[has_verified_token])`). Reboot evaluates
 that rule against `context.auth` before each method call. Identity
 comes from one of two sources on `Application(...)`:
 
-| Identity source on `Application(...)`        | When identity is available                                                                                                 | Implication for authorizer rules                                                              |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `oauth=<OAuthProvider>` (e.g. `Anonymous()`) | **Always** — every caller gets a verified `context.auth.user_id` (an `anon-{ULID}` for `Anonymous()`), in dev and in prod. | Write real `allow_if(...)` rules **from day one**. They work in dev exactly as in production. |
-| `token_verifier=<TokenVerifier>`             | **Only when the verifier is wired** — typically requires integrating an external IdP (Auth0, Firebase, JWT issuer, …).     | Until the verifier is in place, no caller has identity. Defer rules (see below).              |
-| Neither                                      | Never.                                                                                                                     | All rules that need identity will fail.                                                       |
+| Identity source on `Application(...)`                                                            | When identity is available                                                                                                   | Implication for authorizer rules                                                              |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `oauth=<OAuthProviderSelector>` (e.g. `OAuthProviderByEnvironment(dev=Development(), prod=...)`) | **Always** — every caller gets a verified `context.auth.user_id` (a `dev-{hash}` under `Development()`), in dev and in prod. | Write real `allow_if(...)` rules **from day one**. They work in dev exactly as in production. |
+| `token_verifier=<TokenVerifier>`                                                                 | **Only when the verifier is wired** — typically requires integrating an external IdP (Auth0, Firebase, JWT issuer, …).       | Until the verifier is in place, no caller has identity. Defer rules (see below).              |
+| Neither                                                                                          | Never.                                                                                                                       | All rules that need identity will fail.                                                       |
 
-`oauth=Anonymous()` is a real OAuth provider that mints a fresh
-`anon-{ULID}` user ID per session — no external IdP, no sign-in UI,
-but `context.auth.user_id` is populated and predicates like
-`has_verified_token` and `state_id_is_user_id` work correctly. This
-is what makes "write real authorizers from day one" viable for apps
-that don't need an external IdP.
+`Development()` (the typical `dev` arm, wired via
+`oauth=OAuthProviderByEnvironment(dev=Development(), prod=...)`) is a
+real OAuth provider that shows a fake account-picker sign-in UI and
+mints a stable `dev-{hash}` user ID per chosen identity — no external
+IdP, but `context.auth.user_id` is populated and predicates like
+`has_verified_token` and `state_id_is_user_id` work correctly. This is
+what makes "write real authorizers from day one" viable for apps that
+don't need an external IdP.
 
 ## What Happens Without `authorizer()`
 
@@ -48,7 +50,7 @@ identity available).
 
 ## When to Write Authorizers from Day One vs. Defer
 
-- **`Application(oauth=...)` (any OAuth provider, including `Anonymous()`)** —
+- **`Application(oauth=...)` (any OAuth provider, including `Development()`)** —
   identity is wired by construction. **Write `authorizer()` on every
   Servicer up front**, using `allow_if(...)` with predicates like
   `has_verified_token` and `state_id_is_user_id`. The rules execute
@@ -100,8 +102,9 @@ class CounterServicer(Counter.Servicer):
 
     def authorizer(self):
         # Only the user whose ID matches this Counter's state ID may
-        # call its methods. `oauth=Anonymous()` (or any other OAuth
-        # provider) ensures every caller has a `user_id`.
+        # call its methods. An `oauth=` provider (e.g. via
+        # `OAuthProviderByEnvironment`) ensures every caller has a
+        # `user_id`.
         return allow_if(all=[state_id_is_user_id])
 
     async def value(

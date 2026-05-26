@@ -65,7 +65,7 @@ has a `context.auth.user_id`, so authorizer rules that depend on
 identity can't be satisfied.
 
 > **Don't use `Application(oauth=...)` for web apps.** The `oauth=`
-> slot (including `Anonymous()`) is currently MCP-chat-app-only and
+> slot (including `Development()`) is currently MCP-chat-app-only and
 > doesn't work for browser-served web apps. For a web app, leave
 > `oauth=` unset and use the `token_verifier=` path below. (Web-app
 > support for `oauth=` is planned but not yet available.)

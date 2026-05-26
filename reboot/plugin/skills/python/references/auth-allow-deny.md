@@ -57,10 +57,11 @@ Common anti-patterns the agent should refuse:
   approach loses track of _which_ Servicers needed real rules, and the
   `allow()` calls survive into production code.
 - "Use `allow()` because there's no auth yet." Pick the right
-  identity wiring for your app instead: `Application(oauth=Anonymous())`
-  gives every caller a verified `anon-{ULID}` identity (works in dev
-  and prod, lets you write real `allow_if(...)` rules from day one —
-  typical for MCP/chat apps), and `Application(token_verifier=...)`
+  identity wiring for your app instead:
+  `Application(oauth=OAuthProviderByEnvironment(dev=Development(), prod=...))`
+  gives every caller a verified `dev-{hash}` identity in dev (and a real
+  one in prod), letting you write real `allow_if(...)` rules from day
+  one — typical for MCP/chat apps; and `Application(token_verifier=...)`
   integrates an external IdP (typical for web apps; until it's wired,
   omit `authorizer()` so the dev-mode warning flags what's
   outstanding). See `servicer-authorizer.md` for the full table.
