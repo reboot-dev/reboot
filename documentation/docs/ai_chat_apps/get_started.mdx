@@ -65,9 +65,9 @@ Naming a type \`User\` in your \`API(...)\` is special:
 
 - A \`User\` instance is automatically created for each authenticated
   user that connects to your app.
-- During development all users of your app are automatically
-  "authenticated" with the built-in \`Anonymous\` OAuth provider, so every
-  user of your app gets a \`User\` instance.
+- During development you "sign in" by picking one of the built-in
+  \`Development\` OAuth provider's fake identities, so every user of
+  your app gets a \`User\` instance.
 - \`User\` acts as an entry point: its methods create other state
   types (like \`Counter\`) whose IDs the AI tracks in its context
   window.
@@ -356,14 +356,23 @@ touch backend/src/main.py
 # backend/src/main.py
 import asyncio
 from reboot.aio.applications import Application
-from reboot.aio.auth.oauth_providers import Anonymous
+from reboot.aio.auth.oauth_providers import (
+    Development,
+    OAuthProviderByEnvironment,
+)
 from servicers.counter import CounterServicer, UserServicer
 
 
 async def main() -> None:
     application = Application(
         servicers=[UserServicer, CounterServicer],
-        oauth=Anonymous(),
+        oauth=OAuthProviderByEnvironment(
+            dev=Development(),
+            # TODO: set a real provider (e.g. `Google(...)`) before
+            # production; `prod=None` makes a production deployment fail
+            # to start until one is chosen.
+            prod=None,
+        ),
     )
     await application.run()
 

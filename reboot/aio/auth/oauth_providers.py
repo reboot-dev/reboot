@@ -10,7 +10,9 @@ import os
 from abc import ABC, abstractmethod
 from jinja2 import Template
 from log.log import get_logger, log_at_most_once_per
+from reboot.aio.exceptions import InputError
 from reboot.aio.http import PythonWebFramework
+from reboot.run_environments import running_rbt_dev
 from reboot.settings import ENVVAR_REBOOT_OAUTH_SIGNING_SECRET
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
@@ -475,3 +477,70 @@ class Development(OAuthProvider):
             hashlib.sha256,
         ).hexdigest()
         return UserId(f"dev-{digest[:16]}")
+
+
+# Message raised when a selector has no provider for the current
+# environment.
+_NO_PROVIDER_REASON = (
+    "No OAuth provider is configured for this environment. Pass "
+    "`Application(oauth=OAuthProviderByEnvironment(dev=..., prod=...))` "
+    "with a provider for the current environment — e.g. `Development()` "
+    "for local `rbt dev`, and `Google(...)` / `GitHub(...)` for "
+    "production."
+)
+
+
+class OAuthProviderSelector(ABC):
+    """
+    Chooses the `OAuthProvider` an `Application` should use.
+
+    `Application(oauth=...)` takes a selector rather than an
+    `OAuthProvider` directly, so the choice can depend on the run
+    environment. The selection is resolved lazily, via `get()`, only
+    when the application actually needs a provider to identify users
+    (i.e. it has a `User`-typed auto-construct servicer).
+    """
+
+    @abstractmethod
+    def get(self) -> OAuthProvider:
+        """Return the `OAuthProvider` to use, or raise if none is
+        configured for the current environment."""
+        raise NotImplementedError()
+
+
+class OAuthProviderByEnvironment(OAuthProviderSelector):
+    """
+    Selects an OAuth provider based on the run environment.
+
+    `get()` returns the `dev` arm only under `rbt dev run`, and the
+    `prod` arm everywhere else — `rbt serve`, Reboot Cloud, and any
+    environment we can't classify (which defaults to the more secure
+    `prod`, never the local-dev arm). Unit tests don't use this
+    selector: the test `Application` (`reboot.aio.tests.Application`)
+    wires a concrete provider via `OAuthProviderForTest` instead.
+
+    Both `dev` and `prod` must be passed explicitly (so the choice for
+    each environment is deliberate), but either may be `None`. If
+    `get()` is reached and the selected arm is `None`, it raises — so an
+    application that never chose a provider for the current environment
+    fails to start with a clear message rather than shipping without
+    sensible auth. A typical production app uses
+    `OAuthProviderByEnvironment(dev=Development(), prod=Google(...))`;
+    under `rbt dev` that transparently uses `Development` without needing
+    the real provider's credentials.
+    """
+
+    def __init__(
+        self,
+        *,
+        dev: Optional[OAuthProvider],
+        prod: Optional[OAuthProvider],
+    ):
+        self._dev = dev
+        self._prod = prod
+
+    def get(self) -> OAuthProvider:
+        provider = self._dev if running_rbt_dev() else self._prod
+        if provider is None:
+            raise InputError(reason=_NO_PROVIDER_REASON)
+        return provider

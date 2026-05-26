@@ -3,7 +3,10 @@ import logging
 from constants import COUPON_BOOK_ID
 from dotenv import load_dotenv
 from reboot.aio.applications import Application
-from reboot.aio.auth.oauth_providers import Anonymous
+from reboot.aio.auth.oauth_providers import (
+    Anonymous,
+    OAuthProviderByEnvironment,
+)
 from reboot_swag_store.v1.store_rbt import CouponBook
 from servicers.store import (
     CartServicer,
@@ -35,7 +38,13 @@ async def main() -> None:
             CartServicer,
             OrderServicer,
         ],
-        oauth=Anonymous(),
+        oauth=OAuthProviderByEnvironment(
+            dev=Anonymous(),
+            # TODO: set a real provider (e.g. `Google(...)`) before
+            # production; `prod=None` makes a production deployment fail
+            # to start until one is chosen.
+            prod=None,
+        ),
         initialize=initialize,
     )
     await application.run()

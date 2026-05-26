@@ -1,6 +1,5 @@
 import httpx
 import json
-import os
 import time
 import unittest
 from mcp.client.session import ClientSession
@@ -15,8 +14,6 @@ from reboot.ping.ping import (
     UserServicer,
 )
 from reboot.ping.ping_api_rbt import Counter, Ping, Pong, User, UserAuthorizer
-from reboot.settings import ENVVAR_REBOOT_OAUTH_SIGNING_SECRET
-from unittest import mock
 
 
 class PingTest(unittest.IsolatedAsyncioTestCase):
@@ -151,8 +148,8 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                         "test counter",
                     )
 
-    async def test_whoami_with_anonymous_auth(self):
-        """Verify that Anonymous OAuth populates user_id,
+    async def test_whoami_with_default_oauth(self):
+        """Verify that the default OAuth provider populates user_id,
         and that unauthenticated requests get a 401."""
         await self.rbt.up(
             Application(
@@ -396,27 +393,6 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                     # Domains should contain the Reboot server URL and
                     # Reboot websocket URL.
                     self.assertEqual(len(csp["connectDomains"]), 2)
-
-    async def test_user_without_oauth_raises(self):
-        """
-        Registering a `User` servicer without `Application(oauth=...)`
-        should raise at `Application` startup when not in `rbt dev` or a
-        unit test.
-        """
-        # Temporarily unset the signing secret so that the `Application`
-        # constructor believes that we're NOT a unit test; otherwise it
-        #  would silently default to `oauth=Anonymous()`.
-        with mock.patch.dict(
-            os.environ,
-            {ENVVAR_REBOOT_OAUTH_SIGNING_SECRET: ""},
-            clear=False,
-        ):
-            with self.assertRaises(ValueError) as context:
-                Application(servicers=[UserServicer, CounterServicer])
-            self.assertIn(
-                "requires OAuth to identify the user",
-                str(context.exception),
-            )
 
     async def test_mcp_no_tools_returns_501(self):
         # An application with only PongServicer (which has

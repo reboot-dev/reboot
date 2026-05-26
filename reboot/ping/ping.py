@@ -6,7 +6,10 @@ import os
 from datetime import timedelta
 from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow
-from reboot.aio.auth.oauth_providers import Development
+from reboot.aio.auth.oauth_providers import (
+    Development,
+    OAuthProviderByEnvironment,
+)
 from reboot.aio.contexts import (
     ReaderContext,
     TransactionContext,
@@ -236,11 +239,17 @@ async def main():
         # We choose to not call the initialization method
         # `initialize`, to exercise that that is allowed.
         initialize=start_periodic_ping,
-        oauth=Development(
-            # Set a short access token TTL so that most manual tests
-            # with this app naturally also exercise the access token
-            # refresh flow.
-            access_token_ttl_seconds=30,
+        oauth=OAuthProviderByEnvironment(
+            dev=Development(
+                # Set a short access token TTL so that most manual tests
+                # with this app naturally also exercise the access token
+                # refresh flow.
+                access_token_ttl_seconds=30,
+            ),
+            # TODO: set a real provider (e.g. `Google(...)`) before
+            # running this in production; `None` makes a production
+            # deployment fail to start until one is chosen.
+            prod=None,
         ),
     )
     await application.run()

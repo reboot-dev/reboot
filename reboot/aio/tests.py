@@ -4,6 +4,10 @@ import reboot.aio.reboot
 import time
 import unittest
 from reboot.aio.applications import Application
+from reboot.aio.auth.oauth_providers import (
+    OAuthProvider,
+    OAuthProviderSelector,
+)
 from reboot.aio.auth.token_verifiers import TokenVerifier
 from reboot.aio.contexts import EffectValidation
 from reboot.aio.external import InitializeContext
@@ -22,6 +26,18 @@ from unittest import mock
 # Hardcoded signing secret for unit tests. Not a real
 # secret — only used in-process for test JWT minting.
 _TEST_OAUTH_SIGNING_SECRET = "reboot-test-signing-secret"
+
+
+class OAuthProviderForTest(OAuthProviderSelector):
+    """`OAuthProviderSelector` that always returns the given provider,
+    regardless of environment. Used by the test `Application`, since
+    tests run in a single, known environment."""
+
+    def __init__(self, provider: OAuthProvider):
+        self._provider = provider
+
+    def get(self) -> OAuthProvider:
+        return self._provider
 
 
 def assert_called_twice_with(

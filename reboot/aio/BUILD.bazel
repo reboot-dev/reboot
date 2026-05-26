@@ -505,6 +505,7 @@ py_library(
         ":libraries_py",
         ":reboot_py",
         ":servicers_py",
+        "//reboot/aio/auth:oauth_providers_py",
     ],
 )
 

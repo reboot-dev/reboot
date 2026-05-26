@@ -1,13 +1,22 @@
 import asyncio
 from reboot.aio.applications import Application
-from reboot.aio.auth.oauth_providers import Anonymous
+from reboot.aio.auth.oauth_providers import (
+    Development,
+    OAuthProviderByEnvironment,
+)
 from servicers.counter import CounterServicer, UserServicer
 
 
 async def main() -> None:
     application = Application(
         servicers=[UserServicer, CounterServicer],
-        oauth=Anonymous(),
+        oauth=OAuthProviderByEnvironment(
+            dev=Development(),
+            # TODO: set a real provider (e.g. `Google(...)`) before
+            # production; `prod=None` makes a production deployment fail
+            # to start until one is chosen.
+            prod=None,
+        ),
     )
     await application.run()
 

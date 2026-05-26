@@ -10,7 +10,10 @@ import traceback
 from log.log import get_logger
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
-from reboot.aio.auth.oauth_providers import Anonymous, OAuthProvider
+from reboot.aio.auth.oauth_providers import (
+    OAuthProviderByEnvironment,
+    OAuthProviderSelector,
+)
 from reboot.aio.auth.oauth_server import OAuthServer
 from reboot.aio.auth.token_verifiers import TokenVerifier
 from reboot.aio.exceptions import InputError
@@ -35,7 +38,6 @@ from reboot.run_environments import (
     InvalidRunEnvironment,
     RunEnvironment,
     detect_run_environment,
-    running_rbt_dev,
     within_nodejs_server,
     within_python_server,
 )
@@ -181,7 +183,7 @@ class Application:
                                       Awaitable[None]]] = None,
         initialize_bearer_token: Optional[str] = None,
         token_verifier: Optional[TokenVerifier] = None,
-        oauth: Optional[OAuthProvider] = None,
+        oauth: Optional[OAuthProviderSelector] = None,
     ):
         """
         :param servicers: the types of Reboot-powered servicers that
@@ -203,10 +205,14 @@ class Application:
         :param token_verifier: a TokenVerifier that will be used to
             verify authorization bearer tokens passed to the
             application.
-        :param oauth: an OAuth provider (e.g. `Google` or `GitHub`) for
-            authenticating MCP clients. When set, the Application
-            automatically creates a `TokenVerifier` for the minted JWTs.
-            Mutually exclusive with `token_verifier`.
+        :param oauth: an `OAuthProviderSelector` (e.g.
+            `OAuthProviderByEnvironment(dev=Development(),
+            prod=Google(...))`) that chooses the OAuth provider for
+            authenticating MCP clients. It is resolved (and a
+            `TokenVerifier` created automatically) only when the
+            application has a `User`-typed auto-construct servicer. `None`
+            is equivalent to `OAuthProviderByEnvironment(dev=None,
+            prod=None)`. Mutually exclusive with `token_verifier`.
 
         TODO(benh): update the initialize function to be run in a
         transaction and ensure that the transaction has finished before
@@ -221,17 +227,12 @@ class Application:
                 "`TokenVerifier` is created automatically."
             )
 
-        # Default to Anonymous OAuth in environments that also have a
-        # default signing secret (i.e. `rbt dev` and unit tests; these
-        # are the environments where true security isn't needed yet).
-        # This lets MCP clients connect without explicit config. In `rbt
-        # dev`, `_is_dev_default` triggers a warning nudging the
-        # developer to configure a real provider for production.
-        if oauth is None and token_verifier is None:
-            if running_rbt_dev():
-                oauth = Anonymous(_is_dev_default=True)
-            elif os.environ.get(ENVVAR_REBOOT_OAUTH_SIGNING_SECRET):
-                oauth = Anonymous()
+        # NOTE: `oauth` is an `OAuthProviderSelector`, resolved lazily in
+        # `_mount_mcp` only when the app needs a provider to identify
+        # users (it has a `User`-typed auto-construct servicer and no
+        # `token_verifier`). `oauth=None` is treated as
+        # `OAuthProviderByEnvironment(dev=None, prod=None)` there, so an
+        # app that needs OAuth but never configured one fails to start.
 
         # Get all libraries including required dependent libraries.
         if libraries is not None:
@@ -329,12 +330,6 @@ class Application:
         # errors are raised consistently regardless of run environment.
         seen_tools: dict[str, str] = {}
         for servicer_cls in self._servicers or []:
-            if servicer_cls._is_auto_construct and oauth is None:
-                raise ValueError(
-                    "Application includes a `User` auto-constructed state "
-                    "type, which requires OAuth to identify the user. Pass "
-                    "`Application(oauth=...)` - e.g. `oauth=Anonymous()`."
-                )
             for tool_name in servicer_cls._mcp_tool_names():
                 if tool_name in seen_tools:
                     raise ValueError(
@@ -495,9 +490,22 @@ class Application:
         # produce the 401 error code needed to trigger a token refresh.
         mcp_sdk_token_verifier = None
         oauth_server = None
-        if self._oauth is not None:
+        # Resolve an OAuth provider only when the app needs one to
+        # identify users — it has a `User`-typed auto-construct servicer
+        # and isn't already authenticating via a `token_verifier`. The
+        # selector's `get()` raises if no provider is configured for the
+        # current environment (`oauth=None` is treated as a selector with
+        # no provider for any environment).
+        if (
+            auto_construct_state_type_full_names and
+            self._token_verifier is None
+        ):
+            selector = self._oauth or OAuthProviderByEnvironment(
+                dev=None,
+                prod=None,
+            )
             oauth_server = OAuthServer(
-                provider=self._oauth,
+                provider=selector.get(),
                 protected_resources=[_MCP_PATH],
             )
             self._token_verifier = oauth_server.token_verifier
@@ -573,6 +581,25 @@ class Application:
 
         return serviceables
 
+    def _require_oauth_signing_secret(self) -> None:
+        """Fail fast (clean exit, no stack trace) on a serving path if
+        the MCP OAuth signing secret isn't set. Every serving Reboot
+        application needs it: the MCP OAuth server signs and verifies the
+        minted JWTs with it, and it must be identical across all server
+        processes. Config pods (`REBOOT_MODE_CONFIG`) only validate
+        configuration and never serve, so they never call this.
+        """
+        if not os.environ.get(ENVVAR_REBOOT_OAUTH_SIGNING_SECRET):
+            terminal.fail(
+                f"The '{ENVVAR_REBOOT_OAUTH_SIGNING_SECRET}' environment "
+                "variable is not set. Every Reboot application needs a "
+                "signing secret for the MCP OAuth server, shared across "
+                "all of its servers. Under `rbt dev` it is set "
+                "automatically; for `rbt serve` and Reboot Cloud set it "
+                "to a strong random secret (e.g. `rbt cloud secret set "
+                f"{ENVVAR_REBOOT_OAUTH_SIGNING_SECRET}=...`)."
+            )
+
     async def run(self) -> NoReturn:
         """Runs the application, and does not return unless the application fails.
 
@@ -585,7 +612,9 @@ class Application:
         colorama.init()
 
         if within_python_server():
-            # We're running as a Python server subprocess.
+            # We're running as a Python server subprocess — a serving
+            # path, so it requires the OAuth signing secret.
+            self._require_oauth_signing_secret()
             try:
                 await run_python_server_process(
                     serviceables=self._get_serviceables(),
@@ -662,7 +691,9 @@ class Application:
                 sys.exit(1)
 
         # We're going to run a normal Reboot application with one or
-        # more serving servers.
+        # more serving servers — a serving path, so it requires the
+        # OAuth signing secret.
+        self._require_oauth_signing_secret()
         try:
             await self._rbt_start_and_up_and_initialize()
         except InputError as e:

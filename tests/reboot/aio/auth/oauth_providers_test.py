@@ -10,8 +10,11 @@ from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from reboot.aio.applications import Application
 from reboot.aio.auth.oauth_providers import Development
-from reboot.aio.tests import Reboot
+from reboot.aio.exceptions import InputError
+from reboot.aio.tests import OAuthProviderForTest, Reboot
 from reboot.ping.ping import CounterServicer, UserServicer
+from reboot.settings import ENVVAR_RBT_SERVE
+from unittest import mock
 
 
 class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
@@ -31,7 +34,7 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                oauth=Development(),
+                oauth=OAuthProviderForTest(Development()),
             ),
         )
 
@@ -155,6 +158,33 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(alice_id, alice_id_again)
         self.assertNotEqual(alice_id, ben_id)
         self.assertNotIn("alice", alice_id.lower())
+
+    async def test_user_without_oauth_raises_in_prod(self):
+        """
+        In a real production deployment (`rbt serve` / Reboot Cloud), an
+        `Application` whose `oauth` selector has no provider for that
+        environment (here, the `oauth=None` default ≡ `dev=None,
+        prod=None`) fails to start when it has a `User` servicer — its
+        `OAuthProviderByEnvironment.get()` raises. So an app can't
+        silently ship without choosing a real OAuth provider. (Under
+        `rbt dev` and in tests the `dev` arm is used instead.)
+
+        Uses the real `reboot.aio.applications.Application` (the test
+        `Application` always resolves to a concrete provider).
+        """
+        with mock.patch.dict(
+            os.environ,
+            {ENVVAR_RBT_SERVE: "true"},
+            clear=False,
+        ):
+            with self.assertRaises(InputError) as context:
+                Application(
+                    servicers=[UserServicer, CounterServicer],
+                )
+        self.assertIn(
+            "No OAuth provider is configured",
+            str(context.exception),
+        )
 
 
 if __name__ == "__main__":
