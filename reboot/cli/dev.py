@@ -6,6 +6,7 @@ import grpc
 import os
 import random
 import reboot.aio.tracing
+import secrets
 import shutil
 import signal
 import sys
@@ -1369,13 +1370,30 @@ async def __dev_run(
         EffectValidation,
     ).name
 
-    # Set a signing secret for the MCP OAuth server. For local
-    # dev we use the application name (insecure, but convenient).
-    # Fall back to a fixed string when `--name` wasn't provided.
     if ENVVAR_REBOOT_OAUTH_SIGNING_SECRET not in env:
-        env[ENVVAR_REBOOT_OAUTH_SIGNING_SECRET] = (
-            args.application_name or "reboot-dev"
-        )
+        if args.application_name is not None:
+            # Set a signing secret for the MCP OAuth server. We persist
+            # a random secret in the application's state directory so
+            # that it is stable across restarts but is wiped by `rbt dev
+            # expunge` — which also deletes each signed-in user's
+            # auto-constructed `User` state, so we want previously
+            # minted OAuth tokens to become invalid and force connected
+            # clients back through the OAuth flow.
+            secret_path = (
+                dot_rbt_dev_directory(args, parser) / args.application_name /
+                "oauth-signing-secret"
+            )
+            if secret_path.exists():
+                secret = secret_path.read_text()
+            else:
+                secret = secrets.token_urlsafe(32)
+                secret_path.parent.mkdir(parents=True, exist_ok=True)
+                secret_path.write_text(secret)
+            env[ENVVAR_REBOOT_OAUTH_SIGNING_SECRET] = secret
+        else:
+            # No application name means no per-app state directory to
+            # persist into; fall back to a fixed string.
+            env[ENVVAR_REBOOT_OAUTH_SIGNING_SECRET] = "reboot-dev"
 
     if tracing == Tracing.JAEGER:
         # TODO: dynamic port. See comment in `_run_jaeger()`.
@@ -1797,6 +1815,10 @@ async def _expunge(
         ):
             terminal.fail("Expunge cancelled")
 
+    # Removing this directory also removes the persisted
+    # `oauth-signing-secret` written by `rbt dev run`, so the next run
+    # generates a fresh secret and previously minted OAuth tokens become
+    # invalid — forcing connected clients back through the OAuth flow.
     application_directory = dot_rbt_dev / args.application_name
     if not application_directory.exists():
         terminal.warn(
