@@ -20,6 +20,7 @@ from reboot.aio.auth import Auth
 from reboot.aio.auth.oauth_providers import OAuthProvider, UserId
 from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
 from reboot.aio.contexts import ReaderContext
+from reboot.aio.http import PythonWebFramework
 from reboot.settings import ENVVAR_REBOOT_OAUTH_SIGNING_SECRET
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
@@ -277,7 +278,7 @@ class OAuthServer:
         assert self._signing_secret is not None
         return MCPSDKOAuthTokenVerifier(self._signing_secret)
 
-    def mount_routes(self, http) -> None:
+    def mount_routes(self, http: PythonWebFramework.HTTP) -> None:
         """Register all OAuth endpoints on `http`."""
         # RFC 9728: Protected Resource Metadata. MCP
         # clients discover auth servers through this.
@@ -303,6 +304,9 @@ class OAuthServer:
         http.get(_CALLBACK_PATH)(self.callback)
         http.post(_TOKEN_PATH)(self.token)
         http.options(_TOKEN_PATH)(self.cors_preflight)
+
+        # Let the provider register any additional routes it needs.
+        self._provider.mount_routes(http)
 
     # ---- Helpers ----
 

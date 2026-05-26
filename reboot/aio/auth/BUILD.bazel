@@ -53,11 +53,14 @@ py_library(
 py_library(
     name = "oauth_providers_py",
     srcs = ["oauth_providers.py"],
+    data = ["development_login_page.html.j2"],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        "//reboot/aio:http_py",
         "@com_github_reboot_dev_reboot//log:log_py",
         requirement("aiohttp"),
+        requirement("jinja2"),
         requirement("pyjwt"),
         requirement("python-ulid"),
     ],
@@ -73,6 +76,7 @@ py_library(
         ":oauth_providers_py",
         ":token_verifiers_py",
         "//reboot:settings_py",
+        "//reboot/aio:http_py",
         requirement("pyjwt"),
         requirement("starlette"),
     ],

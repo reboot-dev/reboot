@@ -3,12 +3,20 @@
 from __future__ import annotations
 
 import aiohttp
+import hashlib
+import hmac
 import jwt
+import os
 from abc import ABC, abstractmethod
+from jinja2 import Template
 from log.log import get_logger, log_at_most_once_per
-from typing import NewType
+from reboot.aio.http import PythonWebFramework
+from reboot.settings import ENVVAR_REBOOT_OAUTH_SIGNING_SECRET
+from starlette.requests import Request
+from starlette.responses import HTMLResponse
+from typing import NewType, Optional
 from ulid import ULID
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, urlunparse
 
 logger = get_logger(__name__)
 
@@ -66,6 +74,13 @@ class OAuthProvider(ABC):
                 the identity provider to validate the exchange.
         """
         raise NotImplementedError()
+
+    def mount_routes(self, http: PythonWebFramework.HTTP) -> None:
+        """
+        Optional hook to register provider-specific HTTP routes.
+        
+        Default: no extra routes.
+        """
 
 
 class RegisteredOAuthProvider(OAuthProvider):
@@ -301,3 +316,162 @@ class Anonymous(OAuthProvider):
         # relevant here because anonymous user IDs are likely to be seen
         # by humans.
         return UserId(f"anon-{ULID()}")
+
+
+# The five fake identities offered by the `Development` login page. We
+# deliberately keep this a small, hardcoded set: it's for local
+# development only.
+_DEVELOPMENT_IDENTITIES: tuple[str, ...] = (
+    "Alice",
+    "Ben",
+    "Carlos",
+    "Dani",
+    "Esi",
+)
+
+# Avatar colors for the login page, drawn from the Reboot brand palette.
+# Cycled per identity so each account is visually distinct.
+_DEVELOPMENT_AVATAR_COLORS: tuple[str, ...] = (
+    "#103761",
+    "#266AB2",
+    "#3285DE",
+    "#007367",
+    "#A39382",
+)
+
+# Path of the `Development` login page's HTTP route. Prefixed with
+# `__/oauth/` to match the other OAuth endpoints and to avoid colliding
+# with developer-specified routes.
+_DEVELOPMENT_LOGIN_PATH = "/__/oauth/dev-login"
+
+_DEVELOPMENT_LOGIN_PAGE_TEMPLATE_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "development_login_page.html.j2",
+)
+
+
+class Development(OAuthProvider):
+    """
+    Development provider — a fake "pick an account" login page.
+
+    Shows the developer a Google-style account picker with a handful of
+    hardcoded fake identities (no passwords); whichever they pick
+    becomes their identity. Unlike `Anonymous` the developer can pick
+    the same identity twice, logging them in under the *same* user ID,
+    so multi-user, multi-client, and returning-user behavior can be
+    exercised locally.
+
+    For local development only; do not use in production.
+    """
+
+    def __init__(
+        self,
+        *,
+        access_token_ttl_seconds: int = _DEFAULT_ACCESS_TOKEN_TTL_SECONDS,
+    ):
+        super().__init__(access_token_ttl_seconds=access_token_ttl_seconds)
+        self._login_page_template: Optional[Template] = None
+
+    def mount_routes(self, http: PythonWebFramework.HTTP) -> None:
+        # Read and compile the login page template now, rather than at
+        # module import or `__init__`, so only apps that actually use
+        # `Development()` pay for it.
+        with open(_DEVELOPMENT_LOGIN_PAGE_TEMPLATE_PATH) as template_file:
+            self._login_page_template = Template(
+                template_file.read(),
+                # make interpolated values (notably the per-identity
+                # links built from the `state` JWT and callback URI)
+                # safe in HTML/attribute context.
+                autoescape=True,
+            )
+
+        http.get(_DEVELOPMENT_LOGIN_PATH)(self._dev_login)
+
+    def authorization_url(
+        self,
+        state: str,
+        redirect_uri: str,
+    ) -> str:
+        # Redirect the browser to our own login page, carrying the OAuth
+        # `state` and the server's callback URI (passed in as
+        # `redirect_uri`) so the page can build links straight to the
+        # callback. We build an absolute URL by reusing the scheme and
+        # host of the callback URI, so we stay correct behind a reverse
+        # proxy without needing to know the callback path here.
+        parsed = urlparse(redirect_uri)
+        return urlunparse(
+            parsed._replace(
+                path=_DEVELOPMENT_LOGIN_PATH,
+                query=urlencode(
+                    {
+                        "state": state,
+                        "redirect_uri": redirect_uri,
+                    }
+                ),
+            )
+        )
+
+    async def _dev_login(self, request: Request) -> HTMLResponse:
+        """Render the fake account-picker login page."""
+        log_at_most_once_per(
+            seconds=60,
+            log_method=logger.warning,
+            message=(
+                "*** Using Development OAuth. *** This shows a fake "
+                "account picker for local development only; do not use "
+                "`Development()` in production."
+            ),
+        )
+        # The callback URI (where each identity link points) and the
+        # signed `state` JWT to echo back to it.
+        callback_uri = request.query_params.get("redirect_uri", "")
+        state = request.query_params.get("state", "")
+
+        accounts: list[dict[str, str]] = []
+        for index, name in enumerate(_DEVELOPMENT_IDENTITIES):
+            # Build the link straight to the OAuth callback. Use
+            # `urlencode` (never hand-concatenate the JWT `state`); the
+            # template autoescapes it into the `href` attribute.
+            query = urlencode({"code": name, "state": state})
+            color = _DEVELOPMENT_AVATAR_COLORS[index %
+                                               len(_DEVELOPMENT_AVATAR_COLORS)]
+            accounts.append(
+                {
+                    "name": name,
+                    "email": f"{name.lower()}@example.com",
+                    "initial": name[0],
+                    "href": f"{callback_uri}?{query}",
+                    "color": color,
+                }
+            )
+        # Invariant: `mount_routes` is inherently called before any HTTP
+        #            request is served, so the login page template has
+        #            been loaded.
+        assert self._login_page_template is not None
+        return HTMLResponse(
+            self._login_page_template.render(accounts=accounts)
+        )
+
+    async def exchange_code(
+        self,
+        code: str,
+        redirect_uri: str,
+    ) -> UserId:
+        """Derive a stable, per-app user ID for the chosen identity."""
+        if code not in _DEVELOPMENT_IDENTITIES:
+            # Only our own login page produces these codes; anything else
+            # is bogus. The OAuth server turns this into a graceful
+            # `access_denied` redirect.
+            raise ValueError(f"Unknown development identity: {code!r}")
+        # Key the HMAC by the per-app signing secret so the ID is opaque
+        # and differs per app — deliberately NOT `dev-{name}`, so nobody
+        # hardcodes user IDs into authorization logic or tests and is
+        # instead pushed toward looking up the authenticated user ID at
+        # runtime.
+        secret = os.environ[ENVVAR_REBOOT_OAUTH_SIGNING_SECRET]
+        digest = hmac.new(
+            secret.encode(),
+            code.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        return UserId(f"dev-{digest[:16]}")
