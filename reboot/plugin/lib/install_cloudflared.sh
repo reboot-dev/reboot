@@ -100,6 +100,7 @@ _verify_sha256() {
     elif command -v shasum >/dev/null 2>&1; then
         _actual="$(shasum -a 256 "$_file" | awk '{print $1}')"
     else
+        printf '\033[1;33m[reboot-plugin]\033[0m no sha256sum/shasum found; skipping cloudflared SHA-256 verification\n' >&2
         return 0
     fi
     if [ "$_expected" != "$_actual" ]; then

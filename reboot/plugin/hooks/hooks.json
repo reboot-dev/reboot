@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "grep -qE '\"skill\"[[:space:]]*:[[:space:]]*\"([a-zA-Z0-9_-]+:)?(app|chat-app|web-app|python|run)\"' && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"}}'; exit 0"
+            "command": "grep -qE '\"skill\"[[:space:]]*:[[:space:]]*\"reboot:(app|chat-app|web-app|python|run)\"' && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"}}'; exit 0"
           }
         ]
       },
