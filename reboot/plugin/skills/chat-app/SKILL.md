@@ -212,24 +212,24 @@ so it lives inline").
 
 **Examples.**
 
-Collection shape — BAD:
+Collection shape reasoning — BAD, uses skill-internal terms:
 
 > `people_index_id: str` — ID of an OrderedMap actor that
 > holds this user's Persons (Shape C from state-collections.md
 > — unbounded; PRM is explicitly called out as a Shape C case).
 
-Collection shape — GOOD:
+Collection shape reasoning — GOOD:
 
 > `people_index_id: str` — points to an OrderedMap that holds
 > this user's Persons. An OrderedMap (rather than an inline
 > list) because a PRM grows without bound and the UI will
 > paginate / sort by recency.
 
-Nested model — BAD:
+Nested model reasoning — BAD, uses skill-internal terms:
 
 > Relationship and Event are non-state Models — Shape A.
 
-Nested model — GOOD:
+Nested model reasoning — GOOD:
 
 > Relationship and Event live inline on Person as
 > `list[Relationship]` / `list[Event]`. They don't get their

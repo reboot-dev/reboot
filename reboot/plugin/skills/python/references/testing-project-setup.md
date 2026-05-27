@@ -20,8 +20,8 @@ creating contexts, mocking, etc.) live in
 
 ## Where Tests Live
 
-The convention across [public/reboot/examples](../../../../examples) is
-**one test file per servicer**, in `backend/tests/`:
+The convention is **one test file per servicer**, in
+`backend/tests/`:
 
 ```
 <app>/
@@ -44,8 +44,7 @@ them up. The class name convention is `Test<Servicer>` or
 
 For apps with cross-servicer flows (e.g. a checkout that touches a
 cart and an order), a single `full_<app>_test.py` that boots all
-servicers in one `Application(...)` is also a valid layout — see
-[boutique/backend/tests/full_app_test.py](../../../../examples/boutique/backend/tests/full_app_test.py).
+servicers in one `Application(...)` is also a valid layout.
 
 ## `.pytest.ini` — Make Generated Modules Importable
 
@@ -57,7 +56,7 @@ resolves into `src/`. Add both to the `pythonpath` so neither
 needs a `pip install -e .`:
 
 ```ini
-# backend/.pytest.ini — matches `chat-room/backend/.pytest.ini`.
+# backend/.pytest.ini
 [pytest]
 pythonpath=
   src/
@@ -77,8 +76,7 @@ constructs a client at import time. Set a placeholder so the import
 succeeds; tests must still mock the real call before any RPC fires:
 
 ```python
-# backend/tests/conftest.py — from
-# `agent-wiki/backend/tests/conftest.py`.
+# backend/tests/conftest.py
 import os
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-placeholder")
@@ -96,7 +94,7 @@ async test methods on its own, and adding `pytest-asyncio` can
 conflict with that path.
 
 ```toml
-# pyproject.toml — from `chat-room/pyproject.toml`.
+# pyproject.toml
 [project]
 requires-python = ">= 3.10"
 dependencies = [
@@ -134,11 +132,6 @@ cd backend && uv run pytest \
 # Verbose, with print() output flowing to the terminal.
 cd backend && uv run pytest -v -s
 ```
-
-These example-style apps run tests **directly with `pytest`** — there
-is no Bazel target involved. (The `bazel test //...` workflow in
-this repo's [`CLAUDE.md`](../../../../../../CLAUDE.md) applies to
-framework-internal tests, not to a generated Reboot application.)
 
 ## Don't Construct Servicer Instances Directly
 

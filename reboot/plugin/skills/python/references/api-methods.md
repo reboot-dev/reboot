@@ -90,10 +90,9 @@ first write (see `lifecycle-initialize-hook.md`).
 
 - Reading `self.state` only? → `Reader`
 - Mutating `self.state` for **one** actor, no calls to other actors? → `Writer`
-- Mutating across multiple actors, calling external services, or both,
-  in a single one-shot transaction? → `Transaction`
+- Mutating across multiple actors in a single one-shot transaction? → `Transaction`
 - Long-running, durable, restartable work (control loops, agents,
-  multi-step orchestration)? → `Workflow`
+  multi-step orchestration), or external calls? → `Workflow`
 
 Wrong-factory symptoms include "context type mismatch" runtime errors and
 deadlocks when a `Writer` tries to call into another actor.

@@ -14,7 +14,7 @@ The `python` skill covers the canonical project shape
 ### `.python-version`
 
 ```
-3.10
+3.12
 ```
 
 ### `.rbtrc`

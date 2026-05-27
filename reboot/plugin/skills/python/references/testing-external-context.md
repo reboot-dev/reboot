@@ -26,8 +26,7 @@ just like a real client.
 ctx = ReaderContext(...)  # not a public construction path.
 ```
 
-**Correct (matches
-[chat-room/backend/tests/chat_room_servicer_test.py](../../../../examples/chat-room/backend/tests/chat_room_servicer_test.py)):**
+**Correct:**
 
 ```python
 context = self.rbt.create_external_context(name=f"test-{self.id()}")
@@ -87,7 +86,6 @@ To test that a different user cannot touch another user's state,
 create a **second** context with a different `user_id`:
 
 ```python
-# From `reboot-swag-store/backend/tests/store_servicer_test.py`.
 other_context = self.rbt.create_external_context(
     name=f"other-{self.id()}",
     bearer_token=self.rbt.make_valid_oauth_access_token(
@@ -107,8 +105,7 @@ generated `<Service>.<Method>Aborted` exception whose `.error`
 attribute is the original error model. Two equivalent shapes for
 asserting on it:
 
-**`try`/`except` (explicit error-model check), from
-[bank-pydantic/backend/tests/full_bank_test.py](../../../../examples/bank-pydantic/backend/tests/full_bank_test.py):**
+**`try`/`except` (explicit error-model check):**
 
 ```python
 try:
@@ -119,9 +116,7 @@ except Account.WithdrawAborted as aborted:
     self.assertEqual(aborted.error.amount, 50.50)
 ```
 
-**`self.assertRaises` (cleaner, also asserts on the error model),
-from
-[reboot-swag-store/backend/tests/store_servicer_test.py](../../../../examples/reboot-swag-store/backend/tests/store_servicer_test.py):**
+**`self.assertRaises` (cleaner, also asserts on the error model):**
 
 ```python
 with self.assertRaises(Cart.CheckoutAborted) as cm:
@@ -152,8 +147,6 @@ immediately with a `task_id`. Tests must explicitly **wait** for
 that task to finish, using `<Service>.<Task>.retrieve`:
 
 ```python
-# From `monorepo/hello-tasks/backend/tests/hello_servicer_test.py`.
-
 # Speed the task up so the test doesn't sit through real delays.
 hello_servicer.SECS_UNTIL_WARNING = 0
 hello_servicer.ADDITIONAL_SECS_UNTIL_ERASE = 0
@@ -190,7 +183,6 @@ when the external call lives behind a specific method you want
 to no-op (e.g. don't actually fulfill an order through Printful):
 
 ```python
-# From `reboot-swag-store/backend/tests/store_servicer_test.py`.
 class NoFulfillOrderServicer(OrderServicer):
     """Override the `fulfill` workflow to skip the Printful
     call during tests."""
@@ -213,7 +205,6 @@ the external call is a free function or async helper the
 servicer calls directly:
 
 ```python
-# From `reboot-swag-store/backend/tests/store_servicer_test.py`.
 from unittest.mock import AsyncMock, patch
 
 with patch(
@@ -229,12 +220,10 @@ location. Same rule as any `unittest.mock.patch`.
 
 **3. A scripted `FunctionModel` for pydantic-AI agents.** When a
 servicer runs an LLM agent, replace the agent's model with a
-deterministic `FunctionModel`. The full pattern (a stateful
+deterministic `FunctionModel`. The pattern is a stateful
 `ScriptedLibrarian` that walks the agent through a fixed
 sequence of tool calls and uses `asyncio.Event` to signal
-completion) lives in
-[agent-wiki/backend/tests/wiki_test.py](../../../../examples/agent-wiki/backend/tests/wiki_test.py).
-Sketch:
+completion. Sketch:
 
 ```python
 import asyncio
@@ -272,7 +261,6 @@ authorizing a privileged operation), set the variable in
 `asyncSetUp` and restore it in `asyncTearDown`:
 
 ```python
-# From `reboot-swag-store/backend/tests/store_servicer_test.py`.
 async def asyncSetUp(self) -> None:
     self._prev_admin_key = os.environ.get(STORE_ADMIN_KEY_ENV)
     os.environ[STORE_ADMIN_KEY_ENV] = ADMIN_KEY

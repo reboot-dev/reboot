@@ -321,12 +321,12 @@ confirm_dangerous_action=Writer(
 
 ## Workflow Declaration
 
-Use `Workflow` for periodic or long-running operations. The
-declaration is chat-app boilerplate; the body's primitives
-(`at_most_once`, `at_least_once`, `until`, `until_changes`,
-`context.loop`, `MyType.ref().write(context, fn)`) are all in
-`python` workflow-\* references — load them before writing the
-body.
+Use `Workflow` for periodic or long-running operations, or for external
+calls (outside Reboot, including to LLMs). The declaration is similar to
+other Reboot methods; the body's primitives (`at_most_once`,
+`at_least_once`, `until`, `until_changes`, `context.loop`,
+`MyType.ref().write(context, fn)`) are all in `python` workflow-\*
+references — load them before writing the body.
 
 ```python
 from reboot.api import (

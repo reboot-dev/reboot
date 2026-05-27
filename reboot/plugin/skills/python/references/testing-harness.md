@@ -28,8 +28,7 @@ servicer = ChatRoomServicer()
 await servicer.send(...)
 ```
 
-**Correct (the minimal template, matches
-[chat-room/backend/tests/chat_room_servicer_test.py](../../../../examples/chat-room/backend/tests/chat_room_servicer_test.py)):**
+**Correct (the minimal template):**
 
 ```python
 import unittest
@@ -72,8 +71,7 @@ class TestChatRoom(unittest.IsolatedAsyncioTestCase):
 You can move `rbt.up(...)` into `asyncSetUp` if every test in the
 class uses the same `Application` configuration (cleaner) or keep
 it in each test method if different tests need different
-configurations (more explicit). Both shapes appear across the
-examples.
+configurations (more explicit).
 
 ## Multi-Servicer Applications
 
@@ -81,7 +79,6 @@ Production apps usually have several servicers. Register all of them
 in one `Application(...)` so cross-actor calls work:
 
 ```python
-# From `bank-pydantic/backend/tests/full_bank_test.py`.
 await self.rbt.up(
     Application(
         servicers=[
@@ -100,12 +97,10 @@ Things to know:
   `SortedMap` / `Queue` need their library registered, exactly as
   in `main.py`. See `stdlib-*.md`.
 - **`legacy_grpc_servicers=[...]`** — for mixed pydantic + plain
-  gRPC apps. Used by
-  [boutique/backend/tests/full_app_test.py](../../../../examples/boutique/backend/tests/full_app_test.py).
+  gRPC apps, listing the plain-gRPC servicers alongside the
+  `servicers=[...]` pydantic ones.
 - **`initialize=<async fn>`** — runs the same one-shot bootstrap
-  hook your `main.py` would run (e.g. creating a singleton state).
-  Used by
-  [reboot-swag-store/backend/tests/store_servicer_test.py](../../../../examples/reboot-swag-store/backend/tests/store_servicer_test.py):
+  hook your `main.py` would run (e.g. creating a singleton state):
 
   ```python
   async def _initialize(context) -> None:
@@ -131,7 +126,6 @@ The standard pattern is to **subclass each servicer and override
 the subclasses with `Application`:
 
 ```python
-# From `chick-potle/backend/tests/food_test.py`.
 from reboot.aio.auth.authorizers import allow
 from servicers.food import FoodOrderServicer, UserServicer
 
@@ -171,7 +165,6 @@ runtime treats as a real, verified OAuth identity. Pair it with
 production authorizer end-to-end:
 
 ```python
-# From `reboot-swag-store/backend/tests/store_servicer_test.py`.
 self.user_id = "test-user"
 self.context = self.rbt.create_external_context(
     name=f"test-{self.id()}",
@@ -189,13 +182,12 @@ asserting on aborts.
 ## Auto-Construct Under Auth
 
 If a state type has a real authorizer that gates its constructor —
-typically the case for `User`-shaped front-door types — the MCP
-session hook in production calls `_auto_construct` to create the
-state for an authenticated user. Tests skip that hook, so trigger
+typically the case for `User`-shaped front-door types — the MCP session
+hook in production calls `_auto_construct` to create the state for an
+authenticated user. Tests that don't use MCP skip that hook, so trigger
 it manually right after creating the context:
 
 ```python
-# From `chick-potle/backend/tests/food_test.py`.
 await PermissiveUserServicer._auto_construct(
     self.context,
     state_id=self.user_id,
@@ -210,8 +202,7 @@ aborts because the state was never constructed.
 Each test should pick its own actor IDs (e.g.
 `f"test-room-{self.id()}"`, or just embed `self.id()` in the
 external-context `name`). The harness is fresh per test, but using
-`self.id()` keeps trace output identifiable and protects against
-shared-state regressions if you ever reuse a harness.
+`self.id()` keeps trace output identifiable.
 
 ## Tests Are Real End-to-End
 
