@@ -159,6 +159,52 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(alice_id, ben_id)
         self.assertNotIn("alice", alice_id.lower())
 
+    async def test_dev_login_rejects_untrusted_redirect_uri(self):
+        """
+        The `dev-login` page reflects its `redirect_uri` query param into
+        the per-identity links, so it must reject any `redirect_uri` that
+        isn't this server's own (same-origin, http(s)) — otherwise it's
+        an XSS / open-redirect gadget. A same-origin `redirect_uri` is
+        accepted; a `javascript:` scheme and an off-origin URL are not.
+        """
+        await self.rbt.up(
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Development()),
+            ),
+        )
+
+        dev_login_url = self.rbt.http_localhost_url("/__/oauth/dev-login")
+        same_origin = self.rbt.http_localhost_url("/__/oauth/callback")
+
+        async with httpx.AsyncClient() as client:
+            # Same-origin callback: accepted, page renders.
+            response = await client.get(
+                dev_login_url,
+                params={
+                    "redirect_uri": same_origin,
+                    "state": "x"
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("Alice", response.text)
+
+            # A `javascript:` scheme (the XSS gadget) is rejected, and
+            # the payload never reaches the response body.
+            for bad_redirect_uri in (
+                "javascript:alert(document.cookie)//",
+                "https://evil.example.com/callback",
+            ):
+                response = await client.get(
+                    dev_login_url,
+                    params={
+                        "redirect_uri": bad_redirect_uri,
+                        "state": "x"
+                    },
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertNotIn("Alice", response.text)
+
     async def test_user_without_oauth_raises_in_prod(self):
         """
         In a real production deployment (`rbt serve` / Reboot Cloud), an

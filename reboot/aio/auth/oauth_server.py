@@ -17,7 +17,11 @@ import rbt.v1alpha1.errors_pb2
 import time
 from mcp.server.auth.provider import AccessToken
 from reboot.aio.auth import Auth
-from reboot.aio.auth.oauth_providers import OAuthProvider, UserId
+from reboot.aio.auth.oauth_providers import (
+    OAuthProvider,
+    UserId,
+    origin_from_request,
+)
 from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
 from reboot.aio.contexts import ReaderContext
 from reboot.aio.http import PythonWebFramework
@@ -61,24 +65,6 @@ _CORS_HEADERS = {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, MCP-Protocol-Version",
 }
-
-
-def _base_url(request: Request) -> str:
-    """
-    Derive the server's base URL from the request headers.
-
-    Respects `X-Forwarded-Proto` and `X-Forwarded-Host` when behind a
-    reverse proxy.
-    """
-    scheme = request.headers.get(
-        "x-forwarded-proto",
-        request.url.scheme,
-    )
-    host = request.headers.get(
-        "x-forwarded-host",
-        request.headers.get("host", "localhost"),
-    )
-    return f"{scheme}://{host}"
 
 
 def _oauth_error(
@@ -371,7 +357,7 @@ class OAuthServer:
         Returns RFC 9728 OAuth 2.0 Protected Resource Metadata.
         Tells MCP clients which authorization server to use.
         """
-        base = _base_url(request)
+        base = origin_from_request(request)
         # Derive the resource path from the request URL:
         #   "/.well-known/oauth-protected-resource/mcp" → "/mcp".
         prefix = "/.well-known/oauth-protected-resource"
@@ -390,7 +376,7 @@ class OAuthServer:
 
         Returns RFC 8414 OAuth Authorization Server Metadata.
         """
-        base = _base_url(request)
+        base = origin_from_request(request)
         return JSONResponse(
             {
                 "issuer": base,
@@ -552,7 +538,7 @@ class OAuthServer:
         )
 
         # Our own callback URL.
-        callback_uri = f"{_base_url(request)}{_CALLBACK_PATH}"
+        callback_uri = f"{origin_from_request(request)}{_CALLBACK_PATH}"
 
         idp_url = self._provider.authorization_url(
             state=pending,
@@ -621,7 +607,7 @@ class OAuthServer:
             )
 
         # Exchange identity provider code for a user ID.
-        callback_uri = f"{_base_url(request)}{_CALLBACK_PATH}"
+        callback_uri = f"{origin_from_request(request)}{_CALLBACK_PATH}"
         try:
             user_id = await self._provider.exchange_code(
                 code=idp_code,
@@ -758,7 +744,7 @@ class OAuthServer:
             )
 
         user_id: UserId = UserId(code_data["sub"])
-        base = _base_url(request)
+        base = origin_from_request(request)
 
         # Mint access token.
         access_token = self._make_jwt(
@@ -834,7 +820,7 @@ class OAuthServer:
             )
 
         user_id: UserId = UserId(refresh_data["sub"])
-        base = _base_url(request)
+        base = origin_from_request(request)
 
         # Mint new access token.
         access_token = self._make_jwt(

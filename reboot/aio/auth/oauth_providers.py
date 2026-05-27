@@ -27,6 +27,24 @@ UserId = NewType("UserId", str)
 _DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 24 * 60 * 60  # 24 hours.
 
 
+def origin_from_request(request: Request) -> str:
+    """
+    Derive the server's origin (`scheme://host`) from request headers.
+
+    Respects `X-Forwarded-Proto` and `X-Forwarded-Host` when behind a
+    reverse proxy.
+    """
+    scheme = request.headers.get(
+        "x-forwarded-proto",
+        request.url.scheme,
+    )
+    host = request.headers.get(
+        "x-forwarded-host",
+        request.headers.get("host", "localhost"),
+    )
+    return f"{scheme}://{host}"
+
+
 class OAuthProvider(ABC):
     """
     Base class for identity providers.
@@ -428,6 +446,26 @@ class Development(OAuthProvider):
         # signed `state` JWT to echo back to it.
         callback_uri = request.query_params.get("redirect_uri", "")
         state = request.query_params.get("state", "")
+
+        # `callback_uri` is reflected into every per-identity `href`
+        # below. In the normal flow it's this server's own OAuth
+        # callback, but the endpoint is reachable directly, so a crafted
+        # `redirect_uri` could turn this page into an XSS (e.g. a
+        # `javascript:` scheme — HTML autoescaping does NOT neutralize a
+        # dangerous URL scheme) or open-redirect gadget. Require it to be
+        # same-origin over http(s); reject anything else with a 400. The
+        # legit callback is always built from `origin_from_request`, so
+        # the legitimate flow always passes.
+        parsed_callback = urlparse(callback_uri)
+        if (
+            parsed_callback.scheme not in ("http", "https") or
+            f"{parsed_callback.scheme}://{parsed_callback.netloc}"
+            != origin_from_request(request)
+        ):
+            return HTMLResponse(
+                "Invalid `redirect_uri`: must be same-origin.",
+                status_code=400,
+            )
 
         accounts: list[dict[str, str]] = []
         for index, name in enumerate(_DEVELOPMENT_IDENTITIES):
