@@ -1,0 +1,24 @@
+# Reboot plugin configuration for Codex.
+#
+# `install.sh` substitutes `__REBOOT_PLUGIN_ROOT__` with the plugin's
+# absolute install path and merges these keys into the user's
+# `~/.codex/config.toml` (creating it if absent, without clobbering
+# existing keys).
+#
+# Codex hooks are off by default, so they must be enabled explicitly.
+[features]
+codex_hooks = true
+
+# SessionStart: launch the cloudflared quick tunnel against the local
+# Reboot dev server. (The Claude Code plugin runs the equivalent script
+# from its hooks.json; this is the Codex registration of the port.)
+#
+# Note: there is no PreToolUse auto-approval hook here. Codex PreToolUse
+# hooks can only DENY a tool, never approve one, so the Claude plugin's
+# `auto-approve.sh` has no Codex equivalent; prompt reduction is left to
+# Codex's own `approval_policy` / `sandbox_mode`. See the README.
+[[hooks.SessionStart]]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = 'bash "__REBOOT_PLUGIN_ROOT__/hooks/codex/session-start.sh"'
