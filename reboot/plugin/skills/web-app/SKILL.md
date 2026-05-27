@@ -5,7 +5,7 @@ argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
 
-# /web-app — Build Reboot Web Apps
+# web-app — Build Reboot Web Apps
 
 Build complete Reboot Web Apps from a user description: a Reboot
 backend behind a standalone React frontend served at a normal URL.
@@ -24,7 +24,7 @@ backend behind a standalone React frontend served at a normal URL.
 
 > **Not for MCP Chat Apps.** If the app's primary front door is an
 > MCP host (ChatGPT, Claude, VSCode, Goose, …) with MCP tools and
-> embedded UIs, use [`/chat-app`](../chat-app/SKILL.md) instead.
+> embedded UIs, use the [chat-app skill](../chat-app/SKILL.md) instead.
 > Signals you're in the wrong place: `mcp=Tool()`, `UI()`, `User`
 > auto-construct from the MCP host, `mcp_servers.json`, MCPJam
 > inspector.
@@ -157,15 +157,16 @@ mechanics. The patterns in this skill assume you've read them.
 
 ## Workflow: Plan First, Then Build
 
-**Always enter plan mode before writing code.** The state model is
-the foundation — getting entities, field types, or method types
-wrong means regenerating everything across the project.
+**Always plan the design and get approval before writing code.** The
+state model is the foundation — getting entities, field types, or
+method types wrong means regenerating everything across the project.
 
 ### Plan Phase
 
 1. Analyze the user's description using the State Model Assessment
    below.
-2. Enter plan mode (`EnterPlanMode`).
+2. Begin a plan for the user to approve (in Claude Code, enter plan
+   mode; in Codex, present the plan and wait for the go-ahead).
 3. Present the proposed design:
    - Application types: state shape (fields, types, tags).
    - Method map: which operations, which method type

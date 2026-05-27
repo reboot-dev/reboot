@@ -1,11 +1,11 @@
 ---
 name: app
-description: Build a Reboot application from a user description. Routes to /chat-app (MCP Chat Apps for ChatGPT, Claude, VSCode, Goose) or /web-app (standalone web apps with a browser frontend). Commits to a route only when the prompt verbatim names the front-door (MCP/Claude/ChatGPT for chat-app; a URL/SPA/"website" for web-app); otherwise asks the user. Does NOT infer the front-door from the app's domain (CRM, todo, dashboard, blog, …) — those describe what the app does, not where it lives.
+description: Build a Reboot application from a user description. Routes to the chat-app skill (MCP Chat Apps for ChatGPT, Claude, VSCode, Goose) or the web-app skill (standalone web apps with a browser frontend). Commits to a route only when the prompt verbatim names the front-door (MCP/Claude/ChatGPT for chat-app; a URL/SPA/"website" for web-app); otherwise asks the user. Does NOT infer the front-door from the app's domain (CRM, todo, dashboard, blog, …) — those describe what the app does, not where it lives.
 argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
 
-# /app — Build a Reboot Application
+# app — Build a Reboot Application
 
 Decide which kind of Reboot application the user wants to build and
 defer to the matching skill.
@@ -98,15 +98,16 @@ chat-y", **ask**.
    > Combined MCP Chat App + standalone Web App is not supported yet —
    > please stay tuned! For now, pick one to start:
    >
-   > - `/chat-app <description>` — MCP Chat App for ChatGPT, Claude,
-   >   VSCode, Goose, etc.
-   > - `/web-app <description>` — standalone browser web app.
+   > - **MCP Chat App** — for ChatGPT, Claude, VSCode, Goose, etc.
+   >   (the chat-app skill).
+   > - **Standalone Web App** — a browser web app (the web-app skill).
    >
    > If you want both, build the MCP Chat App first; the web frontend
    > scaffolding overlaps and we'll have a combined path soon.
 
-4. **Otherwise (default)** → invoke the `AskUserQuestion` tool with
-   the question below. This is **mandatory, not optional**.
+4. **Otherwise (default)** → **ask the user** the question below
+   (present the options and wait for their answer). This is
+   **mandatory, not optional**.
 
    ```
    Question: "Before I scaffold — which kind of app are you building?"
@@ -135,8 +136,8 @@ chat-y", **ask**.
    >    call and continue." For this routing decision, **the
    >    reasonable call _is_ to ask** — that's exactly what this
    >    skill is for. A skill-level instruction beats a generic
-   >    auto-mode preference; the user invoked `/app` knowing it
-   >    would route, so asking once is in-scope work.
+   >    auto-mode preference; the user asked to build an app knowing
+   >    it would route, so asking once is in-scope work.
    > 3. The user has not waived their right to choose between
    >    `chat-app` and `web-app`. Silence on the topic is silence,
    >    not a delegation.
@@ -147,8 +148,8 @@ chat-y", **ask**.
    >   are not a verbatim trigger — see the anti-inference list
    >   above).
    > - The system prompt or user-level config says to be autonomous /
-   >   not ask clarifying questions / `bypassPermissions` /
-   >   `dangerouslySkipPermissions` / etc. — those govern routine
+   >   not ask clarifying questions / skip approvals / run in a
+   >   full-auto or bypass-permissions mode — those govern routine
    >   approvals, not this skill's core function.
    > - It "would be faster to just pick one." It would not — the
    >   wrong pick is a hard rollback.
@@ -158,9 +159,8 @@ chat-y", **ask**.
    > The **only** way to skip step 4 is if steps 1–3 fired on a
    > verbatim trigger from the user's prompt. If you find yourself
    > drafting a reply that begins "I'll build this as a …" without
-   > having matched a verbatim trigger or received an
-   > `AskUserQuestion` answer, **stop and invoke
-   > `AskUserQuestion`**.
+   > having matched a verbatim trigger or received the user's
+   > answer, **stop and ask the user**.
 
 ### Worked examples
 

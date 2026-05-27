@@ -5,7 +5,7 @@ argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
 
-# /chat-app — Build Reboot AI Chat Apps
+# chat-app — Build Reboot AI Chat Apps
 
 Build complete Reboot AI Chat Apps from a user description.
 
@@ -22,40 +22,16 @@ Build complete Reboot AI Chat Apps from a user description.
 
 ## Installation
 
-### From GitHub
+Install the plugin (works for both Claude Code and Codex):
 
 ```bash
-# 1. Add the marketplace (one-time).
-claude plugin marketplace add reboot-dev/reboot-plugin
-
-# 2. Install the plugin.
-claude plugin install reboot@reboot-plugin
+curl -fsSL https://reboot.dev/install.sh | bash
 ```
 
-If you install the plugin within `claude` with `/plugin`, restart for
-the configuration and skill to load.
-
-Add to your project's `.claude/settings.json` so teammates are
-automatically offered the plugin:
-
-```json
-{
-  "extraKnownMarketplaces": {
-    "reboot-plugin": {
-      "source": { "source": "github", "repo": "reboot-dev/reboot-plugin" }
-    }
-  },
-  "enabledPlugins": {
-    "reboot@reboot-plugin": true
-  }
-}
-```
-
-### Local (repo checked out)
-
-```bash
-claude --plugin-dir /path/to/reboot-plugin
-```
+This installs the skills for whichever of Claude Code / Codex you
+have, then restart your agent so the skills load. See the plugin
+README for the manual install, team auto-enable, and the Codex
+`skill-installer` routes.
 
 ## When to Use
 
@@ -162,15 +138,16 @@ they cover aren't restated inline below.
 
 ## Workflow: Plan First, Then Build
 
-**Always enter plan mode before writing code.** The state model is the
-foundation — getting entities, field types, or method types wrong
-means regenerating everything across 12+ files.
+**Always plan the design and get approval before writing code.** The
+state model is the foundation — getting entities, field types, or
+method types wrong means regenerating everything across 12+ files.
 
 ### Plan Phase
 
 1. Analyze the user's description using the State Model Assessment
    below.
-2. Enter plan mode (`EnterPlanMode`).
+2. Begin a plan for the user to approve (in Claude Code, enter plan
+   mode; in Codex, present the plan and wait for the go-ahead).
 3. Present the proposed design:
    - `User` type and its methods (the MCP front door for creating new
      application-type instances and locating existing ones).

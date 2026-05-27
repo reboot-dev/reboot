@@ -5,7 +5,7 @@ argument-hint: [<project-directory>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit, AskUserQuestion
 ---
 
-# /run — Run a Reboot Application
+# run — Run a Reboot Application
 
 Bring an existing Reboot application up locally. This skill is the
 single canonical "start the app" procedure: it figures out what
@@ -18,14 +18,13 @@ session, where no processes and no exported environment survive
 from last time.
 
 > This skill **runs** an app; it does not build or modify one. To
-> build, see [`/chat-app`](../chat-app/SKILL.md) and
-> [`/web-app`](../web-app/SKILL.md) — those skills defer here for
+> build, see the [chat-app skill](../chat-app/SKILL.md) and the
+> [web-app skill](../web-app/SKILL.md) — those skills defer here for
 > their "run the app" step.
 
 ## Step 1 — Locate the project
 
-Work in the directory the user named (the `argument-hint`), or the
-current directory. The project root is the directory that contains
+Work in the directory the user named, or the current directory. The project root is the directory that contains
 `.rbtrc`. If there is no `.rbtrc` anywhere obvious, ask the user
 where the app is. Every command below runs from the project root.
 
@@ -50,10 +49,9 @@ strongest first.
 - A single SPA entry at `web/index.html` (top of `web/`, not under
   `web/ui/`).
 
-If the signals genuinely conflict, or none match, ask the user with
-`AskUserQuestion` ("Is this an MCP Chat App or a standalone Web
-App?"). Do not guess — the app type changes whether the MCPJam
-inspector is started.
+If the signals genuinely conflict, or none match, ask the user
+("Is this an MCP Chat App or a standalone Web App?"). Do not guess —
+the app type changes whether the MCPJam inspector is started.
 
 ## Step 3 — Dependencies
 
@@ -83,8 +81,8 @@ in `.rbtrc`. Set this up **before** starting the backend:
 4. **Fill `.env`.** Write standard `.env` `KEY=VALUE` lines — e.g.
    `ANTHROPIC_API_KEY=sk-ant-...`. For every required variable not
    already a line in `.env` (and not already exported in the
-   environment), ask the user for the value with `AskUserQuestion`
-   and write it in. Never start the backend with a required
+   environment), ask the user for the value and write it in.
+   Never start the backend with a required
    variable missing — the app fails at boot or on first use, and
    the failure is hard to read.
 
@@ -135,8 +133,10 @@ is the application name from `.rbtrc`):
 ```
 
 The inspector binds the fixed port 6274; its launcher orphans the
-server on `SIGTERM`, so the plugin's `SessionEnd` hook reaps it
-when the user exits Claude Code.
+server on `SIGTERM`, so the plugin reaps it when the agent session
+ends. Claude Code does this automatically via a `SessionEnd` hook;
+Codex has no session-end event, so see the README for how cleanup
+is handled there.
 
 ## Step 6 — Hand off
 
