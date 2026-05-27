@@ -28,6 +28,19 @@ py_reboot_library_from_pydantic(
 py_library(
     name = "ping_py",
     srcs = ["ping.py"],
+    data = [
+        # `.rbtrc` is an (empty) project-root marker so the MCP
+        # UI-serving code (`reboot/mcp/ui.py`) can locate the
+        # project root in runfiles by walking up from the
+        # generated module, plus the built UI dist so it can read
+        # real UI HTML from `web/dist/...`. Carried on the library
+        # (rather than only on `ping_py_bin`) so every consumer
+        # gets them in runfiles -- notably `ping_test`, whose
+        # `test_ui_resource_metadata` reads a UI resource.
+        ".rbtrc",
+        ":clicker_dist",
+        ":pinger_dist",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":ping_py_reboot",
@@ -145,10 +158,6 @@ open(sys.argv[4], 'w').write(out)
 py_binary(
     name = "ping_py_bin",
     srcs = ["ping.py"],
-    data = [
-        ":clicker_dist",
-        ":pinger_dist",
-    ],
     env = {
         # Pretend that we're running `rbt dev`.
         "RBT_DEV": "true",

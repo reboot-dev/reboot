@@ -19,9 +19,8 @@ from reboot.mcp.context import (
     _init_session_state,
     _set_user_id,
 )
-from reboot.mcp.proxy import _UI_ASSETS_PREFIX
+from reboot.mcp.request_state import _UI_ASSETS_PREFIX, _request_user_agent
 from reboot.mcp.ui import (
-    _request_user_agent,
     _resolve_dist_path,
     _resource_meta,
     _ui_tool_cache_bust_info,
@@ -286,7 +285,7 @@ def create_mcp_factory(
         ) -> None:
             # Static-asset branch: serve the UI's dist files
             # directly from disk for production-mode MCP Apps.
-            # The path shape, set by `prod_loader_html`, is
+            # The path shape, set by `cache_busting_iframe_html`, is
             # `/mcp<_UI_ASSETS_PREFIX><ui_name>/<cache_bust>/<rest>`.
             # Handled before any MCP-protocol logic (including
             # bearer-token auth) so the iframe, which has no
@@ -303,11 +302,9 @@ def create_mcp_factory(
 
             request = Request(scope, receive, send)
 
-            # Publish the incoming User-Agent so `ui_html()` can
-            # branch on host identity (ChatGPT gets the relay
-            # iframe; others get the inlined bundle). Set here,
-            # before handing off to the MCP transport, so the
-            # contextvar is captured into downstream tasks.
+            # Publish the incoming User-Agent. Set here, before handing
+            # off to the MCP transport, so the contextvar is captured
+            # into downstream tasks.
             _request_user_agent.set(request.headers.get("user-agent"))
 
             # If no tools are registered, there is nothing useful for an
