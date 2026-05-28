@@ -594,10 +594,9 @@ class Application:
                 f"The '{ENVVAR_REBOOT_OAUTH_SIGNING_SECRET}' environment "
                 "variable is not set. Every Reboot application needs a "
                 "signing secret for the MCP OAuth server, shared across "
-                "all of its servers. Under `rbt dev` it is set "
-                "automatically; for `rbt serve` and Reboot Cloud set it "
-                "to a strong random secret (e.g. `rbt cloud secret set "
-                f"{ENVVAR_REBOOT_OAUTH_SIGNING_SECRET}=...`)."
+                "all of its servers. Under `rbt dev` and on Reboot Cloud "
+                "it is set automatically; for `rbt serve` you must set an "
+                "environment variable yourself"
             )
 
     async def run(self) -> NoReturn:
