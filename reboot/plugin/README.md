@@ -28,6 +28,16 @@ curl -fsSL https://reboot.dev/install.sh | bash
 
 Restart your agent afterward so the new skills and configuration load.
 
+If Codex is detected, the installer pauses to ask whether to disable
+Codex's sandbox globally — a requirement to work around
+[openai/codex#24933](https://github.com/openai/codex/issues/24933).
+Decline (`n`) and the Codex install is skipped entirely; accept (`Y`,
+the default) and the installer writes the opt-out into
+`~/.codex/config.toml`. See [Differences in Codex vs. Claude Code](#differences-in-codex-vs-claude-code)
+for the full rationale. For non-interactive installs (CI/CD), set
+`REBOOT_PLUGIN_DISABLE_CODEX_SANDBOX=yes` (or `no`) to pre-answer
+the prompt.
+
 ### Claude Code (manual)
 
 Add the Reboot skills marketplace and install the plugin:
@@ -82,13 +92,19 @@ codex plugin add reboot@reboot-plugin
 `install.sh` then merges a small marked region into `~/.codex/config.toml`
 that:
 
-- enables hooks (`features.codex_hooks = true` — off by default), and
+- enables hooks (`features.codex_hooks = true` — off by default),
 - prepends the plugin's pinned tool shims (`uv`, `node`, `rbt`, …) to
   PATH for every subprocess via `shell_environment_policy.set.PATH`.
   Codex SessionStart hooks can't modify PATH the way Claude Code's can,
   so this is how the bin/ prepend is wired. `set` replaces PATH
   wholesale, so the install-time PATH is baked in after the plugin's
-  bin/ — re-run `install.sh` to refresh it.
+  bin/ — re-run `install.sh` to refresh it, and
+- disables Codex's sandbox (`sandbox_mode = "danger-full-access"`)
+  to work around
+  [openai/codex#24933](https://github.com/openai/codex/issues/24933);
+  see the [Differences](#differences-in-codex-vs-claude-code) section
+  for context. `install.sh` asks for explicit consent before writing
+  this; if you install manually you must add it yourself.
 
 If you check out the plugin and work inside it, the bundled
 `.agents/skills` directory makes Codex discover the **skills** with no
@@ -97,9 +113,25 @@ full install).
 
 ## Differences in Codex vs. Claude Code
 
-The skills behave identically; two pieces of lifecycle automation differ
-because of Codex hook limitations:
+The skills behave identically; three pieces of lifecycle automation
+differ because of Codex limitations:
 
+- **Codex sandbox must be disabled.** The plugin's main commands
+  (`rbt dev run`, `rbt generate`, …) hang silently inside Codex's
+  default sandbox because of an upstream Codex bug that breaks Python
+  asyncio cross-thread wakeups —
+  [openai/codex#24933](https://github.com/openai/codex/issues/24933).
+  Until that is fixed, the only way to make the plugin work under
+  Codex is to set `sandbox_mode = "danger-full-access"` in
+  `~/.codex/config.toml`. `install.sh` writes this for you after
+  asking for explicit consent, because the setting is **global**:
+  it affects every Codex session on the machine, not just sessions
+  using the Reboot plugin. If you decline at the prompt, the Codex
+  install is skipped entirely (a Codex install without this opt-out
+  cannot run the plugin's main commands). You can undo the change
+  any time by deleting the `# >>> reboot-plugin (managed) >>>` …
+  `# <<< reboot-plugin (managed) <<<` region from
+  `~/.codex/config.toml`.
 - **No PreToolUse auto-approval.** Claude Code auto-approves the
   plugin's own dev commands to cut down on prompts. Codex PreToolUse
   hooks can only _deny_ a tool, never approve one, so there is no

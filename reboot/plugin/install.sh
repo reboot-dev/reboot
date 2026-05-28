@@ -1,12 +1,32 @@
 #!/usr/bin/env bash
 #
 # Reboot plugin installer for Claude Code and Codex.
-# Usage: curl -fsSL https://reboot.dev/install.sh | bash
+#
+# Usage:
+#   curl -fsSL https://reboot.dev/install.sh | bash
 #
 # Installs the plugin into whichever of Claude Code / Codex is present
 # on the machine. Having only one of the two is the normal case; the
 # installer simply skips the one that isn't there and reports which
 # tools it installed for.
+#
+# Codex sandbox opt-out
+#
+#   Installing for Codex requires globally disabling Codex's sandbox to
+#   work around https://github.com/openai/codex/issues/24933, an
+#   upstream Codex bug that breaks Python asyncio cross-thread wakeups
+#   and silently hangs the plugin's main commands. The installer
+#   prompts (Y/n) before doing so; decline and the Codex install is
+#   skipped entirely (since a Codex install without the opt-out cannot
+#   actually run the plugin).
+#
+#   For non-interactive (CI/CD) installs, pre-answer the prompt via:
+#     REBOOT_PLUGIN_DISABLE_CODEX_SANDBOX=yes   # consent; install for Codex
+#     REBOOT_PLUGIN_DISABLE_CODEX_SANDBOX=no    # decline; skip Codex install
+#
+#   If neither env var nor a TTY (stdin or /dev/tty) is available, the
+#   installer defaults to "yes" and logs that it did so, so headless
+#   installs are not blocked.
 
 set -euo pipefail
 
@@ -19,6 +39,39 @@ RESET='\033[0m'
 log()   { printf "${BLUE}[reboot-plugin]${RESET} %s\n" "$*" >&2; }
 error() { printf "${RED}[reboot-plugin] error:${RESET} %s\n" "$*" >&2; }
 ok()    { printf "${GREEN}[reboot-plugin]${RESET} %s\n" "$*" >&2; }
+
+# Ask a Y/n question on the user's TTY, defaulting to Y (return 0).
+# Works under `curl | bash`: stdin is the curl pipe in that case, not
+# a TTY, but the user's terminal is still attached at /dev/tty so the
+# prompt is interactive. When there is truly no TTY anywhere (e.g.
+# running inside a Docker build or CI step), defaults to Y with a log
+# line so automated installs are not blocked. CI/CD pipelines that
+# want explicit consent can pre-answer via an env var read by the
+# caller; this helper just handles the interactive case.
+prompt_yes_no() {
+    local prompt="$1"
+    local answer=""
+    local tty_in=""
+
+    if [ -r /dev/tty ]; then
+        tty_in=/dev/tty
+    elif [ -t 0 ]; then
+        tty_in=/dev/stdin
+    fi
+
+    if [ -n "$tty_in" ]; then
+        printf "%s " "$prompt" >&2
+        IFS= read -r answer <"$tty_in" || answer=""
+    else
+        log "Non-interactive install (no TTY); defaulting to Y."
+        return 0
+    fi
+
+    case "$answer" in
+        ""|[Yy]|[Yy][Ee][Ss]) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 REPO="reboot-dev/reboot-plugin"
 PLUGIN_NAME="reboot"
@@ -114,8 +167,14 @@ codex_plugin_path() {
 }
 
 # Merge a marked region into ~/.codex/config.toml that:
-#   - enables hooks (off by default in Codex), and
-#   - prepends the plugin's bin/ to PATH for every subprocess.
+#   - enables hooks (off by default in Codex),
+#   - prepends the plugin's bin/ to PATH for every subprocess, and
+#   - (optionally, controlled by $3) disables Codex's
+#     seccomp+landlock sandbox to work around
+#     https://github.com/openai/codex/issues/24933. See the inline
+#     comment in this function for details. The caller must have
+#     gathered the user's consent before passing "true" here, since
+#     the sandbox is a global Codex setting.
 #
 # Codex's `shell_environment_policy.set` replaces PATH wholesale, so the
 # install-time PATH is baked in after the plugin's bin/ — re-running the
@@ -125,6 +184,7 @@ codex_plugin_path() {
 merge_codex_config() {
     local config="$1"
     local root="$2"
+    local disable_sandbox="${3:-false}"
     local begin="# >>> reboot-plugin (managed) >>>"
     local end="# <<< reboot-plugin (managed) <<<"
 
@@ -144,6 +204,22 @@ merge_codex_config() {
         printf 'features.codex_hooks = true\n'
         printf 'shell_environment_policy.set.PATH = "%s/bin:%s"\n' \
             "$root" "$PATH"
+        if [ "$disable_sandbox" = "true" ]; then
+            # Disable Codex's seccomp+landlock sandbox. Inside the
+            # sandbox, Python `asyncio.call_soon_threadsafe` -- and
+            # everything built on it (`run_in_executor`, `aiofiles`,
+            # even `asyncio.run`'s own shutdown) -- silently stalls
+            # because Codex's seccomp filter denies SYS_sendto on the
+            # AF_UNIX socketpair asyncio uses for cross-thread loop
+            # wakeups. That breaks `rbt dev run` and `rbt generate`
+            # (which are heavily asyncio-based). Until the Codex bug
+            # is fixed, the only way to make the plugin usable under
+            # Codex is to opt out of the sandbox entirely. See
+            # https://github.com/openai/codex/issues/24933.
+            printf '# Disabled because Codex sandbox breaks Python asyncio cross-thread\n'
+            printf '# wakeup; see https://github.com/openai/codex/issues/24933.\n'
+            printf 'sandbox_mode = "danger-full-access"\n'
+        fi
         printf '%s\n' "$end"
         if [ -n "$stripped" ]; then
             printf '\n%s\n' "$stripped"
@@ -154,6 +230,63 @@ merge_codex_config() {
 
 install_codex() {
     log "Installing for Codex..."
+
+    # Decide whether the user is willing to disable Codex's sandbox
+    # BEFORE we touch anything. The plugin's main commands hang
+    # silently inside Codex's sandbox -- see
+    # https://github.com/openai/codex/issues/24933 -- so a Codex
+    # install without the sandbox opt-out is effectively a broken
+    # install. If the user declines, we skip Codex entirely rather
+    # than leaving a dud behind. The env var
+    # $REBOOT_PLUGIN_DISABLE_CODEX_SANDBOX (yes/no) lets CI/CD
+    # installs give explicit consent without a prompt.
+    local disable_sandbox=""
+    case "${REBOOT_PLUGIN_DISABLE_CODEX_SANDBOX-}" in
+        [Yy]|[Yy][Ee][Ss]|true|1)
+            log "REBOOT_PLUGIN_DISABLE_CODEX_SANDBOX=yes; skipping prompt."
+            disable_sandbox=true
+            ;;
+        [Nn]|[Nn][Oo]|false|0)
+            log "REBOOT_PLUGIN_DISABLE_CODEX_SANDBOX=no; skipping prompt."
+            disable_sandbox=false
+            ;;
+    esac
+
+    if [ -z "$disable_sandbox" ]; then
+        printf >&2 "\n"
+        printf >&2 "${BOLD}Codex sandbox decision${RESET}\n"
+        printf >&2 "  The Reboot plugin's main commands (rbt dev run, rbt generate, ...)\n"
+        printf >&2 "  hang silently inside Codex's sandbox because of an upstream Codex\n"
+        printf >&2 "  bug that breaks Python asyncio cross-thread wakeups:\n"
+        printf >&2 "    ${BOLD}https://github.com/openai/codex/issues/24933${RESET}\n"
+        printf >&2 "  Until that is fixed, the only way to make the plugin actually work\n"
+        printf >&2 "  under Codex is to opt out of Codex's sandbox.\n"
+        printf >&2 "\n"
+        printf >&2 "  Doing so writes ${BOLD}sandbox_mode = \"danger-full-access\"${RESET} into\n"
+        printf >&2 "  ~/.codex/config.toml. That setting is ${BOLD}global${RESET}: it affects every\n"
+        printf >&2 "  Codex session on this machine, not just sessions that touch the\n"
+        printf >&2 "  Reboot plugin. You can undo it later by removing the managed\n"
+        printf >&2 "  region from ~/.codex/config.toml.\n"
+        printf >&2 "\n"
+        printf >&2 "  If you decline, the Codex install will be skipped entirely (a Codex\n"
+        printf >&2 "  install without the sandbox opt-out cannot run the plugin's main\n"
+        printf >&2 "  commands).\n"
+        printf >&2 "\n"
+        if prompt_yes_no "Disable Codex sandbox globally? [Y/n]"; then
+            disable_sandbox=true
+        else
+            disable_sandbox=false
+        fi
+    fi
+
+    if [ "$disable_sandbox" != "true" ]; then
+        log "Skipping Codex install: the plugin's main commands hang inside"
+        log "  Codex's sandbox until https://github.com/openai/codex/issues/24933"
+        log "  is fixed, so installing without the sandbox opt-out would not"
+        log "  give a working experience. Re-run install.sh and answer Y to"
+        log "  opt in."
+        return 0
+    fi
 
     # Use a local checkout as the marketplace source if we're running
     # from inside one; otherwise let Codex clone the GitHub repo.
@@ -184,8 +317,14 @@ install_codex() {
     root="$(codex_plugin_path)"
     [ -n "$root" ] || root="$source"
 
-    # Enable hooks and put the plugin's bin/ on PATH.
-    merge_codex_config "${CODEX_HOME:-$HOME/.codex}/config.toml" "$root"
+    # Enable hooks, put the plugin's bin/ on PATH, and disable the
+    # Codex sandbox (user already consented above).
+    merge_codex_config \
+        "${CODEX_HOME:-$HOME/.codex}/config.toml" "$root" "true"
+
+    log "Set sandbox_mode = \"danger-full-access\" in ~/.codex/config.toml"
+    log "  to work around https://github.com/openai/codex/issues/24933."
+    log "  Remove the managed region from ~/.codex/config.toml to undo."
 
     log "Pre-installing dependencies for Codex..."
     prewarm "$root/bin"
