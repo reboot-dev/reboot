@@ -6,7 +6,8 @@ from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from rbt.v1alpha1.errors_pb2 import PermissionDenied, Unauthenticated
 from reboot.aio.applications import Application
-from reboot.aio.tests import Reboot
+from reboot.aio.auth.oauth_providers import Anonymous
+from reboot.aio.tests import OAuthProviderForTest, Reboot
 from reboot.ping.ping import (
     CounterServicer,
     PingServicer,
@@ -70,6 +71,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Anonymous()),
             ),
         )
 
@@ -154,6 +156,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Anonymous()),
             ),
         )
 
@@ -211,6 +214,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                 servicers=[
                     UserServicer, CounterServicer, PingServicer, PongServicer
                 ],
+                oauth=OAuthProviderForTest(Anonymous()),
             ),
         )
 
@@ -296,6 +300,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                     UserServicer,
                     CounterServicer,
                 ],
+                oauth=OAuthProviderForTest(Anonymous()),
             ),
         )
 
@@ -429,6 +434,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Anonymous()),
             ),
         )
 
@@ -503,6 +509,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Anonymous()),
             ),
         )
 
@@ -545,6 +552,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Anonymous()),
             ),
         )
 
@@ -667,6 +675,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Anonymous()),
             ),
         )
 
@@ -738,6 +747,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserWithGeneratedAuth, CounterServicer],
+                oauth=OAuthProviderForTest(Anonymous()),
             ),
         )
 

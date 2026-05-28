@@ -4,7 +4,7 @@ from constants import COUPON_BOOK_ID
 from dotenv import load_dotenv
 from reboot.aio.applications import Application
 from reboot.aio.auth.oauth_providers import (
-    Anonymous,
+    Development,
     OAuthProviderByEnvironment,
 )
 from reboot_swag_store.v1.store_rbt import CouponBook
@@ -39,7 +39,7 @@ async def main() -> None:
             OrderServicer,
         ],
         oauth=OAuthProviderByEnvironment(
-            dev=Anonymous(),
+            dev=Development(),
             # TODO: set a real provider (e.g. `Google(...)`) before
             # production; `prod=None` makes a production deployment fail
             # to start until one is chosen.

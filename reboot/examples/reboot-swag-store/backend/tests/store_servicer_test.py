@@ -11,8 +11,9 @@ import unittest
 from constants import COUPON_BOOK_ID
 from reboot.aio.aborted import Aborted
 from reboot.aio.applications import Application
+from reboot.aio.auth.oauth_providers import Anonymous
 from reboot.aio.contexts import WorkflowContext
-from reboot.aio.tests import Reboot
+from reboot.aio.tests import OAuthProviderForTest, Reboot
 from reboot_swag_store.v1.store import (
     CartEmpty,
     InvalidCoupon,
@@ -88,6 +89,7 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
                     NoFulfillOrderServicer,
                 ],
                 initialize=_initialize,
+                oauth=OAuthProviderForTest(Anonymous()),
             )
         )
         # Authenticated context for a "guest" user. With

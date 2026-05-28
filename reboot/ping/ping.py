@@ -229,6 +229,13 @@ async def main():
         f"'{os.environ.get(ENVVAR_REBOOT_MODE)}'"
     )
 
+    dev_oauth = Development(
+        # Set a short access token TTL so that most manual tests
+        # with this app naturally also exercise the access token
+        # refresh flow.
+        access_token_ttl_seconds=30,
+    )
+
     application = Application(
         servicers=[
             PingServicer,
@@ -240,16 +247,10 @@ async def main():
         # `initialize`, to exercise that that is allowed.
         initialize=start_periodic_ping,
         oauth=OAuthProviderByEnvironment(
-            dev=Development(
-                # Set a short access token TTL so that most manual tests
-                # with this app naturally also exercise the access token
-                # refresh flow.
-                access_token_ttl_seconds=30,
-            ),
-            # TODO: set a real provider (e.g. `Google(...)`) before
-            # running this in production; `None` makes a production
-            # deployment fail to start until one is chosen.
-            prod=None,
+            dev=dev_oauth,
+            # "Production" for this application is our local Reboot
+            # clusters; that's still a development environment.
+            prod=dev_oauth,
         ),
     )
     await application.run()
