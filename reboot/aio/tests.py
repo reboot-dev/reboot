@@ -36,7 +36,7 @@ class OAuthProviderForTest(OAuthProviderSelector):
     def __init__(self, provider: OAuthProvider):
         self._provider = provider
 
-    def get(self) -> OAuthProvider:
+    def _select(self) -> OAuthProvider:
         return self._provider
 
 

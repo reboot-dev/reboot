@@ -83,8 +83,8 @@ async def main():
         oauth=OAuthProviderByEnvironment(
             dev=Development(),
             prod=Google(
-                client_id=os.environ["GOOGLE_OAUTH_CLIENT_ID"],
-                client_secret=os.environ["GOOGLE_OAUTH_CLIENT_SECRET"],
+                client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
+                client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"),
             ),
         ),
     ).run()
@@ -95,6 +95,14 @@ credentials needed locally); everywhere else — including `rbt serve`,
 Reboot Cloud, and any unrecognized environment — you get Google. If
 you'd rather exercise the real provider locally too, set `dev=Google(...)`
 as well (you'll then need its credentials in dev).
+
+Note the `os.environ.get(...)` (not `os.environ[...]`): the `Google(...)`
+constructor runs even under `rbt dev`, where only the `dev=` arm is
+actually used. `.get()` returns `None` when the variable isn't set so
+local dev doesn't need the production credentials; `Google` /
+`GitHub` reject a `None` `client_id` / `client_secret` only when the
+OAuth server actually mounts them, so the production deploy still
+fails fast if the credentials are missing there.
 
 GitHub is the same shape — `GitHub(client_id=..., client_secret=...)`,
 reading both values from `os.environ`. Servicer code, API
@@ -122,9 +130,13 @@ asks for an authorized redirect URI.
 **Never** hard-code the client ID or client secret in `main.py` and
 never check them into git. Deliver them to the running process as
 environment variables — read them in `main.py` with
-`os.environ["GOOGLE_OAUTH_CLIENT_ID"]` etc. (any uppercase
+`os.environ.get("GOOGLE_OAUTH_CLIENT_ID")` etc. (any uppercase
 environment-style name you pick; `REBOOT_*` and `RBT_*` are
-reserved). Set the values:
+reserved). Use `.get()`, not `os.environ[...]`: when you only use
+`Google` in the `prod=` arm, the constructor still runs under `rbt dev`
+where the variable isn't set, and `.get()` returns `None` cleanly there
+— the provider only rejects `None` when it's actually mounted on the
+OAuth server. Set the values:
 
 - **Locally under `rbt dev run`:** `export GOOGLE_OAUTH_CLIENT_ID=...` in the shell before launching, or
   pass `--env=GOOGLE_OAUTH_CLIENT_ID=...` on the CLI. Don't put

@@ -98,32 +98,58 @@ class OAuthProvider(ABC):
     def mount_routes(self, http: PythonWebFramework.HTTP) -> None:
         """
         Optional hook to register provider-specific HTTP routes.
-        
+
         Default: no extra routes.
+        """
+
+    def validate(self) -> None:
+        """
+        Optional hook to verify the provider's configuration.
+
+        Called when this provider will be used in this process (i.e.
+        it's been selected). Subclasses override to fail fast on missing
+        or invalid configuration; the default is a no-op.
         """
 
 
 class RegisteredOAuthProvider(OAuthProvider):
     """
     Base class for providers that use pre-registered client credentials.
-    
+
     These providers require developers to go through some manual
     registration flow once, which produces a `client_id` and
     `client_secret` that we need to know.
     """
 
-    def __init__(self, *, client_id: str, client_secret: str):
+    def __init__(
+        self,
+        *,
+        # `client_id`/`client_secret` are typed `Optional` so a
+        # production-only provider can still be constructed in dev
+        # processes where it is present but won't be used.
+        client_id: Optional[str],
+        client_secret: Optional[str],
+    ):
+
         super().__init__()
-        if not client_id:
-            raise ValueError(
-                f"{type(self).__name__} requires a non-empty `client_id`."
-            )
-        if not client_secret:
-            raise ValueError(
-                f"{type(self).__name__} requires a non-empty `client_secret`."
-            )
         self._client_id = client_id
         self._client_secret = client_secret
+
+    def validate(self) -> None:
+        if not self._client_id:
+            raise InputError(
+                reason=(
+                    f"{type(self).__name__} requires a non-empty "
+                    "`client_id`."
+                ),
+            )
+        if not self._client_secret:
+            raise InputError(
+                reason=(
+                    f"{type(self).__name__} requires a non-empty "
+                    "`client_secret`."
+                ),
+            )
 
 
 class Google(RegisteredOAuthProvider):
@@ -399,7 +425,7 @@ class Development(OAuthProvider):
         with open(_DEVELOPMENT_LOGIN_PAGE_TEMPLATE_PATH) as template_file:
             self._login_page_template = Template(
                 template_file.read(),
-                # make interpolated values (notably the per-identity
+                # Make interpolated values (notably the per-identity
                 # links built from the `state` JWT and callback URI)
                 # safe in HTML/attribute context.
                 autoescape=True,
@@ -532,17 +558,28 @@ class OAuthProviderSelector(ABC):
     """
     Chooses the `OAuthProvider` an `Application` should use.
 
-    `Application(oauth=...)` takes a selector rather than an
-    `OAuthProvider` directly, so the choice can depend on the run
-    environment. The selection is resolved lazily, via `get()`, only
-    when the application actually needs a provider to identify users
-    (i.e. it has a `User`-typed auto-construct servicer).
+    The selection is resolved lazily, via `get()`, so that the choice
+    can be made based on the environment, and only when the application
+    actually needs a provider to identify users (i.e. it has a
+    `User`-typed auto-construct servicer).
     """
 
-    @abstractmethod
     def get(self) -> OAuthProvider:
-        """Return the `OAuthProvider` to use, or raise if none is
-        configured for the current environment."""
+        """
+        Return the `OAuthProvider` to use, or raise if none is
+        configured for the current environment.
+        """
+        provider = self._select()
+        # The provider has been selected; validate it before anyone
+        # tries to actually use it.
+        provider.validate()
+        return provider
+
+    @abstractmethod
+    def _select(self) -> OAuthProvider:
+        """
+        Choose the provider for the current environment.
+        """
         raise NotImplementedError()
 
 
@@ -577,7 +614,7 @@ class OAuthProviderByEnvironment(OAuthProviderSelector):
         self._dev = dev
         self._prod = prod
 
-    def get(self) -> OAuthProvider:
+    def _select(self) -> OAuthProvider:
         provider = self._dev if running_rbt_dev() else self._prod
         if provider is None:
             raise InputError(reason=_NO_PROVIDER_REASON)
