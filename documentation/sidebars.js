@@ -32,6 +32,11 @@ const sidebars = {
         },
         {
           type: "doc",
+          id: "ai_chat_apps/get_started_codex",
+          label: "Get Started (with Codex)",
+        },
+        {
+          type: "doc",
           id: "ai_chat_apps/get_started",
           label: "Get Started (hand-written)",
         },
