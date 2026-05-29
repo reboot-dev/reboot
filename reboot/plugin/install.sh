@@ -201,7 +201,7 @@ merge_codex_config() {
 
     {
         printf '%s\n' "$begin"
-        printf 'features.codex_hooks = true\n'
+        printf 'features.hooks = true\n'
         printf 'shell_environment_policy.set.PATH = "%s/bin:%s"\n' \
             "$root" "$PATH"
         if [ "$disable_sandbox" = "true" ]; then

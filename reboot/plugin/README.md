@@ -92,7 +92,7 @@ codex plugin add reboot@reboot-plugin
 `install.sh` then merges a small marked region into `~/.codex/config.toml`
 that:
 
-- enables hooks (`features.codex_hooks = true` — off by default),
+- enables hooks (`features.hooks = true` — off by default),
 - prepends the plugin's pinned tool shims (`uv`, `node`, `rbt`, …) to
   PATH for every subprocess via `shell_environment_policy.set.PATH`.
   Codex SessionStart hooks can't modify PATH the way Claude Code's can,
