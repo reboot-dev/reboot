@@ -1,4 +1,5 @@
 import argparse
+import time
 import traceback
 from pathlib import Path
 from rbt.v1alpha1.admin import export_import_pb2_grpc
@@ -69,6 +70,7 @@ async def do_export(args: argparse.Namespace) -> int:
         terminal.fail(f"Destination directory `{dest_dir}` must be empty.\n\n")
 
     export_import = _export_import_stub(args)
+    export_start_time = time.monotonic()
     try:
         await export_import_client.do_export(
             export_import, dest_dir, admin_token=args.admin_credential
@@ -78,7 +80,9 @@ async def do_export(args: argparse.Namespace) -> int:
             f"Failed to export: {e}\n\nPlease report this issue to the maintainers."
         )
 
-    terminal.info(f"Exported to: `{dest_dir}`")
+    terminal.info(
+        f"Exported to: `{dest_dir}` in {time.monotonic() - export_start_time:.2f} seconds"
+    )
     return 0
 
 
@@ -90,6 +94,7 @@ async def do_import(args: argparse.Namespace) -> int:
         terminal.fail(f"Source directory `{src_dir}` must be non-empty.\n\n")
 
     export_import = _export_import_stub(args)
+    import_start_time = time.monotonic()
     try:
         await export_import_client.do_import(
             export_import, src_dir, admin_token=args.admin_credential
@@ -100,7 +105,9 @@ async def do_import(args: argparse.Namespace) -> int:
             f"Failed to import: {type(e)}: {e}\n\nPlease report this issue to the maintainers."
         )
 
-    terminal.info(f"Imported from: `{src_dir}`")
+    terminal.info(
+        f"Imported from: `{src_dir}` in {time.monotonic() - import_start_time:.2f} seconds"
+    )
     return 0
 
 

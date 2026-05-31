@@ -562,7 +562,8 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   bool BelongsToShard(
       std::string_view state_type,
       std::string_view state_ref,
-      const std::unordered_set<std::string>& shard_ids);
+      const std::unordered_set<std::string>& shard_ids,
+      bool use_cache = true);
 
   // Helper function to compute SHA1 hash of the first component of a state_ref.
   std::string ComputeStateRefHash(std::string_view state_ref) const;
@@ -571,7 +572,9 @@ class DatabaseService final : public rbt::v1alpha1::Database::Service {
   std::string GetShardForHash(const std::string& hash_str) const;
 
   // Helper function to determine which shard owns a given state_ref.
-  std::string GetShardForStateRef(std::string_view state_ref);
+  std::string GetShardForStateRef(
+      std::string_view state_ref,
+      bool use_cache = true);
 
   // Iterates RocksDB and calls `on_item` for each matching item.
   // If `on_item` returns a non-OK status, iteration stops early and
@@ -3290,7 +3293,14 @@ grpc::Status DatabaseService::_Export(
 
     // If this item doesn't belong to one of the requested shards,
     // skip it.
-    if (!BelongsToShard(request.state_type(), state_ref, shard_ids)) {
+    // For the `Export` we iterate over all items in the database so the
+    // odds of hitting the cache are low, so we set `use_cache` to
+    // `false` to avoid the overhead of checking the cache on each item.
+    if (!BelongsToShard(
+            request.state_type(),
+            state_ref,
+            shard_ids,
+            /* use_cache= */ false)) {
       continue;
     }
 
@@ -4333,13 +4343,15 @@ std::string DatabaseService::GetShardForHash(
 }
 
 // Helper function to determine which shard owns a given state_ref.
-std::string DatabaseService::GetShardForStateRef(std::string_view state_ref) {
+std::string DatabaseService::GetShardForStateRef(
+    std::string_view state_ref,
+    bool use_cache) {
   // TODO: improve stout to support C++20 "heterogeneous lookup" to
   // avoid needing to make a string copy here.
   std::string state_ref_copy(state_ref);
 
   // Check if we have this cached.
-  {
+  if (use_cache) {
     std::lock_guard lock(shard_cache_mutex_);
     Option<std::string> cached_shard = shard_for_state_ref_.get(state_ref_copy);
     if (cached_shard.isSome()) {
@@ -4352,7 +4364,7 @@ std::string DatabaseService::GetShardForStateRef(std::string_view state_ref) {
   // (both threads will arrive at the same answer).
   std::string shard = GetShardForHash(ComputeStateRefHash(state_ref));
 
-  {
+  if (use_cache) {
     std::lock_guard lock(shard_cache_mutex_);
     shard_for_state_ref_.put(state_ref_copy, shard);
   }
@@ -4365,13 +4377,14 @@ std::string DatabaseService::GetShardForStateRef(std::string_view state_ref) {
 bool DatabaseService::BelongsToShard(
     std::string_view state_type,
     std::string_view state_ref,
-    const std::unordered_set<std::string>& shard_ids) {
+    const std::unordered_set<std::string>& shard_ids,
+    bool use_cache) {
   // We should always have shards configured.
   CHECK(!server_info_.shard_infos().empty())
       << "No shards configured - this should not happen";
 
   // Determine which shard owns this state_ref.
-  std::string target_shard_id = GetShardForStateRef(state_ref);
+  std::string target_shard_id = GetShardForStateRef(state_ref, use_cache);
 
   // Check if the target shard is in the set of requested shards.
   return shard_ids.find(target_shard_id) != shard_ids.end();

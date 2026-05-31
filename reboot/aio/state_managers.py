@@ -491,6 +491,8 @@ class StateManager(ABC):
         state_ref: StateRef,
         task: database_pb2.Task,
         middleware: Middleware,
+        *,
+        sync: bool = True,
     ) -> None:
         """Imports state for an actor, overwriting on collision."""
         raise NotImplementedError
@@ -501,6 +503,8 @@ class StateManager(ABC):
         state_type: StateTypeName,
         state_ref: StateRef,
         state: Message,
+        *,
+        sync: bool = True,
     ) -> None:
         """Imports state for an actor, overwriting on collision."""
         raise NotImplementedError
@@ -512,6 +516,8 @@ class StateManager(ABC):
         state_ref: StateRef,
         state: bytes,
         actor_converters: ExportImportItemConverters,
+        *,
+        sync: bool = True,
     ) -> None:
         """Imports state for an actor, overwriting on collision."""
         raise NotImplementedError
@@ -522,6 +528,8 @@ class StateManager(ABC):
         state_type: StateTypeName,
         state_ref: StateRef,
         idempotent_mutation: database_pb2.IdempotentMutation,
+        *,
+        sync: bool = True,
     ) -> None:
         """Imports state for an actor, overwriting on collision."""
         raise NotImplementedError
@@ -1628,6 +1636,8 @@ class SidecarStateManager(
         state_ref: StateRef,
         task: database_pb2.Task,
         middleware: Middleware,
+        *,
+        sync: bool = True,
     ) -> None:
         async with self._mutator_locks[state_type][state_ref]:
             pending_task_effect = (
@@ -1642,6 +1652,7 @@ class SidecarStateManager(
                 state_type=state_type,
                 state_ref=state_ref,
                 task=task,
+                sync=sync,
             )
             if pending_task_effect is not None:
                 middleware.tasks_dispatcher.dispatch([pending_task_effect])
@@ -1651,12 +1662,15 @@ class SidecarStateManager(
         state_type: StateTypeName,
         state_ref: StateRef,
         state: Message,
+        *,
+        sync: bool = True,
     ) -> None:
         async with self._mutator_locks[state_type][state_ref]:
             await self._store(
                 state_type=state_type,
                 state_ref=state_ref,
                 effects=Effects(state=state),
+                sync=sync,
             )
 
     async def import_sorted_map_entry(
@@ -1665,6 +1679,8 @@ class SidecarStateManager(
         state_ref: StateRef,
         state: bytes,
         actor_converters: ExportImportItemConverters,
+        *,
+        sync: bool = True,
     ) -> None:
         # TODO: We do not support directly inserting a
         # SORTED_MAP_ENTRY_TYPE_NAME as a Message, so it must be stored
@@ -1702,6 +1718,7 @@ class SidecarStateManager(
                 state_type=state_type,
                 state_ref=state_ref,
                 effects=effects,
+                sync=sync,
             )
 
     async def import_idempotent_mutation(
@@ -1709,6 +1726,8 @@ class SidecarStateManager(
         state_type: StateTypeName,
         state_ref: StateRef,
         idempotent_mutation: database_pb2.IdempotentMutation,
+        *,
+        sync: bool = True,
     ) -> None:
         async with self._mutator_locks[state_type][state_ref]:
             # Recover idempotent mutations before trying to import any
@@ -1730,6 +1749,7 @@ class SidecarStateManager(
                 state_type=state_type,
                 state_ref=state_ref,
                 idempotent_mutation=idempotent_mutation,
+                sync=sync,
             )
 
     @function_span()
