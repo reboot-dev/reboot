@@ -27,6 +27,15 @@
 #   If neither env var nor a TTY (stdin or /dev/tty) is available, the
 #   installer defaults to "yes" and logs that it did so, so headless
 #   installs are not blocked.
+#
+# Maintainer note
+#
+#   This is a thin bootstrap: it only adds the `reboot-dev/reboot-plugin`
+#   marketplace and installs the plugin from it. It carries no version
+#   of its own. Keep it that way -- it must stay compatible with the
+#   currently-published `reboot-dev/reboot-plugin`, so don't make it
+#   depend on plugin contents or behaviors that aren't published there
+#   yet.
 
 set -euo pipefail
 
