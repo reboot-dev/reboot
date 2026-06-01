@@ -21,7 +21,9 @@
 set -u
 
 # The plugin root is two levels up from this script (`hooks/codex/`).
-PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd || true)"
+[ -n "$PLUGIN_ROOT" ] || exit 0
+[ -x "$PLUGIN_ROOT/bin/cloudflared" ] || exit 0
 
 # Codex sends a JSON payload on stdin; we don't need it. Drain it so the
 # hook doesn't appear to hang on a blocking pipe.

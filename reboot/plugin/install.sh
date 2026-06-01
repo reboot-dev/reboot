@@ -315,8 +315,14 @@ install_codex() {
     # where parsing fails on an unexpected output format.
     local root
     root="$(codex_plugin_path)"
-    [ -n "$root" ] || root="$source"
-
+    if [ -z "$root" ]; then
+        if [ -d "$source" ]; then
+            root="$source"
+        else
+            error "Could not determine Codex plugin install path from 'codex plugin list'."
+            return 1
+        fi
+    fi
     # Enable hooks, put the plugin's bin/ on PATH, and disable the
     # Codex sandbox (user already consented above).
     merge_codex_config \
@@ -350,6 +356,10 @@ fi
 $have_claude && install_claude
 $have_codex  && install_codex
 
-ok "Installed for: $(IFS=', '; echo "${INSTALLED_FOR[*]}")."
+if [ "${#INSTALLED_FOR[@]}" -eq 0 ]; then
+    ok "Installed for: (none — Codex install skipped)."
+else
+    ok "Installed for: $(IFS=', '; echo "${INSTALLED_FOR[*]}")."
+fi
 printf >&2 "\nStart a new agent session, then ask to build a Reboot app"
 printf >&2 " — e.g. ${BOLD}build a todo chat app${RESET}.\n"
