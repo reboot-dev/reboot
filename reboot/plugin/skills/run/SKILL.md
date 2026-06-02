@@ -110,6 +110,39 @@ confusing to a developer who cannot see the backend terminal.
 cd web && npm run dev
 ```
 
+### Setup wizard — MCP Chat Apps only
+
+An MCP Chat App's backend serves an interactive **setup wizard** at
+its root URL (`http://localhost:9991`) — a browser page that walks
+the user through connecting the app to an MCP client (such as
+MCPJam: picking a client, copying the `/mcp` endpoint, completing
+the OAuth handshake). It is the natural starting point, so open it
+**before** the MCPJam inspector.
+
+Once the backend logs show it is serving traffic, do two things:
+
+1. **Tell the user the wizard exists and what it's for** — e.g.
+   "Setup wizard (connect an MCP client) at http://localhost:9991".
+2. **Open it once in the browser**, best-effort:
+
+   ```sh
+   "$BROWSER" http://localhost:9991 || xdg-open http://localhost:9991 || \
+     python3 -m webbrowser http://localhost:9991
+   ```
+
+Open the wizard **exactly once, at first startup — never on
+reloads.** The backend runs under `--watch` and reprints its
+"serving traffic" banner every time it hot-reloads on a code change;
+re-opening a browser tab on each reload would be hostile. Because
+you open it as a one-shot step during initial startup (not from a
+loop that watches for the backend coming back up), this is naturally
+satisfied — just don't add any reload-driven re-open.
+
+**Only for MCP apps.** A **Web App** has no MCP surface, and a
+**backend-only app** (no `UI()`, no MCP client to connect) has no
+one to walk through the wizard — in both cases skip this step
+entirely: don't announce or open the wizard.
+
 ### MCPJam inspector — Chat Apps only
 
 First wait until the backend logs show a passed health check and
@@ -143,8 +176,10 @@ is handled there.
 Confirm every process is up from its logs, then give the user:
 
 - the application's own inspect-page URL;
-- for a Chat App — the MCPJam inspector URL and a first prompt to
-  try (e.g. "Create a new todo list and show it to me");
+- for a Chat App — the setup-wizard URL (`http://localhost:9991`,
+  already opened for them, for connecting an MCP client), the
+  MCPJam inspector URL, and a first prompt to try (e.g. "Create a
+  new todo list and show it to me");
 - for a Web App — the frontend dev-server URL and a first page to
   open.
 
