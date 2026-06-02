@@ -143,15 +143,13 @@ If you're consuming from a Queue, you're writing a workflow — load the
 workflow primitives now so you don't trip on durable-execution rules
 mid-implementation:
 
-- `workflow-method.md` — `@classmethod`, `WorkflowContext`, scheduling
-  the workflow's first run.
-- `workflow-loop.md` — `async for iteration in context.loop(...)` for
-  the consume loop's iteration boundary.
-- `workflow-state-write.md` — workflows have no `self.state`; mutate
-  via `Service.ref().write(context, fn)`.
-- `workflow-at-most-once.md` / `workflow-at-least-once.md` — for
-  non-trivial per-item processing where you want memoization across
-  replays.
+- `servicer-workflow.md` — the single, comprehensive workflow
+  reference: `@classmethod` / `WorkflowContext` declaration and
+  scheduling the workflow's first run; `async for iteration in context.loop(...)` for the consume loop's iteration boundary;
+  inline state mutation via `Service.ref().write(context, fn)`
+  (workflows have no `self.state`); and `at_least_once` /
+  `at_most_once` for non-trivial per-item processing where you want
+  memoization across replays.
 - `lifecycle-application-entry.md` — register `queue.servicers()`
   and `sorted_map_library()` (Queue's internal storage actor).
 

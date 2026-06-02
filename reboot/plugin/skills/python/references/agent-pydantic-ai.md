@@ -87,7 +87,7 @@ keys and break replay. To rename, construct a new `Agent`.
 ## Running the Agent
 
 The agent runs **only inside a `WorkflowContext`** — a `Workflow(...)`
-method (see `workflow-method.md`). It is not usable from a reader,
+method (see `servicer-workflow.md`). It is not usable from a reader,
 writer, or transaction. All four entry points take `context` first:
 
 ```python
@@ -158,8 +158,7 @@ dependencies = [
 
 - `agent-tools.md` — give the agent tools with `@agent.tool` /
   `@agent.tool_plain` so it can read and mutate Reboot state.
-- `workflow-method.md` — the `WorkflowContext` method the agent
-  runs inside.
-- `workflow-at-least-once.md` — the primitive the agent memoizes
-  every model and tool call with.
+- `servicer-workflow.md` — the `WorkflowContext` method the agent
+  runs inside, and the `at_least_once` primitive it memoizes every
+  model and tool call with.
 - `lifecycle-secrets.md` — managing the provider API key.

@@ -119,19 +119,14 @@ RPCs, and the un-rollback-able external call lives safely in that
 workflow.
 
 When _you_ are the one making the external call — an LLM / model API
-call, a payment charge — put it in a `Workflow` method and wrap it in
-`at_least_once` / `at_most_once` (see `workflow-method.md` and
-`workflow-at-least-once.md`). That primitive **memoizes the result**:
-a workflow replay reuses the cached outcome instead of re-executing
-the call — the only way Reboot can give you "ran at most once" for an
-external effect.
+call, a payment charge, an SMS — put it in a `Workflow` method and
+pick the right primitive (`at_least_once`, `at_most_once`, or
+`Agent`) per `servicer-workflow.md`.
 
 How to wire it up:
 
-- Make the external call inside a `Workflow` method, wrapped in
-  `at_least_once("alias", context, call)`. For an LLM call, let `call`
-  catch its own errors and return them as data, so a permanent failure
-  (e.g. a bad API key) is not retried forever.
+- Make the external call inside a `Workflow` method, with the
+  primitive chosen above.
 - A `Transaction` (or `Writer`) reaches that workflow only by
   **scheduling** it —
   `await self.ref().schedule().<workflow_method>(context)` — never by
@@ -169,5 +164,5 @@ orchestration calls where the caller only needs success/failure
 - `servicer-constructor.md` — when a transaction also constructs an
   actor (e.g. `Account.open(context, id)`).
 - `api-errors.md` — typed errors that roll back the entire transaction.
-- `workflow-method.md` — when one-shot atomicity isn't enough and you
+- `servicer-workflow.md` — when one-shot atomicity isn't enough and you
   need durable, long-running orchestration.

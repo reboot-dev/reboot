@@ -92,15 +92,13 @@ writes — must **not** happen in a `Writer` or a `Transaction`,
   A real bug: an SMS login code sent twice with the first code
   invalidated.
 
-Put the external call in a `Workflow` wrapped in `at_most_once`
-(or `at_least_once` with
-`effect_validation=EffectValidation.DISABLED` when the call is
-idempotent but expensive, e.g. an LLM call). The on-demand "do it
-now" entry point is a `Writer`/`Transaction` that only
-**schedules** the workflow
+Put the external call in a `Workflow` and pick the right primitive
+per `servicer-workflow.md`. The
+on-demand "do it now" entry point is a `Writer`/`Transaction` that
+only **schedules** the workflow
 (`await self.ref().schedule().<workflow_method>(context)`); the
 external call itself lives in the workflow. See
-`workflow-at-most-once.md` and "External Calls Belong in a
+`servicer-workflow.md` and "External Calls Belong in a
 Workflow, Not a Transaction" in `servicer-transaction.md`.
 
 ### 9. `initialize` Runs on Every Restart

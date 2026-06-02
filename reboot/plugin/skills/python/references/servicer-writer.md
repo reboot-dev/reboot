@@ -17,8 +17,9 @@ tags: servicer, writer, WriterContext, state, mutation
 > breaking atomicity; (b) writer bodies also re-execute under
 > retries and dev-mode effect validation, so any external call
 > fires more than once. External calls — SMS, email, payment,
-> LLM/model — belong in a `Workflow` wrapped in `at_most_once`; the
-> writer only `schedule()`s the workflow. A writer calling another
+> LLM/model — belong in a `Workflow`; the writer only
+> `schedule()`s the workflow, and the workflow picks the right
+> primitive per `servicer-workflow.md`. A writer calling another
 > actor's writer is a category error.
 
 A method declared with `Writer(...)` in the API file receives a
@@ -31,8 +32,9 @@ retries and, in development, as part of **effect validation**, which
 re-runs the body and asserts the state mutations match. So a
 writer body must be safe to run more than once: confine it to
 `self.state` mutations and in-system calls (including readers on
-other actors), and push any external work to a `Workflow` wrapped
-in `at_most_once` (see `workflow-at-most-once.md`).
+other actors), and push any external work to a `Workflow` — the
+workflow picks the right primitive per
+`servicer-workflow.md`.
 
 **Incorrect (calling another actor's writer from inside a writer):**
 
@@ -90,9 +92,8 @@ inside a `Transaction`, so an external call here breaks
 transactional atomicity (the transaction may still abort and roll
 back state, but the external call already happened); writer bodies
 also re-execute under retries and effect validation. External calls
-belong in a `Workflow` wrapped in `at_most_once` (see
-`workflow-at-most-once.md`); the writer only `schedule()`s the
-workflow.
+belong in a `Workflow` (see `servicer-workflow.md` for the
+right primitive); the writer only `schedule()`s the workflow.
 
 A writer **can** call `ref.schedule(...).method(context)` on its own actor
 to defer work (see `scheduling-basic.md`).
@@ -138,7 +139,7 @@ async def increment(
   pattern for deferred work driven from a writer.
 - `servicer-transaction.md` — when a writer can't (cross-actor
   mutation).
-- `workflow-at-most-once.md` — the home for **all** external side
+- `servicer-workflow.md` — the home for **all** external side
   effects (even idempotent ones); writers/transactions only
-  `schedule()` it.
+  `schedule()` the workflow, which picks the right primitive there.
 - `api-errors.md` — typed errors that roll back state automatically.

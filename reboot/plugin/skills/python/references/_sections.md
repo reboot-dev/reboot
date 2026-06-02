@@ -17,49 +17,44 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 3. Servicer (servicer)
 
 **Impact:** HIGH
-**Description:** Implementing the generated `Servicer` base class. One reference per context type (reader, writer, transaction), plus constructor handling and authorizers. Workflow methods get their own category.
+**Description:** Implementing the generated `Servicer` base class. One reference per context type (reader, writer, transaction, workflow), plus constructor handling and authorizers. `servicer-workflow.md` is the single, comprehensive workflow reference: declaration shape, the call-classification model that routes each call to the right primitive (scope chain `.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` for Reboot-internal calls; `at_least_once` as the default for external calls, with `at_most_once` for non-retryable ones), `context.loop` iteration, inline state mutation via `ref().<scope>.write(context, fn)`, `until` / `until_changes` reactive waiting, and the declared-vs-undeclared exception exit rule.
 
-## 4. Workflow (workflow)
-
-**Impact:** HIGH
-**Description:** Durable, long-running, restartable methods. One reference per primitive (`at_most_once`, `at_least_once`, `until`, `until_changes`), plus iteration via `context.loop`, state mutation via `ref().write(context, fn)`, and idempotency-scope selection (`PER_WORKFLOW`, `PER_ITERATION`, `ALWAYS`).
-
-## 5. Agent (agent)
+## 4. Agent (agent)
 
 **Impact:** HIGH
 **Description:** Backend LLM calls and AI agents via the durable `reboot.agents.pydantic_ai.Agent` — a replay-safe wrapper over `pydantic_ai.Agent` that memoizes every model and tool call. Constructing and running the agent inside a `WorkflowContext`, and giving it tools with `@agent.tool` / `@agent.tool_plain`.
 
-## 6. Stdlib (stdlib)
+## 5. Stdlib (stdlib)
 
 **Impact:** HIGH
 **Description:** First-class stdlib state types shipped with Reboot — `OrderedMap`, `Queue`, `Topic` (PubSub), `Presence`, and the `Item` value envelope. One reference per type with method surface and library registration.
 
-## 7. State (state)
+## 6. State (state)
 
 **Impact:** HIGH
 **Description:** Modeling state with scalar fields, collections (`list[T]` / `dict[str, T]`, `OrderedMap`), and nested `Model`s. Default-value rules and access patterns.
 
-## 8. Auth (auth)
+## 7. Auth (auth)
 
 **Impact:** HIGH
 **Description:** Authorizer composition: `allow()` / `deny()`, `allow_if(all=...)` / `allow_if(any=...)`, the built-in predicates (`has_verified_token`, `is_app_internal`, `state_id_is_user_id`), and writing custom predicates.
 
-## 9. RPC (rpc)
+## 8. RPC (rpc)
 
 **Impact:** MEDIUM
 **Description:** Calling actors via `Service.ref(id)` and `await ref.method(context, ...)`. Constructor calls (`Service.create`), fan-out via `Service.forall(ids).method(context)`, and the kwargs-not-Request convention.
 
-## 10. Scheduling (scheduling)
+## 9. Scheduling (scheduling)
 
 **Impact:** MEDIUM
 **Description:** Deferred work via `ref.schedule(when=timedelta(...)).method(context)` and recurring schedules driven from inside writer methods.
 
-## 11. Testing (testing)
+## 10. Testing (testing)
 
 **Impact:** LOW-MEDIUM
 **Description:** The `Reboot()` test harness, `rbt.up(Application(...))`, and `create_external_context` for issuing calls in tests.
 
-## 12. Patterns (patterns)
+## 11. Patterns (patterns)
 
 **Impact:** LOW-MEDIUM
 **Description:** Cross-cutting patterns and anti-patterns: raising typed errors, idempotency strategies, and the most common Reboot Python gotchas.

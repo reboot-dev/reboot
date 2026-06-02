@@ -143,7 +143,7 @@ get=Reader(... factory=True ...),        # codegen error
 To kick off a workflow on actor creation, make the factory a
 `Writer(factory=True)` or `Transaction(factory=True)` and have
 its body call `self.ref().schedule().<workflow_name>(context, ...)`.
-See `workflow-method.md` for the full pattern.
+See `servicer-workflow.md` for the full pattern.
 
 Calling `<Type>.<MethodPascalCase>(ctx, <state-id>, **kwargs)`
 both creates the actor AND runs the factory method. Don't try

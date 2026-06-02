@@ -129,10 +129,13 @@ show the chat-app-specific shape on top.
 
 **Workflows:**
 
-- `python/references/workflow-method.md` (start here — has the
-  When-to-Pick decision table for the rest), then the specific
-  primitive references for `at_most_once` / `at_least_once` / `until` /
-  `until_changes` / `loop` / `state-write` / `idempotency-scopes`.
+- `python/references/servicer-workflow.md` — the single,
+  comprehensive workflow reference. Read it top to bottom: the
+  `@classmethod` / `WorkflowContext` declaration shape, the
+  call-classification decision tree (Reboot scopes vs.
+  `at_least_once` vs. `at_most_once`), `context.loop`, inline state
+  writes,
+  `until` / `until_changes`, and workflow exit semantics.
 
 **Project shell:**
 
@@ -151,7 +154,7 @@ they cover aren't restated inline below.
 | [`references/project-shell.md`](references/project-shell.md)               | `.python-version`, `.rbtrc` deltas (HMR + dist configs), `pyproject.toml` extras, `main.py` shape, durable-state setup.                                                                                                                                                                                                                                                              |
 | [`references/api-method-types.md`](references/api-method-types.md)         | The pydantic API file. `User`-type front door, `mcp=Tool()` / `mcp=None`, `UI()` (including parameterized UI props), `factory=True` on `create`, `Workflow(...)` declaration shape. Full Counter API example.                                                                                                                                                                        |
 | [`references/api-state-shapes.md`](references/api-state-shapes.md)         | Two recurring state shapes: `list[Item]` with `default_factory=list`; single nested `Model` sub-objects as `Optional[X] = Field(tag=N, default=None)` hydrated in factory `create` (Gotcha #13). The state-inside-state regression and how to compose state actors via string ID + `ref(id)`.                                                                                        |
-| [`references/servicer-patterns.md`](references/servicer-patterns.md)       | Servicer-side patterns: `UserServicer` calling `<X>.create(context)`, Workflow Servicer with `MyType.ref()` (no-arg) magic, inline writers via `.idempotently("alias").write(context, fn)` / `.always().write(...)`, scheduling a workflow from a Transaction with `.schedule()`.                                                                                                    |
+| [`references/servicer-patterns.md`](references/servicer-patterns.md)       | Servicer-side patterns: `UserServicer` calling `<X>.create(context)`, Workflow Servicer with `MyType.ref()` (no-arg) magic, inline writers via `.per_workflow("alias").write(context, fn)` / `.per_iteration("alias").write(...)` / `.always().write(...)`, scheduling a workflow from a Transaction with `.schedule()`.                                                             |
 | [`references/react-scaffolding.md`](references/react-scaffolding.md)       | The `web/` shell: `package.json` (per-UI `build:<name>` scripts, no auto-discovery wrappers), `vite.config.ts` (load-bearing — copy exactly), `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json`, `index.css` theme variables, `ui/<name>/index.html`, `ui/<name>/main.tsx`.                                                                                               |
 | [`references/react-app-tsx.md`](references/react-app-tsx.md)               | `App.tsx` — generated `use<Type>()` hook usage (reader subscriptions + mutation calls), Python-snake → TypeScript-camel field naming, Zod-validated request/response types. Full Counter `App.tsx` + `App.module.css` example.                                                                                                                                                       |
 | [`references/gotchas.md`](references/gotchas.md)                           | The numbered MCP-Chat-App–specific trip list (1–19): `mcp=Tool()`/`mcp=None` required, `factory=True` on app-type `create`, `MyType.ref()` not `cls.ref()`/`self.ref()` in workflows, `.schedule()` from a Transaction, Optional+`default=None` for nested Models, `.read()` only on no-arg ref inside a workflow, method-name PascalCase → generated `<Type>.<Method>Request`, etc. |

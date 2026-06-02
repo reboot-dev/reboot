@@ -2,7 +2,7 @@
 title: Servicer Patterns — User Front Door, Workflow Magic, Scheduling
 impact: CRITICAL
 impactDescription: Three chat-app-specific servicer patterns layered on top of `python`'s Servicer rules. The User-side `create_<X>` Transaction is the front door for every application-type instance; Workflow methods need `MyType.ref()` (no-arg) magic instead of `cls.ref()` or `self.ref()`; workflows kicked off from a Transaction must be `.schedule()`-d, not awaited.
-tags: servicer, user, transaction, workflow, ref, schedule, classmethod, inline-writer, idempotently, always
+tags: servicer, user, transaction, workflow, ref, schedule, classmethod, inline-writer, per_workflow, per_iteration, always
 ---
 
 ## Servicer Patterns — User Front Door, Workflow Magic, Scheduling
@@ -133,32 +133,43 @@ class MyTypeServicer(MyType.Servicer):
 
 When a mutation is only ever performed by this workflow, _don't_
 add a separate `store_xxx` Writer to the API just so the workflow
-can call it. Pass an `async (state) -> ...` function to
-`.idempotently("alias").write(context, fn)`:
+can call it. Pass an `async (state) -> ...` function to a scoped
+inline writer:
+`.per_workflow("alias").write(context, fn)` (once for the entire
+workflow), `.per_iteration("alias").write(context, fn)` (once per
+`context.loop` iteration), or `.always().write(context, fn)` (on
+every replay).
 
 ```python
 async def increment_count(state):
     state.num_pings += 1
 
-await MyType.ref().idempotently(
+# Once for the whole workflow lifetime — captures the outcome and
+# replays return the memoized no-op.
+await MyType.ref().per_workflow(
     "Increment ping count",
 ).write(context, increment_count)
 ```
 
-The idempotency alias is a human-readable string that survives
-workflow restarts — the inline writer runs at most once per alias.
-Reserve declared Writers in the API for operations also called from
-outside the workflow.
+The alias is a human-readable string that survives workflow
+restarts — `.per_workflow("X")` runs the writer at most once per
+alias for the workflow lifetime; `.per_iteration("X")` runs it
+once per loop iteration. Reserve declared Writers in the API for
+operations also called from outside the workflow.
 
-For "run every time" (e.g. re-fetching a remote value on each loop
-iteration), use `.always().write(context, fn)` instead of
-`.idempotently("...").write(...)`.
+For "run every time" (e.g. re-fetching a remote value on each
+loop iteration), use `.always().write(context, fn)`.
+
+**Never** wrap an inline writer in `at_least_once` / `at_most_once`
+/ `.idempotently("alias")`. Inline writers are Reboot-internal and
+already durable — scope is the only knob. See
+`python/references/servicer-workflow.md`.
 
 The inline writer's parameter must be named **`state`** — the
 runtime calls the callback as `writer(state=typed_state)`, so
 `async def make_move(s):` raises
 `TypeError: ... got an unexpected keyword argument 'state'`. See
-also `python/references/workflow-state-write.md`.
+also `python/references/servicer-workflow.md`.
 
 ## Scheduling a Workflow from a Transaction
 

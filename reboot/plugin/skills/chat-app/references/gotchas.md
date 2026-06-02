@@ -153,7 +153,7 @@ The list below is what's specific to the MCP-Chat-App layer:
     `async def make_move(s):` raises
     `TypeError: ... got an unexpected keyword argument 'state'`.
     Always use `async def fn(state): ...`. (See
-    `python/references/workflow-state-write.md`.)
+    `python/references/servicer-workflow.md`.)
 
 19. **`web/dist/ui/<name>/index.html` is the right location** for
     the built MCP UI — that's where the MCP server's
@@ -171,15 +171,15 @@ The list below is what's specific to the MCP-Chat-App layer:
     rank, classify, generate). Reboot **retries transactions**, so a
     model call inside one is billed multiple times for a single
     logical request — and a transaction has no memoization to prevent
-    it. Put the call in a `Workflow` and wrap it in `at_least_once` /
-    `at_most_once`; the result is memoized, so a workflow replay reuses
-    it instead of re-billing the provider. Pass
-    `effect_validation=EffectValidation.DISABLED` to `at_least_once`
-    (both from `reboot.aio.workflows`) so its effect-validation re-run
-    does not double-call the provider. Expose any on-demand "do it
-    now" tool as a `Writer`/`Transaction` that only **schedules** the
-    workflow (`await self.ref().schedule().<workflow_method>(context)`)
-    — never one that makes the model call itself. Full rationale in
+    it. Put the call in a `Workflow` and use the Reboot `Agent`
+    (`reboot.agents.pydantic_ai.Agent`) — it wraps every model and
+    tool call in `at_least_once` for you, so a workflow replay
+    returns the cached response instead of re-billing the provider.
+    Expose any on-demand "do it now" tool as a `Writer`/`Transaction`
+    that only **schedules** the workflow
+    (`await self.ref().schedule().<workflow_method>(context)`) —
+    never one that makes the model call itself. Full rationale in
     `python/references/servicer-transaction.md` (§External Side
-    Effects: Transaction or Workflow?) and
-    `python/references/workflow-method.md`.
+    Effects: Transaction or Workflow?),
+    `python/references/servicer-workflow.md`, and
+    `python/references/agent-pydantic-ai.md`.

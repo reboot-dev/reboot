@@ -128,10 +128,13 @@ mechanics. The patterns in this skill assume you've read them.
 
 **Workflows:**
 
-- `python/references/workflow-method.md` (start here — has the
-  When-to-Pick decision table), then the specific primitive
-  references for `at_most_once` / `at_least_once` / `until` /
-  `until_changes` / `loop` / `state-write` / `idempotency-scopes`.
+- `python/references/servicer-workflow.md` — the single,
+  comprehensive workflow reference. Read it top to bottom: the
+  `@classmethod` / `WorkflowContext` declaration shape, the
+  call-classification decision tree (Reboot scopes vs.
+  `at_least_once` vs. `at_most_once`), `context.loop`, inline state
+  writes,
+  `until` / `until_changes`, and workflow exit semantics.
 
 **Project shell:**
 

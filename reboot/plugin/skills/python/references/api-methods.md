@@ -26,9 +26,11 @@ Servicer method and the isolation level applied:
   effects. Signature: `context: TransactionContext`.
 - **`Workflow(...)`** — durable, long-running, restartable. Implemented as
   a `@classmethod` (no `self.state`). Signature: `context: WorkflowContext`.
-  See the `workflow-*` reference category for the primitives
-  (`at_most_once`, `at_least_once`, `until`, `until_changes`,
-  `context.loop`, and state mutation via `ref().write(context, fn)`).
+  See `servicer-workflow.md` — the single, comprehensive workflow
+  reference — to pick the right primitive for each call (Reboot
+  scopes vs. `at_least_once` vs. `at_most_once`), plus
+  `context.loop`, state mutation via
+  `ref().<scope>.write(context, fn)`, and the rest.
 
 **Incorrect (missing factory):**
 
@@ -134,8 +136,8 @@ work end-to-end:
   - `Reader(...)` → `servicer-reader.md`
   - `Writer(...)` → `servicer-writer.md`
   - `Transaction(...)` → `servicer-transaction.md`
-  - `Workflow(...)` → `workflow-method.md` (the entire `workflow-*`
-    family covers the durable primitives)
+  - `Workflow(...)` → `servicer-workflow.md` (the single,
+    comprehensive workflow reference — durable primitives and all)
   - `factory=True` → `servicer-constructor.md`
 - **Calling these methods**: `rpc-calls.md` (kwargs convention) and
   `rpc-refs.md` (`self.ref().state_id`, never `self.state_id`).

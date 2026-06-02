@@ -1,13 +1,13 @@
 ---
 name: python
-description: Reboot Python framework for building transactional microservices with durable actor state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, implementing Servicers, calling actor refs across services, scheduling work, building durable workflows with `at_most_once`/`at_least_once`/`until` primitives, calling an LLM / building an AI agent in the backend via the durable `reboot.agents.pydantic_ai.Agent`, or testing Reboot applications with the `Reboot()` test harness.
+description: Reboot Python framework for building transactional microservices with durable actor state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, implementing Servicers, calling actor refs across services, scheduling work, building durable workflows with the right call primitive (`.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` for Reboot calls; `at_least_once` / `at_most_once` for external calls; `until` / `until_changes` for reactive waiting on Reboot state), calling an LLM / building an AI agent in the backend via the durable `reboot.agents.pydantic_ai.Agent`, or testing Reboot applications with the `Reboot()` test harness.
 license: Apache-2.0
 metadata:
   author: reboot
   version: "1.0.0"
   organization: Reboot
   date: April 2026
-  abstract: Comprehensive guide for building Reboot Python applications. Covers pydantic API definitions, the Servicer pattern, reader/writer/transaction/workflow contexts, durable workflow primitives (at_most_once / at_least_once / until / until_changes), actor refs, scheduling, the standard library (OrderedMap, Queue, PubSub, Presence, Item), and testing.
+  abstract: Comprehensive guide for building Reboot Python applications. Covers pydantic API definitions, the Servicer pattern, reader/writer/transaction/workflow contexts, the workflow call-classification model (Reboot scopes `.per_workflow` / `.per_iteration` / `.always()` for Reboot calls; external-call primitives `at_least_once` / `at_most_once`; reactive-waiting primitives `until` / `until_changes`), actor refs, scheduling, the standard library (OrderedMap, Queue, PubSub, Presence, Item), and testing.
 ---
 
 # Reboot Python Best Practices
@@ -29,8 +29,12 @@ Reference these guidelines when:
   reader/writer/transaction/workflow methods, errors, constructors)
 - Implementing or modifying a Servicer
 - Calling another actor via `Service.ref(id).method(context, ...)`
-- Building a durable workflow with `WorkflowContext` and the `at_most_once`
-  / `at_least_once` / `until` / `until_changes` primitives
+- Building a durable workflow with `WorkflowContext`, picking the right
+  primitive per `servicer-workflow.md` (Reboot calls use
+  `.per_workflow(alias)` / `.per_iteration(alias)` / `.always()`;
+  external calls default to `at_least_once`, with `at_most_once` for
+  the rare non-retryable call)
+  plus `until` / `until_changes` for reactive waiting
 - Scheduling work via `ref.schedule(when=...).method(context)`
 - Calling an LLM or building an AI agent in the backend via the
   durable `reboot.agents.pydantic_ai.Agent`
@@ -44,15 +48,18 @@ Reference these guidelines when:
 | 1        | Lifecycle  | CRITICAL   | `lifecycle-`  |
 | 2        | API        | CRITICAL   | `api-`        |
 | 3        | Servicer   | HIGH       | `servicer-`   |
-| 4        | Workflow   | HIGH       | `workflow-`   |
-| 5        | Agent      | HIGH       | `agent-`      |
-| 6        | Stdlib     | HIGH       | `stdlib-`     |
-| 7        | State      | HIGH       | `state-`      |
-| 8        | Auth       | HIGH       | `auth-`       |
-| 9        | RPC        | MEDIUM     | `rpc-`        |
-| 10       | Scheduling | MEDIUM     | `scheduling-` |
-| 11       | Testing    | LOW-MEDIUM | `testing-`    |
-| 12       | Patterns   | LOW-MEDIUM | `patterns-`   |
+| 4        | Agent      | HIGH       | `agent-`      |
+| 5        | Stdlib     | HIGH       | `stdlib-`     |
+| 6        | State      | HIGH       | `state-`      |
+| 7        | Auth       | HIGH       | `auth-`       |
+| 8        | RPC        | MEDIUM     | `rpc-`        |
+| 9        | Scheduling | MEDIUM     | `scheduling-` |
+| 10       | Testing    | LOW-MEDIUM | `testing-`    |
+| 11       | Patterns   | LOW-MEDIUM | `patterns-`   |
+
+The `Workflow(...)` context method is the fourth servicer context
+type alongside reader / writer / transaction; its (large) reference
+is `servicer-workflow.md`.
 
 ## Critical Rules
 
@@ -204,20 +211,16 @@ should be loaded for almost every task.
 
 ### Building a workflow
 
-Read **all** of these before writing the body:
-
-- `references/workflow-method.md` — declaration shape (`@classmethod`,
-  `WorkflowContext`, scheduling)
-- `references/workflow-loop.md` — `context.loop(...)` for iteration
-- `references/workflow-at-least-once.md` — default primitive
-- `references/workflow-at-most-once.md` — non-retryable side effects
-  (failure poisons the alias — read the file)
-- `references/workflow-until.md` — wait reactively for a condition
-- `references/workflow-until-changes.md` — react inside a loop
-- `references/workflow-idempotency-scopes.md` — `PER_WORKFLOW` vs.
-  `PER_ITERATION` defaults flip inside a loop
-- `references/workflow-state-write.md` — workflows have no
-  `self.state`; mutate via `Service.ref().write(context, fn)`
+- `references/servicer-workflow.md` — **the** single, comprehensive
+  workflow reference; read it top to bottom before writing the body.
+  Covers the `@classmethod` / `WorkflowContext` declaration shape and
+  scheduling; the call-classification model that routes each call
+  to the right primitive (Reboot scope `.per_workflow(alias)` /
+  `.per_iteration(alias)` / `.always()` vs. external `at_least_once` /
+  `at_most_once`); `context.loop(...)` iteration; inline state
+  mutation via `Service.ref().<scope>.write(context, fn)`;
+  `until` / `until_changes` reactive waiting; and the declared-vs-
+  undeclared exception rule for how a workflow exits
 
 ### Calling an LLM / building an AI agent
 
@@ -258,8 +261,10 @@ The `Agent` runs only inside a `WorkflowContext`, so also read the
 
 ### Implementing a Servicer
 
-- `references/servicer-{reader,writer,transaction,constructor,authorizer}.md`
-  — one per context type and the constructor / authorizer concerns
+- `references/servicer-{reader,writer,transaction,workflow,constructor,authorizer}.md`
+  — one per context type and the constructor / authorizer concerns.
+  `servicer-workflow.md` is the large one — see "Building a workflow"
+  above for when to reach for it
 - `references/rpc-refs.md` — **always read**: `self.ref().state_id` vs.
   `self.state_id` (which doesn't exist) is a recurring trip
 - `references/rpc-calls.md` — **always read**: the kwargs-not-Request
@@ -320,7 +325,7 @@ with "unknown actor type."
 ## Available Reference Files
 
 Reference files live in `references/` and are named
-`{prefix}-{topic}.md` (e.g., `workflow-at-most-once.md`). Load only
+`{prefix}-{topic}.md` (e.g., `servicer-transaction.md`). Load only
 the files relevant to the current task; the "How to Use" section
 above lists the right ones grouped by task type. The full catalog:
 
@@ -345,19 +350,12 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/servicer-reader.md`
 - `references/servicer-writer.md`
 - `references/servicer-transaction.md`
+- `references/servicer-workflow.md` — the single, comprehensive
+  workflow reference (declaration, call-classification, scopes,
+  `context.loop`, external `at_least_once` / `at_most_once`,
+  `until` / `until_changes`, and workflow exit semantics)
 - `references/servicer-constructor.md`
 - `references/servicer-authorizer.md`
-
-**Workflow** (`workflow-`):
-
-- `references/workflow-method.md`
-- `references/workflow-loop.md`
-- `references/workflow-at-most-once.md`
-- `references/workflow-at-least-once.md`
-- `references/workflow-until.md`
-- `references/workflow-until-changes.md`
-- `references/workflow-idempotency-scopes.md`
-- `references/workflow-state-write.md`
 
 **Agent** (`agent-`):
 
