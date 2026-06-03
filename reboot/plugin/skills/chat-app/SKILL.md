@@ -40,8 +40,9 @@ README for the manual install, team auto-enable, and the Codex
 - Modifying state model, methods, or React UI in a Reboot AI Chat App
 - Running an existing Reboot AI Chat App — e.g. at the start of a
   new session. This needs no Plan or Build phase: load the
-  [`run` skill](../run/SKILL.md), which detects the app type and
-  starts the backend, frontend, and MCPJam inspector.
+  [`run` skill](../run/SKILL.md), which detects the app type,
+  starts the backend and frontend, and opens the setup wizard (from
+  which the user can launch MCPJam on demand).
 
 ## Read These From `python` First
 

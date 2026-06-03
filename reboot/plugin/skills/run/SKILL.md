@@ -1,6 +1,6 @@
 ---
 name: run
-description: Run an existing Reboot application locally. Detects whether the project is an MCP Chat App or a standalone Web App, makes sure dependencies and secrets are in place, then starts every process the app needs — the backend (`rbt dev run`), the frontend dev server, and (for Chat Apps) the MCPJam inspector. Use this to bring an app back up, e.g. at the start of a new session.
+description: Run an existing Reboot application locally. Detects whether the project is an MCP Chat App or a standalone Web App, makes sure dependencies and secrets are in place, then starts every process the app needs — the backend (`rbt dev run`) and the frontend dev server (for Chat Apps it also opens the setup wizard, from which the user can launch MCPJam on demand). Use this to bring an app back up, e.g. at the start of a new session.
 argument-hint: [<project-directory>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit, AskUserQuestion
 ---
@@ -51,7 +51,7 @@ strongest first.
 
 If the signals genuinely conflict, or none match, ask the user
 ("Is this an MCP Chat App or a standalone Web App?"). Do not guess —
-the app type changes whether the MCPJam inspector is started.
+the app type changes whether the setup wizard is opened.
 
 ## Step 3 — Dependencies
 
@@ -143,33 +143,34 @@ satisfied — just don't add any reload-driven re-open.
 one to walk through the wizard — in both cases skip this step
 entirely: don't announce or open the wizard.
 
-### MCPJam inspector — Chat Apps only
+### MCPJam inspector — on demand, never during startup
 
-First wait until the backend logs show a passed health check and
-the printed inspect-page URL — that confirms the backend is ready.
-Then read the server name from `mcp_servers.json` and start the
-inspector:
+Do **not** start the MCPJam inspector as part of bringing the app
+up. MCPJam is just one of the MCP clients the setup wizard offers
+(alongside Claude and ChatGPT), so starting it is only relevant
+once the user picks **MCPJam** in the wizard. When they do, the
+wizard's MCPJam step shows the exact launch command — pointed at
+the app's `/mcp` endpoint with OAuth — for the user to run from
+their own terminal:
 
 ```sh
-npx @mcpjam/inspector@2.4.12 --config mcp_servers.json --server <name>
+npx @mcpjam/inspector@2.5.0 --url http://localhost:9991/mcp --oauth
 ```
 
-If `mcp_servers.json` is missing, create it first (the server name
-is the application name from `.rbtrc`):
+Leave the launch to the wizard. Only run it yourself if the user
+explicitly asks you to, and then use the plugin's
+`mcpjam-inspector` shim (it pins the version and passes `--no-open`
+so it does not pop a browser tab — you surface the URL instead):
 
-```json
-{
-  "mcpServers": {
-    "<name>": { "url": "http://localhost:9991/mcp", "useOAuth": true }
-  }
-}
+```sh
+mcpjam-inspector --url http://localhost:9991/mcp --oauth
 ```
 
-The inspector binds the fixed port 6274; its launcher orphans the
-server on `SIGTERM`, so the plugin reaps it when the agent session
-ends. Claude Code does this automatically via a `SessionEnd` hook;
-Codex has no session-end event, so see the README for how cleanup
-is handled there.
+Either way the inspector binds the fixed port 6274; its launcher
+orphans the server on `SIGTERM`, so the plugin reaps whatever is on
+6274 when the agent session ends. Claude Code does this
+automatically via a `SessionEnd` hook; Codex has no session-end
+event, so see the README for how cleanup is handled there.
 
 ## Step 6 — Hand off
 
@@ -177,13 +178,16 @@ Confirm every process is up from its logs, then give the user:
 
 - the application's own inspect-page URL;
 - for a Chat App — the setup-wizard URL (`http://localhost:9991`,
-  already opened for them, for connecting an MCP client), the
-  MCPJam inspector URL, and a first prompt to try (e.g. "Create a
-  new todo list and show it to me");
+  already opened for them, for connecting an MCP client) and a
+  first prompt to try (e.g. "Create a new todo list and show it to
+  me"). Don't hand over an MCPJam URL — MCPJam isn't running, and
+  only starts if the user picks it in the wizard (see the on-demand
+  step above);
 - for a Web App — the frontend dev-server URL and a first page to
   open.
 
 > **Always start every process the app needs.** A Chat App needs
-> all three — backend, frontend, MCPJam inspector; a Web App needs
-> both — backend, frontend. The app is not usable until they are
-> all up, so do not stop after one or two.
+> backend and frontend; a Web App needs the same. (MCPJam is not in
+> this set — it is launched on demand from the wizard, only if the
+> user picks it.) The app is not usable until both are up, so do
+> not stop after one.

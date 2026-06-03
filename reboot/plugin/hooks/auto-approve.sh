@@ -226,11 +226,14 @@ case "$tool" in
                             || exit 1
                         approved=$((approved + 1))
                         ;;
-                    'npx @mcpjam/inspector'*)
-                        # `run` skill — MCPJam inspector for Chat Apps.
-                        # Its `--config <file>` / `--server <name>`
-                        # arguments are not flags, so the project gate
-                        # and the metacharacter screen are the guard.
+                    'npx @mcpjam/inspector'* | 'mcpjam-inspector'*)
+                        # `run` skill — MCPJam inspector for Chat Apps,
+                        # whether invoked directly or via the plugin's
+                        # `mcpjam-inspector` shim (the on-demand path
+                        # when the user asks us to launch it). Its
+                        # `--url <url>` / `--config <file>` arguments are
+                        # not flags, so the project gate and the
+                        # metacharacter screen are the guard.
                         in_reboot_project "$effective_dir" || exit 1
                         approved=$((approved + 1))
                         ;;

@@ -106,15 +106,22 @@ interface MCPJamLaunchStepProps {
   connections: readonly HostConnection[];
 }
 
-// Default port that the MCPJam inspector listens on locally. We
-// run an instance for the developer alongside their app, so this
-// is the URL we send them to.
+// Default port the MCPJam inspector binds once the developer
+// launches it (see the command below). MCPJam's own browser tab
+// normally opens on launch; this is the URL we link to as a
+// fallback if it doesn't.
 const MCPJAM_LOCAL_URL = "http://localhost:6274";
 
+// MCPJam inspector version the launch command pins to. Kept in
+// sync with the plugin's `bin/mcpjam-inspector` shim so a
+// hand-launched inspector matches the one an agent would start.
+const MCPJAM_VERSION = "2.5.0";
+
 // Step 01 variant for MCPJam — no tunnel needed, and MCPJam runs
-// locally so there's no separate "install" step either: the
-// developer just opens the inspector and we wait for the first
-// request to come in from MCPJam.
+// locally so there's no separate "install" step either. The
+// developer launches the inspector themselves with the command
+// below — pointed straight at this app's `/mcp` endpoint, with
+// OAuth — and then we wait for the first request to come in.
 export const MCPJamLaunchStep = ({
   appPort,
   connections,
@@ -131,6 +138,13 @@ export const MCPJamLaunchStep = ({
       connection.forwardedHost === expectedHost &&
       connection.userAgents.includes("node")
   );
+
+  // Self-contained launch command — no config file or server name
+  // to look up. `--url` points MCPJam straight at this app's MCP
+  // endpoint and `--oauth` runs the handshake on connect.
+  const launchCommand =
+    `npx @mcpjam/inspector@${MCPJAM_VERSION} ` +
+    `--url http://localhost:${appPort}/mcp --oauth`;
 
   // Wrap in an `aria-live` region so the flip to "connected!" gets
   // announced to screen-reader users — same pattern as the chat-
@@ -154,29 +168,28 @@ export const MCPJamLaunchStep = ({
       stepLabel="Local inspector"
       title={
         <>
-          Open the <em>MCPJam</em> inspector.
+          Launch the <em>MCPJam</em> inspector.
         </>
       }
       intro={
-        <>MCPJam runs alongside your app on this machine — no tunnel needed.</>
+        <>
+          MCPJam runs alongside your app on this machine — no tunnel needed. Run
+          this in your project from a new terminal; it opens MCPJam in your
+          browser.
+        </>
       }
     >
-      <div className="actions">
-        <a
-          className="button button--primary"
-          href={MCPJAM_LOCAL_URL}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Open MCPJam ↗
-        </a>
-      </div>
+      <InlineCode text={launchCommand} />
 
       <Substep done={connected} title={waitingSubstepTitle}>
         {!connected && (
           <p className="substep__body-text">
-            Open MCPJam and send a request; we'll collapse this once we've seen
-            one.
+            Once MCPJam opens, send a request; we'll collapse this once we've
+            seen one. If no browser tab opens, visit{" "}
+            <a href={MCPJAM_LOCAL_URL} target="_blank" rel="noreferrer">
+              {MCPJAM_LOCAL_URL}
+            </a>
+            .
           </p>
         )}
       </Substep>

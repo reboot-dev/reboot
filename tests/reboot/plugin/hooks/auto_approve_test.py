@@ -624,6 +624,23 @@ REBOOT_DEV_CASES: list[tuple[str, str, Where, Decision]] = [
         Decision.APPROVE,
     ),
     (
+        # On-demand launch via the `mcpjam-inspector` shim, pointed
+        # at the app's `/mcp` endpoint (the form the setup wizard
+        # shows and the `run` skill uses when asked to launch it).
+        "dev: mcpjam-inspector shim with --url",
+        "mcpjam-inspector --url http://localhost:9991/mcp --oauth",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        # The shim must still defer outside a Reboot project, same
+        # as the `npx` form.
+        "dev: mcpjam-inspector shim outside a Reboot project",
+        "mcpjam-inspector --url http://localhost:9991/mcp --oauth",
+        Where.NON_PROJECT,
+        Decision.REJECT,
+    ),
+    (
         # The exact shape from the user's report: an absolute `cd`
         # into the project's `web/` from an unrelated `cwd`. The gate
         # must follow the `cd` target, not `cwd`.
