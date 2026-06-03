@@ -61,7 +61,7 @@ Also make sure to include the `OrderedMap` library when starting up your `Applic
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 ```py
-from reboot.std.collections.ordered_map.v1 import ordered_map
+from reboot.std.collections.ordered_map.v1.ordered_map import ordered_map_library
 
 async def main():
     application = Application(
@@ -72,12 +72,51 @@ async def main():
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 ```ts
-import orderedMap from "@reboot-dev/reboot-std/collections/ordered_map/v1";
+import { orderedMapLibrary } from "@reboot-dev/reboot-std/collections/ordered_map/v1";
 
 new Application({
-  servicers: [MyServicer, ...orderedMap.servicers()],
+  servicers: [MyServicer],
+  libraries: [orderedMapLibrary()],
   initialize,
 }).run();
+```
+  </TabItem>
+</Tabs>
+
+
+### Authorizer
+
+By default, `OrderedMap` allows internal calls from the application to the
+library. However, this can be overridden by providing your own
+[authorizer](/learn_more/auth#authorizers).
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+authorizer = OrderedMap.Authorizer(
+    insert=allow_if(all=[is_app_internal]),
+    search=allow(),
+)
+
+application = Application(
+    servicers=[MyServicer],
+    libraries=[ordered_map_library(authorizer=authorizer)],
+)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const authorizer = new OrderedMap.Authorizer({
+  insert: allowIf({ all: [isAppInternal] }),
+  search: allow(),
+});
+
+const application = new Application({
+  servicers: [MyServicer],
+  libraries: [orderedMapLibrary({ authorizer })],
+  initialize,
+});
+
 ```
   </TabItem>
 </Tabs>
@@ -541,3 +580,73 @@ try {
 ```
   </TabItem>
 </Tabs>
+
+## React
+
+Once you've [set up](/learn_more/call/from_react) your React app to call into
+your Reboot API, you can also use `OrderedMap` directly from your React app.
+
+First, on your backend, you will need to [override the authorizer](#authorizer) to allow
+calls from your front end directly to `OrderedMap` methods.
+
+Second, add `@reboot-dev/reboot-std-api` to your `package.json`.
+
+```
+npm install -S @reboot-dev/reboot-std-api
+```
+
+Third, import the React library for `OrderedMap` in your React app.
+
+```ts
+import { useOrderedMap } from "@reboot-dev/reboot-std-api/collections/ordered_map/v1/ordered_map_rbt_react.js";
+```
+
+Then, you can access your `OrderedMap`. For example, you can call a writer method, such as [`insert()`](#insert):
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/react/test_ordered_map/ordered_map.test.tsx&lines=34-44) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/react/test_ordered_map/ordered_map.test.tsx -->
+
+```tsx
+const map = useOrderedMap({ id: "my-map" });
+
+const handleClick = () => {
+  map.insert({ key: "my-key", value: Value.fromJson("new value") });
+};
+
+return (
+  <button id="button" onClick={handleClick}>
+    Insert New Value
+  </button>
+);
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+Or a reader, such as [`search()`](#search):
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/react/test_ordered_map/ordered_map.test.tsx&lines=49-61) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/react/test_ordered_map/ordered_map.test.tsx -->
+
+```tsx
+const map = useOrderedMap({ id: "my-map" });
+
+const { aborted, response } = map.useSearch({ key: "my-key" });
+
+if (aborted !== undefined) {
+  return <div id="error">Errored while searching.</div>;
+} else if (response === undefined) {
+  return <div id="loading">Loading...</div>;
+} else if (!response.found) {
+  return <div id="not-found">Not found</div>;
+} else {
+  return <div id="map-value">{response.value?.toJson() as string}</div>;
+}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+See [Call your API from
+React](/learn_more/call/from_react) to learn more about how to call methods from
+React.
