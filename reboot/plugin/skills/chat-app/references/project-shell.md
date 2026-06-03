@@ -107,14 +107,67 @@ virtual = true
 managed = true
 ```
 
+### `example_prompts.py`
+
+Every MCP Chat App ships a list of `ExamplePrompt`s — the
+ready-to-send chat scenarios the root-page wizard offers users so
+they can try the app the moment it's running. Keep them in their own
+`backend/src/example_prompts.py` module so `main.py` stays a thin
+entry point:
+
+```python
+from reboot.application import ExamplePrompt
+
+example_prompts = [
+    ExamplePrompt(
+        title="Track your morning coffee",
+        prompts=[
+            "Create a new counter for tracking how many cups of "
+            "coffee I drink today, and show me the counter.",
+            "I just finished a cup — increment my coffee counter "
+            "and show it to me again.",
+        ],
+    ),
+    ExamplePrompt(
+        title="Run a quick scoreboard",
+        prompts=[
+            "Create two counters, 'wins' and 'losses', for my "
+            "board-game nights.",
+            "I just won a game — show me the wins counter so I "
+            "can bump it.",
+            "List all my counters and their current values.",
+        ],
+    ),
+]
+```
+
+`ExamplePrompt` (re-exported from `reboot.application`) has two
+fields: `title`, a short human-readable label that is the example's
+identity key — re-registering a prompt with the same `title`
+replaces the existing entry; and `prompts`, the ordered list of
+chat messages the user sends one per turn. A single example is a
+**sequence** that walks an end-to-end flow through the app's MCP
+tools (create something → act on it → view the result), not a single
+isolated message. Write three or so examples that together exercise
+the app's main user stories, phrased the way a real user would talk
+to the chat client. Most prompts should end on a natural
+"show me / open / view ..." turn that renders a `UI()` component
+rather than only calling tool-only methods — see "Example Prompts"
+in `SKILL.md` for the full rule. The counter set above does this
+with its "…and show me the counter" / "show me the wins counter"
+turns. See the worked set in
+`public/reboot/examples/ai-chat-counter/backend/src/example_prompts.py`.
+
 ### `main.py`
 
-Register all servicers (User + application types). Shape per
+Register all servicers (User + application types) and pass the
+`example_prompts` through so the wizard can show them. Shape per
 `python/references/lifecycle-application-entry.md`:
 
 ```python
 import asyncio
 import logging
+from example_prompts import example_prompts
 from reboot.aio.applications import Application
 from servicers.<name> import (
     CounterServicer,
@@ -129,7 +182,13 @@ logging.basicConfig(
 
 async def main() -> None:
     application = Application(
+        title="Chat Counter",
+        description=(
+            "Lets a chat client create, list, increment, and "
+            "show counters on your behalf."
+        ),
         servicers=[UserServicer, CounterServicer],
+        example_prompts=example_prompts,
     )
     await application.run()
 
@@ -138,9 +197,12 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-A typical chat app has no `initialize` hook — the auto-constructed
-`User` covers per-user setup and application-type instances are
-created on demand by `User`'s Transaction methods.
+`title` and `description` are also surfaced by the wizard, so set
+both to something human-readable (`title` defaults to the
+application name if omitted). A typical chat app has no `initialize`
+hook — the auto-constructed `User` covers per-user setup and
+application-type instances are created on demand by `User`'s
+Transaction methods.
 
 ### State Is Durable
 

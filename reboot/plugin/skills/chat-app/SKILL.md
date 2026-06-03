@@ -127,7 +127,7 @@ they cover aren't restated inline below.
 
 | Reference                                                                  | What's in it                                                                                                                                                                                                                                                                                                                                                                         |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`references/project-shell.md`](references/project-shell.md)               | `.python-version`, `.rbtrc` deltas (HMR + dist configs), `pyproject.toml` extras, `main.py` shape, durable-state setup.                                                                                                                                                                                                                                                              |
+| [`references/project-shell.md`](references/project-shell.md)               | `.python-version`, `.rbtrc` deltas (HMR + dist configs), `pyproject.toml` extras, `main.py` shape, the `example_prompts.py` module wired into `Application(example_prompts=...)`, durable-state setup.                                                                                                                                                                               |
 | [`references/api-method-types.md`](references/api-method-types.md)         | The pydantic API file. `User`-type front door, `mcp=Tool()` / `mcp=None`, `UI()` (including parameterized UI props), `factory=True` on `create`, `Workflow(...)` declaration shape. Full Counter API example.                                                                                                                                                                        |
 | [`references/api-state-shapes.md`](references/api-state-shapes.md)         | Two recurring state shapes: `list[Item]` with `default_factory=list`; single nested `Model` sub-objects as `Optional[X] = Field(tag=N, default=None)` hydrated in factory `create` (Gotcha #13). The state-inside-state regression and how to compose state actors via string ID + `ref(id)`.                                                                                        |
 | [`references/servicer-patterns.md`](references/servicer-patterns.md)       | Servicer-side patterns: `UserServicer` calling `<X>.create(context)`, Workflow Servicer with `MyType.ref()` (no-arg) magic, inline writers via `.per_workflow("alias").write(context, fn)` / `.per_iteration("alias").write(...)` / `.always().write(...)`, scheduling a workflow from a Transaction with `.schedule()`.                                                             |
@@ -155,6 +155,11 @@ method types wrong means regenerating everything across 12+ files.
    - Method map: which operations, which method type
      (Reader/Writer/Transaction/Workflow), which get `UI()`.
    - Tool surface: what the AI will see as callable tools.
+   - Example prompts: the ~3 named chat scenarios the root-page
+     wizard will offer, each a sequence of messages exercising a
+     main user story — and most of them ending on a turn that
+     renders a `UI()` component, not just a tool call (see
+     "Example Prompts" under Key Framework Concepts).
 4. Get user approval before writing any files.
 5. Then execute the Step-by-Step Build Flow.
 
@@ -469,6 +474,43 @@ State survives restarts. `dev run --application-name=<name>` in
 `.rbtrc` (see [`references/project-shell.md`](references/project-shell.md))
 is what makes that work.
 
+### Example Prompts (Root-Page Wizard)
+
+Every MCP Chat App ships **example prompts** — short, named chat
+scenarios the root-page wizard shows users so they can try the app
+the moment it boots, without having to invent a first message. They
+are not optional polish: a fresh user landing on the wizard with no
+suggested prompts has nothing to click, so always author a set.
+
+An example prompt is an `ExamplePrompt(title=..., prompts=[...])`
+(imported from `reboot.application`). The `title` is a short label
+(and the identity key — same title replaces an existing entry); the
+`prompts` are an **ordered sequence** of chat messages the user sends
+one per turn, walking a real end-to-end flow through the app's MCP
+tools (create something → act on it → view the result), not one
+isolated message. Write ~3 examples that together cover the app's
+main user stories, phrased the way a real user would talk to the
+chat client.
+
+**Make the prompts show the UI, not just call tools.** The embedded
+React UIs (the `UI()` methods) are the whole reason this is an MCP
+**App** and not a plain MCP server — a flow that only calls
+tool-only methods and never renders a component demos the boring
+half. Every example should end on (or pass through) a turn that
+triggers a `UI()` method — phrase that turn as a natural "show me
+/ open / view ..." request so the AI picks the UI tool. In the counter
+example, the "…and show me the counter" / "show me the wins counter"
+turns are exactly this: they resolve to the `Counter` UI and render the
+live component, not just a text reply. When you write the set, look at
+the method map from the plan: for each `UI()` method, make sure at
+least one example drives the user to it.
+
+They live in `backend/src/example_prompts.py` and are passed to
+`Application(example_prompts=...)` in `main.py`. Full file shapes and
+a worked set are in
+[`references/project-shell.md`](references/project-shell.md); the
+`ai-chat-counter` example is the canonical reference.
+
 ## Project Structure
 
 ```
@@ -482,6 +524,7 @@ is what makes that work.
 ├── backend/
 │   └── src/
 │       ├── main.py          # Application entrypoint
+│       ├── example_prompts.py  # Wizard example prompts
 │       └── servicers/
 │           └── <name>.py    # Servicer implementation
 └── web/
@@ -516,7 +559,9 @@ application directory.**
 5. Write servicer (`backend/src/servicers/<name>.py`) — see
    [`references/servicer-patterns.md`](references/servicer-patterns.md);
    context-type rules in `python/references/servicer-*.md`.
-6. Write `main.py` — see
+6. Write `backend/src/example_prompts.py` (the wizard's example
+   prompts) and `main.py` (which imports them and passes
+   `example_prompts=` to `Application`) — see
    [`references/project-shell.md`](references/project-shell.md) and
    `python/references/lifecycle-application-entry.md`.
 7. `npm create @reboot-dev/ui`.
@@ -565,7 +610,10 @@ When modifying an existing app:
 3. Update API definition → re-run `uv run rbt generate`.
 4. Update servicer methods.
 5. Update React components.
-6. If the app isn't already running, bring it up with the
+6. When the change adds a new user-facing capability, add or update
+   an example prompt in `backend/src/example_prompts.py` so the
+   wizard surfaces the new flow.
+7. If the app isn't already running, bring it up with the
    [`run` skill](../run/SKILL.md). If it is already running under
    `rbt dev run`, the `--watch` globs reload it automatically — no
    restart needed. Editing `.env` likewise triggers a restart, so
