@@ -371,7 +371,16 @@ application directory.**
     and the page components, calling generated `use<Type>()` hooks
     for reader subscriptions and mutations. Field-name conversion is
     Python-snake → TypeScript-camel; request/response types are
-    Zod-validated.
+    Zod-validated. A reader hook returns both `isLoading` and
+    `response`: use `isLoading` (the stream's connection state) for
+    loading/disconnected indicators (`!isLoading`, debounced, is a
+    connected/disconnected badge) and `response !== undefined` to
+    guard data access (it's also the only one that narrows
+    `response`'s `T | undefined` type). They diverge: an aborted
+    reader is `!isLoading` with no `response`; a reconnect is
+    `isLoading` with stale `response`. Transport disconnects
+    auto-reconnect and do **not** surface via `aborted`, so don't
+    reach for `aborted` or a heartbeat for an online/offline badge.
 11. `cd web && npm run build` (sanity check the bundle).
 12. **Write and run backend unit tests covering each user-facing
     user story before handing the app off.** Enumerate the user
