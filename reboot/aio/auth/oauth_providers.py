@@ -491,6 +491,213 @@ class GitHub(RegisteredOAuthProvider):
         )
 
 
+class Auth0(RegisteredOAuthProvider):
+    """
+    Auth0 OAuth provider (OpenID Connect).
+
+    Auth0 is an identity broker: a single Auth0 application can let
+    users sign in through any of the connections you enable in the
+    Auth0 dashboard (Google, GitHub, username/password, enterprise
+    SSO, …). To the app it's one OIDC provider — the per-user choice
+    of login method happens upstream, in Auth0, not here.
+
+    All endpoints live under your tenant domain (e.g.
+    `your-tenant.us.auth0.com`), so unlike `Google`/`GitHub` this
+    provider takes a `domain`. Register a "Regular Web Application" in
+    Auth0 and add Reboot's callback (`<base>/__/oauth/callback`) to its
+    allowed callback URLs; the app's client ID/secret are the
+    `client_id`/`client_secret` here.
+
+    Obtains the user ID from the OIDC ID token's `sub` claim (shaped
+    like `<connection>|<id>`, e.g. `google-oauth2|108…`), falling back
+    to the `/userinfo` endpoint if no ID token is returned.
+    """
+
+    # `openid` is the minimum OIDC scope; yields an ID token with the
+    # `sub` claim (the user's Auth0 ID). Add `profile`/`email` via
+    # `scopes=` if the app needs them.
+    _REQUIRED_SCOPE = "openid"
+
+    # Auth0 grants a refresh token only when `offline_access` is
+    # requested (the analogue of Google's `access_type=offline`); see
+    # `authorization_url`.
+    _OFFLINE_ACCESS_SCOPE = "offline_access"
+
+    def __init__(
+        self,
+        *,
+        # The Auth0 tenant domain, e.g. `your-tenant.us.auth0.com`. A
+        # full `https://...` URL or a trailing slash is tolerated.
+        domain: Optional[str],
+        client_id: Optional[str],
+        client_secret: Optional[str],
+        scopes: Optional[list[str]] = None,
+        store_tokens: bool = False,
+    ):
+        super().__init__(
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=scopes,
+            store_tokens=store_tokens,
+        )
+        self._domain = self._normalize_domain(domain)
+
+    @staticmethod
+    def _normalize_domain(domain: Optional[str]) -> str:
+        """Strip a leading scheme and any trailing slash from an Auth0
+        `domain` so both `your-tenant.auth0.com` and the full
+        `https://your-tenant.auth0.com/` form work; returns `""` for a
+        missing domain (caught later by `validate()`).
+        """
+        if not domain:
+            return ""
+        parsed = urlparse(domain)
+        # `urlparse("tenant.auth0.com")` puts everything in `path` (no
+        # scheme), whereas `urlparse("https://tenant.auth0.com")` puts it
+        # in `netloc`; take whichever is populated.
+        host = parsed.netloc or parsed.path
+        return host.strip("/")
+
+    @staticmethod
+    def _sub_from_id_token(id_token: Optional[str]) -> Optional[str]:
+        """Decode an OIDC ID token and return its `sub` claim, or `None`
+        if there's no token or no `sub`.
+
+        Decodes without verifying the signature: we received this token
+        directly from the provider's token endpoint over TLS, so the
+        transport guarantees authenticity (the same reasoning `Google`
+        applies). We don't restrict `algorithms` because the signature
+        isn't checked and Auth0 tenants may sign with RS256 or HS256.
+        """
+        if not id_token:
+            return None
+        decoded = jwt.decode(id_token, options={"verify_signature": False})
+        return decoded.get("sub")
+
+    @property
+    def _authorization_endpoint(self) -> str:
+        return f"https://{self._domain}/authorize"
+
+    @property
+    def _token_endpoint(self) -> str:
+        return f"https://{self._domain}/oauth/token"
+
+    @property
+    def _userinfo_endpoint(self) -> str:
+        return f"https://{self._domain}/userinfo"
+
+    def validate(self) -> None:
+        # Validate the credentials the base class knows about, then the
+        # `domain` that's unique to Auth0 — same fail-fast contract, so
+        # a missing `AUTH0_DOMAIN` is caught at selection time, not
+        # mid-sign-in.
+        super().validate()
+        if not self._domain:
+            raise InputError(
+                reason="Auth0 requires a non-empty `domain`.",
+            )
+
+    def authorization_url(
+        self,
+        state: str,
+        redirect_uri: str,
+    ) -> str:
+        scopes = self._requested_scopes()
+        # Auth0 asks for refresh tokens via the `offline_access` scope
+        # (where Google uses `access_type=offline`). Only request it
+        # when we're actually capturing tokens, to avoid prompting the
+        # user for offline access we'd never use.
+        if self._store_tokens and self._OFFLINE_ACCESS_SCOPE not in scopes:
+            scopes = scopes + [self._OFFLINE_ACCESS_SCOPE]
+        params = {
+            "client_id": self._client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": " ".join(scopes),
+            "state": state,
+        }
+        return f"{self._authorization_endpoint}?{urlencode(params)}"
+
+    async def exchange_code(
+        self,
+        code: str,
+        redirect_uri: str,
+    ) -> ExchangeResult:
+        """
+        Exchange the Auth0 auth code for a user ID (and tokens).
+        """
+        data = {
+            "grant_type": "authorization_code",
+            "client_id": self._client_id,
+            "client_secret": self._client_secret,
+            "code": code,
+            "redirect_uri": redirect_uri,
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                self._token_endpoint,
+                data=data,
+            ) as response:
+                response.raise_for_status()
+                token_response = await response.json()
+
+            user_id = self._sub_from_id_token(token_response.get("id_token"))
+            if user_id is None:
+                # No ID token (shouldn't happen with the `openid`
+                # scope, but be defensive): fall back to `/userinfo`,
+                # which returns the same `sub` for the access token.
+                access_token = token_response.get("access_token")
+                if access_token is None:
+                    raise ValueError(
+                        "Auth0 token response contained neither an "
+                        "'id_token' nor an 'access_token'; cannot "
+                        "resolve the user's identity."
+                    )
+                async with session.get(
+                    self._userinfo_endpoint,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                ) as response:
+                    response.raise_for_status()
+                    user_info = await response.json()
+                user_id = user_info.get("sub")
+
+        if user_id is None:
+            raise ValueError(
+                "Auth0 did not return a 'sub' claim; cannot resolve "
+                "the user's identity."
+            )
+        return ExchangeResult(
+            user_id=UserId(user_id),
+            tokens=self._tokens_from_response(token_response),
+        )
+
+    def _tokens_from_response(
+        self,
+        token_response: dict,
+    ) -> Optional[IdpTokens]:
+        """Build an `IdpTokens` from an Auth0 token endpoint response, or
+        `None` when token storage isn't enabled or no access token came
+        back. Auth0 only returns a `refresh_token` when `offline_access`
+        was requested (see `authorization_url`).
+        """
+        if not self._store_tokens:
+            return None
+        access_token = token_response.get("access_token")
+        if access_token is None:
+            return None
+        return IdpTokens(
+            access_token=access_token,
+            refresh_token=token_response.get("refresh_token"),
+            expires_at=_expires_at_from_expires_in(
+                token_response.get("expires_in")
+            ),
+            scopes=_scopes_from_response(
+                token_response.get("scope"),
+                self._requested_scopes(),
+            ),
+        )
+
+
 class Anonymous(OAuthProvider):
     """
     Anonymous provider — no external identity provider.

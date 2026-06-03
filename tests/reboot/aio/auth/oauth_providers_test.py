@@ -11,6 +11,7 @@ from mcp.client.streamable_http import streamable_http_client
 from reboot.aio.applications import Application
 from reboot.aio.auth.oauth_providers import (
     Anonymous,
+    Auth0,
     Development,
     ExchangeResult,
     GitHub,
@@ -313,6 +314,83 @@ class GitHubValidateTest(unittest.TestCase):
         self.assertIn("`client_secret`", str(context.exception))
 
 
+class Auth0ValidateTest(unittest.TestCase):
+    """
+    Same shape as `GoogleValidateTest`/`GitHubValidateTest`, plus the
+    extra `domain` that's unique to Auth0 — each missing field names
+    itself and (for the credentials) the `Auth0` class, so a developer
+    reading startup logs knows which env var to set.
+    """
+
+    def test_none_client_id_message_names_auth0(self):
+        provider = Auth0(
+            domain="tenant.auth0.com",
+            client_id=None,
+            client_secret="secret",
+        )
+        with self.assertRaises(InputError) as context:
+            provider.validate()
+        self.assertIn("Auth0", str(context.exception))
+        self.assertIn("`client_id`", str(context.exception))
+
+    def test_none_client_secret_message_names_auth0(self):
+        provider = Auth0(
+            domain="tenant.auth0.com",
+            client_id="id",
+            client_secret=None,
+        )
+        with self.assertRaises(InputError) as context:
+            provider.validate()
+        self.assertIn("Auth0", str(context.exception))
+        self.assertIn("`client_secret`", str(context.exception))
+
+    def test_missing_domain_rejected(self):
+        # The `domain` is what `Google`/`GitHub` don't have; a missing
+        # one must fail validation just like a missing credential.
+        provider = Auth0(
+            domain=None,
+            client_id="id",
+            client_secret="secret",
+        )
+        with self.assertRaises(InputError) as context:
+            provider.validate()
+        self.assertIn("Auth0", str(context.exception))
+        self.assertIn("`domain`", str(context.exception))
+
+    def test_all_supplied_passes(self):
+        Auth0(
+            domain="tenant.auth0.com",
+            client_id="id",
+            client_secret="secret",
+        ).validate()
+
+
+class Auth0DomainTest(unittest.TestCase):
+    """The `domain` is accepted bare or as a full URL, and the
+    authorization endpoint is derived from it under the tenant — that's
+    what lets a developer paste either form from the Auth0 dashboard."""
+
+    def test_bare_domain_builds_tenant_authorize_url(self):
+        url = Auth0(
+            domain="tenant.us.auth0.com",
+            client_id="id",
+            client_secret="s",
+        ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        self.assertTrue(
+            url.startswith("https://tenant.us.auth0.com/authorize?")
+        )
+
+    def test_full_url_domain_is_normalized(self):
+        # A pasted `https://tenant.auth0.com/` must resolve to the same
+        # endpoint as the bare host, not a doubled-up scheme.
+        url = Auth0(
+            domain="https://tenant.auth0.com/",
+            client_id="id",
+            client_secret="s",
+        ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        self.assertTrue(url.startswith("https://tenant.auth0.com/authorize?"))
+
+
 def _scope_param(authorization_url: str) -> list[str]:
     """Extract the space-delimited `scope` query parameter from an
     authorization URL as a list."""
@@ -382,6 +460,48 @@ class ScopeTest(unittest.TestCase):
         ).authorization_url(state="x", redirect_uri="http://localhost/cb")
         scopes = _scope_param(url)
         self.assertEqual(scopes.count("read:user"), 1)
+
+    def test_auth0_defaults_to_openid_only(self):
+        url = Auth0(
+            domain="tenant.auth0.com",
+            client_id="id",
+            client_secret="s",
+        ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        self.assertEqual(_scope_param(url), ["openid"])
+
+    def test_auth0_adds_extra_scopes_after_base(self):
+        url = Auth0(
+            domain="tenant.auth0.com",
+            client_id="id",
+            client_secret="s",
+            scopes=["profile", "email"],
+        ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        scopes = _scope_param(url)
+        self.assertEqual(scopes[0], "openid")
+        self.assertIn("profile", scopes)
+        self.assertIn("email", scopes)
+
+    def test_auth0_store_tokens_requests_offline_access(self):
+        # Auth0 issues a refresh token only when `offline_access` is in
+        # the requested scopes (the analogue of Google's
+        # `access_type=offline`); we add it only when storing tokens.
+        plain = _scope_param(
+            Auth0(
+                domain="tenant.auth0.com",
+                client_id="id",
+                client_secret="s",
+            ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        )
+        self.assertNotIn("offline_access", plain)
+        storing = _scope_param(
+            Auth0(
+                domain="tenant.auth0.com",
+                client_id="id",
+                client_secret="s",
+                store_tokens=True,
+            ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        )
+        self.assertIn("offline_access", storing)
 
     def test_provider_without_store_tokens_does_not_store(self):
         self.assertFalse(
