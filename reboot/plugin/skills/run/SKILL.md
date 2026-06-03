@@ -116,8 +116,8 @@ An MCP Chat App's backend serves an interactive **setup wizard** at
 its root URL (`http://localhost:9991`) — a browser page that walks
 the user through connecting the app to an MCP client (such as
 MCPJam: picking a client, copying the `/mcp` endpoint, completing
-the OAuth handshake). It is the natural starting point, so open it
-**before** the MCPJam inspector.
+the OAuth handshake). It is the natural starting point — and the
+place the user launches MCPJam from, if they pick it — so open it.
 
 Once the backend logs show it is serving traffic, do two things:
 
@@ -138,10 +138,13 @@ you open it as a one-shot step during initial startup (not from a
 loop that watches for the backend coming back up), this is naturally
 satisfied — just don't add any reload-driven re-open.
 
-**Only for MCP apps.** A **Web App** has no MCP surface, and a
-**backend-only app** (no `UI()`, no MCP client to connect) has no
-one to walk through the wizard — in both cases skip this step
-entirely: don't announce or open the wizard.
+**Skip this only for a Web App.** A **Web App** has no MCP surface,
+so no wizard is served and there's nothing to connect — don't
+announce or open it. Every other app here is an MCP app, and the
+wizard is how you point a client at it, so open it even for a
+**tools-only app** with no `UI()` methods: connecting MCPJam or
+Claude through the wizard is exactly how the user tries those MCP
+tools out.
 
 ### MCPJam inspector — on demand, never during startup
 

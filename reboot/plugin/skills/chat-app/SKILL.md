@@ -599,8 +599,19 @@ application directory.**
 14. Run the app — load the [`run` skill](../run/SKILL.md) and
     follow it. It is the single canonical "start the app"
     procedure: it detects the app type, makes sure dependencies
-    and secrets are in place, and starts the backend, frontend,
-    and MCPJam inspector.
+    and secrets are in place, and starts the backend and
+    frontend. **The handoff for a Chat App is the setup wizard,
+    not the `/mcp` URL.** The backend serves an interactive
+    **setup wizard at its root (`http://localhost:9991`)** — the
+    page that connects an MCP client (Claude, ChatGPT, MCPJam, …)
+    and completes OAuth. As the run skill directs, surface that
+    URL to the user and open it once at first startup. Do **not**
+    start the MCPJam inspector as part of running the app — it
+    launches on demand, only if the user picks it in the wizard.
+    Don't bypass the run skill by invoking `rbt dev run` /
+    `npm run dev` by hand: those bare commands print only the
+    API/MCP/inspect URLs, dropping the wizard hint the user
+    actually needs.
 
 ## Update Flow
 
