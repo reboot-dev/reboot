@@ -192,6 +192,7 @@ py_library(
     deps = [
         requirement("fastapi"),
         requirement("uvicorn"),
+        ":caller_id_py",
         ":external_py",
         ":types_py",
         "//reboot:wait_for_tasks_py",

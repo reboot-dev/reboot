@@ -4,9 +4,10 @@ import uvicorn  # type: ignore[import]
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from fastapi import Depends, FastAPI  # type: ignore[import]
+from reboot.aio.caller_id import CallerID
 from reboot.aio.external import ExternalContext
 from reboot.aio.internals.channel_manager import _ChannelManager
-from reboot.aio.types import ServerId
+from reboot.aio.types import ApplicationId, ServerId
 from reboot.wait_for_tasks import wait_for_tasks
 from starlette.requests import Request  # type: ignore[import]
 from starlette.types import Receive, Scope, Send  # type: ignore[import]
@@ -37,12 +38,44 @@ class WebFramework(ABC):
     async def stop(self, server_id: ServerId):
         raise NotImplementedError()
 
+    def set_application_id(self, application_id: ApplicationId) -> None:
+        """Tell the web framework which application it serves, so HTTP
+        handlers can build app-internal contexts. Called before `start`.
+        The default is a no-op; only `PythonWebFramework` (where the
+        OAuth routes are served) needs it.
+        """
+
 
 def external_context(request: Request) -> ExternalContext:
     return request.state.reboot_external_context
 
 
 InjectExternalContext = Depends(external_context)
+
+
+def app_internal_external_context(request: Request) -> ExternalContext:
+    """Return the app-internal `ExternalContext` for this request.
+
+    Unlike `external_context`, this context carries the application's
+    `caller_id`, so it may call app-internal-only servicers (e.g. the
+    stdlib `Ciphertext`/`OrderedMap`). It is framework-internal — used by
+    the OAuth callback to persist encrypted identity-provider tokens — and
+    is available only on routes that opted in via
+    `HTTP.require_app_internal_context`, never on developer routes, since
+    an HTTP handler serves untrusted traffic and must not be able to make
+    trusted in-app calls.
+    """
+    context = getattr(
+        request.state,
+        "reboot_app_internal_external_context",
+        None,
+    )
+    if context is None:
+        raise RuntimeError(
+            "No app-internal context for this request — its route did not "
+            "opt in via `HTTP.require_app_internal_context`."
+        )
+    return context
 
 
 class HTTPASGIApp(Protocol):
@@ -86,6 +119,22 @@ class PythonWebFramework(WebFramework):
         def __init__(self):
             self._api_routes: list[PythonWebFramework.APIRoute] = []
             self._mounts: list[PythonWebFramework.Mount] = []
+            # Exact request paths whose handlers receive an *app-internal*
+            # context (one that can call app-internal-only servicers). Kept
+            # minimal on purpose: an app-internal context lets a handler
+            # make trusted in-app calls that bypass authorizers, so it must
+            # never be handed to a developer route serving untrusted
+            # traffic. Only framework handlers opt in, via
+            # `require_app_internal_context`.
+            self._app_internal_paths: set[str] = set()
+
+        def require_app_internal_context(self, path: str) -> None:
+            """Mark `path` so its handler gets an app-internal context on
+            `request.state.reboot_app_internal_external_context`. For
+            framework use only (e.g. the OAuth callback persisting
+            encrypted tokens).
+            """
+            self._app_internal_paths.add(path)
 
         def _api_route(self, path: str, **kwargs):
             # TODO: add type annotations for `endpoint` so that what
@@ -183,6 +232,10 @@ class PythonWebFramework(WebFramework):
     def __init__(self):
         self._http = PythonWebFramework.HTTP()
 
+        # Set via `set_application_id` before `start`; used to build the
+        # app-internal context for framework HTTP handlers.
+        self._application_id: Optional[ApplicationId] = None
+
         self._servers: dict[
             ServerId,
             tuple[uvicorn.Server, asyncio.Task],
@@ -192,6 +245,9 @@ class PythonWebFramework(WebFramework):
     def http(self) -> HTTP:
         return self._http
 
+    def set_application_id(self, application_id: ApplicationId) -> None:
+        self._application_id = application_id
+
     async def start(
         self,
         server_id: ServerId,
@@ -199,6 +255,9 @@ class PythonWebFramework(WebFramework):
         channel_manager: _ChannelManager,
     ) -> int:
         assert server_id not in self._servers
+        # `set_application_id` is always called before `start`.
+        assert self._application_id is not None
+        application_id = self._application_id
 
         def external_context_from_request(request: Request) -> ExternalContext:
             # Check if we have an `Authorization: bearer <token>`
@@ -233,6 +292,19 @@ class PythonWebFramework(WebFramework):
                 # end-user auth when they enter their Reboot code.
             )
 
+        def app_internal_external_context_from_request(
+            request: Request,
+        ) -> ExternalContext:
+            # An app-internal context (carries the application's
+            # `caller_id`) so framework HTTP handlers can call
+            # app-internal-only servicers (e.g. the OAuth server
+            # persisting encrypted identity-provider tokens).
+            return ExternalContext(
+                name=f"HTTP {request.method} '{request.url.path}'",
+                channel_manager=channel_manager,
+                caller_id=CallerID(application_id=application_id),
+            )
+
         fastapi = FastAPI()
 
         @fastapi.middleware("http")
@@ -242,6 +314,19 @@ class PythonWebFramework(WebFramework):
             request.state.reboot_external_context = external_context_from_request(
                 request
             )
+            # Only routes that explicitly opted in via
+            # `require_app_internal_context` (framework handlers — today
+            # just the OAuth callback) get an *app-internal* context. We
+            # deliberately do NOT expose one to developer routes: an HTTP
+            # handler serves untrusted external traffic, so handing it a
+            # caller that bypasses authorizers would let external requests
+            # escalate to trusted in-app calls. Developer routes get only
+            # `reboot_external_context` and must do their own end-user
+            # auth.
+            if request.url.path in self._http._app_internal_paths:
+                request.state.reboot_app_internal_external_context = (
+                    app_internal_external_context_from_request(request)
+                )
 
             return await call_next(request)
 
