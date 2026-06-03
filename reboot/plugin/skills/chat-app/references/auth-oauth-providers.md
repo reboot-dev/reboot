@@ -2,7 +2,7 @@
 title: OAuth Providers — Choosing a Production Provider
 impact: HIGH
 impactDescription: The provider you launch with fixes your user-ID namespace; switching providers later strands all user-keyed state, so choose deliberately before you have production users
-tags: auth, oauth, development, anonymous, google, github, provider, production, migration
+tags: auth, oauth, development, anonymous, google, github, auth0, provider, production, migration
 ---
 
 ## OAuth Providers — Choosing a Production Provider
@@ -25,11 +25,23 @@ provider can depend on the run environment. The selector that ships is
 The **providers** you place in the `dev` / `prod` arms ship in
 `reboot.aio.auth.oauth_providers`:
 
-| Provider        | Construction                               | Identity issued                                          | When to use                                      |
-| --------------- | ------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------ |
-| `Development()` | `Development()` — no args                  | stable `dev-{hash}` per fake identity, account-picker UI | Local dev only; **never in production**.         |
-| `Google(...)`   | `Google(client_id=..., client_secret=...)` | Google account's OIDC `sub` claim                        | Production apps where users sign in with Google. |
-| `GitHub(...)`   | `GitHub(client_id=..., client_secret=...)` | GitHub user's numeric ID (as `str`)                      | Production apps where users sign in with GitHub. |
+| Provider        | Construction                                          | Identity issued                                          | When to use                                                                                            |
+| --------------- | ----------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `Development()` | `Development()` — no args                             | stable `dev-{hash}` per fake identity, account-picker UI | Local dev only; **never in production**.                                                               |
+| `Google(...)`   | `Google(client_id=..., client_secret=...)`            | Google account's OIDC `sub` claim                        | Production apps where users sign in with Google.                                                       |
+| `GitHub(...)`   | `GitHub(client_id=..., client_secret=...)`            | GitHub user's numeric ID (as `str`)                      | Production apps where users sign in with GitHub.                                                       |
+| `Auth0(...)`    | `Auth0(domain=..., client_id=..., client_secret=...)` | Auth0 OIDC `sub` (e.g. `google-oauth2\|108…`)            | Production apps that broker sign-in through Auth0 (Google, GitHub, password, SSO) behind one provider. |
+
+`Auth0` takes a `domain=` (your tenant, e.g. `your-tenant.us.auth0.com`)
+on top of the client credentials — all its endpoints live under that
+domain. It's an identity _broker_: one Auth0 application lets users sign
+in through any connection you enable in the Auth0 dashboard
+(Google, GitHub, username/password, enterprise SSO), and your app sees a
+single OIDC provider. The per-user choice of login method happens
+upstream in Auth0, not in your code. Because the `sub` it issues encodes
+the upstream connection (`google-oauth2|…`, `auth0|…`, `github|…`), the
+namespace-permanence rule below still applies: changing which Auth0
+connections you offer can change users' `sub`s.
 
 There is also an `Anonymous()` provider that mints a fresh
 `anon-{ULID}` per OAuth flow with no sign-in UI. It's a real provider
@@ -54,6 +66,17 @@ selector, with `Anonymous` a reasonable default provider to go with.
 Servicers and authorizer rules are **provider-agnostic** — the same
 `allow_if(all=[state_id_is_user_id])` works under every provider.
 Only `main.py` changes.
+
+**Beyond identity: calling the provider's API on the user's behalf.**
+`Google`, `GitHub`, and `Auth0` can also request extra OAuth **scopes**
+(`scopes=[...]`) and **capture the provider's tokens** (`store_tokens=True`)
+so the app can later call the provider's API as the signed-in user — read
+their calendar, open issues in their repos, and so on. That's a separate
+concern from picking a provider; the full setup (scopes, the encrypted
+token store, the `oauth_tokens(...)` read path, and the
+calls-go-in-a-`Workflow` rule) is in
+[`auth-provider-api-calls.md`](auth-provider-api-calls.md). The rest of
+this reference is only about **identity**.
 
 ## Replace `Development` Before Production
 
@@ -121,11 +144,24 @@ we won't try to mirror here:
   what you pass as `client_id=` and `client_secret=`.
 - **GitHub**: [Creating an OAuth app](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app)
   in GitHub Developer Settings. The Client ID and generated Client
-  Secret are what you pass to `GitHub(...)`.
+  Secret are what you pass to `GitHub(...)`. (If you need
+  `store_tokens=True` with refresh tokens, register a **GitHub App**
+  with expiring user tokens instead — see
+  [`auth-provider-api-calls.md`](auth-provider-api-calls.md).)
+- **Auth0**: in the [Auth0 dashboard](https://auth0.com/docs/get-started/auth0-overview/create-applications),
+  create a **Regular Web Application**. Its Domain, Client ID, and
+  Client Secret are what you pass as `domain=`, `client_id=`, and
+  `client_secret=`. Enable the upstream connections you want users to
+  sign in through (Google, GitHub, username/password, SSO) under the
+  application's Connections tab.
 
-For both providers, register the callback URL Reboot serves
-(`<your-app-base-url>/oauth/callback`) when the registration flow
-asks for an authorized redirect URI.
+For every provider, register the callback URL Reboot serves —
+`<your-app-base-url>/__/oauth/callback` (note the `/__/` prefix) — when
+the registration flow asks for an authorized redirect URI. For local
+`rbt dev run` that base URL is `http://localhost:9991`, and providers
+often treat `localhost` and `127.0.0.1` as distinct origins, so register
+**both** `http://127.0.0.1:9991/__/oauth/callback` and
+`http://localhost:9991/__/oauth/callback`.
 
 **Never** hard-code the client ID or client secret in `main.py` and
 never check them into git. Deliver them to the running process as
@@ -157,6 +193,8 @@ the provider, and providers don't share an ID space:
 
 - `Google` issues the OIDC `sub`.
 - `GitHub` issues a numeric account ID.
+- `Auth0` issues its OIDC `sub`, which encodes the upstream connection
+  (`google-oauth2|…`, `auth0|…`).
 - `Anonymous()` issues a fresh `anon-{ULID}` per flow.
 - `Development()` issues a `dev-{hash}` per fake identity.
 
