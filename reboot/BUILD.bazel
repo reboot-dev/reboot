@@ -473,6 +473,7 @@ compile_pip_requirements(
 py_library(
     name = "python_std",
     deps = [
+        "//reboot/std/ciphertext/v1:ciphertext_py",
         "//reboot/std/collections/ordered_map/v1:ordered_map_py",
         "//reboot/std/collections/queue/v1:queue_py",
         "//reboot/std/collections/v1:sorted_map_py",

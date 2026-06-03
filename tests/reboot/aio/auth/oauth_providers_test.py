@@ -12,15 +12,25 @@ from reboot.aio.applications import Application
 from reboot.aio.auth.oauth_providers import (
     Anonymous,
     Development,
+    ExchangeResult,
     GitHub,
     Google,
+    IdpTokens,
+    OAuthProvider,
     OAuthProviderByEnvironment,
+    UserId,
 )
+from reboot.aio.auth.oauth_token_store import oauth_tokens, store_idp_tokens
 from reboot.aio.exceptions import InputError
 from reboot.aio.tests import OAuthProviderForTest, Reboot
 from reboot.ping.ping import CounterServicer, UserServicer
 from reboot.settings import ENVVAR_RBT_SERVE
+from reboot.std.ciphertext.v1.ciphertext import ciphertext_library
+from reboot.std.collections.ordered_map.v1.ordered_map import (
+    ordered_map_library,
+)
 from unittest import mock
+from urllib.parse import parse_qs, urlencode, urlparse
 
 
 class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
@@ -301,6 +311,296 @@ class GitHubValidateTest(unittest.TestCase):
             provider.validate()
         self.assertIn("GitHub", str(context.exception))
         self.assertIn("`client_secret`", str(context.exception))
+
+
+def _scope_param(authorization_url: str) -> list[str]:
+    """Extract the space-delimited `scope` query parameter from an
+    authorization URL as a list."""
+    query = parse_qs(urlparse(authorization_url).query)
+    return query["scope"][0].split()
+
+
+class ScopeTest(unittest.TestCase):
+    """`Google`/`GitHub` always request their required base scope and add
+    any developer-supplied `scopes` on top — so an app can ask for extra
+    access (Calendar, `repo`, …) without losing the scope identity
+    resolution depends on."""
+
+    def test_google_defaults_to_openid_only(self):
+        url = Google(client_id="id", client_secret="s").authorization_url(
+            state="x", redirect_uri="http://localhost/cb"
+        )
+        self.assertEqual(_scope_param(url), ["openid"])
+
+    def test_google_adds_extra_scopes_after_base(self):
+        calendar = "https://www.googleapis.com/auth/calendar"
+        url = Google(
+            client_id="id",
+            client_secret="s",
+            scopes=[calendar],
+        ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        scopes = _scope_param(url)
+        self.assertEqual(scopes[0], "openid")
+        self.assertIn(calendar, scopes)
+
+    def test_google_store_tokens_requests_offline_access(self):
+        url = Google(
+            client_id="id",
+            client_secret="s",
+            store_tokens=True,
+        ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        query = parse_qs(urlparse(url).query)
+        # `access_type=offline` asks for a refresh token. We do NOT force
+        # `prompt=consent` (which would show the consent screen on every
+        # sign-in); the token store carries an existing refresh token
+        # forward instead.
+        self.assertEqual(query.get("access_type"), ["offline"])
+        self.assertNotIn("prompt", query)
+
+    def test_github_defaults_to_read_user_only(self):
+        url = GitHub(client_id="id", client_secret="s").authorization_url(
+            state="x", redirect_uri="http://localhost/cb"
+        )
+        self.assertEqual(_scope_param(url), ["read:user"])
+
+    def test_github_adds_extra_scopes_after_base(self):
+        url = GitHub(
+            client_id="id",
+            client_secret="s",
+            scopes=["repo"],
+        ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        scopes = _scope_param(url)
+        self.assertEqual(scopes[0], "read:user")
+        self.assertIn("repo", scopes)
+
+    def test_extra_scopes_are_deduplicated(self):
+        # Asking for the base scope again doesn't duplicate it.
+        url = GitHub(
+            client_id="id",
+            client_secret="s",
+            scopes=["read:user", "repo"],
+        ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        scopes = _scope_param(url)
+        self.assertEqual(scopes.count("read:user"), 1)
+
+    def test_provider_without_store_tokens_does_not_store(self):
+        self.assertFalse(
+            Google(client_id="id", client_secret="s").stores_tokens
+        )
+        self.assertTrue(
+            Google(
+                client_id="id",
+                client_secret="s",
+                store_tokens=True,
+            ).stores_tokens
+        )
+
+
+class _FakeStoringProvider(OAuthProvider):
+    """A provider that redirects straight back to the callback (like
+    `Anonymous`) and reports a fixed user plus identity-provider tokens,
+    so the storage path can be exercised without talking to a real
+    identity provider."""
+
+    USER_ID = UserId("stored-user")
+
+    @property
+    def stores_tokens(self) -> bool:
+        return True
+
+    def authorization_url(self, state: str, redirect_uri: str) -> str:
+        return f"{redirect_uri}?{urlencode({'code': 'fake', 'state': state})}"
+
+    async def exchange_code(
+        self, code: str, redirect_uri: str
+    ) -> ExchangeResult:
+        return ExchangeResult(
+            user_id=self.USER_ID,
+            tokens=IdpTokens(
+                access_token="access-1",
+                refresh_token="refresh-1",
+                expires_at=None,
+                scopes=["read:user"],
+            ),
+        )
+
+
+class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
+    """Drives the OAuth flow with a token-storing provider and checks the
+    identity provider's tokens are encrypted-at-rest, readable via the
+    `oauth_tokens` helper, and rotated on refresh."""
+
+    async def asyncSetUp(self):
+        self.rbt = Reboot()
+        await self.rbt.start()
+
+    async def asyncTearDown(self):
+        await self.rbt.stop()
+
+    async def test_oauth_tokens_is_none_before_anything_is_stored(self):
+        # Reading tokens before any have ever been stored must return
+        # `None`, not abort: the backing token map is created lazily by
+        # the first store, so a read beforehand hits an unconstructed
+        # map.
+        await self.rbt.up(
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                libraries=[ciphertext_library(),
+                           ordered_map_library()],
+                oauth=OAuthProviderForTest(_FakeStoringProvider()),
+            ),
+        )
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+        self.assertIsNone(await oauth_tokens(context, "nobody"))
+
+    async def test_store_carries_existing_refresh_token_forward(self):
+        # Some providers (e.g. Google) return a refresh token only on the
+        # first consent. A later store without one must keep the existing
+        # refresh token rather than drop it.
+        await self.rbt.up(
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                libraries=[ciphertext_library(),
+                           ordered_map_library()],
+                oauth=OAuthProviderForTest(_FakeStoringProvider()),
+            ),
+        )
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+        await store_idp_tokens(
+            context,
+            user_id="u1",
+            tokens=IdpTokens(
+                access_token="access-1",
+                refresh_token="refresh-1",
+                expires_at=None,
+                scopes=[],
+            ),
+        )
+        # A re-login where the provider returned no refresh token.
+        await store_idp_tokens(
+            context,
+            user_id="u1",
+            tokens=IdpTokens(
+                access_token="access-2",
+                refresh_token=None,
+                expires_at=None,
+                scopes=[],
+            ),
+        )
+        stored = await oauth_tokens(context, "u1")
+        assert stored is not None
+        self.assertEqual(stored.access_token, "access-2")
+        self.assertEqual(stored.refresh_token, "refresh-1")
+
+    async def test_tokens_stored_on_login_and_untouched_by_refresh(self):
+        provider = _FakeStoringProvider()
+        await self.rbt.up(
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                libraries=[ciphertext_library(),
+                           ordered_map_library()],
+                oauth=OAuthProviderForTest(provider),
+            ),
+        )
+
+        async with httpx.AsyncClient() as client:
+            metadata = (
+                await client.get(
+                    self.rbt.http_localhost_url(
+                        "/.well-known/oauth-authorization-server"
+                    )
+                )
+            ).json()
+            register_url = metadata["registration_endpoint"]
+            authorize_url = metadata["authorization_endpoint"]
+            token_url = metadata["token_endpoint"]
+            client_redirect_uri = "http://localhost/callback"
+
+            code_verifier = base64.urlsafe_b64encode(os.urandom(32)
+                                                    ).rstrip(b"=").decode()
+            code_challenge = base64.urlsafe_b64encode(
+                hashlib.sha256(code_verifier.encode()).digest()
+            ).rstrip(b"=").decode()
+
+            client_id = (
+                await client.post(
+                    register_url,
+                    json={"redirect_uris": [client_redirect_uri]},
+                )
+            ).json()["client_id"]
+
+            # GET /authorize → 302 to the (fake) identity provider, which
+            # here is just our own callback.
+            response = await client.get(
+                authorize_url,
+                params={
+                    "response_type": "code",
+                    "client_id": client_id,
+                    "redirect_uri": client_redirect_uri,
+                    "code_challenge": code_challenge,
+                    "code_challenge_method": "S256",
+                    "state": "mcp-state",
+                },
+            )
+            self.assertEqual(response.status_code, 302)
+
+            # Follow the redirect into the callback; it stores the tokens
+            # and 302s back to the client with an auth code.
+            response = await client.get(response.headers["location"])
+            self.assertEqual(response.status_code, 302)
+            auth_code = httpx.URL(response.headers["location"]).params["code"]
+
+            # Exchange the auth code for our own access/refresh tokens.
+            tokens = (
+                await client.post(
+                    token_url,
+                    data={
+                        "grant_type": "authorization_code",
+                        "code": auth_code,
+                        "redirect_uri": client_redirect_uri,
+                        "client_id": client_id,
+                        "code_verifier": code_verifier,
+                    },
+                )
+            ).json()
+            refresh_token = tokens["refresh_token"]
+
+        # The identity provider's tokens were stored, encrypted, and are
+        # readable via the public helper using an app-internal context.
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+        stored = await oauth_tokens(context, _FakeStoringProvider.USER_ID)
+        assert stored is not None
+        self.assertEqual(stored.access_token, "access-1")
+        self.assertEqual(stored.refresh_token, "refresh-1")
+
+        # Refreshing the MCP token mints a new pair but does NOT
+        # re-authorize at the identity provider: the stored provider
+        # tokens are left untouched (storage is for the app to use, not
+        # to drive re-authorization).
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                token_url,
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "client_id": client_id,
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+
+        unchanged = await oauth_tokens(context, _FakeStoringProvider.USER_ID)
+        assert unchanged is not None
+        self.assertEqual(unchanged.access_token, "access-1")
+        self.assertEqual(unchanged.refresh_token, "refresh-1")
 
 
 class OAuthProviderByEnvironmentTest(unittest.TestCase):

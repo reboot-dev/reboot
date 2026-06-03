@@ -17,13 +17,14 @@ import time
 from mcp.server.auth.provider import AccessToken
 from reboot.aio.auth import Auth
 from reboot.aio.auth.oauth_providers import (
+    IdpTokens,
     OAuthProvider,
     UserId,
     origin_from_request,
 )
 from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
 from reboot.aio.contexts import ReaderContext
-from reboot.aio.http import PythonWebFramework
+from reboot.aio.http import PythonWebFramework, app_internal_external_context
 from reboot.crypto import root_keys
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
@@ -237,10 +238,10 @@ class OAuthServer:
 
     6. **Refresh.** When the access token expires, the client `POST
        /token` with `grant_type=refresh_token` to get a new
-       access/refresh token pair. This OAuth server does NOT currently
-       re-authorize with the identity provider, since doing so would
-       require storing the identity provider's sensitive refresh and
-       access tokens.
+       access/refresh token pair. This OAuth server does NOT re-authorize
+       with the identity provider on refresh: token storage
+       (`store_tokens=True`) exists for the application to call the
+       provider's API, not to drive re-authorization here.
     """
 
     def __init__(
@@ -269,7 +270,7 @@ class OAuthServer:
     def mcp_sdk_token_verifier(self) -> MCPSDKOAuthTokenVerifier:
         """
         Return something implementing the MCP SDK's `TokenVerifier`
-        
+
         For use with the SDK's `BearerAuthBackend` /
         `RequireAuthMiddleware`.
         """
@@ -301,6 +302,11 @@ class OAuthServer:
         http.get(_CALLBACK_PATH)(self.callback)
         http.post(_TOKEN_PATH)(self.token)
         http.options(_TOKEN_PATH)(self.cors_preflight)
+
+        # The callback persists the provider's tokens (when
+        # `store_tokens=True`) via the app-internal-only `Ciphertext` /
+        # `OrderedMap` servicers, so it needs an app-internal context.
+        http.require_app_internal_context(_CALLBACK_PATH)
 
         # Let the provider register any additional routes it needs.
         self._provider.mount_routes(http)
@@ -345,6 +351,37 @@ class OAuthServer:
             return decoded
         except jwt.exceptions.PyJWTError:
             return None
+
+    async def _store_idp_tokens(
+        self,
+        request: Request,
+        user_id: UserId,
+        tokens: IdpTokens,
+    ) -> None:
+        """Persist the provider's tokens (encrypted) for `user_id`.
+
+        Best-effort: a storage failure (e.g. a misconfigured ciphertext
+        key) is logged but does not block the sign-in, so auth never
+        breaks because the token vault is misconfigured.
+        """
+        # Imported lazily to avoid an import cycle: `oauth_token_store`
+        # pulls in the `ciphertext` library, which imports
+        # `reboot.aio.applications`, which imports this module.
+        from reboot.aio.auth.oauth_token_store import store_idp_tokens
+        try:
+            await store_idp_tokens(
+                app_internal_external_context(request),
+                user_id=user_id,
+                tokens=tokens,
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to store identity provider tokens for user "
+                "'%s': %s",
+                user_id,
+                e,
+                exc_info=True,
+            )
 
     # ---- Route handlers ----
 
@@ -617,10 +654,11 @@ class OAuthServer:
                 status_code=400,
             )
 
-        # Exchange identity provider code for a user ID.
+        # Exchange identity provider code for a user ID (and, for
+        # providers that capture them, the provider's tokens).
         callback_uri = f"{origin_from_request(request)}{_CALLBACK_PATH}"
         try:
-            user_id = await self._provider.exchange_code(
+            result = await self._provider.exchange_code(
                 code=idp_code,
                 redirect_uri=callback_uri,
             )
@@ -645,6 +683,14 @@ class OAuthServer:
                 url=f"{redirect_uri}?{query}",
                 status_code=302,
             )
+
+        user_id = result.user_id
+
+        # If the provider captured the identity provider's tokens
+        # (`store_tokens=True`), persist them, encrypted, so the app can
+        # use them to call the provider's API.
+        if result.tokens is not None:
+            await self._store_idp_tokens(request, user_id, result.tokens)
 
         # Mint the auth code JWT.
         auth_code = self._make_jwt(
@@ -795,15 +841,13 @@ class OAuthServer:
     ) -> JSONResponse:
         """
         Handle `grant_type=refresh_token`.
-        
-        TODO: this flow (currently) doesn't consult the identity
-        provider; it's therefore not possible to revoke a leaked refresh
-        token. In the future, when we add the capability to securely
-        store the identity provider's access token and refresh token, we
-        should use those to refresh our own access token at the identity
-        provider before refreshing the caller's access token. It is then
-        possible for the identity provider to revoke the caller's
-        refresh token by revoking the refresh token it has issued to us.
+
+        This mints a fresh access/refresh token pair from the (still
+        valid) refresh token. It does NOT re-authorize at the identity
+        provider, even when `store_tokens=True`: token storage exists so
+        the application can call the provider's API, not to drive
+        re-authorization here. An app that needs a fresh provider token
+        refreshes on demand using the stored `refresh_token`.
         """
         refresh_token_str = form.get("refresh_token")
         if refresh_token_str is None:

@@ -577,8 +577,14 @@ class Application:
                 dev=None,
                 prod=None,
             )
+            provider = selector.get()
+            # A provider that stores the identity provider's tokens
+            # (`store_tokens=True`) encrypts them via the `ciphertext`
+            # library; require the developer to have mounted it.
+            if provider.stores_tokens:
+                self._require_ciphertext_library()
             oauth_server = OAuthServer(
-                provider=selector.get(),
+                provider=provider,
                 protected_resources=[_MCP_PATH],
             )
             self._token_verifier = oauth_server.token_verifier
@@ -596,6 +602,31 @@ class Application:
                 new_session_hooks=new_session_hooks,
                 per_request_hooks=per_request_hooks,
                 token_verifier=mcp_sdk_token_verifier,
+            ),
+        )
+
+    def _require_ciphertext_library(self) -> None:
+        """Fail fast if an OAuth provider with `store_tokens=True` is
+        used without the `ciphertext` library mounted — it's needed to
+        encrypt and persist the identity provider's tokens.
+        """
+        # Imported lazily: `ciphertext` imports `reboot.aio.applications`,
+        # so a module-level import would be circular.
+        from reboot.std.ciphertext.v1.ciphertext import CIPHERTEXT_LIBRARY_NAME
+        libraries = self._libraries or []
+        if any(
+            library.name == CIPHERTEXT_LIBRARY_NAME for library in libraries
+        ):
+            return
+        raise InputError(
+            reason=(
+                "An OAuth provider with `store_tokens=True` needs the "
+                "`ciphertext` library to encrypt the identity provider's "
+                "tokens, but it isn't mounted. Add it to your "
+                "`Application`, e.g. `Application(..., "
+                "libraries=[ciphertext_library()])` (import it with "
+                "`from reboot.std.ciphertext.v1.ciphertext import "
+                "ciphertext_library`)."
             ),
         )
 

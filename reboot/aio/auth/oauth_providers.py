@@ -8,6 +8,8 @@ import hmac
 import jwt
 import os
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from jinja2 import Template
 from log.log import get_logger, log_at_most_once_per
 from reboot.aio.exceptions import InputError
@@ -16,7 +18,7 @@ from reboot.crypto import root_keys
 from reboot.run_environments import running_rbt_dev
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
-from typing import NewType, Optional
+from typing import Any, NewType, Optional
 from ulid import ULID
 from urllib.parse import urlencode, urlparse, urlunparse
 
@@ -25,6 +27,61 @@ logger = get_logger(__name__)
 UserId = NewType("UserId", str)
 
 _DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 24 * 60 * 60  # 24 hours.
+
+
+@dataclass(frozen=True)
+class IdpTokens:
+    """The identity provider's OAuth tokens, captured during the code
+    exchange so the application can later call the provider's API on the
+    user's behalf.
+
+    Only populated by providers constructed with `store_tokens=True`;
+    see `OAuthProvider.exchange_code`.
+    """
+    # The provider's access token (a bearer token for the provider's
+    # API).
+    access_token: str
+    # The provider's refresh token, if one was issued.
+    refresh_token: Optional[str]
+    # Absolute expiry of `access_token` as epoch seconds, or `None` if
+    # the provider didn't tell us.
+    expires_at: Optional[int]
+    # The scopes the provider actually granted.
+    scopes: list[str]
+
+
+@dataclass(frozen=True)
+class ExchangeResult:
+    """The result of exchanging an identity provider authorization code:
+    the resolved user ID and, when the provider captures them, the
+    provider's tokens.
+    """
+    user_id: UserId
+    # The provider's tokens, present only when the provider was
+    # constructed with `store_tokens=True`; `None` otherwise, so apps
+    # that don't opt in never carry these secrets around.
+    tokens: Optional[IdpTokens]
+
+
+def _expires_at_from_expires_in(expires_in: Any) -> Optional[int]:
+    """Convert a token endpoint's `expires_in` (seconds from now) into an
+    absolute epoch-seconds expiry, or `None` if absent or unparsable.
+    """
+    try:
+        now = int(datetime.now(timezone.utc).timestamp())
+        return now + int(expires_in)
+    except (TypeError, ValueError):
+        return None
+
+
+def _scopes_from_response(granted: Any, requested: list[str]) -> list[str]:
+    """Parse the granted `scope` string from a token response, falling
+    back to the scopes we requested when the provider doesn't echo
+    them.
+    """
+    if isinstance(granted, str) and granted.strip():
+        return granted.split()
+    return requested
 
 
 def origin_from_request(request: Request) -> str:
@@ -82,9 +139,10 @@ class OAuthProvider(ABC):
         self,
         code: str,
         redirect_uri: str,
-    ) -> UserId:
-        """Exchange an identity provider authorization code for
-        a user ID.
+    ) -> ExchangeResult:
+        """Exchange an identity provider authorization code for a user
+        ID (and, for providers that capture them, the provider's
+        tokens).
 
         Args:
             code: The authorization code received from the
@@ -94,6 +152,14 @@ class OAuthProvider(ABC):
                 the identity provider to validate the exchange.
         """
         raise NotImplementedError()
+
+    @property
+    def stores_tokens(self) -> bool:
+        """Whether this provider captures and persists the identity
+        provider's tokens. `False` by default; providers that support it
+        flip this on when constructed with `store_tokens=True`.
+        """
+        return False
 
     def mount_routes(self, http: PythonWebFramework.HTTP) -> None:
         """
@@ -121,6 +187,11 @@ class RegisteredOAuthProvider(OAuthProvider):
     `client_secret` that we need to know.
     """
 
+    # The scope this provider always requests, on top of any the
+    # developer adds, because identity resolution depends on it (e.g.
+    # `openid` for Google, `read:user` for GitHub). Subclasses set this.
+    _REQUIRED_SCOPE: str = ""
+
     def __init__(
         self,
         *,
@@ -129,11 +200,36 @@ class RegisteredOAuthProvider(OAuthProvider):
         # processes where it is present but won't be used.
         client_id: Optional[str],
         client_secret: Optional[str],
+        # Extra OAuth scopes to request on top of `_REQUIRED_SCOPE`, so
+        # the app can call the provider's API on the user's behalf.
+        scopes: Optional[list[str]] = None,
+        # When `True`, capture the provider's access/refresh tokens
+        # during the code exchange and persist them (encrypted) so the
+        # app can use them later to call the provider's API. Off by
+        # default — opting in requires the `ciphertext` library and
+        # `REBOOT_CRYPTO_ROOT_KEYS`.
+        store_tokens: bool = False,
     ):
 
         super().__init__()
         self._client_id = client_id
         self._client_secret = client_secret
+        self._extra_scopes = scopes or []
+        self._store_tokens = store_tokens
+
+    @property
+    def stores_tokens(self) -> bool:
+        return self._store_tokens
+
+    def _requested_scopes(self) -> list[str]:
+        """The full scope list: the required base scope plus the
+        developer's extras (deduplicated, base scope first).
+        """
+        scopes = [self._REQUIRED_SCOPE]
+        for scope in self._extra_scopes:
+            if scope not in scopes:
+                scopes.append(scope)
+        return scopes
 
     def validate(self) -> None:
         if not self._client_id:
@@ -162,6 +258,10 @@ class Google(RegisteredOAuthProvider):
     _AUTHORIZATION_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
     _TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 
+    # `openid` is the minimum OIDC scope; gives us an ID token with the
+    # `sub` claim (the user's ID).
+    _REQUIRED_SCOPE = "openid"
+
     def authorization_url(
         self,
         state: str,
@@ -171,10 +271,13 @@ class Google(RegisteredOAuthProvider):
             "client_id": self._client_id,
             "redirect_uri": redirect_uri,
             "response_type": "code",
-            # `openid` is the minimum OIDC scope; gives us an ID token
-            # with the `sub` claim (the user's ID).
-            "scope": "openid",
+            "scope": " ".join(self._requested_scopes()),
             "state": state,
+            # `offline` asks Google for a refresh token. Google only
+            # returns one on the *first* consent (not on later sign-ins),
+            # so the token store carries the existing refresh token
+            # forward rather than us forcing the consent screen every
+            # time with `prompt=consent` (see `store_idp_tokens`).
             "access_type": "offline",
         }
         return f"{self._AUTHORIZATION_ENDPOINT}?{urlencode(params)}"
@@ -183,9 +286,9 @@ class Google(RegisteredOAuthProvider):
         self,
         code: str,
         redirect_uri: str,
-    ) -> UserId:
+    ) -> ExchangeResult:
         """
-        Exchange the Google auth code for user ID.
+        Exchange the Google auth code for a user ID (and tokens).
         """
         data = {
             "code": code,
@@ -232,17 +335,66 @@ class Google(RegisteredOAuthProvider):
         user_id = decoded.get("sub")
         if user_id is None:
             raise ValueError("Google ID token did not contain a 'sub' claim.")
-        return UserId(user_id)
+        return ExchangeResult(
+            user_id=UserId(user_id),
+            tokens=self._tokens_from_response(token_response),
+        )
+
+    def _tokens_from_response(
+        self,
+        token_response: dict,
+    ) -> Optional[IdpTokens]:
+        """Build an `IdpTokens` from a Google token endpoint response, or
+        `None` when token storage isn't enabled or no access token came
+        back.
+        """
+        if not self._store_tokens:
+            return None
+        access_token = token_response.get("access_token")
+        if access_token is None:
+            return None
+        return IdpTokens(
+            access_token=access_token,
+            refresh_token=token_response.get("refresh_token"),
+            expires_at=_expires_at_from_expires_in(
+                token_response.get("expires_in")
+            ),
+            scopes=_scopes_from_response(
+                token_response.get("scope"),
+                self._requested_scopes(),
+            ),
+        )
 
 
 class GitHub(RegisteredOAuthProvider):
     """
     GitHub OAuth provider (plain OAuth 2.0).
+
+    Note on refresh tokens (relevant only with `store_tokens=True`):
+    whether GitHub issues a `refresh_token` is entirely a property of how
+    the credentials were created, not anything we can request:
+
+    - A classic **OAuth App** never issues a refresh token. Its access
+      token simply does not expire (so there is nothing to refresh, and
+      `IdpTokens.refresh_token` / `expires_at` come back `None`).
+    - A **GitHub App** issues a `refresh_token` (and an expiring access
+      token) only when "Expire user authorization tokens" is enabled in
+      the app's settings. With that opt-out left disabled, its
+      user-to-server token behaves like the OAuth App's — no refresh
+      token.
+
+    So to get refresh tokens, register a GitHub App and enable expiring
+    user tokens; `client_id`/`client_secret` are then that app's
+    credentials. We store whatever the token endpoint returns either way.
     """
 
     _AUTHORIZATION_ENDPOINT = "https://github.com/login/oauth/authorize"
     _TOKEN_ENDPOINT = "https://github.com/login/oauth/access_token"
     _USER_API = "https://api.github.com/user"
+
+    # `read:user`: minimum scope needed to call `GET /user` and obtain
+    # the numeric user ID.
+    _REQUIRED_SCOPE = "read:user"
 
     def authorization_url(
         self,
@@ -252,9 +404,7 @@ class GitHub(RegisteredOAuthProvider):
         params = {
             "client_id": self._client_id,
             "redirect_uri": redirect_uri,
-            # `read:user`: minimum scope needed to call `GET /user` and
-            # obtain the numeric user ID.
-            "scope": "read:user",
+            "scope": " ".join(self._requested_scopes()),
             "state": state,
         }
         return f"{self._AUTHORIZATION_ENDPOINT}?{urlencode(params)}"
@@ -263,9 +413,9 @@ class GitHub(RegisteredOAuthProvider):
         self,
         code: str,
         redirect_uri: str,
-    ) -> UserId:
+    ) -> ExchangeResult:
         """
-        Exchange the GitHub auth code for user ID.
+        Exchange the GitHub auth code for a user ID (and tokens).
         """
         # Since GitHub isn't an OpenID provider (only plain OAuth), we
         # must first POST to the token endpoint for an access token,
@@ -309,7 +459,36 @@ class GitHub(RegisteredOAuthProvider):
         user_id = user_info.get("id")
         if user_id is None:
             raise ValueError("GitHub user API did not return an 'id' field.")
-        return UserId(str(user_id))
+        return ExchangeResult(
+            user_id=UserId(str(user_id)),
+            tokens=self._tokens_from_response(token_response),
+        )
+
+    def _tokens_from_response(
+        self,
+        token_response: dict,
+    ) -> Optional[IdpTokens]:
+        """Build an `IdpTokens` from a GitHub token endpoint response, or
+        `None` when token storage isn't enabled. Classic GitHub OAuth App
+        tokens don't expire and carry no refresh token; GitHub Apps issue
+        expiring tokens with a `refresh_token` and `expires_in`.
+        """
+        if not self._store_tokens:
+            return None
+        access_token = token_response.get("access_token")
+        if access_token is None:
+            return None
+        return IdpTokens(
+            access_token=access_token,
+            refresh_token=token_response.get("refresh_token"),
+            expires_at=_expires_at_from_expires_in(
+                token_response.get("expires_in")
+            ),
+            scopes=_scopes_from_response(
+                token_response.get("scope"),
+                self._requested_scopes(),
+            ),
+        )
 
 
 class Anonymous(OAuthProvider):
@@ -345,7 +524,7 @@ class Anonymous(OAuthProvider):
         self,
         code: str,
         redirect_uri: str,
-    ) -> UserId:
+    ) -> ExchangeResult:
         """Generate a fresh anonymous user ID."""
         if self._is_dev_default:
             log_at_most_once_per(
@@ -361,7 +540,7 @@ class Anonymous(OAuthProvider):
         # base32 encoding is shorter and easier on the human eye —
         # relevant here because anonymous user IDs are likely to be seen
         # by humans.
-        return UserId(f"anon-{ULID()}")
+        return ExchangeResult(user_id=UserId(f"anon-{ULID()}"), tokens=None)
 
 
 # The five fake identities offered by the `Development` login page. We
@@ -527,7 +706,7 @@ class Development(OAuthProvider):
         self,
         code: str,
         redirect_uri: str,
-    ) -> UserId:
+    ) -> ExchangeResult:
         """Derive a stable, per-app user ID for the chosen identity."""
         if code not in _DEVELOPMENT_IDENTITIES:
             # Only our own login page produces these codes; anything else
@@ -554,7 +733,10 @@ class Development(OAuthProvider):
             code.encode(),
             hashlib.sha256,
         ).hexdigest()
-        return UserId(f"dev-{digest[:16]}")
+        return ExchangeResult(
+            user_id=UserId(f"dev-{digest[:16]}"),
+            tokens=None,
+        )
 
 
 # Message raised when a selector has no provider for the current

@@ -15,7 +15,10 @@ py_test(
         # `Pydantic-to-proto` generation.
         "//reboot/aio:tests_py",
         "//reboot/aio/auth:oauth_providers_py",
+        "//reboot/aio/auth:oauth_token_store_py",
         "//reboot/ping:ping_py",
+        "//reboot/std/ciphertext/v1:ciphertext_py",
+        "//reboot/std/collections/ordered_map/v1:ordered_map_py",
         requirement("httpx"),
         requirement("mcp"),
     ],

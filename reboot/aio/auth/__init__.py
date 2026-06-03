@@ -3,7 +3,31 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from google.protobuf import json_format, struct_pb2
 from rbt.v1alpha1 import auth_pb2
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    # For type checkers only; the runtime re-export is lazy (see
+    # `__getattr__` below) to avoid an import cycle — `oauth_token_store`
+    # pulls in the `ciphertext` library, which imports
+    # `reboot.aio.applications`, which imports this package.
+    from reboot.aio.auth.oauth_providers import IdpTokens
+    from reboot.aio.auth.oauth_token_store import oauth_tokens
+
+__all__ = ["Auth", "IdpTokens", "oauth_tokens"]
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily re-export the OAuth token-store public API so
+    `from reboot.aio.auth import oauth_tokens` works without importing the
+    (heavy, cycle-prone) ciphertext machinery at package import time.
+    """
+    if name == "oauth_tokens":
+        from reboot.aio.auth.oauth_token_store import oauth_tokens
+        return oauth_tokens
+    if name == "IdpTokens":
+        from reboot.aio.auth.oauth_providers import IdpTokens
+        return IdpTokens
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 @dataclass(frozen=True, kw_only=True)
