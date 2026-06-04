@@ -52,9 +52,9 @@ from reboot.settings import (
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
     ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS,
+    ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_LOCAL_ENVOY,
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
-    ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
 )
 from typing import Any, Awaitable, Callable, NoReturn, Optional
@@ -676,21 +676,22 @@ class Application:
 
         return serviceables
 
-    def _require_oauth_signing_secret(self) -> None:
-        """Fail fast (clean exit, no stack trace) on a serving path if
-        the MCP OAuth signing secret isn't set. Every serving Reboot
-        application needs it: the MCP OAuth server signs and verifies the
-        minted JWTs with it, and it must be identical across all server
-        processes. Config pods (`REBOOT_MODE_CONFIG`) only validate
+    def _require_crypto_root_keys(self) -> None:
+        """Fail fast (clean exit, no stack trace) on a serving path if the
+        Reboot-managed cryptographic root keys aren't set. Every serving
+        Reboot application needs them: libraries derive keys from them (the
+        MCP OAuth server its JWT signing key, `reboot.std.ciphertext` its
+        key-encryption key, ...), and they must be identical across all
+        server processes. Config pods (`REBOOT_MODE_CONFIG`) only validate
         configuration and never serve, so they never call this.
         """
-        if not os.environ.get(ENVVAR_REBOOT_OAUTH_SIGNING_SECRET):
+        if not os.environ.get(ENVVAR_REBOOT_CRYPTO_ROOT_KEYS):
             terminal.fail(
-                f"The '{ENVVAR_REBOOT_OAUTH_SIGNING_SECRET}' environment "
-                "variable is not set. Every Reboot application needs a "
-                "signing secret for the MCP OAuth server, shared across "
-                "all of its servers. Under `rbt dev` and on Reboot Cloud "
-                "it is set automatically; for `rbt serve` you must set an "
+                f"The '{ENVVAR_REBOOT_CRYPTO_ROOT_KEYS}' environment "
+                "variable is not set. Every Reboot application needs "
+                "cryptographic root keys, shared across all of its "
+                "servers. Under `rbt dev` and on Reboot Cloud they are "
+                "set automatically; for `rbt serve` you must set an "
                 "environment variable yourself"
             )
 
@@ -708,7 +709,7 @@ class Application:
         if within_python_server():
             # We're running as a Python server subprocess — a serving
             # path, so it requires the OAuth signing secret.
-            self._require_oauth_signing_secret()
+            self._require_crypto_root_keys()
             try:
                 await run_python_server_process(
                     serviceables=self._get_serviceables(),
@@ -787,7 +788,7 @@ class Application:
         # We're going to run a normal Reboot application with one or
         # more serving servers — a serving path, so it requires the
         # OAuth signing secret.
-        self._require_oauth_signing_secret()
+        self._require_crypto_root_keys()
         try:
             await self._rbt_start_and_up_and_initialize()
         except InputError as e:

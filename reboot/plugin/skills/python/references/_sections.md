@@ -27,34 +27,39 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 5. Stdlib (stdlib)
 
 **Impact:** HIGH
-**Description:** First-class stdlib state types shipped with Reboot — `OrderedMap`, `Queue`, `Topic` (PubSub), `Presence`, and the `Item` value envelope. One reference per type with method surface and library registration.
+**Description:** First-class stdlib state types shipped with Reboot — `OrderedMap`, `Queue`, `Topic` (PubSub), `Presence`, the `Item` value envelope, and `Ciphertext` (envelope encryption / crypto-shredding). One reference per type with method surface and library registration.
 
-## 6. State (state)
+## 6. Crypto (crypto)
+
+**Impact:** HIGH
+**Description:** Reboot's managed cryptographic root keys (`REBOOT_CRYPTO_ROOT_KEYS`) and HKDF key derivation (`reboot.crypto.root_keys.derive_key`) for building your own key-deriving library/feature — including the rotation control loop and the `Application.use_root_key_version` / `disuse_root_key_version` usage markers. For ready-made encryption-at-rest + crypto-shredding, use the `Ciphertext` stdlib library instead.
+
+## 7. State (state)
 
 **Impact:** HIGH
 **Description:** Modeling state with scalar fields, collections (`list[T]` / `dict[str, T]`, `OrderedMap`), and nested `Model`s. Default-value rules and access patterns.
 
-## 7. Auth (auth)
+## 8. Auth (auth)
 
 **Impact:** HIGH
 **Description:** Authorizer composition: `allow()` / `deny()`, `allow_if(all=...)` / `allow_if(any=...)`, the built-in predicates (`has_verified_token`, `is_app_internal`, `state_id_is_user_id`), and writing custom predicates.
 
-## 8. RPC (rpc)
+## 9. RPC (rpc)
 
 **Impact:** MEDIUM
 **Description:** Calling actors via `Service.ref(id)` and `await ref.method(context, ...)`. Constructor calls (`Service.create`), fan-out via `Service.forall(ids).method(context)`, and the kwargs-not-Request convention.
 
-## 9. Scheduling (scheduling)
+## 10. Scheduling (scheduling)
 
 **Impact:** MEDIUM
 **Description:** Deferred work via `ref.schedule(when=timedelta(...)).method(context)` and recurring schedules driven from inside writer methods.
 
-## 10. Testing (testing)
+## 11. Testing (testing)
 
 **Impact:** LOW-MEDIUM
 **Description:** The `Reboot()` test harness, `rbt.up(Application(...))`, and `create_external_context` for issuing calls in tests.
 
-## 11. Patterns (patterns)
+## 12. Patterns (patterns)
 
 **Impact:** LOW-MEDIUM
 **Description:** Cross-cutting patterns and anti-patterns: raising typed errors, idempotency strategies, and the most common Reboot Python gotchas.

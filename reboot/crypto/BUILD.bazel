@@ -1,0 +1,14 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "root_keys_py",
+    srcs = [
+        "root_keys.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot:settings_py",
+        requirement("cryptography"),
+    ],
+)

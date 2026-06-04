@@ -134,12 +134,17 @@ RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY = 13
 ENVVAR_REBOOT_LOCAL_ENVOY = 'REBOOT_LOCAL_ENVOY'
 ENVVAR_REBOOT_LOCAL_ENVOY_PORT = 'REBOOT_LOCAL_ENVOY_PORT'
 
-# Shared secret used by the MCP OAuth server to sign JWTs
-# (HS256). Must be the same across all server processes. For
-# `rbt dev` this is set automatically to the application name;
-# for production the operator must provide a strong random
-# secret.
-ENVVAR_REBOOT_OAUTH_SIGNING_SECRET = 'REBOOT_OAUTH_SIGNING_SECRET'
+# Reboot-managed cryptographic root keys. A comma-separated list of
+# `vN:key` entries (e.g., `v2:...,v1:...`); the highest version is
+# "active" and older entries are retained so keys derived from them
+# can still be used (and re-derived forward) during a
+# rotation. Provisioned per-application by Reboot: a random value in
+# `rbt dev` and created-once in production. Libraries HKDF-derive
+# their own purpose-specific keys from these roots (see
+# `reboot.crypto.root_keys`); e.g., the `reboot.std.ciphertext`
+# library derives a key-encryption key and the MCP OAuth server
+# derives its JWT signing key.
+ENVVAR_REBOOT_CRYPTO_ROOT_KEYS = 'REBOOT_CRYPTO_ROOT_KEYS'
 
 # The shared-secret used to authenticate admin requests.
 ENVVAR_SECRET_REBOOT_ADMIN_TOKEN = 'SECRET_REBOOT_ADMIN_TOKEN'

@@ -130,6 +130,7 @@ const sidebars = {
       label: "Standard library",
       items: [
         "library_services/overview",
+        "library_services/ciphertext",
         "library_services/mailgun",
         "library_services/ordered_map",
         "library_services/pubsub",

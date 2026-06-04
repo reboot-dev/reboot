@@ -1,0 +1,14 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "root_keys_test_py",
+    size = "small",
+    srcs = [":root_keys_test.py"],
+    main = "root_keys_test.py",
+    deps = [
+        "//reboot:settings_py",
+        "//reboot/crypto:root_keys_py",
+        requirement("cryptography"),
+    ],
+)

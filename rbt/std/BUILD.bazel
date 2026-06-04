@@ -47,6 +47,8 @@ ts_project(
     },
     visibility = ["//visibility:public"],
     deps = [
+        "//rbt/std/ciphertext/v1:ciphertext_js_proto",
+        "//rbt/std/ciphertext/v1:ciphertext_js_reboot",
         "//rbt/std/collections/ordered_map/v1:ordered_map_js_proto",
         "//rbt/std/collections/ordered_map/v1:ordered_map_js_reboot",
         "//rbt/std/collections/ordered_map/v1:ordered_map_js_reboot_react",

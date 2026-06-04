@@ -1,0 +1,400 @@
+syntax = "proto3";
+
+package rbt.std.ciphertext.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+// Errors.
+
+// Raised when decryption fails because the supplied `associated_data`
+// does not match what was provided at encryption time, or the stored
+// envelope is corrupt.
+message DecryptionFailed {}
+
+// Raised when the scope protecting this ciphertext has been crypto-shredded
+// (see `KeyManager.Shred`). The key that could unwrap it has been
+// destroyed, so the plaintext is permanently unrecoverable.
+message ScopeShredded {}
+
+// Raised when `REBOOT_CRYPTO_ROOT_KEYS` does not contain the root key
+// version that a `WrappingKey`'s material was wrapped under (e.g. an
+// in-use version was dropped from the secret before rotation completed).
+message UnknownRootKeyVersion {}
+
+////////////////////////////////////////////////////////////////////////
+// Ciphertext: a single encrypted value. The "envelope" *is* the state.
+
+message Ciphertext {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  // The `WrappingKey` that wraps this ciphertext's data encryption key
+  // (DEK). Revoking that `WrappingKey` crypto-shreds this ciphertext.
+  // Derived from the caller's `key_manager_id` and `scope`.
+  string wrapping_key_id = 1;
+
+  // The per-value DEK, encrypted ("wrapped") under the `WrappingKey`.
+  bytes wrapped_dek = 2;
+
+  // The plaintext, encrypted under the DEK.
+  bytes data = 3;
+
+  // The `KeyManager` this ciphertext's wrapping key belongs to, remembered
+  // so `Rescope` can re-wrap within the same manager.
+  string key_manager_id = 4;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message EncryptRequest {
+  // The plaintext to encrypt.
+  bytes plaintext = 1;
+
+  // Additional authenticated data bound to the ciphertext. The identical
+  // value must be supplied to `Decrypt`. It is authenticated but not
+  // stored, so it cannot be recovered from the ciphertext and an
+  // envelope cannot be decrypted in a context it was not sealed for.
+  bytes associated_data = 2;
+
+  // The crypto-shred scope this value belongs to (e.g. a user id, a
+  // tenant id). The library derives a `WrappingKey` from it (created
+  // lazily on first use); shredding the scope destroys every value in it.
+  // Any string is allowed — it is encoded into a valid state id.
+  string scope = 3;
+
+  // The `KeyManager` to scope the wrapping key under. Required — pass
+  // `APP_SHARED_KEY_MANAGER_ID` unless you want a dedicated manager. Lets
+  // independent consumers partition their keys into separate managers —
+  // each with its own rotation loop, registry, and shred domain — so two
+  // consumers can use the same `scope` without sharing (or shredding) each
+  // other's wrapping key.
+  string key_manager_id = 4;
+}
+
+message EncryptResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message DecryptRequest {
+  // Must match the `associated_data` supplied to `Encrypt`.
+  bytes associated_data = 1;
+}
+
+message DecryptResponse {
+  bytes plaintext = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message RescopeRequest {
+  // The scope to move this ciphertext into. The bulk `data` is untouched;
+  // only the (tiny) wrapped DEK is re-encrypted under the new scope's
+  // wrapping key.
+  string scope = 1;
+}
+
+message RescopeResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+service CiphertextMethods {
+  // Encrypts `plaintext` into this `Ciphertext`. A fresh random DEK
+  // encrypts the plaintext; the DEK is then wrapped by the `WrappingKey`
+  // derived from `scope`.
+  rpc Encrypt(EncryptRequest) returns (EncryptResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: { constructor: {} },
+    };
+  }
+
+  // Returns the decrypted plaintext. Requires the same `associated_data`
+  // used at `Encrypt` time.
+  rpc Decrypt(DecryptRequest) returns (DecryptResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [ "DecryptionFailed", "ScopeShredded", "UnknownRootKeyVersion" ],
+    };
+  }
+
+  // Moves this ciphertext into a different `scope`, re-wrapping its DEK
+  // under the new scope's wrapping key. Touches only the wrapped DEK.
+  rpc Rescope(RescopeRequest) returns (RescopeResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+      errors: [ "ScopeShredded", "UnknownRootKeyVersion" ],
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+// WrappingKey: a revocable key that wraps the DEKs of many ciphertexts.
+// Its material is stored encrypted ("wrapped") under the root KEK
+// derived from `REBOOT_CRYPTO_ROOT_KEYS`.
+
+message WrappingKey {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  enum Status {
+    // The key is usable.
+    ACTIVE = 0;
+    // The key has been revoked; its material is destroyed and any
+    // ciphertext it wraps is permanently unrecoverable.
+    REVOKED = 1;
+  }
+
+  // The wrapping key material (a random 256-bit key), itself encrypted
+  // under the root KEK derived from `REBOOT_CRYPTO_ROOT_KEYS`. Unset once
+  // revoked (and before first use).
+  optional bytes wrapped_key_material = 1;
+
+  // The `REBOOT_CRYPTO_ROOT_KEYS` version whose root KEK
+  // `wrapped_key_material` is currently wrapped under. Unset before first
+  // use.
+  optional uint32 root_key_version = 2;
+
+  Status status = 3;
+
+  // Id of an `OrderedMap` indexing the `Ciphertext` ids wrapped by this
+  // key, so they can be enumerated for re-keying. Unset before first use.
+  optional string ciphertext_index_id = 4;
+
+  // The `KeyManager` this `WrappingKey` is stored in, and the (UUIDv7) key
+  // under which it is registered in that manager's registry, so the two
+  // can be cross-referenced. Both unset before first use.
+  optional string key_manager_id = 6;
+  optional string key_manager_key = 5;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message WrapRequest {
+  // The data encryption key to wrap.
+  bytes dek = 1;
+  // The `Ciphertext` id to record in this key's index (for re-keying
+  // enumeration).
+  string ciphertext_id = 2;
+  // The `KeyManager` to register this wrapping key with on first use.
+  string key_manager_id = 3;
+}
+
+message WrapResponse {
+  bytes wrapped_dek = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message UnwrapRequest {
+  bytes wrapped_dek = 1;
+}
+
+message UnwrapResponse {
+  bytes dek = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message RevokeRequest {}
+
+message RevokeResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message RewrapUnderRootKeyRequest {}
+
+message RewrapUnderRootKeyResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message CiphertextsRequest {
+  // If set, enumeration resumes strictly after this `Ciphertext` id.
+  optional string start_after = 1;
+  // Maximum number of ids to return. Must be non-zero.
+  uint32 limit = 2;
+}
+
+message CiphertextsResponse {
+  repeated string ciphertext_ids = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+service WrappingKeyMethods {
+  // Wraps `dek` under this key, lazily generating the key's material on
+  // first use (registering it with the `KeyManager`) and migrating it
+  // forward to the active root key version.
+  rpc Wrap(WrapRequest) returns (WrapResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+      errors: [ "ScopeShredded", "UnknownRootKeyVersion" ],
+    };
+  }
+
+  // Unwraps a previously wrapped DEK.
+  rpc Unwrap(UnwrapRequest) returns (UnwrapResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [ "ScopeShredded", "UnknownRootKeyVersion" ],
+    };
+  }
+
+  // Revokes this key: destroys its material (crypto-shred). Every
+  // ciphertext wrapped by it becomes permanently unrecoverable.
+  // Idempotent.
+  rpc Revoke(RevokeRequest) returns (RevokeResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  // Re-wraps this key's material under the active root key version. Used
+  // by `KeyManager.Rotate` so an old `REBOOT_CRYPTO_ROOT_KEYS` version can
+  // be retired.
+  rpc RewrapUnderRootKey(RewrapUnderRootKeyRequest)
+      returns (RewrapUnderRootKeyResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      errors: [ "UnknownRootKeyVersion" ],
+    };
+  }
+
+  // Enumerates the `Ciphertext` ids wrapped by this key.
+  rpc Ciphertexts(CiphertextsRequest) returns (CiphertextsResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+// KeyManager: registers every `WrappingKey` created under its id and
+// continuously rotates them onto the active root key version. An
+// application has one manager by default, but consumers may partition
+// their keys across several (selected by `EncryptRequest.key_manager_id`),
+// each with its own registry, rotation loop, and revocation domain.
+
+message KeyManager {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  // The `REBOOT_CRYPTO_ROOT_KEYS` versions this manager currently holds
+  // wrapping keys under (is "consuming"). A version is added when the
+  // first key under it is registered and removed once rotation has
+  // migrated every key off it; each change is mirrored to the
+  // `Application`'s `use_root_key_version` / `disuse_root_key_version`
+  // markers. More than one version means a rotation is in progress.
+  repeated uint32 consuming_versions = 1;
+
+  // Cursor (a registry UUIDv7) for an in-progress rotation sweep; unset
+  // when no sweep is running.
+  optional string rotation_cursor = 2;
+
+  // Whether the `Watch` control loop has been started.
+  bool watch_started = 3;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message RegisterRequest {
+  string wrapping_key_id = 1;
+  // The root key version the wrapping key's material is wrapped under, so
+  // the registration can mark it in use atomically (closing the window
+  // where a key is in use before its `use_root_key_version` marker is
+  // recorded).
+  uint32 root_key_version = 2;
+}
+
+message RegisterResponse {
+  // The UUIDv7 under which the wrapping key was registered.
+  string uuid = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message WatchRequest {}
+
+message WatchResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message RotateRequest {}
+
+message RotateResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message StatusRequest {}
+
+message StatusResponse {
+  // The highest root key version every wrapping key has been rotated to.
+  // Unset if no rotation has completed yet.
+  optional uint32 active_version = 1;
+  // Whether a rotation sweep is currently in progress (i.e. not every
+  // wrapping key has reached `active_version` yet).
+  bool rotating = 2;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message ShredRequest {
+  // The scope to crypto-shred. Shredding destroys the scope's wrapping
+  // key, so every `Ciphertext` encrypted under it becomes permanently
+  // unrecoverable.
+  string scope = 1;
+}
+
+message ShredResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+service KeyManagerMethods {
+  // Records a `WrappingKey` in the registry and returns the UUIDv7 it was
+  // registered under. Called automatically when a `WrappingKey` is first
+  // generated; also lazily starts the `Watch` control loop.
+  rpc Register(RegisterRequest) returns (RegisterResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+    };
+  }
+
+  // Crypto-shreds `scope`: destroys its wrapping key so every
+  // `Ciphertext` encrypted under it becomes permanently unrecoverable.
+  // Idempotent. This is the supported way to shred a scope; the
+  // underlying `WrappingKey` is an implementation detail.
+  rpc Shred(ShredRequest) returns (ShredResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+    };
+  }
+
+  // A long-lived control loop that watches `REBOOT_CRYPTO_ROOT_KEYS` for a
+  // newer active version and, when one appears (e.g. after an operator
+  // updates the secret and restarts the application), drives `Rotate` and
+  // records the version reached in `active_version`.
+  rpc Watch(WatchRequest) returns (WatchResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  // Re-wraps every registered `WrappingKey` onto the active root key
+  // version. A durable control loop that pages through the registry, so
+  // it scales to very large keyrings and resumes across restarts.
+  rpc Rotate(RotateRequest) returns (RotateResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+      errors: [ "UnknownRootKeyVersion" ],
+    };
+  }
+
+  // Returns the highest root key version every wrapping key has been
+  // rotated to, and whether a rotation sweep is still in progress.
+  rpc Status(StatusRequest) returns (StatusResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////

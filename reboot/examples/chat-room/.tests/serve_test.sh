@@ -103,7 +103,7 @@ if command -v docker &> /dev/null; then
       --env=PORT=8787 \
       --env=RBT_STATE_DIRECTORY=/app/state/ \
       --env=RBT_SERVERS=2 \
-      --env=REBOOT_OAUTH_SIGNING_SECRET=reboot-chat-room-serve-test \
+      --env=REBOOT_CRYPTO_ROOT_KEYS=v1:reboot-chat-room-serve-test \
       -p8787:8787 \
       --detach \
       $image_name \

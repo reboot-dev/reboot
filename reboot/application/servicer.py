@@ -4,12 +4,16 @@ import rbt.v1alpha1.errors_pb2
 from log.log import get_logger
 from rbt.v1alpha1.application.application_rbt import (
     Application,
+    DisuseRootKeyVersionRequest,
+    DisuseRootKeyVersionResponse,
     GetRequest,
     GetResponse,
     InitializeRequest,
     InitializeResponse,
     RecordConnectionRequest,
     RecordConnectionResponse,
+    UseRootKeyVersionRequest,
+    UseRootKeyVersionResponse,
     WatchTunnelsRequest,
     WatchTunnelsResponse,
 )
@@ -122,6 +126,10 @@ class ApplicationServicer(Application.Servicer):
             initialize=allow_if(all=[is_app_internal]),
             # Record connection is only done in dev.
             record_connection=allow_if(all=[_is_running_rbt_dev]),
+            # Root-key usage markers are written by consumers
+            # app-internally.
+            use_root_key_version=allow_if(all=[is_app_internal]),
+            disuse_root_key_version=allow_if(all=[is_app_internal]),
         )
 
     async def initialize(
@@ -205,6 +213,40 @@ class ApplicationServicer(Application.Servicer):
         )
         connection.user_agents.append(request.user_agent)
         return RecordConnectionResponse()
+
+    async def use_root_key_version(
+        self,
+        context: WriterContext,
+        request: UseRootKeyVersionRequest,
+    ) -> UseRootKeyVersionResponse:
+        # Idempotent: at most one marker per `(consumer, version)`.
+        for usage in self.state.root_key_usages:
+            if (
+                usage.consumer == request.consumer and
+                usage.version == request.version
+            ):
+                return UseRootKeyVersionResponse()
+        self.state.root_key_usages.add(
+            consumer=request.consumer,
+            version=request.version,
+        )
+        return UseRootKeyVersionResponse()
+
+    async def disuse_root_key_version(
+        self,
+        context: WriterContext,
+        request: DisuseRootKeyVersionRequest,
+    ) -> DisuseRootKeyVersionResponse:
+        # Idempotent: remove the marker if present.
+        remaining = [
+            usage for usage in self.state.root_key_usages if not (
+                usage.consumer == request.consumer and
+                usage.version == request.version
+            )
+        ]
+        del self.state.root_key_usages[:]
+        self.state.root_key_usages.extend(remaining)
+        return DisuseRootKeyVersionResponse()
 
     @classmethod
     async def watch_tunnels(

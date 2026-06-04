@@ -21,6 +21,7 @@
   "exports": {
     "./package.json": "./package.json",
     ".": "./index.js",
+    "./ciphertext/v1": "./ciphertext/v1/index.js",
     "./collections/queue/v1": "./collections/queue/v1/index.js",
     "./collections/ordered_map/v1": "./collections/ordered_map/v1/index.js",
     "./collections/v1/sorted_map.js": "./collections/v1/sorted_map.js",

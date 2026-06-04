@@ -9,9 +9,8 @@ import "rbt/v1alpha1/options.proto";
 // Per-application state that we want to expose, e.g., for web or MCP
 // apps. There is exactly one of these per Reboot application, keyed
 // by the name used when running the application (e.g., from `rbt dev
-// run --name=...`).
-//
-// Currently these are only created during development.
+// run --name=...`). It is initialized on every boot in all environments
+// (dev and production), so libraries can rely on it being present.
 message Application {
   option (rbt.v1alpha1.state) = {
   };
@@ -46,6 +45,23 @@ message Application {
   int32 port = 8;
   // Whether the `WatchTunnels` workflow has already been scheduled.
   bool watch_tunnels_scheduled = 9;
+
+  // Cryptographic root-key versions still in use, by consumer (see
+  // `reboot.crypto.root_keys`). A consumer records `(consumer, version)`
+  // while it holds keys derived from that root version and clears it once
+  // it has migrated off, so an operator can retire a root key version once
+  // no consumer still uses it. The active version is always in use and is
+  // never retired.
+  repeated RootKeyUsage root_key_usages = 10;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// A marker that `consumer` is still using cryptographic root-key
+// `version`. There is at most one entry per `(consumer, version)`.
+message RootKeyUsage {
+  string consumer = 1;
+  uint32 version = 2;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -131,6 +147,24 @@ message WatchTunnelsResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
+message UseRootKeyVersionRequest {
+  string consumer = 1;
+  uint32 version = 2;
+}
+
+message UseRootKeyVersionResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message DisuseRootKeyVersionRequest {
+  string consumer = 1;
+  uint32 version = 2;
+}
+
+message DisuseRootKeyVersionResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
 service ApplicationMethods {
   // Store the latest state (`title`, `description`, `mcp`, etc) from
   // the started `Application(...)`. The state is implicitly
@@ -160,6 +194,20 @@ service ApplicationMethods {
   // every supported tunnel provider every few seconds.
   rpc WatchTunnels(WatchTunnelsRequest) returns (WatchTunnelsResponse) {
     option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  // Records that `consumer` is using cryptographic root-key `version`.
+  rpc UseRootKeyVersion(UseRootKeyVersionRequest)
+      returns (UseRootKeyVersionResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // Records that `consumer` no longer uses root-key `version`.
+  rpc DisuseRootKeyVersion(DisuseRootKeyVersionRequest)
+      returns (DisuseRootKeyVersionResponse) {
+    option (rbt.v1alpha1.method).writer = {
     };
   }
 }

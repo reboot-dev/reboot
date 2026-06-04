@@ -12,8 +12,8 @@ from jinja2 import Template
 from log.log import get_logger, log_at_most_once_per
 from reboot.aio.exceptions import InputError
 from reboot.aio.http import PythonWebFramework
+from reboot.crypto import root_keys
 from reboot.run_environments import running_rbt_dev
-from reboot.settings import ENVVAR_REBOOT_OAUTH_SIGNING_SECRET
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
 from typing import NewType, Optional
@@ -375,6 +375,11 @@ _DEVELOPMENT_IDENTITIES: tuple[str, ...] = (
     "Esi",
 )
 
+# HKDF `info` (domain separator) for the key that derives opaque
+# development user ids. Distinct from the OAuth signing key: this is a
+# separate purpose, so it gets its own root-derived key.
+_DEV_USER_ID_INFO = b"reboot.oauth.dev-user-id"
+
 # Avatar colors for the login page, drawn from the Reboot brand palette.
 # Cycled per identity so each account is visually distinct.
 _DEVELOPMENT_AVATAR_COLORS: tuple[str, ...] = (
@@ -529,14 +534,23 @@ class Development(OAuthProvider):
             # is bogus. The OAuth server turns this into a graceful
             # `access_denied` redirect.
             raise ValueError(f"Unknown development identity: {code!r}")
-        # Key the HMAC by the per-app signing secret so the ID is opaque
-        # and differs per app — deliberately NOT `dev-{name}`, so nobody
-        # hardcodes user IDs into authorization logic or tests and is
-        # instead pushed toward looking up the authenticated user ID at
-        # runtime.
-        secret = os.environ[ENVVAR_REBOOT_OAUTH_SIGNING_SECRET]
+        # Key the HMAC by a per-app key derived from the root keys so
+        # the ID is opaque and differs per app — deliberately NOT
+        # `dev-{name}`, so nobody hardcodes user IDs into authorization
+        # logic or tests and is instead pushed toward looking up the
+        # authenticated user ID at runtime.
+        #
+        # We derive from the active root key version, so this ID
+        # changes if the root keys rotate. That is fine since this is
+        # dev-only (in production the user subject comes from the IdP,
+        # not this HMAC), and currently a "rotation" only occurs from
+        # an expunge, which means all of the user's data has also been
+        # deleted, so getting a new ID is just fine.
         digest = hmac.new(
-            secret.encode(),
+            root_keys.derive_key(
+                info=_DEV_USER_ID_INFO,
+                version=root_keys.active_version(),
+            ),
             code.encode(),
             hashlib.sha256,
         ).hexdigest()

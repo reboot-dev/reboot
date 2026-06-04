@@ -50,12 +50,13 @@ Reference these guidelines when:
 | 3        | Servicer   | HIGH       | `servicer-`   |
 | 4        | Agent      | HIGH       | `agent-`      |
 | 5        | Stdlib     | HIGH       | `stdlib-`     |
-| 6        | State      | HIGH       | `state-`      |
-| 7        | Auth       | HIGH       | `auth-`       |
-| 8        | RPC        | MEDIUM     | `rpc-`        |
-| 9        | Scheduling | MEDIUM     | `scheduling-` |
-| 10       | Testing    | LOW-MEDIUM | `testing-`    |
-| 11       | Patterns   | LOW-MEDIUM | `patterns-`   |
+| 6        | Crypto     | HIGH       | `crypto-`     |
+| 7        | State      | HIGH       | `state-`      |
+| 8        | Auth       | HIGH       | `auth-`       |
+| 9        | RPC        | MEDIUM     | `rpc-`        |
+| 10       | Scheduling | MEDIUM     | `scheduling-` |
+| 11       | Testing    | LOW-MEDIUM | `testing-`    |
+| 12       | Patterns   | LOW-MEDIUM | `patterns-`   |
 
 The `Workflow(...)` context method is the fourth servicer context
 type alongside reader / writer / transaction; its (large) reference
@@ -284,18 +285,32 @@ reference **before** writing your own actor type — defining your
 own `Queue` / `OrderedMap` / etc. is almost always wrong
 and forfeits durability, ordering, and concurrency guarantees:
 
-| You need...                                  | Use          | Reference               |
-| -------------------------------------------- | ------------ | ----------------------- |
-| Durable FIFO — work queue, job queue, intake | `Queue`      | `stdlib-queue.md`       |
-| Sorted key-value with pagination / ordering  | `OrderedMap` | `stdlib-ordered-map.md` |
-| Presence — who's online / connected          | `Presence`   | `stdlib-presence.md`    |
-| Pubsub / broadcast / fan-out to subscribers  | `PubSub`     | `stdlib-pubsub.md`      |
-| Item builder for `Queue` / `PubSub` payloads | `Item`       | `stdlib-item.md`        |
+| You need...                                       | Use          | Reference               |
+| ------------------------------------------------- | ------------ | ----------------------- |
+| Durable FIFO — work queue, job queue, intake      | `Queue`      | `stdlib-queue.md`       |
+| Sorted key-value with pagination / ordering       | `OrderedMap` | `stdlib-ordered-map.md` |
+| Presence — who's online / connected               | `Presence`   | `stdlib-presence.md`    |
+| Pubsub / broadcast / fan-out to subscribers       | `PubSub`     | `stdlib-pubsub.md`      |
+| Item builder for `Queue` / `PubSub` payloads      | `Item`       | `stdlib-item.md`        |
+| Encrypt at rest / crypto-shred (right-to-erasure) | `Ciphertext` | `stdlib-ciphertext.md`  |
 
 Each stdlib reference also lists its library registration —
 forgetting `<thing>_library()` and the stdlib actor's
 `<thing>.servicers()` in your `Application(...)` fails at boot
 with "unknown actor type."
+
+### Encryption & key derivation
+
+- `references/stdlib-ciphertext.md` — **encrypting sensitive data at
+  rest** or **crypto-shredding** (GDPR right-to-erasure): the
+  `Ciphertext` library handles envelope encryption, per-scope erasure,
+  and automatic root-key rotation for you. Reach here before
+  hand-rolling any encryption.
+- `references/crypto-root-keys.md` — only when building your **own**
+  key-deriving library/feature: HKDF-deriving purpose-specific keys
+  from Reboot's managed root keys, and the rotation control loop +
+  `use_root_key_version` / `disuse_root_key_version` markers. Most apps
+  want `Ciphertext` instead.
 
 ### Authorization
 
@@ -369,6 +384,11 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/stdlib-pubsub.md`
 - `references/stdlib-presence.md`
 - `references/stdlib-item.md`
+- `references/stdlib-ciphertext.md`
+
+**Crypto** (`crypto-`):
+
+- `references/crypto-root-keys.md`
 
 **State** (`state-`):
 
