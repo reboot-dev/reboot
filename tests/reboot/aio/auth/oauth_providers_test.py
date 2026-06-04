@@ -582,9 +582,11 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                libraries=[oauth_library(),
-                           ciphertext_library(),
-                           ordered_map_library()],
+                libraries=[
+                    oauth_library(),
+                    ciphertext_library(),
+                    ordered_map_library()
+                ],
                 oauth=OAuthProviderForTest(_FakeStoringProvider()),
             ),
         )
@@ -593,9 +595,8 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
             app_internal=True,
         )
         with self.assertRaises(OAuthTokenManager.FetchAborted) as raised:
-            await OAuthTokenManager.ref(self.SERVICE).fetch(
-                context, user_id="nobody"
-            )
+            await OAuthTokenManager.ref(self.SERVICE
+                                       ).fetch(context, user_id="nobody")
         self.assertIsInstance(
             raised.exception.error,
             rbt.v1alpha1.errors_pb2.StateNotConstructed,
@@ -651,9 +652,11 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                libraries=[oauth_library(),
-                           ciphertext_library(),
-                           ordered_map_library()],
+                libraries=[
+                    oauth_library(),
+                    ciphertext_library(),
+                    ordered_map_library()
+                ],
                 oauth=OAuthProviderForTest(provider),
             ),
         )
@@ -671,9 +674,9 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
             name=f"test-{self.id()}",
             app_internal=True,
         )
-        stored = await OAuthTokenManager.ref(self.SERVICE).fetch(
-            context, user_id=_FakeStoringProvider.USER_ID
-        )
+        stored = await OAuthTokenManager.ref(
+            self.SERVICE
+        ).fetch(context, user_id=_FakeStoringProvider.USER_ID)
         self.assertTrue(stored.found)
         self.assertEqual(stored.tokens.access_token, "access-2")
         self.assertEqual(stored.tokens.refresh_token, "refresh-1")
@@ -683,9 +686,11 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                libraries=[oauth_library(),
-                           ciphertext_library(),
-                           ordered_map_library()],
+                libraries=[
+                    oauth_library(),
+                    ciphertext_library(),
+                    ordered_map_library()
+                ],
                 oauth=OAuthProviderForTest(provider),
             ),
         )
@@ -759,9 +764,9 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
             name=f"test-{self.id()}",
             app_internal=True,
         )
-        stored = await OAuthTokenManager.ref(self.SERVICE).fetch(
-            context, user_id=_FakeStoringProvider.USER_ID
-        )
+        stored = await OAuthTokenManager.ref(
+            self.SERVICE
+        ).fetch(context, user_id=_FakeStoringProvider.USER_ID)
         self.assertTrue(stored.found)
         self.assertEqual(stored.tokens.access_token, "access-1")
         self.assertEqual(stored.tokens.refresh_token, "refresh-1")
@@ -781,9 +786,9 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(response.status_code, 200)
 
-        unchanged = await OAuthTokenManager.ref(self.SERVICE).fetch(
-            context, user_id=_FakeStoringProvider.USER_ID
-        )
+        unchanged = await OAuthTokenManager.ref(
+            self.SERVICE
+        ).fetch(context, user_id=_FakeStoringProvider.USER_ID)
         self.assertTrue(unchanged.found)
         self.assertEqual(unchanged.tokens.access_token, "access-1")
         self.assertEqual(unchanged.tokens.refresh_token, "refresh-1")

@@ -9,10 +9,10 @@ import jwt
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from rbt.std.oauth.v1.oauth_rbt import OAuthTokens
 from datetime import datetime, timezone
 from jinja2 import Template
 from log.log import get_logger, log_at_most_once_per
+from rbt.std.oauth.v1.oauth_rbt import OAuthTokens
 from reboot.aio.exceptions import InputError
 from reboot.aio.http import PythonWebFramework
 from reboot.crypto import root_keys
@@ -272,7 +272,7 @@ class Google(RegisteredOAuthProvider):
             # returns one on the *first* consent (not on later sign-ins),
             # so the token store carries the existing refresh token
             # forward rather than us forcing the consent screen every
-            # time with `prompt=consent` (see `OAuthServer._store_idp_tokens`).
+            # time with `prompt=consent` (see `OAuthServer._store_oauth_tokens`).
             "access_type": "offline",
         }
         return f"{self._AUTHORIZATION_ENDPOINT}?{urlencode(params)}"

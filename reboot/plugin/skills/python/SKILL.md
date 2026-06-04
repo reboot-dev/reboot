@@ -171,7 +171,7 @@ messages nested as attributes, the `Servicer` base class, and the
   calling `Service.ref().write(context, callback)` — not `self.state` —
   because workflows can re-execute on replay.
 - `.rbtrc` is **line-based**, not YAML. Each line is `<subcommand> <flag>`.
-  Use `--application-name=<app>` (canonical on `reboot>=1.0.4`; `--name`
+  Use `--application-name=<app>` (canonical since Reboot 1.0.4; `--name`
   still works as a deprecated alias but warns).
 - The actor's ID is `self.ref().state_id` inside writer/reader/
   transaction methods, and `context.state_id` inside workflows.

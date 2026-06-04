@@ -594,15 +594,15 @@ class ServiceServer(Server):
         # Once recovery is complete, we can start serving traffic.
         await super().start()
 
-        # And also start serving web framework traffic if requested.
-        # Tell the web framework which application it serves first, so its
-        # HTTP handlers can build app-internal contexts (e.g. the OAuth
-        # server persisting encrypted identity-provider tokens).
-        self._web_framework.set_application_id(self._application_id)
+        # And also start serving web framework traffic if requested. Pass
+        # the application ID so its HTTP handlers can build app-internal
+        # contexts (e.g. the OAuth server persisting encrypted
+        # identity-provider tokens).
         self._http_port = await self._web_framework.start(
             self._server_id,
             self._http_port,
             self._channel_manager,
+            self._application_id,
         )
 
         # And also start serving React traffic.

@@ -36,29 +36,13 @@ from rbt.std.oauth.v1.oauth_rbt import (
     StoreResponse,
 )
 from reboot.aio.applications import Library
-from reboot.aio.contexts import (
-    Context,
-    ReaderContext,
-    TransactionContext,
-    WorkflowContext,
-    WriterContext,
-)
+from reboot.aio.contexts import Context, ReaderContext, TransactionContext
 from reboot.std.ciphertext.v1.ciphertext import (
     CIPHERTEXT_LIBRARY_NAME,
     make_associated_data,
 )
 from reboot.std.collections.ordered_map.v1 import ordered_map
-from typing import Optional, Union
-
-# Any servicer state context that can issue the reads `_lookup` needs.
-# (Excludes `ExternalContext`, which has no `state_id` and never reaches
-# `_lookup` — it's only ever called from `store`/`fetch`.)
-ReadableContext = Union[
-    ReaderContext,
-    WriterContext,
-    TransactionContext,
-    WorkflowContext,
-]
+from typing import Optional
 
 OAUTH_LIBRARY_NAME = "reboot.std.oauth.v1.oauth"
 
@@ -132,7 +116,7 @@ class OAuthTokenManagerServicer(OAuthTokenManager.Servicer):
         # providers issue one only on the first consent) must `fetch` and
         # merge first — we can't read the index here, since this same
         # transaction writes it (Reboot forbids reading and writing the
-        # same state in one transaction). See `OAuthServer._store_idp_tokens`.
+        # same state in one transaction).
         ciphertext, _ = await Ciphertext.encrypt(
             context,
             plaintext=request.tokens.SerializeToString(),
@@ -160,15 +144,14 @@ class OAuthTokenManagerServicer(OAuthTokenManager.Servicer):
     @classmethod
     async def _lookup(
         cls,
-        context: ReadableContext,
+        context: ReaderContext,
         user_id: str,
     ) -> Optional[OAuthTokens]:
         """Reads and decrypts a user's stored tokens, or returns `None` if
         none are stored (or they have been crypto-shredded)."""
         try:
-            found = await cls._token_index(context).search(
-                context, key=user_id
-            )
+            found = await cls._token_index(context
+                                          ).search(context, key=user_id)
         except OrderedMap.SearchAborted as aborted:
             # The index is created lazily by the first `store`; a read
             # before anything was stored hits an unconstructed map. That

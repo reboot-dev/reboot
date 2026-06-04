@@ -67,14 +67,12 @@ Servicers and authorizer rules are **provider-agnostic** — the same
 `allow_if(all=[state_id_is_user_id])` works under every provider.
 Only `main.py` changes.
 
-**Beyond identity: calling the provider's API on the user's behalf.**
-`Google`, `GitHub`, and `Auth0` can also request extra OAuth **scopes**
-(`scopes=[...]`) and **capture the provider's tokens** (`store_tokens=True`)
-so the app can later call the provider's API as the signed-in user — read
-their calendar, open issues in their repos, and so on. That's a separate
-concern from picking a provider; the full setup (scopes, the encrypted
-token store, the `OAuthTokenManager.fetch(...)` read path, and the
-calls-go-in-a-`Workflow` rule) is in
+**Beyond identity.** Identity is this slot's only required job, but the
+same OAuth machinery can also let the app act **as the user** at an
+external service — call your identity provider's own API (built in via
+`scopes=[...]` + `store_tokens=True`), or **any other** third-party
+service (which you wire up yourself with your own OAuth endpoints). That's
+a separate concern from picking a provider; the full setup for both is in
 [`auth-provider-api-calls.md`](auth-provider-api-calls.md). The rest of
 this reference is only about **identity**.
 
@@ -132,6 +130,14 @@ reading both values from `os.environ`. Servicer code, API
 definitions, React components, and authorizer rules don't change.
 
 ## Where Credentials Come From
+
+**Remind the user** that this side is theirs to configure, for **every**
+provider — none of it is done in code. Registering the application,
+getting the client ID / secret, and authorizing the callback URL all
+happen in the provider's own console (Google Cloud Console, GitHub
+Developer Settings, the Auth0 dashboard — plus enabling upstream
+connections for Auth0). An `oauth=` provider won't work until they've set
+that up correctly, so tell them explicitly; don't assume it's done.
 
 Each provider has its own one-time registration flow. Follow the
 provider's own docs — they stay current with UI changes and cover

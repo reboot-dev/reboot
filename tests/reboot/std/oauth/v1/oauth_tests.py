@@ -66,9 +66,8 @@ class TestOAuthTokenManager(unittest.IsolatedAsyncioTestCase):
     async def _shred(self, *, service: str, user_id: str) -> None:
         # Shred a single user's tokens for a service: revoke the wrapping
         # key for their scope within the service's dedicated `KeyManager`.
-        await KeyManager.ref(_key_manager_id(service)).shred(
-            self.context, scope=user_id
-        )
+        await KeyManager.ref(_key_manager_id(service)
+                            ).shred(self.context, scope=user_id)
 
     async def test_store_fetch_round_trip(self) -> None:
         await self._store(
@@ -142,8 +141,7 @@ class TestOAuthTokenManager(unittest.IsolatedAsyncioTestCase):
     async def test_second_store_replaces_tokens(self) -> None:
         # `store` replaces wholesale: a later store with no refresh token
         # drops the previously stored one. (Carrying a refresh token
-        # forward is the caller's responsibility, via `fetch` + merge; see
-        # `OAuthServer._store_idp_tokens`.)
+        # forward is the caller's responsibility, via `fetch` + merge).
         await self._store(
             service=GOOGLE,
             user_id="u1",

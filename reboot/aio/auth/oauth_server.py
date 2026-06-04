@@ -24,7 +24,7 @@ from reboot.aio.auth.oauth_providers import (
 )
 from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
 from reboot.aio.contexts import ReaderContext
-from reboot.aio.http import PythonWebFramework, app_internal_external_context
+from reboot.aio.http import PythonWebFramework, external_context
 from reboot.crypto import root_keys
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
@@ -299,14 +299,16 @@ class OAuthServer:
 
         # Authorization and token endpoints.
         http.get(_AUTHORIZE_PATH)(self.authorize)
-        http.get(_CALLBACK_PATH)(self.callback)
-        http.post(_TOKEN_PATH)(self.token)
-        http.options(_TOKEN_PATH)(self.cors_preflight)
-
         # The callback persists the provider's tokens (when
         # `store_tokens=True`) via the app-internal-only `Ciphertext` /
-        # `OrderedMap` servicers, so it needs an app-internal context.
-        http.require_app_internal_context(_CALLBACK_PATH)
+        # `OrderedMap` servicers, so it opts in to an app-internal context
+        # with `app_internal=True`. That's safe here because the callback
+        # runs only after the identity provider has redirected back with an
+        # authorization code that we exchange and validate before doing any
+        # app-internal work.
+        http.get(_CALLBACK_PATH, app_internal=True)(self.callback)
+        http.post(_TOKEN_PATH)(self.token)
+        http.options(_TOKEN_PATH)(self.cors_preflight)
 
         # Let the provider register any additional routes it needs.
         self._provider.mount_routes(http)
@@ -352,7 +354,7 @@ class OAuthServer:
         except jwt.exceptions.PyJWTError:
             return None
 
-    async def _store_idp_tokens(
+    async def _store_oauth_tokens(
         self,
         request: Request,
         user_id: UserId,
@@ -367,7 +369,7 @@ class OAuthServer:
         """
         from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager
         service = self._provider.token_service_id
-        context = app_internal_external_context(request)
+        context = external_context(request)
         try:
             # Carry an existing refresh token forward when this sign-in
             # didn't return one (some providers, e.g. Google, issue a
@@ -713,7 +715,7 @@ class OAuthServer:
         # (`store_tokens=True`), persist them, encrypted, so the app can
         # use them to call the provider's API.
         if result.tokens is not None:
-            await self._store_idp_tokens(request, user_id, result.tokens)
+            await self._store_oauth_tokens(request, user_id, result.tokens)
 
         # Mint the auth code JWT.
         auth_code = self._make_jwt(
