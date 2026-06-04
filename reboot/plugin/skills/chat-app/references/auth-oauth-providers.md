@@ -73,7 +73,7 @@ Only `main.py` changes.
 so the app can later call the provider's API as the signed-in user — read
 their calendar, open issues in their repos, and so on. That's a separate
 concern from picking a provider; the full setup (scopes, the encrypted
-token store, the `oauth_tokens(...)` read path, and the
+token store, the `OAuthTokenManager.fetch(...)` read path, and the
 calls-go-in-a-`Workflow` rule) is in
 [`auth-provider-api-calls.md`](auth-provider-api-calls.md). The rest of
 this reference is only about **identity**.

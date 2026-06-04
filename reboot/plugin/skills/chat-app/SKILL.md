@@ -136,7 +136,7 @@ they cover aren't restated inline below.
 | [`references/react-app-tsx.md`](references/react-app-tsx.md)                     | `App.tsx` — generated `use<Type>()` hook usage (reader subscriptions + mutation calls), Python-snake → TypeScript-camel field naming, Zod-validated request/response types. Full Counter `App.tsx` + `App.module.css` example.                                                                                                                                                                                                                                                                          |
 | [`references/gotchas.md`](references/gotchas.md)                                 | The numbered MCP-Chat-App–specific trip list (1–19): `mcp=Tool()`/`mcp=None` required, `factory=True` on app-type `create`, `MyType.ref()` not `cls.ref()`/`self.ref()` in workflows, `.schedule()` from a Transaction, Optional+`default=None` for nested Models, `.read()` only on no-arg ref inside a workflow, method-name PascalCase → generated `<Type>.<Method>Request`, etc.                                                                                                                    |
 | [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md)       | Choosing your `Application(oauth=...)` provider via `OAuthProviderByEnvironment(dev=..., prod=...)` (the recommended `dev=Development(), prod=Google(...)` shape; a selected `None` arm fails startup), the `Google` / `GitHub` / `Auth0` / `Development` / `Anonymous` providers and where credentials come from (incl. the `/__/oauth/callback` URL), and the user-ID-namespace gotcha that makes switching providers after launch infeasible — choose deliberately **before** real users have state. |
-| [`references/auth-provider-api-calls.md`](references/auth-provider-api-calls.md) | **Acting on the user's behalf** at the provider: requesting extra OAuth `scopes=[...]`, capturing the provider's tokens with `store_tokens=True` (needs `ciphertext_library()` + `ordered_map_library()`), reading them back with `oauth_tokens(context, context.state_id)`, and making the outbound API call **inside a `Workflow`** (wrapped in a durability primitive). Per-provider refresh-token behavior; token erasure.                                                                          |
+| [`references/auth-provider-api-calls.md`](references/auth-provider-api-calls.md) | **Acting on the user's behalf** at the provider: requesting extra OAuth `scopes=[...]`, capturing the provider's tokens with `store_tokens=True` (needs `oauth_library()` + `ciphertext_library()` + `ordered_map_library()`), reading them back with `OAuthTokenManager.ref(GOOGLE).fetch(context, user_id=context.state_id)`, and making the outbound API call **inside a `Workflow`** (wrapped in a durability primitive). Per-provider refresh-token behavior; token erasure.                                                                          |
 
 ## Workflow: Plan First, Then Build
 
@@ -470,8 +470,9 @@ is just **which mode you're in**: `oauth=` + real rules from day one.
 capture the provider's tokens (`store_tokens=True`) so the app can call
 that provider's API as the signed-in user (their calendar, repos, etc.).
 The tokens are stored encrypted and read back with
-`oauth_tokens(context, context.state_id)`, and the outbound call goes
-**inside a `Workflow`**. Full setup, libraries, and the read path are in
+`OAuthTokenManager.ref(GOOGLE).fetch(context, user_id=context.state_id)`,
+and the outbound call goes **inside a `Workflow`**. Full setup,
+libraries, and the read path are in
 [`references/auth-provider-api-calls.md`](references/auth-provider-api-calls.md).
 
 ### Declarative, Not Decorator

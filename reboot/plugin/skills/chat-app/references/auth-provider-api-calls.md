@@ -22,8 +22,9 @@ This is **opt-in** and orthogonal to _which_ provider you chose
    (`scopes=[...]`).
 2. **Capture and persist the provider's tokens** during sign-in
    (`store_tokens=True`), which Reboot encrypts at rest.
-3. **Read the tokens back at call time** with `oauth_tokens(...)` and
-   make the outbound HTTP call **inside a `Workflow`**.
+3. **Read the tokens back at call time** with
+   `OAuthTokenManager.ref(GOOGLE).fetch(...)` and make the outbound HTTP
+   call **inside a `Workflow`**.
 
 The snippets below show the pattern end to end, using a Chat App that
 lists and edits the signed-in user's Google Calendar as the running
@@ -50,6 +51,7 @@ from reboot.std.ciphertext.v1.ciphertext import ciphertext_library
 from reboot.std.collections.ordered_map.v1.ordered_map import (
     ordered_map_library,
 )
+from reboot.std.oauth.v1.oauth import oauth_library
 from servicers.calendar import UserServicer
 
 # Read/write the user's calendar *events* (narrower than the full
@@ -64,7 +66,7 @@ def _google() -> Google:
         # Ask for Calendar access on top of the base `openid` scope.
         scopes=[_CALENDAR_SCOPE],
         # Capture + persist the Google tokens so the app can call the
-        # Calendar API. Requires the `ciphertext` library (below).
+        # Calendar API. Requires the `oauth` library (below).
         store_tokens=True,
     )
 
@@ -72,10 +74,11 @@ def _google() -> Google:
 async def main() -> None:
     application = Application(
         servicers=[UserServicer],
-        # `store_tokens=True` encrypts tokens via `ciphertext`, which in
-        # turn needs `ordered_map`. Without these the app fails fast at
-        # startup.
-        libraries=[ciphertext_library(), ordered_map_library()],
+        # `store_tokens=True` persists tokens via the `oauth` library,
+        # which encrypts them via `ciphertext`, which in turn needs
+        # `ordered_map`. Without all three the app fails fast at startup.
+        libraries=[oauth_library(), ciphertext_library(),
+                   ordered_map_library()],
         oauth=OAuthProviderByEnvironment(
             # The calendar needs a real provider token even in local dev
             # (`Development()` issues none), so both arms are `Google`.
@@ -88,11 +91,13 @@ async def main() -> None:
 
 **Two setup requirements that fail at startup if missing:**
 
-- **The `ciphertext` + `ordered_map` libraries.** The token store
-  encrypts each user's tokens with the `Ciphertext` stdlib type and
-  keeps a `user_id → ciphertext` pointer in an `OrderedMap`. Register
-  **both** `libraries=[ciphertext_library(), ordered_map_library()]`;
-  omitting them makes the app fail fast.
+- **The `oauth` + `ciphertext` + `ordered_map` libraries.** The token
+  store keeps each external service's tokens in an `OAuthTokenManager`
+  (one per service, addressed by `GOOGLE` / `GITHUB` / …), encrypts each
+  user's tokens with the `Ciphertext` stdlib type, and keeps a
+  `user_id → ciphertext` pointer in an `OrderedMap`. Register **all
+  three** `libraries=[oauth_library(), ciphertext_library(),
+  ordered_map_library()]`; omitting any makes the app fail fast.
 - **`REBOOT_CRYPTO_ROOT_KEYS`** backs the encryption. It's
   **auto-provisioned under `rbt dev run`**, so local dev needs no setup.
   In production it's part of your deploy; see
@@ -100,38 +105,46 @@ async def main() -> None:
   `python/references/crypto-root-keys.md`.
 
 **`Development()` issues no tokens.** It's a fake account picker with no
-real provider behind it, so `oauth_tokens(...)` returns `None` under it.
+real provider behind it, so `fetch(...)` reports nothing stored under it.
 If a feature genuinely needs the provider's API, use the real provider in
 the `dev=` arm too (as above) so you can exercise it locally — you'll
 need real credentials in dev then.
 
 ## 2. Reading tokens and calling the API — inside a `Workflow`
 
-At call time, read the signed-in user's tokens with `oauth_tokens`:
+At call time, read the signed-in user's tokens with
+`OAuthTokenManager.fetch`, addressing the manager by the service whose
+tokens you stored (the `GOOGLE` / `GITHUB` constants name the well-known
+services):
 
 ```python
-from reboot.aio.auth.oauth_token_store import oauth_tokens
+from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager
+from reboot.std.oauth.v1.oauth import GOOGLE
 ```
 
 ```python
-tokens = await oauth_tokens(context, context.state_id)
+response = await OAuthTokenManager.ref(GOOGLE).fetch(
+    context, user_id=context.state_id
+)
 ```
 
-It returns `Optional[IdpTokens]` (from
-`reboot.aio.auth.oauth_providers`):
+It returns a `FetchResponse` with `found: bool` and `tokens: OAuthTokens`
+(meaningful only when `found`):
 
 | Field           | Type            | Meaning                                                    |
 | --------------- | --------------- | ---------------------------------------------------------- |
 | `access_token`  | `str`           | Bearer token for the provider's API.                       |
-| `refresh_token` | `Optional[str]` | Present only when the provider issued one (see below).     |
-| `expires_at`    | `Optional[int]` | Absolute expiry, epoch seconds, or `None` if not reported. |
+| `refresh_token` | `optional str`  | Present only when the provider issued one (see below).     |
+| `expires_at`    | `optional int`  | Absolute expiry, epoch seconds; unset if not reported.     |
 | `scopes`        | `list[str]`     | The scopes the provider actually granted.                  |
 
-`None` means **no tokens are stored for this user** — they haven't
-signed in with this provider yet, signed in _before_ you added
-`store_tokens=True` / a new scope, or had their tokens crypto-shredded.
-Always handle it: surface a "connect / re-authenticate" message rather
-than crashing.
+`found=False` means **no tokens are stored for this user** — they signed
+in _before_ you added `store_tokens=True` / a new scope, or had their
+tokens crypto-shredded. And if **no one** has ever signed in with this
+service yet, the manager is unconstructed and `fetch` aborts with
+`OAuthTokenManager.FetchAborted` (a `StateNotConstructed` error) — treat
+that the same as "not connected". Always handle both: surface a
+"connect / re-authenticate" message rather than crashing.
 
 > **The outbound HTTP call MUST go in a `Workflow`.** This is the
 > framework-wide "external calls only in Workflows" rule
@@ -143,9 +156,10 @@ than crashing.
 > inside a `WorkflowContext` (see
 > `python/references/workflow-method.md` for the decision table). A
 > `WorkflowContext` is also app-internal,
-> which the `OrderedMap` / `Ciphertext` servicers backing the token
-> store require — so reading tokens and calling the API belong in the
-> same workflow. Use **`context.state_id`** as the `user_id` argument,
+> which the `OAuthTokenManager` / `Ciphertext` / `OrderedMap` servicers
+> backing the token store require — so reading tokens and calling the API
+> belong in the same workflow. Use **`context.state_id`** as the `user_id`
+> argument,
 > **not `context.auth`**: a `Workflow` is a `@classmethod` typically
 > reached via a scheduled or app-internal call, so `context.auth` isn't
 > reliably populated there. `context.state_id` always resolves to the
@@ -162,11 +176,19 @@ class UserServicer(User.Servicer):
         context: WorkflowContext,
         request: User.CreateEventRequest,
     ) -> CreateEventResponse:
-        tokens = await oauth_tokens(context, context.state_id)
-        if tokens is None:
+        try:
+            stored = await OAuthTokenManager.ref(GOOGLE).fetch(
+                context, user_id=context.state_id
+            )
+        except OAuthTokenManager.FetchAborted:
+            # No one has connected this service yet (the manager is
+            # constructed lazily by the first store).
+            return CreateEventResponse(ok=False, message=_CONNECT_MESSAGE)
+        if not stored.found:
             # Not connected (or scope not yet granted): tell the user,
             # don't crash.
             return CreateEventResponse(ok=False, message=_CONNECT_MESSAGE)
+        tokens = stored.tokens
 
         async def do_create() -> calendar_api.EventResult:
             # The actual external HTTP call to the provider's API, using
@@ -213,12 +235,12 @@ result a `cached_events` Reader exposes.
 
 ## 3. Refresh tokens differ per provider
 
-Reboot **stores** whatever the token endpoint returns and **carries a
-previously stored `refresh_token` forward** if a later sign-in omits it
-— but it does **not** auto-refresh expired access tokens for you. If you
-need long-lived background access, check `expires_at` and refresh via the
-provider's token endpoint yourself. Whether you even _get_ a refresh
-token is provider-specific:
+The OAuth server **stores** whatever the token endpoint returns and
+**carries a previously stored `refresh_token` forward** if a later
+sign-in omits it — but it does **not** auto-refresh expired access tokens
+for you. If you need long-lived background access, check `expires_at` and
+refresh via the provider's token endpoint yourself. Whether you even
+_get_ a refresh token is provider-specific:
 
 - **Google** returns a `refresh_token` only on the **first** consent, and
   only because the provider sends `access_type=offline` automatically.
@@ -236,11 +258,22 @@ token is provider-specific:
 
 ## 4. Erasing a user's tokens
 
-Each user's tokens are encrypted under a dedicated per-user
-crypto-shred scope (`oauth-idp-tokens:{user_id}`), separate from any
-scope your app uses for its own ciphertexts. To erase a user's stored
-provider tokens (e.g. as part of deleting the user), shred that scope;
-`oauth_tokens(...)` then returns `None` for them. The scope mechanics are
+Each service's tokens live under their own dedicated `KeyManager`, and
+each user's tokens are encrypted under a per-user crypto-shred scope (the
+`user_id`) within it — separate from any scope your app uses for its own
+ciphertexts. To erase a user's stored tokens for a service (e.g. as part
+of deleting the user), shred that scope in the service's manager:
+
+```python
+from rbt.std.ciphertext.v1.ciphertext_rbt import KeyManager
+from reboot.std.oauth.v1.oauth import GOOGLE, _key_manager_id
+
+await KeyManager.ref(_key_manager_id(GOOGLE)).shred(
+    context, scope=user_id
+)
+```
+
+`fetch(...)` then reports `found=False` for them. The scope mechanics are
 in `python/references/stdlib-ciphertext.md`.
 
 ## Checklist
@@ -248,12 +281,13 @@ in `python/references/stdlib-ciphertext.md`.
 - [ ] `scopes=[...]` lists the extra permissions your API calls need
       (least privilege), on top of the provider's base identity scope.
 - [ ] `store_tokens=True` on the provider.
-- [ ] `libraries=[ciphertext_library(), ordered_map_library()]` on the
-      `Application`.
+- [ ] `libraries=[oauth_library(), ciphertext_library(),
+      ordered_map_library()]` on the `Application`.
 - [ ] The real provider is in the `dev=` arm if the feature must work
       under `rbt dev run` (`Development()` issues no tokens).
 - [ ] Every method that calls the provider's API is a `Workflow`, with
       the call wrapped in a durability primitive (`at_least_once` /
       `at_most_once`).
-- [ ] `oauth_tokens(context, context.state_id) is None` is handled with a
-      "connect / re-authenticate" path, not a crash.
+- [ ] A `fetch` reporting `found=False` (and an `OAuthTokenManager.FetchAborted`
+      before anyone has connected) is handled with a "connect /
+      re-authenticate" path, not a crash.

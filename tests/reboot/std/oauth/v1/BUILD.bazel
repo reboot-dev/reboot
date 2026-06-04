@@ -1,0 +1,17 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "oauth_tests_py",
+    size = "medium",
+    srcs = [":oauth_tests.py"],
+    main = "oauth_tests.py",
+    deps = [
+        "//reboot/aio:tests_py",
+        "//reboot/std/ciphertext/v1:ciphertext_py",
+        "//reboot/std/collections/ordered_map/v1:ordered_map_py",
+        "//reboot/std/oauth/v1:oauth_py",
+        "@com_github_reboot_dev_reboot//rbt/std/ciphertext/v1:ciphertext_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/std/oauth/v1:oauth_py_reboot",
+    ],
+)

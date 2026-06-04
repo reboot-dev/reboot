@@ -17,8 +17,8 @@ import time
 from mcp.server.auth.provider import AccessToken
 from reboot.aio.auth import Auth
 from reboot.aio.auth.oauth_providers import (
-    IdpTokens,
     OAuthProvider,
+    OAuthTokens,
     UserId,
     origin_from_request,
 )
@@ -356,21 +356,44 @@ class OAuthServer:
         self,
         request: Request,
         user_id: UserId,
-        tokens: IdpTokens,
+        tokens: OAuthTokens,
     ) -> None:
-        """Persist the provider's tokens (encrypted) for `user_id`.
+        """Persist the provider's tokens (encrypted) for `user_id`, under
+        the `OAuthTokenManager` for this provider's external service.
 
         Best-effort: a storage failure (e.g. a misconfigured ciphertext
         key) is logged but does not block the sign-in, so auth never
         breaks because the token vault is misconfigured.
         """
-        # Imported lazily to avoid an import cycle: `oauth_token_store`
-        # pulls in the `ciphertext` library, which imports
-        # `reboot.aio.applications`, which imports this module.
-        from reboot.aio.auth.oauth_token_store import store_idp_tokens
+        from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager
+        service = self._provider.token_service_id
+        context = app_internal_external_context(request)
         try:
-            await store_idp_tokens(
-                app_internal_external_context(request),
+            # Carry an existing refresh token forward when this sign-in
+            # didn't return one (some providers, e.g. Google, issue a
+            # refresh token only on the first consent, so a later sign-in
+            # would otherwise drop it). `fetch` and `store` are separate
+            # transactions, so this can't live inside `store`, which writes
+            # the same per-user index it would have to read.
+            if not tokens.HasField("refresh_token"):
+                try:
+                    existing = await OAuthTokenManager.ref(service).fetch(
+                        context, user_id=user_id
+                    )
+                except OAuthTokenManager.FetchAborted:
+                    # Nothing stored for this service yet (the manager is
+                    # constructed lazily by the first store).
+                    existing = None
+                if (
+                    existing is not None and existing.found and
+                    existing.tokens.HasField("refresh_token")
+                ):
+                    merged = OAuthTokens()
+                    merged.CopyFrom(tokens)
+                    merged.refresh_token = existing.tokens.refresh_token
+                    tokens = merged
+            await OAuthTokenManager.ref(service).store(
+                context,
                 user_id=user_id,
                 tokens=tokens,
             )

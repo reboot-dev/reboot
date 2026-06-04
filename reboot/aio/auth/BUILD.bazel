@@ -62,24 +62,11 @@ py_library(
         "//reboot/aio:http_py",
         "//reboot/crypto:root_keys_py",
         "@com_github_reboot_dev_reboot//log:log_py",
+        "@com_github_reboot_dev_reboot//rbt/std/oauth/v1:oauth_py_reboot",
         requirement("aiohttp"),
         requirement("jinja2"),
         requirement("pyjwt"),
         requirement("python-ulid"),
-    ],
-)
-
-py_library(
-    name = "oauth_token_store_py",
-    srcs = ["oauth_token_store.py"],
-    srcs_version = "PY3",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":oauth_providers_py",
-        "//reboot/aio:contexts_py",
-        "//reboot/aio:external_py",
-        "@com_github_reboot_dev_reboot//rbt/std/ciphertext/v1:ciphertext_py_reboot",
-        "@com_github_reboot_dev_reboot//rbt/std/collections/ordered_map/v1:ordered_map_py_reboot",
     ],
 )
 
@@ -91,11 +78,11 @@ py_library(
     deps = [
         ":__init___py",
         ":oauth_providers_py",
-        ":oauth_token_store_py",
         ":token_verifiers_py",
         "//reboot:settings_py",
         "//reboot/aio:http_py",
         "//reboot/crypto:root_keys_py",
+        "@com_github_reboot_dev_reboot//rbt/std/oauth/v1:oauth_py_reboot",
         requirement("pyjwt"),
         requirement("starlette"),
     ],
@@ -110,7 +97,6 @@ py_library(
         ":authorizers_py",
         ":oauth_providers_py",
         ":oauth_server_py",
-        ":oauth_token_store_py",
         ":token_verifiers_py",
     ],
 )

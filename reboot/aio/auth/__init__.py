@@ -7,26 +7,26 @@ from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     # For type checkers only; the runtime re-export is lazy (see
-    # `__getattr__` below) to avoid an import cycle — `oauth_token_store`
-    # pulls in the `ciphertext` library, which imports
-    # `reboot.aio.applications`, which imports this package.
-    from reboot.aio.auth.oauth_providers import IdpTokens
-    from reboot.aio.auth.oauth_token_store import oauth_tokens
+    # `__getattr__` below) to avoid an import cycle — `OAuthTokenManager`
+    # pulls in the `oauth` library, which imports `reboot.aio.applications`,
+    # which imports this package.
+    from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager
+    from reboot.aio.auth.oauth_providers import OAuthTokens
 
-__all__ = ["Auth", "IdpTokens", "oauth_tokens"]
+__all__ = ["Auth", "OAuthTokens", "OAuthTokenManager"]
 
 
 def __getattr__(name: str) -> Any:
-    """Lazily re-export the OAuth token-store public API so
-    `from reboot.aio.auth import oauth_tokens` works without importing the
-    (heavy, cycle-prone) ciphertext machinery at package import time.
+    """Lazily re-export the OAuth token public API so
+    `from reboot.aio.auth import OAuthTokenManager` works without importing
+    the (heavy, cycle-prone) reboot machinery at package import time.
     """
-    if name == "oauth_tokens":
-        from reboot.aio.auth.oauth_token_store import oauth_tokens
-        return oauth_tokens
-    if name == "IdpTokens":
-        from reboot.aio.auth.oauth_providers import IdpTokens
-        return IdpTokens
+    if name == "OAuthTokenManager":
+        from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager
+        return OAuthTokenManager
+    if name == "OAuthTokens":
+        from reboot.aio.auth.oauth_providers import OAuthTokens
+        return OAuthTokens
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

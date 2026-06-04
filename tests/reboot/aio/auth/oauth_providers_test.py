@@ -4,10 +4,12 @@ import html
 import httpx
 import json
 import os
+import rbt.v1alpha1.errors_pb2
 import re
 import unittest
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager, OAuthTokens
 from reboot.aio.applications import Application
 from reboot.aio.auth.oauth_providers import (
     Anonymous,
@@ -16,12 +18,10 @@ from reboot.aio.auth.oauth_providers import (
     ExchangeResult,
     GitHub,
     Google,
-    IdpTokens,
     OAuthProvider,
     OAuthProviderByEnvironment,
     UserId,
 )
-from reboot.aio.auth.oauth_token_store import oauth_tokens, store_idp_tokens
 from reboot.aio.exceptions import InputError
 from reboot.aio.tests import OAuthProviderForTest, Reboot
 from reboot.ping.ping import CounterServicer, UserServicer
@@ -30,6 +30,8 @@ from reboot.std.ciphertext.v1.ciphertext import ciphertext_library
 from reboot.std.collections.ordered_map.v1.ordered_map import (
     ordered_map_library,
 )
+from reboot.std.oauth.v1.oauth import oauth_library
+from typing import Optional
 from unittest import mock
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -523,10 +525,23 @@ class _FakeStoringProvider(OAuthProvider):
     identity provider."""
 
     USER_ID = UserId("stored-user")
+    SERVICE = "fake-service.example"
+
+    def __init__(self) -> None:
+        super().__init__()
+        # The tokens the next `exchange_code` reports. Mutable so a test
+        # can simulate a re-login that returns a different access token
+        # and/or no refresh token.
+        self.access_token: str = "access-1"
+        self.refresh_token: Optional[str] = "refresh-1"
 
     @property
     def stores_tokens(self) -> bool:
         return True
+
+    @property
+    def token_service_id(self) -> str:
+        return self.SERVICE
 
     def authorization_url(self, state: str, redirect_uri: str) -> str:
         return f"{redirect_uri}?{urlencode({'code': 'fake', 'state': state})}"
@@ -536,9 +551,9 @@ class _FakeStoringProvider(OAuthProvider):
     ) -> ExchangeResult:
         return ExchangeResult(
             user_id=self.USER_ID,
-            tokens=IdpTokens(
-                access_token="access-1",
-                refresh_token="refresh-1",
+            tokens=OAuthTokens(
+                access_token=self.access_token,
+                refresh_token=self.refresh_token,
                 expires_at=None,
                 scopes=["read:user"],
             ),
@@ -547,8 +562,10 @@ class _FakeStoringProvider(OAuthProvider):
 
 class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
     """Drives the OAuth flow with a token-storing provider and checks the
-    identity provider's tokens are encrypted-at-rest, readable via the
-    `oauth_tokens` helper, and rotated on refresh."""
+    identity provider's tokens are encrypted-at-rest, readable via
+    `OAuthTokenManager.fetch`, and rotated on refresh."""
+
+    SERVICE = _FakeStoringProvider.SERVICE
 
     async def asyncSetUp(self):
         self.rbt = Reboot()
@@ -557,15 +574,16 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.rbt.stop()
 
-    async def test_oauth_tokens_is_none_before_anything_is_stored(self):
-        # Reading tokens before any have ever been stored must return
-        # `None`, not abort: the backing token map is created lazily by
-        # the first store, so a read beforehand hits an unconstructed
-        # map.
+    async def test_fetch_before_any_store_is_unconstructed(self):
+        # Reading tokens for a service before any have ever been stored
+        # aborts with `StateNotConstructed`: the manager is constructed
+        # lazily by the first store. Callers treat that as "no tokens"
+        # (the same idiom used for an unconstructed `OrderedMap`).
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                libraries=[ciphertext_library(),
+                libraries=[oauth_library(),
+                           ciphertext_library(),
                            ordered_map_library()],
                 oauth=OAuthProviderForTest(_FakeStoringProvider()),
             ),
@@ -574,56 +592,99 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
             name=f"test-{self.id()}",
             app_internal=True,
         )
-        self.assertIsNone(await oauth_tokens(context, "nobody"))
+        with self.assertRaises(OAuthTokenManager.FetchAborted) as raised:
+            await OAuthTokenManager.ref(self.SERVICE).fetch(
+                context, user_id="nobody"
+            )
+        self.assertIsInstance(
+            raised.exception.error,
+            rbt.v1alpha1.errors_pb2.StateNotConstructed,
+        )
+
+    async def _perform_idp_login(self) -> None:
+        """Drive one full identity-provider sign-in (register → authorize
+        → follow into the callback), which causes the OAuth server to store
+        the provider's tokens. The token exchange isn't needed: storage
+        happens in the callback."""
+        async with httpx.AsyncClient() as client:
+            metadata = (
+                await client.get(
+                    self.rbt.http_localhost_url(
+                        "/.well-known/oauth-authorization-server"
+                    )
+                )
+            ).json()
+            client_redirect_uri = "http://localhost/callback"
+            code_verifier = base64.urlsafe_b64encode(os.urandom(32)
+                                                    ).rstrip(b"=").decode()
+            code_challenge = base64.urlsafe_b64encode(
+                hashlib.sha256(code_verifier.encode()).digest()
+            ).rstrip(b"=").decode()
+            client_id = (
+                await client.post(
+                    metadata["registration_endpoint"],
+                    json={"redirect_uris": [client_redirect_uri]},
+                )
+            ).json()["client_id"]
+            response = await client.get(
+                metadata["authorization_endpoint"],
+                params={
+                    "response_type": "code",
+                    "client_id": client_id,
+                    "redirect_uri": client_redirect_uri,
+                    "code_challenge": code_challenge,
+                    "code_challenge_method": "S256",
+                    "state": "mcp-state",
+                },
+            )
+            self.assertEqual(response.status_code, 302)
+            # Follow the redirect into the callback; it stores the tokens.
+            response = await client.get(response.headers["location"])
+            self.assertEqual(response.status_code, 302)
 
     async def test_store_carries_existing_refresh_token_forward(self):
         # Some providers (e.g. Google) return a refresh token only on the
-        # first consent. A later store without one must keep the existing
-        # refresh token rather than drop it.
+        # first consent. A later sign-in without one must keep the existing
+        # refresh token rather than drop it; the OAuth server carries it
+        # forward (`fetch` + merge) before storing.
+        provider = _FakeStoringProvider()
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                libraries=[ciphertext_library(),
+                libraries=[oauth_library(),
+                           ciphertext_library(),
                            ordered_map_library()],
-                oauth=OAuthProviderForTest(_FakeStoringProvider()),
+                oauth=OAuthProviderForTest(provider),
             ),
         )
+
+        # First sign-in: the provider returns an access and a refresh token.
+        await self._perform_idp_login()
+
+        # A later sign-in where the provider returned a fresh access token
+        # but no refresh token.
+        provider.access_token = "access-2"
+        provider.refresh_token = None
+        await self._perform_idp_login()
+
         context = self.rbt.create_external_context(
             name=f"test-{self.id()}",
             app_internal=True,
         )
-        await store_idp_tokens(
-            context,
-            user_id="u1",
-            tokens=IdpTokens(
-                access_token="access-1",
-                refresh_token="refresh-1",
-                expires_at=None,
-                scopes=[],
-            ),
+        stored = await OAuthTokenManager.ref(self.SERVICE).fetch(
+            context, user_id=_FakeStoringProvider.USER_ID
         )
-        # A re-login where the provider returned no refresh token.
-        await store_idp_tokens(
-            context,
-            user_id="u1",
-            tokens=IdpTokens(
-                access_token="access-2",
-                refresh_token=None,
-                expires_at=None,
-                scopes=[],
-            ),
-        )
-        stored = await oauth_tokens(context, "u1")
-        assert stored is not None
-        self.assertEqual(stored.access_token, "access-2")
-        self.assertEqual(stored.refresh_token, "refresh-1")
+        self.assertTrue(stored.found)
+        self.assertEqual(stored.tokens.access_token, "access-2")
+        self.assertEqual(stored.tokens.refresh_token, "refresh-1")
 
     async def test_tokens_stored_on_login_and_untouched_by_refresh(self):
         provider = _FakeStoringProvider()
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, CounterServicer],
-                libraries=[ciphertext_library(),
+                libraries=[oauth_library(),
+                           ciphertext_library(),
                            ordered_map_library()],
                 oauth=OAuthProviderForTest(provider),
             ),
@@ -692,15 +753,18 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
             refresh_token = tokens["refresh_token"]
 
         # The identity provider's tokens were stored, encrypted, and are
-        # readable via the public helper using an app-internal context.
+        # readable via `OAuthTokenManager.fetch` using an app-internal
+        # context.
         context = self.rbt.create_external_context(
             name=f"test-{self.id()}",
             app_internal=True,
         )
-        stored = await oauth_tokens(context, _FakeStoringProvider.USER_ID)
-        assert stored is not None
-        self.assertEqual(stored.access_token, "access-1")
-        self.assertEqual(stored.refresh_token, "refresh-1")
+        stored = await OAuthTokenManager.ref(self.SERVICE).fetch(
+            context, user_id=_FakeStoringProvider.USER_ID
+        )
+        self.assertTrue(stored.found)
+        self.assertEqual(stored.tokens.access_token, "access-1")
+        self.assertEqual(stored.tokens.refresh_token, "refresh-1")
 
         # Refreshing the MCP token mints a new pair but does NOT
         # re-authorize at the identity provider: the stored provider
@@ -717,10 +781,12 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(response.status_code, 200)
 
-        unchanged = await oauth_tokens(context, _FakeStoringProvider.USER_ID)
-        assert unchanged is not None
-        self.assertEqual(unchanged.access_token, "access-1")
-        self.assertEqual(unchanged.refresh_token, "refresh-1")
+        unchanged = await OAuthTokenManager.ref(self.SERVICE).fetch(
+            context, user_id=_FakeStoringProvider.USER_ID
+        )
+        self.assertTrue(unchanged.found)
+        self.assertEqual(unchanged.tokens.access_token, "access-1")
+        self.assertEqual(unchanged.tokens.refresh_token, "refresh-1")
 
 
 class OAuthProviderByEnvironmentTest(unittest.TestCase):

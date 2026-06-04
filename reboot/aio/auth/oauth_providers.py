@@ -9,6 +9,7 @@ import jwt
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from rbt.std.oauth.v1.oauth_rbt import OAuthTokens
 from datetime import datetime, timezone
 from jinja2 import Template
 from log.log import get_logger, log_at_most_once_per
@@ -30,27 +31,6 @@ _DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 24 * 60 * 60  # 24 hours.
 
 
 @dataclass(frozen=True)
-class IdpTokens:
-    """The identity provider's OAuth tokens, captured during the code
-    exchange so the application can later call the provider's API on the
-    user's behalf.
-
-    Only populated by providers constructed with `store_tokens=True`;
-    see `OAuthProvider.exchange_code`.
-    """
-    # The provider's access token (a bearer token for the provider's
-    # API).
-    access_token: str
-    # The provider's refresh token, if one was issued.
-    refresh_token: Optional[str]
-    # Absolute expiry of `access_token` as epoch seconds, or `None` if
-    # the provider didn't tell us.
-    expires_at: Optional[int]
-    # The scopes the provider actually granted.
-    scopes: list[str]
-
-
-@dataclass(frozen=True)
 class ExchangeResult:
     """The result of exchanging an identity provider authorization code:
     the resolved user ID and, when the provider captures them, the
@@ -60,7 +40,7 @@ class ExchangeResult:
     # The provider's tokens, present only when the provider was
     # constructed with `store_tokens=True`; `None` otherwise, so apps
     # that don't opt in never carry these secrets around.
-    tokens: Optional[IdpTokens]
+    tokens: Optional[OAuthTokens]
 
 
 def _expires_at_from_expires_in(expires_in: Any) -> Optional[int]:
@@ -160,6 +140,16 @@ class OAuthProvider(ABC):
         flip this on when constructed with `store_tokens=True`.
         """
         return False
+
+    @property
+    def token_service_id(self) -> str:
+        """The `OAuthTokenManager` state id this provider's tokens are
+        stored under — names the external third-party service (e.g.
+        "google.com"), so application code can read them back via
+        `OAuthTokenManager.ref(...)`. Providers that set `stores_tokens`
+        must override this.
+        """
+        raise NotImplementedError()
 
     def mount_routes(self, http: PythonWebFramework.HTTP) -> None:
         """
@@ -262,6 +252,11 @@ class Google(RegisteredOAuthProvider):
     # `sub` claim (the user's ID).
     _REQUIRED_SCOPE = "openid"
 
+    @property
+    def token_service_id(self) -> str:
+        # Mirrors `reboot.std.oauth.v1.oauth.GOOGLE`.
+        return "google.com"
+
     def authorization_url(
         self,
         state: str,
@@ -277,7 +272,7 @@ class Google(RegisteredOAuthProvider):
             # returns one on the *first* consent (not on later sign-ins),
             # so the token store carries the existing refresh token
             # forward rather than us forcing the consent screen every
-            # time with `prompt=consent` (see `store_idp_tokens`).
+            # time with `prompt=consent` (see `OAuthServer._store_idp_tokens`).
             "access_type": "offline",
         }
         return f"{self._AUTHORIZATION_ENDPOINT}?{urlencode(params)}"
@@ -343,9 +338,9 @@ class Google(RegisteredOAuthProvider):
     def _tokens_from_response(
         self,
         token_response: dict,
-    ) -> Optional[IdpTokens]:
-        """Build an `IdpTokens` from a Google token endpoint response, or
-        `None` when token storage isn't enabled or no access token came
+    ) -> Optional[OAuthTokens]:
+        """Build an `OAuthTokens` from a Google token endpoint response,
+        or `None` when token storage isn't enabled or no access token came
         back.
         """
         if not self._store_tokens:
@@ -353,7 +348,7 @@ class Google(RegisteredOAuthProvider):
         access_token = token_response.get("access_token")
         if access_token is None:
             return None
-        return IdpTokens(
+        return OAuthTokens(
             access_token=access_token,
             refresh_token=token_response.get("refresh_token"),
             expires_at=_expires_at_from_expires_in(
@@ -376,7 +371,7 @@ class GitHub(RegisteredOAuthProvider):
 
     - A classic **OAuth App** never issues a refresh token. Its access
       token simply does not expire (so there is nothing to refresh, and
-      `IdpTokens.refresh_token` / `expires_at` come back `None`).
+      `OAuthTokens.refresh_token` / `expires_at` come back unset).
     - A **GitHub App** issues a `refresh_token` (and an expiring access
       token) only when "Expire user authorization tokens" is enabled in
       the app's settings. With that opt-out left disabled, its
@@ -395,6 +390,11 @@ class GitHub(RegisteredOAuthProvider):
     # `read:user`: minimum scope needed to call `GET /user` and obtain
     # the numeric user ID.
     _REQUIRED_SCOPE = "read:user"
+
+    @property
+    def token_service_id(self) -> str:
+        # Mirrors `reboot.std.oauth.v1.oauth.GITHUB`.
+        return "github.com"
 
     def authorization_url(
         self,
@@ -467,18 +467,18 @@ class GitHub(RegisteredOAuthProvider):
     def _tokens_from_response(
         self,
         token_response: dict,
-    ) -> Optional[IdpTokens]:
-        """Build an `IdpTokens` from a GitHub token endpoint response, or
-        `None` when token storage isn't enabled. Classic GitHub OAuth App
-        tokens don't expire and carry no refresh token; GitHub Apps issue
-        expiring tokens with a `refresh_token` and `expires_in`.
+    ) -> Optional[OAuthTokens]:
+        """Build an `OAuthTokens` from a GitHub token endpoint response,
+        or `None` when token storage isn't enabled. Classic GitHub OAuth
+        App tokens don't expire and carry no refresh token; GitHub Apps
+        issue expiring tokens with a `refresh_token` and `expires_in`.
         """
         if not self._store_tokens:
             return None
         access_token = token_response.get("access_token")
         if access_token is None:
             return None
-        return IdpTokens(
+        return OAuthTokens(
             access_token=access_token,
             refresh_token=token_response.get("refresh_token"),
             expires_at=_expires_at_from_expires_in(
@@ -586,6 +586,12 @@ class Auth0(RegisteredOAuthProvider):
     def _userinfo_endpoint(self) -> str:
         return f"https://{self._domain}/userinfo"
 
+    @property
+    def token_service_id(self) -> str:
+        # Auth0 is a per-tenant identity broker, so the tenant domain
+        # (e.g. "your-tenant.us.auth0.com") names the service.
+        return self._domain
+
     def validate(self) -> None:
         # Validate the credentials the base class knows about, then the
         # `domain` that's unique to Auth0 — same fail-fast contract, so
@@ -674,9 +680,9 @@ class Auth0(RegisteredOAuthProvider):
     def _tokens_from_response(
         self,
         token_response: dict,
-    ) -> Optional[IdpTokens]:
-        """Build an `IdpTokens` from an Auth0 token endpoint response, or
-        `None` when token storage isn't enabled or no access token came
+    ) -> Optional[OAuthTokens]:
+        """Build an `OAuthTokens` from an Auth0 token endpoint response,
+        or `None` when token storage isn't enabled or no access token came
         back. Auth0 only returns a `refresh_token` when `offline_access`
         was requested (see `authorization_url`).
         """
@@ -685,7 +691,7 @@ class Auth0(RegisteredOAuthProvider):
         access_token = token_response.get("access_token")
         if access_token is None:
             return None
-        return IdpTokens(
+        return OAuthTokens(
             access_token=access_token,
             refresh_token=token_response.get("refresh_token"),
             expires_at=_expires_at_from_expires_in(
