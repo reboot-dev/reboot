@@ -52,7 +52,7 @@ Reboot supports Python 3.10+. The only required runtime dependency is
 [project]
 requires-python = ">= 3.10"
 dependencies = [
-    "reboot==1.0.4",
+    "reboot==1.1.0",
 ]
 
 [tool.rye]
@@ -60,7 +60,7 @@ dev-dependencies = [
     "mypy==1.18.1",
     "pytest>=7.4.2",
     "types-protobuf>=4.24.0.20240129",
-    "reboot==1.0.4",
+    "reboot==1.1.0",
 ]
 virtual = true
 managed = true
