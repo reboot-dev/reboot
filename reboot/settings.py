@@ -146,6 +146,15 @@ ENVVAR_REBOOT_LOCAL_ENVOY_PORT = 'REBOOT_LOCAL_ENVOY_PORT'
 # derives its JWT signing key.
 ENVVAR_REBOOT_CRYPTO_ROOT_KEYS = 'REBOOT_CRYPTO_ROOT_KEYS'
 
+# Legacy predecessor of `ENVVAR_REBOOT_CRYPTO_ROOT_KEYS`. No current
+# Reboot code reads it, but old application images do an unconditional
+# fail-fast check for it on startup. The runtime keeps setting it (to the
+# same per-application root-keys value) so those old apps still boot. Per
+# application so any old app that did use the OAuth flow keeps a stable,
+# high-entropy, non-shared signing secret rather than a guessable global
+# one. Remove once all supported app versions read the root keys instead.
+ENVVAR_REBOOT_OAUTH_SIGNING_SECRET = 'REBOOT_OAUTH_SIGNING_SECRET'
+
 # The shared-secret used to authenticate admin requests.
 ENVVAR_SECRET_REBOOT_ADMIN_TOKEN = 'SECRET_REBOOT_ADMIN_TOKEN'
 

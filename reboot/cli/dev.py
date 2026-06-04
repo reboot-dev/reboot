@@ -66,6 +66,7 @@ from reboot.settings import (
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_LOCAL_ENVOY,
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
+    ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
     ENVVAR_REBOOT_USE_TTY,
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
 )
@@ -1397,6 +1398,15 @@ async def __dev_run(
             # No application name means no per-app state directory to
             # persist into; fall back to a fixed value.
             env[ENVVAR_REBOOT_CRYPTO_ROOT_KEYS] = "v1:reboot-dev"
+
+    # Backwards compatibility: old application images do an unconditional
+    # fail-fast check for the legacy OAuth signing secret on startup. Keep
+    # setting it (to the same value as the root keys) so those apps still
+    # boot; current code reads `ENVVAR_REBOOT_CRYPTO_ROOT_KEYS` instead.
+    env.setdefault(
+        ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
+        env[ENVVAR_REBOOT_CRYPTO_ROOT_KEYS],
+    )
 
     if tracing == Tracing.JAEGER:
         # TODO: dynamic port. See comment in `_run_jaeger()`.
