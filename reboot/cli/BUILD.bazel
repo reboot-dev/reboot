@@ -43,6 +43,7 @@ py_library(
         requirement("aiofiles"),
         requirement("pyprctl"),
         requirement("cryptography"),
+        requirement("python-dotenv"),
         ":directories_py",
         ":generate_py",
         ":monkeys_py",

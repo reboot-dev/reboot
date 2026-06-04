@@ -7,7 +7,8 @@ from rbt.std.collections.queue.v1.queue_rbt import (
     EnqueueResponse,
     Queue,
 )
-from reboot.aio.auth.authorizers import allow
+from reboot.aio.applications import Library
+from reboot.aio.auth.authorizers import allow_if, is_app_internal
 from reboot.aio.contexts import (
     ReaderContext,
     TransactionContext,
@@ -15,9 +16,13 @@ from reboot.aio.contexts import (
 )
 from reboot.aio.workflows import until
 from reboot.std.collections.v1 import sorted_map
-from reboot.std.collections.v1.sorted_map import SortedMap
+from reboot.std.collections.v1.sorted_map import (
+    SORTED_MAP_LIBRARY_NAME,
+    SortedMap,
+)
 from reboot.std.item.v1.item import Item
 from reboot.uuidv7 import uuid7
+from typing import Optional
 from uuid import uuid4
 
 # The number of items a bulk `Dequeue` without an `at_most` number set
@@ -27,8 +32,16 @@ DEFAULT_BULK_COUNT = 64
 
 class QueueServicer(Queue.Servicer):
 
+    # Singleton authorizer as class variable.
+    # Discussion here for singleton authorizer vs subclassing the servicer:
+    # https://github.com/reboot-dev/mono/pull/5140#issuecomment-3667592432
+    _authorizer: Optional[Queue.Authorizer] = None
+
     def authorizer(self):
-        return allow()
+        if self._authorizer:
+            return self._authorizer
+        else:
+            return allow_if(all=[is_app_internal])
 
     @property
     def _map(self):
@@ -192,5 +205,28 @@ class QueueServicer(Queue.Servicer):
         return EmptyResponse(empty=(len(response.entries) == 0))
 
 
+QUEUE_LIBRARY_NAME = "reboot.std.collections.queue.v1.queue"
+
+
+class QueueLibrary(Library):
+    name = QUEUE_LIBRARY_NAME
+
+    def __init__(
+        self,
+        authorizer: Optional[Queue.Authorizer] = None,
+    ):
+        QueueServicer._authorizer = authorizer
+
+    def servicers(self):
+        return [QueueServicer]
+
+    def requirements(self):
+        return [SORTED_MAP_LIBRARY_NAME]
+
+
 def servicers():
     return [QueueServicer] + sorted_map.servicers()
+
+
+def queue_library(authorizer: Optional[Queue.Authorizer] = None):
+    return QueueLibrary(authorizer)

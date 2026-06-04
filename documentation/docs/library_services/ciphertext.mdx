@@ -1,0 +1,329 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Ciphertext
+
+Application-layer **envelope encryption** with a **revocable wrapping key**.
+Use it to encrypt values at rest and to **crypto-shred** them — make a whole
+scope of data permanently unrecoverable by destroying a single key, with no
+need to find or rewrite the data itself (e.g., GDPR "right to erasure").
+
+## How it works
+
+The library uses three layers of keys:
+
+```
+root KEK    — derived from the REBOOT_CRYPTO_ROOT_KEYS; never stored.
+   └ wraps → WrappingKey — a random 256-bit key, stored *encrypted* under the
+                           root KEK; the revocable unit.
+      └ wraps → DEK — a random per-value key.
+         └ encrypts → your plaintext (stored as the "envelope").
+```
+
+- Each value is encrypted under a fresh **data encryption key (DEK)**.
+- That DEK is wrapped (encrypted) by a **`WrappingKey`** the library derives
+  from your `scope` — one wrapping key per scope.
+- The wrapping key's own material is stored only in encrypted form, wrapped by
+  a **root key** derived from `REBOOT_CRYPTO_ROOT_KEYS`, which lives
+  outside the database.
+
+This buys three properties:
+
+- **Encryption at rest.** Recovering a value requires *both* the database
+  contents *and* `REBOOT_CRYPTO_ROOT_KEYS`. A leaked database backup
+  alone is inert.
+- **Crypto-shredding.** Shredding a scope destroys the only key that can
+  unwrap the DEKs it protects, so every `Ciphertext` in it becomes
+  permanently unrecoverable — instantly, without touching the ciphertexts.
+- **Cheap rotation.** Rotating the root key re-wraps only the (small) wrapping
+  keys, never the data.
+
+## The root key
+
+The library reads its root key from the `REBOOT_CRYPTO_ROOT_KEYS` environment
+variable. Its value carries a **version inline** and may list multiple
+comma-separated versions, newest first:
+
+```
+v1:<key>                 # Steady state.
+v2:<new-key>,v1:<key>    # During a rotation.
+```
+
+`rbt dev` and the Reboot Cloud **provision the root key(s) automatically**, per
+application — you do not need to set it yourself.
+
+## Imports and servicers
+
+The `ciphertext` library depends on [`OrderedMap`](./ordered_map), so include
+both when starting your `Application`.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+
+```py
+
+from reboot.std.ciphertext.v1.ciphertext import ciphertext_library
+from reboot.std.collections.ordered_map.v1.ordered_map import (
+    ordered_map_library,
+)
+
+async def main():
+    application = Application(
+        servicers=[MyServicer],
+        libraries=[ciphertext_library(), ordered_map_library()],
+    )
+    await application.run()
+```
+
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+
+```ts
+import { ciphertextLibrary } from "@reboot-dev/reboot-std/ciphertext/v1";
+import { orderedMapLibrary } from "@reboot-dev/reboot-std/collections/ordered_map/v1";
+
+new Application({
+  servicers: [MyServicer],
+  libraries: [ciphertextLibrary(), orderedMapLibrary()],
+}).run();
+```
+
+  </TabItem>
+</Tabs>
+
+## Methods
+
+### Encrypt
+
+Encrypts `plaintext` into a new `Ciphertext`. `scope` is the
+crypto-shred identifier — any string (e.g., a user id, a tenant id);
+shredding the scope destroys every value in it.
+
+`key_manager_id` is required. Pass `APP_SHARED_KEY_MANAGER_ID` to use the
+application-wide shared manager, or a dedicated id to partition keys
+across [independent key managers](#multiple-key-managers).
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+
+```py
+from rbt.std.ciphertext.v1.ciphertext_rbt import Ciphertext
+from reboot.std.ciphertext.v1.ciphertext import APP_SHARED_KEY_MANAGER_ID
+from uuid import uuid4
+
+ciphertext_id = str(uuid4())
+ciphertext, _ = await Ciphertext.encrypt(
+    context,
+    ciphertext_id,
+    plaintext=b"123-45-6789",
+    associated_data=make_associated_data(user_id="42", purpose="ssn"),
+    scope="user_id:42",
+    key_manager_id=APP_SHARED_KEY_MANAGER_ID,
+)
+```
+
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+
+```ts
+import {
+  APP_SHARED_KEY_MANAGER_ID,
+  Ciphertext,
+} from "@reboot-dev/reboot-std/ciphertext/v1";
+
+const ciphertextId = crypto.randomUUID();
+const [ciphertext] = await Ciphertext.encrypt(context, ciphertextId, {
+  plaintext: new TextEncoder().encode("123-45-6789"),
+  associatedData: makeAssociatedData({ user_id: "42", purpose: "ssn" }),
+  scope: "user_id:42",
+  keyManagerId: APP_SHARED_KEY_MANAGER_ID,
+});
+```
+
+  </TabItem>
+</Tabs>
+
+### Associated data (encryption context)
+
+To encrypt/decrypt ciphertext you'll need to provide `associated_data`
+which is **bound but not stored**: it is authenticated as part of the
+ciphertext but never persisted, so the identical bytes must be
+supplied to decrypt — an envelope cannot be decrypted in a context it
+wasn't sealed for.
+
+Because it must match **byte-for-byte**, don't build it ad hoc. A flat
+string like `b"user-42:ssn"` is ambiguous (`("a", "b:c")` and `("a:b",
+"c")` collide), and `json.dumps` is not canonical (key order,
+whitespace, and number formatting vary, and may differ between
+languages or library implementations). Use the `make_associated_data`
+helper — a canonical, length-prefixed encoding of a string key/value
+map (an "encryption context", in AWS KMS terms). The Python and
+TypeScript helpers produce identical bytes, so a value encrypted from
+one language decrypts from the other.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+
+```py
+from reboot.std.ciphertext.v1.ciphertext import make_associated_data
+
+associated_data = make_associated_data(user_id="42", purpose="ssn")
+```
+
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+
+```ts
+import { makeAssociatedData } from "@reboot-dev/reboot-std/ciphertext/v1";
+
+const associatedData = makeAssociatedData({ user_id: "42", purpose: "ssn" });
+```
+
+  </TabItem>
+</Tabs>
+
+Use ASCII keys (so the sort order matches across languages), and keep values as
+strings (so you never hit number-formatting drift).
+
+### Multiple key managers
+
+By default every ciphertext uses keys tracked in a shared `KeyManager`
+(id `APP_SHARED_KEY_MANAGER_ID`). Independent consumers — different libraries,
+tenants, or data domains — can instead partition their keys into
+**separate managers** by passing `key_manager_id=` to `encrypt`. This
+ensures that two managers that use the *same* `scope` won't shred each
+others ciphertexts (`shred` operates per manager).
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+
+```py
+# Encrypt under a named manager.
+await Ciphertext.encrypt(
+    context,
+    ciphertext_id,
+    plaintext=b"123-45-6789",
+    associated_data=make_associated_data(user_id="42", purpose="ssn"),
+    scope="user_id:42",
+    key_manager_id="tenant:acme",
+)
+
+# Shred that scope within the same manager.
+await KeyManager.ref("tenant:acme").shred(context, scope="user_id:42")
+```
+
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+
+```ts
+// Encrypt under a named manager.
+await Ciphertext.encrypt(context, ciphertextId, {
+  plaintext: new TextEncoder().encode("123-45-6789"),
+  associatedData: makeAssociatedData({ user_id: "42", purpose: "ssn" }),
+  scope: "user_id:42",
+  keyManagerId: "tenant:acme",
+});
+
+// Shred that scope within the same manager.
+await KeyManager.ref("tenant:acme").shred(context, { scope: "user_id:42" });
+```
+
+  </TabItem>
+</Tabs>
+
+A `Ciphertext` remembers its manager, so `decrypt` and `rescope` need no
+`key_manager_id` — they stay within the manager the value was encrypted under.
+
+### Decrypt
+
+Returns the plaintext. Supply the same `associated_data` used at `encrypt` time.
+Raises `Ciphertext.DecryptAborted` with a `DecryptionFailed`,
+`ScopeShredded`, or `UnknownRootKeyVersion` error.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+
+```py
+response = await Ciphertext.ref(ciphertext_id).decrypt(
+    context,
+    associated_data=make_associated_data(user_id="42", purpose="ssn"),
+)
+plaintext = response.plaintext
+```
+
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+
+```ts
+const response = await Ciphertext.ref(ciphertextId).decrypt(context, {
+  associatedData: makeAssociatedData({ user_id: "42", purpose: "ssn" }),
+});
+const plaintext = new TextDecoder().decode(response.plaintext);
+```
+
+  </TabItem>
+</Tabs>
+
+### Crypto-shred (`shred`)
+
+Shredding a scope destroys the key protecting it. Every `Ciphertext` in that
+scope becomes permanently undecryptable — even with full database and root-key
+access. Shredding is scoped: shredding one scope does not affect any other.
+Shred through the `KeyManager` instance that you encrypted ciphertext for.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+
+```py
+from rbt.std.ciphertext.v1.ciphertext_rbt import KeyManager
+from reboot.std.ciphertext.v1.ciphertext import APP_SHARED_KEY_MANAGER_ID
+
+await KeyManager.ref(APP_SHARED_KEY_MANAGER_ID).shred(context, scope="user_id:42")
+```
+
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+
+```ts
+import {
+  APP_SHARED_KEY_MANAGER_ID,
+  KeyManager,
+} from "@reboot-dev/reboot-std/ciphertext/v1";
+
+await KeyManager.ref(APP_SHARED_KEY_MANAGER_ID).shred(context, { scope: "user_id:42" });
+```
+
+  </TabItem>
+</Tabs>
+
+### Re-scope a ciphertext
+
+Move a single ciphertext to a different scope (e.g., a different shred scope).
+Only the small wrapped DEK changes; the bulk data is untouched.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+
+```py
+await Ciphertext.ref(ciphertext_id).rescope(context, scope="tenant:acme")
+```
+
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+
+```ts
+await Ciphertext.ref(ciphertextId).rescope(context, { scope: "tenant:acme" });
+```
+
+  </TabItem>
+</Tabs>
+
+## Key rotation
+
+When `REBOOT_CRYPTO_ROOT_KEYS` rotates each `KeyManager` instance
+**automatically** rotates all of its keys.
+
+A `KeyManager` always rotates to the highest active version in
+`REBOOT_CRYPTO_ROOT_KEYS` so it may skip versions (`v1` straight to
+`v3`), and refuses to go backwards (a lower active version just logs a
+warning and keeps waiting).

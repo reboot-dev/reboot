@@ -15,6 +15,7 @@ from reboot.aio.contexts import (
     ContextT,
     EffectValidation,
     EffectValidationRetry,
+    ReaderContext,
     TransactionContext,
     WorkflowContext,
     _log_message_for_effect_validation,
@@ -105,6 +106,7 @@ class Middleware(ABC):
         placement_client: PlacementClient,
         channel_manager: _ChannelManager,
         effect_validation: EffectValidation,
+        get_database_timestamp_ms: Callable[[], Optional[int]],
     ):
         self._application_id = application_id
         self._server_id = server_id
@@ -112,6 +114,7 @@ class Middleware(ABC):
         assert len(service_names) > 0
         self._service_names = service_names
         self._effect_validation = effect_validation
+        self._get_database_timestamp_ms = get_database_timestamp_ms
 
         self.placement_client = placement_client
         self.channel_manager = channel_manager
@@ -175,6 +178,8 @@ class Middleware(ABC):
             )
             kwargs['reactively_state_manager'] = reactively_state_manager
             kwargs['reactively_state_type'] = reactively_state_type
+        if context_type == TransactionContext:
+            kwargs['database_timestamp_ms'] = self._get_database_timestamp_ms()
         context = context_type(**kwargs)
 
         # Now toggle 'servicing' to indicate that we are servicing the
@@ -247,7 +252,11 @@ class Middleware(ABC):
             (
                 not isinstance(context, WorkflowContext) and
                 context.workflow_id is not None
-            )
+            ) or
+            # Reader called from within a Reboot method. The outermost
+            # method's effect-validation re-run will re-invoke this
+            # reader, so skip its own validation.
+            (isinstance(context, ReaderContext) and context.internal_call)
         )
         if is_non_root_in_nested:
             # When a method is nested (transactions/workflows), retry occurs

@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import re
 from google.api import annotations_pb2, http_pb2
@@ -306,12 +305,3 @@ def base64_serialize_proto_descriptor_set(
     file_descriptor_set: FileDescriptorSet
 ) -> bytes:
     return base64.b64encode(file_descriptor_set.SerializeToString())
-
-
-async def maybe_cancel_task(task: Optional[asyncio.Task]):
-    if task is not None and not task.done():
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass

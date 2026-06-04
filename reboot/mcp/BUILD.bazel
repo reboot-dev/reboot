@@ -16,19 +16,32 @@ py_library(
 )
 
 py_library(
-    name = "proxy_py",
-    srcs = ["proxy.py"],
+    name = "request_state_py",
+    srcs = ["request_state.py"],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
 )
 
 py_library(
-    name = "ui_py",
-    srcs = ["ui.py"],
+    name = "iframe_py",
+    srcs = ["iframe.py"],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
-        ":proxy_py",
+        ":request_state_py",
+    ],
+)
+
+py_library(
+    name = "ui_py",
+    srcs = ["ui.py"],
+    # Served verbatim by `dev_inline_html` when a Claude client hits a
+    # UI over a free-tier ngrok tunnel; read from runfiles at runtime.
+    data = ["claude_ngrok_error.html"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":iframe_py",
         "//reboot:settings_py",
     ],
 )
@@ -40,6 +53,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":context_py",
+        ":request_state_py",
         "@com_github_reboot_dev_reboot//log:log_py",
         requirement("mcp"),
         requirement("anyio"),
@@ -63,7 +77,8 @@ py_library(
         ":context_py",
         ":factories_py",
         ":helpers_py",
-        ":proxy_py",
+        ":iframe_py",
+        ":request_state_py",
         ":ui_py",
     ],
 )

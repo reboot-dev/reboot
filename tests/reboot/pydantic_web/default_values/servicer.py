@@ -24,6 +24,8 @@ class DefaultValuesTestServicer(DefaultValuesTest.Servicer):
         assert self.state.number == 0
         assert self.state.flag is False
         assert self.state.status == "first"
+        assert self.state.status_list == []
+        assert self.state.status_mapping == {}
         assert self.state.items == []
         assert self.state.mapping == {}
         assert self.state.optional_text is None
@@ -39,6 +41,8 @@ class DefaultValuesTestServicer(DefaultValuesTest.Servicer):
         self.state.number = request.number
         self.state.flag = request.flag
         self.state.status = request.status
+        self.state.status_list = request.status_list
+        self.state.status_mapping = request.status_mapping
         self.state.items = request.items
         self.state.mapping = request.mapping
         self.state.optional_text = request.optional_text
@@ -54,6 +58,8 @@ class DefaultValuesTestServicer(DefaultValuesTest.Servicer):
             number=self.state.number,
             flag=self.state.flag,
             status=self.state.status,
+            status_list=self.state.status_list,
+            status_mapping=self.state.status_mapping,
             items=self.state.items,
             mapping=self.state.mapping,
             optional_text=self.state.optional_text,

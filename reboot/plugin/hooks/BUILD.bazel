@@ -1,0 +1,5 @@
+filegroup(
+    name = "auto_approve_sh",
+    srcs = ["auto-approve.sh"],
+    visibility = ["//visibility:public"],
+)

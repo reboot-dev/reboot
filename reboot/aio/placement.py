@@ -1,4 +1,5 @@
 import asyncio
+import bisect
 import grpc.aio
 import hashlib
 import traceback
@@ -266,16 +267,20 @@ class PlanOnlyPlacementClient(PlacementClient):
         state_ref_hash: bytes = hashlib.sha1(
             state_ref.components()[0].to_str().encode("utf-8"),
         ).digest()
-        for entry in reversed(shard_list):
-            if entry.first_key <= state_ref_hash:
-                return entry.shard_id
-
-        # This cannot happen; the first entry in the shard list has been
-        # asserted to be `b""`, which is always <= any other key.
-        raise RuntimeError(
-            "Unexpectedly reached end of shard list while looking for key "
-            f"'{state_ref_hash.hex()}'."
+        # `shard_list` is sorted ascending by `first_key`. Find the
+        # rightmost entry whose `first_key` is `<= state_ref_hash`.
+        index = bisect.bisect_right(
+            shard_list,
+            state_ref_hash,
+            key=lambda entry: entry.first_key,
         )
+        # `bisect_right` returns the index _after_ any existing
+        # matches, so we need `index - 1`. The first entry in the
+        # shard list has been asserted to be `b""`, which is always <=
+        # any other key, so `index >= 1` and thus we can always safely
+        # do `index - 1`.
+        assert index >= 1
+        return shard_list[index - 1].shard_id
 
     def server_for_shard(self, shard_id: ShardId) -> ServerId:
         return self._server_by_shard[shard_id]

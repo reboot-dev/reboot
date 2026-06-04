@@ -385,12 +385,23 @@ py_test(
 )
 
 py_test(
+    name = "uuidv7_test_py",
+    timeout = "short",
+    srcs = [":uuidv7_test.py"],
+    main = "uuidv7_test.py",
+    deps = [
+        "//reboot:uuidv7_py",
+    ],
+)
+
+py_test(
     name = "state_manager_tests_py",
     srcs = [":state_manager_tests.py"],
     main = "state_manager_tests.py",
     deps = [
         ":greeter_servicers_py",
         ":test_helpers_py",
+        "//reboot:uuidv7_py",
         "//reboot/aio:exceptions_py",
         "//reboot/aio:tests_py",
     ],
@@ -675,6 +686,16 @@ py_test(
         ":general_boilerplate_py_reboot",
         "//reboot/aio:tests_py",
         "//reboot/std/collections/v1:sorted_map_py",
+    ],
+)
+
+py_test(
+    name = "preload_tests_py",
+    srcs = [":preload_tests.py"],
+    main = "preload_tests.py",
+    deps = [
+        ":bank_py",
+        "//reboot/aio:tests_py",
     ],
 )
 

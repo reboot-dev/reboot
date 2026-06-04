@@ -10,6 +10,7 @@ from chat.v1.channel_rbt import (
 )
 from chat.v1.message_rbt import Message
 from reboot.aio.auth.authorizers import allow
+from reboot.aio.concurrently import concurrently
 from reboot.aio.contexts import ReaderContext, TransactionContext
 from reboot.protobuf import as_str, from_str
 from reboot.std.index.v1.index import Index
@@ -76,15 +77,17 @@ class ChannelServicer(Channel.Servicer):
             limit=request.limit,
         )
 
-        timestamps = [entry.key for entry in response.entries]
-        message_ids = [as_str(entry.value) for entry in response.entries]
-
-        responses = await Message.forall(message_ids).get(context)
-
         return MessagesResponse(
             messages={
-                timestamps[i]: response.details
-                for i, response in enumerate(responses)
+                timestamp: response.details
+                async for (timestamp, _), response in concurrently(
+                    lambda _,
+                    message_id: Message.ref(message_id).get(context),
+                    for_each=[
+                        (entry.key, as_str(entry.value))
+                        for entry in response.entries
+                    ],
+                )
             }
         )
 

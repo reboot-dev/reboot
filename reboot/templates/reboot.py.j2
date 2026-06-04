@@ -428,6 +428,7 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             placement_client=placement_client,
             channel_manager=channel_manager,
             effect_validation=effect_validation,
+            get_database_timestamp_ms=lambda: state_manager.latest_timestamp_ms,
         )
 
         self._servicer = servicer
@@ -1246,6 +1247,27 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
             headers=context._headers, method='{{ method.proto.name }}'
         )
 
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         {% if method.options.proto.kind in ['writer', 'transaction'] %}
         # Check if we already have performed this mutation!
         #
@@ -1392,6 +1414,32 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         )
         response = {{ method.output_type }}()
 
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='{{ method.proto.name }}'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
         # Check if we already have performed this schedule! Note that
         # we need to do this for all kinds of methods because this is
         # effectively a mutation (actually a `writer`, see below).
@@ -1432,11 +1480,6 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 context.participants.add(
                     self._servicer.__state_type_name__, context._state_ref
                 )
-
-            # Try to verify the token if a token verifier exists.
-            context.auth = await self._maybe_verify_token(
-                headers=headers, method='{{ method.proto.name }}'
-            )
 
             async with self._state_manager.writer(
                 context,
@@ -1550,8 +1593,6 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
         {% else %}
         ) -> IMPORT_typing.AsyncIterable[{{ method.output_type }}]:
         {% endif %}
-            {% if not method.proto.server_streaming %}
-            {% endif %}
             context: IMPORT_typing.Optional[IMPORT_reboot_aio_contexts.Context] = None
             try:
                 {% if method.options.proto.kind == 'workflow' %}
@@ -2081,6 +2122,7 @@ class {{ client.proto.state_name }}WriterStub(_{{ client.proto.state_name }}Stub
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -2198,6 +2240,7 @@ class {{ client.proto.state_name }}WorkflowStub(_{{ client.proto.state_name }}St
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -2269,6 +2312,7 @@ class {{ client.proto.state_name }}TasksStub(_{{ client.proto.state_name }}Stub)
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
                 bearer_token=bearer_token,
             ) as call:
                 assert isinstance(call, IMPORT_typing.Awaitable), type(call)
@@ -3110,7 +3154,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 return await self._read(
                     self._servicer,
                     context.idempotency(
-                        key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
                         how=IMPORT_reboot_aio_idempotency.ALWAYS,
                     ) if self._how == IMPORT_reboot_aio_workflows.ALWAYS else context.idempotency(
                         alias=self._alias,
@@ -3218,7 +3261,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 unidempotently = self._how == IMPORT_reboot_aio_workflows.ALWAYS
                 idempotency = (
                     context.idempotency(
-                        key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
                         how=IMPORT_reboot_aio_idempotency.ALWAYS,
                     ) if unidempotently else context.idempotency(
                         alias=self._alias,
@@ -5421,7 +5463,6 @@ class {{ client.proto.state_name }}:
 
         def always(self):
             return self.idempotently(
-                key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
                 how=IMPORT_reboot_aio_idempotency.ALWAYS,
             )
 
@@ -7088,7 +7129,6 @@ class {{ client.proto.state_name }}:
     @classmethod
     def always(cls):
         return cls.idempotently(
-            key=IMPORT_reboot_aio_idempotency.make_expiring_idempotency_key(),
             how=IMPORT_reboot_aio_idempotency.ALWAYS,
         )
 

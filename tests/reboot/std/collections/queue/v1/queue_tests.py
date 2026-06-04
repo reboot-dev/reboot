@@ -4,7 +4,7 @@ from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot
 from reboot.protobuf import as_int, as_str, from_int, from_str, pack, unpack
 
-# Import used in Queue documentation.
+# Import used in Queue documentation, so we want to keep them
 # isort: off
 from reboot.std.collections.queue.v1.queue import Queue
 from reboot.std.item.v1.item import Item
@@ -12,8 +12,9 @@ from reboot.std.item.v1.item import Item
 from reboot.std.collections.queue.v1.queue import (
     DEFAULT_BULK_COUNT,
     DequeueResponse,
-    servicers,
+    queue_library,
 )
+from reboot.std.collections.v1.sorted_map import sorted_map_library
 from tests.reboot.greeter_rbt import CreateRequest
 
 
@@ -30,9 +31,14 @@ class TestQueue(unittest.IsolatedAsyncioTestCase):
         """
         Test that we can do a simple enqueue and a dequeue with a `Value`.
         """
-        await self.rbt.up(Application(
-            servicers=servicers(),
-        ))
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    queue_library(),
+                    sorted_map_library(),
+                ],
+            )
+        )
 
         context = self.rbt.create_external_context(
             name=f"test-{self.id()}",
@@ -59,9 +65,14 @@ class TestQueue(unittest.IsolatedAsyncioTestCase):
         """
         Test that we can do a simple enqueue and a dequeue with a `bytes`.
         """
-        await self.rbt.up(Application(
-            servicers=servicers(),
-        ))
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    queue_library(),
+                    sorted_map_library(),
+                ],
+            )
+        )
 
         context = self.rbt.create_external_context(
             name=f"test-{self.id()}",
@@ -85,9 +96,14 @@ class TestQueue(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(item.bytes, b"brownies")
 
     async def test_single_any(self) -> None:
-        await self.rbt.up(Application(
-            servicers=servicers(),
-        ))
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    queue_library(),
+                    sorted_map_library(),
+                ],
+            )
+        )
 
         context = self.rbt.create_external_context(
             name=f"test-{self.id()}",
@@ -117,9 +133,14 @@ class TestQueue(unittest.IsolatedAsyncioTestCase):
         """
         Test that we can do a bulk enqueue and a dequeue.
         """
-        await self.rbt.up(Application(
-            servicers=servicers(),
-        ))
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    queue_library(),
+                    sorted_map_library(),
+                ],
+            )
+        )
 
         context = self.rbt.create_external_context(
             name=f"test-{self.id()}",
@@ -159,9 +180,14 @@ class TestQueue(unittest.IsolatedAsyncioTestCase):
         """
         Test that we can dequeue fewer items than `at_most`.
         """
-        await self.rbt.up(Application(
-            servicers=servicers(),
-        ))
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    queue_library(),
+                    sorted_map_library(),
+                ],
+            )
+        )
 
         context = self.rbt.create_external_context(
             name=f"test-{self.id()}",
@@ -184,13 +210,18 @@ class TestQueue(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(as_str(bulk_items.items[0].value), "apple")
         self.assertEqual(as_str(bulk_items.items[1].value), "gum")
 
-    async def test_try_dequeue_before_enqueue(self) -> None:
+    async def test_try_dequeue(self) -> None:
         """
         Test that we can dequeue (non-blocking) before we enqueue.
         """
-        await self.rbt.up(Application(
-            servicers=servicers(),
-        ))
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    queue_library(),
+                    sorted_map_library(),
+                ],
+            )
+        )
 
         context = self.rbt.create_external_context(
             name=f"test-{self.id()}",
@@ -199,17 +230,35 @@ class TestQueue(unittest.IsolatedAsyncioTestCase):
 
         queue = Queue.ref("test-queue")
 
-        # Attempt to dequeue.
-        response = await queue.try_dequeue(context, bulk=True)
+        # Attempt to dequeue. print() and if/else is for examples in documentation.
+        response = await queue.try_dequeue(context)
+        if response == DequeueResponse():
+            print("The queue is empty.")
+        else:
+            # Something was in the queue; handle it.
+            pass
+
         self.assertEquals(response, DequeueResponse())
+
+        # Add an item and `try_dequeue()` it.
+        await queue.enqueue(context, value=from_str("tree"))
+        response = await queue.try_dequeue(context)
+
+        # Verify correct item.
+        self.assertEquals(as_str(response.value), "tree")
 
     async def test_dequeue_bulk_default_at_most(self) -> None:
         """
         Test that when we bulk dequeue, a default value gets set for `at_most`.
         """
-        await self.rbt.up(Application(
-            servicers=servicers(),
-        ))
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    queue_library(),
+                    sorted_map_library(),
+                ],
+            )
+        )
 
         context = self.rbt.create_external_context(
             name=f"test-{self.id()}",
@@ -233,9 +282,14 @@ class TestQueue(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(as_int(response.items[i].value), i)
 
     async def test_dequeue_waits_for_item(self) -> None:
-        await self.rbt.up(Application(
-            servicers=servicers(),
-        ))
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    queue_library(),
+                    sorted_map_library(),
+                ],
+            )
+        )
         queue_name = "test-queue"
         has_dequeued = False
 
@@ -284,13 +338,56 @@ class TestQueue(unittest.IsolatedAsyncioTestCase):
             has_dequeued, "Should have dequeued after items were enqueued."
         )
 
+    async def test_empty(self) -> None:
+        """
+        Test that Queue.empty returns whether or not the Queue has items.
+        """
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    queue_library(),
+                    sorted_map_library(),
+                ],
+            )
+        )
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        queue = Queue.ref("test-queue")
+
+        # Need to construct state before reading.
+        await queue.try_dequeue(context)
+
+        # Check `empty()` returns `True` when the queue has no items.
+        # `print()` below is for example code in documentation.
+        response = await queue.empty(context)
+        if response.empty:
+            print("The queue is empty.")
+
+        self.assertTrue(response.empty)
+
+        # Add an item.
+        await queue.enqueue(context, value=from_str("tree"))
+
+        # Check that `empty()` returns `False``.
+        response = await queue.empty(context)
+        self.assertFalse(response.empty)
+
     async def test_example_code_for_documentation(self) -> None:
         """
         Examples used in documentation for single enqueue/dequeue.
         """
-        await self.rbt.up(Application(
-            servicers=servicers(),
-        ))
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    queue_library(),
+                    sorted_map_library(),
+                ],
+            )
+        )
 
         context = self.rbt.create_external_context(
             name=f"test-{self.id()}",
@@ -337,9 +434,14 @@ class TestQueue(unittest.IsolatedAsyncioTestCase):
         """
         Examples used in documentation for bulk enqueue/dequeue.
         """
-        await self.rbt.up(Application(
-            servicers=servicers(),
-        ))
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    queue_library(),
+                    sorted_map_library(),
+                ],
+            )
+        )
 
         context = self.rbt.create_external_context(
             name=f"test-{self.id()}",

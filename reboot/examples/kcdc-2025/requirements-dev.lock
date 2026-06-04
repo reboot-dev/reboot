@@ -49,7 +49,6 @@ charset-normalizer==3.4.3
 click==8.2.1
     # via uvicorn
 colorama==0.4.6
-    # via griffecli
     # via reboot
 cryptography==44.0.0
     # via pyjwt
@@ -76,13 +75,8 @@ googleapis-common-protos==1.65.0
     # via reboot
 greenlet==3.2.4
     # via sqlalchemy
-griffe==2.0.2
-    # via pydantic-ai-slim
-griffecli==2.0.2
-    # via griffe
 griffelib==2.0.2
-    # via griffe
-    # via griffecli
+    # via pydantic-ai-slim
 grpc-interceptor==0.15.4
     # via reboot
 grpcio==1.64.3
@@ -222,7 +216,7 @@ psutil==6.0.0
     # via reboot
 pycparser==2.22
     # via cffi
-pydantic==2.11.7
+pydantic==2.13.4
     # via anthropic
     # via fastapi
     # via genai-prices
@@ -235,11 +229,11 @@ pydantic==2.11.7
     # via pydantic-graph
     # via pydantic-settings
     # via reboot
-pydantic-ai-slim==1.60.0
+pydantic-ai-slim==1.87.0
     # via reboot
-pydantic-core==2.33.2
+pydantic-core==2.46.4
     # via pydantic
-pydantic-graph==1.60.0
+pydantic-graph==1.87.0
     # via pydantic-ai-slim
 pydantic-settings==2.13.1
     # via mcp
@@ -250,8 +244,9 @@ pyprctl==0.1.3
     # via reboot
 python-dateutil==2.9.0.post0
     # via kubernetes-asyncio
-python-dotenv==1.2.2
+python-dotenv==1.2.1
     # via pydantic-settings
+    # via reboot
 python-multipart==0.0.22
     # via mcp
 python-ulid==3.1.0
@@ -261,7 +256,7 @@ pyyaml==6.0.2
     # via langchain
     # via langchain-core
     # via reboot
-reboot==1.0.4
+reboot==1.1.0
 referencing==0.37.0
     # via jsonschema
     # via jsonschema-specifications
@@ -316,7 +311,7 @@ typing-extensions==4.15.0
     # via sqlalchemy
     # via typing-inspection
     # via uvicorn
-typing-inspection==0.4.1
+typing-inspection==0.4.2
     # via mcp
     # via pydantic
     # via pydantic-ai-slim

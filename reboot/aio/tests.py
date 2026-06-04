@@ -4,6 +4,11 @@ import reboot.aio.reboot
 import time
 import unittest
 from reboot.aio.applications import Application
+from reboot.aio.auth.oauth_providers import (
+    OAuthProvider,
+    OAuthProviderSelector,
+)
+from reboot.aio.auth.oauth_server import signing_secret
 from reboot.aio.auth.token_verifiers import TokenVerifier
 from reboot.aio.contexts import EffectValidation
 from reboot.aio.external import InitializeContext
@@ -13,15 +18,28 @@ from reboot.aio.reboot import ApplicationRevision
 from reboot.aio.servicers import Servicer
 from reboot.run_environments import in_nodejs
 from reboot.settings import (
+    ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG,
-    ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
 )
 from typing import Any, Awaitable, Callable, Optional, Sequence, overload
 from unittest import mock
 
-# Hardcoded signing secret for unit tests. Not a real
-# secret — only used in-process for test JWT minting.
-_TEST_OAUTH_SIGNING_SECRET = "reboot-test-signing-secret"
+# Hardcoded cryptographic root keys for unit tests. Not real secrets —
+# only used in-process (libraries derive their keys from these, e.g.,
+# the OAuth signing key for test JWT minting).
+_TEST_CRYPTO_ROOT_KEYS = "v1:reboot-test-root-key"
+
+
+class OAuthProviderForTest(OAuthProviderSelector):
+    """`OAuthProviderSelector` that always returns the given provider,
+    regardless of environment. Used by the test `Application`, since
+    tests run in a single, known environment."""
+
+    def __init__(self, provider: OAuthProvider):
+        self._provider = provider
+
+    def _select(self) -> OAuthProvider:
+        return self._provider
 
 
 def assert_called_twice_with(
@@ -68,11 +86,12 @@ class Reboot(reboot.aio.reboot.Reboot):
         # must be set before `start()` which is where
         # `monitor_event_loop()` reads the env var.
         os.environ[ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG] = 'true'
-        # Set a signing secret so that `OAuthServer` can be used in
-        # tests without manual env patching. Mirrors what `rbt dev` does
-        # for local development.
-        os.environ[ENVVAR_REBOOT_OAUTH_SIGNING_SECRET] = (
-            _TEST_OAUTH_SIGNING_SECRET
+        # Set cryptographic root keys so that `OAuthServer` (and any other
+        # key-deriving library) can be used in tests without manual env
+        # patching. Mirrors what `rbt dev` does for local development.
+        os.environ.setdefault(
+            ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
+            _TEST_CRYPTO_ROOT_KEYS,
         )
 
     def make_valid_oauth_access_token(
@@ -113,7 +132,7 @@ class Reboot(reboot.aio.reboot.Reboot):
         """
         return jwt.encode(
             claims,
-            _TEST_OAUTH_SIGNING_SECRET,
+            signing_secret(),
             algorithm="HS256",
         )
 

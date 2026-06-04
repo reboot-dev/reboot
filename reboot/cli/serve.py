@@ -344,13 +344,20 @@ async def serve_run(
             env[key] = value
 
         # If 'PYTHONPATH' is not explicitly set, we'll set it to the
-        # specified generated code directory. We want to get the directory from
-        # 'rbt generate' flags, which user might have specified in '.rbtrc'.
+        # specified generated code directory plus each proto directory.
+        # We want to get the directories from 'rbt generate' flags,
+        # which user might have specified in '.rbtrc'. Including the
+        # proto directories matches the behavior of `rbt dev run`, so
+        # that schemas defined as pydantic Models in `api/` are
+        # importable from servicer code under `rbt serve run` too.
         if 'PYTHONPATH' not in env and parser.dot_rc is not None:
             generate_parser = parser_factory(['rbt', 'generate'])
             generate_args, _ = generate_parser.parse_args()
             if generate_args.python is not None:
-                env['PYTHONPATH'] = generate_args.python
+                pythonpath = generate_args.python
+                for proto_directory in (generate_args.proto_directories or []):
+                    pythonpath = pythonpath + os.pathsep + proto_directory
+                env['PYTHONPATH'] = pythonpath
 
         if not await aiofiles.os.path.isfile(application):
             terminal.fail(f"Missing application at '{application}'")

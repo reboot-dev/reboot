@@ -404,16 +404,20 @@ def _routes_for_server(
                     [CALLER_ID_HEADER] if not trust_caller_id else []
                 ),
             ),
-            # This route sends all traffic with the
-            # 'x-reboot-server-id' header and an exact path of '/'
-            # to the gRPC port because currently that is what serves
-            # '/'.
+            # This route sends traffic with the 'x-reboot-server-id'
+            # header and an exact path of '/' to the gRPC port,
+            # because that is what currently serves '/' (the
+            # `RootPage` servicer).
+            #
+            # This route deliberately does NOT require gRPC
+            # `content-type` (no `GrpcRouteMatchOptions`): a browser
+            # `GET /` arrives as plain HTTP and must match a route on
+            # which the gRPC-JSON transcoder is still enabled, so the
+            # transcoder can turn it into a `RootPage` gRPC call.
             route_components_pb2.Route(
                 match=route_components_pb2.RouteMatch(
                     path="/",
                     headers=[server_header_matcher],
-                    grpc=route_components_pb2.RouteMatch.GrpcRouteMatchOptions(
-                    ),
                 ),
                 route=route_components_pb2.RouteAction(
                     cluster=cluster_name,
@@ -707,7 +711,13 @@ def _filter_http_connection_manager(
                         ],
                         allow_methods="GET, PUT, DELETE, POST, OPTIONS",
                         allow_headers=
-                        f"{APPLICATION_ID_HEADER},{STATE_REF_HEADER},{SERVER_ID_HEADER},{IDEMPOTENCY_KEY_HEADER},{WORKFLOW_ID_HEADER},keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,grpc-timeout,{AUTHORIZATION_HEADER}",
+                        f"{APPLICATION_ID_HEADER},{STATE_REF_HEADER},{SERVER_ID_HEADER},{IDEMPOTENCY_KEY_HEADER},{WORKFLOW_ID_HEADER},keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,grpc-timeout,{AUTHORIZATION_HEADER}"
+                        +
+                        # `ngrok-skip-browser-warning` is needed so
+                        # HTML fetches when using ngrok tunnels will
+                        # not get the free-tier interstitial that
+                        # blocks CORS preflight.
+                        ",ngrok-skip-browser-warning",
                         max_age="1728000",
                         expose_headers="grpc-status,grpc-message",
                     ),

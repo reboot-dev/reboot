@@ -1,0 +1,50 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "ciphertext_py",
+    srcs = [
+        "_crypto.py",
+        "ciphertext.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot:settings_py",
+        "//reboot:uuidv7_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:concurrently_py",
+        "//reboot/aio:contexts_py",
+        "//reboot/aio:workflows_py",
+        "//reboot/aio/auth:authorizers_py",
+        "//reboot/application:application_py",
+        "//reboot/crypto:root_keys_py",
+        "//reboot/std/collections/ordered_map/v1:ordered_map_py",
+        "@com_github_reboot_dev_reboot//rbt/std/ciphertext/v1:ciphertext_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/std/collections/ordered_map/v1:ordered_map_py_reboot",
+        requirement("cryptography"),
+    ],
+)
+
+ts_project(
+    name = "ciphertext_ts",
+    srcs = [
+        "index.ts",
+        "package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-std-api",
+        "//:node_modules/@types/node",
+    ],
+)

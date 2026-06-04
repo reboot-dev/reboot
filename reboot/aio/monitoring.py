@@ -1,11 +1,18 @@
 import asyncio
+import gc
 import os
+import subprocess
 import threading
 import time
 from log.log import get_logger
 from reboot.settings import (
+    ENVVAR_REBOOT_ASYNCIO_SLOW_CALLBACK_DURATION_SECONDS,
+    ENVVAR_REBOOT_DISABLE_CYCLIC_GC,
     ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG,
     ENVVAR_REBOOT_ENABLE_EVENT_LOOP_LAG_MONITORING,
+    ENVVAR_REBOOT_PY_SPY_DURATION_SECONDS,
+    ENVVAR_REBOOT_PY_SPY_OUTPUT,
+    ENVVAR_REBOOT_PY_SPY_RATE,
 )
 from typing import Optional
 
@@ -107,10 +114,183 @@ async def _monitor_event_loop_lag(
             )
 
 
+def _maybe_enable_slow_callback_warnings(
+    loop: asyncio.AbstractEventLoop,
+) -> None:
+    """If `REBOOT_ASYNCIO_SLOW_CALLBACK_DURATION_SECONDS` is set,
+    enable asyncio debug mode on the running loop and configure
+    `slow_callback_duration` so asyncio logs a warning (with the
+    offending callback's source location) whenever a single callback
+    hogs the loop for longer than the given threshold.
+
+    Useful for tracking down coroutines that block the loop.
+    """
+    slow_callback_duration_seconds = os.environ.get(
+        ENVVAR_REBOOT_ASYNCIO_SLOW_CALLBACK_DURATION_SECONDS
+    )
+    if slow_callback_duration_seconds is None:
+        return
+
+    loop.set_debug(True)
+    loop.slow_callback_duration = float(slow_callback_duration_seconds)
+    logger.warning(
+        "asyncio debug mode is ENABLED with "
+        f"`slow_callback_duration={slow_callback_duration_seconds}s` "
+        f"(via the '{ENVVAR_REBOOT_ASYNCIO_SLOW_CALLBACK_DURATION_SECONDS}' "
+        "environment variable); this adds non-trivial overhead and "
+        "should only be used for debugging. NOTE: consider also "
+        "disabling the cyclic GC so as to avoid false positive "
+        "warnings that are actually due to GC pauses. "
+        "Do not use in production!"
+    )
+
+
+def _maybe_disable_cyclic_gc() -> None:
+    """If `REBOOT_DISABLE_CYCLIC_GC` is set to "true", disable
+    CPython's cyclic garbage collector entirely.
+
+    Reference counting still frees most objects normally; only cycle
+    collection is suppressed. With cyclic GC off, any remaining
+    slow-callback warnings are guaranteed to be real Python work
+    (not GC pauses masquerading as long handles), which makes A/B
+    testing the GC contribution to event-loop stalls trivial.
+    Memory will grow over time as cycles accumulate — never enable
+    in production.
+    """
+    if os.environ.get(
+        ENVVAR_REBOOT_DISABLE_CYCLIC_GC,
+        "false",
+    ).lower() != "true":
+        return
+
+    gc.disable()
+
+    logger.warning(
+        "CPython cyclic garbage collector is DISABLED (via the "
+        f"'{ENVVAR_REBOOT_DISABLE_CYCLIC_GC}' environment variable). "
+        "This is a diagnostic-only setting: memory will grow over "
+        "time as cycles accumulate. Do not use in production!"
+    )
+
+
+def _enable_ptrace_attach() -> None:
+    """Allow any process owned by the same user to `PTRACE_ATTACH` to
+    us via `prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY)`.
+
+    Without this, on systems with `kernel.yama.ptrace_scope=1` (e.g.,
+    the Ubuntu default, which GitHub Codespaces inherits), py-spy
+    cannot attach to its parent because the Yama LSM requires the
+    *target* to be a descendant of the *caller* — and our py-spy is a
+    *child* of the target, not vice versa. The `PR_SET_PTRACER_ANY`
+    prctl explicitly grants ptrace permission and unblocks the attach.
+
+    Failure here is non-fatal: on platforms without `prctl` (e.g.,
+    macOS) or without libc loadable via `ctypes`, the caller still
+    tries to launch py-spy and lets it fail with a clear error.
+    """
+    try:
+        import ctypes
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        # Constants from <sys/prctl.h>:
+        # PR_SET_PTRACER       = 0x59616d61
+        # PR_SET_PTRACER_ANY   = (unsigned long)-1
+        PR_SET_PTRACER = 0x59616d61
+        PR_SET_PTRACER_ANY = ctypes.c_ulong(-1).value
+        result = libc.prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0)
+        if result != 0:
+            logger.warning(
+                "PR_SET_PTRACER prctl failed with errno "
+                f"{ctypes.get_errno()}; py-spy may be unable "
+                "to attach if `kernel.yama.ptrace_scope` >= 1"
+            )
+    except (OSError, AttributeError) as exception:
+        logger.warning(
+            "Could not call PR_SET_PTRACER (likely not on "
+            f"Linux): {exception}. py-spy may be unable to attach if "
+            "`kernel.yama.ptrace_scope` >= 1"
+        )
+
+
+def _maybe_run_py_spy() -> None:
+    """If `REBOOT_PY_SPY_OUTPUT` is set, launch py-spy as a subprocess
+    targeting the current process and have it record a flame graph for
+    a fixed duration.
+
+    py-spy is a sampling profiler that runs out-of-process via
+    `ptrace`, so it does not significantly perturb the running
+    process. Fire-and-forget; the subprocess writes its output and
+    exits on its own. Requires py-spy to be installed and `ptrace`
+    permissions on the host (`CAP_SYS_PTRACE`, root, or
+    `kernel.yama.ptrace_scope=0`). Diagnostic only, do not use in
+    production!
+    """
+    py_spy_output = os.environ.get(ENVVAR_REBOOT_PY_SPY_OUTPUT)
+    if py_spy_output is None:
+        return
+
+    py_spy_duration = os.environ.get(
+        ENVVAR_REBOOT_PY_SPY_DURATION_SECONDS, "60"
+    )
+    py_spy_rate = os.environ.get(ENVVAR_REBOOT_PY_SPY_RATE, "100")
+
+    _enable_ptrace_attach()
+
+    try:
+        subprocess.Popen(
+            [
+                "py-spy",
+                "record",
+                "--pid",
+                str(os.getpid()),
+                "--output",
+                py_spy_output,
+                "--duration",
+                py_spy_duration,
+                "--rate",
+                py_spy_rate,
+                # Include all threads (not just the asyncio loop
+                # thread) so background threads like OpenTelemetry's
+                # exporter and gRPC's worker threads show up in the
+                # flame graph too.
+                "--threads",
+                # Include idle samples so we see time spent waiting on
+                # I/O, not just CPU-bound work.
+                "--idle",
+            ]
+        )
+        logger.warning(
+            f"py-spy is RECORDING this process for {py_spy_duration} "
+            f"seconds at {py_spy_rate}Hz to '{py_spy_output}' "
+            f"(via the '{ENVVAR_REBOOT_PY_SPY_OUTPUT}' environment variable). "
+            "py-spy stdout/stderr inherits this process's, so any error "
+            "appears in this process's log output. The SVG is only "
+            f"written after {py_spy_duration} seconds has elapsed."
+        )
+    except FileNotFoundError:
+        logger.warning(
+            "Could not start py-spy: binary not found on "
+            "PATH. Install it, e.g., with `pip install py-spy`, and "
+            "ensure it is on PATH for this process."
+        )
+
+
 async def monitor_event_loop(
     server_id: Optional[str] = None,
 ) -> None:
     loop = asyncio.get_running_loop()
+
+    # Start/enable opt-in event loop monitoring mechansism to help
+    # debug performance issues. Each mechanism is gated by its own
+    # environment variable and if none of them are set these are all
+    # no-ops and add no overhead - the mechanisms are all independent
+    # of each other and a user might want any subset of them.
+
+    _maybe_enable_slow_callback_warnings(loop)
+    _maybe_disable_cyclic_gc()
+    _maybe_run_py_spy()
+
+    # TODO: move watchdog and lag mechanisms that we start below into
+    # own functions like above to keep this function cleaner.
 
     watchdog_enabled = os.environ.get(
         ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG,

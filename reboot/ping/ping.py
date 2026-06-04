@@ -6,7 +6,10 @@ import os
 from datetime import timedelta
 from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow
-from reboot.aio.auth.oauth_providers import Anonymous
+from reboot.aio.auth.oauth_providers import (
+    Development,
+    OAuthProviderByEnvironment,
+)
 from reboot.aio.contexts import (
     ReaderContext,
     TransactionContext,
@@ -226,6 +229,13 @@ async def main():
         f"'{os.environ.get(ENVVAR_REBOOT_MODE)}'"
     )
 
+    dev_oauth = Development(
+        # Set a short access token TTL so that most manual tests
+        # with this app naturally also exercise the access token
+        # refresh flow.
+        access_token_ttl_seconds=30,
+    )
+
     application = Application(
         servicers=[
             PingServicer,
@@ -236,11 +246,11 @@ async def main():
         # We choose to not call the initialization method
         # `initialize`, to exercise that that is allowed.
         initialize=start_periodic_ping,
-        oauth=Anonymous(
-            # Set a short access token TTL so that most manual tests
-            # with this app naturally also exercise the access token
-            # refresh flow.
-            access_token_ttl_seconds=30,
+        oauth=OAuthProviderByEnvironment(
+            dev=dev_oauth,
+            # "Production" for this application is our local Reboot
+            # clusters; that's still a development environment.
+            prod=dev_oauth,
         ),
     )
     await application.run()

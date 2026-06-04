@@ -1,0 +1,26 @@
+# This `BUILD.bazel` file allows a `bazel` system (configured outside of
+# this repository) to use code in this directory and its subdirectories.
+
+filegroup(
+    name = "everything",
+    srcs = glob(
+        ["**/*"],
+        exclude = [
+            # Files that may be created by activity in this directory
+            # (`uv sync`, `rbt dev run`, `npm install`, `npm run build`,
+            # etc.) but which are not part of the "source code" of this
+            # example.
+            ".claude/**/*",
+            ".env",
+            ".mypy_cache/**/*",
+            ".pytest_cache/**/*",
+            ".rbt/**/*",
+            ".venv/**/*",
+            "backend/api/**/*",
+            "web/api/**/*",
+            "web/dist/**/*",
+            "web/node_modules/**/*",
+        ],
+    ),
+    visibility = ["//visibility:public"],
+)

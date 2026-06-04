@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reboot App"
+  short_description: "Build a Reboot app (routes to chat-app or web-app)"
+  default_prompt: "Use Reboot App to build a Reboot application from a description."

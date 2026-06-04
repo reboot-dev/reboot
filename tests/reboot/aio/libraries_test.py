@@ -131,7 +131,7 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(type(error.exception), ValueError)
 
         self.assertIn(
-            f"Missing required libraries: {GREETER_LIBRARY_NAME}",
+            f"Missing required libraries: {GREETER_LIBRARY_NAME}. Please add these libraries and pass them to the `libraries` parameter.",
             str(error.exception)
         )
 

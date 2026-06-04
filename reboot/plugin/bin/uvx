@@ -1,0 +1,20 @@
+#!/usr/bin/env sh
+#
+# Reboot Claude Code plugin: `uvx` bootstrap shim.
+#
+# Claude Code prepends this script's directory to the agent's `PATH`, so
+# the agent's `uvx ...` invocations land here. We delegate install
+# management to `lib/install_uv.sh`, then exec the cached `uvx` binary.
+# The first call installs; later calls are a single subshell stat away
+# from the real `uvx`.
+
+set -eu
+
+# `$CLAUDE_PLUGIN_ROOT` is documented to be set for "hook commands and
+# plugin executables" but is not exported into the agent's Bash env when
+# `bin/` shims run. Fall back to `$0`-derivation; the env var (when
+# present) points at the same physical dir.
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname -- "$0")/.." && pwd)}"
+
+UV_DIR="$("$PLUGIN_ROOT/lib/install_uv.sh")"
+exec "$UV_DIR/uvx" "$@"

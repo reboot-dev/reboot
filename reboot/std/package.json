@@ -1,6 +1,6 @@
 {
   "name": "@reboot-dev/reboot-std",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "description": "Reboot standard library.",
   "main": "index.js",
   "type": "module",
@@ -10,8 +10,8 @@
   },
   "author": "reboot-dev",
   "dependencies": {
-    "@reboot-dev/reboot-std-api": "1.0.4",
-    "@reboot-dev/reboot": "1.0.4",
+    "@reboot-dev/reboot-std-api": "1.1.0",
+    "@reboot-dev/reboot": "1.1.0",
     "@scarf/scarf": "1.4.0"
   },
   "license": "Apache-2.0",
@@ -21,6 +21,7 @@
   "exports": {
     "./package.json": "./package.json",
     ".": "./index.js",
+    "./ciphertext/v1": "./ciphertext/v1/index.js",
     "./collections/queue/v1": "./collections/queue/v1/index.js",
     "./collections/ordered_map/v1": "./collections/ordered_map/v1/index.js",
     "./collections/v1/sorted_map.js": "./collections/v1/sorted_map.js",

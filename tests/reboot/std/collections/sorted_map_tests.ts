@@ -1,9 +1,9 @@
 import { allow, Application, deny, Reboot } from "@reboot-dev/reboot";
 import { errors_pb } from "@reboot-dev/reboot-api";
-import {
-  SortedMap,
-  sortedMapLibrary,
-} from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
+// eslint-disable-next-line
+import { SortedMap } from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
+// eslint-disable-next-line
+import { sortedMapLibrary } from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 

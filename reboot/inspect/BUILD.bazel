@@ -61,11 +61,12 @@ py_library(
     deps = [
         "//rbt/v1alpha1/inspect:inspect_py_grpc",
         "//rbt/v1alpha1/inspect:inspect_py_proto",
+        "//reboot:wait_for_tasks_py",
+        "//reboot/aio:aborted_py",
+        "//reboot/aio:state_managers_py",
+        "//reboot/aio:stubs_py",
         "//reboot/aio/auth:admin_auth_py",
+        "//reboot/aio/internals:middleware_py",
         "//reboot/templates:tools_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:aborted_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:state_managers_py",
-        "@com_github_reboot_dev_reboot//reboot/aio:stubs_py",
-        "@com_github_reboot_dev_reboot//reboot/aio/internals:middleware_py",
     ],
 )

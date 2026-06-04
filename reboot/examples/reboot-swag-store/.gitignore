@@ -1,0 +1,35 @@
+# Python virtual environment
+.venv/
+
+# Generated API code (from rbt generate)
+backend/api/
+
+# Reboot runtime state
+.rbt/
+
+# Byte-compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# mypy cache
+.mypy_cache/
+
+# pytest cache
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Claude Code local settings (per-machine)
+.claude/settings.local.json
+
+# Local environment variables
+.env

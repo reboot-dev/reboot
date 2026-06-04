@@ -235,6 +235,9 @@ proto_library(
     name = "transactions_proto",
     srcs = [":transactions.proto"],
     visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_protobuf//:timestamp_proto",
+    ],
 )
 
 py_proto_library(

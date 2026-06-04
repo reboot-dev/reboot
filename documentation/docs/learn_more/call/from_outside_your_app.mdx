@@ -118,3 +118,13 @@ async for response in fig.reactively().get_position(context):
 ```
   </TabItem>
 </Tabs>
+
+## Making concurrent calls
+
+When calling multiple Reboot methods externally, you can use the
+same concurrency patterns described in
+[Making concurrent calls](/learn_more/call/from_within_your_app#making-concurrent-calls).
+For Python, the `concurrently` helper provides adaptive
+concurrency limits and streaming results — see
+[`concurrently` (Python)](/learn_more/call/from_within_your_app#concurrently-python)
+for details and examples.

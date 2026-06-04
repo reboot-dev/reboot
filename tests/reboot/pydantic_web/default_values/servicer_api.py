@@ -21,6 +21,14 @@ class State(Model):
     number: int = Field(tag=2, default=0)
     flag: bool = Field(tag=3, default=False)
     status: Literal["first", "second"] = Field(tag=4, default="first")
+    status_list: List[Literal["first", "second"]] = Field(
+        tag=9,
+        default_factory=list,
+    )
+    status_mapping: Dict[str, Literal["first", "second"]] = Field(
+        tag=10,
+        default_factory=dict,
+    )
     items: List[str] = Field(tag=5, default_factory=list)
     mapping: Dict[str, str] = Field(tag=6, default_factory=dict)
     optional_text: str | None = Field(tag=7, default=None)
@@ -37,6 +45,14 @@ class UpdateStateRequest(Model):
     number: int = Field(tag=2, default=0)
     flag: bool = Field(tag=3, default=False)
     status: Literal["first", "second"] = Field(tag=4, default="first")
+    status_list: List[Literal["first", "second"]] = Field(
+        tag=9,
+        default_factory=list,
+    )
+    status_mapping: Dict[str, Literal["first", "second"]] = Field(
+        tag=10,
+        default_factory=dict,
+    )
     items: List[str] = Field(tag=5, default_factory=list)
     mapping: Dict[str, str] = Field(tag=6, default_factory=dict)
     optional_text: str | None = Field(tag=7, default=None)
@@ -53,6 +69,14 @@ class GetStateResponse(Model):
     number: int = Field(tag=2, default=0)
     flag: bool = Field(tag=3, default=False)
     status: Literal["first", "second"] = Field(tag=4, default="first")
+    status_list: List[Literal["first", "second"]] = Field(
+        tag=9,
+        default_factory=list,
+    )
+    status_mapping: Dict[str, Literal["first", "second"]] = Field(
+        tag=10,
+        default_factory=dict,
+    )
     items: List[str] = Field(tag=5, default_factory=list)
     mapping: Dict[str, str] = Field(tag=6, default_factory=dict)
     optional_text: str | None = Field(tag=7, default=None)

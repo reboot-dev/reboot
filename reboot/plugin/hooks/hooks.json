@@ -1,0 +1,81 @@
+{
+  "description": "SessionStart prepends the plugin's bin/ to the agent's PATH so our shims take precedence over system-installed binaries, and launches a cloudflared quick tunnel against the local Reboot dev server (metrics on :4040, --url http://localhost:9991). SessionEnd reaps any MCPJam inspector left on its fixed port (launched on demand when the user picks MCPJam in the setup wizard) and the cloudflared tunnel SessionStart spawned. PreToolUse auto-approves this plugin's own skills, read-only calls on its files, and the run skill's Reboot dev commands when they run inside a Reboot project.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/session-start.sh\""
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/session-end.sh\""
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "grep -qE '\"skill\"[[:space:]]*:[[:space:]]*\"reboot:(app|chat-app|web-app|python|run)\"' && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"}}'; exit 0"
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/auto-approve.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "LS",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/auto-approve.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/auto-approve.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/auto-approve.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/auto-approve.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

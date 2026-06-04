@@ -19,18 +19,24 @@ import React, {
   useState,
 } from "react";
 import { v4 as uuidv4 } from "uuid";
-{# Check if any methods have MCP tool options for write operations. #}
-{% set mcp_ns = namespace(has_mcp_tools=false) %}
+{# Import the MCP context bindings iff any client below declares
+   them. Mirrors `client_has_ui | client_needs_mcp_app` per client;
+   drift between this gate and the declarations previously emitted
+   references to symbols that were never imported. #}
+{% set mcp_ns = namespace(needed=false) %}
 {% for client in clients %}
+{% if client.state is not none and client.state.proto.uis | length > 0 %}
+{% set mcp_ns.needed = true %}
+{% endif %}
 {% for service in client.services %}
 {% for method in service.methods %}
 {% if method.options.proto.mcp and method.options.proto.mcp.tool and method.options.proto.kind in ['writer', 'transaction'] %}
-{% set mcp_ns.has_mcp_tools = true %}
+{% set mcp_ns.needed = true %}
 {% endif %}
 {% endfor %}
 {% endfor %}
 {% endfor %}
-{% if mcp_ns.has_mcp_tools %}
+{% if mcp_ns.needed %}
 import type { App as McpApp } from "@modelcontextprotocol/ext-apps/react";
 import { useMcpApp, useMcpToolData } from "@reboot-dev/reboot-react/internal";
 {% endif %}
@@ -931,7 +937,14 @@ class {{ client.proto.state_name | to_camel }}Instance {
             return;
           }
 
-          reader.setIsLoading(false);
+          // Intentionally leave `isLoading: true` here. The outer
+          // `retryForever(...)` will run another attempt and call
+          // `reader.setIsLoading(true)` again at the top of the
+          // try block, but if we cleared it to `false` here first
+          // consumers would observe a brief `false → true → false
+          // → true ...` flip-flop on every retry while we're
+          // actually still trying to (re)connect. Once a response
+          // finally arrives the success path sets it to `false`.
 
           if (e instanceof reboot_api.Status) {
             reader.setStatus(e);
@@ -1354,22 +1367,42 @@ class {{ client.proto.state_name | to_camel }}Instance {
   }
 }
 
-{# Check if this client has any MCP-based UI methods. #}
-{% set client_has_mcp_ui = namespace(value=false) %}
-{% if client.state is not none and client.state.proto.uis | length > 0 %}
-{% set client_has_mcp_ui.value = true %}
+{# Two per-client MCP gates. References at each declaration / use
+   site must stay aligned with the gate, or generated code will
+   name a symbol that was never declared.
+     - `client_has_ui`: this client has `UI()` methods. Drives the
+       hook's `id`-handling — optional param, URL fallback,
+       `useMcpToolData()` for tool-input id resolution.
+     - `client_needs_mcp_app`: this client's hook declares
+       `mcpApp` (via `useMcpApp()`). True for any UI-having
+       client and any client with a Writer/Transaction whose
+       `mcp=Tool()` — the per-method useMemo lists `mcpApp` in
+       its deps. #}
+{% set client_has_ui = client.state is not none and client.state.proto.uis | length > 0 %}
+{% set client_needs_mcp_app = namespace(value=client_has_ui) %}
+{% for service in client.services %}
+{% for method in service.methods %}
+{% if method.options.proto.mcp and method.options.proto.mcp.tool and method.options.proto.kind in ['writer', 'transaction'] %}
+{% set client_needs_mcp_app.value = true %}
 {% endif %}
+{% endfor %}
+{% endfor %}
 
 export const use{{ client.proto.state_name | to_camel }} = (
-{% if client_has_mcp_ui.value %}
+{% if client_has_ui %}
   { id: providedId }: { id?: string } = {}
 {% else %}
   { id }: { id: string }
 {% endif %}
 ): Use{{ client.proto.state_name | to_camel }}Api => {
-{% if client_has_mcp_ui.value %}
-  // Get mcpApp and tool input from context (RebootClientProvider).
+{% if client_needs_mcp_app.value %}
+  // Listed in the useMemo deps of each Writer/Transaction with
+  // `mcp=Tool()` below, so memoized mutations invalidate when the
+  // MCP host context identity changes.
   const mcpApp = useMcpApp();
+{% endif %}
+{% if client_has_ui %}
+  // Read below to resolve `id` from MCP tool-input context.
   const mcpToolData = useMcpToolData();
 
   // Resolve ID: explicit > URL param (dev) > `ids` mapping.
@@ -1399,7 +1432,6 @@ export const use{{ client.proto.state_name | to_camel }} = (
     );
   }
   const id = resolvedId;
-{% else %}
 {% endif %}
   const stateRef = reboot_api.stateIdToRef(
     "{{ client.proto.state_full_name }}",
@@ -1490,6 +1522,8 @@ export const use{{ client.proto.state_name | to_camel }} = (
         new Array<Pending{{ client.proto.state_name }}{{ method.proto.name }}Mutation>();
 
       return method;
+    {# `mcpApp` is in scope here by `client_needs_mcp_app` (declared
+       whenever any method on this client has `mcp=Tool()`). #}
     }, [instance, bearerToken{% if method.options.proto.mcp and method.options.proto.mcp.tool %}, mcpApp, id{% endif %}]);
 
     {{ method.proto.name | to_lower_camel }}.pending = pending;

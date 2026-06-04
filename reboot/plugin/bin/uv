@@ -1,0 +1,15 @@
+#!/usr/bin/env sh
+#
+# Reboot Claude Code plugin: `uv` bootstrap shim.
+#
+# Claude Code prepends this script's directory to the agent's `PATH`, so
+# the agent's `uv ...` invocations land here. Sibling of
+# `bin/uvx`; both delegate to `lib/install_uv.sh` and exec into
+# the same cached install directory.
+
+set -eu
+
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname -- "$0")/.." && pwd)}"
+
+UV_DIR="$("$PLUGIN_ROOT/lib/install_uv.sh")"
+exec "$UV_DIR/uv" "$@"

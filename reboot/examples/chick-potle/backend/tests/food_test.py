@@ -6,7 +6,8 @@ import unittest
 from ai_chat_food.v1.food_rbt import FoodOrder, User
 from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow
-from reboot.aio.tests import Reboot
+from reboot.aio.auth.oauth_providers import Anonymous
+from reboot.aio.tests import OAuthProviderForTest, Reboot
 from servicers.food import FoodOrderServicer, UserServicer
 
 # Production servicers intentionally don't define an
@@ -43,7 +44,10 @@ class ServicerTest(unittest.IsolatedAsyncioTestCase):
         self.rbt = Reboot()
         await self.rbt.start()
         await self.rbt.up(
-            Application(servicers=APPLICATION_SERVICERS),
+            Application(
+                servicers=APPLICATION_SERVICERS,
+                oauth=OAuthProviderForTest(Anonymous()),
+            ),
         )
         self.user_id = "alice"
         self.context = self.rbt.create_external_context(

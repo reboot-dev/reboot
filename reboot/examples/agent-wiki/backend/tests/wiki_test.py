@@ -19,7 +19,8 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from reboot.aio.applications import Application
-from reboot.aio.tests import Reboot
+from reboot.aio.auth.oauth_providers import Anonymous
+from reboot.aio.tests import OAuthProviderForTest, Reboot
 from servicers import wiki as wiki_module
 from servicers.wiki import (
     PageServicer,
@@ -54,21 +55,42 @@ def _null_librarian_model() -> FunctionModel:
     return FunctionModel(_refuse)
 
 
-class ServicerTest(unittest.IsolatedAsyncioTestCase):
-    """Unit tests for each servicer's CRUD methods. These
-    tests never add a transcript, so the librarian workflow
-    never actually runs — but we still replace the agent's
-    model as a belt-and-braces guard against accidental
-    Anthropic calls from this suite."""
+def _simple_librarian_model() -> FunctionModel:
+    """Return a `FunctionModel` that always returns the same
+    response, used by tests that want to trigger the
+    librarian but don't care about its behavior."""
+
+    def _respond(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> ModelResponse:
+        return ModelResponse(parts=[TextPart(content="Librarian response")])
+
+    return FunctionModel(_respond)
+
+
+class _WikiTestBase(unittest.IsolatedAsyncioTestCase):
+    """Base class that wires up Reboot, creates an `alice` user
+    context, and swaps the librarian model for the duration of
+    each test. Subclasses override `_make_librarian_model` to
+    choose which stand-in model to install."""
+
+    def _make_librarian_model(self) -> FunctionModel:
+        raise NotImplementedError
 
     async def asyncSetUp(self) -> None:
         self._original_model = wiki_module.librarian.wrapped.model
-        wiki_module.librarian.wrapped.model = _null_librarian_model()
+        # Overwrite the librarian's model within the test, so any calls
+        # to LLM become deterministic.
+        wiki_module.librarian.wrapped.model = self._make_librarian_model()
 
         self.rbt = Reboot()
         await self.rbt.start()
         await self.rbt.up(
-            Application(servicers=APPLICATION_SERVICERS),
+            Application(
+                servicers=APPLICATION_SERVICERS,
+                oauth=OAuthProviderForTest(Anonymous()),
+            ),
         )
         self.user_id = "alice"
         self.context = self.rbt.create_external_context(
@@ -89,6 +111,18 @@ class ServicerTest(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         await self.rbt.stop()
         wiki_module.librarian.wrapped.model = self._original_model
+
+
+class ServicerTest(_WikiTestBase):
+    """Unit tests for each servicer's CRUD methods. These
+    tests never add a transcript, so the librarian workflow
+    never actually runs — but we still replace the agent's
+    model as a belt-and-braces guard against accidental
+    Anthropic calls from this suite."""
+
+    def _make_librarian_model(self) -> FunctionModel:
+        # The tests should never trigger the librarian.
+        return _null_librarian_model()
 
     async def test_user_create_and_list_wikis(self) -> None:
         """A user can create a wiki and then see it in their
@@ -180,6 +214,14 @@ class ServicerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(got.messages), 1)
         self.assertEqual(got.messages[0].content, "Goodbye")
 
+
+class ServicerWithSimpleLibrarianTest(_WikiTestBase):
+
+    def _make_librarian_model(self) -> FunctionModel:
+        # Depending on the timing, that test might trigger the librarian
+        # when the transcription is added an consumed by `until`.
+        return _simple_librarian_model()
+
     async def test_add_transcript_creates_transcript(
         self,
     ) -> None:
@@ -228,8 +270,9 @@ class ScriptedLibrarian:
 
     def __init__(self) -> None:
         self.page_id: str | None = None
+        self.done = asyncio.Event()
 
-    def step(
+    async def step(
         self,
         messages: list[ModelMessage],
         info: AgentInfo,
@@ -286,42 +329,25 @@ class ScriptedLibrarian:
                     ),
                 ]
             )
+
+        # Signal done the moment we emit the final response, which means
+        # the librarian has already executed `update_wiki` and the
+        # wiki's content is updated by the time any test code waiting on
+        # `done` wakes up.
+        self.done.set()
         return ModelResponse(parts=[TextPart(content="Done.")])
 
 
-class IngestWorkflowTest(unittest.IsolatedAsyncioTestCase):
+class IngestWorkflowTest(_WikiTestBase):
     """End-to-end test of the `Wiki.ingest` librarian
     workflow with the LLM replaced by a `FunctionModel`."""
 
-    async def asyncSetUp(self) -> None:
-        self.script = ScriptedLibrarian()
-        self._original_model = wiki_module.librarian.wrapped.model
-        wiki_module.librarian.wrapped.model = FunctionModel(self.script.step)
+    script = ScriptedLibrarian()
 
-        self.rbt = Reboot()
-        await self.rbt.start()
-        await self.rbt.up(
-            Application(servicers=APPLICATION_SERVICERS),
-        )
-        self.user_id = "alice"
-        self.context = self.rbt.create_external_context(
-            name=f"test-{self.id()}",
-            bearer_token=self.rbt.make_valid_oauth_access_token(
-                user_id=self.user_id,
-            ),
-        )
-        # `User` is an auto-constructed state type: in
-        # production the MCP session's "new session" hook
-        # calls `_auto_construct` for the authenticated user.
-        # Tests don't go through that hook, so we do it here.
-        await UserServicer._auto_construct(
-            self.context,
-            state_id=self.user_id,
-        )
-
-    async def asyncTearDown(self) -> None:
-        await self.rbt.stop()
-        wiki_module.librarian.wrapped.model = self._original_model
+    def _make_librarian_model(self) -> FunctionModel:
+        # Scripted model that drives the librarian through a fixed
+        # sequence of tool calls.
+        return FunctionModel(self.script.step)
 
     async def test_ingest_creates_page_and_updates_wiki(
         self,
@@ -351,20 +377,14 @@ class IngestWorkflowTest(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
-        # Poll the wiki's markdown body until the scripted
-        # `update_wiki` call lands. `Wiki.get` is the only
-        # externally observable signal — `transcripts` lives
-        # on the internal state, not on the `get` response.
-        for _ in range(100):  # 10 s at 100 ms steps.
-            state = await wiki.get(self.context)
-            if state.content.startswith("# Table of contents"):
-                break
-            await asyncio.sleep(0.1)
-        else:
-            self.fail(
-                "Timed out waiting for librarian to rewrite "
-                "Wiki.content"
-            )
+        # Block until the scripted librarian signals it is
+        # done. `done` is set the moment `step()` emits its
+        # final `TextPart("Done.")`, at which point
+        # `update_wiki` has already executed and
+        # `Wiki.content` is already updated.
+        await self.script.done.wait()
+
+        state = await wiki.get(self.context)
 
         # The scripted librarian should have created exactly
         # one page and referenced it from the wiki's

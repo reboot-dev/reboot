@@ -8,7 +8,7 @@ example want to try your Reboot application on your phone, or you may want to
 test it with somebody who is not sitting at your computer.
 
 ## Deploying to a dedicated testing environment
-You may [deploy your Reboot application](/deploy_operate/where) to a testing
+You may [deploy your Reboot application](/deploy_on_your_own) to a testing
 environment. This works just like deploying to production, but the deployment is
 kept private (typically by using a different domain name).
 

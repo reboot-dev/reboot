@@ -79,15 +79,25 @@ def _pydantic_field_type_string_from_type(
         else:
             # Primitive type does not need module prefix.
             return field_type.__name__
-    elif origin is list or origin is dict:
-        # 'list' and 'dict' types should just be what was
-        # specified in the Pydantic model.
-        if str(field_type).startswith('typing.'):
-            # If user specified 'typing.List' or 'typing.Dict',
-            # we need to replace 'typing' with 'IMPORT_typing'
-            # to avoid name conflicts in the generated code.
-            return str(field_type).replace('typing.', 'IMPORT_typing.')
-        return str(field_type)
+    elif origin is list:
+        # Recurse into the item since an inner type must be
+        # rendered using `IMPORT_typing` prefix, while a `Model`
+        # must keep its exact module path.
+        (item_type,) = get_args(field_type)
+        item_string = _pydantic_field_type_string_from_type(
+            item_type, field_name, model_name
+        )
+        return f'list[{item_string}]'
+    elif origin is dict:
+        # See the 'list' case above.
+        key_type, value_type = get_args(field_type)
+        key_string = _pydantic_field_type_string_from_type(
+            key_type, field_name, model_name
+        )
+        value_string = _pydantic_field_type_string_from_type(
+            value_type, field_name, model_name
+        )
+        return f'dict[{key_string}, {value_string}]'
     else:
         fail(
             f"Unsupported field type '{field_type}' for field "
@@ -490,6 +500,28 @@ async def generate(
                     f"{path}.[value]",
                     name=type_name,
                 )
+            elif value_origin is Literal:
+                type_name = "Value"
+                literal_args = get_args(value_type)
+
+                # Verify all literal values are strings.
+                for literal_value in literal_args:
+                    if not isinstance(literal_value, str):
+                        fail(
+                            f"Unexpected literal `{literal_value}` for the "
+                            f"'dict' at '{path}'; only string literals are "
+                            "currently supported"
+                        )
+
+                # Same as the field-level `Literal` handling above: a
+                # nested `enum` whose values are prefixed with the type
+                # name, since Protobuf `enum` values use C++ scoping.
+                await proto.write(f"  enum {type_name} {{\n")
+                for i, literal_value in enumerate(literal_args):
+                    await proto.write(
+                        f"    {type_name}_{literal_value} = {i};\n"
+                    )
+                await proto.write("  }\n")
             # NOTE: Discriminated unions are not supported inside `dict` values
             # because Pydantic only allows discriminators on direct model fields.
             # `Union` types here would only be `Optional[T]`, which is not supported
@@ -534,6 +566,28 @@ async def generate(
                 await generate(
                     proto, item_type, f"{path}.[item]", name=type_name
                 )
+            elif item_origin is Literal:
+                type_name = "Item"
+                literal_args = get_args(item_type)
+
+                # Verify all literal values are strings.
+                for literal_value in literal_args:
+                    if not isinstance(literal_value, str):
+                        fail(
+                            f"Unexpected literal `{literal_value}` for the "
+                            f"list at '{path}'; only string literals are "
+                            "currently supported"
+                        )
+
+                # Same as the field-level `Literal` handling above: a
+                # nested `enum` whose values are prefixed with the type
+                # name, since Protobuf `enum` values use C++ scoping.
+                await proto.write(f"  enum {type_name} {{\n")
+                for i, literal_value in enumerate(literal_args):
+                    await proto.write(
+                        f"    {type_name}_{literal_value} = {i};\n"
+                    )
+                await proto.write("  }\n")
             # NOTE: Discriminated unions are not supported inside `list` items
             # because Pydantic only allows discriminators on direct model fields.
             # `Union` types here would only be `Optional[T]`, which is not supported

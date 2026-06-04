@@ -12,7 +12,7 @@ Application starting; your application will be available at:
   ${unique-id}.prod1.rbt.cloud:9991
 ```
 
-[Join the waitlist](https://cloud.reboot.dev/) today, and [give us your feedback](https://reboot.dev/discord)
+[Sign up](https://cloud.reboot.dev/) today, and [give us your feedback](https://reboot.dev/discord)
 on the shape of the Reboot Cloud!
 
 ### Reboot Enterprise

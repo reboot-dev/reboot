@@ -29,18 +29,12 @@ export default defineConfig(({ command, mode }) => {
 
   // Dev server configuration.
   //
-  // UIs use a double iframe architecture:
-  //   MCP Host -> srcdoc (origin=null) -> iframe (origin=localhost:9991)
-  //
-  // The inner iframe loads from Envoy ("/__/web/**"), which proxies
-  // to Vite. Because the inner iframe has a real origin, Vite's URLs
-  // work normally. `base: "/__/web/"` ensures all paths route through
-  // Envoy.
-  //
-  // Hot Module Replacement works automatically: Vite's client connects
-  // to the page's origin, and Envoy proxies WebSocket upgrades to
-  // Vite. This also works with tunnels (ngrok) since the tunnel
-  // points to Envoy.
+  // In some cases the Reboot server acts as a relay for this server,
+  // fetching the HTML from Vite and serving it to the MCP Client. In
+  // that setup it rewrites any paths to be absolute, since MCP UIs are
+  // rendered in a `srcdoc` iframe that has no base. The following
+  // config is chosen to keep Hot Module Replacement (HMR) working in
+  // that setup.
   if (command === "serve") {
     const port = parseInt(process.env.RBT_VITE_PORT || "4444", 10);
 
@@ -55,8 +49,24 @@ export default defineConfig(({ command, mode }) => {
         // Listen on all interfaces since requests come through
         // Envoy (and tunnels).
         host: true,
+        // Disable the host-allowlist check, so requests forwarded by
+        // ngrok-style tunnels are accepted regardless of their `Host`
+        // header.
         allowedHosts: true,
+        // Reflect whatever `Origin` the browser sent into
+        // `Access-Control-Allow-Origin`. We need this because the
+        // document hosting our scripts lives at the MCP sandbox-proxy
+        // origin (e.g. `claudemcpcontent.com`) while the scripts
+        // themselves are served from the Reboot origin, so every fetch
+        // is cross-origin. Vite 6's `cors: true` shortcut only allows
+        // loopback origins (post-CVE-2025-30208 hardening), so we have
+        // to be explicit.
+        cors: { origin: true },
       },
+      // We leave `server.hmr` at its defaults: @vite/client derives the
+      // websocket URL from `import.meta.url`, which post-rewrite points
+      // at the Reboot server — so the WS hits Envoy with no explicit
+      // host/port override.
     };
   }
 

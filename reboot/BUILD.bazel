@@ -447,6 +447,13 @@ py_library(
     ],
 )
 
+py_library(
+    name = "wait_for_tasks_py",
+    srcs = ["wait_for_tasks.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
 # PEP 561 marker file; tells tools that type information is available.
 genrule(
     name = "py_typed",
@@ -466,6 +473,7 @@ compile_pip_requirements(
 py_library(
     name = "python_std",
     deps = [
+        "//reboot/std/ciphertext/v1:ciphertext_py",
         "//reboot/std/collections/ordered_map/v1:ordered_map_py",
         "//reboot/std/collections/queue/v1:queue_py",
         "//reboot/std/collections/v1:sorted_map_py",
@@ -586,6 +594,7 @@ sh_library(
         "stage_and_publish_local.sh",
     ],
     data = [
+        "retag_wheel.py",
         ":reboot.dev",
         "//rbt/v1alpha1:reboot-dev-reboot-api",
         "//reboot/create-ui:reboot-dev-create-ui",
@@ -603,6 +612,7 @@ sh_binary(
         "stage_and_publish_local.sh",
     ],
     data = [
+        "retag_wheel.py",
         ":reboot.dev",
         "//rbt/v1alpha1:reboot-dev-reboot-api",
         "//reboot/create-ui:reboot-dev-create-ui",

@@ -95,11 +95,18 @@ static_resources:
                                 "ERROR: Missing 'state_ref' path parameter")
                             end
                         
-                            -- The state ref may contain URL-encoded colons and slashes; those shouldn't
-                            -- be URL-encoded in the header. Note that '%%' is Lua-escaped '%'.
-                            state_ref = string.gsub(state_ref, "%%3A", ":")
-                            state_ref = string.gsub(state_ref, "%%2F", "/")
-                            state_ref = string.gsub(state_ref, "%%5C", "\\")
+                            -- The state ref arrives percent-encoded in the path (the browser
+                            -- encodes reserved characters like ':', '/', '\\', and '|'), but the
+                            -- 'x-reboot-state-ref' header must carry the raw state id so it matches
+                            -- the id seen on non-URL paths (e.g. the MCP tool path, where the id
+                            -- flows straight from 'context.auth.user_id'). Decode every '%XX'
+                            -- escape rather than an incomplete hardcoded list, so ids such as an
+                            -- Auth0 'sub' ('google-oauth2|123', whose '|' the browser sends as
+                            -- '%7C') resolve to the same actor on both paths. Note: '%%' is
+                            -- Lua-escaped '%', and '%x' matches a hex digit.
+                            state_ref = string.gsub(state_ref, "%%(%x%x)", function(hex)
+                              return string.char(tonumber(hex, 16))
+                            end)
                         
                             request_handle:headers():replace("x-reboot-state-ref", state_ref)
                         

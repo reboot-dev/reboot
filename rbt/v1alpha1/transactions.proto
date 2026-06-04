@@ -2,15 +2,37 @@ syntax = "proto3";
 
 package rbt.v1alpha1;
 
+import "google/protobuf/timestamp.proto";
+
 ////////////////////////////////////////////////////////////////////////
 
 message PrepareRequest {
   bytes transaction_id = 1;
+  // When true, the participant returns definitive outcomes, i.e.,
+  // whether the transaction should abort or not, whether a restart
+  // was detected, etc, via fields in `PrepareResponse` rather than
+  // the legacy semantics of raising an exception causing the RPC to
+  // abort with a gRPC status code. New coordinators set this; old
+  // coordinators leave it false (the default) and the participant
+  // falls back to the legacy semantics.
+  bool abort_via_response = 2;
 }
 
 ////////////////////////////////////////////////////////////////////////
 
-message PrepareResponse {}
+message PrepareResponse {
+  // True if the participant definitively cannot prepare this
+  // transaction and the coordinator must abort it. Only set when the
+  // request had `abort_via_response = true`.
+  bool abort = 1;
+  // True if the reason for abort is that the participant restarted
+  // since the transaction began (restart detection). Only meaningful
+  // when `abort = true`.
+  bool restart_detected = 2;
+  // The participant's recovery timestamp, included when
+  // `restart_detected = true`.
+  optional google.protobuf.Timestamp recovery_timestamp = 3;
+}
 
 ////////////////////////////////////////////////////////////////////////
 

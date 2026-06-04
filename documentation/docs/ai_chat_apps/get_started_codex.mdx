@@ -1,0 +1,251 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Get Started (with Codex)
+
+Build an AI Chat App using [Codex](https://developers.openai.com/codex/)
+and the Reboot skill. Codex writes the code for you: describe the app,
+approve the proposed design, and it scaffolds the Reboot backend,
+interactive UI, tests, and local development setup.
+
+:::info Prerequisites
+Reboot requires Python >= 3.10 and &lt; 3.13, Docker, and
+Node.js >= 20.10. You also need
+[Codex](https://developers.openai.com/codex/cli) installed and
+authenticated.
+:::
+
+## Install the Reboot skill
+
+<Tabs groupId="install-method">
+  <TabItem value="quick" label="Quick install">
+
+Install the Reboot plugin for Codex with a single command:
+
+```sh
+curl -fsSL https://reboot.dev/install.sh | bash
+```
+
+The installer detects Codex, registers the Reboot plugin marketplace,
+installs the plugin, enables Codex hooks, and pre-installs the pinned
+tool shims used by the skill.
+
+:::warning Temporary Codex sandbox opt-out
+The installer currently asks to disable Codex's sandbox globally by
+writing `sandbox_mode = "danger-full-access"` into
+`~/.codex/config.toml`. This is a temporary workaround for an upstream
+Codex issue that breaks Python asyncio cross-thread wakeups inside the
+sandbox. Reboot's main commands (`rbt generate`, `rbt dev run`, and
+related commands) rely on that asyncio behavior.
+
+If you accept the prompt, the installer writes the setting inside a
+managed Reboot block so it is easy to remove later. If you decline, the
+Codex install is skipped because the plugin's main commands will not
+work reliably under the current sandbox behavior.
+:::
+
+Restart Codex after installation so the new plugin, skills, hooks, and
+PATH configuration are loaded.
+
+  </TabItem>
+  <TabItem value="manual" label="Manual install">
+
+Register the Reboot plugin marketplace and install the plugin yourself:
+
+```sh
+codex plugin marketplace add reboot-dev/reboot-plugin
+```
+
+```sh
+codex plugin add reboot@reboot-plugin
+```
+
+Then add the required Codex settings to `~/.codex/config.toml`. Codex
+prints the plugin install path in `codex plugin list`; use it to build
+the PATH entry for your machine:
+
+```sh
+REBOOT_PLUGIN_ROOT="$(codex plugin list \
+  | awk '$1 == "reboot@reboot-plugin" {print $NF; exit}')"
+
+printf 'features.hooks = true\n'
+printf 'shell_environment_policy.set.PATH = "%s/bin:%s"\n' \
+  "$REBOOT_PLUGIN_ROOT" "$PATH"
+printf 'sandbox_mode = "danger-full-access"\n'
+```
+
+Copy the output into `~/.codex/config.toml`. It should look like this,
+with your actual plugin path:
+
+```toml
+features.hooks = true
+shell_environment_policy.set.PATH = "/path/from/codex/plugin/list/bin:/your/existing/path"
+sandbox_mode = "danger-full-access"
+```
+
+Restart Codex after changing the config.
+
+  </TabItem>
+</Tabs>
+
+## Use the skill
+
+In Codex, you do not need a slash command. Start from a normal prompt:
+
+```
+Build a Reboot counter AI chat app with an interactive clicker UI
+```
+
+Codex selects the Reboot app skill from the prompt and routes to the AI
+Chat App builder. The builder plans first. It will:
+
+1. Analyze your description and propose a state model.
+2. Map out the `User` entry point, application types, methods, AI tools,
+   and UIs.
+3. Wait for your approval before writing files.
+
+Once you approve, Codex scaffolds the full project, runs Reboot code
+generation, builds the React UI, writes backend tests, runs the tests,
+and starts the local development processes.
+
+## What gets created
+
+The skill generates a complete Reboot AI Chat App. The most relevant
+files are:
+
+```
+my-app/
+├── .rbtrc                    # Reboot CLI config
+├── mcp_servers.json          # MCPJam connection config
+├── pyproject.toml            # Python deps (uv)
+├── api/
+│   └── my_app/v1/
+│       └── my_app.py         # API definition (Pydantic)
+├── backend/
+│   ├── src/
+│   │   ├── main.py           # Application entrypoint
+│   │   └── servicers/
+│   │       └── my_app.py     # Servicer implementation
+│   └── tests/
+│       └── my_app_test.py    # Backend behavior tests
+└── web/
+    ├── package.json
+    ├── index.css             # Styling
+    └── ui/
+        └── my-ui/
+            ├── index.html
+            ├── main.tsx      # RebootClientProvider entry
+            ├── App.tsx       # React component
+            └── App.module.css
+```
+
+The API definition uses the same `User` + application type pattern
+described in the [hand-written guide](/ai_chat_apps/get_started):
+`User` is the auto-constructed entry point whose methods create other
+state types, and those types' methods use `mcp=Tool()` to be callable
+by the AI. UI methods use `UI()` and render React inside the MCP host.
+
+## Test your app
+
+When the build succeeds, Codex starts:
+
+* the Reboot backend (`rbt dev run`),
+* the Vite frontend dev server, and
+* the MCPJam Inspector for AI Chat Apps.
+
+Codex will print the local URLs, including:
+
+```
+http://127.0.0.1:9991/__/inspect   # Reboot state inspector
+http://127.0.0.1:6274              # MCPJam Inspector
+```
+
+Open MCPJam and try a prompt like:
+
+```
+Create a counter and show me the clicker UI.
+```
+
+Codex also writes backend tests for the user-facing tool workflows and
+runs them before handing off the app.
+
+## What is running
+
+After the app is built, Codex starts the local processes needed to use
+it:
+
+* `rbt dev run` runs the Reboot backend and serves the MCP endpoint at
+  `http://127.0.0.1:9991/mcp`.
+* `npm run dev` runs the Vite frontend dev server. Reboot proxies UI
+  assets through the backend so MCP UIs can hot reload while you edit.
+* MCPJam Inspector runs at `http://127.0.0.1:6274` so you can test the
+  MCP tools and UI from a browser.
+* The Reboot plugin starts a `cloudflared` quick tunnel when a Codex
+  session begins, so remote MCP clients can reach the local Reboot
+  server when needed.
+
+## Iterate on your app
+
+You can use the same skill to modify an existing app:
+
+```
+Add a reset button that sets the counter back to zero.
+```
+
+Codex reads the current Reboot project, proposes a plan, waits for your
+approval, then updates the API, servicers, React UI, and tests.
+
+## Run it again later
+
+:::info Prerequisite
+These prompts require the Reboot plugin. If they do not work, reinstall
+with `curl -fsSL https://reboot.dev/install.sh | bash` and restart Codex.
+:::
+
+If you close Codex and come back to the project later, ask Codex to run
+the Reboot app again:
+
+```
+Run my Reboot app in ./my-app
+```
+
+Or, if Codex is already open in the project directory:
+
+```
+Run this Reboot app
+```
+
+Codex will use the Reboot run skill to detect that this is an AI Chat
+App and start the backend, frontend, and MCPJam Inspector again. The
+`cloudflared` tunnel is handled by the plugin when the Codex session
+starts.
+
+## Stop leftover processes
+
+Codex does not have a session-end hook, so the plugin includes a reaper
+script for leftover local processes. Use it if MCPJam is still holding
+port `6274` or if you want to stop the `cloudflared` tunnel:
+
+```sh
+REBOOT_PLUGIN_ROOT="$(codex plugin list \
+  | awk '$1 == "reboot@reboot-plugin" {print $NF; exit}')"
+
+bash "$REBOOT_PLUGIN_ROOT/hooks/codex/reap.sh"
+```
+
+## Next steps
+
+* **[Get Started (with Claude Code)](/ai_chat_apps/get_started_claude_code)** —
+  the equivalent agent-driven workflow for Claude Code.
+* **[Get Started (hand-written)](/ai_chat_apps/get_started)** —
+  build the same app step by step to understand every file.
+* **[UIs for AI Chat Apps](/learn_more/implement/ui_methods)** —
+  the full reference for `UI` methods.
+* **[Creating tools](/learn_more/define/pydantic#creating-tools-for-the-ai)** —
+  control which methods are callable by the AI.
+* **[AI Chat App Examples](/ai_chat_apps/examples)** — more examples
+  to explore.
+* **[Deploy to Reboot Cloud](/deploy_on_reboot_cloud)** — deploy your
+  app with `rbt cloud up`.
+* **[Join us on Discord](https://discord.gg/cRbdcS94Nr)** — ask
+  questions and share what you're building!

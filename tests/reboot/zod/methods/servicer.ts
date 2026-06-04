@@ -18,6 +18,8 @@ export class TestServicer extends Test.Servicer {
   ): Promise<void> {
     this.state.data = "";
     this.state.literalValue = "option1";
+    this.state.literalArrayValue = ["option3", "option1", "option2"];
+    this.state.literalRecordValue = { a: "option2", b: "option1" };
   }
 
   async writer(
@@ -49,6 +51,19 @@ export class TestServicer extends Test.Servicer {
         this.state.recordDefaultValue !== null &&
         Object.keys(this.state.recordDefaultValue).length === 0
     );
+
+    // Confirm `z.array`/`z.record` of `z.literal` round-trip through
+    // the generated proto (a repeated `enum` and a `map` with `enum`
+    // values), set in `construct`.
+    assert.deepStrictEqual(this.state.literalArrayValue, [
+      "option3",
+      "option1",
+      "option2",
+    ]);
+    assert.deepStrictEqual(this.state.literalRecordValue, {
+      a: "option2",
+      b: "option1",
+    });
   }
 
   async reader(

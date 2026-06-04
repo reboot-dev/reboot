@@ -77,6 +77,12 @@ async def test(context: ExternalContext, uri: str):
             )
             wait.until(
                 expected_conditions.text_to_be_present_in_element(
+                    (By.ID, 'status-list'),
+                    "statusList: []",
+                )
+            )
+            wait.until(
+                expected_conditions.text_to_be_present_in_element(
                     (By.ID, 'items'),
                     "items: []",
                 )
@@ -85,6 +91,12 @@ async def test(context: ExternalContext, uri: str):
                 expected_conditions.text_to_be_present_in_element(
                     (By.ID, 'mapping'),
                     "mapping: {}",
+                )
+            )
+            wait.until(
+                expected_conditions.text_to_be_present_in_element(
+                    (By.ID, 'status-mapping'),
+                    "statusMapping: {}",
                 )
             )
             wait.until(
@@ -141,6 +153,12 @@ async def test(context: ExternalContext, uri: str):
             )
             wait.until(
                 expected_conditions.text_to_be_present_in_element(
+                    (By.ID, 'status-list'),
+                    "statusList: [second, first]",
+                )
+            )
+            wait.until(
+                expected_conditions.text_to_be_present_in_element(
                     (By.ID, 'items'),
                     "items: [a, b, c]",
                 )
@@ -159,6 +177,18 @@ async def test(context: ExternalContext, uri: str):
                 expected_conditions.text_to_be_present_in_element(
                     (By.ID, 'mapping'),
                     '"key2":"value2"',
+                )
+            )
+            wait.until(
+                expected_conditions.text_to_be_present_in_element(
+                    (By.ID, 'status-mapping'),
+                    '"keyA":"second"',
+                )
+            )
+            wait.until(
+                expected_conditions.text_to_be_present_in_element(
+                    (By.ID, 'status-mapping'),
+                    '"keyB":"first"',
                 )
             )
             wait.until(
