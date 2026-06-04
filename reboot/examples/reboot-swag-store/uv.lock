@@ -1459,7 +1459,7 @@ wheels = [
 
 [[package]]
 name = "pydantic-ai-slim"
-version = "1.90.0"
+version = "1.87.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
@@ -1471,9 +1471,9 @@ dependencies = [
     { name = "pydantic-graph" },
     { name = "typing-inspection" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ee/1a/8d27dd7f4b34a1ed78900943a0933c4c7e290cfe238f80d9e8fc8fe4c1b1/pydantic_ai_slim-1.90.0.tar.gz", hash = "sha256:39e6c8eca29436a6aa9a7440852cb80081ebd54d49b91a1dfbc18dd4a6da77a0", size = 616448, upload-time = "2026-05-05T00:51:04.306Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bb/f9/76c7943f208b09b320dc65a000689929df6a5d3b143d56b48deade6db486/pydantic_ai_slim-1.87.0.tar.gz", hash = "sha256:25822985ca21d6f2995310da915080fc3f75763aec82e815a3388257b06d6b84", size = 573802, upload-time = "2026-04-25T01:09:21.678Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/53/3d/39ddaaee36de205969b3a09a73ee1dde9c9f4c106a711a2c18fcd3009a6a/pydantic_ai_slim-1.90.0-py3-none-any.whl", hash = "sha256:4916258f5a422e5aace4cc5285fa55e7cc332939109594f2c1ff9a5f59be4104", size = 782077, upload-time = "2026-05-05T00:50:55.905Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/90/810dbc478bf063677cf56babc4404f2f0c59794017a5022ac93345a26d75/pydantic_ai_slim-1.87.0-py3-none-any.whl", hash = "sha256:6a9b4f9bcac3709ef47f3b3cda70446c002eb55901038a50d6224ee6743fe31a", size = 732159, upload-time = "2026-04-25T01:09:13.025Z" },
 ]
 
 [[package]]
@@ -1594,7 +1594,7 @@ wheels = [
 
 [[package]]
 name = "pydantic-graph"
-version = "1.90.0"
+version = "1.87.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
@@ -1602,9 +1602,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "typing-inspection" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5e/19/2cb30b5dd3ad367b838dbc858d63b428a36fd371ef1e19c831d04e0b23ee/pydantic_graph-1.90.0.tar.gz", hash = "sha256:30d69bb491599612ad88a5122ebf4a10a000eae8f89abb8910f1532bead23cc5", size = 59253, upload-time = "2026-05-05T00:51:07.011Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/fa/b2306c6dbb06e4dfe6ce6b7c5a28b82bee536d965e1dd1800b49c386b389/pydantic_graph-1.87.0.tar.gz", hash = "sha256:0f44848f8e83908ce372491c32ef349dfaf05e29f39fade0bae9309ab4f015cd", size = 59251, upload-time = "2026-04-25T01:09:23.989Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d4/09/7f86467a2a113b7dbaa415bb068972401a8c66db310de38dd8ef755e573a/pydantic_graph-1.90.0-py3-none-any.whl", hash = "sha256:0845d5726f95a63e89342bcf8236c8a660d616b7e5a30d8aa2c9a731f96018ed", size = 73066, upload-time = "2026-05-05T00:50:59.911Z" },
+    { url = "https://files.pythonhosted.org/packages/2c/9a/e99edfa37527ee04c14db7fc4b8da3f8e9c913f91c541a4b2d08438b461e/pydantic_graph-1.87.0-py3-none-any.whl", hash = "sha256:fd39e4e852808e36163474fe2af48e88a046b5e5e00596730f33c17d2429b7d2", size = 73063, upload-time = "2026-04-25T01:09:16.493Z" },
 ]
 
 [[package]]
@@ -1658,11 +1658,11 @@ wheels = [
 
 [[package]]
 name = "python-dotenv"
-version = "1.2.2"
+version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/82/ed/0301aeeac3e5353ef3d94b6ec08bbcabd04a72018415dcb29e588514bba8/python_dotenv-1.2.2.tar.gz", hash = "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3", size = 50135, upload-time = "2026-03-01T16:00:26.196Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/26/19cadc79a718c5edbec86fd4919a6b6d3f681039a2f6d66d14be94e75fb9/python_dotenv-1.2.1.tar.gz", hash = "sha256:42667e897e16ab0d66954af0e60a9caa94f0fd4ecf3aaf6d2d260eec1aa36ad6", size = 44221, upload-time = "2025-10-26T15:12:10.434Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a", size = 22101, upload-time = "2026-03-01T16:00:25.09Z" },
+    { url = "https://files.pythonhosted.org/packages/14/1b/a298b06749107c305e1fe0f814c6c74aea7b2f1e10989cb30f544a1b3253/python_dotenv-1.2.1-py3-none-any.whl", hash = "sha256:b81ee9561e9ca4004139c6cbba3a238c32b03e4894671e181b671e8cb8425d61", size = 21230, upload-time = "2025-10-26T15:12:09.109Z" },
 ]
 
 [[package]]
@@ -1751,7 +1751,7 @@ wheels = [
 
 [[package]]
 name = "reboot"
-version = "1.0.4"
+version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiofiles" },
@@ -1787,6 +1787,7 @@ dependencies = [
     { name = "pydantic-ai-slim" },
     { name = "pyjwt" },
     { name = "pyprctl" },
+    { name = "python-dotenv" },
     { name = "python-ulid" },
     { name = "pyyaml" },
     { name = "starlette" },
@@ -1800,9 +1801,9 @@ dependencies = [
     { name = "websockets" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/68/5c/84371781a0a1f65dbc44c4813acfc0fc0fdcc4c3b42d9edb352e03e6ab69/reboot-1.0.4-py3-none-macosx_13_0_arm64.whl", hash = "sha256:cc9e933d6fc363e0e53444b1f88cf63b3f8a00f39b162ac2d2bc17bcb3677148", size = 19001037, upload-time = "2026-04-29T15:49:04.01Z" },
-    { url = "https://files.pythonhosted.org/packages/2a/09/2e486af82b06d253e45cb7f338f5bc8744cc2edb9d8d3857d419eb1ae0b7/reboot-1.0.4-py3-none-manylinux_2_34_aarch64.whl", hash = "sha256:91d6c74685511db78e306ac26943a675ad3fa989d0b2df6b4220b8abe7ea14a4", size = 22393523, upload-time = "2026-04-29T15:26:28.444Z" },
-    { url = "https://files.pythonhosted.org/packages/aa/e8/5df836f1ee82282468e81316cbea126d545d622e5063b6ac990879fd6d9e/reboot-1.0.4-py3-none-manylinux_2_34_x86_64.whl", hash = "sha256:f9d9056def456c8fa4f7fa861a08557ae628fd5974be36dd2cd8d69d403b37dd", size = 22512574, upload-time = "2026-04-29T15:25:52.791Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/3a/3656c155ba7daf8a5b4b8de71345c82b11af5875ef8c727d804e6188b48e/reboot-1.1.0-py3-none-macosx_13_0_arm64.whl", hash = "sha256:458c18a0fd897870d37cec3a396d13cc97e1d0ce7c604de5c94ff2fe363c0b05", size = 20695822, upload-time = "2026-06-04T19:03:56.637Z" },
+    { url = "https://files.pythonhosted.org/packages/66/a5/2784d4b02a8b9b5a27d710ac1de9e89b84e17c7954fc354b2735ee46ac02/reboot-1.1.0-py3-none-manylinux_2_34_aarch64.whl", hash = "sha256:f3a55ab0b70703b0c07a128cc8c0b35a619627ec28dda427904cf4104a624fe9", size = 24093172, upload-time = "2026-06-04T18:03:38.821Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/50/47016a92fbd9078b86e2e08f2e669f57fc51059989e477266915c9bb0043/reboot-1.1.0-py3-none-manylinux_2_34_x86_64.whl", hash = "sha256:ef64a530c25e84be8f8992706050086dfaf9ff213eed958925e2f6ad9209307e", size = 24221768, upload-time = "2026-06-04T18:02:07.117Z" },
 ]
 
 [[package]]
@@ -1822,7 +1823,7 @@ requires-dist = [
     { name = "anyio", specifier = ">=4.0.0" },
     { name = "httpx", specifier = ">=0.27,<1.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "reboot", specifier = "==1.0.4" },
+    { name = "reboot", specifier = "==1.1.0" },
     { name = "uuid7", specifier = ">=0.1.0" },
 ]
 
