@@ -26,6 +26,7 @@ from reboot.settings import (
     REBOOT_DISCORD_URL,
     REBOOT_GITHUB_ISSUES_URL,
 )
+from reboot.wait_for_tasks import wait_for_tasks
 from typing import Optional
 
 logger = get_logger(__name__)
@@ -39,16 +40,6 @@ MAX_LOG_LINES = 100
 # it's a typical choice (AWS uses it) that's similar to the ports Reboot
 # already uses.
 ENVOY_ADMIN_PORT = 9901
-
-
-async def _cancel_task(task: asyncio.Task) -> None:
-    if task.done():
-        return
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
 
 
 class DockerLocalEnvoy(LocalEnvoy):
@@ -702,9 +693,12 @@ class DockerLocalEnvoy(LocalEnvoy):
             # greatly increases the odds that tests will notice this issue.
             raise e
         finally:
-            # If any of the tasks are still running at this point, cancel them.
-            await _cancel_task(wait_for_termination_task)
-            await _cancel_task(follow_logs_task)
+            # If any of the tasks are still running at this point,
+            # cancel them.
+            await wait_for_tasks(
+                [wait_for_termination_task, follow_logs_task],
+                cancel=True,
+            )
 
         # Envoy terminated and the logs have been collected. We print the logs
         # if Envoy terminated unsuccessfully.

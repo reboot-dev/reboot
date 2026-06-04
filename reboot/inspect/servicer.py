@@ -31,6 +31,7 @@ from reboot.aio.placement import PlacementClient
 from reboot.aio.state_managers import StateManager
 from reboot.aio.types import ApplicationId, ServerId, StateTypeName
 from reboot.controller.settings import ENVVAR_REBOOT_REPLICA_INDEX
+from reboot.wait_for_tasks import wait_for_tasks
 from typing import AsyncIterator, Optional
 
 logger = get_logger(__name__)
@@ -43,7 +44,7 @@ async def chunks_get_state(
 ) -> AsyncIterator[GetStateResponse]:
     """
     Helper to chunk up `struct` into `chunk_size_bytes` chunks.
-    
+
     This lets `GetState` responses avoid any max message size issues
     along the way, i.e., 4MB by default for gRPC, but also Envoy might
     not send more than 1MB.
@@ -197,21 +198,11 @@ class InspectServicer(
                 yield ListStatesResponse(state_infos=state_infos)
 
         finally:
-            for task in all_tasks:
-                if not task.done():
-                    task.cancel()
-            # We need to explicitly `await` or call `.result()` on
-            # each task otherwise we'll get 'Task exception was never
-            # retrieved'.
-            for task in all_tasks:
-                try:
-                    await task
-                except:
-                    # We'll let what ever other exception has been
-                    # raised propagate instead of this exception which
-                    # might just be `CancelledError` from us
-                    # cancelling the task.
-                    pass
+            # Cancel any still running tasks and wait for all of them
+            # to finish, also making sure that we consume each task
+            # result avoiding 'Task exception was never retrieved'
+            # warnings.
+            await wait_for_tasks(all_tasks, cancel=True)
 
     async def ListStates(
         self,

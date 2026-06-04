@@ -39,7 +39,7 @@ dist/**/*.tar
 dist/build_info/source_info.txt
 
 # Generated binaries.
-bin/
+# TODO: bin/ somehow?
 /reboot/*.whl
 
 # Files inside submodules. This is moot for git itself, since it knows that

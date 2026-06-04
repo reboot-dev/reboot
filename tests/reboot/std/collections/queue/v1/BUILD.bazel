@@ -35,6 +35,7 @@ ts_project(
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@reboot-dev/reboot",
         "//:node_modules/@reboot-dev/reboot-std",
+        "//:node_modules/@reboot-dev/reboot-std-api",
         "//:node_modules/@types/node",
         "//tests/reboot:greeter_js_proto",
         "//tests/reboot:greeter_js_reboot",

@@ -32,6 +32,11 @@ const sidebars = {
         },
         {
           type: "doc",
+          id: "ai_chat_apps/get_started_codex",
+          label: "Get Started (with Codex)",
+        },
+        {
+          type: "doc",
           id: "ai_chat_apps/get_started",
           label: "Get Started (hand-written)",
         },
@@ -125,6 +130,7 @@ const sidebars = {
       label: "Standard library",
       items: [
         "library_services/overview",
+        "library_services/ciphertext",
         "library_services/mailgun",
         "library_services/ordered_map",
         "library_services/pubsub",
@@ -152,7 +158,7 @@ const sidebars = {
     // {
     //   type: "category",
     //   label: "Deploy & operate",
-    //   items: ["deploy_operate/where", "deploy_operate/import_export"],
+    //   items: ["deploy_operate/import_export"],
     // },
     // TODO: #3363.
 

@@ -1,7 +1,10 @@
 // `eslint` disabled to preserve separation of imports for documentation.
 import { Value } from "@bufbuild/protobuf";
 import { Application, Reboot } from "@reboot-dev/reboot";
-import queue, { Queue } from "@reboot-dev/reboot-std/collections/queue/v1";
+import { Queue } from "@reboot-dev/reboot-std/collections/queue/v1";
+// eslint-disable-next-line
+import { queueLibrary } from "@reboot-dev/reboot-std/collections/queue/v1";
+import { sortedMapLibrary } from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { CreateRequest } from "../../../../greeter_rbt.js";
@@ -21,7 +24,9 @@ test("Use queue servicers", async (t) => {
   });
 
   await t.test("Interact with the Queue", async (t) => {
-    await rbt.up(new Application({ servicers: queue.servicers() }));
+    await rbt.up(
+      new Application({ libraries: [queueLibrary(), sortedMapLibrary()] })
+    );
 
     const context = rbt.createExternalContext("test", {
       appInternal: true,
@@ -59,7 +64,9 @@ test("Use queue servicers", async (t) => {
   await t.test(
     "Examples for documentation for single enqueue/dequeue.",
     async (t) => {
-      await rbt.up(new Application({ servicers: queue.servicers() }));
+      await rbt.up(
+        new Application({ libraries: [queueLibrary(), sortedMapLibrary()] })
+      );
 
       const context = rbt.createExternalContext("test", {
         appInternal: true,
@@ -100,7 +107,9 @@ test("Use queue servicers", async (t) => {
   await t.test(
     "Examples for documentation for bulk enqueue/dequeue.",
     async (t) => {
-      await rbt.up(new Application({ servicers: queue.servicers() }));
+      await rbt.up(
+        new Application({ libraries: [queueLibrary(), sortedMapLibrary()] })
+      );
 
       const context = rbt.createExternalContext("test", {
         appInternal: true,
@@ -147,4 +156,76 @@ test("Use queue servicers", async (t) => {
       // `items` is a list of Items
     }
   );
+
+  await t.test("Test tryDequeue()", async (t) => {
+    await rbt.up(
+      new Application({ libraries: [queueLibrary(), sortedMapLibrary()] })
+    );
+
+    const context = rbt.createExternalContext("test", {
+      appInternal: true,
+    });
+
+    const queue = Queue.ref("test-queue");
+
+    // `console.log()` and if/else below is pulled in for example code in documentation.
+    const response = await queue.tryDequeue(context, { bulk: true, atMost: 1 });
+    if (response.items.length === 0) {
+      console.log("The queue is empty.");
+    } else {
+      // Something was in the queue; handle it.
+    }
+
+    assert(response.items.length === 0, `Expected 0 items to be dequeued.`);
+
+    // Add item and `tryDequeue()` it.
+    await queue.enqueue(context, {
+      value: Value.fromJson({ details: "details-go-here" }),
+    });
+
+    const { value } = await queue.tryDequeue(context);
+
+    assert(
+      value?.toJson()["details"] === "details-go-here",
+      `Expected to tryDequeue() the correct item.`
+    );
+  });
+
+  await t.test("Test empty().", async (t) => {
+    await rbt.up(
+      new Application({ libraries: [queueLibrary(), sortedMapLibrary()] })
+    );
+
+    const context = rbt.createExternalContext("test", {
+      appInternal: true,
+    });
+
+    const queue = Queue.ref("test-queue");
+
+    // Need to construct state before reading.
+    await queue.tryDequeue(context);
+
+    // `console.log()` below is pulled in for example code in documentation.
+    const response = await queue.empty(context);
+    if (response.empty) {
+      console.log("The queue is empty.");
+    }
+
+    assert(
+      response.empty === true,
+      `Expected empty() to be true when there are no items.`
+    );
+
+    // Add item and check `empty()` again.
+    await queue.enqueue(context, {
+      value: Value.fromJson({ details: "details-go-here" }),
+    });
+
+    const emptyFalseResponse = await queue.empty(context);
+
+    assert(
+      emptyFalseResponse.empty === false,
+      `Expected empty() to be true when there are items.`
+    );
+  });
 });

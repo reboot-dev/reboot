@@ -5,12 +5,17 @@ import colorama
 import os
 import reboot.aio.memoize
 import reboot.aio.workflows
+import reboot.application
 import sys
 import traceback
 from log.log import get_logger
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
-from reboot.aio.auth.oauth_providers import Anonymous, OAuthProvider
+from rbt.v1alpha1.application.application_pb2 import ExamplePrompt
+from reboot.aio.auth.oauth_providers import (
+    OAuthProviderByEnvironment,
+    OAuthProviderSelector,
+)
 from reboot.aio.auth.oauth_server import OAuthServer
 from reboot.aio.auth.token_verifiers import TokenVerifier
 from reboot.aio.exceptions import InputError
@@ -34,6 +39,7 @@ from reboot.nodejs.python import should_print_stacktrace
 from reboot.run_environments import (
     InvalidRunEnvironment,
     RunEnvironment,
+    application_name,
     detect_run_environment,
     running_rbt_dev,
     within_nodejs_server,
@@ -46,12 +52,12 @@ from reboot.settings import (
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
     ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS,
+    ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_LOCAL_ENVOY,
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
-    ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
 )
-from typing import Awaitable, Callable, NoReturn, Optional
+from typing import Any, Awaitable, Callable, NoReturn, Optional
 
 logger = get_logger(__name__)
 
@@ -181,7 +187,10 @@ class Application:
                                       Awaitable[None]]] = None,
         initialize_bearer_token: Optional[str] = None,
         token_verifier: Optional[TokenVerifier] = None,
-        oauth: Optional[OAuthProvider] = None,
+        oauth: Optional[OAuthProviderSelector] = None,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        example_prompts: Optional[list[ExamplePrompt]] = None,
     ):
         """
         :param servicers: the types of Reboot-powered servicers that
@@ -203,10 +212,20 @@ class Application:
         :param token_verifier: a TokenVerifier that will be used to
             verify authorization bearer tokens passed to the
             application.
-        :param oauth: an OAuth provider (e.g. `Google` or `GitHub`) for
-            authenticating MCP clients. When set, the Application
-            automatically creates a `TokenVerifier` for the minted JWTs.
-            Mutually exclusive with `token_verifier`.
+        :param oauth: an `OAuthProviderSelector` (e.g.
+            `OAuthProviderByEnvironment(dev=Development(),
+            prod=Google(...))`) that chooses the OAuth provider for
+            authenticating MCP clients. It is resolved (and a
+            `TokenVerifier` created automatically) only when the
+            application has a `User`-typed auto-construct servicer. `None`
+            is equivalent to `OAuthProviderByEnvironment(dev=None,
+            prod=None)`. Mutually exclusive with `token_verifier`.
+        :param title: a human-readable name for the application.
+            Defaults to `application_name()` if unset.
+        :param description: a human-readable description of the
+            application.
+        :param example_prompts: a list of `ExamplePrompt` instances
+            for using this application in a chat client.
 
         TODO(benh): update the initialize function to be run in a
         transaction and ensure that the transaction has finished before
@@ -221,17 +240,12 @@ class Application:
                 "`TokenVerifier` is created automatically."
             )
 
-        # Default to Anonymous OAuth in environments that also have a
-        # default signing secret (i.e. `rbt dev` and unit tests; these
-        # are the environments where true security isn't needed yet).
-        # This lets MCP clients connect without explicit config. In `rbt
-        # dev`, `_is_dev_default` triggers a warning nudging the
-        # developer to configure a real provider for production.
-        if oauth is None and token_verifier is None:
-            if running_rbt_dev():
-                oauth = Anonymous(_is_dev_default=True)
-            elif os.environ.get(ENVVAR_REBOOT_OAUTH_SIGNING_SECRET):
-                oauth = Anonymous()
+        # NOTE: `oauth` is an `OAuthProviderSelector`, resolved lazily in
+        # `_mount_mcp` only when the app needs a provider to identify
+        # users (it has a `User`-typed auto-construct servicer and no
+        # `token_verifier`). `oauth=None` is treated as
+        # `OAuthProviderByEnvironment(dev=None, prod=None)` there, so an
+        # app that needs OAuth but never configured one fails to start.
 
         # Get all libraries including required dependent libraries.
         if libraries is not None:
@@ -254,7 +268,7 @@ class Application:
             if len(needed_requirements) > 0:
                 raise ValueError(
                     "Missing required libraries: "
-                    f"{', '.join(needed_requirements)}"
+                    f"{', '.join(needed_requirements)}. "
                     "Please add these libraries and pass them to the "
                     "`libraries` parameter."
                 )
@@ -324,17 +338,14 @@ class Application:
         self._token_verifier = token_verifier
         self._initialize_bearer_token = initialize_bearer_token
         self._oauth = oauth
+        self._title = title
+        self._description = description
+        self._example_prompts = example_prompts or []
 
         # Validate MCP configuration eagerly at construction time so
         # errors are raised consistently regardless of run environment.
         seen_tools: dict[str, str] = {}
         for servicer_cls in self._servicers or []:
-            if servicer_cls._is_auto_construct and oauth is None:
-                raise ValueError(
-                    "Application includes a `User` auto-constructed state "
-                    "type, which requires OAuth to identify the user. Pass "
-                    "`Application(oauth=...)` - e.g. `oauth=Anonymous()`."
-                )
             for tool_name in servicer_cls._mcp_tool_names():
                 if tool_name in seen_tools:
                     raise ValueError(
@@ -388,8 +399,6 @@ class Application:
             # cluster!
             return
 
-        self._name: Optional[str] = os.environ.get(ENVVAR_RBT_NAME)
-
         state_directory: Optional[str] = os.environ.get(
             ENVVAR_RBT_STATE_DIRECTORY
         )
@@ -399,8 +408,16 @@ class Application:
 
         # NOTE: we construct a 'Reboot' instance here so that it can
         # perform any process wide initialization as early as possible.
+        #
+        # We pass the raw `ENVVAR_RBT_NAME` value (which may be `None`)
+        # rather than `application_name()`: `Reboot` relies on a `None`
+        # name to know that this run is unnamed and therefore may use a
+        # throwaway temporary state directory. `application_name()`
+        # falls back to a non-`None` default, which would violate that
+        # invariant. The human-facing default name is applied to
+        # `title` below instead.
         self._rbt = Reboot(
-            application_name=self._name,
+            application_name=os.environ.get(ENVVAR_RBT_NAME),
             state_directory=self._state_directory,
             # Don't initialize tracing for the 'Reboot' instance, if
             # we're starting a server.
@@ -415,8 +432,12 @@ class Application:
 
     @property
     def servicers(self):
-        # Always include `memoize` servicers.
-        return (self._servicers or []) + reboot.aio.memoize.servicers()
+        # Always include `memoize` servicers and `ApplicationServicer`
+        # for storing runtime information about the application.
+        return (
+            (self._servicers or []) + reboot.aio.memoize.servicers() +
+            reboot.application.servicers()
+        )
 
     @property
     def legacy_grpc_servicers(self):
@@ -459,7 +480,14 @@ class Application:
         connections and explain what's missing.
         """
         auto_construct_state_type_full_names: list[StateTypeName] = []
-        new_session_hooks = []
+        new_session_hooks: list[Callable[
+            [ExternalContext, Optional[str]],
+            Awaitable[None],
+        ]] = []
+        per_request_hooks: list[Callable[
+            [ExternalContext, Optional[str], Any],
+            Awaitable[None],
+        ]] = []
 
         # Wire up auto-construction of states for every authenticated user.
         for servicer_cls in servicers:
@@ -482,6 +510,46 @@ class Application:
 
                 new_session_hooks.append(maybe_auto_construct_based_on_user_id)
 
+        # Record MCP connections made into this application — but only
+        # in dev mode.
+        if running_rbt_dev():
+            # We dedupe so we can skip the RPC entirely for the
+            # overwhelmingly-common case of repeated calls on an
+            # established connection.
+            seen_connections: set[tuple[str, str]] = set()
+
+            async def record_connection(
+                context: ExternalContext,
+                user_id: Optional[str],
+                request,
+            ) -> None:
+                forwarded_host = (
+                    request.headers.get("x-forwarded-host") or
+                    request.headers.get("host") or None
+                )
+                user_agent = request.headers.get("user-agent") or None
+                if forwarded_host is None or user_agent is None:
+                    # A connection is only meaningful if we have both
+                    # `forwarded_host` and `user_agent`; skip if
+                    # either is absent.
+                    return
+                connection = (forwarded_host, user_agent)
+                if connection in seen_connections:
+                    return
+                seen_connections.add(connection)
+                await reboot.application.ref().record_connection(
+                    context,
+                    forwarded_host=forwarded_host,
+                    user_agent=user_agent,
+                )
+
+            # NOTE: even though we have session hooks we want to check
+            # for connections per-request because (a) MCP is dropping
+            # sessions and (b) after an expunge we will still want to
+            # track which clients have connected and the only way to
+            # do that is by looking at each request.
+            per_request_hooks.append(record_connection)
+
         # Create MCP server and register all servicers' tools/resources.
         server = FastMCP(name="reboot-mcp")
         for servicer_cls in servicers:
@@ -495,9 +563,29 @@ class Application:
         # produce the 401 error code needed to trigger a token refresh.
         mcp_sdk_token_verifier = None
         oauth_server = None
-        if self._oauth is not None:
+        # Resolve an OAuth provider only when the app needs one to
+        # identify users — it has a `User`-typed auto-construct servicer
+        # and isn't already authenticating via a `token_verifier`. The
+        # selector's `get()` raises if no provider is configured for the
+        # current environment (`oauth=None` is treated as a selector with
+        # no provider for any environment).
+        if (
+            auto_construct_state_type_full_names and
+            self._token_verifier is None
+        ):
+            selector = self._oauth or OAuthProviderByEnvironment(
+                dev=None,
+                prod=None,
+            )
+            provider = selector.get()
+            # A provider that stores the identity provider's tokens
+            # (`store_tokens=True`) persists them via the `oauth` library
+            # (which encrypts them via `ciphertext`); require the developer
+            # to have mounted them.
+            if provider.stores_tokens:
+                self._require_oauth_libraries()
             oauth_server = OAuthServer(
-                provider=self._oauth,
+                provider=provider,
                 protected_resources=[_MCP_PATH],
             )
             self._token_verifier = oauth_server.token_verifier
@@ -513,7 +601,34 @@ class Application:
             factory=create_mcp_factory(  # type: ignore[arg-type]
                 server=server,
                 new_session_hooks=new_session_hooks,
+                per_request_hooks=per_request_hooks,
                 token_verifier=mcp_sdk_token_verifier,
+            ),
+        )
+
+    def _require_oauth_libraries(self) -> None:
+        """Fail fast if an OAuth provider with `store_tokens=True` is used
+        without the `oauth` (and its `ciphertext`) library mounted — they
+        encrypt and persist the identity provider's tokens.
+        """
+        # Imported lazily: both libraries import `reboot.aio.applications`,
+        # so a module-level import would be circular.
+        from reboot.std.ciphertext.v1.ciphertext import CIPHERTEXT_LIBRARY_NAME
+        from reboot.std.oauth.v1.oauth import OAUTH_LIBRARY_NAME
+        names = {library.name for library in (self._libraries or [])}
+        if OAUTH_LIBRARY_NAME in names and CIPHERTEXT_LIBRARY_NAME in names:
+            return
+        raise InputError(
+            reason=(
+                "An OAuth provider with `store_tokens=True` needs the "
+                "`oauth` and `ciphertext` libraries to encrypt and persist "
+                "the identity provider's tokens, but they aren't all "
+                "mounted. Add them to your `Application`, e.g. "
+                "`Application(..., libraries=[oauth_library(), "
+                "ciphertext_library(), ordered_map_library()])` (import "
+                "`oauth_library` from `reboot.std.oauth.v1.oauth` and "
+                "`ciphertext_library` from "
+                "`reboot.std.ciphertext.v1.ciphertext`)."
             ),
         )
 
@@ -541,13 +656,34 @@ class Application:
             'Expecting server count from `rbt dev` or `rbt serve`'
         )
 
+        async def initialize(context: InitializeContext) -> None:
+            # Construct/refresh the `Application` singleton on every
+            # boot so we get latest values (`title`, `description`,
+            # etc.), hence `.always()`. An `InitializeContext` is
+            # app-internal, which is what `Application.initialize`'s
+            # authorizer requires.
+            await reboot.application.ref().always().initialize(
+                context,
+                title=self._title or application_name(),
+                description=self._description,
+                port=local_envoy_port,
+                mcp=any(
+                    servicer._mcp_tool_names()
+                    for servicer in (self._servicers or [])
+                ),
+                example_prompts=self._example_prompts,
+            )
+
+            if self._initialize is not None:
+                await self._initialize(context)
+
         await self._rbt.up(
             servicers=self.servicers,
             libraries=self.libraries,
             legacy_grpc_servicers=self.legacy_grpc_servicers,
             web_framework=self.web_framework,
             token_verifier=self.token_verifier,
-            initialize=self._initialize,
+            initialize=initialize,
             initialize_bearer_token=self._initialize_bearer_token,
             local_envoy=local_envoy,
             local_envoy_port=local_envoy_port,
@@ -573,6 +709,25 @@ class Application:
 
         return serviceables
 
+    def _require_crypto_root_keys(self) -> None:
+        """Fail fast (clean exit, no stack trace) on a serving path if the
+        Reboot-managed cryptographic root keys aren't set. Every serving
+        Reboot application needs them: libraries derive keys from them (the
+        MCP OAuth server its JWT signing key, `reboot.std.ciphertext` its
+        key-encryption key, ...), and they must be identical across all
+        server processes. Config pods (`REBOOT_MODE_CONFIG`) only validate
+        configuration and never serve, so they never call this.
+        """
+        if not os.environ.get(ENVVAR_REBOOT_CRYPTO_ROOT_KEYS):
+            terminal.fail(
+                f"The '{ENVVAR_REBOOT_CRYPTO_ROOT_KEYS}' environment "
+                "variable is not set. Every Reboot application needs "
+                "cryptographic root keys, shared across all of its "
+                "servers. Under `rbt dev` and on Reboot Cloud they are "
+                "set automatically; for `rbt serve` you must set an "
+                "environment variable yourself"
+            )
+
     async def run(self) -> NoReturn:
         """Runs the application, and does not return unless the application fails.
 
@@ -585,7 +740,9 @@ class Application:
         colorama.init()
 
         if within_python_server():
-            # We're running as a Python server subprocess.
+            # We're running as a Python server subprocess — a serving
+            # path, so it requires the OAuth signing secret.
+            self._require_crypto_root_keys()
             try:
                 await run_python_server_process(
                     serviceables=self._get_serviceables(),
@@ -662,7 +819,9 @@ class Application:
                 sys.exit(1)
 
         # We're going to run a normal Reboot application with one or
-        # more serving servers.
+        # more serving servers — a serving path, so it requires the
+        # OAuth signing secret.
+        self._require_crypto_root_keys()
         try:
             await self._rbt_start_and_up_and_initialize()
         except InputError as e:

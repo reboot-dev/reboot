@@ -50,8 +50,14 @@ const App = () => {
           <p id="number">number: {response.number}</p>
           <p id="flag">flag: {response.flag ? "true" : "false"}</p>
           <p id="status">status: {response.status}</p>
+          <p id="status-list">
+            statusList: [{response.statusList?.join(", ") ?? ""}]
+          </p>
           <p id="items">items: [{response.items?.join(", ") ?? ""}]</p>
           <p id="mapping">mapping: {JSON.stringify(response.mapping ?? {})}</p>
+          <p id="status-mapping">
+            statusMapping: {JSON.stringify(response.statusMapping ?? {})}
+          </p>
           <p id="optional-text">
             optionalText:{" "}
             {response.optionalText === undefined
@@ -73,8 +79,10 @@ const App = () => {
               number: 42,
               flag: true,
               status: "second",
+              statusList: ["second", "first"],
               items: ["a", "b", "c"],
               mapping: { key1: "value1", key2: "value2" },
+              statusMapping: { keyA: "second", keyB: "first" },
               optionalText: "optional-value",
               variant: { kind: "A", valueA: "variant-value" },
             };
@@ -97,8 +105,14 @@ const App = () => {
         <p id="number">number: {response.number}</p>
         <p id="flag">flag: {response.flag ? "true" : "false"}</p>
         <p id="status">status: {response.status}</p>
+        <p id="status-list">
+          statusList: [{response.statusList?.join(", ") ?? ""}]
+        </p>
         <p id="items">items: [{response.items?.join(", ") ?? ""}]</p>
         <p id="mapping">mapping: {JSON.stringify(response.mapping ?? {})}</p>
+        <p id="status-mapping">
+          statusMapping: {JSON.stringify(response.statusMapping ?? {})}
+        </p>
         <p id="optional-text">
           optionalText:{" "}
           {response.optionalText === undefined

@@ -1,0 +1,35 @@
+# Keep the build context small and prevent local secrets / build
+# artifacts from being uploaded to the Docker daemon.
+
+# Secrets. NEVER ship into a layer.
+.env
+
+# Local Python environment (rebuilt in the image by `uv sync`).
+.venv/
+
+# Reboot runtime state (per-machine).
+.rbt/
+
+# Python / test caches.
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+
+# Generated Reboot code (regenerated in the image by `rbt generate`).
+backend/api/
+web/api/
+
+# Node + Vite outputs (rebuilt in the image by the `web-build` stage).
+web/node_modules/
+web/dist/
+
+# Tooling noise.
+.claude/
+.vscode/
+.idea/
+*.swp
+
+# Docker files themselves.
+Dockerfile
+.dockerignore

@@ -1,3 +1,6 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
 # Get Started (with Claude Code)
 
 Build an AI Chat App using
@@ -15,15 +18,32 @@ installed.
 
 ## Install the Reboot skill
 
-Add the Reboot skills marketplace and install the
-`reboot-chat-app` skill using Claude Code:
+<Tabs groupId="install-method">
+  <TabItem value="quick" label="Quick install">
+
+Install the Reboot plugin for Claude Code with a single
+command:
+
+```sh
+curl -fsSL https://reboot.dev/install.sh | bash
+```
+
+This registers the Reboot marketplace, installs the plugin,
+and pre-installs its pinned dependencies so your first build
+runs without waiting on downloads.
+
+  </TabItem>
+  <TabItem value="manual" label="Manual install">
+
+Add the marketplace and install the plugin yourself with
+Claude Code:
 
 ```
-claude plugin marketplace add reboot-dev/reboot-skills
+claude plugin marketplace add reboot-dev/reboot-plugin
 ```
 
 ```
-claude plugin install reboot-chat-app@reboot-skills
+claude plugin install reboot@reboot-plugin
 ```
 
 :::note
@@ -37,25 +57,28 @@ project's `.claude/settings.json`:
 ```json
 {
   "extraKnownMarketplaces": {
-    "reboot-skills": {
+    "reboot-plugin": {
       "source": {
         "source": "github",
-        "repo": "reboot-dev/reboot-skills"
+        "repo": "reboot-dev/reboot-plugin"
       }
     }
   },
   "enabledPlugins": {
-    "reboot-chat-app@reboot-skills": true
+    "reboot@reboot-plugin": true
   }
 }
 ```
+
+  </TabItem>
+</Tabs>
 
 ## Use the skill
 
 Once installed, invoke the skill with a description of your app:
 
 ```
-/reboot-chat-app Build a counter app with an interactive clicker UI
+/chat-app Build a counter app with an interactive clicker UI
 ```
 
 The skill enters **plan mode** first. It will:
@@ -70,27 +93,30 @@ then builds and runs it.
 
 ## What gets created
 
-The skill generates a complete Reboot AI Chat App:
+The skill generates a complete Reboot AI Chat App. The most relevant
+files are:
 
 ```
 my-app/
+├── .rbtrc                    # Reboot CLI config
+├── pyproject.toml            # Python deps (uv)
 ├── api/
 │   └── my_app/v1/
-│       └── app.py           # API definition (Pydantic)
+│       └── my_app.py         # API definition (Pydantic)
 ├── backend/
 │   └── src/
 │       ├── main.py           # Application entrypoint
 │       └── servicers/
-│           └── app.py        # Servicer implementation
-├── web/
-│   └── ui/
-│       └── my-ui/
-│           ├── index.html
-│           ├── main.tsx      # RebootClientProvider entry
-│           ├── App.tsx       # React component
-│           └── App.module.css
-├── .rbtrc                    # Reboot CLI config
-└── pyproject.toml
+│           └── my_app.py     # Servicer implementation
+└── web/
+    ├── package.json
+    ├── index.css             # Styling
+    └── ui/
+        └── my-ui/
+            ├── index.html
+            ├── main.tsx      # RebootClientProvider entry
+            ├── App.tsx       # React component
+            └── App.module.css
 ```
 
 The API definition uses the same `User` + application type
@@ -102,27 +128,18 @@ by the AI.
 
 ## Test your app
 
-After the skill finishes building, it starts the app with
-`uv run rbt dev run`. You can test it with
-[MCPJam Inspector](https://mcpjam.com):
+Once the build succeeds, Claude will run the program for you. You'll see
+a link, click it to try your app out! 
 
-```sh
-npx @mcpjam/inspector@2.4.0 \
-  --config mcp_servers.json --server my-app
-```
-
-See the [hand-written guide](/ai_chat_apps/get_started) for details
-on what to try in the inspector.
-
-To connect from other AI clients (VS Code, ChatGPT, Claude,
-Goose), see [From an MCP client](/learn_more/call/from_mcp_client).
+Claude will also write unit tests for your app, which help to make sure
+that your app works - and keeps working.
 
 ## Iterate on your app
 
 You can also use the skill to modify an existing app:
 
 ```
-/reboot-chat-app Add a reset button that sets the counter back to zero
+/app Add a reset button that sets the counter back to zero
 ```
 
 The skill reads your current code, plans the changes, and waits

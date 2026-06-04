@@ -5,6 +5,7 @@ import bitarray  # type: ignore[import]
 import grpc
 import hashlib
 import inspect
+import itertools
 import log.log
 import logging
 import math
@@ -20,6 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from google.protobuf import any_pb2
 from google.protobuf.message import Message
+from google.protobuf.timestamp_pb2 import Timestamp
 from grpc.aio import AioRpcError
 from log.log import log_at_most_once_per
 from rbt.v1alpha1 import (
@@ -34,11 +36,13 @@ from rbt.v1alpha1.errors_pb2 import (
     StateNotConstructed,
     TransactionParticipantFailedToCommit,
     TransactionParticipantFailedToPrepare,
+    Unavailable,
 )
 from reboot.admin.export_import_converters import ExportImportItemConverters
 from reboot.aio import tracing
 from reboot.aio.aborted import Aborted, SystemAborted
 from reboot.aio.backoff import Backoff
+from reboot.aio.concurrently import concurrently
 from reboot.aio.contexts import (
     Context,
     Participants,
@@ -75,6 +79,8 @@ from reboot.server.database import (
     DatabaseClient,
 )
 from reboot.time import DateTimeWithTimeZone
+from reboot.uuidv7 import uuid7_timestamp_ms
+from reboot.wait_for_tasks import wait_for_tasks
 from struct import pack, unpack
 from typing import (
     Any,
@@ -110,10 +116,7 @@ def check_idempotency_key_not_expired(idempotency_key: uuid.UUID) -> None:
     if idempotency_key.version != 7:
         return
 
-    # Extract the 48-bit timestamp from the first 6 bytes of the UUID.
-    # UUIDv7 stores the Unix timestamp in milliseconds in big-endian format.
-    uuid_bytes = idempotency_key.bytes
-    timestamp_ms = int.from_bytes(uuid_bytes[:6], byteorder='big')
+    timestamp_ms = uuid7_timestamp_ms(uuid.UUID(bytes=idempotency_key.bytes))
 
     now_ms = int(time.time() * 1000)
 
@@ -212,6 +215,8 @@ class StateManager(ABC):
             cls,
             context: Context,
             tasks_dispatcher: TasksDispatcher,
+            *,
+            using_restart_detection: bool = False,
         ) -> StateManager.Transaction:
             assert context.transaction_ids is not None
             assert context.transaction_coordinator_state_type is not None
@@ -226,6 +231,7 @@ class StateManager(ABC):
                 state_ref=context._state_ref,
                 tasks_dispatcher=tasks_dispatcher,
                 idempotency_key=context.idempotency_key,
+                using_restart_detection=using_restart_detection,
             )
 
         @classmethod
@@ -283,6 +289,7 @@ class StateManager(ABC):
             idempotency_key: Optional[uuid.UUID] = None,
             idempotent_mutations: Optional[dict[
                 uuid.UUID, database_pb2.IdempotentMutation]] = None,
+            using_restart_detection: bool = False,
         ) -> None:
             self._ids = transaction_ids
 
@@ -306,6 +313,10 @@ class StateManager(ABC):
             # be read/written only when holding 'lock'. Use property
             # `self.stored` to access this safely.
             self._stored = stored
+
+            # Whether restart detection is being used for this
+            # transaction.
+            self.using_restart_detection = using_restart_detection
 
             # Whether or not we should abort this transaction when
             # asked by the coordinator.
@@ -436,6 +447,21 @@ class StateManager(ABC):
             """Returns whether or not the transaction is finished."""
             return self._committed.done()
 
+    @property
+    def latest_timestamp_ms(self) -> Optional[int]:
+        """Return the latest known database timestamp (ms), e.g., for
+        UUID7 transaction ID generation.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def preload(
+        self,
+        state_type_name: StateTypeName,
+        state_ref: StateRef,
+    ) -> None:
+        raise NotImplementedError()
+
     @abstractmethod
     def add_to_server(self, server: grpc.aio.Server) -> None:
         """Hook for adding the state manager to a gRPC server."""
@@ -465,6 +491,8 @@ class StateManager(ABC):
         state_ref: StateRef,
         task: database_pb2.Task,
         middleware: Middleware,
+        *,
+        sync: bool = True,
     ) -> None:
         """Imports state for an actor, overwriting on collision."""
         raise NotImplementedError
@@ -475,6 +503,8 @@ class StateManager(ABC):
         state_type: StateTypeName,
         state_ref: StateRef,
         state: Message,
+        *,
+        sync: bool = True,
     ) -> None:
         """Imports state for an actor, overwriting on collision."""
         raise NotImplementedError
@@ -486,6 +516,8 @@ class StateManager(ABC):
         state_ref: StateRef,
         state: bytes,
         actor_converters: ExportImportItemConverters,
+        *,
+        sync: bool = True,
     ) -> None:
         """Imports state for an actor, overwriting on collision."""
         raise NotImplementedError
@@ -496,6 +528,8 @@ class StateManager(ABC):
         state_type: StateTypeName,
         state_ref: StateRef,
         idempotent_mutation: database_pb2.IdempotentMutation,
+        *,
+        sync: bool = True,
     ) -> None:
         """Imports state for an actor, overwriting on collision."""
         raise NotImplementedError
@@ -1343,6 +1377,49 @@ class SidecarStateManager(
                                  dict[StateRef,
                                       asyncio.Event]] = defaultdict(dict)
 
+        # Futures for state preloads. `preload()` creates a future
+        # that resolves with `Optional[bytes]` (raw data, or `None` if
+        # the state doesn't exist). `_load()` pops the future and
+        # awaits it before falling back to its own call into the
+        # database.
+        #
+        # NOTE: we've kept the original `_loads` events separate from
+        # `_state_preloads` futures to simplify the addition of the
+        # preload feature.
+        self._state_preloads: defaultdict[
+            StateTypeName,
+            dict[StateRef, asyncio.Future[Optional[bytes]]],
+        ] = defaultdict(dict)
+
+        # Futures for calls to the database to recovery idempotent
+        # mutations. `preload()` creates a future that resolves with
+        # the idempotent mutations; `check_for_idempotent_mutation()`
+        # also creates a future so concurrent callers await it instead
+        # of doing their own recovery but they resolve with `None` to
+        # signal to concurrent callers that nothing else needs to be
+        # done.
+        #
+        # Unlike for state loading, for idempotent mutations we
+        # combined load and preload into a single future because there
+        # was no pre-existing mechanism like there was for state
+        # loading (although arguably that was a bug).
+        self._idempotent_mutations_loads: defaultdict[
+            StateTypeName,
+            dict[
+                StateRef,
+                asyncio.Future[Optional[list[database_pb2.
+                                             IdempotentMutation]]],
+            ],
+        ] = defaultdict(dict)
+
+        # Strong references to in-flight preload tasks. The asyncio
+        # event loop only keeps weak references to tasks, so a task
+        # created via `asyncio.create_task()` without a strong
+        # reference may be garbage collected mid-flight. We hold the
+        # tasks here and discard them via `add_done_callback` once
+        # they complete.
+        self._preload_tasks: set[asyncio.Task] = set()
+
         # Any streaming readers. We're explicitly using a 'dict' as
         # the value instead of a 'defaultdict' because we don't want
         # to construct memory every time we "check" if there is a
@@ -1357,6 +1434,113 @@ class SidecarStateManager(
         self._idempotent_mutations: defaultdict[StateTypeName, dict[
             StateRef, IdempotentMutations]] = defaultdict(dict)
 
+        # Recovery timestamp from the database, set during
+        # `recover()`. Represents the database's clock reading
+        # when this server recovered. Used for restart detection.
+        self._recovery_timestamp_ms: Optional[int] = None
+
+        # Latest timestamp from the database, updated by
+        # piggybacked responses and periodic refresh. Used for
+        # UUID7 transaction ID generation.
+        self._latest_timestamp_ms: Optional[int] = None
+
+        # Event used to cancel and restart the periodic refresh
+        # timer when a piggybacked timestamp is received.
+        self._timestamp_refresh_event = asyncio.Event()
+
+        # Task for the periodic timestamp refresh loop.
+        self._timestamp_refresh_task: Optional[asyncio.Task] = None
+
+    @property
+    def latest_timestamp_ms(self) -> Optional[int]:
+        return self._latest_timestamp_ms
+
+    def _can_use_restart_detection(
+        self,
+        root_transaction_id: uuid.UUID,
+        state_type: StateTypeName,
+    ) -> bool:
+        """Return whether restart detection can be used for this transaction
+        to optimize performance.
+
+        Restart detection requires all of:
+
+        1. A recovery timestamp from the database (i.e., the database
+           supports timestamps).
+
+        2. A UUIDv7 root transaction ID (which embeds a
+           timestamp). UUIDv4 transactions (from older coordinators
+           that don't yet generate UUIDv7 IDs) don't carry a
+           timestamp, so we can't compare against the recovery
+           timestamp.
+
+        3. A state type that is not `SortedMap`. `SortedMap`
+           operations use `colocated_[reverse_]range()` which reads
+           from RocksDB within the transaction, requiring the RocksDB
+           transaction to have been started at join time. See
+           https://github.com/reboot-dev/mono/issues/4019.
+        """
+        return (
+            self._recovery_timestamp_ms is not None and
+            root_transaction_id.version == 7 and
+            state_type != SORTED_MAP_TYPE_NAME
+        )
+
+    def _update_latest_timestamp(
+        self,
+        timestamp: Optional[Timestamp],
+        *,
+        from_refresh: bool = False,
+    ) -> None:
+        """Update the latest database timestamp if newer. Also
+        resets the periodic refresh countdown (unless this update
+        is from the refresh loop itself).
+        """
+        if timestamp is None:
+            return
+        timestamp_ms = timestamp.ToMilliseconds()
+        if (
+            self._latest_timestamp_ms is None or
+            timestamp_ms > self._latest_timestamp_ms
+        ):
+            self._latest_timestamp_ms = timestamp_ms
+        # Reset the periodic refresh countdown since we just
+        # got a fresh timestamp (unless this call IS from the
+        # refresh loop itself).
+        if not from_refresh:
+            self._timestamp_refresh_event.set()
+
+    async def _refresh_timestamp_loop(
+        self,
+        interval_seconds: float = 2.0,
+    ) -> None:
+        """Periodically fetch the latest timestamp from the database. The
+        timer resets each time a piggybacked timestamp is received, so
+        the periodic RPC only fires after `interval_seconds` of
+        complete idleness.
+        """
+        while not self._shutting_down:
+            self._timestamp_refresh_event.clear()
+            try:
+                # Wait `interval_seconds`, but can be cancelled early
+                # by `_update_latest_timestamp()` setting the event.
+                await asyncio.wait_for(
+                    self._timestamp_refresh_event.wait(),
+                    timeout=interval_seconds,
+                )
+                # Event was set, i.e., we got a piggybacked timestamp
+                # so restart the countdown (no RPC needed).
+                continue
+            except asyncio.TimeoutError:
+                # `interval_seconds` have elapsed. Do the refresh RPC.
+                pass
+            try:
+                timestamp = await self._database_client.refresh_timestamp()
+                self._update_latest_timestamp(timestamp, from_refresh=True)
+            except Exception:
+                # Best effort; retry next interval.
+                pass
+
     async def shutdown(self) -> None:
         """Shuts down this state manager, which includes cancellation of
         background tasks.
@@ -1365,6 +1549,11 @@ class SidecarStateManager(
         # we're working on shutting down that we are, in fact, shutting down.
         # They will get cancelled immediately after creation.
         self._shutting_down = True
+
+        # Cancel the periodic timestamp refresh task.
+        if self._timestamp_refresh_task is not None:
+            self._timestamp_refresh_task.cancel()
+
         # Cancel all previously created coordinator commit control loops.
         for task in self._coordinator_commit_control_loop_tasks.values():
             task.cancel()
@@ -1447,6 +1636,8 @@ class SidecarStateManager(
         state_ref: StateRef,
         task: database_pb2.Task,
         middleware: Middleware,
+        *,
+        sync: bool = True,
     ) -> None:
         async with self._mutator_locks[state_type][state_ref]:
             pending_task_effect = (
@@ -1461,6 +1652,7 @@ class SidecarStateManager(
                 state_type=state_type,
                 state_ref=state_ref,
                 task=task,
+                sync=sync,
             )
             if pending_task_effect is not None:
                 middleware.tasks_dispatcher.dispatch([pending_task_effect])
@@ -1470,12 +1662,15 @@ class SidecarStateManager(
         state_type: StateTypeName,
         state_ref: StateRef,
         state: Message,
+        *,
+        sync: bool = True,
     ) -> None:
         async with self._mutator_locks[state_type][state_ref]:
             await self._store(
                 state_type=state_type,
                 state_ref=state_ref,
                 effects=Effects(state=state),
+                sync=sync,
             )
 
     async def import_sorted_map_entry(
@@ -1484,6 +1679,8 @@ class SidecarStateManager(
         state_ref: StateRef,
         state: bytes,
         actor_converters: ExportImportItemConverters,
+        *,
+        sync: bool = True,
     ) -> None:
         # TODO: We do not support directly inserting a
         # SORTED_MAP_ENTRY_TYPE_NAME as a Message, so it must be stored
@@ -1521,6 +1718,7 @@ class SidecarStateManager(
                 state_type=state_type,
                 state_ref=state_ref,
                 effects=effects,
+                sync=sync,
             )
 
     async def import_idempotent_mutation(
@@ -1528,12 +1726,17 @@ class SidecarStateManager(
         state_type: StateTypeName,
         state_ref: StateRef,
         idempotent_mutation: database_pb2.IdempotentMutation,
+        *,
+        sync: bool = True,
     ) -> None:
         async with self._mutator_locks[state_type][state_ref]:
             # Recover idempotent mutations before trying to import any
             # since there is an invariant that we won't do a store on
             # a state before recovering its idempotent mutations.
             if state_ref not in self._idempotent_mutations[state_type]:
+                # NOTE: we assume that an import is done before any
+                # other concurrent calls and thus we don't bother with
+                # `self._idempotent_mutations_loads` machinery here.
                 self._idempotent_mutations[state_type][state_ref] = (
                     await IdempotentMutations.recover(
                         state_type,
@@ -1546,6 +1749,7 @@ class SidecarStateManager(
                 state_type=state_type,
                 state_ref=state_ref,
                 idempotent_mutation=idempotent_mutation,
+                sync=sync,
             )
 
     @function_span()
@@ -1564,6 +1768,126 @@ class SidecarStateManager(
             state = state_copy
 
         await authorize(state)
+
+    def preload(
+        self,
+        state_type_name: StateTypeName,
+        state_ref: StateRef,
+    ) -> None:
+        """Fire a `Preload` RPC to load both state and idempotent
+        mutations in a single round-trip to the database. This is a
+        fire-and-forget optimization that returns immediately; the
+        actual RPC runs as a background task.
+
+        Results are delivered via futures in `_state_preloads` and
+        `_idempotent_mutations_loads`. `_load()` and
+        `check_for_idempotent_mutation()` await these futures before
+        falling back to their own RPCs.
+
+        If state or idempotent mutations are already cached or already
+        being loaded, this call is a no-op.
+
+        Unconsumed futures are auto-cleaned after 60 seconds. The
+        cleanup uses future identity so a stale timer never evicts a
+        newer preload's data.
+        """
+        # Only try and load state if it's not already cached, not
+        # already being loaded, or not already preloaded.
+        state_future: Optional[asyncio.Future[Optional[bytes]]] = None
+        if (
+            state_ref not in self._states[state_type_name] and
+            state_ref not in self._loads[state_type_name] and
+            state_ref not in self._state_preloads[state_type_name]
+        ):
+            state_future = asyncio.get_event_loop().create_future()
+            self._state_preloads[state_type_name][state_ref] = state_future
+
+        # Only try and load idempotent mutations similarly.
+        idempotent_mutations_future: Optional[asyncio.Future[Optional[list[
+            database_pb2.IdempotentMutation]]]] = None
+        if (
+            state_ref not in self._idempotent_mutations[state_type_name] and
+            state_ref not in self._idempotent_mutations_loads[state_type_name]
+        ):
+            idempotent_mutations_future = (
+                asyncio.get_event_loop().create_future()
+            )
+            self._idempotent_mutations_loads[state_type_name][
+                state_ref] = idempotent_mutations_future
+
+        if state_future is None and idempotent_mutations_future is None:
+            # Nothing to preload!
+            return
+
+        async def _preload():
+            try:
+                response = await self._database_client.preload(
+                    state_type_name,
+                    state_ref,
+                    skip_state=state_future is None,
+                    skip_idempotent_mutations=(
+                        idempotent_mutations_future is None
+                    ),
+                )
+                if response.HasField("timestamp"):
+                    self._update_latest_timestamp(response.timestamp)
+                if state_future is not None:
+                    state_future.set_result(
+                        response.actor.state if response.
+                        HasField("actor") else None
+                    )
+                if idempotent_mutations_future is not None:
+                    idempotent_mutations_future.set_result(
+                        response.idempotent_mutations
+                    )
+                # Wait 60 seconds for any consumer to come along and
+                # pop the futures, otherwise we'll pop them ourselves
+                # in the `finally`. This allows a method call that
+                # starts a preload but then gets cancelled, e.g., due
+                # to a network issue, can retry and consume the
+                # preload it previously started.
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                # Don't swallow cancellations, so the parent
+                # task can be cancelled properly.
+                raise
+            except:
+                # Preloading is best-effort, so just set an exception
+                # to signal to any waiters that they should try and
+                # load themselves. We use `set_exception()` (not
+                # `cancel()`) so consumers can distinguish when they
+                # are cancelled.
+                error = RuntimeError("Preload failed")
+                if state_future is not None and not state_future.done():
+                    state_future.set_exception(error)
+                if (
+                    idempotent_mutations_future is not None and
+                    not idempotent_mutations_future.done()
+                ):
+                    idempotent_mutations_future.set_exception(error)
+            finally:
+                # Clean up any unconsumed futures. Identity check
+                # ensures we only pop our own future, not a newer
+                # preload's since we might have waited for 60 seconds.
+                if (
+                    state_future is not None and
+                    self._state_preloads[state_type_name].get(state_ref)
+                    is state_future
+                ):
+                    del self._state_preloads[state_type_name][state_ref]
+                if (
+                    idempotent_mutations_future is not None and
+                    self._idempotent_mutations_loads[state_type_name].
+                    get(state_ref) is idempotent_mutations_future
+                ):
+                    del self._idempotent_mutations_loads[state_type_name][
+                        state_ref]
+
+        # Save a strong reference to the task so the GC doesn't
+        # collect it mid-flight; discard once it completes.
+        preload_task = asyncio.create_task(_preload())
+        self._preload_tasks.add(preload_task)
+        preload_task.add_done_callback(self._preload_tasks.discard)
 
     @function_span()
     async def _load(
@@ -1619,6 +1943,10 @@ class SidecarStateManager(
                     # need to wait for it to complete.
                     try:
                         await ongoing_transaction
+                    except asyncio.CancelledError:
+                        # Don't swallow cancellations, so the parent
+                        # task can be cancelled properly.
+                        raise
                     except:
                         # Any errors coming from the transaction do not concern us
                         # here.
@@ -1693,11 +2021,44 @@ class SidecarStateManager(
                         span_name="reboot.aio.state_managers._load() "
                         "- load_actor_state"
                     ):
-                        data: Optional[
-                            bytes
-                        ] = await self._database_client.load_actor_state(
-                            state_type_name, state_ref
+                        data: Optional[bytes] = None
+
+                        # Check for a future from `preload()` before
+                        # calling into the database ourselves.
+                        #
+                        # NOTE: we `pop()` the preload here beacuse
+                        # any other concurrent callers and any other
+                        # calls to `preload()` will see the event in
+                        # `_loads` and wait on that.
+                        preload = self._state_preloads[state_type_name].pop(
+                            state_ref, None
                         )
+                        if preload is not None:
+                            try:
+                                data = await preload
+                            except asyncio.CancelledError:
+                                # Propagate any cancellations, e.g.,
+                                # if the RPC that instigated this load
+                                # was cancelled. Note that `preload`
+                                # is a future not a task so it won't
+                                # get cancelled and another caller can
+                                # still await it.
+                                raise
+                            except Exception:
+                                # Preload failed; need to make a call
+                                # to the database which we signal by
+                                # setting `preload` back to `None`.
+                                preload = None
+
+                        # Only try and load if we didn't preload (or
+                        # preload failed). Otherwise, if `data` is
+                        # `None` it means we preloaded and the state
+                        # does not yet exist.
+                        if preload is None:
+                            data = await self._database_client.load_actor_state(
+                                state_type_name, state_ref
+                            )
+
                     if data is not None:
                         with span(
                             state_name=state_type_name,
@@ -1956,48 +2317,75 @@ class SidecarStateManager(
                 ),
             )
 
-        if transaction is not None and not transaction._stored:
-            # Regardless of what a dev may have specified, we want to
-            # ensure the write related to beginning a transaction
-            # survives machine failures.
-            #
-            # As has been suggested in other places in the code, in
-            # the future we can actually keep all writes after the
-            # first one in memory to improve performance further. But
-            # the first one needs to be persisted because it
-            # demarcates that this state is part of a transaction.
-            sync = True
+        # When using restart detection, we defer ALL writes to prepare
+        # time. Only prepared transactions can be recovered after a
+        # crash, so intermediate writes within a transaction don't
+        # need to be persisted — we can keep them in memory on the
+        # `Transaction` object (via `transaction.state`,
+        # `transaction.tasks`, and `transaction.idempotent_mutations`)
+        # and send everything in one batch at prepare time. This
+        # eliminates a sidecar RPC on every writer/transaction
+        # `complete()` call.
+        #
+        # The in-memory state updates below (updating
+        # `transaction.state`, streaming readers, idempotent
+        # mutations, etc.) still run so that readers within the
+        # transaction see the latest state, and so that the data is
+        # available at prepare time.
+        if transaction is not None and transaction.using_restart_detection:
+            pass  # Skip the database call below.
+        else:
+            if transaction is not None and not transaction._stored:
+                # Regardless of what a dev may have specified, we want
+                # to ensure the write related to beginning a
+                # transaction survives machine failures.
+                sync = True
 
-        if constructor:
-            # Regardless of what a dev may have specified, we want to
-            # ensure that constructors can survive machine failures.
-            sync = True
+            if constructor:
+                # Regardless of what a dev may have specified, we want
+                # to ensure that constructors can survive machine
+                # failures.
+                sync = True
 
-            # Ensure that when creating a `SortedMap`, the `SortedMapEntry`
-            # state type's column family has also been created.
-            if state_type == SORTED_MAP_TYPE_NAME:
-                ensure_state_types_created.append(SORTED_MAP_ENTRY_TYPE_NAME)
+                # Ensure that when creating a `SortedMap`, the
+                # `SortedMapEntry` state type's column family has also
+                # been created.
+                if state_type == SORTED_MAP_TYPE_NAME:
+                    ensure_state_types_created.append(
+                        SORTED_MAP_ENTRY_TYPE_NAME
+                    )
 
-        # NOTE: we _must_ store the data in the sidecar _before_
-        # updating in memory state in case the store fails.
-        await self._database_client.store(
-            actor_upserts,
-            task_upserts,
-            colocated_upserts,
-            ensure_state_types_created,
-            database_pb2.Transaction(
-                state_type=state_type,
-                state_ref=state_ref.to_str(),
-                transaction_ids=[
-                    transaction_id.bytes for transaction_id in transaction.ids
-                ],
-                coordinator_state_type=transaction.coordinator_state_type,
-                coordinator_state_ref=transaction.coordinator_state_ref.to_str(
-                ),
-            ) if transaction is not None else None,
-            idempotent_mutation,
-            sync=sync,
-        )
+            # NOTE: we _must_ store the data in the database _before_
+            # updating in memory state in case the store fails.
+            timestamp = await self._database_client.store(
+                actor_upserts,
+                task_upserts,
+                colocated_upserts,
+                ensure_state_types_created,
+                database_pb2.Transaction(
+                    state_type=state_type,
+                    state_ref=state_ref.to_str(),
+                    transaction_ids=[
+                        transaction_id.bytes
+                        for transaction_id in transaction.ids
+                    ],
+                    coordinator_state_type=transaction.coordinator_state_type,
+                    coordinator_state_ref=transaction.coordinator_state_ref.
+                    to_str(),
+                ) if transaction is not None else None,
+                idempotent_mutation,
+                sync=sync,
+            )
+
+            # Update latest timestamp from piggybacked response.
+            self._update_latest_timestamp(timestamp)
+
+            # The database call actually happened, so mark the
+            # transaction as stored. (When using restart detection
+            # we took the `pass` branch above and writes are
+            # deferred to prepare, so the flag stays unset.)
+            if transaction is not None:
+                transaction.stored = True
 
         # Now that everything is stored we can update in memory
         # state. First we update state related to effects (if any).
@@ -2063,9 +2451,12 @@ class SidecarStateManager(
     ) -> None:
         """Helper to validate that a transaction participant is conforming to
         the requirements of being a participant."""
-        # We *MUST* have persisted the transaction before returning any
-        # value back to the caller. Check that this is the case.
-        assert transaction._stored, 'Transaction not persisted'
+        # We *MUST* have persisted the transaction before returning
+        # any value back to the caller -- unless restart detection is
+        # active, in which case the store is deferred to prepare time.
+        assert transaction._stored or transaction.using_restart_detection, (
+            'Transaction not persisted'
+        )
 
         # All outstanding RPCs must complete before returning (and
         # it should always be > 0 otherwise we have a bug).
@@ -2192,6 +2583,46 @@ class SidecarStateManager(
                 "to the maintainers and tell us about it!"
             )
         else:
+            # If we can use restart detection for this transaction,
+            # ensure that the last restart was before the start of the
+            # transaction to ensure consistency.
+            root_transaction_id = context.transaction_ids[0]
+
+            using_restart_detection = self._can_use_restart_detection(
+                root_transaction_id, state_type
+            )
+
+            if using_restart_detection:
+                transaction_timestamp_ms = uuid7_timestamp_ms(
+                    root_transaction_id
+                )
+                if (
+                    self._recovery_timestamp_ms is not None and
+                    self._recovery_timestamp_ms > transaction_timestamp_ms
+                ):
+                    # Server recovered after this transaction started,
+                    # which means it may have already participated and
+                    # lost in-memory state when it restarted. Return
+                    # UNAVAILABLE so the caller retries with a fresh
+                    # transaction.
+                    transaction_time = datetime.fromtimestamp(
+                        transaction_timestamp_ms / 1000,
+                        tz=timezone.utc,
+                    ).isoformat()
+                    recovery_time = datetime.fromtimestamp(
+                        self._recovery_timestamp_ms / 1000,
+                        tz=timezone.utc,
+                    ).isoformat()
+                    raise SystemAborted(
+                        Unavailable(),
+                        message=(
+                            f"Transaction {root_transaction_id} was "
+                            f"created at {transaction_time} but this "
+                            f"server recovered at {recovery_time}; retry "
+                            "required to ensure consistency."
+                        ),
+                    )
+
             # Acquire semaphore which might mean we queue until our turn.
             await self._participant_transactions_semaphore[state_type][
                 state_ref].acquire()
@@ -2201,7 +2632,9 @@ class SidecarStateManager(
             ) is None
 
             transaction = StateManager.Transaction.from_context(
-                context, tasks_dispatcher
+                context,
+                tasks_dispatcher,
+                using_restart_detection=using_restart_detection,
             )
 
             self._participant_transactions[state_type][state_ref] = transaction
@@ -2211,39 +2644,10 @@ class SidecarStateManager(
 
         assert transaction is not None
 
-        # Make sure we've stored this transaction.
-        #
-        # We need the transaction to be stored _before_ sending a
-        # response to the user, otherwise they may read two different
-        # states if we crash.
-        #
-        # We also need to store the transaction _before_ making any
-        # calls which might call into RocksDB. In particular,
-        # `StateManager.colocated_read()`, which may be called from a
-        # reader, will read from RocksDB, and will want to use the
-        # transaction. See
-        # https://github.com/reboot-dev/mono/issues/4019 for more
-        # details.
-        #
-        # TODO: do this concurrently with yielding the transaction and
-        # calling into the developers method for better performance and
-        # then only wait for the store to complete before things like
-        # `StateManager.colocated_read()` or before we return (or if
-        # this `transactionally()` wraps a `transaction` method type
-        # then we make sure that we've stored before we run 2PC).
-        #
-        # Other optimizations to consider:
-        #
-        # Doing this store now will also allow us to skip actually
-        # doing any stores from a `writer` or a `transaction`, those
-        # could just update memory until we are asked to prepare. We
-        # can also look at optimistically performing a prepare after
-        # returning to the caller by introducing a mechanism that
-        # tracks not only the participants but also the number of
-        # times they've been used within the transaction and thus not
-        # having to do the prepare when requested for the common case
-        # that a state is only involved in a transaction once.
-        await self.transaction_participant_store(transaction)
+        # When restart detection is not being used, store the
+        # transaction to disk at join time (the legacy behavior).
+        if not transaction.using_restart_detection:
+            await self.transaction_participant_store(transaction)
 
         try:
             yield transaction
@@ -2526,6 +2930,10 @@ class SidecarStateManager(
 
                         assert context.react is not None
                         context.react.event.set()
+            except asyncio.CancelledError:
+                # Don't swallow cancellations, so the parent
+                # task can be cancelled properly.
+                raise
             except BaseException as exception:
                 state_or_exception.exception = exception
 
@@ -2565,38 +2973,25 @@ class SidecarStateManager(
         try:
             yield states
         finally:
-            watch_state_task.cancel()
+            # Tear down in order: fully stop the `watch_state()`
+            # before cancelling `React.Query` calls, so
+            # the two don't race on `context.react`'s queriers.
             try:
-                await watch_state_task
-            except asyncio.CancelledError:
-                pass
-            except:
-                print(
-                    'Failed to cancel "watch state" task',
-                    file=sys.stderr,
-                )
-                pass
-
-            # Make sure we stop all transitive `React.Query` calls.
-            # Use `asyncio.shield()` so that if this task is being
-            # cancelled (e.g., the gRPC client disconnected), the
-            # cleanup still runs to completion.
-            context_react_cancel_task = asyncio.ensure_future(
-                context.react.cancel(),
-            )
-            try:
-                await asyncio.shield(context_react_cancel_task)
-            except asyncio.CancelledError:
-                # Wait for `react.cancel()`` to actually finish.
-                await context_react_cancel_task
-                # Propagate so the outer task actually cancels.
-                raise
+                await wait_for_tasks([watch_state_task], cancel=True)
             finally:
-                # We've already invalidated the `context.react` as part
-                # of `context.react.cancel()`, so now it is safe to set
-                # it to `None` to allow the GC to clean up any resources
-                # associated with it.
-                context.react = None
+                # Still execute the `React.Query` cancellation and
+                # cleanup even if we were cancelled while waiting for
+                # `watch_state()`.
+                react_cancel_task = asyncio.ensure_future(
+                    context.react.cancel()
+                )
+                try:
+                    await wait_for_tasks(
+                        [react_cancel_task],
+                        cancel=False,
+                    )
+                finally:
+                    context.react = None
 
     @asynccontextmanager_span(
         # We expect an `EffectValidationRetry` exception; that's not an error.
@@ -2683,7 +3078,6 @@ class SidecarStateManager(
                             workflow_iteration=context.workflow_iteration,
                             constructor=context.constructor,
                         )
-                        transaction.stored = True
                         if effects.tasks is not None:
                             assert all(
                                 task.task_id.state_type ==
@@ -3012,7 +3406,6 @@ class SidecarStateManager(
                     workflow_iteration=context.workflow_iteration,
                     constructor=context.constructor,
                 )
-                transaction.stored = True
 
         if not context.nested:
             # We're starting a new transaction here, so we should have
@@ -3081,22 +3474,35 @@ class SidecarStateManager(
             if context.transaction_must_abort or transaction.must_abort:
                 raise RuntimeError('Transaction must abort')
 
-            # Two phase commit: (1) prepare
-            await self._transaction_coordinator_prepare(
-                application_id=context.application_id,
-                channel_manager=context.channel_manager,
-                transaction_id=transaction.root_id,
-                participants=context.participants,
+            # Two phase commit: (1) prepare.
+            #
+            # Concurrently write the participant list to the database
+            # ("coordinator prepare") and send `Prepare` RPCs to all
+            # participants ("participants prepare").
+            #
+            # In addition to the participant list the coordinator also
+            # writes `preparing=True` to the database so it can
+            # "re-prepare" if the server crashes and recovers. Once
+            # the coordinator determines that the transaction is
+            # prepared it will update the database with
+            # `preparing=False` so that it doesn't need to keep
+            # re-preparing if the server keeps crashing.
+            coordinator_prepare_timestamp, _ = await asyncio.gather(
+                self._database_client.transaction_coordinator_prepare(
+                    transaction_id=transaction.root_id,
+                    transaction_coordinator_state_ref=state_ref,
+                    participants=context.participants,
+                ),
+                self._transaction_coordinator_prepare(
+                    application_id=context.application_id,
+                    channel_manager=context.channel_manager,
+                    transaction_id=transaction.root_id,
+                    participants=context.participants,
+                ),
             )
 
-            # TODO(benh): if all of the participants were able to
-            # prepare successfully consider retrying the sidecar call
-            # more than once!
-            await self._database_client.transaction_coordinator_prepared(
-                transaction_id=transaction.root_id,
-                transaction_coordinator_state_ref=state_ref,
-                participants=context.participants
-            )
+            if coordinator_prepare_timestamp is not None:
+                self._update_latest_timestamp(coordinator_prepare_timestamp)
 
             participants = self._coordinator_participants[transaction.root_id]
 
@@ -3106,38 +3512,22 @@ class SidecarStateManager(
 
             participants.set_result(context.participants)
         except:
-            # Mark all the participants as need to be aborted.
-            context.participants.abort()
-
             if context.nested:
-                # Raise the exception up to the outermost transaction,
-                # so the coordinator can handle the failure there.
+                # Mark all the participants as needing to be aborted,
+                # then raise the exception up to the outermost
+                # transaction so the coordinator can handle the
+                # failure (including participants abort, database
+                # coordinator record cleanup, etc).
+                context.participants.abort()
                 raise
 
-            # Best effort try and tell the participants that the
-            # transaction was aborted; if they don't hear from us now
-            # they'll find out when they watch on their own.
             await self._transaction_coordinator_abort(
                 application_id=context.application_id,
                 channel_manager=context.channel_manager,
                 transaction_id=transaction.root_id,
                 participants=context.participants,
+                coordinator_state_ref=state_ref,
             )
-
-            # To indicate that the transaction has aborted we set the
-            # participants, which will all be in
-            # `participants.should_abort`.
-            participants = self._coordinator_participants[transaction.root_id]
-
-            # Not expecting `participants` to ever be cancelled, see:
-            # https://github.com/reboot-dev/mono/issues/3241
-            assert not participants.cancelled()
-
-            participants.set_result(context.participants)
-
-            # Remove transaction so that participants "watch control
-            # loop" will determine that the transaction has aborted!
-            del self._coordinator_participants[transaction.root_id]
 
             raise
         else:
@@ -3153,6 +3543,7 @@ class SidecarStateManager(
                     transaction_id=transaction.root_id,
                     participants=context.participants,
                     coordinator_state_ref=state_ref,
+                    durably_prepared=False,
                 ),
                 name=
                 f'self._transaction_coordinator_commit_control_loop(...) in {__name__}',
@@ -3216,13 +3607,94 @@ class SidecarStateManager(
         # all data structures that are storing state via some LRU like
         # mechanism.
         if state_ref not in self._idempotent_mutations[state_type_name]:
-            self._idempotent_mutations[state_type_name][state_ref] = (
-                await IdempotentMutations.recover(
-                    state_type_name,
-                    state_ref,
-                    self._database_client,
-                )
+            # Check for an in progress call to the database (from
+            # another concurrent caller or `preload()`) and await it
+            # if it exists.
+            #
+            # NOTE: we don't `pop()` here because we want any other
+            # concurrent callers or calls to `preload()` to not start
+            # redundant calls into the database. If the future
+            # resolves and it came from `preload()` (i.e., the future
+            # has a list of idempotent mutations) then we'll handle
+            # removing the future from
+            # `self._idempotent_mutations_loads`.
+            load = self._idempotent_mutations_loads[state_type_name].get(
+                state_ref
             )
+            if load is not None:
+                idempotent_mutations: Optional[list[
+                    database_pb2.IdempotentMutation]] = None
+                try:
+                    idempotent_mutations = await load
+                except asyncio.CancelledError:
+                    # Propagate any cancellations, e.g., if the RPC
+                    # that instigated this call to
+                    # `check_for_idempotent_mutation()` was cancelled.
+                    #
+                    # NOTE: this doesn't cancel `load` since it is a
+                    # future not a task.
+                    raise
+                except Exception:
+                    # Fall back to our own RPC.
+                    pass
+
+                # If `idempotent_mutations` is not `None` then
+                # `preload()` must have completed and we need to store
+                # the idempotent mutations, unless another waiter
+                # already took care of that and `state_ref` is now in
+                # `self._idempotent_mutations`.
+                if (
+                    idempotent_mutations is not None and state_ref
+                    not in self._idempotent_mutations[state_type_name]
+                ):
+                    self._idempotent_mutations[state_type_name][
+                        state_ref] = IdempotentMutations(
+                            state_type_name=state_type_name,
+                            state_ref=state_ref,
+                            database_client=self._database_client,
+                            idempotent_mutations=idempotent_mutations,
+                        )
+                    # Also need to remove future that was created by
+                    # `preload()`.
+                    assert (
+                        self._idempotent_mutations_loads[state_type_name].
+                        get(state_ref) is load
+                    )
+                    del self._idempotent_mutations_loads[state_type_name][
+                        state_ref]
+
+            # Need to do our own loading, i.e., either no concurrent
+            # caller or no `preload()` or `preload()` failed.
+            if state_ref not in self._idempotent_mutations[state_type_name]:
+                # Create a future so concurrent callers and
+                # `preload()` don't also try.
+                load = asyncio.get_event_loop().create_future()
+                self._idempotent_mutations_loads[state_type_name][state_ref
+                                                                 ] = load
+                try:
+                    self._idempotent_mutations[state_type_name][state_ref] = (
+                        await IdempotentMutations.recover(
+                            state_type_name,
+                            state_ref,
+                            self._database_client,
+                        )
+                    )
+                    load.set_result(None)
+                except:
+                    # Loading failed, signal to any waiters that they
+                    # should try themselves. We use `set_exception()`
+                    # (not `cancel()`) so consumers can distinguish
+                    # when they are cancelled.
+                    load.set_exception(RuntimeError("Loading failed"))
+                    raise
+                finally:
+                    # We are responsible for cleaning up our future.
+                    assert (
+                        self._idempotent_mutations_loads[state_type_name].
+                        get(state_ref) is load
+                    )
+                    del self._idempotent_mutations_loads[state_type_name][
+                        state_ref]
 
         idempotent_mutation: Optional[database_pb2.IdempotentMutation] = (
             await self._idempotent_mutations[state_type_name][state_ref].get(
@@ -3306,47 +3778,130 @@ class SidecarStateManager(
         transaction_id: uuid.UUID,
         participants: Participants,
     ):
-        """Helper for a transaction coordinator performing the prepare step of
-        two phase commit."""
-        try:
-            # TODO(benh): do in parallel!
-            for (state_type, state_ref) in participants.should_prepare():
-                # Getting a channel to the actor should succeed, since its
-                # participation in a transaction that is in the prepare step
-                # indicates that (1) it is up and running and (2) we should be
-                # able to reach it. If either of those are untrue, that's
-                # sufficient reason to fail the transaction.
-                # TODO(rjh, benh): consider being more generous with temporarily
-                #                  unavailable participants.
-                channel = channel_manager.get_channel_to_state(
-                    state_type,
-                    state_ref,
-                    # Since this is a Reboot-internal process that the user
-                    # may not be aware is running in the background, logging
-                    # user-visible errors is unhelpful.
-                    unresolvable_state_log_level=logging.DEBUG,
-                )
+        """Sends `Prepare` RPCs to all participants concurrently, retrying
+        each participant individually until getting a definitive
+        response.
 
-                stub = transactions_pb2_grpc.ParticipantStub(channel)
+        Passes `abort_via_response=True` in the request so that new
+        participants use definitive responses via fields in
+        `PrepareResponse` (`abort`, `restart_detected`) rather than
+        the legacy semantics of raising an exception causing the RPC
+        to abort with a gRPC status code. This eliminates ambiguity
+        with proxy/middleware errors: any RPC-level failure is always
+        non-definitive and retried.
 
+        Old participants that don't understand
+        `abort_via_response=True` will ignore the field and abort the
+        RPC as before. The coordinator treats any such RPC error as
+        non-definitive and retries until the participant gets
+        updated. In practice this should only happen once during the
+        upgrade and be very short lived.
+
+        Raises `SystemAborted` ONLY for definitive participant
+        responses:
+
+          - `SystemAborted(TransactionParticipantFailedToPrepare())`
+            if the participant set `abort=True` (no such transaction,
+            different transaction, or `must_abort`).
+
+          - `SystemAborted(Unavailable())` if the participant set
+            `abort=True` and `restart_detected=True` (the participant
+            restarted since this transaction began but it can be
+            retried).
+
+        Any other exception is retried internally with backoff; this
+        method only returns or raises once every participant has
+        reached a definitive state. This narrow contract is what
+        `_transaction_coordinator_reprepare` relies on when it treats
+        any `SystemAborted` as "safe to abort".
+        """
+
+        async def prepare(state_type: StateTypeName, state_ref: StateRef):
+            # We retry indefinitely on any non-definitive outcome: we
+            # cannot report the transaction as aborted to the caller
+            # unless we have a definitive "never prepared" answer from
+            # the participant, because this participant may in fact
+            # prepare successfully on retry and a future recovery
+            # could then commit the whole transaction.
+            backoff = Backoff()
+            while True:
                 try:
-                    await stub.Prepare(
+                    # Getting a channel to the actor should succeed,
+                    # since its participation in a transaction that is
+                    # in the prepare step indicates that (1) it is up
+                    # and running and (2) we should be able to reach
+                    # it. If either is temporarily untrue, we'll retry
+                    # below.
+                    channel = channel_manager.get_channel_to_state(
+                        state_type,
+                        state_ref,
+                        # Since this is a Reboot-internal process that
+                        # the user may not be aware is running in the
+                        # background, logging user-visible errors is
+                        # unhelpful.
+                        unresolvable_state_log_level=logging.DEBUG,
+                    )
+
+                    stub = transactions_pb2_grpc.ParticipantStub(channel)
+
+                    response = await stub.Prepare(
                         transactions_pb2.PrepareRequest(
-                            transaction_id=transaction_id.bytes
+                            transaction_id=transaction_id.bytes,
+                            abort_via_response=True,
                         ),
                         metadata=Headers(
                             application_id=application_id,
                             state_ref=state_ref,
                         ).to_grpc_metadata(),
                     )
-                except AioRpcError as error:
+                except asyncio.CancelledError:
+                    raise
+                except BaseException:
+                    # Any RPC or network error is non-definitive
+                    # (could be a proxy failure, an old server that
+                    # doesn't understand `abort_via_response=True`,
+                    # etc). Retry after backoff.
+                    await backoff()
+                    continue
+
+                # RPC succeeded — definitive outcomes are conveyed via
+                # response fields, never via gRPC status codes. This
+                # eliminates ambiguity with proxy/middleware errors.
+                if not response.abort:
+                    return
+
+                if response.restart_detected:
+                    transaction_time = (
+                        datetime.fromtimestamp(
+                            uuid7_timestamp_ms(transaction_id) / 1000,
+                            tz=timezone.utc,
+                        ).isoformat()
+                    )
+                    recovery_time = (
+                        response.recovery_timestamp.ToDatetime(
+                            tzinfo=timezone.utc
+                        ).isoformat()
+                    ) if response.HasField(
+                        "recovery_timestamp"
+                    ) else "unknown"
                     raise SystemAborted(
-                        TransactionParticipantFailedToPrepare(),
-                        message=error.details(),
+                        Unavailable(),
+                        message=
+                        f"No pending transaction for state type '{state_type}' "
+                        f"state '{state_ref}': the server must have "
+                        f"restarted since transaction {transaction_id} began "
+                        f"(transaction created at {transaction_time}, server "
+                        f"recovered at {recovery_time}).",
                     ) from None
-        except:
-            # TODO(benh): handle failed transaction!
-            raise
+
+                raise SystemAborted(
+                    TransactionParticipantFailedToPrepare(),
+                ) from None
+
+        await concurrently(
+            prepare(state_type, state_ref)
+            for (state_type, state_ref) in participants.should_prepare()
+        )
 
     async def _transaction_coordinator_commit(
         self,
@@ -3358,9 +3913,8 @@ class SidecarStateManager(
     ):
         """Helper for a transaction coordinator performing the commit step of
         two phase commit."""
-        # TODO(benh): do this for loop and the one below all in parallel!
 
-        for (state_type, state_ref) in participants.should_commit():
+        async def commit(state_type: StateTypeName, state_ref: StateRef):
             # Do our best to tell the participant that the transaction has
             # committed. If we fail (e.g. because we can't get a channel), no
             # big deal; the caller will retry this at a later point.
@@ -3391,8 +3945,7 @@ class SidecarStateManager(
                     message=error.details(),
                 ) from None
 
-        # Need to abort all of the participants that should be aborted.
-        for (state_type, state_ref) in participants.should_abort():
+        async def abort(state_type: StateTypeName, state_ref: StateRef):
             # Do our best to tell the participant that, from their
             # perspective, the transaction has aborted. If we fail
             # (e.g. because we can't get a channel), no big deal; the
@@ -3424,6 +3977,19 @@ class SidecarStateManager(
                     message=error.details(),
                 ) from None
 
+        await concurrently(
+            itertools.chain(
+                (
+                    commit(state_type, state_ref)
+                    for (state_type, state_ref) in participants.should_commit()
+                ),
+                (
+                    abort(state_type, state_ref)
+                    for (state_type, state_ref) in participants.should_abort()
+                ),
+            )
+        )
+
     async def _transaction_coordinator_abort(
         self,
         *,
@@ -3431,10 +3997,42 @@ class SidecarStateManager(
         channel_manager: _ChannelManager,
         transaction_id: uuid.UUID,
         participants: Participants,
+        coordinator_state_ref: Optional[StateRef],
     ):
-        for (state_type, state_ref) in participants.should_prepare():
-            # TODO(benh): do in parallel!
+        """Aborts a transaction for which we are the coordinator:
+        (1) marks all participants as "to abort"; (2) cleans up
+        the "preparing" record that may be in the database; (3)
+        best-effort sends `Abort` RPCs to all participants; and
+        (4) publishes the aborted participants to the
+        `_coordinator_participants` future so any participant
+        "watch control loops" observe the abort, then deletes
+        the future entry."""
+        # Mark all the participants as need to be aborted.
+        participants.abort()
 
+        # Clean up the "preparing" record that may be in the database
+        # when the coordinator stored the transaction participants
+        # (and `preparing=True`). The database write may or may not
+        # have completed (it could have been cancelled), but the
+        # database supports deleting missing keys.
+        #
+        # If we crash before doing this we'll recover the transaction
+        # in the database and our commit control loop will try to
+        # re-prepare only to re-discover the transaction should abort,
+        # which will then properly abort any other participants and
+        # clean up the database. If this gets cleaned up before we
+        # have succesfully aborted any other participants then their
+        # watch should signal that the transaction doesn't exist and
+        # they will abort themselves.
+        await self._database_client.transaction_coordinator_cleanup(
+            transaction_id=transaction_id,
+            coordinator_state_ref=coordinator_state_ref,
+        )
+
+        # Best effort try and tell the participants that the
+        # transaction was aborted; if they don't hear from us now
+        # they'll find out when they watch on their own.
+        async def abort(state_type: StateTypeName, state_ref: StateRef):
             try:
                 # Getting a channel to the participant may fail; notably this
                 # can happen after the coordinator restarts if it tries to abort
@@ -3460,12 +4058,34 @@ class SidecarStateManager(
                         state_ref=state_ref,
                     ).to_grpc_metadata(),
                 )
+            except asyncio.CancelledError:
+                # Don't swallow cancellations, so the parent task can
+                # be cancelled properly.
+                raise
             except:
                 # NOTE: aborting is best effort abort, each
                 # participant is responsible for checking back in with
                 # the coordinator as well in case we were unable to
                 # send an abort to them.
-                continue
+                pass
+
+        await concurrently(
+            abort(state_type, state_ref)
+            for (state_type, state_ref) in participants.should_prepare()
+        )
+
+        # To indicate that the transaction has aborted we set the
+        # participants, which will all be in
+        # `participants.should_abort`.
+        #
+        # Not expecting `participants` to ever be cancelled, see:
+        # https://github.com/reboot-dev/mono/issues/3241
+        assert not self._coordinator_participants[transaction_id].cancelled()
+        self._coordinator_participants[transaction_id].set_result(participants)
+
+        # Remove transaction so that participants "watch control loop"
+        # will determine that the transaction has aborted!
+        del self._coordinator_participants[transaction_id]
 
     async def _transaction_participant_watch(
         self,
@@ -3608,13 +4228,68 @@ class SidecarStateManager(
         transaction_id = uuid.UUID(bytes=request.transaction_id)
         transaction = self._participant_transactions[state_type].get(state_ref)
         if transaction is None:
+            if (
+                self._can_use_restart_detection(transaction_id, state_type) and
+                # `_can_use_restart_detection` ensures that
+                # `self._recovery_timestamp_ms` is not `None`.
+                self._recovery_timestamp_ms  # type: ignore[operator]
+                > uuid7_timestamp_ms(transaction_id)
+            ):
+                assert self._recovery_timestamp_ms is not None  # for mypy
+                if request.abort_via_response:
+                    recovery_timestamp = Timestamp()
+                    recovery_timestamp.FromMilliseconds(
+                        self._recovery_timestamp_ms,
+                    )
+                    return transactions_pb2.PrepareResponse(
+                        abort=True,
+                        restart_detected=True,
+                        recovery_timestamp=recovery_timestamp,
+                    )
+                transaction_time = datetime.fromtimestamp(
+                    uuid7_timestamp_ms(transaction_id) / 1000,
+                    tz=timezone.utc,
+                ).isoformat()
+                recovery_time = datetime.fromtimestamp(
+                    self._recovery_timestamp_ms / 1000,
+                    tz=timezone.utc,
+                ).isoformat()
+                # Legacy path for old coordinators.
+                raise RuntimeError(
+                    f"No pending transaction for state type '{state_type}' "
+                    f"state '{state_ref.id}': the server must have "
+                    f"restarted since transaction {transaction_id} began "
+                    f"(transaction created at {transaction_time}, server "
+                    f"recovered at {recovery_time})."
+                )
+            if request.abort_via_response:
+                logger.warning(
+                    f"Failed to prepare transaction '{transaction_id}': "
+                    f"No pending transaction for state type '{state_type}' "
+                    f"state '{state_ref.id}'"
+                )
+                return transactions_pb2.PrepareResponse(abort=True)
+            # Legacy path for old coordinators.
             raise RuntimeError(
                 f"No pending transaction for state type '{state_type}' "
                 f"state '{state_ref.id}'"
             )
         if transaction.root_id != transaction_id:
+            if request.abort_via_response:
+                logger.warning(
+                    f"Failed to prepare transaction '{transaction_id}': "
+                    "Pending transaction id differs"
+                )
+                return transactions_pb2.PrepareResponse(abort=True)
+            # Legacy path for old coordinators.
             raise RuntimeError('Pending transaction id differs')
         else:
+            # If the transaction is already prepared (e.g., because we
+            # recovered it from the database after a restart and the
+            # coordinator is re-preparing), just return success.
+            if transaction.prepared():
+                return transactions_pb2.PrepareResponse()
+
             # All RPCs that are part of this transaction should
             # have completed which means all streaming readers
             # should have completed!
@@ -3623,19 +4298,16 @@ class SidecarStateManager(
             await transaction.tasks_dispatcher.validate(transaction.tasks)
 
             if transaction.must_abort:
+                if request.abort_via_response:
+                    logger.warning(
+                        f"Failed to prepare transaction '{transaction_id}': "
+                        "Transaction must abort"
+                    )
+                    return transactions_pb2.PrepareResponse(abort=True)
+                # Legacy path for old coordinators.
                 raise RuntimeError('Transaction must abort')
 
-            # TODO(benh): take advantage of the fact that only
-            # prepared transactions can be recovered and instead of
-            # storing state in the sidecar after each write, instead
-            # store the state in memory and pass the updated state and
-            # tasks to the sidecar here.
-
-            await self._database_client.transaction_participant_prepare(
-                state_type, state_ref
-            )
-
-            transaction.prepare()
+            await self.transaction_participant_prepare(transaction)
 
             return transactions_pb2.PrepareResponse()
 
@@ -3734,7 +4406,67 @@ class SidecarStateManager(
                         state_ref=transaction.state_ref,
                         transaction=transaction,
                     )
-                    transaction.stored = True
+
+    async def transaction_participant_prepare(
+        self,
+        transaction: StateManager.Transaction,
+    ):
+        state_type = transaction.state_type
+        state_ref = transaction.state_ref
+
+        async with transaction.lock:
+            if not transaction.finished():
+                # When using restart detection, all intermediate
+                # writes were deferred (no database calls). Now at
+                # prepare time we derive what we need from the
+                # transaction's in-memory state and send it all at
+                # once to the database. This is the only database
+                # write for the entire transaction.
+                #
+                # When NOT using restart detection, the writes were
+                # already applied to the RocksDB transaction during
+                # intermediate `_store()` calls, so we just need to
+                # call prepare on the existing transaction.
+                if transaction.using_restart_detection:
+                    timestamp = await self._database_client.transaction_participant_prepare(
+                        state_type,
+                        state_ref,
+                        transaction=(
+                            database_pb2.Transaction(
+                                state_type=state_type,
+                                state_ref=state_ref.to_str(),
+                                transaction_ids=[
+                                    transaction_id.bytes
+                                    for transaction_id in transaction.ids
+                                ],
+                                coordinator_state_type=(
+                                    transaction.coordinator_state_type
+                                ),
+                                coordinator_state_ref=(
+                                    transaction.coordinator_state_ref.to_str()
+                                ),
+                            )
+                        ),
+                        state=(
+                            transaction.state.SerializeToString()
+                            if transaction.state is not None else None
+                        ),
+                        task_upserts=[
+                            task.to_sidecar_task()
+                            for task in transaction.tasks
+                        ],
+                        idempotent_mutations=(
+                            list(transaction.idempotent_mutations.values()) if
+                            len(transaction.idempotent_mutations) > 0 else None
+                        ),
+                    )
+                else:
+                    timestamp = await self._database_client.transaction_participant_prepare(
+                        state_type, state_ref
+                    )
+
+                self._update_latest_timestamp(timestamp)
+                transaction.prepare()
 
     async def transaction_participant_commit(
         self, transaction: StateManager.Transaction
@@ -3749,9 +4481,10 @@ class SidecarStateManager(
         async with transaction.lock:
             if not transaction.finished():
                 # TODO(benh): add test case for sidecar failure!
-                await self._database_client.transaction_participant_commit(
+                timestamp = await self._database_client.transaction_participant_commit(
                     state_type, state_ref
                 )
+                self._update_latest_timestamp(timestamp)
 
                 # NOTE: invariant here is everything after this line
                 # SHOULD NOT RAISE!
@@ -3893,11 +4626,13 @@ class SidecarStateManager(
         # check if the transaction has finished.
         async with transaction.lock:
             if not transaction.finished():
-
-                # We only reach out to the sidecar to abort in case we have
-                # persisted anything.
-                if transaction.stored:
-                    # TODO(benh): add test case for sidecar failure!
+                # If the prepare was cancelled before ever reaching
+                # the database when using restart detection we won't
+                # have anything to abort but the database tolerates
+                # "no transaction found" as a no-op. If the prepare is
+                # still in progress, the database ensures it is
+                # serialized with this abort.
+                if transaction.stored or transaction.using_restart_detection:
                     await self._database_client.transaction_participant_abort(
                         state_type, state_ref
                     )
@@ -4077,6 +4812,12 @@ class SidecarStateManager(
             shard_ids=[shard.shard_id for shard in self._shards],
         )
 
+        # Extract recovery timestamp for restart detection.
+        if recover_response.HasField("timestamp"):
+            recovery_timestamp_ms = recover_response.timestamp.ToMilliseconds()
+            self._recovery_timestamp_ms = recovery_timestamp_ms
+            self._latest_timestamp_ms = recovery_timestamp_ms
+
         # Need to declare this up here as it is used in multiple scopes.
         middleware: Optional[Middleware] = None
 
@@ -4151,17 +4892,22 @@ class SidecarStateManager(
         for (transaction_id, coordinator) in [
             (uuid.UUID(transaction_id), coordinator)
             for (transaction_id, coordinator
-                ) in recover_response.prepared_transaction_coordinators.items()
+                ) in recover_response.transaction_coordinators.items()
         ]:
-            participants = coordinator.participants
+            participants = Participants.from_sidecar(coordinator.participants)
             coordinator_state_ref = StateRef(
                 coordinator.state_ref
             ) if coordinator.state_ref else None
 
             self._coordinator_participants[transaction_id] = asyncio.Future()
-            self._coordinator_participants[transaction_id].set_result(
-                participants
-            )
+
+            if not coordinator.preparing:
+                # Fully prepared: the commit control loop can proceed
+                # directly to commit, so publish the participants
+                # future now.
+                self._coordinator_participants[transaction_id].set_result(
+                    participants
+                )
 
             self._coordinator_commit_control_loop_tasks[
                 transaction_id
@@ -4170,11 +4916,27 @@ class SidecarStateManager(
                     application_id=application_id,
                     channel_manager=channel_manager,
                     transaction_id=transaction_id,
-                    participants=Participants.from_sidecar(participants),
+                    participants=participants,
                     coordinator_state_ref=coordinator_state_ref,
+                    # If `coordinator.preparing` is true the
+                    # coordinator recorded participants but crashed
+                    # before confirming all were prepared; the commit
+                    # control loop will re-prepare them before
+                    # continuing.
+                    durably_prepared=not coordinator.preparing,
+                    needs_reprepare=coordinator.preparing,
                 ),
                 name=
                 f'self._transaction_coordinator_commit_control_loop(...) in {__name__}',
+            )
+
+        # Start the periodic timestamp refresh loop only if the
+        # database supports timestamps which it must if we have a
+        # recovery timestamp.
+        if self._recovery_timestamp_ms is not None:
+            self._timestamp_refresh_task = asyncio.create_task(
+                self._refresh_timestamp_loop(),
+                name=f"self._refresh_timestamp_loop() in {__name__}",
             )
 
     def _get_task_effect_from_sidecar_task(
@@ -4202,6 +4964,75 @@ class SidecarStateManager(
             # methods.
             raise RuntimeError('Error parsing task request') from e
 
+    async def _transaction_coordinator_reprepare(
+        self,
+        *,
+        application_id: ApplicationId,
+        channel_manager: _ChannelManager,
+        transaction_id: uuid.UUID,
+        participants: Participants,
+        coordinator_state_ref: Optional[StateRef],
+    ) -> bool:
+        """Recovery for coordinators that stored participants but didn't
+        confirm all were prepared. Re-prepares all participants.
+        Returns `True` if all participants re-prepared successfully,
+        or `False` if the transaction was aborted (and cleaned up)
+        because a participant gave a definitive response proving it
+        never durably prepared this transaction.
+        """
+        prepared = False
+        backoff = Backoff()
+        while True:
+            try:
+                await self._transaction_coordinator_prepare(
+                    application_id=application_id,
+                    channel_manager=channel_manager,
+                    transaction_id=transaction_id,
+                    participants=participants,
+                )
+                prepared = True
+                break
+            except asyncio.CancelledError:
+                raise
+            except SystemAborted:
+                # Per `_transaction_coordinator_prepare`'s contract,
+                # any `SystemAborted` it raises means some participant
+                # has definitively no durable prepared state for this
+                # transaction. If *any* participant never durably
+                # prepared, the original prepare cannot have fully
+                # succeeded, so the coordinator never reached the path
+                # where it returned success to the caller. Therefore
+                # it is safe to abort.
+                break
+            except BaseException as exception:
+                # `_transaction_coordinator_prepare` is supposed
+                # to have already retried any non-definitive
+                # errors. If we end up here something unexpected
+                # happened; log and retry with backoff.
+                logger.warning(
+                    f"Failed to re-prepare transaction '{transaction_id}': "
+                    f"{exception}"
+                )
+                await backoff()
+                continue
+
+        if not prepared:
+            # A participant gave a definitive "never prepared"
+            # response. Abort.
+            await self._transaction_coordinator_abort(
+                application_id=application_id,
+                channel_manager=channel_manager,
+                transaction_id=transaction_id,
+                participants=participants,
+                coordinator_state_ref=coordinator_state_ref,
+            )
+            return False
+
+        # All participants re-prepared successfully. Set the
+        # participants future so watches work correctly.
+        self._coordinator_participants[transaction_id].set_result(participants)
+        return True
+
     async def _transaction_coordinator_commit_control_loop(
         self,
         *,
@@ -4210,7 +5041,56 @@ class SidecarStateManager(
         transaction_id: uuid.UUID,
         participants: Participants,
         coordinator_state_ref: Optional[StateRef],
+        durably_prepared: bool,
+        needs_reprepare: bool = False,
     ) -> None:
+        if needs_reprepare:
+            assert not durably_prepared, (
+                "A coordinator transaction that is durably prepared "
+                "should never need to re-prepare!"
+            )
+            # On recovery, the coordinator recorded participants but
+            # crashed before confirming all were prepared. Re-prepare
+            # all participants before continuing with the commit.
+            if not await self._transaction_coordinator_reprepare(
+                application_id=application_id,
+                channel_manager=channel_manager,
+                transaction_id=transaction_id,
+                participants=participants,
+                coordinator_state_ref=coordinator_state_ref,
+            ):
+                # The transaction was aborted, and cleanup already
+                # happened in `_transaction_coordinator_reprepare`.
+                del self._coordinator_commit_control_loop_tasks[transaction_id]
+                return
+
+        # If this coordinator transaction is not durably prepared,
+        # i.e., the database still has "preparing=True" we must now
+        # overwrite that with `preparing=False` to mark the
+        # transaction as fully prepared.
+        #
+        # This MUST complete _before_ committing so that all
+        # participants remain valid in the event we crash (again) and
+        # need to re-prepare (again).
+        if not durably_prepared:
+            assert coordinator_state_ref is not None
+            backoff = Backoff()
+            while True:
+                try:
+                    timestamp = await self._database_client.transaction_coordinator_prepared(
+                        transaction_id=transaction_id,
+                        transaction_coordinator_state_ref=coordinator_state_ref,
+                        participants=participants,
+                    )
+                    if timestamp is not None:
+                        self._update_latest_timestamp(timestamp)
+                    break
+                except asyncio.CancelledError:
+                    raise
+                except BaseException:
+                    await backoff()
+                    continue
+
         backoff = Backoff()
         is_retry = False
         while True:

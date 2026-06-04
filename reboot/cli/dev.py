@@ -6,6 +6,7 @@ import grpc
 import os
 import random
 import reboot.aio.tracing
+import secrets
 import shutil
 import signal
 import sys
@@ -14,6 +15,7 @@ import tty
 from colorama import Fore
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
+from dotenv import dotenv_values
 from enum import Enum
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 from opentelemetry.sdk.environment_variables import (
@@ -61,6 +63,7 @@ from reboot.settings import (
     ENVVAR_RBT_NODEJS,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
+    ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_LOCAL_ENVOY,
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
     ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
@@ -94,6 +97,15 @@ class EnvTransformer(BaseTransformer):
                 "'--env=KEY=VALUE'"
             )
         return value.split('=', 1)
+
+
+def _load_env_file(path: str) -> dict[str, str]:
+    """Read a `--env-file` into a dict of environment variables.
+    """
+    return {
+        key: value if value is not None else ''
+        for key, value in dotenv_values(path).items()
+    }
 
 
 def add_application_options(subcommand: SubcommandParser) -> None:
@@ -146,6 +158,17 @@ def _register_dev_run(parser: ArgumentParser):
     add_working_directory_options(parser.subcommand('dev run'))
 
     add_application_options(parser.subcommand('dev run'))
+
+    parser.subcommand('dev run').add_argument(
+        '--env-file',
+        type=str,
+        help=(
+            "path to a '.env' file whose 'KEY=VALUE' lines are set "
+            "as environment variables before running the "
+            "application; standard '.env' syntax is supported."
+        ),
+        non_empty_string=True,
+    )
 
     parser.subcommand('dev run').add_argument(
         '--application-name',
@@ -660,6 +683,12 @@ async def _run_jaeger():
         'receivers.otlp.protocols.http.endpoint=0.0.0.0:4318',
         '--set',
         'receivers.otlp.protocols.grpc.endpoint=0.0.0.0:4317',
+        # Disable clock skew adjustments, this is all running on the
+        # same host so even though it is across processes we shouldn't
+        # expect any clock skew and without this Jaeger adjusts some
+        # spans to completely incorrect and misleading places.
+        '--set',
+        'extensions.jaeger_query.max_clock_skew_adjust=0s',
         # Suppress all output from Jaeger; its logs are not
         # developer-facing.
         stdout=asyncio.subprocess.DEVNULL,
@@ -731,22 +760,39 @@ async def _read_until(
 
     When the function is done reading, it should set the result of the future to complete.
     """
-    fd = file_handle.fileno()
+    future: asyncio.Future[ResultT] = asyncio.Future()
+
+    # The file handle may be unpollable: closed, or redirected from
+    # a regular file (Linux `epoll` rejects those with
+    # `PermissionError`). In that case, block forever; callers run
+    # us inside `_wait_for_first_completed` and will cancel us when
+    # a sibling task fires.
+    try:
+        fd = file_handle.fileno()
+    except (OSError, ValueError):
+        return await future
+
     loop = asyncio.get_running_loop()
 
     def read(future: asyncio.Future[ResultT]):
-        value = file_handle.read(1)
+        try:
+            value = file_handle.read(1)
+        except (OSError, ValueError):
+            loop.remove_reader(fd)
+            return
         if not value:
-            # The input is closed, and will never be readable. Remove our reader
-            # rather than continuing to poll it.
+            # The input is closed, and will never be readable.
+            # Remove our reader rather than continuing to poll it.
             loop.remove_reader(fd)
         f(value, future)
 
-    future: asyncio.Future[ResultT] = asyncio.Future()
-
     # Add an async file descriptor reader to our running event
     # loop so that we know when a key has been pressed.
-    loop.add_reader(fd, read, future)
+    try:
+        loop.add_reader(fd, read, future)
+    except OSError:
+        return await future
+
     try:
         return await future
     finally:
@@ -1325,30 +1371,80 @@ async def __dev_run(
         EffectValidation,
     ).name
 
-    # Set a signing secret for the MCP OAuth server. For local
-    # dev we use the application name (insecure, but convenient).
-    # Fall back to a fixed string when `--name` wasn't provided.
-    if ENVVAR_REBOOT_OAUTH_SIGNING_SECRET not in env:
-        env[ENVVAR_REBOOT_OAUTH_SIGNING_SECRET] = (
-            args.application_name or "reboot-dev"
-        )
+    if ENVVAR_REBOOT_CRYPTO_ROOT_KEYS not in env:
+        if args.application_name is not None:
+            # Reboot's managed cryptographic root keys, from which
+            # libraries derive their own keys (the MCP OAuth signing key,
+            # the `reboot.std.ciphertext` key-encryption key, ...). Persist
+            # a random value in the application's state directory so it is
+            # stable across restarts but wiped by `rbt dev expunge` (which
+            # also deletes signed-in users' state, so derived OAuth tokens
+            # should become invalid and push clients back through the OAuth
+            # flow). The `v1:` prefix carries the version inline so the
+            # value can later grow to a comma-separated, newest-first list
+            # during rotation.
+            root_keys_path = (
+                dot_rbt_dev_directory(args, parser) / args.application_name /
+                "crypto-root-keys"
+            )
+            if root_keys_path.exists():
+                root_keys = root_keys_path.read_text()
+            else:
+                root_keys = f"v1:{secrets.token_urlsafe(32)}"
+                root_keys_path.parent.mkdir(parents=True, exist_ok=True)
+                root_keys_path.write_text(root_keys)
+            env[ENVVAR_REBOOT_CRYPTO_ROOT_KEYS] = root_keys
+        else:
+            # No application name means no per-app state directory to
+            # persist into; fall back to a fixed value.
+            env[ENVVAR_REBOOT_CRYPTO_ROOT_KEYS] = "v1:reboot-dev"
+
+    # Backwards compatibility: old application images do an unconditional
+    # fail-fast check for the legacy OAuth signing secret on startup. Keep
+    # setting it (to the same value as the root keys) so those apps still
+    # boot; current code reads `ENVVAR_REBOOT_CRYPTO_ROOT_KEYS` instead.
+    env.setdefault(
+        ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
+        env[ENVVAR_REBOOT_CRYPTO_ROOT_KEYS],
+    )
 
     if tracing == Tracing.JAEGER:
         # TODO: dynamic port. See comment in `_run_jaeger()`.
         env[OTEL_EXPORTER_OTLP_TRACES_ENDPOINT] = "localhost:4317"
         env[OTEL_EXPORTER_OTLP_TRACES_INSECURE] = "true"
 
-    # Also include all environment variables from '--env='.
-    for (key, value) in args.env or []:
-        env[key] = value
+    # Compose the environment for an application run. Rebuilding from
+    # the frozen base `env` ensures that keys removed from the file are
+    # removed from the result.
+    def compose_env() -> dict[str, str]:
+        composed = env.copy()
 
-    # If 'PYTHONPATH' is not explicitly set, we'll set it to the
-    # specified generated code directory.
-    if 'PYTHONPATH' not in env and generate_python_directory is not None:
-        pythonpath = generate_python_directory
-        for proto_directory in generate_proto_directories or []:
-            pythonpath = pythonpath + os.pathsep + proto_directory
-        env['PYTHONPATH'] = pythonpath
+        # Include environment variables from `--env-file=`. The
+        # `--env=` values below override anything also set here. A
+        # missing file is ignored here.
+        if args.env_file is not None and os.path.isfile(args.env_file):
+            composed.update(_load_env_file(args.env_file))
+
+        # Also include all environment variables from '--env='.
+        for (key, value) in args.env or []:
+            composed[key] = value
+
+        # If 'PYTHONPATH' is not explicitly set, we'll set it to the
+        # specified generated code directory.
+        if (
+            'PYTHONPATH' not in composed and
+            generate_python_directory is not None
+        ):
+            pythonpath = generate_python_directory
+            for proto_directory in generate_proto_directories or []:
+                pythonpath = pythonpath + os.pathsep + proto_directory
+            composed['PYTHONPATH'] = pythonpath
+
+        return composed
+
+    # Warn once, at startup, if `--env-file` points at a missing file.
+    if args.env_file is not None and not os.path.isfile(args.env_file):
+        terminal.warn(f"'--env-file' '{args.env_file}' does not exist.")
 
     if not args.chaos:
         # When running with '--terminate-after-health-check', we
@@ -1428,7 +1524,14 @@ async def __dev_run(
 
             # NOTE: we don't want to watch `application` yet as it
             # might be getting generated if we're using `transpile`.
-            async with watcher.watch(args.watch or []) as watch_event_task:
+            #
+            # We also watch the `--env-file` (if any) as its own event
+            # task so that editing it triggers an application restart.
+            async with watcher.watch(
+                args.watch or []
+            ) as watch_event_task, watcher.watch(
+                [args.env_file] if args.env_file is not None else []
+            ) as env_file_event_task:
 
                 # Transpile TypeScript if requested.
                 if args.transpile is not None:
@@ -1448,6 +1551,7 @@ async def __dev_run(
                             )
                             completed = await _wait_for_first_completed(
                                 watch_event_task,
+                                env_file_event_task,
                                 protos_event_task,
                                 rc_file_event_task,
                             )
@@ -1507,6 +1611,7 @@ async def __dev_run(
                             completed = await _wait_for_first_completed(
                                 application_event_task,
                                 watch_event_task,
+                                env_file_event_task,
                                 protos_event_task,
                                 rc_file_event_task,
                             )
@@ -1594,7 +1699,7 @@ async def __dev_run(
                     [application] if not auto_transpilation else ts_input_paths
                 ) as application_event_task, _run(
                     application if not auto_transpilation else str(bundle),
-                    env=env,
+                    env=compose_env(),
                     launcher=launcher,
                     subprocesses=subprocesses,
                     application_started_event=application_started_event,
@@ -1619,6 +1724,7 @@ async def __dev_run(
                     completed = await _wait_for_first_completed(
                         application_event_task,
                         watch_event_task,
+                        env_file_event_task,
                         protos_event_task,
                         process_wait_task,
                         induce_chaos_task,
@@ -1675,6 +1781,7 @@ async def __dev_run(
                     completed = await _wait_for_first_completed(
                         application_event_task,
                         watch_event_task,
+                        env_file_event_task,
                         protos_event_task,
                         rc_file_event_task,
                         expunge_task,
@@ -1721,6 +1828,11 @@ async def _expunge(
         ):
             terminal.fail("Expunge cancelled")
 
+    # Removing this directory also removes the persisted
+    # `crypto-root-keys` written by `rbt dev run`, so the next run
+    # generates fresh root keys and anything derived from them changes —
+    # e.g. previously minted OAuth tokens become invalid, forcing
+    # connected clients back through the OAuth flow.
     application_directory = dot_rbt_dev / args.application_name
     if not application_directory.exists():
         terminal.warn(

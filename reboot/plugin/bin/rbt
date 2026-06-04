@@ -1,0 +1,33 @@
+#!/usr/bin/env sh
+#
+# Reboot Claude Code plugin: `rbt` bootstrap shim.
+#
+# Claude Code prepends this script's directory to the agent's `PATH`, so
+# the agent's `rbt ...` invocations land here.
+# Delegates to the plugin's pinned `uvx`, which fetches the
+# pinned Reboot CLI from PyPI on demand and caches it. We call
+# the sibling `uvx` shim by absolute path rather than via
+# `PATH` so the dependency is explicit and immune to `PATH`
+# ordering or to an agent that has shadowed `uvx`.
+
+set -eu
+
+# We pin the exact Reboot version so that when a user will
+# install a new plugin version, the Reboot will be updated
+# automatically.
+# We expect that the latest plugin version will use the
+# latest version of the Reboot library.
+REBOOT_VERSION="1.1.0"
+# The highest Python version we currently support.
+PYTHON_VERSION="3.12"
+
+# `$CLAUDE_PLUGIN_ROOT` is documented to be set for "hook commands and
+# plugin executables" but is not exported into the agent's Bash env when
+# `bin/` shims run. Fall back to `$0`-derivation; the env var (when
+# present) points at the same physical dir.
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname -- "$0")/.." && pwd)}"
+
+exec "$PLUGIN_ROOT/bin/uvx" \
+    "--from=reboot==$REBOOT_VERSION" \
+    "--python=$PYTHON_VERSION" \
+    rbt "$@"

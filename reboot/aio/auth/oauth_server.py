@@ -12,15 +12,20 @@ import hashlib
 import json
 import jwt
 import logging
-import os
 import rbt.v1alpha1.errors_pb2
 import time
 from mcp.server.auth.provider import AccessToken
 from reboot.aio.auth import Auth
-from reboot.aio.auth.oauth_providers import OAuthProvider, UserId
+from reboot.aio.auth.oauth_providers import (
+    OAuthProvider,
+    OAuthTokens,
+    UserId,
+    origin_from_request,
+)
 from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
 from reboot.aio.contexts import ReaderContext
-from reboot.settings import ENVVAR_REBOOT_OAUTH_SIGNING_SECRET
+from reboot.aio.http import PythonWebFramework, external_context
+from reboot.crypto import root_keys
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
 from typing import Any, Optional
@@ -61,23 +66,27 @@ _CORS_HEADERS = {
     "Access-Control-Allow-Headers": "Content-Type, MCP-Protocol-Version",
 }
 
+# HKDF `info` (domain separator) for the OAuth server's token-signing key.
+_SIGNING_INFO = b"reboot.oauth.signing"
 
-def _base_url(request: Request) -> str:
-    """
-    Derive the server's base URL from the request headers.
 
-    Respects `X-Forwarded-Proto` and `X-Forwarded-Host` when behind a
-    reverse proxy.
+def signing_secret() -> bytes:
+    """The MCP OAuth server's HS256 token-signing key, derived from
+    Reboot's managed cryptographic root keys (see `reboot.crypto.root_keys`).
+
+    Signs and verifies the access/refresh/authorization-code JWTs this
+    server issues to MCP clients, so it is exercised on every authenticated
+    MCP request — including in production behind an external IdP, where the
+    IdP authenticates the user but this key protects the session token the
+    app then issues.
+
+    Rotating the root keys changes this value, invalidating outstanding
+    tokens so clients re-authenticate. That is acceptable: it carries no
+    persistent identity (production user subjects come from the IdP).
     """
-    scheme = request.headers.get(
-        "x-forwarded-proto",
-        request.url.scheme,
+    return root_keys.derive_key(
+        info=_SIGNING_INFO, version=root_keys.active_version()
     )
-    host = request.headers.get(
-        "x-forwarded-host",
-        request.headers.get("host", "localhost"),
-    )
-    return f"{scheme}://{host}"
 
 
 def _oauth_error(
@@ -104,7 +113,7 @@ class OAuthTokenVerifier(TokenVerifier):
     Returns `Auth(user_id=...)` on success, `None` otherwise.
     """
 
-    def __init__(self, signing_secret: str):
+    def __init__(self, signing_secret: bytes):
         self._signing_secret = signing_secret
 
     async def verify_token(
@@ -151,7 +160,7 @@ class MCPSDKOAuthTokenVerifier:
     signature, audience, and type.
     """
 
-    def __init__(self, signing_secret: str):
+    def __init__(self, signing_secret: bytes):
         self._signing_secret = signing_secret
 
     async def verify_token(  # type: ignore[override]
@@ -229,10 +238,10 @@ class OAuthServer:
 
     6. **Refresh.** When the access token expires, the client `POST
        /token` with `grant_type=refresh_token` to get a new
-       access/refresh token pair. This OAuth server does NOT currently
-       re-authorize with the identity provider, since doing so would
-       require storing the identity provider's sensitive refresh and
-       access tokens.
+       access/refresh token pair. This OAuth server does NOT re-authorize
+       with the identity provider on refresh: token storage
+       (`store_tokens=True`) exists for the application to call the
+       provider's API, not to drive re-authorization here.
     """
 
     def __init__(
@@ -244,18 +253,10 @@ class OAuthServer:
         self._provider = provider
         self._protected_resources = protected_resources
         self._access_token_ttl_seconds = provider.access_token_ttl_seconds
-        self._signing_secret = os.environ.get(
-            ENVVAR_REBOOT_OAUTH_SIGNING_SECRET
-        )
-        if self._signing_secret is None:
-            raise ValueError(
-                f"The '{ENVVAR_REBOOT_OAUTH_SIGNING_SECRET}' environment "
-                "variable must be set when using `oauth`. "
-                "For local development with `rbt dev`, this is "
-                "set automatically. For production, set it to a "
-                "strong random secret shared across all server "
-                "processes."
-            )
+        # Derived from the Reboot-managed cryptographic root keys; raises
+        # if `REBOOT_CRYPTO_ROOT_KEYS` is unset/malformed (fail fast at
+        # construction rather than per-request).
+        self._signing_secret = signing_secret()
         self._token_verifier = OAuthTokenVerifier(self._signing_secret)
 
     @property
@@ -269,15 +270,13 @@ class OAuthServer:
     def mcp_sdk_token_verifier(self) -> MCPSDKOAuthTokenVerifier:
         """
         Return something implementing the MCP SDK's `TokenVerifier`
-        
+
         For use with the SDK's `BearerAuthBackend` /
         `RequireAuthMiddleware`.
         """
-        # `__init__` raises if `_signing_secret` is None.
-        assert self._signing_secret is not None
         return MCPSDKOAuthTokenVerifier(self._signing_secret)
 
-    def mount_routes(self, http) -> None:
+    def mount_routes(self, http: PythonWebFramework.HTTP) -> None:
         """Register all OAuth endpoints on `http`."""
         # RFC 9728: Protected Resource Metadata. MCP
         # clients discover auth servers through this.
@@ -300,9 +299,19 @@ class OAuthServer:
 
         # Authorization and token endpoints.
         http.get(_AUTHORIZE_PATH)(self.authorize)
-        http.get(_CALLBACK_PATH)(self.callback)
+        # The callback persists the provider's tokens (when
+        # `store_tokens=True`) via the app-internal-only `Ciphertext` /
+        # `OrderedMap` servicers, so it opts in to an app-internal context
+        # with `app_internal=True`. That's safe here because the callback
+        # runs only after the identity provider has redirected back with an
+        # authorization code that we exchange and validate before doing any
+        # app-internal work.
+        http.get(_CALLBACK_PATH, app_internal=True)(self.callback)
         http.post(_TOKEN_PATH)(self.token)
         http.options(_TOKEN_PATH)(self.cors_preflight)
+
+        # Let the provider register any additional routes it needs.
+        self._provider.mount_routes(http)
 
     # ---- Helpers ----
 
@@ -345,6 +354,60 @@ class OAuthServer:
         except jwt.exceptions.PyJWTError:
             return None
 
+    async def _store_oauth_tokens(
+        self,
+        request: Request,
+        user_id: UserId,
+        tokens: OAuthTokens,
+    ) -> None:
+        """Persist the provider's tokens (encrypted) for `user_id`, under
+        the `OAuthTokenManager` for this provider's external service.
+
+        Best-effort: a storage failure (e.g. a misconfigured ciphertext
+        key) is logged but does not block the sign-in, so auth never
+        breaks because the token vault is misconfigured.
+        """
+        from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager
+        service = self._provider.token_service_id
+        context = external_context(request)
+        try:
+            # Carry an existing refresh token forward when this sign-in
+            # didn't return one (some providers, e.g. Google, issue a
+            # refresh token only on the first consent, so a later sign-in
+            # would otherwise drop it). `fetch` and `store` are separate
+            # transactions, so this can't live inside `store`, which writes
+            # the same per-user index it would have to read.
+            if not tokens.HasField("refresh_token"):
+                try:
+                    existing = await OAuthTokenManager.ref(service).fetch(
+                        context, user_id=user_id
+                    )
+                except OAuthTokenManager.FetchAborted:
+                    # Nothing stored for this service yet (the manager is
+                    # constructed lazily by the first store).
+                    existing = None
+                if (
+                    existing is not None and existing.found and
+                    existing.tokens.HasField("refresh_token")
+                ):
+                    merged = OAuthTokens()
+                    merged.CopyFrom(tokens)
+                    merged.refresh_token = existing.tokens.refresh_token
+                    tokens = merged
+            await OAuthTokenManager.ref(service).store(
+                context,
+                user_id=user_id,
+                tokens=tokens,
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to store identity provider tokens for user "
+                "'%s': %s",
+                user_id,
+                e,
+                exc_info=True,
+            )
+
     # ---- Route handlers ----
 
     async def cors_preflight(
@@ -367,7 +430,7 @@ class OAuthServer:
         Returns RFC 9728 OAuth 2.0 Protected Resource Metadata.
         Tells MCP clients which authorization server to use.
         """
-        base = _base_url(request)
+        base = origin_from_request(request)
         # Derive the resource path from the request URL:
         #   "/.well-known/oauth-protected-resource/mcp" → "/mcp".
         prefix = "/.well-known/oauth-protected-resource"
@@ -386,7 +449,7 @@ class OAuthServer:
 
         Returns RFC 8414 OAuth Authorization Server Metadata.
         """
-        base = _base_url(request)
+        base = origin_from_request(request)
         return JSONResponse(
             {
                 "issuer": base,
@@ -548,7 +611,7 @@ class OAuthServer:
         )
 
         # Our own callback URL.
-        callback_uri = f"{_base_url(request)}{_CALLBACK_PATH}"
+        callback_uri = f"{origin_from_request(request)}{_CALLBACK_PATH}"
 
         idp_url = self._provider.authorization_url(
             state=pending,
@@ -616,10 +679,11 @@ class OAuthServer:
                 status_code=400,
             )
 
-        # Exchange identity provider code for a user ID.
-        callback_uri = f"{_base_url(request)}{_CALLBACK_PATH}"
+        # Exchange identity provider code for a user ID (and, for
+        # providers that capture them, the provider's tokens).
+        callback_uri = f"{origin_from_request(request)}{_CALLBACK_PATH}"
         try:
-            user_id = await self._provider.exchange_code(
+            result = await self._provider.exchange_code(
                 code=idp_code,
                 redirect_uri=callback_uri,
             )
@@ -644,6 +708,14 @@ class OAuthServer:
                 url=f"{redirect_uri}?{query}",
                 status_code=302,
             )
+
+        user_id = result.user_id
+
+        # If the provider captured the identity provider's tokens
+        # (`store_tokens=True`), persist them, encrypted, so the app can
+        # use them to call the provider's API.
+        if result.tokens is not None:
+            await self._store_oauth_tokens(request, user_id, result.tokens)
 
         # Mint the auth code JWT.
         auth_code = self._make_jwt(
@@ -754,7 +826,7 @@ class OAuthServer:
             )
 
         user_id: UserId = UserId(code_data["sub"])
-        base = _base_url(request)
+        base = origin_from_request(request)
 
         # Mint access token.
         access_token = self._make_jwt(
@@ -794,15 +866,13 @@ class OAuthServer:
     ) -> JSONResponse:
         """
         Handle `grant_type=refresh_token`.
-        
-        TODO: this flow (currently) doesn't consult the identity
-        provider; it's therefore not possible to revoke a leaked refresh
-        token. In the future, when we add the capability to securely
-        store the identity provider's access token and refresh token, we
-        should use those to refresh our own access token at the identity
-        provider before refreshing the caller's access token. It is then
-        possible for the identity provider to revoke the caller's
-        refresh token by revoking the refresh token it has issued to us.
+
+        This mints a fresh access/refresh token pair from the (still
+        valid) refresh token. It does NOT re-authorize at the identity
+        provider, even when `store_tokens=True`: token storage exists so
+        the application can call the provider's API, not to drive
+        re-authorization here. An app that needs a fresh provider token
+        refreshes on demand using the stored `refresh_token`.
         """
         refresh_token_str = form.get("refresh_token")
         if refresh_token_str is None:
@@ -830,7 +900,7 @@ class OAuthServer:
             )
 
         user_id: UserId = UserId(refresh_data["sub"])
-        base = _base_url(request)
+        base = origin_from_request(request)
 
         # Mint new access token.
         access_token = self._make_jwt(

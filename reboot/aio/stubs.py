@@ -215,6 +215,7 @@ class Stub:
             transaction_coordinator_state_ref=transaction_coordinator_state_ref,
             bearer_token=bearer_token,
             caller_id=caller_id,
+            internal_call=context is not None,
         )
 
     def _should_call_retry_unavailable(
@@ -277,6 +278,7 @@ class Stub:
         metadata: Optional[GrpcMetadata] = None,
         idempotency_key: Optional[uuid.UUID] = None,
         per_iteration: bool = False,
+        always: bool = False,
         bearer_token: Optional[str] = None,
     ) -> AsyncIterator[Awaitable[ResponseT] | AsyncIterable[ResponseT]]:
         """Helper for making an RPC, handling any user-defined errors, and
@@ -298,10 +300,7 @@ class Stub:
         # and there isn't a user-provided idempotency key, add one so
         # that we can retry safely.
         if not reader and self._context is None and idempotency_key is None:
-            assert (
-                isinstance(self._idempotency_manager, ExternalContext) and
-                not isinstance(self._idempotency_manager, InitializeContext)
-            ), "Calls with `InitializeContext` should already have idempotency key"
+            assert isinstance(self._idempotency_manager, ExternalContext)
 
             # We may perform transparent retries on this call. That
             # means it needs to be idempotent, and for non-readers that
@@ -310,13 +309,22 @@ class Stub:
             # generate one now. Keys generated here don't need to be
             # reproducible, they just need to be unique, and it should
             # expire after 7 days.
-            idempotency_key = make_expiring_idempotency_key()
+            #
+            # Although, for `InitializeContext`, we don't generate a
+            # retry-safety idempotency key so that we don't pay for
+            # idempotent mutations. Retryable errors (e.g.,
+            # UNAVAILABLE) will still be properly handled by the outer
+            # `initialize` retry handler in `servers.py` which re-runs
+            # the entire `initialize` function.
+            if not isinstance(self._idempotency_manager, InitializeContext):
+                idempotency_key = make_expiring_idempotency_key()
 
         # If we're a `WorkflowContext` all non-readers should have an
-        # idempotency key already.
+        # idempotency key already (unless `.always()` which intentionally
+        # has no key).
         assert (
             not isinstance(self._context, WorkflowContext) or
-            (reader or idempotency_key is not None)
+            (reader or idempotency_key is not None or always)
         )
 
         if idempotency_key is not None:

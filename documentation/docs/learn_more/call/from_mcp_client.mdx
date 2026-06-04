@@ -39,7 +39,7 @@ app runs on a different port or host.
 
 Then run MCPJam:
 ```sh
-npx @mcpjam/inspector@2.4.0 \
+npx @mcpjam/inspector@2.9.3 \
   --config mcp_servers.json --server my-app
 ```
 
@@ -152,7 +152,7 @@ Once Developer Mode is on, to connect your deployed Reboot app:
    running locally behind an `ngrok` tunnel (see
    [exposing `rbt dev` to the internet](/learn_more/nonlocal#ngrok))
    it will be your tunnel's URL with `/mcp` appended.
-4. If your app uses auth (`Anonymous` or otherwise), select
+4. If your app uses auth (`Development` or otherwise), select
    **OAuth** from the Authentication dropdown — ChatGPT will run
    the OAuth handshake against your Reboot app as soon as you add
    the server. Otherwise, select **No auth**.

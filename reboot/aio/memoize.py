@@ -1,6 +1,5 @@
 import log.log
 import pickle
-import uuid
 from reboot.aio.auth.authorizers import allow_if, is_app_internal
 from reboot.aio.contexts import (
     EffectValidation,
@@ -82,6 +81,21 @@ async def memoize(
 
     assert context.task_id is not None
 
+    # `ALWAYS` means "run every time, don't memoize." Skip all
+    # `Memoize` state machinery (Reset, Status, Store) since the
+    # result would be written under a unique UUID that is never
+    # read again.
+    #
+    # TODO: we may still want to record `ALWAYS` results for
+    # observability (e.g., tracking what the workflow is doing)
+    # but that should be a separate, lighter-weight mechanism
+    # than full memoization.
+    if (
+        not isinstance(idempotency_alias_or_tuple, str) and
+        idempotency_alias_or_tuple[1] == ALWAYS
+    ):
+        return await callable()
+
     # Use `Context.idempotency()` to properly create an `Idempotency`
     # that handles `PER_ITERATION` correctly.
     idempotency = context.idempotency(
@@ -89,12 +103,8 @@ async def memoize(
         how=PER_ITERATION if context.within_loop() else None,
     ) if isinstance(idempotency_alias_or_tuple, str) else (
         context.idempotency(
-            alias=f"{idempotency_alias_or_tuple[0]} - {uuid.uuid4()}",
-        ) if idempotency_alias_or_tuple[1] == ALWAYS else (
-            context.idempotency(
-                alias=idempotency_alias_or_tuple[0],
-                how=idempotency_alias_or_tuple[1],
-            )
+            alias=idempotency_alias_or_tuple[0],
+            how=idempotency_alias_or_tuple[1],
         )
     )
 

@@ -19,9 +19,8 @@ from reboot.mcp.context import (
     _init_session_state,
     _set_user_id,
 )
-from reboot.mcp.proxy import _UI_ASSETS_PREFIX
+from reboot.mcp.request_state import _UI_ASSETS_PREFIX, _request_user_agent
 from reboot.mcp.ui import (
-    _request_user_agent,
     _resolve_dist_path,
     _resource_meta,
     _ui_tool_cache_bust_info,
@@ -238,8 +237,14 @@ async def _serve_ui_asset(
 def create_mcp_factory(
     *,
     server: FastMCP,
-    new_session_hooks: Sequence[Callable[[ExternalContext, Optional[str]],
-                                         Awaitable[None]]],
+    new_session_hooks: Sequence[Callable[
+        [ExternalContext, Optional[str]],
+        Awaitable[None],
+    ]],
+    per_request_hooks: Sequence[Callable[
+        [ExternalContext, Optional[str], Request],
+        Awaitable[None],
+    ]] = (),
     token_verifier: Optional[Any],
 ) -> Callable[
     [Callable[[Request], Any]],
@@ -253,6 +258,11 @@ def create_mcp_factory(
         new_session_hooks: Async callables to invoke when a new
             MCP session starts (e.g. to auto-construct state). Arguments
            passed: (external_context, user_id_or_none).
+        per_request_hooks: Async callables to invoke on *every*
+            inbound MCP request, regardless of session boundary.
+            Arguments passed: (external_context, user_id_or_none,
+            request) — the Starlette `Request` lets hooks inspect
+            headers (e.g., `x-forwarded-host`).
         token_verifier: Optional MCP SDK `TokenVerifier`
             (from `mcp.server.auth.provider`). When set, it can reject
             requests with missing or expired bearer tokens with an HTTP
@@ -286,7 +296,7 @@ def create_mcp_factory(
         ) -> None:
             # Static-asset branch: serve the UI's dist files
             # directly from disk for production-mode MCP Apps.
-            # The path shape, set by `prod_loader_html`, is
+            # The path shape, set by `cache_busting_iframe_html`, is
             # `/mcp<_UI_ASSETS_PREFIX><ui_name>/<cache_bust>/<rest>`.
             # Handled before any MCP-protocol logic (including
             # bearer-token auth) so the iframe, which has no
@@ -303,11 +313,9 @@ def create_mcp_factory(
 
             request = Request(scope, receive, send)
 
-            # Publish the incoming User-Agent so `ui_html()` can
-            # branch on host identity (ChatGPT gets the relay
-            # iframe; others get the inlined bundle). Set here,
-            # before handing off to the MCP transport, so the
-            # contextvar is captured into downstream tasks.
+            # Publish the incoming User-Agent. Set here, before handing
+            # off to the MCP transport, so the contextvar is captured
+            # into downstream tasks.
             _request_user_agent.set(request.headers.get("user-agent"))
 
             # If no tools are registered, there is nothing useful for an
@@ -407,6 +415,25 @@ def create_mcp_factory(
                 user_id = _get_user_id(request)
                 for hook in new_session_hooks:
                     await hook(external_context, user_id)
+
+            # Per-request hooks fire on every inbound MCP
+            # call. Failures are logged and swallowed — these hooks
+            # are meant to be observational, so a backend hiccup in a
+            # hook must never break the user-visible MCP call.
+            if per_request_hooks:
+                user_id_for_per_request = _get_user_id(request)
+                for per_request_hook in per_request_hooks:
+                    try:
+                        await per_request_hook(
+                            external_context,
+                            user_id_for_per_request,
+                            request,
+                        )
+                    except Exception:
+                        logger.exception(
+                            f"[{ui_id}] per-request hook "
+                            f"{per_request_hook.__name__!r} raised; continuing"
+                        )
 
             logger.debug(f"[{ui_id}] {request.method} {request.url.path}")
 

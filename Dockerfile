@@ -431,7 +431,9 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install bash-comple
 #    code. Keep the version of `mypy` in sync with `mypy-requirements.in`.
 #  * `build`, Python's package-builder-frontend.
 #  * `uv`, a fast Python package installer and resolver.
-RUN pip install yapf==0.40.2 mypy==1.18.1 isort==5.12.0 ruff==0.1.14 build==1.0.3 uv==0.9.18
+#  * `py-spy`, the sampling profiler invoked by `_maybe_run_py_spy()`
+#    in `reboot/aio/monitoring.py`.
+RUN pip install yapf==0.40.2 mypy==1.18.1 isort==5.12.0 ruff==0.1.14 build==1.0.3 uv==0.9.18 py-spy==0.4.2
 
 # Install and setup fish (shell used on codespaces).
 # NOTE: We do this as it is done here:

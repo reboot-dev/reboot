@@ -5,6 +5,7 @@ from reboot.settings import (
     ENVVAR_NODEJS_SERVER,
     ENVVAR_PYTHON_SERVER,
     ENVVAR_RBT_DEV,
+    ENVVAR_RBT_NAME,
     ENVVAR_RBT_SERVE,
     ENVVAR_RBT_SERVERS,
     ENVVAR_REBOOT_CLOUD_VERSION,
@@ -96,6 +97,21 @@ def in_nodejs() -> bool:
     """Helper for checking if we are running in Node.js."""
 
     return os.environ.get(ENVVAR_REBOOT_NODEJS, 'false').lower() == 'true'
+
+
+def application_name() -> str:
+    """Helper that returns the current name this application has been run
+    with, e.g., via `rbt dev run --application-name=...` or `rbt serve
+    --application-name=...`.
+    """
+    # TODO(rjh): make sure all paths in the Cloud set this environment
+    #            variable (not just customer containers using the `rbt
+    #            serve` CLI, but also the bazel-built images), and
+    #            make sure that it is obeyed (i.e. the CLI considers
+    #            it an alternative to the `--application-name`
+    #            argument). Then replace the fallback below with an
+    #            `assert`.
+    return os.environ.get(ENVVAR_RBT_NAME) or "Reboot Application"
 
 
 @asynccontextmanager

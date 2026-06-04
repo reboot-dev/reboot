@@ -1,0 +1,23 @@
+{
+  "name": "reboot",
+  "version": "1.0.0",
+  "description": "Build Reboot apps (MCP Chat Apps and standalone Web Apps) from your coding agent. Includes skills for routing, scaffolding, running, and a full Reboot Python reference.",
+  "author": {
+    "name": "Reboot",
+    "email": "team@reboot.dev",
+    "url": "https://reboot.dev"
+  },
+  "homepage": "https://reboot.dev",
+  "repository": "https://github.com/reboot-dev/reboot-plugin",
+  "license": "Apache-2.0",
+  "keywords": ["reboot", "mcp", "chat-app", "web-app", "python", "agents"],
+  "skills": "./skills/",
+  "hooks": "./hooks/codex/hooks.json",
+  "interface": {
+    "displayName": "Reboot",
+    "shortDescription": "Build Reboot apps (MCP Chat Apps and Web Apps)",
+    "developerName": "Reboot",
+    "category": "Productivity",
+    "defaultPrompt": ["Build a Reboot app", "Run my Reboot app"]
+  }
+}

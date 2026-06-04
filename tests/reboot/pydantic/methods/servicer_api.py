@@ -68,6 +68,11 @@ class ComplexTypesRequest(Model):
     optional_data_list_primitive: Optional[list[int]] = Field(tag=8)
     data_dict_primitive: dict[str, float] = Field(tag=9)
     optional_data_dict_primitive: Optional[dict[str, float]] = Field(tag=10)
+    data_list_literal: list[LiteralType] = Field(tag=11)
+    optional_data_list_literal: Optional[list[LiteralType]] = Field(tag=12)
+    data_dict_literal: dict[str, LiteralType] = Field(tag=13)
+    optional_data_dict_literal: Optional[dict[str,
+                                              LiteralType]] = Field(tag=14)
 
 
 class State(Model):
@@ -97,6 +102,11 @@ class State(Model):
     data_dict_value: dict[str, ArbitraryData] = Field(tag=9)
     optional_data_dict_value: Optional[dict[str,
                                             ArbitraryData]] = Field(tag=10)
+    # `list[<Literal>]` — a repeated `enum` field; we want to ensure
+    # codegen lowers it and that the runtime round-trips it.
+    literal_list_value: list[LiteralType] = Field(tag=21)
+    # `dict[str, <Literal>]` — a `map` with `enum` values.
+    literal_dict_value: dict[str, LiteralType] = Field(tag=22)
 
     ### Empty default values. ###
     str_default_value: str = Field(
@@ -133,6 +143,18 @@ class State(Model):
     literal_default_value: LiteralType = Field(
         tag=18,
         default="option1",
+    )
+
+    # `list[<Model>]` and `dict[str, <Model>]` with empty-collection
+    # defaults — we want to ensure codegen handles nested-repeated and
+    # nested-map message fields rather than silently dropping them.
+    data_list_default_value: list[ArbitraryData] = Field(
+        tag=19,
+        default_factory=list,
+    )
+    data_dict_default_value: dict[str, ArbitraryData] = Field(
+        tag=20,
+        default_factory=dict,
     )
 
 

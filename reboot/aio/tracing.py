@@ -31,11 +31,8 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from reboot.aio.headers import TRACEPARENT_HEADER, TRACESTATE_HEADER, Headers
 from reboot.aio.once import Once
 from reboot.aio.signals import install_cleanup
-from reboot.settings import (
-    ENVVAR_RBT_NAME,
-    ENVVAR_REBOOT_NODEJS,
-    ENVVAR_REBOOT_TRACE_LEVEL,
-)
+from reboot.run_environments import application_name
+from reboot.settings import ENVVAR_REBOOT_NODEJS, ENVVAR_REBOOT_TRACE_LEVEL
 from typing import Any, AsyncIterator, Callable, Optional
 
 logger = get_logger(__name__)
@@ -158,14 +155,7 @@ _start_once = Once(_start)
 
 def start(process_name: Optional[str] = None, server_id: Optional[str] = None):
     if process_name is None:
-        # TODO(rjh): make sure all paths in the Cloud set this
-        #            environment variable (not just customer containers
-        #            using the `rbt serve` CLI, but also the bazel-built
-        #            images), and make sure that it is obeyed (i.e. the
-        #            CLI considers it an alternative to the `--name`
-        #            argument). Then replace the fallback below with an
-        #            `assert`.
-        process_name = os.environ.get(ENVVAR_RBT_NAME, "Reboot Application")
+        process_name = application_name()
 
     if server_id is not None:
         # Server IDs have an application ID prefix; that's redundant

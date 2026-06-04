@@ -1,8 +1,9 @@
 import { Value } from "@bufbuild/protobuf";
 import { Application, Reboot } from "@reboot-dev/reboot";
-import orderedMap, {
+import {
   Node,
   OrderedMap,
+  orderedMapLibrary,
 } from "@reboot-dev/reboot-std/collections/ordered_map/v1";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
@@ -16,13 +17,14 @@ test("Use orderedMap and node servicers", async (t) => {
   t.beforeEach(async () => {
     rbt = new Reboot();
     await rbt.start();
-    await rbt.up(new Application({ servicers: orderedMap.servicers() }));
   });
   t.afterEach(async () => {
     await rbt.stop();
   });
 
   await t.test("Interact with the OrderedMap v1", async (t) => {
+    await rbt.up(new Application({ libraries: [orderedMapLibrary()] }));
+
     const context = rbt.createExternalContext("test", {
       appInternal: true,
     });
@@ -48,6 +50,8 @@ test("Use orderedMap and node servicers", async (t) => {
   });
 
   await t.test("Interact with the Node", async (t) => {
+    await rbt.up(new Application({ libraries: [orderedMapLibrary()] }));
+
     const context = rbt.createExternalContext("test", {
       appInternal: true,
     });
@@ -60,8 +64,9 @@ test("Use orderedMap and node servicers", async (t) => {
     });
 
     await node.insert(context, {
-      key: "50",
-      value: Value.fromJson("fifty").toBinary(),
+      entries: {
+        "50": Value.fromJson("fifty").toBinary(),
+      },
     });
 
     const entry = await node.search(context, { key: "50" });

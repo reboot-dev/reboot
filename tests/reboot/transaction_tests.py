@@ -7,7 +7,7 @@ import reboot.aio.internals.channel_manager
 import unittest
 from ast import literal_eval
 from collections import namedtuple
-from rbt.v1alpha1 import errors_pb2
+from rbt.v1alpha1 import errors_pb2, transactions_pb2
 from rbt.v1alpha1.errors_pb2 import StateNotConstructed
 from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow
@@ -24,6 +24,7 @@ from reboot.aio.headers import (
     Headers,
 )
 from reboot.aio.state_managers import SidecarStateManager, StateManager
+from reboot.aio.stubs import UnaryRetriedCall
 from reboot.aio.tests import Reboot
 from reboot.aio.types import StateRef
 from reboot.server.database import DatabaseClient
@@ -242,7 +243,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         async def mock_prepare(state_manager, request, grpc_context):
             headers = Headers.from_grpc_context(grpc_context)
             if (headers.state_id == 'jonathan'):
-                raise RuntimeError('Mock error')
+                return transactions_pb2.PrepareResponse(abort=True)
             else:
                 return await prepare(state_manager, request, grpc_context)
 
@@ -258,10 +259,8 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
 
-            with self.assertRaises(Bank.SignUpAborted) as aborted:
+            with self.assertRaises(Bank.SignUpAborted):
                 await bank.SignUp(context, account_id='jonathan')
-
-            self.assertIn('Mock error', str(aborted.exception))
 
             # Need to acknowledge idempotency uncertainty so that we
             # can continue running the test!
@@ -287,7 +286,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
                 headers.state_id == 'jonathan' and not prepare_called.is_set()
             ):
                 prepare_called.set()
-                raise RuntimeError('Mock error')
+                return transactions_pb2.PrepareResponse(abort=True)
             else:
                 return await prepare(state_manager, request, grpc_context)
 
@@ -303,10 +302,8 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
 
-            with self.assertRaises(Bank.SignUpAborted) as sign_up_aborted:
+            with self.assertRaises(Bank.SignUpAborted):
                 await bank.SignUp(context, account_id='jonathan')
-
-            self.assertIn('Mock error', str(sign_up_aborted.exception))
 
             # Need to acknowledge idempotency uncertainty so that we
             # can continue running the test!
@@ -362,7 +359,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
                 if not prepare_called.is_set():
                     prepare_called.set()
                     await prepare_waiting.wait()
-                    raise RuntimeError('Mock prepare error')
+                    return transactions_pb2.PrepareResponse(abort=True)
                 else:
                     return await prepare(state_manager, request, grpc_context)
             else:
@@ -529,6 +526,207 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
             await bank.SignUp(context, account_id=account_ref.id)
 
+    async def test_participant_restart_retries_transaction(self) -> None:
+        """Tests that if a participant server restarts after a
+        transaction has started but before the prepare phase, the
+        participant detects the restart via timestamp comparison
+        and returns Unavailable, causing the client to
+        automatically retry the transaction with the same
+        idempotency key."""
+        # Get a reference to the real
+        # `_transaction_coordinator_prepare` so we can call it after
+        # restarting the participant server.
+        transaction_coordinator_prepare = (
+            SidecarStateManager._transaction_coordinator_prepare
+        )
+
+        account_ref = StateRef.from_id(
+            Account.__state_type_name__, 'jonathan-2345'
+        )
+
+        restarted = False
+
+        async def mock_transaction_coordinator_prepare(
+            state_manager,
+            *,
+            application_id,
+            channel_manager,
+            transaction_id,
+            participants,
+        ):
+            nonlocal restarted
+            if not restarted:
+                # Restart the `Account` (participant) server before
+                # sending `Prepare` RPCs. This simulates a participant
+                # crash between the writer phase and the prepare
+                # phase: the new server will have a recovery timestamp
+                # after the transaction's UUIDv7 timestamp, so the
+                # `Prepare` handler will detect the gap and return
+                # `Unavailable`.
+                account_server = await self.rbt.server_stop(account_server_id)
+                await self.rbt.server_start(account_server)
+                restarted = True
+
+            return await transaction_coordinator_prepare(
+                state_manager,
+                application_id=application_id,
+                channel_manager=channel_manager,
+                transaction_id=transaction_id,
+                participants=participants,
+            )
+
+        # Track when `_should_retry` is called with an `Unavailable`
+        # error, proving that the participant's restart detection
+        # triggered a retryable error that propagated all the way to
+        # the client.
+        should_retry = UnaryRetriedCall._should_retry
+        retried_unavailable = asyncio.Event()
+
+        def mock_should_retry(unary_retried_call, error):
+            if error.code() == grpc.StatusCode.UNAVAILABLE:
+                retried_unavailable.set()
+            return should_retry(unary_retried_call, error)
+
+        with mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager.'
+            '_transaction_coordinator_prepare',
+            mock_transaction_coordinator_prepare,
+        ), mock.patch(
+            'reboot.aio.stubs.UnaryRetriedCall._should_retry',
+            mock_should_retry,
+        ):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer]),
+                local_envoy=True,
+                local_envoy_tls=True,
+                servers=2,
+            )
+
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+            # Confirm that `Bank` and `Account` are on different
+            # servers so we can restart just the participant.
+            _, account_server_id = await self.rbt.unique_servers(
+                bank._state_ref,
+                account_ref,
+            )
+
+            # The first attempt will fail because the participant
+            # restarted; the framework automatically retries because
+            # the error is `Unavailable`, reusing the same idempotency
+            # key.
+            await bank.SignUp(context, account_id=account_ref.id)
+
+            # Verify that the retry was triggered by the `Unavailable`
+            # error from restart detection.
+            self.assertTrue(retried_unavailable.is_set())
+
+    async def test_uuid4_coordinator_with_updated_participant(self) -> None:
+        """Tests that a coordinator without a database timestamp (simulating a
+        legacy server) creates UUIDv4 transaction IDs, and the
+        participant correctly falls back to the legacy flow (storing
+        at join time, writing every intermediate state) even though
+        the participant has a recovery timestamp and supports restart
+        detection.
+        """
+        transaction_participant_store = (
+            SidecarStateManager.transaction_participant_store
+        )
+        participant_store_count = 0
+
+        async def mock_transaction_participant_store(
+            state_manager,
+            transaction,
+        ):
+            nonlocal participant_store_count
+            participant_store_count += 1
+            return await transaction_participant_store(
+                state_manager,
+                transaction,
+            )
+
+        with mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager'
+            '.latest_timestamp_ms',
+            new_callable=mock.PropertyMock,
+            return_value=None,
+        ), mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager'
+            '.transaction_participant_store',
+            mock_transaction_participant_store,
+        ):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer]),
+            )
+
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+            await bank.SignUp(context, account_id='jonathan')
+
+            # Legacy flow: `transaction_participant_store` must have
+            # been called at join time for each participant. We don't
+            # assert an exact count because effect validation re-runs
+            # the handler (creating fresh transactions that store
+            # again), and scheduled tasks like `PostOpen` and
+            # `PostSignUp` may or may not have started running before
+            # this assertion executes.
+            self.assertGreater(participant_store_count, 0)
+
+    async def test_uuid7_coordinator_with_legacy_participant(self) -> None:
+        """Tests that a coordinator sending UUIDv7 transaction IDs works
+        correctly when participants cannot use restart detection
+        (simulating a legacy server without a recovery timestamp),
+        falling back to the legacy flow of storing at join time and
+        writing every intermediate state.
+        """
+        transaction_participant_store = (
+            SidecarStateManager.transaction_participant_store
+        )
+        participant_store_count = 0
+
+        async def mock_transaction_participant_store(
+            state_manager,
+            transaction,
+        ):
+            nonlocal participant_store_count
+            participant_store_count += 1
+            return await transaction_participant_store(
+                state_manager,
+                transaction,
+            )
+
+        with mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager'
+            '._can_use_restart_detection',
+            return_value=False,
+        ), mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager'
+            '.transaction_participant_store',
+            mock_transaction_participant_store,
+        ):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer]),
+            )
+
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+            await bank.SignUp(context, account_id='jonathan')
+
+            # Legacy flow: `transaction_participant_store` must have
+            # been called at join time for each participant. We don't
+            # assert an exact count because effect validation re-runs
+            # the handler (creating fresh transactions that store
+            # again), and scheduled tasks like `PostOpen` and
+            # `PostSignUp` may or may not have started running before
+            # this assertion executes.
+            self.assertGreater(participant_store_count, 0)
+
     def _capture_logs(self) -> LogCapture:
         """A helper function that installs a `LogCapture` and ensures it is
         cleaned up at the end of the test.
@@ -636,6 +834,188 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertTrue(transferrable_response.transferrable)
+
+    async def test_transaction_recovery_after_coordinator_preparing(
+        self,
+    ) -> None:
+        """Tests recovery when a coordinator crashed after it wrote its
+        participant list to the database (with `preparing=True`) and
+        all the participants prepared, but before it wrote that it was
+        'prepared'. After restarting both coordinator and
+        participants, recovery re-prepares all participants and
+        completes the transaction.
+        """
+        account_ref = StateRef.from_id(
+            Account.__state_type_name__, 'jonathan-2345'
+        )
+
+        # Mock `transaction_coordinator_prepared` to always fail,
+        # simulating a crash after the coordinator has written its
+        # participants _and_ all of the participants have prepared.
+        async def mock_transaction_coordinator_prepared(
+            database_client, *args, **kwargs
+        ):
+            raise RuntimeError('Simulating a coordinator crash')
+
+        with mock.patch(
+            'reboot.server.database.DatabaseClient'
+            '.transaction_coordinator_prepared',
+            mock_transaction_coordinator_prepared,
+        ):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer]),
+                local_envoy=True,
+                local_envoy_tls=True,
+                servers=2,
+            )
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+            # Confirm that `Bank` and `Account` are on different
+            # servers so we exercise cross-server recovery.
+            bank_server_id, account_server_id = await self.rbt.unique_servers(
+                bank._state_ref,
+                account_ref,
+            )
+
+            # This transaction will succeed from the caller's
+            # perspective (coordinator wrote down participants and all
+            # participant's have prepared). The commit control loop
+            # starts in the background but will keep failing due to
+            # our mock.
+            await bank.SignUp(context, account_id=account_ref.id)
+
+            # Stop both servers. The coordinator has a
+            # `preparing=True` record in the database. The
+            # participants have prepared RocksDB transaction.
+            bank_server = await self.rbt.server_stop(bank_server_id)
+            account_server = await self.rbt.server_stop(account_server_id)
+
+        # Now restart without the mocks. Recovery should find the
+        # `preparing=True` coordinator record, try to (re-)prepare all
+        # participants, and be able to commit!
+        await self.rbt.server_start(bank_server)
+        await self.rbt.server_start(account_server)
+
+        # Verify the transaction committed: the account should be
+        # constructed and allow mutations (i.e., not still be within a
+        # transaction).
+        jonathan = Account.ref(account_ref.id)
+        await jonathan.Deposit(context, amount=100)
+
+        # And we should be able to do more transactions on the bank.
+        bank = Bank.ref(SINGLETON_BANK_ID)
+        await bank.SignUp(context, account_id='ben')
+
+    async def test_transaction_abort_after_coordinator_preparing(self) -> None:
+        """Tests that if both (a) the coordinator crashes _after_ it has
+        stored its participants and `preparing=True` to the database
+        and (b) the participant crashes _before_ it is able to
+        prepare, then recovery will correctly abort the transaction.
+        """
+        account_ref = StateRef.from_id(
+            Account.__state_type_name__, 'jonathan-2345'
+        )
+
+        # Track when we know the 'preparing' record is durable in the
+        # database.
+        transaction_coordinator_prepare_done = asyncio.Event()
+        transaction_coordinator_prepare = (
+            DatabaseClient.transaction_coordinator_prepare
+        )
+
+        async def mock_transaction_coordinator_prepare(
+            database_client, *args, **kwargs
+        ):
+            await transaction_coordinator_prepare(
+                database_client, *args, **kwargs
+            )
+            transaction_coordinator_prepare_done.set()
+            # Now hang forever until we restart the servers.
+            await asyncio.Event().wait()
+
+        # Mock participant prepare RPCs to hang forever, simulating a
+        # crash before participants prepare.
+        async def mock_transaction_participant_prepare(
+            database_client, *args, **kwargs
+        ):
+            await asyncio.Event().wait()
+
+        with mock.patch(
+            'reboot.server.database.DatabaseClient'
+            '.transaction_coordinator_prepare',
+            mock_transaction_coordinator_prepare,
+        ), mock.patch(
+            'reboot.server.database.DatabaseClient'
+            '.transaction_participant_prepare',
+            mock_transaction_participant_prepare,
+        ), mock.patch(
+            # When the bank server is stopped below the `SignUp` RPC
+            # should fail. In the event that the failure is
+            # `UNAVAILABLE` we don't want to retry because we'll retry
+            # forever since the server is stopped. Instead, we have
+            # the mock return `False`.
+            'reboot.aio.stubs.UnaryRetriedCall._should_retry',
+            lambda *args, **kwargs: False
+        ):
+            await self.rbt.up(
+                Application(servicers=[AccountServicer, BankServicer]),
+                local_envoy=True,
+                local_envoy_tls=True,
+                servers=2,
+            )
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+            bank_server_id, account_server_id = await self.rbt.unique_servers(
+                bank._state_ref,
+                account_ref,
+            )
+
+            # Run `SignUp` in the background. It will hang because
+            # participant prepare is mocked to hang.
+            async def sign_up():
+                await bank.SignUp(context, account_id=account_ref.id)
+
+            sign_up_task = asyncio.create_task(sign_up())
+
+            # Wait for the coordinator to have written the
+            # participants and `preparing=True` to the database.
+            await transaction_coordinator_prepare_done.wait()
+
+            # Stop both servers. The coordinator has a record of the
+            # transaction as "preparing". The participant never
+            # prepared (no durable transaction).
+            bank_server = await self.rbt.server_stop(bank_server_id)
+            account_server = await self.rbt.server_stop(account_server_id)
+
+            # The RPC should fail because the server was stopped, and
+            # we've mocked it so that it doesn't retry so we know we
+            # can try a new fresh transaction after recovery below.
+            with self.assertRaises(Bank.SignUpAborted):
+                await sign_up_task
+
+            context.acknowledge_idempotency_uncertainty()
+
+        # Now restart without the mocks. Recovery should find the
+        # 'preparing' record, re-prepare, get a definitive error from
+        # the participant (which has restarted and has no durable
+        # prepared state), and abort the transaction.
+        await self.rbt.server_start(bank_server)
+        await self.rbt.server_start(account_server)
+
+        # Verify that the transaction was aborted by running a new
+        # transaction that creates the same account — if the old
+        # transaction had committed, this would fail because the
+        # account would already exist.
+        bank = Bank.ref(SINGLETON_BANK_ID)
+        await bank.SignUp(context, account_id=account_ref.id)
+
+        # Verify the account works.
+        jonathan = Account.ref(account_ref.id)
+        await jonathan.Deposit(context, amount=100)
 
     async def test_read_commit_race_condition(self) -> None:
         """As we eagerly return the result of a transaction after the first

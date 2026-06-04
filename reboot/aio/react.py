@@ -25,9 +25,26 @@ from reboot.aio.types import (
 )
 from reboot.nodejs.python import should_print_stacktrace
 from reboot.settings import EVERY_LOCAL_NETWORK_ADDRESS
+from reboot.wait_for_tasks import wait_for_tasks
 from typing import AsyncIterable, Optional
 
 logger = get_logger(__name__)
+
+
+class _SuppressInvalidHandshakeFilter(logging.Filter):
+    """Drop spurious `opening handshake failed` logs from non-WebSocket
+    probes (e.g., HEAD requests or half-open TCP connections from a
+    devcontainer/Codespaces port forwarder) so they don't appear during
+    normal operation or shutdown. The `websockets` library logs every
+    failed handshake at `ERROR` with a full stack trace; legitimate
+    clients never produce `InvalidMessage`, so it's safe to filter."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.exc_info is not None:
+            exception = record.exc_info[1]
+            if isinstance(exception, websockets.exceptions.InvalidMessage):
+                return False
+        return True
 
 
 class ReactServicer(react_pb2_grpc.ReactServicer):
@@ -75,6 +92,11 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
             # We set the log level to `ERROR` on this logger because websockets is chatty!
             logger.setLevel(logging.ERROR)
 
+            # Also filter out `opening handshake failed` errors from
+            # clients that aren't speaking WebSocket (e.g., HEAD probes
+            # or half-open connections from a port forwarder).
+            logger.addFilter(_SuppressInvalidHandshakeFilter())
+
             async with websockets.serve(
                 self.serve,
                 EVERY_LOCAL_NETWORK_ADDRESS,
@@ -98,12 +120,10 @@ class ReactServicer(react_pb2_grpc.ReactServicer):
 
     async def stop(self):
         self._stop_websockets_serve.set()
-        try:
-            await self._websockets_serve_task
-        except:
-            # We're trying to stop so no need to propagate any
-            # exceptions.
-            pass
+        # The task stops on its own once the event above is set, so
+        # pass `cancel=False`. Any `CancelledError` raised here is
+        # this task's own cancellation and is propagated.
+        await wait_for_tasks([self._websockets_serve_task], cancel=False)
 
     async def serve(self, websocket):
         # Actually serve within an asyncio task while also creating

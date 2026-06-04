@@ -223,7 +223,7 @@ class Reboot:
         idempotency_required_reason: Optional[str] = None,
         app_internal: bool = False,
     ) -> ExternalContext:
-        """ Create an `ExternalContext` for use in tests.
+        """ Create an `ExternalContext`.
 
         app_internal: When true, the context is being used to
           represent a client internal to the application: essentially, to mock
@@ -254,13 +254,7 @@ class Reboot:
         bearer_token: Optional[str] = None,
         idempotency_seed: Optional[uuid.UUID] = None,
     ) -> InitializeContext:
-        """ Create an `ExternalContext` for use in tests.
-
-        app_internal: When true, the context is being used to
-          represent a client internal to the application: essentially, to mock
-          traffic from another servicer in the same application. A
-          per-application secret will be passed as a header in the call.
-        """
+        """ Create an `InitializeContext`."""
         # Initializers are application-internal code, and should
         # identify themselves as such.
         caller_id = CallerID(application_id=self._application_id)

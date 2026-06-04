@@ -89,6 +89,14 @@ TASK_ID_UUID = 'x-reboot-task-id-uuid'
 TRACEPARENT_HEADER = 'traceparent'
 TRACESTATE_HEADER = 'tracestate'
 
+# Header indicating this call originates from within a Reboot method
+# (reader, writer, transaction, or workflow) rather than using an
+# `ExternalContext`. Note that this is different from the
+# `CALLER_ID_HEADER`; the latter is set on any call by a Reboot
+# application, even if that call comes from an `ExternalContext`
+# (e.g., a legacy gRPC servicer).
+INTERNAL_CALL_HEADER = 'x-reboot-internal-call'
+
 
 @dataclass(kw_only=True, frozen=True)
 class Headers:
@@ -134,6 +142,10 @@ class Headers:
     # propagation when not using opentelemetry's automatic gRPC interceptors.
     traceparent: Optional[str] = None
     tracestate: Optional[str] = None
+
+    # Whether this call originates from within a Reboot method, i.e.,
+    # not an `ExternalContext`.
+    internal_call: bool = False
 
     def __post_init__(self):
         validate_ascii(
@@ -302,6 +314,11 @@ class Headers:
         traceparent: Optional[str] = extract_maybe(TRACEPARENT_HEADER)
         tracestate: Optional[str] = extract_maybe(TRACESTATE_HEADER)
 
+        internal_call: bool = extract_maybe(
+            INTERNAL_CALL_HEADER,
+            convert=lambda value: value == 'true',
+        ) or False
+
         return cls(
             application_id=application_id,
             server_id=server_id,
@@ -319,6 +336,7 @@ class Headers:
             caller_id=caller_id,
             traceparent=traceparent,
             tracestate=tracestate,
+            internal_call=internal_call,
         )
 
     @property
@@ -408,11 +426,17 @@ class Headers:
                 return ((CALLER_ID_HEADER, str(self.caller_id)),)
             return ()
 
+        def maybe_add_internal_call_header() -> GrpcMetadata | tuple[()]:
+            if self.internal_call:
+                return ((INTERNAL_CALL_HEADER, 'true'),)
+            return ()
+
         return (
             ((STATE_REF_HEADER, self.state_ref.to_str()),) +
             maybe_add_application_id_header() + maybe_add_server_id_header() +
             maybe_add_authorization_header() + maybe_add_cookie_header() +
             maybe_add_transaction_headers() + maybe_add_workflow_headers() +
             maybe_add_idempotency_key_header() +
-            maybe_add_opentelemetry_headers() + maybe_add_caller_id_header()
+            maybe_add_opentelemetry_headers() + maybe_add_caller_id_header() +
+            maybe_add_internal_call_header()
         )

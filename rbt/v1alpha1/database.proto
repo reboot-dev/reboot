@@ -285,6 +285,45 @@ message LoadResponse {
   // Invariant: actor's 'state' is expected to be set, although it may be empty.
   repeated Actor actors = 1;
   repeated Task tasks = 2;
+
+  // Latest timestamp from database clock, for timestamp refresh.
+  // Optional for explicit backwards compatibility.
+  optional google.protobuf.Timestamp timestamp = 3;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// Combined preload of state and idempotent mutations in a single
+// (server-streaming) RPC to the database. Used to eliminate one
+// round-trip on the cold path of a request: a single `Preload` is
+// fired early when handling a method call, and `_load()` and
+// `check_for_idempotent_mutation()` consume the cached results
+// instead of making their own RPCs to the database.
+message PreloadRequest {
+  string state_type = 1;
+  string state_ref = 2;
+  // When true, the skip loading the state. Used by servers that
+  // already have the state cached or being loaded.
+  bool skip_state = 3;
+  // When true, the skip recovering idempotent mutations. Used by
+  // servers that already have the idempotent mutations cached or
+  // being loaded.
+  bool skip_idempotent_mutations = 4;
+}
+
+message PreloadResponse {
+  // Set only in the first response message of the stream. Not set if
+  // their is no state yet.
+  optional Actor actor = 1;
+
+  // Idempotent mutations are streamed across multiple response
+  // messages to handle large sets without exceeding gRPC message size
+  // limits.
+  repeated IdempotentMutation idempotent_mutations = 2;
+
+  // Latest timestamp from database clock, for timestamp refresh. Set
+  // only in the first response message.
+  optional google.protobuf.Timestamp timestamp = 3;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -313,7 +352,11 @@ message StoreRequest {
   bool sync = 7;
 }
 
-message StoreResponse {}
+message StoreResponse {
+  // Latest timestamp from database clock, for timestamp refresh.
+  // Optional for explicit backwards compatibility.
+  optional google.protobuf.Timestamp timestamp = 1;
+}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -341,18 +384,20 @@ message RecoverResponse {
   repeated Task pending_tasks = 1;
   repeated Transaction participant_transactions = 2;
 
-  // Transaction UUID -> PreparedTransactionCoordinator for every
+  // Transaction UUID -> TransactionCoordinator for every
   // transaction that a coordinator completed the prepare phase of two
   // phase commit.
   //
   // NOTE: because a map key can not be bytes we pass a stringified UUID
   // where as other places we pass the UUID in its bytes form.
-  // clang-format off
-  map<string, PreparedTransactionCoordinator>
-      prepared_transaction_coordinators = 3;
-  // clang-format on
+  map<string, TransactionCoordinator> transaction_coordinators = 3;
 
   repeated IdempotentMutation idempotent_mutations = 4;
+
+  // Latest timestamp from the database's clock. Used as the server's
+  // recovery timestamp for restart detection. Optional for explicit
+  // backwards compatibility.
+  optional google.protobuf.Timestamp timestamp = 7;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -381,9 +426,32 @@ message RecoverIdempotentMutationsResponse {
 message TransactionParticipantPrepareRequest {
   string state_type = 1;
   string state_ref = 2;
+
+  // Transaction info, provided when using restart detection
+  // to register the participant at prepare time (instead of
+  // at join time).
+  optional Transaction transaction = 3;
+
+  // When using restart detection, all intermediate writes within the
+  // transaction are kept in memory and sent at prepare time.
+
+  // The final serialized state for this participant.  The
+  // `state_type` and `state_ref` are taken from the `transaction`
+  // field above.
+  optional bytes state = 4;
+
+  // Tasks scheduled during the transaction.
+  repeated Task task_upserts = 5;
+
+  // Idempotent mutations recorded during the transaction.
+  repeated IdempotentMutation idempotent_mutations = 6;
 }
 
-message TransactionParticipantPrepareResponse {}
+message TransactionParticipantPrepareResponse {
+  // Latest timestamp from database clock, for timestamp refresh.
+  // Optional for explicit backwards compatibility.
+  optional google.protobuf.Timestamp timestamp = 1;
+}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -392,7 +460,11 @@ message TransactionParticipantCommitRequest {
   string state_ref = 2;
 }
 
-message TransactionParticipantCommitResponse {}
+message TransactionParticipantCommitResponse {
+  // Latest timestamp from database clock, for timestamp refresh.
+  // Optional for explicit backwards compatibility.
+  optional google.protobuf.Timestamp timestamp = 1;
+}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -405,13 +477,17 @@ message TransactionParticipantAbortResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
-// Message representing a prepared transaction from the coordinator's
-// perspective.
-message PreparedTransactionCoordinator {
+// Message representing a transaction coordinator.
+message TransactionCoordinator {
   // The coordinator's `state_ref`.
   string state_ref = 1;
   // The participants in this transaction.
   Participants participants = 2;
+  // True while the coordinator is still preparing participants. Once
+  // all participants are prepared the coordinator sets this back to
+  // false. Default of false also for backwards compatibility, i.e.,
+  // existing records are treated as fully prepared.
+  bool preparing = 3;
 }
 
 message TransactionCoordinatorPreparedRequest {
@@ -419,10 +495,30 @@ message TransactionCoordinatorPreparedRequest {
   // Deprecated: Use `prepared_transaction_coordinator` instead.
   Participants participants = 2 [deprecated = true];
   // New field that includes state_ref for shard-aware storage.
-  PreparedTransactionCoordinator prepared_transaction_coordinator = 3;
+  TransactionCoordinator transaction_coordinator = 3;
 }
 
-message TransactionCoordinatorPreparedResponse {}
+message TransactionCoordinatorPreparedResponse {
+  // Latest timestamp from database clock, for timestamp refresh.
+  // Optional for explicit backwards compatibility.
+  optional google.protobuf.Timestamp timestamp = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// Records the participant list for a transaction that is about to be
+// prepared. This is the first phase of the coordinator's database
+// interaction and can run concurrently with participant prepares.
+message TransactionCoordinatorPrepareRequest {
+  bytes transaction_id = 1;
+  TransactionCoordinator transaction_coordinator = 2;
+}
+
+message TransactionCoordinatorPrepareResponse {
+  // Latest timestamp from database clock, for timestamp refresh.
+  // Optional for explicit backwards compatibility.
+  optional google.protobuf.Timestamp timestamp = 1;
+}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -432,6 +528,17 @@ message TransactionCoordinatorCleanupRequest {
 }
 
 message TransactionCoordinatorCleanupResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message RefreshTimestampRequest {}
+
+message RefreshTimestampResponse {
+  // Timestamp from the database's clock. Used by servers to source
+  // timestamps for UUID7 transaction ID generation and restart
+  // detection.
+  google.protobuf.Timestamp timestamp = 1;
+}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -490,6 +597,15 @@ service Database {
   // exists.
   rpc Load(LoadRequest) returns (LoadResponse);
 
+  // Combined preload of state and idempotent mutations in a single
+  // round-trip. Server-streaming so that large sets of idempotent
+  // mutations can be sent across multiple response messages.
+  //
+  // TODO: consider replacing with a `PreloadBatch` to preload a batch
+  // of states at a time which will futher reduce requests to the
+  // database as well as reduce the work on the server.
+  rpc Preload(PreloadRequest) returns (stream PreloadResponse);
+
   // Stores the specified data.
   rpc Store(StoreRequest) returns (StoreResponse);
 
@@ -513,6 +629,9 @@ service Database {
   rpc TransactionCoordinatorPrepared(TransactionCoordinatorPreparedRequest)
       returns (TransactionCoordinatorPreparedResponse);
 
+  rpc TransactionCoordinatorPrepare(TransactionCoordinatorPrepareRequest)
+      returns (TransactionCoordinatorPrepareResponse);
+
   rpc TransactionCoordinatorCleanup(TransactionCoordinatorCleanupRequest)
       returns (TransactionCoordinatorCleanupResponse);
 
@@ -532,6 +651,12 @@ service Database {
   // Stores application metadata to persistent storage.
   rpc StoreApplicationMetadata(StoreApplicationMetadataRequest)
       returns (StoreApplicationMetadataResponse);
+
+  // Returns the current timestamp from the database's clock.
+  // Used by servers to refresh their latest known timestamp
+  // for UUID7 transaction ID generation.
+  rpc RefreshTimestamp(RefreshTimestampRequest)
+      returns (RefreshTimestampResponse);
 }
 
 ////////////////////////////////////////////////////////////////////////

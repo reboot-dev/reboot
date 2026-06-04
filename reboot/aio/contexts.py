@@ -46,6 +46,8 @@ from reboot.aio.types import (
     StateTypeName,
 )
 from reboot.time import DateTimeWithTimeZone
+from reboot.uuidv7 import uuid7
+from reboot.wait_for_tasks import wait_for_tasks
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -212,7 +214,7 @@ class Participants:
     ):
         # NOTE: manually looping through and calling `self.add()`
         # instead of just using `update()` on `self._participants` and
-        # ``self._participants_to_abort` to assert invariant check
+        # `self._participants_to_abort` to assert invariant check
         # that participants to commit and abort are mutually
         # exclusive.
         for state_ref in state_refs:
@@ -511,23 +513,23 @@ class React:
                 if task in used_tasks:
                     self._tasks[serialized_request] = task
                 else:
-                    task.cancel()
                     unused_tasks.add(task)
 
-            for task in unused_tasks:
-                try:
-                    await task
-                except:
-                    pass
-                # Remove all references to the task object and its
-                # associated gRPC call so they can be garbage-collected.
-                # Using `pop` instead of `del`, since it could be a case
-                # when the task is cancelled before it makes a gRPC call
-                # and thus doesn't have an entry in `self._calls`,
-                # `self._responses` and `self._used_response`.
-                self._calls.pop(task, None)
-                self._responses.pop(task, None)
-                self._used_response.pop(task, None)
+            try:
+                await wait_for_tasks(unused_tasks, cancel=True)
+            finally:
+                for task in unused_tasks:
+                    # Remove all references to the task object and its
+                    # associated gRPC call so they can be
+                    # garbage-collected. Using `pop` instead of `del`,
+                    # since it could be a case when the task is
+                    # cancelled before it makes a gRPC call and thus
+                    # doesn't have an entry in `self._calls`,
+                    # `self._responses` and `self._used_response`.
+                    self._calls.pop(task, None)
+                    self._responses.pop(task, None)
+                    self._used_response.pop(task, None)
+                unused_tasks.clear()
 
     _channel_manager: _ChannelManager
     _queriers: dict[str, Querier]
@@ -911,6 +913,13 @@ class Context(ABC, IdempotencyManager):
         return self._headers.cookie
 
     @property
+    def internal_call(self) -> bool:
+        """Return whether this call originated within a Reboot
+        method (as opposed to externally, e.g., using `ExternalContext`).
+        """
+        return self._headers.internal_call
+
+    @property
     def app_internal(self) -> bool:
         """Returns true if this context is for an application internal call,
         otherwise false.
@@ -1117,18 +1126,26 @@ class TransactionContext(Context):
         method: str,
         effect_validation: EffectValidation,
         task: Optional[TaskEffect] = None,
+        database_timestamp_ms: Optional[int] = None,
     ):
         assert (
             headers.transaction_ids is None or len(headers.transaction_ids) > 0
         )
 
+        # Use UUIDv7 with database-sourced timestamp when available
+        # (for restart detection), otherwise fall back to UUIDv4.
+        if database_timestamp_ms is not None:
+            transaction_id = uuid7(timestamp_ms=database_timestamp_ms)
+        else:
+            transaction_id = uuid.uuid4()
+
         if headers.transaction_ids is None:
             headers = dataclasses.replace(
                 headers,
-                transaction_ids=[uuid.uuid4()],
-                # The state servicing the request to executing a
-                # method of kind transaction acts as the transaction
-                # coordinator.
+                transaction_ids=[transaction_id],
+                # The state servicing the request to executing
+                # a method of kind transaction acts as the
+                # transaction coordinator.
                 transaction_coordinator_state_type=state_type_name,
                 transaction_coordinator_state_ref=headers.state_ref,
             )
@@ -1140,7 +1157,7 @@ class TransactionContext(Context):
 
             headers = dataclasses.replace(
                 headers,
-                transaction_ids=headers.transaction_ids + [uuid.uuid4()],
+                transaction_ids=headers.transaction_ids + [transaction_id],
             )
 
         super().__init__(

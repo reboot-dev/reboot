@@ -1,8 +1,8 @@
-import asyncio
 import grpc.aio
 import time
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 from reboot.aio.backoff import Backoff
+from reboot.aio.concurrently import concurrently
 from reboot.aio.headers import STATE_REF_HEADER
 from reboot.aio.types import StateRef
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA
@@ -85,8 +85,8 @@ async def do_health_check(
         # First check passed. If `state_refs` are provided, send one health
         # check per state ref to target specific replicas.
         if state_refs is not None and len(state_refs) > 0:
-            results = await asyncio.gather(
-                *[single_health_check(state_ref) for state_ref in state_refs]
+            results = await concurrently(
+                single_health_check(state_ref) for state_ref in state_refs
             )
             if not all(results):
                 log_function(

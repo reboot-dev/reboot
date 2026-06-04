@@ -60,4 +60,4 @@ See the [comparison](#comparison) below to get a sense of your options.
 | High availability (failover time) | \~minutes                      | \~seconds                      | \~seconds                                       | \~seconds                                 |
 | Vertical scaling                  | yes                            | yes                            | yes                                             | yes                                       |
 | Horizontal scaling                | no                             | no                             | yes                                             | yes                                       |
-| Availability                      | available now                  | available now                  | [Join the waitlist](https://cloud.reboot.dev/)! | [Contact Reboot](mailto:team@reboot.dev)! |
+| Availability                      | available now                  | available now                  | [available now](https://cloud.reboot.dev/)     | [Contact Reboot](mailto:team@reboot.dev)! |

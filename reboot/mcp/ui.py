@@ -1,4 +1,46 @@
-"""UI HTML serving for MCP (HMR dev mode and production builds)."""
+"""UI HTML serving for MCP (HMR dev mode and production builds).
+
+`ui_html` is the single entry point. What it returns depends on whether
+we're in dev/HMR mode or serving a production build, and on which of
+three MCP-client buckets is asking:
+
+          | Claude             | ChatGPT           | Other
+----------+--------------------+-------------------+-------------------
+dev/HMR   | inline-from-Vite   | nested HMR iframe | nested HMR iframe
+          | (dev_inline_html)  | (dev_iframe_html) | (dev_iframe_html)
+----------+--------------------+-------------------+-------------------
+prod      | inline bundle      | cache-busting     | inline bundle
+(dist/)   | (_read_and_inject) | iframe            | (_read_and_inject)
+
+The buckets and why they differ:
+
+* **Claude.ai** ignores the `frameDomains` CSP, so can't serve iframes
+  (https://github.com/anthropics/claude-ai-mcp/issues/54; see
+  `host_supports_iframe`) — so it must render inline. Claude.ai (the
+  website) and Claude Desktop are indistinguishable to the server, so
+  are treated the same. Claude re-lists tools per session, so the
+  resource-URI cache-bust token (`compute_ui_cache_bust`) keeps prod
+  fresh.
+* **ChatGPT** renders iframes but lists tools (which discovers resource
+  URIs) once at install and never re-lists, so the cache-bust token
+  never reaches it (see `host_needs_cache_busting_iframe`). In dev it
+  gets the ordinary nested HMR iframe (`dev_iframe_html`) — HMR, not the
+  token, keeps it fresh. In prod it gets a cache-busting iframe
+  (`cache_busting_iframe_html`): a thin, stable outer iframe whose inner
+  URL (`/mcp/ui-assets/<ui>/<bust>/index.html`) is re-fetched on every
+  mount, sidestepping the resource cache it never invalidates.
+* **Other** — assumed iframe-capable AND assumed to re-list per session,
+  so the plain cache-bust token keeps them fresh and they need no
+  cache-busting iframe. Dev: the nested HMR iframe (`dev_iframe_html`).
+  Prod: the inline bundle (`_read_and_inject`).
+
+Why the nested HMR iframe is the dev default (and inline only Claude's
+fallback): the iframe *navigates* to the Reboot origin, so HMR and the
+page's own relative/absolute URLs resolve there, which works even
+through ngrok's free tier, which serves an interstitial. The inline
+path's rewritten URLs become cross-origin fetches that trigger that
+interstitial on ngrok's free tier, so the page fails to load.
+"""
 
 import contextvars
 import functools
@@ -8,11 +50,18 @@ import json
 import logging
 import os
 import re
+import urllib.request
 import uuid
 from pathlib import Path
-from reboot.mcp.proxy import dev_loader_html, prod_loader_html
+from reboot.mcp.iframe import (
+    cache_busting_iframe_html,
+    dev_iframe_html,
+    host_needs_cache_busting_iframe,
+    host_supports_iframe,
+)
 from reboot.settings import ENVVAR_RBT_MCP_FRONTEND_HOST
 from typing import Any
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +71,7 @@ _MAX_UI_CACHE_ENTRIES = 16
 
 # Per-process random token used as the cache-bust signature in
 # HMR mode (`--config=hmr` / `--config=default`, i.e. when
-# ENVVAR_RBT_MCP_FRONTEND_HOST is set). `dev_loader_html`
+# ENVVAR_RBT_MCP_FRONTEND_HOST is set). `dev_inline_html`
 # bootstraps content live from the Vite dev server, so there
 # is nothing on disk to hash; a per-process UUID gives host-
 # side caches a fresh URI on every server restart, which
@@ -31,46 +80,6 @@ _MAX_UI_CACHE_ENTRIES = 16
 # never touch the MCP layer, so a stable URI within a session
 # is correct. Computed once at module import.
 _STARTUP_CACHE_BUST_TOKEN = uuid.uuid4().hex[:12]
-
-# Per-request User-Agent for the incoming `resources/read`.
-# Set by `mcp_asgi_app` in `factories.py` before handing off to
-# the MCP transport. Read by `ui_html()` to decide whether to
-# emit the relay iframe (ChatGPT needs it) or the inlined
-# bundle (everyone else is fine).
-_request_user_agent: contextvars.ContextVar[str | None] = (
-    contextvars.ContextVar("_request_user_agent", default=None)
-)
-
-
-def _host_needs_relay_iframe() -> bool:
-    """Return True if the incoming request looks like ChatGPT.
-
-    ChatGPT runs `tools/list` only once per connector lifetime
-    and never re-discovers, so it keeps using the
-    `_meta.ui.resourceUri` it cached on first connection
-    indefinitely. After a server restart with new bundle bytes,
-    inlining the bundle in the `resources/read` response
-    therefore strands ChatGPT on the original bytes — its URI
-    never changes, and the only way out is to uninstall and
-    reinstall the connector. Other hosts (Claude, MCPJam, etc.)
-    re-list per session, so a rotated cache-bust token in the
-    URI surfaces the new bundle on next session.
-
-    For ChatGPT we instead serve a thin relay whose nested
-    iframe fetches the bundle from `/mcp/ui-assets/...` on
-    every mount; that GET runs against the live filesystem and
-    returns current bytes regardless of what URI ChatGPT
-    cached. Others get the inlined bundle, which avoids the
-    extra round-trip.
-
-    Matches `openai-mcp/*` and User-Agents containing `ChatGPT`
-    so the detection works across minor client-version bumps.
-    """
-    user_agent = _request_user_agent.get()
-    if not user_agent:
-        return False
-    return (user_agent.startswith("openai-mcp") or "ChatGPT" in user_agent)
-
 
 # Per-request resource metadata, set by `ui_html()` and read
 # by the patched `FastMCP.read_resource()` in `factories.py`.
@@ -87,33 +96,39 @@ _resource_meta: contextvars.ContextVar[dict[str, Any] |
 # have only a handful.
 @functools.lru_cache(maxsize=_MAX_UI_CACHE_ENTRIES)
 def find_project_root_from(caller_file: str) -> Path:
-    """Walk up from `caller_file` to find a directory with
-    `web/` or `.rbtrc`.
+    """Walk up from `caller_file` to find a directory with `.rbtrc`.
 
-    Exported so generated code can resolve the project root
-    from its own `__file__` without relying on caller-frame
-    inspection.
+    Exported so generated code can resolve the project root from its own
+    `__file__` without relying on caller-frame inspection.
     """
-    current = Path(caller_file).resolve().parent
-    for _ in range(10):  # Max 10 levels up.
-        if (current / "web").is_dir() or (current / ".rbtrc").exists():
+    # Resolve the project root from the module's *logical* location —
+    # where it sits in the project layout — not the physical location of
+    # its bytes. We use `absolute()` (which leaves symlinks intact)
+    # rather than `resolve()` (which canonicalizes through them). The
+    # upward walk is lexical regardless; only the starting path differs.
+    # Following symlinks would answer the wrong question: a module's
+    # bytes can live in a tree unrelated to its project (e.g. under
+    # Bazel the module is a runfiles symlink into `bazel-out`, where no
+    # `.rbtrc` exists, while `.rbtrc` sits beside it in runfiles).
+    # `.exists()` below still follows symlinks, so a symlinked `.rbtrc`
+    # marker is found correctly.
+    current = Path(caller_file).absolute().parent
+    while True:
+        if (current / ".rbtrc").exists():
             return current
         if current.parent == current:
             break
         current = current.parent
 
-    raise RuntimeError(
-        "Could not find project root (directory with `web/` "
-        "or `.rbtrc`)"
-    )
+    raise RuntimeError("Could not find project root (directory with `.rbtrc`)")
 
 
+# Does not need to be cached, because its only expensive call
+# (`find_project_root_from`) is already cached.
 def _find_project_root() -> Path:
     """Find project root by walking up from caller's file location.
 
-    Looks for a directory containing `web/` or `.rbtrc`.
-    Result is cached per caller file so the filesystem walk
-    only happens once.
+    Looks for a directory containing `.rbtrc`.
     """
     frame = inspect.currentframe()
     if (frame is None or frame.f_back is None or frame.f_back.f_back is None):
@@ -128,22 +143,104 @@ def _find_project_root() -> Path:
     return find_project_root_from(caller_file)
 
 
+# The Vite config filename we generate (from
+# `create-ui/templates/vite.config.ts.tmpl`); this is how we recognize a
+# UI's Vite root.
+_VITE_CONFIG_NAME = "vite.config.ts"
+
+
+# Cached because the Vite root is a *structural* property of the project
+# layout (where `vite.config.ts` lives) and is stable for the life of
+# the process. The file *contents* HMR and cache-busting care about flow
+# through `compute_ui_cache_bust` and the dev server, never through this
+# lookup, so caching the location introduces no staleness for the dev
+# loop. The trade-off — adding, moving, or removing a `vite.config.ts`
+# mid-session isn't picked up until restart — matches the also-cached
+# `find_project_root_from`. One entry per (project_root, UI); apps have
+# only a handful.
+@functools.lru_cache(maxsize=_MAX_UI_CACHE_ENTRIES)
+def _resolve_vite_root(project_root: Path, ui_path: str) -> Path:
+    """
+    Find the Vite project root for a UI: the nearest ancestor of the UI
+    directory that holds a `_VITE_CONFIG_NAME` file.
+
+    The Vite root is the directory Vite serves files from and builds
+    into, so both the production `dist/` location and UI's URL paths
+    derive from it. We must NOT assume it is always "web", UIs living
+    under differently-named folders must work too.
+
+    Falls back to the first component of `ui_path` when no Vite config
+    is found on disk — e.g. Bazel-built examples like `ping`, which have
+    no Vite config but still follow the `<root>/dist/...` build-output
+    convention.
+    """
+    # The provided `project_root` is assumed to have already dealt with
+    # symlinks (see `find_project_root_from`), so we can simply do a
+    # lexographical walk up the tree.
+    current = project_root / ui_path
+    while True:
+        if (current / _VITE_CONFIG_NAME).is_file():
+            return current
+        if current == project_root or current.parent == current:
+            break
+        current = current.parent
+    return project_root / ui_path.split("/", 1)[0]
+
+
+def _resolve_dev_ui_paths(project_root: Path, ui_path: str) -> tuple[str, str]:
+    """Compute the dev-server URL prefix and the UI's served URL path.
+
+    Returns `(vite_base, ui_url_path)`:
+
+    * `vite_base` is the URL prefix Vite prepends to its own asset
+      URLs (`@vite/client`, dep chunks, ...), assumed to be
+      `/__/<vite-root relative to project root>`.
+    * `ui_url_path` is the path (rooted at the Reboot origin) at which
+      Vite serves this UI's `index.html` directory, i.e.
+      `<vite_base>/<ui-path-within-vite-root>`.
+
+    We derive both from the Vite root location (via
+    `_resolve_vite_root`) rather than hardcoding `web`, so a UI whose
+    Vite root is named something else still gets correct URLs.
+
+    ASSUMPTION (not currently enforced — ideally we'd parse it out of
+    the Vite config): the Vite `base` is `/__/<vite-root relative to
+    project root>/` and Envoy routes that same prefix to the dev
+    server. Today the Vite root is `<project>/web` and `base` is
+    `/__/web/`, so this holds. A project that changes its Vite root or
+    `base` must keep the two in sync.
+
+    Not separately cached: the only filesystem work is inside
+    `_resolve_vite_root` (which is cached); the rest here is pure
+    string math over its result.
+    """
+    vite_root = _resolve_vite_root(project_root, ui_path)
+    vite_base = f"/__/{vite_root.relative_to(project_root).as_posix()}"
+    ui_relative_to_root = (project_root / ui_path).relative_to(vite_root)
+    return vite_base, f"{vite_base}/{ui_relative_to_root.as_posix()}"
+
+
 def _resolve_dist_path(
     project_root: Path,
     ui_path: str,
     artifact_path: str | None,
 ) -> Path:
-    """Resolve the production-build `index.html` path for a UI."""
+    """Resolve the production-build `index.html` path for a UI.
+
+    The build output lives in a `dist/` directory at the Vite
+    root, under the UI's path relative to that root. E.g. with
+    Vite root `<project>/web` and `ui_path` "web/ui/clicker", the
+    build is at "web/dist/ui/clicker/index.html".
+
+    Not separately cached: the only filesystem work is inside
+    `_resolve_vite_root` (which is cached); the rest here is pure
+    string math over its result.
+    """
     if artifact_path is not None:
         return project_root / artifact_path / "index.html"
-    # Default: insert `dist/` after the first path component.
-    # e.g., "web/ui/clicker" -> "web/dist/ui/clicker".
-    parts = ui_path.split("/", 1)
-    if len(parts) == 2:
-        dist_rel = f"{parts[0]}/dist/{parts[1]}"
-    else:
-        dist_rel = f"{parts[0]}/dist"
-    return project_root / dist_rel / "index.html"
+    vite_root = _resolve_vite_root(project_root, ui_path)
+    ui_relative_to_root = (project_root / ui_path).relative_to(vite_root)
+    return vite_root / "dist" / ui_relative_to_root / "index.html"
 
 
 def compute_ui_cache_bust(
@@ -160,16 +257,18 @@ def compute_ui_cache_bust(
     different URI when the bundle changes, so any host-side
     cache keyed by URI invalidates naturally on next session.
     ChatGPT is the exception — it caches the URI from its first
-    `tools/list` and never re-lists, so the token rotation is
-    invisible to it; see `_host_needs_relay_iframe` for the workaround.
+    `tools/list` and never re-lists, so this cache token rotation is
+    invisible to it; see `host_needs_cache_busting_iframe` for the
+    workaround.
 
-    Three branches, all picked deterministically:
+    We are in one of the following three modes:
 
-    1. **HMR mode** (ENVVAR_RBT_MCP_FRONTEND_HOST set). `ui_html`
-       returns `dev_loader_html`, a static bootstrap that loads
-       the Vite dev server live; nothing on disk to hash.
-       Returns `_STARTUP_CACHE_BUST_TOKEN`, a per-process UUID,
-       so each server restart busts host caches once.
+    1. **HMR mode** (`ENVVAR_RBT_MCP_FRONTEND_HOST` set). `ui_html`
+       serves Vite's live HTML — via `dev_iframe_html` or
+       `dev_inline_html`, depending on the host — so there's
+       nothing on disk to hash. Returns `_STARTUP_CACHE_BUST_TOKEN`,
+       a per-process UUID, so each server restart busts host caches
+       once.
 
     2. **Dist mode, build present**. Returns the first 12 hex
        chars of a SHA-1 over the dist `index.html`. Pure
@@ -221,7 +320,7 @@ def compute_ui_cache_busts(
     Intended to be called once at servicer setup time from
     generated `_add_mcp` code. Wraps project-root discovery and
     per-UI hashing so that any failure (e.g. a minimal container
-    without `web/` or `.rbtrc` anywhere in the ancestor tree)
+    without `.rbtrc` anywhere in the ancestor tree)
     falls back to the per-process `_STARTUP_CACHE_BUST_TOKEN` for
     every UI and logs a warning, rather than raising and blocking
     the application from starting.
@@ -387,6 +486,131 @@ def _build_not_found_html(title: str, ui_name: str) -> str:
 </html>'''
 
 
+# Free-tier ngrok tunnels are served from `<subdomain>.ngrok-free.app`,
+# paid tunnels use a different domain.
+_NGROK_FREE_HOST_SUFFIX = ".ngrok-free.app"
+
+
+def _is_ngrok_free_url(url: str) -> bool:
+    """True if `url`'s host is a free-tier ngrok tunnel."""
+    host = (urlparse(url).hostname or "").lower()
+    return host.endswith(_NGROK_FREE_HOST_SUFFIX)
+
+
+_CLAUDE_NGROK_ERROR_HTML_PATH = (
+    Path(__file__).parent / "claude_ngrok_error.html"
+)
+
+
+@functools.lru_cache(maxsize=1)
+def _build_claude_ngrok_free_error_html() -> str:
+    """
+    Branded error page for the Claude + free-ngrok dead end.
+
+    Claude renders dev UIs inline because it can't host an iframe (see
+    `dev_inline_html`). The inline page's assets are fetched
+    cross-origin from the Reboot server, and ngrok's free tier answers
+    those fetches with its browser interstitial instead of the real
+    bytes, so the UI never loads. We surface a clear explanation instead
+    of a blank frame.
+    """
+    return _CLAUDE_NGROK_ERROR_HTML_PATH.read_text(encoding="utf-8")
+
+
+def dev_inline_html(
+    ui_path: str,
+    reboot_url: str,
+    ui_name: str,
+    mcp_frontend_host: str,
+    project_root: Path,
+) -> str:
+    """
+    Return the HTML that the Vite dev server is serving, by fetching it
+    from Vite. The goal is to give the developer Hot Module Reloading
+    (HMR).
+
+    This is the **Claude.ai** dev render path. Claude.ai ignores the
+    `frameDomains` CSP and so can't render our nested relay iframe
+    (https://github.com/anthropics/claude-ai-mcp/issues/54), so instead
+    of an iframe (see `dev_iframe_html`, used for every other client)
+    we return the page's HTML inline.
+
+    Why not serve inline to *everyone* and drop the iframe entirely?
+    Because the inline path is fragile behind tunnels that gate traffic
+    on an interstitial. Once we rewrite the document's URLs to the
+    Reboot origin (below), they become cross-origin relative to the
+    sandbox-proxy document, so the browser issues plain cross-origin
+    fetches for `@vite/client`, the user's modules, and assets. ngrok's
+    free tier answers the first such fetch with its HTML interstitial
+    rather than the real bytes, and the page fails to load. The nested
+    iframe avoids this: it *navigates* to the Reboot-origin URL (which
+    clears the interstitial for that frame) instead of fetching
+    cross-origin from a foreign document. So the iframe is the default
+    and this inline path is only the fallback for hosts that can't host
+    an iframe at all.
+
+    To do HMR without an iframe, we must fetch Vite's served HTML and
+    rewrite its URLs to be absolute Reboot-origin URLs so the MCP host
+    can render the page directly (no nested iframe). We hand the MCP
+    host the exact bytes Vite would have served — react-refresh shim,
+    `@vite/client`, the user's `index.html` body — and rewrite every URL
+    in the document so it points at `{reboot_url}/__/<base>/...`, which
+    Envoy proxies to Vite. HMR works because `@vite/client` computes the
+    WebSocket URL from its own `import.meta.url`, which (post-rewrite)
+    lands on the Reboot origin.
+
+    The dev server must be configured with `allowedHosts: true` and
+    `cors: { origin: true }` so it accepts the cross-origin fetches the
+    rewritten URLs produce (the document's origin is the MCP
+    sandbox-proxy, not the Reboot origin).
+
+    A `<base href>` would have been the natural fix to avoid needing
+    rewrites, but MCP Apps' sandbox-proxy ships a CSP with `base-uri
+    'none'` that rejects it outright.
+    """
+    # Claude + free ngrok is a dead end. Show an explanation rather than
+    # a blank frame.
+    if _is_ngrok_free_url(reboot_url):
+        return _build_claude_ngrok_free_error_html()
+
+    # `vite_base` is the prefix Vite prepends to its own asset URLs;
+    # `ui_url_path` is where Vite serves this UI's `index.html`
+    # directory. See `_resolve_dev_ui_paths` (incl. its `base`
+    # assumption).
+    vite_base, ui_url_path = _resolve_dev_ui_paths(project_root, ui_path)
+
+    # This fetch goes straight to the Vite dev server, bypassing Envoy —
+    # there's no point routing the server-side request through our own
+    # proxy.
+    fetch_url = f"{mcp_frontend_host.rstrip('/')}{ui_url_path}/index.html"
+    request = urllib.request.Request(fetch_url)
+    with urllib.request.urlopen(request) as response:
+        html = response.read().decode("utf-8")
+
+    # Two rewrites cover everything Vite emits:
+    #
+    # * `"<base>/...` -> `"{reboot_url}<base>/...` catches every URL
+    #   prefixed by Vite's `base` (so `@vite/client`, `@react-refresh`,
+    #   dep chunks, CSS, fonts, ...). It also catches the import
+    #   specifier inside Vite's inline `<script type="module">import ...
+    #   from "<base>/@react-refresh"</script>` because that's just a
+    #   quoted path inside JS source — same shape as an HTML attribute
+    #   value.
+    # * `"./...` -> `"{reboot_url}<ui_url_path>/...` catches the user's
+    #   relative module imports in their `index.html` (e.g. `<script
+    #   src="./main.tsx">`); those resolve inside the UI's own
+    #   directory, which Vite serves at `<base>/<ui-path-within-root>`.
+    #
+    # Both quote styles are handled since either is valid in HTML
+    # attributes and JS string literals.
+    for quote in ('"', "'"):
+        html = html.replace(
+            f'{quote}{vite_base}/', f'{quote}{reboot_url}{vite_base}/'
+        )
+        html = html.replace(f'{quote}./', f'{quote}{reboot_url}{ui_url_path}/')
+    return _inject_globals(html, reboot_url, ui_name)
+
+
 def ui_html(
     ui_path: str,
     reboot_url: str,
@@ -397,9 +621,13 @@ def ui_html(
 ) -> str:
     """Get HTML for a UI.
 
-    In dev mode (`--mcp-frontend-host`), returns HTML that
-    loads from the web dev server via Envoy proxy. In
-    production, returns pre-built HTML.
+    In dev mode (`--mcp-frontend-host`), serves Vite's live HTML
+    for HMR: inline with rewritten URLs for Claude.ai (see
+    `dev_inline_html`) or wrapped in a nested relay iframe for
+    every other client (see `dev_iframe_html`). In production,
+    returns pre-built HTML — either inlined for hosts that
+    re-list per session or wrapped in a cache-busting iframe for
+    ChatGPT (see `cache_busting_iframe_html`).
 
     Note: UIs receive state instance IDs via the MCP
     `ontoolinput` event, not via URL parameters or injected
@@ -414,12 +642,13 @@ def ui_html(
             (e.g., "show_clicker").
         project_root: Project root directory. If not provided,
             auto-discovers by walking up from caller's file
-            looking for `web/` or `.rbtrc`.
+            looking for `.rbtrc`.
         artifact_path: Override for the build artifact path,
-            relative to project root. Defaults to inserting
-            `dist/` after the first component of `ui_path`
-            (e.g., "web/ui/clicker" ->
-            "web/dist/ui/clicker").
+            relative to project root. Defaults to a `dist/`
+            directory at the Vite root, under the UI's path
+            relative to that root (e.g., Vite root "web" and
+            "web/ui/clicker" -> "web/dist/ui/clicker"); see
+            `_resolve_dist_path`.
         cache_bust: Content-hash token from the incoming URI's
             trailing segment (the value `list_tools` computed
             via `compute_ui_cache_bust`). Used as an extra
@@ -445,7 +674,7 @@ def ui_html(
     #     ext-apps spec discourages `frameDomains`, but our dev
     #     loader requires a nested iframe to give Vite HMR a
     #     real origin (the sandbox-proxy's srcdoc origin is
-    #     "null"). See `proxy.py` for details.
+    #     "null"). See `iframe.py` for details.
     assert (
         reboot_url.startswith("http://") or reboot_url.startswith("https://")
     )
@@ -481,51 +710,78 @@ def ui_html(
         }
     )
 
-    # Dev mode: Envoy proxies to dev server
-    # (`--mcp-frontend-host`).
-    mcp_frontend_host = os.environ.get(ENVVAR_RBT_MCP_FRONTEND_HOST)
-    if mcp_frontend_host:
-        return dev_loader_html(ui_path, reboot_url, ui_name)
-
-    # Production mode. Two strategies, picked by the host's
-    # User-Agent:
-    #
-    # * ChatGPT — emit a thin relay that nests an iframe
-    #   pointing at `/mcp/ui-assets/<ui_name>/<cache_bust>/
-    #   index.html`. The host caches the small, stable relay;
-    #   each iframe mount fetches the nested URL fresh, busting
-    #   past the host's resource cache after a rebuild + server
-    #   restart (token rotates). Without this, ChatGPT will
-    #   render stale bundles until the connector is re-added.
-    # * Everyone else (Claude, MCPJam, …) — return the inlined
-    #   bundle directly. These hosts either don't cache
-    #   aggressively or invalidate on session reset, so the
-    #   relay's extra round-trip isn't worth it.
-    #
-    # If the dist isn't present we serve the "build not found"
-    # placeholder inline regardless of host.
+    # Resolve the project root up front: both dev mode (to locate the
+    # Vite root) and production mode (to locate the dist) need it.
+    # `_find_project_root` walks up from the caller's file, so it must
+    # be called directly from `ui_html`.
     if project_root is None:
         project_root = _find_project_root()
     elif isinstance(project_root, str):
         project_root = Path(project_root)
 
+    mcp_frontend_host = os.environ.get(ENVVAR_RBT_MCP_FRONTEND_HOST)
+    if mcp_frontend_host:
+        # Dev mode: deliver hot module reloading. Two strategies, picked
+        # by whether the host can render iframes:
+        #
+        # * Hosts that can render iframes (the default) load a Vite page
+        #   through Envoy on the Reboot origin (`dev_iframe_html`). This
+        #   is preferred because the iframe *navigates* to that origin,
+        #   so it also works through ngrok's free tier, which gates
+        #   traffic on an interstitial.
+        # * Hosts that can't (e.g. claude.ai) get Vite's HTML inline
+        #   (`dev_inline_html`), with its URLs rewritten to the Reboot
+        #   origin. This is the fallback, not the default: those
+        #   rewritten URLs turn into cross-origin fetches, which an
+        #   interstitial-gating tunnel (ngrok free) answers with its
+        #   interstitial instead of the real bytes, so the page fails to
+        #   load. See `dev_inline_html` for the full explanation.
+        if host_supports_iframe():
+            _, ui_url_path = _resolve_dev_ui_paths(project_root, ui_path)
+            return dev_iframe_html(ui_url_path, reboot_url, ui_name)
+        return dev_inline_html(
+            ui_path,
+            reboot_url,
+            ui_name,
+            mcp_frontend_host,
+            project_root,
+        )
+
+    # Production mode. Deliver static content from the `dist` folder,
+    # but do ensure the content is updated when the application is
+    # updated.
+
+    # If the dist isn't present we serve the "build not found"
+    # placeholder inline regardless of host.
     dist_path = _resolve_dist_path(project_root, ui_path, artifact_path)
+    if not dist_path.exists():
+        # No build found — show instructions.
+        return _build_not_found_html(f"{ui_name.title()} UI", ui_name)
 
-    if dist_path.exists():
-        if _host_needs_relay_iframe():
-            return prod_loader_html(
-                ui_name=ui_name,
-                cache_bust=cache_bust or "",
-                reboot_url=reboot_url,
-            )
-        return _read_and_inject(dist_path, reboot_url, ui_name, cache_bust)
+    if host_needs_cache_busting_iframe():
+        # Hosts that don't notice a change of resource URI (ChatGPT) and
+        # thereby don't respond to our cache busting - for these we emit
+        # a thin static "cache-busting iframe" that points at
+        # `/mcp/ui-assets/<ui_name>/<cache_bust>/index.html`. The host
+        # caches the small, stable outer iframe; each mount fetches the
+        # nested URL fresh, avoiding the host's resource cache entirely.
+        # Without this, ChatGPT would render stale UIs until the app is
+        # removed and re-added.
+        return cache_busting_iframe_html(
+            ui_name=ui_name,
+            cache_bust=cache_bust or "",
+            reboot_url=reboot_url,
+        )
 
-    # No build found — show instructions.
-    return _build_not_found_html(f"{ui_name.title()} UI", ui_name)
+    # Everyone else (Claude, MCPJam, ...) — return the inlined bundle
+    # directly. These hosts either don't cache aggressively or notice a
+    # change of resource URI (e.g. because of our cache busting) on
+    # session reset.
+    return _read_and_inject(dist_path, reboot_url, ui_name, cache_bust)
 
 
-# One entry per (UI resource, content version); most apps have
-# only a handful of UIs and one active version at a time.
+# One entry per (UI resource, content version); most apps have only a
+# handful of UIs and one active version at a time.
 @functools.lru_cache(maxsize=_MAX_UI_CACHE_ENTRIES)
 def _read_and_inject(
     dist_path: Path,

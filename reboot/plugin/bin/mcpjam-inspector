@@ -1,0 +1,20 @@
+#!/usr/bin/env sh
+#
+# Reboot Claude Code plugin: `mcpjam-inspector` shim.
+#
+# Claude Code prepends this script's directory to the agent's `PATH`,
+# so the agent's `mcpjam-inspector ...` invocations land here. We
+# launch MCPJam's inspector via the plugin's pinned Node + npm cache,
+# pinning the inspector version in one place and passing `--no-open`
+# so the inspector doesn't pop a browser tab. (The agent surfaces the
+# URL to the user in plain text instead; see the MCPJam section of
+# the `run` skill, which uses this shim for the on-demand launch.)
+# `--no-open` requires inspector >= 2.5.0.
+
+set -eu
+
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname -- "$0")/.." && pwd)}"
+
+NODE_DIR="$("$PLUGIN_ROOT/lib/install_node.sh")"
+
+exec "$NODE_DIR/bin/npx" @mcpjam/inspector@2.5.0 --no-open "$@"

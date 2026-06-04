@@ -1,0 +1,19 @@
+{
+  "name": "reboot-plugin",
+  "interface": {
+    "displayName": "Reboot"
+  },
+  "plugins": [
+    {
+      "name": "reboot",
+      "source": {
+        "source": "local",
+        "path": "./plugins/reboot"
+      },
+      "policy": {
+        "installation": "AVAILABLE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

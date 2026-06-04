@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<!--
+  See `dev_inline_html` in `reboot/mcp/ui.py` for details on when this
+  error is unavoidable.
+
+  Self-contained on purpose: the MCP sandbox CSP only allows the Reboot
+  origin, so no external fonts/assets. The Reboot brand mark is inlined
+  and fonts fall back to the system stack when "DM Sans" isn't present.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UI unavailable &mdash; Reboot</title>
+    <style>
+      :root {
+        --navy: #103761;
+        --cream: #f7f5ed;
+        --tan: #a39382;
+        --blue: #266ab2;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto,
+          sans-serif;
+        background: var(--cream);
+        color: var(--navy);
+        min-height: 100vh;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        line-height: 1.5;
+      }
+      .card {
+        max-width: 620px;
+        text-align: center;
+      }
+      svg {
+        height: 30px;
+        width: auto;
+        margin-bottom: 1.5rem;
+      }
+      .eyebrow {
+        color: var(--tan);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin: 0 0 0.75rem;
+      }
+      h1 {
+        font-weight: 300;
+        font-size: 1.85rem;
+        line-height: 1.2;
+        margin: 0 0 1rem;
+      }
+      p {
+        color: rgba(16, 55, 97, 0.8);
+        margin: 0 0 1rem;
+      }
+      ul {
+        text-align: left;
+        display: inline-block;
+        margin: 0.25rem 0 0;
+        padding-left: 1.2rem;
+      }
+      li {
+        margin: 0.5rem 0;
+        color: rgba(16, 55, 97, 0.8);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <svg
+        viewBox="0 0 924 247"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+      >
+        <path
+          fill="#103761"
+          d="M81.8761 82.8232C98.9505 82.8232 114.795 88.1208 127.876 97.1714L107.285 132.836C100.312 127.123 91.4465 123.722 81.8761 123.722C59.8126 123.722 41.4889 141.791 41.4884 164.62H41.4931V246.417H0.589844V164.62C0.590406 119.445 36.9833 82.8237 81.8761 82.8232Z"
+        />
+        <path
+          fill="#103761"
+          d="M128.679 164.998C128.679 209.964 165.132 246.417 210.098 246.417V206.506C187.174 206.506 168.59 187.922 168.59 164.998C168.59 142.074 187.174 123.491 210.098 123.491C225.461 123.491 238.875 131.838 246.052 144.244H210.098V184.954H289.053C290.662 178.568 291.516 171.883 291.516 164.998C291.516 120.032 255.064 83.5796 210.098 83.5796C165.132 83.5796 128.679 120.032 128.679 164.998Z"
+        />
+        <path
+          fill="#103761"
+          fill-rule="evenodd"
+          clip-rule="evenodd"
+          d="M349.603 0V164.108C349.603 186.978 368.143 205.518 391.013 205.518C413.883 205.518 432.423 186.978 432.423 164.108C432.423 141.237 413.883 122.697 391.013 122.697H380.788V81.7981H391.013C436.471 81.7981 473.322 118.649 473.322 164.108C473.322 209.566 436.471 246.417 391.013 246.417C345.555 246.417 308.704 209.566 308.704 164.108V0H349.603Z"
+        />
+        <path
+          fill="#266AB2"
+          d="M502.609 207.794C506.061 213.358 510.239 218.591 515.153 223.345L543.481 193.702C542.494 192.734 541.569 191.725 540.702 190.681L502.609 207.794Z"
+        />
+        <path
+          fill="#A4D1FF"
+          d="M552.342 243.963C558.534 245.521 565.006 246.375 571.668 246.417V205.414C570.372 205.397 569.088 205.314 567.822 205.176L552.342 243.963Z"
+        />
+        <path
+          fill="#3285DE"
+          d="M524.048 230.785C529.281 234.598 535.051 237.843 541.312 240.386L556.509 202.303C555.266 201.789 554.063 201.216 552.898 200.592L524.048 230.785Z"
+        />
+        <path
+          fill="#103761"
+          d="M572.308 82.8203C617.484 82.8208 654.106 119.444 654.106 164.619C654.106 176.319 651.648 187.444 647.223 197.508L609.917 180.705C612.032 175.767 613.206 170.331 613.206 164.619C613.206 142.032 594.895 123.721 572.308 123.721C549.721 123.721 531.41 142.032 531.41 164.619C531.41 170.331 532.582 175.769 534.697 180.707L497.404 197.537C492.971 187.465 490.509 176.33 490.509 164.619C490.509 119.443 527.132 82.8203 572.308 82.8203Z"
+        />
+        <path
+          fill="#103761"
+          d="M833.861 163.596C833.865 163.937 833.867 164.278 833.867 164.619C833.867 209.795 797.474 246.417 752.58 246.417C707.687 246.417 671.293 209.795 671.293 164.619C671.293 119.615 707.411 83.099 752.069 82.8223V123.723C730.234 124 712.192 141.965 712.192 164.619C712.192 187.449 730.516 205.518 752.58 205.518C774.644 205.518 792.968 187.449 792.968 164.619C792.968 164.277 792.964 163.936 792.956 163.596H833.861Z"
+        />
+        <path
+          fill="#103761"
+          d="M891.953 160.68C891.953 181.093 905.247 198.402 923.65 204.421V246.417C882.462 239.591 851.054 203.803 851.054 160.68V43.9712L891.953 43.9712V82.4759H923.65V123.375H891.953V160.68Z"
+        />
+      </svg>
+      <p class="eyebrow">UI unavailable</p>
+      <h1>Claude can&rsquo;t view this UI over a free ngrok tunnel</h1>
+      <p>
+        ngrok&rsquo;s free tier puts a browser interstitial in front of some
+        requests, which prevents this UI from loading.
+      </p>
+      <p>To view this UI, do any one of:</p>
+      <ul>
+        <li>
+          Use a paid ngrok plan, or a different tunnel, that doesn&rsquo;t
+          inject an interstitial.
+        </li>
+        <li>
+          Open the app in a different MCP client &mdash; for example ChatGPT, or
+          MCPJam. These do work over free ngrok.
+        </li>
+      </ul>
+    </div>
+    <script>
+      // The host (claude.ai) renders this page inside its MCP-UI sandbox
+      // and sizes the frame from the ext-apps
+      // `ui/notifications/size-changed` notification. A plain static page
+      // never sends it, so the host collapses the frame to zero height
+      // and nothing shows. We aren't a full ext-apps app, so we hand-roll
+      // the minimal "view" handshake the SDK performs — `ui/initialize`,
+      // await the result, `ui/notifications/initialized` — then report
+      // our content height. Kept dependency-free on purpose (see the file
+      // header). If the protocol shifts the worst case is this notice
+      // shows unsized again; it can never break a working UI.
+      (function () {
+        var host = window.parent;
+        if (!host || host === window) return;
+        var PROTOCOL_VERSION = "2026-01-26";
+        var INIT_ID = 1;
+        var initialized = false;
+
+        function send(message) {
+          try {
+            host.postMessage(message, "*");
+          } catch (e) {}
+        }
+
+        function reportSize() {
+          var card = document.querySelector(".card");
+          // `card` height plus the body's 2rem (=64px) top+bottom padding;
+          // measuring the content (not `100vh`) avoids depending on the
+          // frame height we're trying to set.
+          var height = card
+            ? Math.ceil(card.getBoundingClientRect().height) + 64
+            : Math.ceil(document.documentElement.scrollHeight);
+          if (height > 0) {
+            send({
+              jsonrpc: "2.0",
+              method: "ui/notifications/size-changed",
+              params: { height: height, width: Math.ceil(window.innerWidth) },
+            });
+          }
+        }
+
+        window.addEventListener("message", function (event) {
+          if (event.source !== host) return;
+          var data = event.data;
+          if (
+            !initialized &&
+            data &&
+            data.id === INIT_ID &&
+            (data.result || data.error)
+          ) {
+            initialized = true;
+            send({
+              jsonrpc: "2.0",
+              method: "ui/notifications/initialized",
+              params: {},
+            });
+            reportSize();
+          }
+        });
+
+        send({
+          jsonrpc: "2.0",
+          id: INIT_ID,
+          method: "ui/initialize",
+          params: {
+            appInfo: { name: "reboot-tunnel-notice", version: "1.0.0" },
+            appCapabilities: {},
+            protocolVersion: PROTOCOL_VERSION,
+          },
+        });
+
+        // Report size on content/viewport changes, plus a couple of
+        // fallbacks in case the host sizes from `size-changed` alone
+        // (i.e. without requiring the initialize round-trip to complete).
+        if (window.ResizeObserver) {
+          new ResizeObserver(reportSize).observe(document.documentElement);
+        }
+        window.addEventListener("resize", reportSize);
+        window.addEventListener("load", reportSize);
+        setTimeout(reportSize, 400);
+        setTimeout(reportSize, 1200);
+      })();
+    </script>
+  </body>
+</html>

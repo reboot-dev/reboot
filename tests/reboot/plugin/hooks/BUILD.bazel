@@ -1,0 +1,12 @@
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "auto_approve_test",
+    size = "small",
+    srcs = ["auto_approve_test.py"],
+    data = ["//reboot/plugin/hooks:auto_approve_sh"],
+    env = {
+        "AUTO_APPROVE_SH": "$(location //reboot/plugin/hooks:auto_approve_sh)",
+    },
+    main = "auto_approve_test.py",
+)

@@ -178,7 +178,16 @@ async def run_application_initializer(
                     traceback.print_exc()
 
                 exception_str = f"{exception}"
-                logger.warning(
+
+                # Use `logger.debug` for retryable errors, e.g.,
+                # UNAVAILABLE, so we don't spam the users for behavior
+                # that is expected during startup, and
+                # `logger.warning` for everything else.
+                (
+                    logger.debug if
+                    reboot.aio.aborted.is_grpc_retryable_exception(exception)
+                    else logger.warning
+                )(
                     f"{context.name} for application '{application_id}' failed "
                     f"with {type(exception).__name__}{': ' + exception_str if len(exception_str) > 0 else ''}; "
                     "will retry after backoff ..."
@@ -214,11 +223,18 @@ class Server:
 
         grpc_server = grpc.aio.server(
             options=GRPC_SERVER_OPTIONS,
-            interceptors=(interceptors or []) + aio_server_interceptors(
+            # The OpenTelemetry gRPC server interceptors must come first
+            # (outermost) so they create the per-RPC server span before
+            # any of the Reboot interceptors run. Otherwise the Reboot
+            # interceptors' `with span(...)` blocks pick up whatever
+            # OpenTelemetry "current span" was inherited from the task
+            # that started the gRPC server (typically
+            # `ServiceServer.start()`) instead of the actual RPC span.
+            interceptors=aio_server_interceptors(
                 # We run a lot of health checks; they're not interesting to
                 # trace and they'll spam our output. Suppress them.
                 filter_=filters.negate(filters.health_check())
-            )
+            ) + (interceptors or [])
         )
 
         try:
@@ -578,11 +594,15 @@ class ServiceServer(Server):
         # Once recovery is complete, we can start serving traffic.
         await super().start()
 
-        # And also start serving web framework traffic if requested.
+        # And also start serving web framework traffic if requested. Pass
+        # the application ID so its HTTP handlers can build app-internal
+        # contexts (e.g. the OAuth server persisting encrypted
+        # identity-provider tokens).
         self._http_port = await self._web_framework.start(
             self._server_id,
             self._http_port,
             self._channel_manager,
+            self._application_id,
         )
 
         # And also start serving React traffic.

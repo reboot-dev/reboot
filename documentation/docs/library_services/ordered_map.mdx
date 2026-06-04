@@ -61,7 +61,7 @@ Also make sure to include the `OrderedMap` library when starting up your `Applic
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 ```py
-from reboot.std.collections.ordered_map.v1 import ordered_map
+from reboot.std.collections.ordered_map.v1.ordered_map import ordered_map_library
 
 async def main():
     application = Application(
@@ -72,12 +72,51 @@ async def main():
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 ```ts
-import orderedMap from "@reboot-dev/reboot-std/collections/ordered_map/v1";
+import { orderedMapLibrary } from "@reboot-dev/reboot-std/collections/ordered_map/v1";
 
 new Application({
-  servicers: [MyServicer, ...orderedMap.servicers()],
+  servicers: [MyServicer],
+  libraries: [orderedMapLibrary()],
   initialize,
 }).run();
+```
+  </TabItem>
+</Tabs>
+
+
+### Authorizer
+
+By default, `OrderedMap` allows internal calls from the application to the
+library. However, this can be overridden by providing your own
+[authorizer](/learn_more/auth#authorizers).
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+authorizer = OrderedMap.Authorizer(
+    insert=allow_if(all=[is_app_internal]),
+    search=allow(),
+)
+
+application = Application(
+    servicers=[MyServicer],
+    libraries=[ordered_map_library(authorizer=authorizer)],
+)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const authorizer = new OrderedMap.Authorizer({
+  insert: allowIf({ all: [isAppInternal] }),
+  search: allow(),
+});
+
+const application = new Application({
+  servicers: [MyServicer],
+  libraries: [orderedMapLibrary({ authorizer })],
+  initialize,
+});
+
 ```
   </TabItem>
 </Tabs>
@@ -88,7 +127,7 @@ new Application({
 Each `OrderedMap` you create will need a unique ID. Using a reference to that
 `OrderedMap`, you will be able to perform operations on keys and associated data.
 
-### Referencing OrderedMaps
+### Getting a reference
 
 This creates a reference to a `OrderedMap` with ID `"my-map"`.
 
@@ -109,24 +148,33 @@ const myMap = OrderedMap.ref("my-map");
 
 ### Create
 
-An optional call to create an ordered map with an explicitly specified `degree`.
-`degree` specifies the maximum number of continuously stored items. Increasing
-the `degree` will increase the number of `Item`s loaded into memory at once.
+An optional call to create an ordered map with construction options.
 
-If used, this call must be called prior to any [`Insert`](#insert) operations.
+- `degree` specifies the maximum number of continuously stored items per node
+  (an `OrderedMap` is implemented as a B+Tree, so increasing `degree` will
+  _decrease_ the total depth of the tree). Note that this defaults to 128 if
+  the map is implicitly created via [`insert`](#insert).
+- `maintain_size` controls whether the map tracks the total number of entries.
+  When `true`, `total_size` is returned in [`range`](#range) responses, but
+  every insert and remove requires a write to the root — which serializes all
+  mutations. When `false` (default), mutations to different parts of the tree
+  can execute concurrently.
 
-By default, `OrderedMap`s are implicitly created with [`Insert`](#insert)
-operations with a default `degree` of 128. This call is only necessary to
-override the default.
+`create` is idempotent: calling it multiple times with the same options is a
+no-op. Calling it with different options after the map has been created will
+raise a `StateAlreadyConstructed` error.
+
+By default, `OrderedMap`s are implicitly created on the first [`insert`](#insert)
+call. `create` is only necessary to override defaults or to ensure the map exists
+before reading.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 ```py
-from reboot.protobuf import as_str
-
 await my_map.create(
     context,
-    degree=128
+    degree=128,
+    maintain_size=True,
 )
 ```
   </TabItem>
@@ -134,6 +182,7 @@ await my_map.create(
 ```ts
 await myMap.create(context, {
   degree: 128,
+  maintainSize: true,
 });
 ```
   </TabItem>
@@ -142,6 +191,44 @@ await myMap.create(context, {
 ### Insert
 
 Insert a key and its associated data into the `OrderedMap`.
+
+You can optionally pass `degree` and `maintain_size` to `insert()`. On
+the first `insert()` (when the map does not yet exist), these are used
+as construction options — equivalent to calling [`create`](#create)
+first. On subsequent `insert` calls, if set, they are validated to
+match the existing configuration. Note that you do not have to pass
+the options after the map has been constructed, but this pattern is
+useful when you don't know whether the map has been created or not and
+you want to ensure the correct options get applied upon implicit
+construction.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+# Implicitly creates with degree=64 if not yet
+# created, or validates that the existing map
+# was created with degree=64.
+await my_map.insert(
+    context,
+    key="key-a",
+    value=from_str("a value!"),
+    degree=64,
+)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+// Implicitly creates with degree 64 if not yet
+// created, or validates that the existing map
+// was created with degree 64.
+await myMap.insert(context, {
+  key: "key-a",
+  value: Value.fromJson("a value!"),
+  degree: 64,
+});
+```
+  </TabItem>
+</Tabs>
 
 Keys which are already in the map will be overwritten.
 
@@ -191,6 +278,47 @@ await myMap.insert(context, {
 await myMap.insert(context, {
   key: "key-c",
   any: <Any>
+});
+```
+  </TabItem>
+</Tabs>
+
+
+#### Bulk Insert
+
+Insert many key-value pairs in a single call using the `entries` parameter.
+This is significantly more efficient than inserting keys one at a time because
+the entries are merged and dispatched through the tree concurrently.
+
+Keys which are already in the map will be overwritten. When using `entries`,
+the single-key fields (`key`, `value`, `bytes`, `any`) must all be unset.
+
+Each entry's value is specified as an [`Item`](/library_services/item).
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from rbt.std.item.v1.item_pb2 import Item
+from reboot.protobuf import from_str
+
+await my_map.insert(
+    context,
+    entries={
+        "key-a": Item(value=from_str("a value!")),
+        "key-b": Item(bytes=b"some bytes"),
+    },
+)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { Value } from "@bufbuild/protobuf/wkt";
+
+await myMap.insert(context, {
+  entries: {
+    "key-a": { value: Value.fromJson("a value!") },
+    "key-b": { bytes: new TextEncoder().encode("some bytes") },
+  },
 });
 ```
   </TabItem>
@@ -267,6 +395,34 @@ await myMap.remove(context, { key: "key-a" });
 
 
 
+#### Bulk Remove
+
+Remove many keys in a single call using the `keys` parameter. This is
+significantly more efficient than removing keys one at a time because the
+removals are dispatched through the tree concurrently.
+
+Keys that are not present are silently ignored. When using `keys`, the
+single-key `key` field must be unset.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+await my_map.remove(
+    context,
+    keys=["key-a", "key-b", "key-c"],
+)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+await myMap.remove(context, {
+  keys: ["key-a", "key-b", "key-c"],
+});
+```
+  </TabItem>
+</Tabs>
+
+
 ### Range
 
 Read a range of data in ascending key order from the `OrderedMap`.
@@ -323,10 +479,10 @@ you'll receive an [`InvalidRangeError`](#invalidrangeerror) explaining why
 your range is not valid.
 
 
-### ReverseRange
+### Reverse Range
 
 Read a range of data in descending key order from the `OrderedMap`. This is
-similar to `Range` but reads data in reverse order.
+similar to `range` but reads data in reverse order.
 
 You can optionally specify a `start_key` (Python) / `startKey` (TypeScript) to limit the upper bound (inclusive) of
 the returned entries. If `start_key` (Python) / `startKey` (TypeScript) is not set, the range will start from the
@@ -383,8 +539,8 @@ your range is not valid.
 ## Errors
 
 ### InvalidRangeError {#invalidrangeerror}
-See [`Range`](#range) and [`ReverseRange`](#reverserange). Raised when the
-requested range is not valid.
+See [`range`](#range) and [`reverse_range`/`reverseRange`](#reverserange).
+Raised when the requested range is not valid.
 
 The `message` field of the error contains the string explaining why the range
 is not valid.
@@ -424,3 +580,73 @@ try {
 ```
   </TabItem>
 </Tabs>
+
+## React
+
+Once you've [set up](/learn_more/call/from_react) your React app to call into
+your Reboot API, you can also use `OrderedMap` directly from your React app.
+
+First, on your backend, you will need to [override the authorizer](#authorizer) to allow
+calls from your front end directly to `OrderedMap` methods.
+
+Second, add `@reboot-dev/reboot-std-api` to your `package.json`.
+
+```
+npm install -S @reboot-dev/reboot-std-api
+```
+
+Third, import the React library for `OrderedMap` in your React app.
+
+```ts
+import { useOrderedMap } from "@reboot-dev/reboot-std-api/collections/ordered_map/v1/ordered_map_rbt_react.js";
+```
+
+Then, you can access your `OrderedMap`. For example, you can call a writer method, such as [`insert()`](#insert):
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/react/test_ordered_map/ordered_map.test.tsx&lines=34-44) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/react/test_ordered_map/ordered_map.test.tsx -->
+
+```tsx
+const map = useOrderedMap({ id: "my-map" });
+
+const handleClick = () => {
+  map.insert({ key: "my-key", value: Value.fromJson("new value") });
+};
+
+return (
+  <button id="button" onClick={handleClick}>
+    Insert New Value
+  </button>
+);
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+Or a reader, such as [`search()`](#search):
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/react/test_ordered_map/ordered_map.test.tsx&lines=49-61) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/react/test_ordered_map/ordered_map.test.tsx -->
+
+```tsx
+const map = useOrderedMap({ id: "my-map" });
+
+const { aborted, response } = map.useSearch({ key: "my-key" });
+
+if (aborted !== undefined) {
+  return <div id="error">Errored while searching.</div>;
+} else if (response === undefined) {
+  return <div id="loading">Loading...</div>;
+} else if (!response.found) {
+  return <div id="not-found">Not found</div>;
+} else {
+  return <div id="map-value">{response.value?.toJson() as string}</div>;
+}
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+See [Call your API from
+React](/learn_more/call/from_react) to learn more about how to call methods from
+React.

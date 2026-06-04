@@ -1,3 +1,4 @@
+import asyncio
 import grpc
 import json
 import os
@@ -10,6 +11,7 @@ from log.log import get_logger
 from pathlib import Path
 from rbt.v1alpha1 import tasks_pb2, tasks_pb2_grpc
 from rbt.v1alpha1.admin import export_import_pb2_grpc
+from rbt.v1alpha1.admin.export_import_pb2 import ExportImportItem
 from reboot.admin import export_import_client
 from reboot.aio.applications import Application
 from reboot.aio.external import ExternalContext
@@ -20,7 +22,7 @@ from reboot.settings import ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA
 from tests.reboot.echo_rbt import Echo
 from tests.reboot.echo_servicers import MyEchoServicer
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional
 
 logger = get_logger(__name__)
 
@@ -231,6 +233,61 @@ class ExportImportTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_multiple_servers(self) -> None:
         await self._do_test(servers=4)
+
+    async def test_cancelled_import_does_not_wedge_server(self) -> None:
+        # A cancelled `Import()` (e.g. the client disconnecting
+        # mid-stream) must release its slot in the shared import loop;
+        # otherwise every subsequent `Import()` on that server hangs
+        # forever. `servers=1` makes the cancelled RPC and the follow-up
+        # RPC hit the same servicer deterministically.
+        context, stub = await self.start(servers=1)
+
+        metadata = (
+            (
+                AUTHORIZATION_HEADER,
+                f'Bearer {TEST_SECRET_REBOOT_ADMIN_TOKEN}',
+            ),
+        )
+
+        # Open an `Import()` that never sends an item, then cancel it
+        # mid-stream by timing out the client call.
+        async def _blocking_requests() -> AsyncIterator[ExportImportItem]:
+            never_send = asyncio.Event()
+            await never_send.wait()
+            yield ExportImportItem()
+
+        with self.assertRaises(asyncio.TimeoutError):
+            await asyncio.wait_for(
+                stub.Import(_blocking_requests(), metadata=metadata),
+                timeout=2.0,
+            )
+
+        # Create some state and export it so that the follow-up import
+        # has a real item to stream (an empty directory would not open
+        # an `Import()` RPC at all).
+        message = 'Hello, wedged'
+        echo = Echo.ref('wedged')
+        await echo.idempotently(key=uuid.uuid4()
+                               ).Reply(context, message=message)
+
+        with tempfile.TemporaryDirectory() as d:
+            directory = Path(d)
+            await export_import_client.do_export(
+                stub, directory, admin_token=TEST_SECRET_REBOOT_ADMIN_TOKEN
+            )
+
+            # The follow-up `Import()` must complete and not hang.
+            await asyncio.wait_for(
+                export_import_client.do_import(
+                    stub,
+                    directory,
+                    admin_token=TEST_SECRET_REBOOT_ADMIN_TOKEN,
+                ),
+                timeout=5.0,
+            )
+
+        response = await echo.Replay(context)
+        self.assertEqual([message], response.messages)
 
 
 if __name__ == '__main__':

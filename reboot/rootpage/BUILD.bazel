@@ -1,16 +1,99 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config", "ts_project")
+load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@rules_python//python:defs.bzl", "py_library")
+
+npm_link_all_packages()
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+ts_project(
+    name = "index_ts",
+    srcs = [
+        "client_picker.tsx",
+        "code_block.tsx",
+        "decorations.tsx",
+        "hero.tsx",
+        "icons.tsx",
+        "index.css",
+        "index.tsx",
+        "install_step.tsx",
+        "loading.tsx",
+        "prompts_step.tsx",
+        "radio_group.tsx",
+        "ready_step.tsx",
+        "step_card.tsx",
+        "top_nav.tsx",
+        "tunnel_provider_picker.tsx",
+        "tunnel_status.tsx",
+        "tunnel_step.tsx",
+        "use_stored_state.ts",
+        "use_tunnel.ts",
+        "wizard.tsx",
+    ],
+    tsconfig = ":tsconfig",
+    deps = [
+        ":node_modules/react",
+        ":node_modules/react-dom",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@reboot-dev/reboot-react",
+        "//rbt/v1alpha1/application:application_js_proto",
+        "//rbt/v1alpha1/application:application_js_reboot_react",
+    ],
+)
+
+esbuild(
+    name = "bundle",
+    srcs = [
+        # `index.css` is also in `:index_ts`'s srcs (so it gets
+        # passed through to bazel-bin), but Bazel's action-cache for
+        # this esbuild rule only tracks the `.js` outputs of
+        # `:index_ts` — CSS-only edits then leave a stale bundle
+        # behind. Listing `index.css` here as a direct srcs entry
+        # forces esbuild to re-run whenever the CSS changes.
+        "index.css",
+        ":index_ts",
+    ],
+    bazel_sandbox_plugin = False,
+    entry_point = "index.js",
+    format = "esm",
+    output = "bundle.js",
+    output_css = "bundle.css",
+    platform = "browser",
+    # Without this, esbuild re-transforms our `.tsx` files (its
+    # `resolveExtensions` default prefers `.tsx` over `.js`) using
+    # its built-in *classic* JSX transform, which emits
+    # `React.createElement(...)` and requires `React` to be in
+    # scope. Passing our tsconfig propagates `"jsx": "react-jsx"`
+    # so esbuild uses the automatic runtime — no file needs to
+    # import `React` just to render JSX.
+    tsconfig = ":tsconfig",
+)
 
 py_library(
     name = "servicer_py",
     srcs = ["servicer.py"],
     data = [
-        "index.html",
+        "add-app-chatgpt.mp4",
+        "add-app-claude.mp4",
+        "decorative-shapes.svg",
+        "favicon.svg",
+        "index.html.j2",
+        "reboot-logo.svg",
+        "reboot-logo-green.svg",
+        ":bundle",
     ],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        "//rbt/v1alpha1/rootpage:rootpage_py_grpc",
+        "//rbt/v1alpha1/rootpage:rootpage_py_proto",
+        "//reboot/application:application_py",
+        "//reboot/templates:tools_py",
         "@com_github_reboot_dev_reboot//log:log_py",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1/rootpage:rootpage_py_grpc",
-        "@com_github_reboot_dev_reboot//rbt/v1alpha1/rootpage:rootpage_py_proto",
     ],
 )
