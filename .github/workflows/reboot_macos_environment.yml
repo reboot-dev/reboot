@@ -90,6 +90,16 @@ jobs:
       HOMEBREW_NO_INSTALL_CLEANUP: 1
       HOMEBREW_NO_ENV_HINTS: 1
     steps:
+      # Depot folks suggestion: macOS runners stay up continuously rather
+      # than being recycled after each job, so Homebrew's package cache
+      # can build up over time. Adding a cleanup step before the install
+      # usually fixes this.
+      - name: Free disk space
+        run: |
+          brew cleanup -s
+          rm -rf ~/Library/Caches/Homebrew
+          df -h
+
       - name: Update Homebrew
         run: |
           brew update -q
