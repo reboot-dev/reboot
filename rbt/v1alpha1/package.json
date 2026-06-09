@@ -11,7 +11,7 @@
   "author": "reboot-dev",
   "dependencies": {
     "@scarf/scarf": "1.4.0",
-    "zod": "^3.25.51",
+    "zod": "^3.25.51 || ^4.0.0",
     "typescript": "5.4.5"
   },
   "peerDependencies": {

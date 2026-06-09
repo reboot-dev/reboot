@@ -15,7 +15,7 @@
     "puppeteer": "^22.14.0",
     "sitemapper": "^3.2.9",
     "typescript": "^4.9.5",
-    "zod": "^3.25.51"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.12.4",

@@ -120,7 +120,7 @@ importers:
         specifier: ^1.1.0
         version: 1.1.0
       zod:
-        specifier: ^3.25.51
+        specifier: ^3.25.51 || ^4.0.0
         version: 3.25.76
 
   rbt/std:
@@ -145,7 +145,7 @@ importers:
         specifier: 5.4.5
         version: 5.4.5
       zod:
-        specifier: ^3.25.51
+        specifier: ^3.25.51 || ^4.0.0
         version: 3.25.76
 
   reboot/create-ui:
@@ -223,7 +223,7 @@ importers:
         specifier: ^1.1.0
         version: 1.1.0
       zod:
-        specifier: ^3.25.51
+        specifier: ^3.25.51 || ^4.0.0
         version: 3.25.76
     devDependencies:
       '@types/express':

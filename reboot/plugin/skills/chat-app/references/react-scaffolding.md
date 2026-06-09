@@ -36,7 +36,7 @@ scripts directly.**
     "@reboot-dev/reboot-api": "1.0.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "zod": "^3.25.0"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.67",
