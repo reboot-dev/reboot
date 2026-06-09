@@ -113,6 +113,12 @@ ENVVAR_RBT_DEV = 'RBT_DEV'
 ENVVAR_RBT_SERVE = 'RBT_SERVE'
 ENVVAR_RBT_NAME = 'RBT_NAME'
 ENVVAR_RBT_EFFECT_VALIDATION = 'RBT_EFFECT_VALIDATION'
+# When set to 'true', effect validation also runs for "trusted" Reboot
+# library servicers (those with the `trusted_effects` state option), which
+# otherwise skip their effect-validation re-runs. Set for all of Reboot's
+# own tests via `.bazelrc`. See
+# https://github.com/reboot-dev/mono/issues/4499.
+ENVVAR_RBT_VALIDATE_TRUSTED_EFFECTS = 'RBT_VALIDATE_TRUSTED_EFFECTS'
 ENVVAR_RBT_STATE_DIRECTORY = 'RBT_STATE_DIRECTORY'
 ENVVAR_RBT_NODEJS = 'RBT_NODEJS'
 ENVVAR_RBT_SERVERS = 'RBT_SERVERS'

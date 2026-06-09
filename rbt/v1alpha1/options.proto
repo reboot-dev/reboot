@@ -153,6 +153,12 @@ message StateOptions {
 
   // Whether and when this state type is auto-constructed.
   AutoConstruct auto_construct = 3;
+
+  // Marks this state type's effects as "trusted": its methods are
+  // known-good and skip effect-validation re-runs unless
+  // `RBT_VALIDATE_TRUSTED_EFFECTS` is set. See
+  // https://github.com/reboot-dev/mono/issues/4499.
+  bool trusted_effects = 4;
 }
 
 extend google.protobuf.MessageOptions {

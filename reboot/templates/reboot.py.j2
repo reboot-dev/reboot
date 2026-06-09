@@ -2594,6 +2594,17 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         effect_validation: IMPORT_reboot_aio_contexts.EffectValidation,
         ready: IMPORT_asyncio.Event,
     ) -> {{ state.proto.name }}ServicerMiddleware:
+{% if state.proto.trusted_effects %}
+        # A trusted Reboot library skips its effect-validation re-runs
+        # (which are just log spam and wasted work for an app developer)
+        # unless `RBT_VALIDATE_TRUSTED_EFFECTS` is set, as it is for
+        # Reboot's own tests. See
+        # https://github.com/reboot-dev/mono/issues/4499.
+        if IMPORT_os.environ.get(
+            'RBT_VALIDATE_TRUSTED_EFFECTS', 'false'
+        ).lower() != 'true':
+            effect_validation = IMPORT_reboot_aio_contexts.EffectValidation.DISABLED
+{% endif %}
         self._middleware = {{ state.proto.name }}ServicerMiddleware(
             servicer=self,
             application_id=application_id,

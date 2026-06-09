@@ -8,6 +8,7 @@ import "rbt/v1alpha1/options.proto";
 
 message MousePosition {
   option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
   };
 
   int32 left = 1;

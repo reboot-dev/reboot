@@ -180,6 +180,11 @@ test --test_env=TZ
 # we will print stack traces when running Reboot from Node.js.
 test --test_env=REBOOT_BAZEL_TEST=true
 
+# When running our own tests, also validate effects for "trusted" Reboot
+# library servicers, which otherwise skip their effect-validation re-runs
+# for app developers. See https://github.com/reboot-dev/mono/issues/4499.
+test --test_env=RBT_VALIDATE_TRUSTED_EFFECTS=true
+
 # Bazel doesn't print stdout/stderr for failed tests if the contents exceeds 1MB
 # by default; increase this to 10MB for CI purposes.
 test --experimental_ui_max_stdouterr_bytes=10485760

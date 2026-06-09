@@ -27,6 +27,7 @@ message UnknownRootKeyVersion {}
 
 message Ciphertext {
   option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
   };
 
   // The `WrappingKey` that wraps this ciphertext's data encryption key
@@ -134,6 +135,7 @@ service CiphertextMethods {
 
 message WrappingKey {
   option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
   };
 
   enum Status {
@@ -276,6 +278,7 @@ service WrappingKeyMethods {
 
 message KeyManager {
   option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
   };
 
   // The `REBOOT_CRYPTO_ROOT_KEYS` versions this manager currently holds

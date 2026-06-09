@@ -39,6 +39,7 @@ service QueueMethods {
 
 message Queue {
   option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
   };
 
   repeated rbt.std.item.v1.Item items = 1;

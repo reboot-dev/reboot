@@ -8,6 +8,7 @@ import "rbt/v1alpha1/options.proto";
 
 message Presence {
   option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
   };
 
   // List of subscribers, i.e., are currently "present".
