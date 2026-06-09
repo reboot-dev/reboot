@@ -8,21 +8,25 @@ import Link from "@docusaurus/Link";
 import TSLogo from "../static/img/ts-logo.svg";
 import PythonLogo from "../static/img/python-logo.svg";
 
-# Build AI Chat Apps with Reboot
+# Build Apps with Reboot
 
 <div style={{ fontSize: "1.2rem" }}>
-  <span style={{ fontWeight: "bold" }}>AI's new UI.</span>{" "}
-  Text-only AI is already dated. Enhance AI with reactive, stateful,
-  multiplayer AI chat apps that run inside ChatGPT, Claude, VS Code,
-  Goose, and more.
+  Reboot lets you build stateful, multiplayer apps on a durable
+  backend. Build AI chat apps that run inside ChatGPT, Claude, and
+  VS Code, or full-stack web apps with React frontends.
 </div>
 
-## AI Chat Apps
+## Where your app runs
+
+The same backend, two different ways to reach your users. Pick a starting
+point:
+
+### Inside an AI chat
 
 <CardSection
   id="ai-chat-apps"
-  description="Build visual, interactive apps that run inside AI chat
-  user interfaces."
+  description="Visual, interactive apps that run inside AI chat
+  interfaces like ChatGPT, Claude, and VS Code."
 >
   <Card
     title="What is an AI Chat App?"
@@ -35,24 +39,27 @@ import PythonLogo from "../static/img/python-logo.svg";
   />
 </CardSection>
 
-## Full-stack apps
+<div style={{ fontSize: "0.9rem", marginTop: "-2rem" }}>
+  Prefer to build with an AI coding agent? Get started with{" "}
+  <Link to="/ai_chat_apps/get_started_claude_code">Claude Code</Link>{" "}
+  or <Link to="/ai_chat_apps/get_started_codex">Codex</Link>.
+</div>
 
-Build reactive backends with React frontends. Works great as a full-page
-extension of your AI chat app, or as a standalone web app.
-
-### Get started
+### As a full-stack web app
 
 <CardSection
-  id="quickstarts"
-  description="From zero to deployable app in just a few minutes!"
+  id="full-stack-apps"
+  description="A reactive Reboot backend behind a standalone React
+  frontend, on its own or as a full-page extension of your chat
+  app."
 >
   <Card
-    title="TypeScript"
+    title="Get Started (TypeScript)"
     icon={<TSLogo />}
     to="/full_stack_apps/typescript"
   />
   <Card
-    title="Python"
+    title="Get Started (Python)"
     to="/full_stack_apps/python"
     icon={<PythonLogo />}
   />
