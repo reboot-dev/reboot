@@ -99,13 +99,9 @@ REBOOT_STATE_DIRECTORY = '/var/run/reboot/state'
 # e.g., for inspect.
 ADMIN_SECRET_NAME = 'rbt-admin-secret'
 
-# The names of environment variables that are present both in `rbt dev run` and
-# in Kubernetes.
-#
-# TODO: The API key should likely be provided by a file in production, to allow
-# for rotation.
-ENVVAR_RBT_CLOUD_API_KEY = 'RBT_CLOUD_API_KEY'
-ENVVAR_RBT_CLOUD_URL = 'RBT_CLOUD_URL'
+# The name of the environment variable used by the `rbt cloud` CLI
+# subcommands as the fallback for the `--api-key` flag.
+ENVVAR_REBOOT_CLOUD_API_KEY = 'REBOOT_CLOUD_API_KEY'
 
 # The names of environment variables that are only present when
 # running in specific modes, e.g., `rbt dev` or `rbt serve`.
