@@ -37,35 +37,37 @@ drive the order programmatically.
 
 ```bash
 # Install Python dependencies and create the virtualenv.
-rye sync
-source .venv/bin/activate
+uv sync
 
 # Install web dependencies.
 cd web && npm install && cd ..
 
 # Generate API code (Python + React bindings).
-rbt generate
+uv run rbt generate
 
 # Build the React UIs.
 cd web && npm run build && cd ..
 ```
 
 Then run the app (each command in its own terminal, from the
-project directory, with `.venv` activated):
+project directory):
 
 ```bash
 # Terminal 1: start the Reboot backend.
-rbt dev run
+uv run rbt dev run
 
 # Terminal 2: start the Vite dev server for Hot Module Replacement.
 cd web && npm run dev
 ```
 
+Then open <http://localhost:9991> and follow the setup wizard to
+connect a chat host (such as Claude or ChatGPT) to the app.
+
 State persists between restarts under the name `chick-potle`
 (configured in `.rbtrc`). To wipe it:
 
 ```bash
-rbt dev expunge --application-name=chick-potle
+uv run rbt dev expunge --application-name=chick-potle
 ```
 
 ## Running the tests
@@ -75,20 +77,14 @@ The backend has an in-process test suite that exercises the
 no MCP client, no browser, no external services.
 
 ```bash
-rye sync
-source .venv/bin/activate
-pytest backend/
+uv sync
+uv run pytest backend/
 ```
 
-## Testing with MCPJam Inspector
+## Try it out
 
-`mcp_servers.json` is pre-configured. In another terminal:
-
-```bash
-npx @mcpjam/inspector@2.9.3 --config mcp_servers.json --server chick-potle
-```
-
-Try these prompts to exercise each capability:
+From the connected chat host, try these prompts to exercise each
+capability:
 
 1. `Start a new food order.` — exercises `start_order`,
    which creates a `FoodOrder` for this user and returns

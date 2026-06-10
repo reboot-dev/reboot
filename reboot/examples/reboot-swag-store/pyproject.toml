@@ -10,6 +10,14 @@ dependencies = [
     "reboot==1.1.0",
 ]
 
+# `uv` reads dev dependencies from here (PEP 735) and installs them
+# by default on `uv sync`, so `uv run pytest` works. The `[tool.rye]`
+# block below mirrors these for the rye-based test harness.
+[dependency-groups]
+dev = [
+    "pytest>=7.4",
+]
+
 [tool.rye]
 dev-dependencies = [
     "pytest>=7.4",
