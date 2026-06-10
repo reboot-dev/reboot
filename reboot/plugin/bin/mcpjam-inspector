@@ -17,4 +17,4 @@ PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname -- "$0")/.." && pwd)}"
 
 NODE_DIR="$("$PLUGIN_ROOT/lib/install_node.sh")"
 
-exec "$NODE_DIR/bin/npx" @mcpjam/inspector@2.5.0 --no-open "$@"
+exec "$NODE_DIR/bin/npx" @mcpjam/inspector@2.9.3 --no-open "$@"

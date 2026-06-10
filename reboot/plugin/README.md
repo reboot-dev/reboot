@@ -137,17 +137,6 @@ differ because of Codex limitations:
   hooks can only _deny_ a tool, never approve one, so there is no
   equivalent — reduce prompts with Codex's own `approval_policy` /
   `sandbox_mode` (e.g. `workspace-write` with network access) instead.
-- **Tunnel cleanup.** Claude Code reaps the cloudflared tunnel (and the
-  MCPJam inspector) from a `SessionEnd` hook. Codex has no session-end
-  event, so the SessionStart handler instead starts a watchdog that
-  kills the tunnel when the owning `codex` process exits. If anything is
-  left behind, find the plugin's install path with `codex plugin list`
-  and run its `hooks/codex/reap.sh`, e.g.:
-
-  ```bash
-  bash "$(codex plugin list \
-      | awk '/^reboot@/ {for(i=NF;i>=1;i--) if($i~"^/") {print $i; exit}}')/hooks/codex/reap.sh"
-  ```
 
 ## Usage
 
@@ -173,19 +162,18 @@ plugin/
 ├── .claude-plugin/
 │   └── marketplace.json      # Claude Code marketplace + plugin defs
 ├── .codex-plugin/
-│   └── plugin.json           # Codex plugin manifest (skills + hooks)
+│   └── plugin.json           # Codex plugin manifest (skills); see
+│                             # "Differences in Codex vs. Claude Code"
+│                             # above for how PATH is wired under Codex
 ├── README.md
 ├── install.sh                # installs for Claude Code and/or Codex
-├── bin/                      # pinned tool shims (uv, node, rbt, …)
+├── bin/                      # pinned tool shims (uv, node, rbt,
+│                             # cloudflared, …)
 ├── lib/                      # shim install scripts
 ├── hooks/
 │   ├── hooks.json            # Claude Code hook registrations
-│   ├── auto-approve.sh       # Claude Code PreToolUse auto-approval
-│   └── codex/                # Codex hook port
-│       ├── hooks.json        # referenced by .codex-plugin/plugin.json
-│       ├── session-start.sh  # cloudflared tunnel + watchdog
-│       └── reap.sh           # manual cleanup fallback
-├── hooks-handlers/           # Claude Code SessionStart/SessionEnd
+│   └── auto-approve.sh       # Claude Code PreToolUse auto-approval
+├── hooks-handlers/           # Claude Code SessionStart
 └── skills/
     └── <name>/
         ├── SKILL.md          # skill definition (YAML frontmatter)

@@ -11,10 +11,11 @@
 #      aimed at a path under `$CLAUDE_PLUGIN_ROOT/skills/`.
 #
 #   2. The Reboot dev commands the `run` skill issues to bring an
-#      app up — `uv sync`, `npm install`, `npm run dev`, `uv run
-#      rbt dev run …`, `npx @mcpjam/inspector …` — but ONLY when
-#      they run inside a Reboot project tree (the working
-#      directory, or an ancestor, holds a `.rbtrc`).
+#      app up — `uv sync`, `npm install`, `npm run dev`,
+#      `cloudflared tunnel …`, `uv run rbt dev run …`,
+#      `npx @mcpjam/inspector …` — but ONLY when they run inside a
+#      Reboot project tree (the working directory, or an ancestor,
+#      holds a `.rbtrc`).
 #
 # Guards that hold for every case:
 #
@@ -224,6 +225,26 @@ case "$tool" in
                         in_reboot_project "$effective_dir" || exit 1
                         args_all_flags "${trimmed#uv run rbt dev run}" \
                             || exit 1
+                        approved=$((approved + 1))
+                        ;;
+                    'cloudflared tunnel '* )
+                        # `run` skill — start the Cloudflare quick tunnel before `rbt dev run`.
+                        in_reboot_project "$effective_dir" || exit 1
+                        args="${trimmed#cloudflared tunnel }"
+                        # Require exactly: --metrics localhost:<port> and --url http://localhost:<port> (either order).
+                        set -- $args
+                        [ "$#" -eq 4 ] || exit 1
+                        if [ "$1" = "--metrics" ] && [ "$3" = "--url" ]; then
+                            metrics="$2"; url="$4"
+                        elif [ "$1" = "--url" ] && [ "$3" = "--metrics" ]; then
+                            metrics="$4"; url="$2"
+                        else
+                            exit 1
+                        fi
+                        case "$metrics" in localhost:*) mport="${metrics#localhost:}" ;; *) exit 1 ;; esac
+                        case "$url" in http://localhost:*) bport="${url#http://localhost:}" ;; *) exit 1 ;; esac
+                        case "$mport" in ''|*[!0-9]*) exit 1 ;; esac
+                        case "$bport" in ''|*[!0-9]*) exit 1 ;; esac
                         approved=$((approved + 1))
                         ;;
                     'npx @mcpjam/inspector'* | 'mcpjam-inspector'*)

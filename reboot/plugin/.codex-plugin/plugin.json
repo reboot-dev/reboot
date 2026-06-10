@@ -12,7 +12,6 @@
   "license": "Apache-2.0",
   "keywords": ["reboot", "mcp", "chat-app", "web-app", "python", "agents"],
   "skills": "./skills/",
-  "hooks": "./hooks/codex/hooks.json",
   "interface": {
     "displayName": "Reboot",
     "shortDescription": "Build Reboot apps (MCP Chat Apps and Web Apps)",
