@@ -27,7 +27,9 @@ py_library(
 
 py_test(
     name = "docker_local_envoy_test_py",
-    timeout = "short",
+    # Dockerized Envoy startup makes this too slow for a "short" (60s)
+    # budget on slower CI runners, where it times out.
+    timeout = "moderate",
     srcs = ["docker_local_envoy_runner.py"],
     main = "docker_local_envoy_runner.py",
     tags = ["requires-docker"],

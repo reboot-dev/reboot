@@ -194,9 +194,11 @@ jobs:
         with:
           show-progress: false
       - name: Setup Node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          # Docusaurus >= 3.9 requires Node >= 20. Pinned to match
+          # the Bazel toolchain (`node_version` in WORKSPACE.bazel).
+          node-version: "20.19.0"
       - name: Install dependencies
 <% if is_mono %>
         working-directory: ./public/documentation
