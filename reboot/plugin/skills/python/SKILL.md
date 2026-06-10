@@ -40,6 +40,9 @@ Reference these guidelines when:
   durable `reboot.agents.pydantic_ai.Agent`
 - Using the standard library (`OrderedMap`, mailgun, etc.)
 - Writing tests with the `Reboot()` harness
+- Verifying any change: **type-check with `mypy backend/` and fix all
+  errors** before considering Python work done (see "Type-checking"
+  below)
 
 ## Rule Categories by Priority
 
@@ -329,6 +332,27 @@ with "unknown actor type."
 - `references/testing-external-context.md` — `create_external_context`,
   asserting on `<Method>Aborted`, waiting on tasks/workflows, mocking
   external services / LLMs, one-test-per-user-story
+
+### Type-checking (do this after every change)
+
+The generated `*_rbt.py` stubs are fully typed, so mypy checks the
+code you write against them and catches the mistakes that pass a
+visual read — a field set to the wrong type, a missing or misspelled
+keyword argument, a method called with the wrong context type, a
+response field that doesn't exist, a servicer method returning the
+wrong type. Treat a clean type-check as part of finishing, not an
+optional extra:
+
+- Every project ships a project-root `.mypy.ini` (config and rationale
+  in `references/lifecycle-project-setup.md`). It puts `backend/src`,
+  `backend/api`, and `backend/tests` on `mypy_path` with
+  `explicit_package_bases = True` so the generated `*_rbt.py` modules
+  resolve. If it's missing, create it first — `mypy` is useless
+  without it.
+- After writing or editing any Python under `backend/`, run
+  `uv run mypy backend/` (or `mypy backend/`) from the project root and
+  fix **every** error.
+- "Done" means both `mypy backend/` and `uv run pytest` are green.
 
 ### Always relevant
 

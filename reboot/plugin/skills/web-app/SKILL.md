@@ -303,6 +303,7 @@ Before writing code, analyze the user's request:
 <project-root>/
 ├── .python-version
 ├── .rbtrc
+├── .mypy.ini                # Type-check config (python skill)
 ├── pyproject.toml
 ├── api/
 │   └── <pkg>/v1/
@@ -342,8 +343,8 @@ Key differences from a `chat-app` layout:
 **Only execute after plan approval. All commands run from the
 application directory.**
 
-1. Create `.python-version`, `pyproject.toml`, `.rbtrc` — same
-   shape as in
+1. Create `.python-version`, `pyproject.toml`, `.rbtrc`, and
+   `.mypy.ini` — same shape as in
    `python/references/lifecycle-{project-setup,rbtrc}.md`. In
    `.rbtrc`, point the React codegen at `web/src/api`:
    ```sh
@@ -399,10 +400,13 @@ application directory.**
     never instantiate Servicers directly. If any servicer has a
     real `authorizer()`, use the permissive-subclass pattern
     from `testing-harness.md`. Run `cd backend && uv run pytest`
-    and fix anything that fails. Do not proceed to the next
-    step until every user-story test passes — these tests are
-    the gate that catches contract bugs before the user opens
-    the browser.
+    and fix anything that fails. Then type-check: run
+    `uv run mypy backend/` from the project root and fix every
+    error (config and rationale in
+    `python/references/lifecycle-project-setup.md`). Do not
+    proceed to the next step until every user-story test passes
+    and mypy is green — together they are the gate that catches
+    contract bugs before the user opens the browser.
 13. Run the app — load the [`run` skill](../run/SKILL.md) and
     follow it. It is the single canonical "start the app"
     procedure: it makes sure dependencies and secrets are in
@@ -420,7 +424,10 @@ When modifying an existing app:
 3. Update the API definition → re-run `uv run rbt generate`.
 4. Update servicer methods.
 5. Update React components and routes.
-6. If the app isn't already running, bring it up with the
+6. Re-verify the backend: run `uv run mypy backend/` from the
+   project root and `cd backend && uv run pytest`; fix every
+   error and failure before handing back.
+7. If the app isn't already running, bring it up with the
    [`run` skill](../run/SKILL.md). If it is already running under
    `rbt dev run`, the `--watch` globs reload it automatically — no
    restart needed. Editing `.env` likewise triggers a restart, so

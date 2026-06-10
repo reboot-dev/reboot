@@ -529,6 +529,7 @@ a worked set are in
 <project>/
 ├── .python-version          # "3.10"
 ├── .rbtrc                   # Line-based config (NOT YAML!)
+├── .mypy.ini                # Type-check config (python skill)
 ├── pyproject.toml           # Python deps (uv)
 ├── api/
 │   └── <pkg>/v1/
@@ -559,8 +560,11 @@ a worked set are in
 **Only execute after plan approval. All commands run from the
 application directory.**
 
-1. Create `.python-version`, `pyproject.toml`, `.rbtrc` — see
-   [`references/project-shell.md`](references/project-shell.md).
+1. Create `.python-version`, `pyproject.toml`, `.rbtrc`, and
+   `.mypy.ini` — see
+   [`references/project-shell.md`](references/project-shell.md);
+   the `.mypy.ini` template lives in
+   `python/references/lifecycle-project-setup.md`.
 2. `uv sync`.
 3. Write API definition (`api/<pkg>/v1/<name>.py`) — see
    [`references/api-method-types.md`](references/api-method-types.md)
@@ -601,10 +605,13 @@ application directory.**
     never instantiate Servicers directly. If any servicer has a
     real `authorizer()`, use the permissive-subclass pattern
     from `testing-harness.md`. Run `cd backend && uv run pytest`
-    and fix anything that fails. Do not proceed to the next
-    step until every user-story test passes — these tests are
-    the gate that catches contract bugs before the user sees
-    them in MCPJam.
+    and fix anything that fails. Then type-check: run
+    `uv run mypy backend/` from the project root and fix every
+    error (config and rationale in
+    `python/references/lifecycle-project-setup.md`). Do not
+    proceed to the next step until every user-story test passes
+    and mypy is green — together they are the gate that catches
+    contract bugs before the user sees them in MCPJam.
 13. Create `mcp_servers.json` with
     `{"mcpServers":{"<name>":{"url":"http://localhost:9991/mcp","useOAuth":true}}}`.
 14. Run the app — load the [`run` skill](../run/SKILL.md) and
@@ -636,7 +643,10 @@ When modifying an existing app:
 6. When the change adds a new user-facing capability, add or update
    an example prompt in `backend/src/example_prompts.py` so the
    wizard surfaces the new flow.
-7. If the app isn't already running, bring it up with the
+7. Re-verify the backend: run `uv run mypy backend/` from the
+   project root and `cd backend && uv run pytest`; fix every
+   error and failure before handing back.
+8. If the app isn't already running, bring it up with the
    [`run` skill](../run/SKILL.md). If it is already running under
    `rbt dev run`, the `--watch` globs reload it automatically — no
    restart needed. Editing `.env` likewise triggers a restart, so
