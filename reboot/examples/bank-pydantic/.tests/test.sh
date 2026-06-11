@@ -26,7 +26,16 @@ if [ -n "$REBOOT_WHL_FILE" ]; then
   uv add --no-sync "${SANDBOX_ROOT}$REBOOT_WHL_FILE"
 fi
 
-# Create and activate a virtual environment.
+# Force a fresh virtualenv. A pre-existing `.venv/` (e.g., carried
+# over from a pre-baked image, or copied between containers/host
+# paths during the dev-container test) has its original creation
+# path baked into its `activate` script and console-script
+# shebangs, which breaks them when the venv is used from a
+# different location. `uv sync` only regenerates entry-point
+# scripts for packages it reinstalls, so it can't repair a
+# relocated venv. Nuking and re-syncing guarantees the venv lives
+# at the current path, which makes it safe to `activate`.
+rm -rf .venv
 uv sync
 source .venv/bin/activate
 

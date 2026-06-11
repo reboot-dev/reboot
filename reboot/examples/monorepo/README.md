@@ -77,7 +77,7 @@ way of keeping the options you have to type (and remember!) to a minimum. We
 provide a different `.rbtrc` for every application in this repository, and by
 selecting an application directory you select the `.rbtrc` that will be used:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=./.tests/readme_test.sh&lines=22-22) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=./.tests/readme_test.sh&lines=31-31) -->
 <!-- The below code snippet is automatically added from ./.tests/readme_test.sh -->
 
 ```sh
