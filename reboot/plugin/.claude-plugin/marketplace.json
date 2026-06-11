@@ -19,7 +19,8 @@
         "./skills/chat-app",
         "./skills/web-app",
         "./skills/run",
-        "./skills/python"
+        "./skills/python",
+        "./skills/upgrade"
       ]
     }
   ]

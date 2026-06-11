@@ -7,6 +7,18 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit, AskUserQuestion
 
 # run — Run a Reboot Application
 
+> **Version notices:**
+>
+> - If an application refuses to start because its `reboot` version
+>   does not match the `rbt` CLI, unconditionally switch to the
+>   [upgrade skill](../upgrade/SKILL.md) — the app cannot run until
+>   the versions agree.
+> - If `rbt` prints `A newer Reboot (X.Y.Z) is available`, ask the
+>   developer at a convenient moment whether they'd like to upgrade.
+>   Don't block iteration on the app if they decline, and don't
+>   start an upgrade without their approval; when they accept, use
+>   the [upgrade skill](../upgrade/SKILL.md).
+
 Bring an existing Reboot application up locally. This skill is the
 single canonical "start the app" procedure: it figures out what
 kind of app the project is, makes sure dependencies and secrets are

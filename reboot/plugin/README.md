@@ -12,6 +12,7 @@ agent. The same skills work in both **Claude Code** and **Codex**.
 | [`web-app`](skills/web-app/)   | Build standalone Reboot Web Apps — a Reboot backend behind a browser-facing React frontend — layers on top of `python` |
 | [`run`](skills/run/)           | Run an existing Reboot app — detects MCP Chat App vs. Web App and starts every process it needs                        |
 | [`python`](skills/python/)     | Reboot Python framework reference: proto- or pydantic-defined APIs, Servicers, contexts, refs, scheduling, and testing |
+| [`upgrade`](skills/upgrade/)   | Upgrade an existing Reboot app to this plugin's Reboot version — applies migration steps, bumps pins, regenerates      |
 
 The skill files are tool-agnostic. Claude Code invokes skills by name
 (e.g. `/chat-app`); Codex selects a skill automatically from its
