@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 import time
 import unittest
@@ -68,6 +69,7 @@ class RebootVersionTest(unittest.TestCase):
         dockerfile_paths = set()
         helm_chart_paths = set()
         skill_md_paths = set()
+        plugin_markdown_paths = set()
         dir_count = 0
         for (dirpath, dirnames, filenames) in os.walk(WORKSPACE_DIR):
             # Skip useless directories by pruning `dirnames` in-place so
@@ -107,6 +109,15 @@ class RebootVersionTest(unittest.TestCase):
 
             if 'SKILL.md' in filenames:
                 skill_md_paths.add(f'{dirpath}/SKILL.md')
+
+            # The agent plugin's skill reference `.md` files contain
+            # `pyproject.toml`, `package.json`, and `Dockerfile`
+            # snippets with version pins that scaffolded apps copy, so
+            # they must stay in sync too.
+            if f'{os.sep}reboot{os.sep}plugin' in dirpath:
+                for filename in filenames:
+                    if filename.endswith('.md'):
+                        plugin_markdown_paths.add(f'{dirpath}/{filename}')
 
         _log(
             f"walk done: {dir_count} dirs, "
@@ -218,6 +229,76 @@ class RebootVersionTest(unittest.TestCase):
                                 f'{line} that is out of date with'
                                 f' version {version}'
                             )
+
+        for path in plugin_markdown_paths:
+            with open(path, 'r') as plugin_markdown_file:
+                for line in plugin_markdown_file.readlines():
+                    # Exact-version pins that scaffolded apps copy
+                    # verbatim. Placeholders (e.g.
+                    # `reboot==<your-pinned-version>`) don't match
+                    # these patterns and are skipped.
+                    if (
+                        re.search(r'reboot==\d+\.\d+\.\d+', line) or re.search(
+                            r'"@reboot-dev/[^"]+": "\d+\.\d+\.\d+"', line
+                        ) or re.search(
+                            re.escape(BASE_IMAGE_NAME) + r':\d+\.\d+\.\d+',
+                            line,
+                        )
+                    ):
+                        if version not in line:
+                            self.fail(
+                                f'{path} contains a package version on '
+                                f'line: {line} that is out of date with '
+                                f'version {version}'
+                            )
+
+        # The agent plugin is released in lockstep with the Reboot
+        # libraries and its version must always match (see
+        # https://github.com/reboot-dev/mono/issues/5528).
+        plugin_dir = os.path.join(WORKSPACE_DIR, 'reboot', 'plugin')
+
+        with open(os.path.join(plugin_dir, 'VERSION'), 'r') as version_file:
+            plugin_version = version_file.read().strip()
+            if plugin_version != version:
+                self.fail(
+                    f'The plugin VERSION file contains {plugin_version}, '
+                    f'which is out of date with version {version}'
+                )
+
+        with open(os.path.join(plugin_dir, 'bin', 'rbt'), 'r') as rbt_shim:
+            match = re.search(r'REBOOT_VERSION="([^"]+)"', rbt_shim.read())
+            if match is None or match.group(1) != version:
+                self.fail(
+                    f'The plugin `bin/rbt` shim pins Reboot version '
+                    f'{match.group(1) if match else "<none>"}, which is '
+                    f'out of date with version {version}'
+                )
+
+        claude_manifest_path = os.path.join(
+            plugin_dir, '.claude-plugin', 'marketplace.json'
+        )
+        with open(claude_manifest_path, 'r') as claude_manifest_file:
+            claude_manifest = json.load(claude_manifest_file)
+            manifest_version = claude_manifest['metadata']['version']
+            if manifest_version != version:
+                self.fail(
+                    f'{claude_manifest_path} contains version '
+                    f'{manifest_version}, which is out of date with '
+                    f'version {version}'
+                )
+
+        codex_manifest_path = os.path.join(
+            plugin_dir, '.codex-plugin', 'plugin.json'
+        )
+        with open(codex_manifest_path, 'r') as codex_manifest_file:
+            codex_manifest = json.load(codex_manifest_file)
+            manifest_version = codex_manifest['version']
+            if manifest_version != version:
+                self.fail(
+                    f'{codex_manifest_path} contains version '
+                    f'{manifest_version}, which is out of date with '
+                    f'version {version}'
+                )
 
         _log("all checks passed")
 

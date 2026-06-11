@@ -32,8 +32,8 @@ scripts directly.**
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.5.0",
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@reboot-dev/reboot-react": "1.0.3",
-    "@reboot-dev/reboot-api": "1.0.3",
+    "@reboot-dev/reboot-react": "1.1.0",
+    "@reboot-dev/reboot-api": "1.1.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zod": "^4.0.0"
