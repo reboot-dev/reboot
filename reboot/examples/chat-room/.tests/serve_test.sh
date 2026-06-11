@@ -43,17 +43,16 @@ if [[ $(get_reboot_version_from "pyproject.toml") != $(get_reboot_version_from_l
   exit 0
 fi
 
-# Use the published Reboot pip package by default, but allow the test system
-# to override it with a different value. This is important even when using the
-# `reboot-base` image with the `reboot` package already installed, since the
-# `uv.lock` file in this example might be out of date with the version
-# of `reboot` used in that base image, and in particular may list the wrong
-# dependencies.
-if [ -n "$REBOOT_WHL_FILE" ]; then
-  # Install the `reboot` package from the specified path explicitly, over-
-  # writing the version from `pyproject.toml`.
-  uv add --no-sync "${SANDBOX_ROOT}$REBOOT_WHL_FILE"
-fi
+# When run under Bazel, this test DOES exercise the unpublished dev
+# version of Reboot. This version is installed in the dev version of
+# Reboot base image, not through this project's lockfile: the
+# `setup_script` (see `reboot/containers/reboot-base/build.sh`) builds
+# the `ghcr.io/reboot-dev/reboot-base:<version>` image locally from
+# `$REBOOT_WHL_FILE`, and the example's `FROM` line picks that image
+# up. The `pip install` of the `uv export`ed lockfile inside the
+# Docker build then leaves that dev install in place, because the dev
+# wheel reports the same version that `uv.lock` pins (pip treats the
+# requirement as already satisfied).
 
 stop_container() {
   if [ -n "$container_id" ]; then
