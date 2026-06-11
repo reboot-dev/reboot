@@ -236,16 +236,21 @@ class RebootVersionTest(unittest.TestCase):
                     # Exact-version pins that scaffolded apps copy
                     # verbatim. Placeholders (e.g.
                     # `reboot==<your-pinned-version>`) don't match
-                    # these patterns and are skipped.
-                    if (
-                        re.search(r'reboot==\d+\.\d+\.\d+', line) or re.search(
-                            r'"@reboot-dev/[^"]+": "\d+\.\d+\.\d+"', line
-                        ) or re.search(
-                            re.escape(BASE_IMAGE_NAME) + r':\d+\.\d+\.\d+',
+                    # these patterns and are skipped. Compare the
+                    # captured versions exactly: a substring check
+                    # would wrongly accept e.g. `reboot==11.1.0` when
+                    # the current version is `1.1.0`.
+                    pinned_versions = (
+                        re.findall(r'reboot==(\d+\.\d+\.\d+)', line) +
+                        re.findall(
+                            r'"@reboot-dev/[^"]+": "(\d+\.\d+\.\d+)"', line
+                        ) + re.findall(
+                            re.escape(BASE_IMAGE_NAME) + r':(\d+\.\d+\.\d+)',
                             line,
                         )
-                    ):
-                        if version not in line:
+                    )
+                    for pinned_version in pinned_versions:
+                        if pinned_version != version:
                             self.fail(
                                 f'{path} contains a package version on '
                                 f'line: {line} that is out of date with '

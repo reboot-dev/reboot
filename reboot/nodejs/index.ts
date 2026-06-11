@@ -31,7 +31,6 @@ import {
   Request as ExpressRequest,
   Response as ExpressResponse,
 } from "express";
-import { parseVersion } from "./utils/index.js";
 import { ensureError } from "./utils/errors.js";
 import { ensurePythonVenv } from "./venv.js";
 import { REBOOT_VERSION } from "./version.js";
@@ -1126,6 +1125,41 @@ export class Application {
 }
 
 /**
+ * Returns true if `versionA` is less than `versionB`.
+ *
+ * Mirrors `version_less_than` in `reboot/versioning.py`: the numeric
+ * `major.minor.patch` components are compared first; when they are
+ * equal, a version that carries a suffix (e.g. a development build
+ * of the `//reboot:reboot.dev` Bazel target) is the higher one,
+ * since such a build is made from source AFTER the release it is
+ * named for. Two suffixed versions with equal numeric components
+ * are considered equal. Throws when a version does not start with
+ * three numeric components.
+ */
+function versionLessThan(versionA: string, versionB: string): boolean {
+  const parse = (version: string): [number, number, number, number] => {
+    const match = version.trim().match(/^(\d+)\.(\d+)\.(\d+)(.*)$/s);
+    if (match === null) {
+      throw new Error(`Failed to parse '${version}' into a version`);
+    }
+    return [
+      Number(match[1]),
+      Number(match[2]),
+      Number(match[3]),
+      match[4].length > 0 ? 1 : 0,
+    ];
+  };
+  const componentsA = parse(versionA);
+  const componentsB = parse(versionB);
+  for (let i = 0; i < componentsA.length; i++) {
+    if (componentsA[i] !== componentsB[i]) {
+      return componentsA[i] < componentsB[i];
+    }
+  }
+  return false;
+}
+
+/**
  * Refuses to run when this `@reboot-dev/reboot` library's version is
  * not the one the `rbt` CLI that spawned this application expects.
  *
@@ -1144,16 +1178,7 @@ function checkExpectedVersion() {
 
   let libraryIsOlder: boolean | undefined = undefined;
   try {
-    const [expectedMajor, expectedMinor, expectedPatch] =
-      parseVersion(expectedVersion);
-    const [libraryMajor, libraryMinor, libraryPatch] =
-      parseVersion(REBOOT_VERSION);
-    libraryIsOlder =
-      libraryMajor < expectedMajor ||
-      (libraryMajor === expectedMajor && libraryMinor < expectedMinor) ||
-      (libraryMajor === expectedMajor &&
-        libraryMinor === expectedMinor &&
-        libraryPatch < expectedPatch);
+    libraryIsOlder = versionLessThan(REBOOT_VERSION, expectedVersion);
   } catch {
     // We can't tell which side is newer, but it is still a mismatch;
     // fail with a direction-less message below.

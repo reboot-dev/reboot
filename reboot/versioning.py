@@ -6,43 +6,62 @@ NOTE: this module's exported interface MUST STAY BACKWARDS COMPATIBLE
       detect versioning issues relative to newer Reboot libraries.
 """
 
+import re
 from reboot.aio.exceptions import InputError
 from reboot.version import REBOOT_VERSION
+
+# A released version is exactly `major.minor.patch`; development
+# builds (e.g. the `//reboot:reboot.dev` Bazel target) may append a
+# suffix to the release version they were built after.
+_VERSION_PATTERN = re.compile(r'(\d+)\.(\d+)\.(\d+)(.*)', re.DOTALL)
+
+
+def _parse_version(version: str) -> tuple[int, int, int, bool]:
+    """
+    Parses `version` into its numeric components plus whether a
+    (development) suffix is present.
+    """
+    match = _VERSION_PATTERN.fullmatch(version)
+    if match is None:
+        raise ValueError(
+            f"Version '{version}' must have exactly 3 parts "
+            "(major.minor.patch), optionally followed by a development "
+            "suffix"
+        )
+    return (
+        int(match.group(1)),
+        int(match.group(2)),
+        int(match.group(3)),
+        bool(match.group(4)),
+    )
 
 
 def version_less_than(version_a: str, version_b: str) -> bool:
     """
     Returns True if `version_a` is less than `version_b`.
 
-    Compares semantic version strings numerically by their components
-    (major.minor.patch).
+    Compares version strings numerically by their components
+    (major.minor.patch). A version may carry a suffix (e.g. a
+    development build of the `//reboot:reboot.dev` Bazel target);
+    such a build is made from source AFTER the release it is named
+    for, so when the numeric components are equal the suffixed
+    version is the higher one. Two suffixed versions with equal
+    numeric components are considered equal.
 
     An empty `version_a` is treated as the lowest possible version
     (always less than any non-empty version). This provides backwards
     compatibility for configurations that don't specify a version.
 
     Raises:
-        ValueError: If either version doesn't have exactly 3 parts
-        (except empty `version_a`, which is allowed for backwards
-        compatibility).
+        ValueError: If either version doesn't start with exactly 3
+        numeric parts (except empty `version_a`, which is allowed for
+        backwards compatibility).
     """
     # Treat empty version_a as the lowest possible version.
     if not version_a:
         return bool(version_b)
 
-    parts_a = [int(x) for x in version_a.split('.')]
-    parts_b = [int(x) for x in version_b.split('.')]
-
-    if len(parts_a) != 3:
-        raise ValueError(
-            f"Version '{version_a}' must have exactly 3 parts (major.minor.patch)"
-        )
-    if len(parts_b) != 3:
-        raise ValueError(
-            f"Version '{version_b}' must have exactly 3 parts (major.minor.patch)"
-        )
-
-    return parts_a < parts_b
+    return _parse_version(version_a) < _parse_version(version_b)
 
 
 def version_at_least(version: str, threshold_version: str) -> bool:

@@ -3,13 +3,15 @@ import { spawnSync } from "child_process";
 export * from "./errors.js";
 
 export function parseVersion(version: string): [number, number, number] {
-  const match = version.trim().match(/(\d+\.\d+\.\d+)/);
+  const match = version.trim().match(/(\d+)\.(\d+)\.(\d+)/);
 
   if (!match) {
     throw new Error(`Failed to parse '${version}' into a version`);
   }
 
-  return version.split(".").map(Number) as [number, number, number];
+  // Convert only the matched components: converting a split of the
+  // full input would produce `NaN` for inputs like `1.2.3rc1`.
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
 }
 
 export type Version = [number, number, number];

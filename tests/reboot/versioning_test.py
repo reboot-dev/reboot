@@ -43,10 +43,24 @@ class VersionLessThanTest(unittest.TestCase):
         self.assertIn("must have exactly 3 parts", str(error.exception))
         self.assertIn("0.1", str(error.exception))
 
-    def test_invalid_version_too_many_parts(self):
-        with self.assertRaises(ValueError) as error:
-            version_less_than('0.1.0.0', '0.2.0')
-        self.assertIn("must have exactly 3 parts", str(error.exception))
+    def test_dev_suffix_is_higher_than_same_release(self):
+        # Development builds (e.g. of the `//reboot:reboot.dev` Bazel
+        # target) carry a suffix and are built from source after the
+        # release they are named for, so they count as higher than the
+        # bare release.
+        self.assertTrue(version_less_than('1.1.0', '1.1.0.dev0'))
+        self.assertFalse(version_less_than('1.1.0.dev0', '1.1.0'))
+        self.assertTrue(version_less_than('1.1.0', '1.1.0rc1'))
+        self.assertFalse(version_less_than('1.1.0rc1', '1.1.0'))
+
+    def test_dev_suffix_numeric_components_dominate(self):
+        self.assertTrue(version_less_than('1.1.0.dev0', '1.1.1'))
+        self.assertFalse(version_less_than('1.1.1', '1.1.0.dev0'))
+        self.assertTrue(version_less_than('0.1.0.0', '0.2.0'))
+
+    def test_dev_suffix_equal_numeric_components_are_equal(self):
+        self.assertFalse(version_less_than('1.1.0.dev0', '1.1.0.dev1'))
+        self.assertFalse(version_less_than('1.1.0.dev1', '1.1.0.dev0'))
 
     def test_invalid_version_second_arg(self):
         with self.assertRaises(ValueError) as error:

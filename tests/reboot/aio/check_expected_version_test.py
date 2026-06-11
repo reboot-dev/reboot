@@ -52,6 +52,22 @@ class CheckExpectedVersionTest(unittest.TestCase):
         self.assertIn('older than this application', message)
         self.assertIn('https://docs.reboot.dev/upgrade', message)
 
+    def test_dev_cli_newer_than_release_library(self) -> None:
+        # A development `rbt` (e.g. built from the
+        # `//reboot:reboot.dev` Bazel target) carries a suffix on the
+        # release version it was built after and counts as NEWER than
+        # that bare release, so the application is the older side and
+        # should be upgraded.
+        with patch.dict(
+            os.environ,
+            {ENVVAR_REBOOT_EXPECTED_VERSION: f'{REBOOT_VERSION}.dev0'}
+        ):
+            with self.assertRaises(RuntimeError) as fail:
+                check_expected_version()
+        message = str(fail.exception)
+        self.assertIn('`upgrade` skill', message)
+        self.assertNotIn('older than this application', message)
+
     def test_unparseable_expected_version(self) -> None:
         with patch.dict(os.environ, {ENVVAR_REBOOT_EXPECTED_VERSION: 'bogus'}):
             with self.assertRaises(RuntimeError) as fail:
