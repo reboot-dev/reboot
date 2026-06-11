@@ -510,7 +510,9 @@ RUN curl -LsSf https://astral.sh/uv/0.11.13/install.sh | sh \
 # does not include the path where `uv` is installed. Rather than changing Bazel's PATH,
 # we ensure that `uv` is accessible on it.
 # TODO: See https://github.com/reboot-dev/mono/issues/2652.
-RUN sudo ln -s "$HOME/.local/bin/uv" /usr/local/bin/uv
+# Use `-f`: base images / Dev Container features may already provide a
+# `uv` there, and ours (pinned) must win.
+RUN sudo ln -sf "$HOME/.local/bin/uv" /usr/local/bin/uv
 RUN echo "export PATH=\"$HOME/.local/bin:\$PATH\"" >> "$HOME/.bashrc"
 # Then return to root.
 USER root
@@ -749,7 +751,7 @@ USER builder
 RUN curl -LsSf https://astral.sh/uv/0.11.13/install.sh | sh
 
 USER root
-RUN ln -s /home/builder/.local/bin/uv /usr/local/bin/uv
+RUN ln -sf /home/builder/.local/bin/uv /usr/local/bin/uv
 
 # Switch back to the builder user for running tests.
 USER builder

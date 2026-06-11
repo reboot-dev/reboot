@@ -152,7 +152,7 @@ jobs:
           echo 'export PATH="$HOME/.local/bin:$PATH"' >> $HOME/.bash_profile
           export PATH="$HOME/.local/bin:$PATH"
           # TODO: See https://github.com/reboot-dev/mono/issues/2652.
-          sudo ln -s $(which uv) /usr/local/bin/uv
+          sudo ln -sf "$HOME/.local/bin/uv" /usr/local/bin/uv
 
         # Our 'examples' tests are bazel 'sh_test', which means they are
         # configured in another way than the 'py_test' tests.
