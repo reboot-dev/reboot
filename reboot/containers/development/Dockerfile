@@ -46,6 +46,20 @@ RUN curl https://raw.githubusercontent.com/devcontainers/features/feature_docker
   && /tmp/install_dind.sh \
   && rm /tmp/install_dind.sh
 
+# The inner Docker daemon stores its images and containers under
+# /var/lib/docker. That directory must NOT live on this container's
+# own overlayfs: mounting an overlay whose layers themselves live on
+# an overlayfs is rejected by the kernel with `invalid argument`,
+# which breaks every `docker run` inside this container. (Docker's
+# containerd image store, the default since Docker 29, fails hard on
+# this; the older `overlay2` driver silently fell back to the slow
+# `vfs` driver.) Declaring the directory a VOLUME makes Docker place
+# it on an anonymous volume on the host's real filesystem, exactly
+# like the official `docker:dind` image does. When this image is
+# used as a Dev Container, the docker-in-docker feature mounts its
+# own named volume here instead.
+VOLUME /var/lib/docker
+
 ### Non-root user.
 #
 # This follows suggestions from:

@@ -503,7 +503,12 @@ class DockerLocalEnvoy(LocalEnvoy):
             **kwargs,
         )
 
-        stdout_data, _ = await process.communicate()
+        stdout_data, stderr_data = await process.communicate()
+        if process.returncode != 0:
+            raise RuntimeError(
+                f"Command '{' '.join(args)}' exited with status "
+                f"{process.returncode}; stderr:\n{stderr_data.decode()}"
+            )
         return stdout_data.decode()
 
     @reboot.aio.tracing.function_span()
