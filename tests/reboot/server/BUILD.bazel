@@ -45,6 +45,17 @@ py_test(
 )
 
 py_test(
+    name = "local_envoy_factory_test_py",
+    timeout = "short",
+    srcs = ["local_envoy_factory_test.py"],
+    main = "local_envoy_factory_test.py",
+    deps = [
+        "//reboot:settings_py",
+        "//reboot/server:local_envoy_factory_py",
+    ],
+)
+
+py_test(
     name = "executable_local_envoy_test_py",
     timeout = "short",
     srcs = ["executable_local_envoy_runner.py"],

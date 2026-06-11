@@ -45,12 +45,23 @@ class LocalEnvoyFactory:
                 "your `PATH`; neither was found."
             )
         try:
-            return LocalEnvoyMode(mode)
+            picked_mode = LocalEnvoyMode(mode)
         except ValueError:
             raise ValueError(
                 f"Invalid value '{mode}' for '{ENVVAR_LOCAL_ENVOY_MODE}'; "
                 "expected 'executable' or 'docker'."
             ) from None
+
+        executable = (
+            'envoy' if picked_mode is LocalEnvoyMode.EXECUTABLE else 'docker'
+        )
+        if shutil.which(executable) is None:
+            raise ValueError(
+                f"'{ENVVAR_LOCAL_ENVOY_MODE}' is set to '{mode}', but "
+                f"`{executable}` was not found on your `PATH`."
+            )
+
+        return picked_mode
 
     @staticmethod
     def create(
