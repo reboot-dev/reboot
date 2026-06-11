@@ -1,9 +1,7 @@
 import aiofiles.os
 import argparse
-import asyncio
 import math
 import os
-import shutil
 import sys
 from pathlib import Path
 from reboot.aio.exceptions import InputError
@@ -13,7 +11,7 @@ from reboot.cli.dev import (
     _check_common_args,
     _set_tls_env_or_fail,
     add_application_options,
-    check_docker_status,
+    check_local_envoy_mode,
     try_and_become_child_subreaper_on_linux,
 )
 from reboot.cli.directories import (
@@ -35,8 +33,6 @@ from reboot.controller.settings import (
 )
 from reboot.run_environments import on_cloud
 from reboot.settings import (
-    ENVOY_VERSION,
-    ENVVAR_LOCAL_ENVOY_MODE,
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_EFFECT_VALIDATION,
     ENVVAR_RBT_NAME,
@@ -127,45 +123,6 @@ class StoreOnceRebootCloudSpecificFlags(StoreOnceIncludingEnvvarsActionBase):
                 f"Reboot Cloud. Unset '{env_var}' to run your application."
             )
         return None
-
-
-async def _pick_envoy_mode(
-    subprocesses: Subprocesses,
-    env: dict[str, str],
-) -> None:
-    # Will we run Envoy inside a new Docker container, or can we run it as a
-    # stand-alone program? Note that it's entirely possible that we are
-    # already inside a Docker container, inside which we might run 'envoy'
-    # as a stand-alone process.
-    envoy_mode = 'docker' if shutil.which('envoy') is None else 'executable'
-    env[ENVVAR_LOCAL_ENVOY_MODE] = envoy_mode
-
-    if envoy_mode == 'docker':
-        return await check_docker_status(subprocesses)
-
-    async with subprocesses.exec(
-        'envoy',
-        '--version',
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
-    ) as process:
-        stdout, _ = await process.communicate()
-        if process.returncode != 0:
-            terminal.fail(
-                f"Could not use Envoy:\n"
-                "\n"
-                f"{stdout.decode() if stdout is not None else '<no output>'}"
-            )
-
-        # 'envoy --version' outputs something like:
-        #  envoy  version:
-        #  d79f6e8d453ee260e9094093b8dd31af0056e67b/1.30.2/Clean/RELEASE/BoringSSL
-        if ENVOY_VERSION not in stdout.decode():
-            terminal.fail(
-                f"Expecting Envoy version '{ENVOY_VERSION}', but found "
-                f"'{stdout.decode()}'. Are you using the right Reboot "
-                "base image in Docker?"
-            )
 
 
 def serve_subcommands() -> list[str]:
@@ -302,9 +259,10 @@ async def serve_run(
         if args.state_directory is not None:
             env[ENVVAR_RBT_STATE_DIRECTORY] = args.state_directory
 
-        # Pick the mode we'll run Envoy in: either as a stand-alone
-        # program or inside a Docker container.
-        await _pick_envoy_mode(subprocesses, env)
+        # Pick the mode we'll run Envoy in (either as a stand-alone
+        # program or inside a Docker container) and check that the
+        # mode is usable.
+        await check_local_envoy_mode(subprocesses)
 
         env[ENVVAR_REBOOT_LOCAL_ENVOY] = 'true'
 

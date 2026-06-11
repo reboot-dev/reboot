@@ -52,6 +52,7 @@ py_library(
         ":transpile_py",
         ":watch_py",
         "//reboot/controller:plan_makers_py",
+        "//reboot/server:local_envoy_factory_py",
         "@com_github_reboot_dev_reboot//reboot:settings_py",
         "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
         "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",

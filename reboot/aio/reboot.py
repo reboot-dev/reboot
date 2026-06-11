@@ -1,7 +1,6 @@
 import asyncio
 import os
 import reboot.aio.tracing
-import shutil
 import tempfile
 import uuid
 from dataclasses import dataclass
@@ -38,7 +37,6 @@ from reboot.naming import get_local_application_id
 from reboot.run_environments import on_cloud
 from reboot.server.database import DatabaseServer, DatabaseServerFailed
 from reboot.settings import (
-    ENVVAR_LOCAL_ENVOY_MODE,
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS,
 )
@@ -405,25 +403,6 @@ class Reboot:
             local_envoy = False
 
         if local_envoy:
-            # 'Reboot' is part of 'Application', which users will call to run
-            # the backend, so we don't want to override the environment variable
-            # if it's already set by 'rbt dev run' or 'rbt serve'.
-            if os.environ.get(ENVVAR_LOCAL_ENVOY_MODE) is None:
-                if shutil.which('envoy') is not None:
-                    # We prefer to use the locally-installed Envoy,
-                    # since that uses fewer resources and more closely
-                    # resembles production (Cloud) usage.
-                    os.environ[ENVVAR_LOCAL_ENVOY_MODE] = 'executable'
-                elif shutil.which('docker') is not None:
-                    # If an executable Envoy isn't available, use a
-                    # Docker container instead.
-                    os.environ[ENVVAR_LOCAL_ENVOY_MODE] = 'docker'
-                else:
-                    raise ValueError(
-                        "You must have either Envoy or Docker installed to run "
-                        "Reboot with `local_envoy=True`. Neither was found."
-                    )
-
             tls_envvar = os.environ.get(ENVVAR_LOCAL_ENVOY_USE_TLS)
             if local_envoy_tls is not None:
                 if tls_envvar is not None:

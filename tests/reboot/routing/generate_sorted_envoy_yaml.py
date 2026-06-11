@@ -12,6 +12,7 @@ from pathlib import Path
 from reboot.aio.types import ApplicationId
 from reboot.helpers import add_file_descriptor_to_file_descriptor_set
 from reboot.server.local_envoy import LocalEnvoy
+from reboot.settings import LocalEnvoyMode
 from tests.reboot import greeter_pb2
 
 
@@ -39,6 +40,10 @@ class NoopLocalEnvoy(LocalEnvoy):
         # Pretend that we've picked a port for xDS, instead of actually doing
         # so.
         self._xds_port = 1337
+
+    @property
+    def _mode(self) -> LocalEnvoyMode:
+        return LocalEnvoyMode.EXECUTABLE
 
     @property
     def public_port(self) -> int:

@@ -109,6 +109,7 @@ py_library(
         "//envoy/config/bootstrap/v3:bootstrapv3_py_proto",
         "//envoy/service/discovery/v3:discoveryv3_py_grpc",
         "//envoy/service/discovery/v3:discoveryv3_py_proto",
+        "//reboot:settings_py",
         "//reboot/aio:headers_py",
         "//reboot/aio:tracing_py",
         "//reboot/aio:types_py",

@@ -25,6 +25,7 @@ from reboot.settings import (
     EVERY_LOCAL_NETWORK_ADDRESS,
     REBOOT_DISCORD_URL,
     REBOOT_GITHUB_ISSUES_URL,
+    LocalEnvoyMode,
 )
 from reboot.wait_for_tasks import wait_for_tasks
 from typing import Optional
@@ -163,6 +164,10 @@ class DockerLocalEnvoy(LocalEnvoy):
                 server.address.host = 'host.docker.internal'
 
         await super().set_servers(servers)
+
+    @property
+    def _mode(self) -> LocalEnvoyMode:
+        return LocalEnvoyMode.DOCKER
 
     @property
     def public_port(self) -> int:

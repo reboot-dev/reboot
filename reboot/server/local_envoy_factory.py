@@ -1,4 +1,5 @@
 import os
+import shutil
 from pathlib import Path
 from reboot.aio.servicers import Routable
 from reboot.aio.types import ApplicationId
@@ -7,10 +8,12 @@ from reboot.server.docker_local_envoy import DockerLocalEnvoy
 from reboot.server.executable_local_envoy import ExecutableLocalEnvoy
 from reboot.server.local_envoy import LocalEnvoy
 from reboot.settings import (
+    ENVOY_VERSION,
     ENVVAR_LOCAL_ENVOY_DEBUG,
     ENVVAR_LOCAL_ENVOY_MODE,
     ENVVAR_LOCAL_ENVOY_TLS_CERTIFICATE_PATH,
     ENVVAR_LOCAL_ENVOY_TLS_KEY_PATH,
+    LocalEnvoyMode,
 )
 
 REBOOT_LOCAL_ENVOY_DEBUG: bool = os.environ.get(
@@ -20,6 +23,34 @@ REBOOT_LOCAL_ENVOY_DEBUG: bool = os.environ.get(
 
 
 class LocalEnvoyFactory:
+
+    @staticmethod
+    def pick_mode() -> LocalEnvoyMode:
+        """Picks the mode in which a local Envoy proxy will run.
+
+        An explicitly set `ENVVAR_LOCAL_ENVOY_MODE` is respected;
+        otherwise we prefer a locally-installed Envoy, primarily so we
+        don't depend on Docker when we can avoid it, and fall back to
+        Docker if no `envoy` executable is found.
+        """
+        mode = os.environ.get(ENVVAR_LOCAL_ENVOY_MODE)
+        if mode is None:
+            if shutil.which('envoy') is not None:
+                return LocalEnvoyMode.EXECUTABLE
+            if shutil.which('docker') is not None:
+                return LocalEnvoyMode.DOCKER
+            raise ValueError(
+                "To run a local Envoy proxy you must have either "
+                f"`envoy` (version {ENVOY_VERSION}) or `docker` on "
+                "your `PATH`; neither was found."
+            )
+        try:
+            return LocalEnvoyMode(mode)
+        except ValueError:
+            raise ValueError(
+                f"Invalid value '{mode}' for '{ENVVAR_LOCAL_ENVOY_MODE}'; "
+                "expected 'executable' or 'docker'."
+            ) from None
 
     @staticmethod
     def create(
@@ -43,9 +74,9 @@ class LocalEnvoyFactory:
 
         assert certificate is None or key is not None
 
-        mode = os.environ.get(ENVVAR_LOCAL_ENVOY_MODE)
+        mode = LocalEnvoyFactory.pick_mode()
 
-        if mode == 'docker':
+        if mode is LocalEnvoyMode.DOCKER:
             return DockerLocalEnvoy(
                 public_port=public_port,
                 application_id=application_id,
@@ -56,7 +87,7 @@ class LocalEnvoyFactory:
                 debug_mode=REBOOT_LOCAL_ENVOY_DEBUG,
             )
 
-        assert mode == 'executable'
+        assert mode is LocalEnvoyMode.EXECUTABLE
         return ExecutableLocalEnvoy(
             public_port=public_port,
             application_id=application_id,

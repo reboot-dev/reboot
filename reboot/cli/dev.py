@@ -48,10 +48,12 @@ from reboot.cli.subprocesses import Subprocesses
 from reboot.cli.transpile import auto_transpile, ensure_can_auto_transpile
 from reboot.cli.watch import FileWatcher, file_watcher
 from reboot.controller.plan_makers import validate_num_servers
+from reboot.server.local_envoy_factory import LocalEnvoyFactory
 from reboot.settings import (
     DEFAULT_SECURE_PORT,
     DOCS_BASE_URL,
     ENVOY_PROXY_IMAGE,
+    ENVOY_VERSION,
     ENVVAR_LOCAL_ENVOY_MODE,
     ENVVAR_LOCAL_ENVOY_TLS_CERTIFICATE_PATH,
     ENVVAR_LOCAL_ENVOY_TLS_KEY_PATH,
@@ -70,6 +72,7 @@ from reboot.settings import (
     ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
     ENVVAR_REBOOT_USE_TTY,
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
+    LocalEnvoyMode,
 )
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA
 from reboot.version import REBOOT_VERSION
@@ -485,6 +488,52 @@ async def check_docker_status(subprocesses: Subprocesses):
                         "\n"
                         f"{stdout.decode() if stdout is not None else '<no output>'}"
                     )
+
+
+async def check_local_envoy_mode(subprocesses: Subprocesses) -> None:
+    """Picks the mode in which a local Envoy proxy will run, and checks
+    that the mode is usable: that Docker is running and has the Envoy
+    proxy image (downloading it if necessary), or that the `envoy`
+    executable has the version we expect. Fails otherwise.
+
+    Note that it's entirely possible that we are already inside a
+    Docker container, inside which we might run `envoy` as a
+    stand-alone process."""
+    try:
+        local_envoy_mode = LocalEnvoyFactory.pick_mode()
+    except ValueError as e:
+        terminal.fail(str(e))
+
+    if local_envoy_mode is LocalEnvoyMode.DOCKER:
+        return await check_docker_status(subprocesses)
+
+    assert local_envoy_mode is LocalEnvoyMode.EXECUTABLE
+
+    async with subprocesses.exec(
+        'envoy',
+        '--version',
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    ) as process:
+        stdout, _ = await process.communicate()
+        if process.returncode != 0:
+            terminal.fail(
+                "Could not use Envoy:\n"
+                "\n"
+                f"{stdout.decode() if stdout is not None else '<no output>'}"
+            )
+
+        # 'envoy --version' outputs something like:
+        #  envoy  version:
+        #  d79f6e8d453ee260e9094093b8dd31af0056e67b/1.30.2/Clean/RELEASE/BoringSSL
+        if ENVOY_VERSION not in stdout.decode():
+            terminal.fail(
+                f"Expecting Envoy version '{ENVOY_VERSION}', but found "
+                f"'{stdout.decode()}'. Install Envoy version "
+                f"'{ENVOY_VERSION}', or set "
+                f"'{ENVVAR_LOCAL_ENVOY_MODE}=docker' to run Envoy in a "
+                "Docker container instead."
+            )
 
 
 async def _check_local_envoy_status(
@@ -960,15 +1009,6 @@ async def dev_run(
 
     _check_common_args(args)
 
-    # We don't expect developers to have Envoy installed
-    # on their own machines, so we pull and run it as a
-    # Docker container, unless specified otherwise via the
-    # `ENVVAR_LOCAL_ENVOY_MODE` env variable, which
-    # we at least use to run nodejs examples on macOS
-    # GitHub runners since they don't have Docker.
-    local_envoy_mode = os.environ.get(ENVVAR_LOCAL_ENVOY_MODE, 'docker')
-    os.environ[ENVVAR_LOCAL_ENVOY_MODE] = local_envoy_mode
-
     if args.use_localhost_direct and (
         args.tls_certificate or args.tls_key or args.tls_root_certificate
     ):
@@ -1321,10 +1361,11 @@ async def __dev_run(
 
     health_check_task: Optional[asyncio.Task] = None
 
-    if os.environ[ENVVAR_LOCAL_ENVOY_MODE] == 'docker':
-        # Check if Docker is running and can access the Envoy proxy image. Fail
-        # otherwise.
-        await check_docker_status(subprocesses)
+    # Pick the mode in which we'll run a local Envoy proxy and check
+    # that the mode is usable, e.g. that Docker is running and can
+    # access the Envoy proxy image, or that the `envoy` executable has
+    # the version we expect. Fail otherwise.
+    await check_local_envoy_mode(subprocesses)
     env[ENVVAR_REBOOT_LOCAL_ENVOY] = 'true'
 
     health_check_task = asyncio.create_task(

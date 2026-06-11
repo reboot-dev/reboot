@@ -1,3 +1,5 @@
+import enum
+
 # The settings below must match their equivalents, if applicable, in:
 # * reboot/settings.h
 # * <possibly other languages by the time you read this>
@@ -258,9 +260,18 @@ ENVVAR_LOCAL_ENVOY_USE_TLS = 'REBOOT_LOCAL_ENVOY_USE_TLS'
 ENVVAR_LOCAL_ENVOY_TLS_CERTIFICATE_PATH = 'REBOOT_LOCAL_ENVOY_TLS_CERTIFICATE_PATH'
 ENVVAR_LOCAL_ENVOY_TLS_KEY_PATH = 'REBOOT_LOCAL_ENVOY_TLS_KEY_PATH'
 
-# The name of the environment variable, which should be set by 'rbt serve' or
-# 'rbt dev run', that contains the mode in which the Envoy should run
-# (executable/docker).
+
+class LocalEnvoyMode(enum.Enum):
+    """The mode in which a local Envoy proxy runs: as a stand-alone
+    `envoy` executable found on the `PATH`, or inside a Docker
+    container."""
+    EXECUTABLE = 'executable'
+    DOCKER = 'docker'
+
+
+# The name of the environment variable that a developer may set to a
+# `LocalEnvoyMode` value ('executable' or 'docker') to explicitly pick
+# the mode in which a local Envoy proxy will run.
 ENVVAR_LOCAL_ENVOY_MODE = 'REBOOT_LOCAL_ENVOY_MODE'
 ENVVAR_LOCAL_ENVOY_DEBUG = 'REBOOT_LOCAL_ENVOY_DEBUG'
 
