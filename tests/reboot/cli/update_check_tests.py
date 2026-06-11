@@ -22,6 +22,9 @@ class UpdateCheckTestCase(unittest.TestCase):
             clear=False,
         )
         self._environ.start()
+        # Bazel sets `REBOOT_NO_VERSION_CHECK` for every test via
+        # `.bazelrc`; remove it (and `CI`) so the tests below exercise
+        # the non-test code path.
         os.environ.pop(ENVVAR_REBOOT_NO_VERSION_CHECK, None)
         os.environ.pop('CI', None)
 

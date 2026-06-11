@@ -185,6 +185,11 @@ test --test_env=REBOOT_BAZEL_TEST=true
 # for app developers. See https://github.com/reboot-dev/mono/issues/4499.
 test --test_env=RBT_VALIDATE_TRUSTED_EFFECTS=true
 
+# Keep tests hermetic: don't let `rbt` invocations inside tests run the
+# new-version check (a network fetch against PyPI). See
+# https://github.com/reboot-dev/mono/issues/5528.
+test --test_env=REBOOT_NO_VERSION_CHECK=true
+
 # Bazel doesn't print stdout/stderr for failed tests if the contents exceeds 1MB
 # by default; increase this to 10MB for CI purposes.
 test --experimental_ui_max_stdouterr_bytes=10485760
