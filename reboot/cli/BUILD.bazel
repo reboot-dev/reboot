@@ -56,7 +56,6 @@ py_library(
         "@com_github_reboot_dev_reboot//reboot:settings_py",
         "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
         "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
-        "@com_github_reboot_dev_reboot//reboot/ssl:localhost_py",
     ],
 )
 

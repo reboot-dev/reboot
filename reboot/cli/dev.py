@@ -74,7 +74,6 @@ from reboot.settings import (
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
     LocalEnvoyMode,
 )
-from reboot.ssl.localhost import LOCALHOST_CRT_DATA
 from reboot.version import REBOOT_VERSION
 from typing import Any, Awaitable, Callable, Optional, TextIO, TypeVar
 
@@ -282,13 +281,6 @@ def _register_dev_run(parser: ArgumentParser):
         "TypeScript files, e.g., 'npx tsc'",
         default=None,
         non_empty_string=True,
-    )
-
-    parser.subcommand('dev run').add_argument(
-        "--use-localhost-direct",
-        type=bool,
-        default=False,
-        help=argparse.SUPPRESS,
     )
 
     parser.subcommand('dev run').add_argument(
@@ -541,7 +533,6 @@ async def _check_local_envoy_status(
     port: int,
     terminate_after_health_check: bool,
     application_started_event: asyncio.Event,
-    use_localhost_direct: bool,
     tls_certificate: Optional[str],
     root_certificate: Optional[str],
     tracing: Tracing,
@@ -553,22 +544,9 @@ async def _check_local_envoy_status(
     # Wait until application is running with starting health check.
     await application_started_event.wait()
 
-    # If we've been asked to use `localhost.direct` we use the 'dev'
-    # subdomain as a workaround on a gRPC bug that produces log
-    # message error about not matching the entry (*.localhost.direct)
-    # in the certificate. See
-    # https://github.com/reboot-dev/mono/issues/2305
-    #
-    # We also want to print out 'dev.localhost.direct' so that our
-    # users copy that to also avoid getting the log message error from
-    # their gRPC or Reboot calls.
-    address = (
-        f'dev.localhost.direct:{port}'
-        if use_localhost_direct else f'127.0.0.1:{port}'
-    )
+    address = f'127.0.0.1:{port}'
 
     if tls_certificate is not None:
-        assert not use_localhost_direct
         assert root_certificate is not None
 
         cert_data = b''
@@ -606,7 +584,7 @@ async def _check_local_envoy_status(
             # similar.
             address = f'localhost:{port}'
 
-    protocol = "https" if use_localhost_direct or tls_certificate else "http"
+    protocol = "https" if tls_certificate else "http"
 
     backoff = Backoff(
         initial_backoff_seconds=0.01,
@@ -616,17 +594,9 @@ async def _check_local_envoy_status(
 
     def create_channel(
         address: str,
-        use_localhost_direct: bool,
         root_certificate: Optional[bytes],
     ):
-        if use_localhost_direct:
-            return grpc.aio.secure_channel(
-                address,
-                grpc.ssl_channel_credentials(
-                    root_certificates=LOCALHOST_CRT_DATA,
-                ),
-            )
-        elif root_certificate is not None:
+        if root_certificate is not None:
             return grpc.aio.secure_channel(
                 address,
                 grpc.ssl_channel_credentials(
@@ -648,7 +618,6 @@ async def _check_local_envoy_status(
         try:
             async with create_channel(
                 address,
-                use_localhost_direct,
                 binary_root_certificate,
             ) as channel:
                 response = await health_pb2_grpc.HealthStub(channel).Check(
@@ -1009,14 +978,6 @@ async def dev_run(
 
     _check_common_args(args)
 
-    if args.use_localhost_direct and (
-        args.tls_certificate or args.tls_key or args.tls_root_certificate
-    ):
-        terminal.fail(
-            "Cannot use '--use-localhost-direct' with '--tls-certificate', "
-            "'--tls-key' or '--tls-root-certificate'."
-        )
-
     tls_args = [args.tls_certificate, args.tls_key, args.tls_root_certificate]
 
     if any(tls_args) and not all(tls_args):
@@ -1025,11 +986,7 @@ async def dev_run(
             "and '--tls-root-certificate' must be specified."
         )
 
-    if args.use_localhost_direct:
-        # We ask for TLS without specifying a specific certificate,
-        # which means Envoy will use the one for `localhost.direct`.
-        os.environ[ENVVAR_LOCAL_ENVOY_USE_TLS] = 'True'
-    elif args.tls_certificate:
+    if args.tls_certificate:
         await _set_tls_env_or_fail(args)
 
         if not await aiofiles.os.path.isfile(args.tls_root_certificate):
@@ -1374,7 +1331,6 @@ async def __dev_run(
             terminate_after_health_check=args.terminate_after_health_check or
             False,
             application_started_event=application_started_event,
-            use_localhost_direct=args.use_localhost_direct,
             tls_certificate=args.tls_certificate,
             root_certificate=args.tls_root_certificate,
             tracing=tracing,
