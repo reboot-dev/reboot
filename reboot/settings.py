@@ -108,6 +108,14 @@ ENVVAR_REBOOT_CLOUD_API_KEY = 'REBOOT_CLOUD_API_KEY'
 # `CI` environment variable is set.
 ENVVAR_REBOOT_NO_VERSION_CHECK = 'REBOOT_NO_VERSION_CHECK'
 
+# Set by the `rbt` CLI (to its own version) on the environment of any
+# application it runs. The application's `reboot` library refuses to
+# start when its own version differs, since the CLI and library are
+# released in lockstep and must match exactly. Absent when the
+# application is run without `rbt` (e.g. under `pytest`), in which
+# case there is no expectation to enforce.
+ENVVAR_REBOOT_EXPECTED_VERSION = 'REBOOT_EXPECTED_VERSION'
+
 # The names of environment variables that are only present when
 # running in specific modes, e.g., `rbt dev` or `rbt serve`.
 ENVVAR_RBT_DEV = 'RBT_DEV'

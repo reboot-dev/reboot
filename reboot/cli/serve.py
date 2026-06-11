@@ -44,10 +44,12 @@ from reboot.settings import (
     ENVVAR_RBT_SERVE,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
+    ENVVAR_REBOOT_EXPECTED_VERSION,
     ENVVAR_REBOOT_LOCAL_ENVOY,
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
     REBOOT_STATE_DIRECTORY,
 )
+from reboot.version import REBOOT_VERSION
 from typing import Optional
 
 
@@ -288,6 +290,10 @@ async def serve_run(
         env = os.environ.copy()
 
         env[ENVVAR_RBT_SERVE] = 'true'
+
+        # The application's `reboot` library must be the same version
+        # as this CLI; the library enforces this at startup.
+        env[ENVVAR_REBOOT_EXPECTED_VERSION] = REBOOT_VERSION
 
         assert args.application_name is not None
 

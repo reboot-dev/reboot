@@ -64,6 +64,7 @@ from reboot.settings import (
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
+    ENVVAR_REBOOT_EXPECTED_VERSION,
     ENVVAR_REBOOT_LOCAL_ENVOY,
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
     ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
@@ -71,6 +72,7 @@ from reboot.settings import (
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
 )
 from reboot.ssl.localhost import LOCALHOST_CRT_DATA
+from reboot.version import REBOOT_VERSION
 from typing import Any, Awaitable, Callable, Optional, TextIO, TypeVar
 
 TLS_CERTIFICATE_BEGINNING = "-----BEGIN CERTIFICATE-----"
@@ -1300,6 +1302,10 @@ async def __dev_run(
     env = os.environ.copy()
 
     env[ENVVAR_RBT_DEV] = 'true'
+
+    # The application's `reboot` library must be the same version as
+    # this CLI; the library enforces this at startup.
+    env[ENVVAR_REBOOT_EXPECTED_VERSION] = REBOOT_VERSION
 
     if args.application_name is not None:
         env[ENVVAR_RBT_NAME] = args.application_name

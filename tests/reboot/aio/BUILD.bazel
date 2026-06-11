@@ -1,6 +1,18 @@
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
+    name = "check_expected_version_test_py",
+    timeout = "short",
+    srcs = [":check_expected_version_test.py"],
+    main = "check_expected_version_test.py",
+    deps = [
+        "//reboot:version_py",
+        "//reboot/aio:applications_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+    ],
+)
+
+py_test(
     name = "applications_test_py",
     timeout = "short",
     srcs = [":applications_test.py"],

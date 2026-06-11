@@ -31,8 +31,10 @@ import {
   Request as ExpressRequest,
   Response as ExpressResponse,
 } from "express";
+import { parseVersion } from "./utils/index.js";
 import { ensureError } from "./utils/errors.js";
 import { ensurePythonVenv } from "./venv.js";
+import { REBOOT_VERSION } from "./version.js";
 
 check_bufbuild_protobuf_library(protobuf_es.Message);
 
@@ -1085,6 +1087,10 @@ export class Application {
   }
 
   async run() {
+    // Refuse to run with a `@reboot-dev/reboot` library that doesn't
+    // match the `rbt` CLI that spawned us.
+    checkExpectedVersion();
+
     if (process.env.REBOOT_ENABLE_EVENT_LOOP_LAG_MONITORING === "true") {
       toobusy.onLag((lag) => {
         console.log(`Node.js event loop lag detected! Latency: ${lag}ms.
@@ -1117,6 +1123,66 @@ export class Application {
   get __external() {
     return this.#external;
   }
+}
+
+/**
+ * Refuses to run when this `@reboot-dev/reboot` library's version is
+ * not the one the `rbt` CLI that spawned this application expects.
+ *
+ * The `rbt` CLI sets `REBOOT_EXPECTED_VERSION` to its own version on
+ * the environment of any application it runs. The CLI and the
+ * library are released in lockstep and must match exactly; a
+ * mismatch means one of the two is out of date. When the variable is
+ * absent (e.g. when the application is run without `rbt`) there is
+ * no expectation to enforce.
+ */
+function checkExpectedVersion() {
+  const expectedVersion = process.env.REBOOT_EXPECTED_VERSION;
+  if (expectedVersion === undefined || expectedVersion === REBOOT_VERSION) {
+    return;
+  }
+
+  let libraryIsOlder: boolean | undefined = undefined;
+  try {
+    const [expectedMajor, expectedMinor, expectedPatch] =
+      parseVersion(expectedVersion);
+    const [libraryMajor, libraryMinor, libraryPatch] =
+      parseVersion(REBOOT_VERSION);
+    libraryIsOlder =
+      libraryMajor < expectedMajor ||
+      (libraryMajor === expectedMajor && libraryMinor < expectedMinor) ||
+      (libraryMajor === expectedMajor &&
+        libraryMinor === expectedMinor &&
+        libraryPatch < expectedPatch);
+  } catch {
+    // We can't tell which side is newer, but it is still a mismatch;
+    // fail with a direction-less message below.
+  }
+
+  let message =
+    `This application depends on \`@reboot-dev/reboot\` ` +
+    `${REBOOT_VERSION}, but it is being run by an \`rbt\` CLI at ` +
+    `version ${expectedVersion}; these versions must match. `;
+  if (libraryIsOlder === true) {
+    // The application is behind the CLI: upgrade the application.
+    message +=
+      "Coding agents: run the Reboot `upgrade` skill to upgrade this " +
+      "application. Humans: see https://docs.reboot.dev/upgrade.";
+  } else if (libraryIsOlder === false) {
+    // The CLI is behind the application: update the CLI (which, for
+    // coding agents, ships with the Reboot plugin).
+    message +=
+      "Your `rbt` is older than this application. Coding agents: ask " +
+      "the user to update the Reboot plugin (re-run `curl -fsSL " +
+      "https://reboot.dev/install.sh | bash`) and restart their agent " +
+      "session. Humans: upgrade your `rbt` install; see " +
+      "https://docs.reboot.dev/upgrade.";
+  } else {
+    message += "See https://docs.reboot.dev/upgrade.";
+  }
+
+  console.error(message);
+  process.exit(1);
 }
 
 export namespace Application {
