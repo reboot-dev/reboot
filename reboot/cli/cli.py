@@ -35,6 +35,7 @@ from reboot.cli.task import (
     register_task,
     task_subcommands,
 )
+from reboot.cli.update_check import check_for_newer_version
 from typing import Optional
 
 
@@ -98,6 +99,10 @@ async def cli() -> int:
     # Sets up the terminal for logging.
     verbose, argv = ArgumentParser.strip_any_arg(sys.argv, '-v', '--verbose')
     terminal.init(verbose=verbose)
+
+    # Best-effort notice (to stderr) when a newer Reboot release is
+    # available; throttled and silent on any failure.
+    check_for_newer_version()
 
     # Install signal handlers to help ensure that Subprocesses get cleaned up.
     Subprocesses.install_terminal_app_signal_handlers()

@@ -103,6 +103,11 @@ ADMIN_SECRET_NAME = 'rbt-admin-secret'
 # subcommands as the fallback for the `--api-key` flag.
 ENVVAR_REBOOT_CLOUD_API_KEY = 'REBOOT_CLOUD_API_KEY'
 
+# Set (to any non-empty value) to disable the `rbt` CLI's check for
+# newer Reboot releases on PyPI. The check is also disabled when the
+# `CI` environment variable is set.
+ENVVAR_REBOOT_NO_VERSION_CHECK = 'REBOOT_NO_VERSION_CHECK'
+
 # The names of environment variables that are only present when
 # running in specific modes, e.g., `rbt dev` or `rbt serve`.
 ENVVAR_RBT_DEV = 'RBT_DEV'

@@ -23,6 +23,17 @@ py_test(
 )
 
 py_test(
+    name = "update_check_tests_py",
+    srcs = [
+        "update_check_tests.py",
+    ],
+    main = "update_check_tests.py",
+    deps = [
+        "//reboot/cli:update_check_py",
+    ],
+)
+
+py_test(
     name = "dev_tests_py",
     srcs = [
         "dev_tests.py",

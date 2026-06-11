@@ -144,6 +144,11 @@ const sidebars = {
       id: "develop_locally",
       label: "Develop locally",
     },
+    {
+      type: "doc",
+      id: "upgrade",
+      label: "Upgrade Reboot",
+    },
     "tools/cli",
     {
       type: "doc",

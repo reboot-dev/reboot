@@ -56,14 +56,15 @@ def info(
         )
 
 
-def warn(message: str):
-    if sys.stdout.isatty():
+def warn(message: str, stderr: bool = False):
+    out = sys.stderr if stderr else sys.stdout
+    if out.isatty():
         print(
             Fore.YELLOW + Style.BRIGHT + message + Style.RESET_ALL,
-            file=sys.stdout,
+            file=out,
         )
     else:
-        print(message, file=sys.stdout)
+        print(message, file=out)
 
 
 def error(message: str):
