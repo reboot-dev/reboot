@@ -88,6 +88,50 @@ Recommended sequence:
    sign-up, public catalog reads): mark these explicitly with
    `allow()`. That's the one legitimate use.
 
+### Feeding the user's identity into hooks — never fabricate an id
+
+A generated `use<Type>({ id })` hook needs a **real, non-empty
+actor id on every render**. It is not SWR-style: there is no
+"pass `null`/`undefined` to skip the subscription" mode. A falsy
+id is a hard throw during render, not a paused hook —
+`id: ''` throws `state ID must have a length of at least 1` and
+`id: undefined` throws a `TypeError` inside `stateIdToRef`. Either
+one crashes the component.
+
+The trap: browser identity (Auth0, Firebase, your own JWT)
+resolves **asynchronously**, so on the first renders you have no
+user id yet. Do **not** dodge the throw by fabricating a
+placeholder — `useUser({ id: userId || '__no-user__' })` is
+wrong. An actor id is a **global key**, so every loading session
+subscribes to the same shared `__no-user__` actor, it's one
+missed write-guard away from cross-user state, and the placeholder
+addresses nothing — it just silences the crash.
+
+Since the hook can't be told "no id" and can't be called
+conditionally (React's rules of hooks), the fix is to **not mount
+the component that calls the hook until you have the real id**.
+Gate at the parent and pass a guaranteed-real id down:
+
+```tsx
+function UserHome() {
+  const { user, isAuthenticated, isLoading } = useAuth0();
+  if (isLoading) return <Spinner />;
+  if (!isAuthenticated || !user?.sub) return <LoginPrompt />;
+  // From here, user.sub is guaranteed present and non-empty.
+  return <UserView userId={user.sub} />;
+}
+
+function UserView({ userId }: { userId: string }) {
+  // Hook always runs, always with a real, per-user id.
+  const { create } = useUser({ id: userId });
+  // ...
+}
+```
+
+No placeholder, no fake actor, no `userId && create(...)` guards
+scattered around mutations — the hook simply never runs until the
+key is real.
+
 ## Read These From `python` First
 
 Before scaffolding, load the references that cover the backend
@@ -382,6 +426,10 @@ application directory.**
     `isLoading` with stale `response`. Transport disconnects
     auto-reconnect and do **not** surface via `aborted`, so don't
     reach for `aborted` or a heartbeat for an online/offline badge.
+    When a hook's `id` comes from the authenticated user, gate the
+    component so it only mounts once the id is real — see "Feeding
+    the user's identity into hooks" above. Never fabricate a
+    placeholder id to get past the non-empty-id validation.
 11. `cd web && npm run build` (sanity check the bundle).
 12. **Write and run backend unit tests covering each user-facing
     user story before handing the app off.** Enumerate the user
