@@ -111,12 +111,6 @@ cloud down --organization=my-org
 
 :::
 
-:::note
-Deploying an application requires that your organization has a valid
-payment method configured. You can add one on the **Settings** page at
-[`cloud.reboot.dev`](https://cloud.reboot.dev/).
-:::
-
 ## Terminate with `rbt cloud down`
 
 `rbt cloud down` terminates a running application:
