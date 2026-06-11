@@ -287,6 +287,19 @@ class RebootVersionTest(unittest.TestCase):
                     f'version {version}'
                 )
 
+        # Every release ships migration notes for the `upgrade` skill;
+        # `make versions` generates this file (with a "no code
+        # migrations" stub when there are no pending fragments).
+        migration_file = os.path.join(
+            plugin_dir, 'skills', 'upgrade', 'migrations', f'{version}.md'
+        )
+        if not os.path.exists(migration_file):
+            self.fail(
+                f'{migration_file} does not exist; run `make versions` '
+                'to roll the pending migration fragments (or generate '
+                'the "no code migrations" stub) for this release'
+            )
+
         codex_manifest_path = os.path.join(
             plugin_dir, '.codex-plugin', 'plugin.json'
         )
