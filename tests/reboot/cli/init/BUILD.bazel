@@ -74,10 +74,8 @@ multi_env_sh_test(
             "PYTHON_VERSION": "3.12.2",
         },
     },
-    # TODO: Rye has issues with concurrent bootstrap.
-    # https://github.com/astral-sh/rye/issues/960
-    # Additionally, in all our example tests, we initiate LocalEnvoy on the
-    # default secure port 9991. We require 'exclusive' to not run multiple
+    # In all our example tests, we initiate LocalEnvoy on the default
+    # secure port 9991. We require 'exclusive' to not run multiple
     # tests, that use the same port, concurrently.
     tags = [
         "exclusive",

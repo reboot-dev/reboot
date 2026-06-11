@@ -23,13 +23,11 @@ check_lines_in_file() {
 if [ -n "$REBOOT_WHL_FILE" ]; then
   # Install the `reboot` package from the specified path explicitly, over-
   # writing the version from `pyproject.toml`.
-  rye remove --no-sync reboot
-  rye remove --no-sync --dev reboot
-  rye add --dev reboot --absolute --path=${SANDBOX_ROOT}$REBOOT_WHL_FILE
+  uv add --no-sync "${SANDBOX_ROOT}$REBOOT_WHL_FILE"
 fi
 
 # Create and activate a virtual environment.
-rye sync --no-lock
+uv sync
 source .venv/bin/activate
 
 # When running in a Bazel test, our `.rbtrc` file ends up in a very deep

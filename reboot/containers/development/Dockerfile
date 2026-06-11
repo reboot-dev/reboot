@@ -184,19 +184,16 @@ RUN mkdir $NVM_DIR && \
 # Have the non-root user load `nvm` on login.
 RUN echo ". $NVM_DIR/nvm.sh" >> /home/$USERNAME/.bashrc
 
-# Install Rye as the target user. We configure rye to use uv and to only install
-# Python inside of a project directory.
+# Install uv as the target user.
 USER $USERNAME
-RUN curl -sSf https://raw.githubusercontent.com/astral-sh/rye/main/scripts/install.sh | RYE_VERSION="0.31.0" RYE_INSTALL_OPTION="--yes" bash \
-    && "$HOME/.rye/shims/rye" config --set-bool behavior.use-uv=true \
-    && "$HOME/.rye/shims/rye" config --set-bool behavior.global-python=false
+RUN curl -LsSf https://astral.sh/uv/0.11.13/install.sh | sh
 
 # Bazel's `--incompatible_strict_action_env` causes a hardcoded PATH to be used which
-# does not include the path where `rye` is installed. Rather than changing Bazel's PATH,
-# we ensure that `rye` is accessible on it.
+# does not include the path where `uv` is installed. Rather than changing Bazel's PATH,
+# we ensure that `uv` is accessible on it.
 # TODO: See https://github.com/reboot-dev/mono/issues/2652.
-RUN sudo ln -s "$HOME/.rye/shims/rye" /usr/local/bin/rye
-RUN echo "source \"$HOME/.rye/env\"" >> "$HOME/.bashrc"
+RUN sudo ln -s "$HOME/.local/bin/uv" /usr/local/bin/uv
+RUN echo "export PATH=\"$HOME/.local/bin:\$PATH\"" >> "$HOME/.bashrc"
 # Then return to root.
 USER root
 

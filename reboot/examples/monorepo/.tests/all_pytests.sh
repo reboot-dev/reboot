@@ -36,12 +36,10 @@ function runPyTest () {
 
 # Install the `reboot` package from the specified path explicitly, over-
 # writing the version from `pyproject.toml`.
-rye remove --no-sync reboot
-rye remove --no-sync --dev reboot
-rye add --dev reboot --absolute --path=${SANDBOX_ROOT}$REBOOT_WHL_FILE
+uv add --no-sync "${SANDBOX_ROOT}$REBOOT_WHL_FILE"
 
 # Create and activate a virtual environment.
-rye sync --no-lock
+uv sync
 source .venv/bin/activate
 
 for application_folder in "${all_application_folders[@]}"; do

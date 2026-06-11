@@ -78,10 +78,8 @@ sh_test_in_working_directory(
     script = ".tests/serve_test.sh",
     # The following path is relative to the bazel sandbox directory.
     setup_script = "reboot/containers/reboot-base/dev",
-    # TODO: Rye has issues with concurrent bootstrap.
-    # https://github.com/astral-sh/rye/issues/960
-    # Additionally, in all our example tests, we initiate LocalEnvoy on the
-    # default secure port 9991. We require 'exclusive' to not run multiple
+    # In all our example tests, we initiate LocalEnvoy on the default
+    # secure port 9991. We require 'exclusive' to not run multiple
     # tests, that use the same port, concurrently.
     tags = [
         "exclusive",

@@ -23,9 +23,7 @@ check_lines_in_file() {
 if [ -n "$REBOOT_WHL_FILE" ]; then
   # Install the `reboot` package from the specified path
   # explicitly, overwriting the version from `pyproject.toml`.
-  rye remove --no-sync reboot
-  rye remove --no-sync --dev reboot
-  rye add --dev reboot --absolute --path="${SANDBOX_ROOT}$REBOOT_WHL_FILE"
+  uv add --no-sync "${SANDBOX_ROOT}$REBOOT_WHL_FILE"
 fi
 
 # Force a fresh virtualenv. A pre-existing `.venv/` (e.g.,
@@ -35,12 +33,12 @@ fi
 # `pytest`) pointing at the path where it was originally
 # created, which produces "bad interpreter: No such file or
 # directory" when those scripts are executed from a different
-# location. `rye sync` only regenerates entry-point scripts
+# location. `uv sync` only regenerates entry-point scripts
 # for packages it reinstalls, so it can't repair an existing
 # venv whose shebangs are stale. Nuking and re-syncing here
 # guarantees the venv lives at the current path.
 rm -rf .venv
-rye sync --no-lock
+uv sync
 
 # Don't `source .venv/bin/activate`: that script bakes in the
 # venv's original creation path on its first line, which is

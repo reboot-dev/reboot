@@ -146,14 +146,13 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install Rye
+      - name: Install uv
         run: |
-          curl -sSf https://raw.githubusercontent.com/astral-sh/rye/main/scripts/install.sh | RYE_VERSION="0.31.0" RYE_INSTALL_OPTION="--yes" bash
-          echo 'source "$HOME/.rye/env"' >> $HOME/.bash_profile
-          source "$HOME/.rye/env"
-          rye config --set-bool behavior.use-uv=true
+          curl -LsSf https://astral.sh/uv/0.11.13/install.sh | sh
+          echo 'export PATH="$HOME/.local/bin:$PATH"' >> $HOME/.bash_profile
+          export PATH="$HOME/.local/bin:$PATH"
           # TODO: See https://github.com/reboot-dev/mono/issues/2652.
-          sudo ln -s $(which rye) /usr/local/bin/rye
+          sudo ln -s $(which uv) /usr/local/bin/uv
 
         # Our 'examples' tests are bazel 'sh_test', which means they are
         # configured in another way than the 'py_test' tests.

@@ -11,7 +11,7 @@ installed. If you are developing `rbt` and testing it against a Bazel-ified exam
 
 When you are working on the `reboot` package and you want to test it
 locally before deploying it to PyPI, you can build and install the development
-version by running the following inside a Rye project directory (you don't need
+version by running the following inside a uv project directory (you don't need
 to increment the version number):
 
 ```bash
