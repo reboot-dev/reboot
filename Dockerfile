@@ -31,7 +31,7 @@ ARG ISTIO_VERSION=1.29.0
 # This version should match `ENVOY_VERSION` in
 # `public/reboot/settings.py` and
 # `reboot/containers/reboot-base/Dockerfile`.
-ARG ENVOY_VERSION=1.30.2
+ARG ENVOY_VERSION=1.38.2
 
 # Clang version used for C++ compilation on the host and in the
 # manylinux-builder container.

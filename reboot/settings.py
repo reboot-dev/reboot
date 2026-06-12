@@ -253,7 +253,7 @@ DATABASE_SUFFIX = "-sidecar"
 #
 # Keep in sync with top-level `Dockerfile` and
 # `reboot/containers/reboot-base/Dockerfile`.
-ENVOY_VERSION = '1.30.2'
+ENVOY_VERSION = '1.38.2'
 ENVOY_PROXY_IMAGE = f'envoyproxy/envoy:v{ENVOY_VERSION}'
 
 ENVVAR_LOCAL_ENVOY_USE_TLS = 'REBOOT_LOCAL_ENVOY_USE_TLS'

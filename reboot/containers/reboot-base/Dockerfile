@@ -1,5 +1,5 @@
 # Keep in sync with top-level `Dockerfile` and `reboot/settings.py`.
-ARG ENVOY_VERSION=1.30.2
+ARG ENVOY_VERSION=1.38.2
 
 FROM envoyproxy/envoy:v${ENVOY_VERSION}
 
