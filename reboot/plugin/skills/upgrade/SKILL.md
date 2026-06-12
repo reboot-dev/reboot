@@ -94,21 +94,22 @@ carry migration steps this plugin does not know about.
 
 ## Step 5 — Plan, and confirm with the developer
 
-Read every migration file in this skill's `migrations/` directory
-whose version is greater than the current version and at most the
-target version (file names are `<version>.md`). Sort them in
-ascending version order; that is the order their steps apply in.
-Many will state that no code migrations are needed.
+Read every fragment (`.md` file) in this skill's
+`migrations/<version>/` directories whose `<version>` is greater
+than the current version and at most the target version. Sort the
+directories in ascending version order; that is the order their
+steps apply in. A version without a directory needs no code
+migrations.
 
 Tell the developer what the upgrade involves (from which version to
-which, and a one-line summary per migration file that has actual
-steps) and get their go-ahead before changing anything. Never start
-the upgrade without their approval.
+which, and a one-line summary per fragment) and get their go-ahead
+before changing anything. Never start the upgrade without their
+approval.
 
 ## Step 6 — Apply the code migrations
 
-Apply the migration files' steps to the application, in ascending
-version order. These are code-only changes; do not bump version pins
+Apply the fragments' steps to the application, in ascending version
+order. These are code-only changes; do not bump version pins
 or regenerate yet. (This ordering is deliberate: if the upgrade is
 interrupted partway, the application still pins its old version, so
 the version-mismatch check fires on the next run and this skill can

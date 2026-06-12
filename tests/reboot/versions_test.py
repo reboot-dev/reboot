@@ -292,17 +292,26 @@ class RebootVersionTest(unittest.TestCase):
                     f'version {version}'
                 )
 
-        # Every release ships migration notes for the `upgrade` skill;
-        # `make versions` generates this file (with a "no code
-        # migrations" stub when there are no pending fragments).
-        migration_file = os.path.join(
-            plugin_dir, 'skills', 'upgrade', 'migrations', f'{version}.md'
+        # The `upgrade` skill's migration fragments live in
+        # `migrations/next/` until a release, when `make versions`
+        # moves them into a `migrations/<version>/` directory. Catch
+        # entries that fit neither shape (e.g. a fragment added next
+        # to the per-release directories instead of inside `next/`).
+        migrations_dir = os.path.join(
+            plugin_dir, 'skills', 'upgrade', 'migrations'
         )
-        if not os.path.exists(migration_file):
+        for entry in os.listdir(migrations_dir):
+            if entry in ('next', 'README.md'):
+                continue
+            if (
+                re.fullmatch(r'\d+\.\d+\.\d+', entry) and
+                os.path.isdir(os.path.join(migrations_dir, entry))
+            ):
+                continue
             self.fail(
-                f'{migration_file} does not exist; run `make versions` '
-                'to roll the pending migration fragments (or generate '
-                'the "no code migrations" stub) for this release'
+                f'{migrations_dir} contains unexpected entry {entry}; '
+                'expected only `next/`, `README.md`, and per-release '
+                '`<version>/` directories'
             )
 
         codex_manifest_path = os.path.join(

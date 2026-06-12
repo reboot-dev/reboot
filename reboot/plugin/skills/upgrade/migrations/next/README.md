@@ -25,7 +25,6 @@ the tests" steps — the `upgrade` skill always does those once at the
 end of an upgrade.
 
 At release time, `make versions` (via
-`bazel run //bazel/release_scripts:roll_migrations`) concatenates the
-fragments here into `../<REBOOT_VERSION>.md` and deletes them. When a
-release has no fragments, that file is generated with a "no code
-migrations" stub instead. This `README.md` stays in place.
+`bazel run //bazel/release_scripts:roll_migrations`) moves the
+fragments here into `../<REBOOT_VERSION>/`. When a release has no
+fragments, no directory is created. This `README.md` stays in place.
