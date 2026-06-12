@@ -208,3 +208,11 @@ async def fn(state):
     state.x += 1
 await Service.ref().write(context, fn)
 ```
+
+### 19. Schema Evolution Is Additive-Only Once State Persists
+
+Changing the API of an application that has persisted state or has
+been deployed can make it fail to boot ("Updated state or method
+definitions are not backwards compatible") and get its deploy
+rejected. Read `api-schema-evolution.md` for the rules you must
+follow before changing such an API.

@@ -468,7 +468,10 @@ When modifying an existing app:
 
 1. Read `.rbtrc`, the API definition, servicer, `main.py`, and
    `web/src/App.tsx`.
-2. Assess state model changes.
+2. Assess state model changes. If the app has persisted state or
+   has been deployed, read
+   `python/references/api-schema-evolution.md` to understand the
+   rules you must follow for API schema evolution.
 3. Update the API definition → re-run `uv run rbt generate`.
 4. Update servicer methods.
 5. Update React components and routes.

@@ -1,6 +1,6 @@
 ---
 name: python
-description: Reboot Python framework for building transactional microservices with durable actor state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, implementing Servicers, calling actor refs across services, scheduling work, building durable workflows with the right call primitive (`.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` for Reboot calls; `at_least_once` / `at_most_once` for external calls; `until` / `until_changes` for reactive waiting on Reboot state), calling an LLM / building an AI agent in the backend via the durable `reboot.agents.pydantic_ai.Agent`, or testing Reboot applications with the `Reboot()` test harness.
+description: Reboot Python framework for building transactional microservices with durable actor state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, changing an API of an application that has already been deployed or has persisted state (schema evolution rules; see `references/api-schema-evolution.md`), implementing Servicers, calling actor refs across services, scheduling work, building durable workflows with the right call primitive (`.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` for Reboot calls; `at_least_once` / `at_most_once` for external calls; `until` / `until_changes` for reactive waiting on Reboot state), calling an LLM / building an AI agent in the backend via the durable `reboot.agents.pydantic_ai.Agent`, or testing Reboot applications with the `Reboot()` test harness.
 license: Apache-2.0
 metadata:
   author: reboot
@@ -27,6 +27,8 @@ Reference these guidelines when:
   application entry point)
 - Defining or modifying an API in pydantic Python (state,
   reader/writer/transaction/workflow methods, errors, constructors)
+- Changing the API of an application that has persisted state or has
+  been deployed — read `references/api-schema-evolution.md` first
 - Implementing or modifying a Servicer
 - Calling another actor via `Service.ref(id).method(context, ...)`
 - Building a durable workflow with `WorkflowContext`, picking the right
@@ -190,6 +192,9 @@ messages nested as attributes, the `Servicer` base class, and the
   request/response, and error Models.
 - Cross-actor and external-service calls belong in `TransactionContext`
   (one-shot) or `WorkflowContext` (durable, long-running).
+- **Changing an API after the application has persisted state or has
+  been deployed?** Read `references/api-schema-evolution.md` to
+  understand the rules you must follow for API schema evolution.
 - Pass arguments to actor methods as **kwargs**, not as Request wrappers:
   `await ref.deposit(context, amount=10)`, not
   `await ref.deposit(context, DepositRequest(amount=10))`.
@@ -262,6 +267,10 @@ The `Agent` runs only inside a `WorkflowContext`, so also read the
 - `references/state-nested-models.md` — same rule from the nested-
   `Model` angle: state Models never appear as fields of other
   state Models
+- `references/api-schema-evolution.md` — **always read before
+  modifying an API that has already been deployed or run with
+  persisted state**: the rules you must follow for API schema
+  evolution
 
 ### Implementing a Servicer
 
@@ -383,6 +392,8 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/api-pydantic.md`
 - `references/api-methods.md`
 - `references/api-errors.md`
+- `references/api-schema-evolution.md` — schema evolution rules for
+  deployed applications / persisted state
 
 **Servicer** (`servicer-`):
 

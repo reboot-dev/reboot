@@ -12,7 +12,7 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 2. API (api)
 
 **Impact:** CRITICAL
-**Description:** Pydantic API definition — state models, reader/writer/transaction method factories, the `factory=True` constructor option, and typed error models. The pydantic API file is the source of truth; everything else is generated from it.
+**Description:** Pydantic API definition — state models, reader/writer/transaction method factories, the `factory=True` constructor option, and typed error models. The pydantic API file is the source of truth; everything else is generated from it. Also covers schema evolution: the rules to follow when changing the API of an application that has persisted state or has been deployed.
 
 ## 3. Servicer (servicer)
 

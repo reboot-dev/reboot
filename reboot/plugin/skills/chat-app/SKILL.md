@@ -636,7 +636,10 @@ application directory.**
 When modifying an existing app:
 
 1. Read `.rbtrc`, API definition, servicer, `main.py`.
-2. Assess state model changes.
+2. Assess state model changes. If the app has persisted state or
+   has been deployed, read
+   `python/references/api-schema-evolution.md` to understand the
+   rules you must follow for API schema evolution.
 3. Update API definition → re-run `uv run rbt generate`.
 4. Update servicer methods.
 5. Update React components.
