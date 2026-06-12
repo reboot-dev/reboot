@@ -344,8 +344,9 @@ with "unknown actor type."
   external service**: capture a provider's OAuth tokens (your own
   authorize/callback HTTP endpoints → `OAuthTokenManager.store`), read
   them back with `fetch`, and make the outbound call **inside a
-  `Workflow`**. Also the **API-key path** for services without OAuth
-  (`Ciphertext`-encrypted, the ciphertext id kept in state).
+  `Workflow`**. Also the **user-provided API-key path** for services
+  without OAuth (`Ciphertext`-encrypted, the ciphertext id kept in
+  state; the developer's own service keys are env-var secrets instead).
   Host-agnostic (chat apps and web apps). Pairs with
   `stdlib-oauth-tokens.md` (the `OAuthTokenManager` type).
 

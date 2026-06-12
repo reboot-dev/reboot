@@ -68,96 +68,43 @@ Optional hooks:
   rarely needed (`Development` uses it for its login page).
 - **`token_service_id`** — see "Supporting `store_tokens=True`" below.
 
-## Example: a generic OIDC provider (Keycloak, Okta, …)
+## Model your provider on the shipped ones
 
-```python
-import aiohttp
-import jwt
-from reboot.aio.auth.oauth_providers import (
-    ExchangeResult,
-    RegisteredOAuthProvider,
-    UserId,
-)
-from typing import Optional
-from urllib.parse import urlencode
+Don't write a provider from a blank page — read the shipped providers
+in `reboot.aio.auth.oauth_providers` (the module is part of the
+installed `reboot` package; open its source) and adapt the closest one:
 
+- **`Auth0`** is the model for any OIDC IdP (Keycloak, Okta, a
+  self-hosted SSO): authorization-code exchange, the user id from the
+  ID token's `sub` claim, a constructor extra (`domain=`) with its
+  `validate()` check, and full `store_tokens=True` support including
+  the `offline_access` refresh-token scope.
+- **`GitHub`** is the model for a plain-OAuth (non-OIDC) IdP: no ID
+  token, so it resolves the user id by calling the IdP's user-info API
+  with the freshly exchanged access token.
+- **`Google`** shows a provider-specific refresh-token knob added in
+  `authorization_url` (`access_type=offline`).
 
-class Keycloak(RegisteredOAuthProvider):
+Your subclass differs from its model only in the endpoint URLs, the
+`_REQUIRED_SCOPE`, any constructor extras (a base URL, a realm, a
+tenant), and `token_service_id` — the rest carries over line by line.
 
-    # `openid` yields an ID token whose `sub` claim is the user's id.
-    _REQUIRED_SCOPE = "openid"
-
-    def __init__(
-        self,
-        *,
-        # E.g. "https://sso.example.com/realms/myrealm".
-        base_url: str,
-        client_id: Optional[str],
-        client_secret: Optional[str],
-        scopes: Optional[list[str]] = None,
-        store_tokens: bool = False,
-    ):
-        super().__init__(
-            client_id=client_id,
-            client_secret=client_secret,
-            scopes=scopes,
-            store_tokens=store_tokens,
-        )
-        self._base_url = base_url.rstrip("/")
-
-    @property
-    def token_service_id(self) -> str:
-        # Names the `OAuthTokenManager` this provider's tokens are
-        # stored under when `store_tokens=True`.
-        return "sso.example.com"
-
-    def authorization_url(self, state: str, redirect_uri: str) -> str:
-        params = {
-            "client_id": self._client_id,
-            "redirect_uri": redirect_uri,
-            "response_type": "code",
-            "scope": " ".join(self._requested_scopes()),
-            "state": state,
-        }
-        endpoint = f"{self._base_url}/protocol/openid-connect/auth"
-        return f"{endpoint}?{urlencode(params)}"
-
-    async def exchange_code(
-        self, code: str, redirect_uri: str
-    ) -> ExchangeResult:
-        data = {
-            "grant_type": "authorization_code",
-            "client_id": self._client_id,
-            "client_secret": self._client_secret,
-            "code": code,
-            "redirect_uri": redirect_uri,
-        }
-        endpoint = f"{self._base_url}/protocol/openid-connect/token"
-        async with aiohttp.ClientSession() as session:
-            async with session.post(endpoint, data=data) as response:
-                response.raise_for_status()
-                token_response = await response.json()
-        # The token arrived directly from the IdP's token endpoint over
-        # TLS, so transport guarantees authenticity; skip signature
-        # verification, as the shipped providers do.
-        decoded = jwt.decode(
-            token_response["id_token"],
-            options={"verify_signature": False},
-        )
-        return ExchangeResult(user_id=UserId(decoded["sub"]), tokens=None)
-```
-
-Wire it like any shipped provider — and register the server's callback
-URL (`<base-url>/__/oauth/callback`) with the IdP, exactly as
-`auth-oauth-providers.md` describes for the shipped ones:
+Wire the instance like any shipped provider. Reboot serves the
+callback route (`<base-url>/__/oauth/callback`) automatically, but the
+IdP only redirects to URLs on its per-client allowlist — and that
+allowlist lives in the IdP's own console, where only the **user** can
+go. **Tell the user explicitly** to add that URL as an authorized
+redirect URI there (along with registering the client and obtaining
+the `client_id` / `client_secret`); don't assume it's done — the
+provider won't work until it is. This is the same hand-off
+`auth-oauth-providers.md` describes for the shipped providers:
 
 ```python
 oauth=OAuthProviderByEnvironment(
     dev=Development(),
-    prod=Keycloak(
-        base_url="https://sso.example.com/realms/myrealm",
-        client_id=os.environ.get("KEYCLOAK_CLIENT_ID"),
-        client_secret=os.environ.get("KEYCLOAK_CLIENT_SECRET"),
+    prod=MyIdP(
+        client_id=os.environ.get("MY_IDP_CLIENT_ID"),
+        client_secret=os.environ.get("MY_IDP_CLIENT_SECRET"),
     ),
 )
 ```
@@ -169,7 +116,7 @@ To let your provider participate in the token-capture machinery of
 user):
 
 1. Override **`token_service_id`** with the state id naming the service
-   (`"sso.example.com"` above) — apps read tokens back with
+   (e.g. `"sso.example.com"`) — apps read tokens back with
    `OAuthTokenManager.ref(<that id>).fetch(...)`.
 2. When `self._store_tokens` is set, have `exchange_code` return an
    `OAuthTokens` (`rbt.std.oauth.v1.oauth_rbt`) built from the token

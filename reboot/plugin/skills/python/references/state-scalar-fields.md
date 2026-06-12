@@ -92,9 +92,13 @@ Instead, encrypt the value with the `Ciphertext` stdlib type (envelope
 encryption + per-scope crypto-shredding) and store the returned
 `state_id` — itself a harmless `str` — on your state. Decrypt on demand.
 Full method surface, library registration, and `associated_data` rules
-are in `stdlib-ciphertext.md`. If the secret is an **API key for
-calling an external service** that doesn't expose OAuth, the end-to-end
-capture-and-call recipe is `auth-external-api-calls.md` (Path C).
+are in `stdlib-ciphertext.md`. If the secret is an **API key the user
+provides** for calling an external service that doesn't expose OAuth,
+the end-to-end capture-and-call recipe is `auth-external-api-calls.md`
+(Path C). A key the **developer** holds for the whole application (your
+Stripe key, your OpenAI key) doesn't belong in state at all — deliver
+it as an application secret via environment variables
+(`lifecycle-secrets.md`).
 
 **OAuth tokens are the exception:** for access/refresh tokens obtained
 through an `OAuthProvider`, don't reach for `Ciphertext` by hand — use

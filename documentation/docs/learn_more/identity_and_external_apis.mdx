@@ -6,7 +6,7 @@ OAuth plays two distinct roles in a Reboot application:
    `context.auth.user_id` is populated and authorizers can act on it.
 2. **Acting as the user** at an external service — calling their Google
    Calendar, their GitHub repos, their Slack — using OAuth tokens your
-   application has captured.
+   application has been granted.
 
 This page walks through the expected flow for both, and what to do for
 external services that don't use OAuth at all.
@@ -248,10 +248,23 @@ async def create_event(
     return User.CreateEventResponse(connected=True)
 ```
 
-### Services that use API keys instead of OAuth
+### Services where the user provides an API key instead of OAuth
 
 Some services don't expose per-user OAuth at all — the user pastes an
-API key or personal access token into your UI. `OAuthTokenManager` is
+API key or personal access token into your UI.
+
+:::note
+
+This section is about a key **the user** provides so your application
+can act *as that user* — a per-user secret, stored per user. A key
+**you, the developer,** hold for the whole application (your Stripe
+secret key, your OpenAI key) is not per-user state and doesn't belong
+in application state at all: deliver it as an application
+[secret](/learn_more/secrets) via environment variables.
+
+:::
+
+`OAuthTokenManager` is
 purpose-built for OAuth tokens; don't shoehorn an API key into it. The
 key is still a secret at rest, so encrypt it with
 [`Ciphertext`](/library_services/ciphertext) and keep the returned

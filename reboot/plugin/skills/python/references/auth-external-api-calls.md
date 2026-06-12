@@ -136,10 +136,19 @@ services issue one only on first consent). You can't read and write the
 same manager in one transaction, so if you need to merge, `fetch` first
 in a separate call.
 
-### Path C — the service uses an API key, not OAuth
+### Path C — the user provides an API key, not OAuth
 
 Some services don't expose per-user OAuth at all — the user pastes an
 API key, personal access token, or webhook secret into your UI instead.
+
+> **Path C is only for keys the _user_ provides** so the app can act
+> _as that user_ — a per-user secret, stored per user. Don't confuse it
+> with service-to-service auth, where **you, the developer,** hold one
+> key for the whole application (your Stripe secret key, your OpenAI
+> key): that key is not per-user state and never goes in an actor —
+> deliver it as an application secret via environment variables /
+> `rbt cloud secret` (`lifecycle-secrets.md`).
+
 `OAuthTokenManager` is purpose-built for OAuth tokens; don't shoehorn an
 API key into it. The key is still a secret at rest, so the rule from
 `state-scalar-fields.md` applies: **never a plain `str` field** — encrypt
@@ -307,8 +316,10 @@ await KeyManager.ref(_key_manager_id(GOOGLE)).shred(context, scope=user_id)
       (any other service; the only path in web apps): your own authorize + callback routes, callback registered `app_internal=True`, the
       OAuth `state` HMAC-signed and verified, `OAuthTokenManager.store`
       called with the app-internal `external_context(request)`. Path C
-      (the service uses an API key, not OAuth): `Ciphertext.encrypt`,
+      (the user provides an API key, not OAuth): `Ciphertext.encrypt`,
       with the returned `state_id` — never the raw key — kept in state.
+      A key the developer holds for the whole app is an application
+      secret (`rbt cloud secret`), not actor state.
 - [ ] Every method that calls the service's API is a `Workflow`, the
       call wrapped in a durability primitive (`at_least_once` /
       `at_most_once`), with `user_id=context.state_id`.
