@@ -15,6 +15,16 @@ whenever:
 - an application refuses to start with `This application depends on reboot <X>, but it is being run by an rbt CLI at version <Y>`, or
 - the user asks to upgrade or update Reboot.
 
+How urgently to react depends on the trigger:
+
+- A version mismatch is blocking: the application cannot run until
+  the versions agree, so switch to this skill unconditionally.
+- A `newer Reboot is available` notice is not: ask the developer at a
+  convenient moment whether they'd like to upgrade, and don't block
+  iteration on the application if they decline.
+
+Either way, never start an upgrade without the developer's approval.
+
 The upgrade has two halves, in a fixed order: first make sure the
 **plugin** is current (steps 1–2), then bring the **application** up
 to the plugin's version (steps 3–8).

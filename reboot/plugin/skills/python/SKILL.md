@@ -12,17 +12,9 @@ metadata:
 
 # Reboot Python Best Practices
 
-> **Version notices:**
->
-> - If an application refuses to start because its `reboot` version
->   does not match the `rbt` CLI, unconditionally switch to the
->   [upgrade skill](../upgrade/SKILL.md) — the app cannot run until
->   the versions agree.
-> - If `rbt` prints `A newer Reboot (X.Y.Z) is available`, ask the
->   developer at a convenient moment whether they'd like to upgrade.
->   Don't block iteration on the app if they decline, and don't
->   start an upgrade without their approval; when they accept, use
->   the [upgrade skill](../upgrade/SKILL.md).
+> **Version notices:** if `rbt` reports a version mismatch or that a
+> newer Reboot is available, the [upgrade skill](../upgrade/SKILL.md)
+> says how and when to react.
 
 Guide for building transactional microservices in Python with the Reboot
 framework. Reboot APIs are defined in pydantic Python
