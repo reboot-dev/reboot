@@ -175,15 +175,6 @@ jobs:
         run: |
           brew list jq &>/dev/null || brew install jq
 
-      # MacOS runners aren't able to run Docker inside, so we have
-      # to run Envoy as an executable during 'rbt dev run'.
-      - name: Install Envoy executable
-        run: |
-          # We would like to pin the envoy version, but there is no available
-          # brew formula for that.
-          # https://github.com/envoyproxy/envoy/issues/14520
-          brew install envoy
-
       - name: Symlink executables arm64
         # Our 'examples' tests are bazel 'sh_test', which means they only have
         # access to a limited set of PATH entries
@@ -191,7 +182,6 @@ jobs:
         run: |
           sudo ln -s $(which autoconf) /usr/local/bin/autoconf
           sudo ln -s $(which jq) /usr/local/bin/jq
-          sudo ln -s $(which envoy) /usr/local/bin/envoy
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -212,6 +202,19 @@ jobs:
 <% endif %>
           submodules: recursive
           show-progress: false
+
+      # MacOS runners aren't able to run Docker inside, so we have
+      # to run Envoy as an executable during 'rbt dev run'.
+      # `install_envoy.sh` downloads the Envoy version pinned in
+      # `reboot/settings.py` (`ENVOY_VERSION`) and prints the
+      # directory containing the binary. Symlink the binary to where
+      # our bazel 'sh_test' tests can find it, since they only have
+      # access to a limited set of PATH entries.
+      # TODO: See https://github.com/reboot-dev/mono/issues/2652.
+      - name: Install Envoy executable
+        run: |
+          ENVOY_DIR="$(sh <% if is_mono %>public/<% endif %>reboot/plugin/lib/install_envoy.sh)"
+          sudo ln -s "$ENVOY_DIR/envoy" /usr/local/bin/envoy
 
       # We need to differentiate between different MacOS environments, like
       # arm64 and x86_64 in the remote cache, so we dump information about the
