@@ -16,6 +16,7 @@ check, as does the `CI` environment variable.
 
 import json
 import os
+import pydantic
 import reboot.cli.terminal as terminal
 import time
 import urllib.request
@@ -33,6 +34,15 @@ PYPI_JSON_URL = 'https://pypi.org/pypi/reboot/json'
 CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 
 FETCH_TIMEOUT_SECONDS = 2
+
+
+class _Cache(pydantic.BaseModel):
+    """The schema of the JSON in `_cache_file()`."""
+    # When PyPI was last asked, in seconds since the epoch.
+    checked_at: float
+    # The latest released version PyPI reported, or `None` when that
+    # fetch failed.
+    latest: Optional[str]
 
 
 def _cache_file() -> Path:
@@ -62,24 +72,21 @@ def _latest_version() -> Optional[str]:
     cache when it is fresh, otherwise by asking PyPI. Returns `None`
     when the latest version is (currently) unknowable."""
     cache_file = _cache_file()
-    cached = {}
+    cached: Optional[_Cache] = None
     try:
-        cached = json.loads(cache_file.read_text(encoding='utf-8'))
-        if not isinstance(cached, dict):
-            cached = {}
+        cached = _Cache.model_validate_json(
+            cache_file.read_text(encoding='utf-8')
+        )
     except Exception:
         # Deliberate catch-all: a missing, unreadable, or corrupt
         # cache file (or an unforeseen filesystem error) must never
         # break `rbt`; we just behave as if there were no cache.
-        cached = {}
+        pass
 
-    latest = cached.get('latest')
-    if not isinstance(latest, str):
-        latest = None
-    checked_at = cached.get('checked_at')
+    latest = cached.latest if cached is not None else None
     if (
-        isinstance(checked_at, (int, float)) and
-        time.time() - checked_at < CHECK_INTERVAL_SECONDS
+        cached is not None and
+        time.time() - cached.checked_at < CHECK_INTERVAL_SECONDS
     ):
         return latest
 
@@ -89,17 +96,23 @@ def _latest_version() -> Optional[str]:
         # Deliberate catch-all: no network failure (DNS, timeout,
         # TLS, a PyPI outage or schema change, ...) should ever break
         # `rbt`. Keep any previously cached value; a stale answer is
-        # more useful than none.
+        # more useful than none. The cache write below records a
+        # fresh `checked_at` for this failed fetch too, so the next
+        # attempt is a full `CHECK_INTERVAL_SECONDS` away: we ask
+        # PyPI at most once per interval, because when PyPI is
+        # struggling the last thing it needs is every `rbt` start in
+        # the world retrying against it, and upgrade notices are not
+        # urgent enough to warrant more.
         pass
 
     try:
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         temporary = cache_file.with_name(cache_file.name + '.tmp')
         temporary.write_text(
-            json.dumps({
-                'checked_at': time.time(),
-                'latest': latest,
-            }),
+            _Cache(
+                checked_at=time.time(),
+                latest=latest,
+            ).model_dump_json(),
             encoding='utf-8',
         )
         # Atomic, so concurrent `rbt` invocations never observe a
