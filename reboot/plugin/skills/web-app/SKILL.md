@@ -136,6 +136,21 @@ No placeholder, no fake actor, no `userId && create(...)` guards
 scattered around mutations — the hook simply never runs until the
 key is real.
 
+### Calling external APIs on the user's behalf
+
+To act **as the user** at an external service (call their Slack,
+Google, a partner API), store that service's OAuth tokens encrypted in
+an `OAuthTokenManager` and make the call inside a `Workflow`. Because a
+web app has no `Application(oauth=...)`, the chat-app `store_tokens=True`
+shortcut isn't available — you always run the service's OAuth flow
+yourself with your own authorize/callback HTTP endpoints (a callback
+registered `app_internal=True`) and call `OAuthTokenManager.store`. The
+full host-agnostic recipe — endpoints, storage, reading tokens back, the
+in-`Workflow` call, refresh, and erasure — is
+`python/references/auth-external-api-calls.md` (Path B). Never store
+tokens in a plain `str` field or hand-roll `Ciphertext`
+(`python/references/stdlib-oauth-tokens.md`).
+
 ## Read These From `python` First
 
 Before scaffolding, load the references that cover the backend
@@ -202,6 +217,12 @@ mechanics. The patterns in this skill assume you've read them.
 - `python/references/auth-allow-deny.md` — narrow uses of
   unconditional rules; specifically, when **not** to reach for
   `allow()`.
+- `python/references/auth-external-api-calls.md` and
+  `python/references/stdlib-oauth-tokens.md` — **calling an external
+  service's API as the user**: custom OAuth endpoints (web apps use
+  Path B — no `store_tokens=True` shortcut) → `OAuthTokenManager.store`
+  → read back + call inside a `Workflow`. Never a plain `str` token
+  field.
 
 ## Workflow: Plan First, Then Build
 

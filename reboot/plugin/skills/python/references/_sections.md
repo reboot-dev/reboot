@@ -42,7 +42,7 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 8. Auth (auth)
 
 **Impact:** HIGH
-**Description:** Authorizer composition: `allow()` / `deny()`, `allow_if(all=...)` / `allow_if(any=...)`, the built-in predicates (`has_verified_token`, `is_app_internal`, `state_id_is_user_id`), and writing custom predicates.
+**Description:** Authorizer composition: `allow()` / `deny()`, `allow_if(all=...)` / `allow_if(any=...)`, the built-in predicates (`has_verified_token`, `is_app_internal`, `state_id_is_user_id`), and writing custom predicates. Also the host-agnostic recipe for acting as the user at an external service — capturing a provider's OAuth tokens via your own endpoints, storing them in an `OAuthTokenManager`, and calling the API inside a `Workflow` (`auth-external-api-calls.md`).
 
 ## 9. RPC (rpc)
 

@@ -301,14 +301,16 @@ reference **before** writing your own actor type — defining your
 own `Queue` / `OrderedMap` / etc. is almost always wrong
 and forfeits durability, ordering, and concurrency guarantees:
 
-| You need...                                       | Use          | Reference               |
-| ------------------------------------------------- | ------------ | ----------------------- |
-| Durable FIFO — work queue, job queue, intake      | `Queue`      | `stdlib-queue.md`       |
-| Sorted key-value with pagination / ordering       | `OrderedMap` | `stdlib-ordered-map.md` |
-| Presence — who's online / connected               | `Presence`   | `stdlib-presence.md`    |
-| Pubsub / broadcast / fan-out to subscribers       | `PubSub`     | `stdlib-pubsub.md`      |
-| Item builder for `Queue` / `PubSub` payloads      | `Item`       | `stdlib-item.md`        |
-| Encrypt at rest / crypto-shred (right-to-erasure) | `Ciphertext` | `stdlib-ciphertext.md`  |
+| You need...                                       | Use                 | Reference                |
+| ------------------------------------------------- | ------------------- | ------------------------ |
+| Durable FIFO — work queue, job queue, intake      | `Queue`             | `stdlib-queue.md`        |
+| Sorted key-value with pagination / ordering       | `OrderedMap`        | `stdlib-ordered-map.md`  |
+| Presence — who's online / connected               | `Presence`          | `stdlib-presence.md`     |
+| Pubsub / broadcast / fan-out to subscribers       | `PubSub`            | `stdlib-pubsub.md`       |
+| Item builder for `Queue` / `PubSub` payloads      | `Item`              | `stdlib-item.md`         |
+| Store OAuth access/refresh tokens from a provider | `OAuthTokenManager` | `stdlib-oauth-tokens.md` |
+| A field holds a password/API key/secret/PII       | `Ciphertext`        | `stdlib-ciphertext.md`   |
+| Encrypt at rest / crypto-shred (right-to-erasure) | `Ciphertext`        | `stdlib-ciphertext.md`   |
 
 Each stdlib reference also lists its library registration —
 forgetting `<thing>_library()` and the stdlib actor's
@@ -322,6 +324,10 @@ with "unknown actor type."
   `Ciphertext` library handles envelope encryption, per-scope erasure,
   and automatic root-key rotation for you. Reach here before
   hand-rolling any encryption.
+- `references/stdlib-oauth-tokens.md` — **storing an external provider's
+  OAuth access/refresh tokens**: use the purpose-built
+  `OAuthTokenManager` (with `store_tokens=True` the OAuth server captures
+  them for you), not a `str` field and not hand-rolled `Ciphertext`.
 - `references/crypto-root-keys.md` — only when building your **own**
   key-deriving library/feature: HKDF-deriving purpose-specific keys
   from Reboot's managed root keys, and the rotation control loop +
@@ -334,6 +340,12 @@ with "unknown actor type."
 - `references/auth-allow-if.md` and `references/auth-built-in-predicates.md`
   — composition patterns
 - `references/auth-custom-predicates.md` — for app-specific rules
+- `references/auth-external-api-calls.md` — **acting as the user at an
+  external service**: capture a provider's OAuth tokens (your own
+  authorize/callback HTTP endpoints → `OAuthTokenManager.store`), read
+  them back with `fetch`, and make the outbound call **inside a
+  `Workflow`**. Host-agnostic (chat apps and web apps). Pairs with
+  `stdlib-oauth-tokens.md` (the `OAuthTokenManager` type).
 
 ### Testing
 
@@ -424,6 +436,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/stdlib-presence.md`
 - `references/stdlib-item.md`
 - `references/stdlib-ciphertext.md`
+- `references/stdlib-oauth-tokens.md`
 
 **Crypto** (`crypto-`):
 
@@ -441,6 +454,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/auth-allow-if.md`
 - `references/auth-built-in-predicates.md`
 - `references/auth-custom-predicates.md`
+- `references/auth-external-api-calls.md`
 
 **RPC** (`rpc-`):
 
