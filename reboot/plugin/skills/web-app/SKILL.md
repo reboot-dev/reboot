@@ -149,7 +149,10 @@ full host-agnostic recipe — endpoints, storage, reading tokens back, the
 in-`Workflow` call, refresh, and erasure — is
 `python/references/auth-external-api-calls.md` (Path B). Never store
 tokens in a plain `str` field or hand-roll `Ciphertext`
-(`python/references/stdlib-oauth-tokens.md`).
+(`python/references/stdlib-oauth-tokens.md`). If the service doesn't do
+OAuth at all and the user pastes an **API key** instead, that key goes
+through `Ciphertext` (the ciphertext id kept in state) — Path C in the
+same recipe.
 
 ## Read These From `python` First
 

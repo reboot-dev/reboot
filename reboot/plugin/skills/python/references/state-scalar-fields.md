@@ -92,7 +92,9 @@ Instead, encrypt the value with the `Ciphertext` stdlib type (envelope
 encryption + per-scope crypto-shredding) and store the returned
 `state_id` — itself a harmless `str` — on your state. Decrypt on demand.
 Full method surface, library registration, and `associated_data` rules
-are in `stdlib-ciphertext.md`.
+are in `stdlib-ciphertext.md`. If the secret is an **API key for
+calling an external service** that doesn't expose OAuth, the end-to-end
+capture-and-call recipe is `auth-external-api-calls.md` (Path C).
 
 **OAuth tokens are the exception:** for access/refresh tokens obtained
 through an `OAuthProvider`, don't reach for `Ciphertext` by hand — use

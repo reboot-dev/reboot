@@ -2,7 +2,7 @@
 title: Calling External-Service APIs on the User's Behalf
 impact: HIGH
 impactDescription: Token capture is opt-in and easy to get subtly wrong — the wrong scope, a missing library, storing from a non-app-internal context, or an external call outside a Workflow all fail at runtime, not at startup. This is the host-agnostic recipe shared by chat apps and web apps.
-tags: auth, oauth, tokens, store_tokens, oauth-token-manager, ciphertext, workflow, external, api, custom-endpoint, on-behalf, refresh-token, crypto-shred
+tags: auth, oauth, tokens, store_tokens, oauth-token-manager, ciphertext, workflow, external, api, api-key, custom-endpoint, on-behalf, refresh-token, crypto-shred
 ---
 
 ## Calling External-Service APIs on the User's Behalf
@@ -22,9 +22,12 @@ apps**; only how you _capture_ the tokens differs slightly by host (see
 The storage and use halves are identical regardless of how the tokens
 were captured. The `OAuthTokenManager` type itself — its `store` /
 `fetch` surface and the `OAuthTokens` fields — is documented in
-`stdlib-oauth-tokens.md`; this file is the end-to-end flow.
+`stdlib-oauth-tokens.md`; this file is the end-to-end flow. (A service
+that doesn't expose OAuth at all — the user pastes an **API key**
+instead — skips the manager: Path C below stores the key with
+`Ciphertext`; the in-`Workflow` call rule still applies.)
 
-### Libraries (required for either capture path)
+### Libraries (required for the OAuth capture paths A and B)
 
 The token store needs all three libraries on the `Application`, or it
 fails fast at startup:
@@ -132,6 +135,58 @@ prior `refresh_token` forward if the new `tokens` leaves it unset (some
 services issue one only on first consent). You can't read and write the
 same manager in one transaction, so if you need to merge, `fetch` first
 in a separate call.
+
+### Path C — the service uses an API key, not OAuth
+
+Some services don't expose per-user OAuth at all — the user pastes an
+API key, personal access token, or webhook secret into your UI instead.
+`OAuthTokenManager` is purpose-built for OAuth tokens; don't shoehorn an
+API key into it. The key is still a secret at rest, so the rule from
+`state-scalar-fields.md` applies: **never a plain `str` field** — encrypt
+it with the `Ciphertext` stdlib type and keep the returned `state_id` (a
+harmless `str`) in your state as the reference to the encrypted value.
+This path needs only `ciphertext_library()` + `ordered_map_library()`
+(no `oauth_library()`).
+
+**Capture** — a `Transaction` the UI calls with the raw key:
+
+```python
+from rbt.std.ciphertext.v1.ciphertext_rbt import Ciphertext
+from reboot.std.ciphertext.v1.ciphertext import (
+    APP_SHARED_KEY_MANAGER_ID, make_associated_data,
+)
+
+
+class UserServicer(User.Servicer):
+
+    async def connect_acme(
+        self,
+        context: TransactionContext,
+        request: User.ConnectAcmeRequest,
+    ) -> User.ConnectAcmeResponse:
+        user_id = self.ref().state_id
+        ciphertext, _ = await Ciphertext.encrypt(
+            context,
+            plaintext=request.api_key.encode(),
+            associated_data=make_associated_data(
+                user_id=user_id, purpose="acme-api-key",
+            ),
+            scope=f"user:{user_id}",  # crypto-shred unit (erasure).
+            key_manager_id=APP_SHARED_KEY_MANAGER_ID,
+        )
+        # The reference to the encrypted key; never the key itself.
+        self.state.acme_api_key_id = ciphertext.state_id
+        return User.ConnectAcmeResponse()
+```
+
+**Use** — the Workflow rule below applies identically: decrypt (with the
+**same** `associated_data`) and make the outbound call inside a
+`Workflow`, the call wrapped in `at_least_once` / `at_most_once`. An
+empty `<service>_api_key_id` is this path's "not connected" signal.
+**Erase** by shredding the user's scope —
+`KeyManager.ref(APP_SHARED_KEY_MANAGER_ID).shred(context, scope=...)`.
+The full `Ciphertext` surface (typed decrypt failures,
+`associated_data` rules, rotation) is `stdlib-ciphertext.md`.
 
 ## Using tokens — inside a `Workflow`
 
@@ -246,12 +301,14 @@ await KeyManager.ref(_key_manager_id(GOOGLE)).shred(context, scope=user_id)
 
 ## Checklist
 
-- [ ] `libraries=[oauth_library(), ciphertext_library(), ordered_map_library()]` on the `Application`.
+- [ ] `libraries=[oauth_library(), ciphertext_library(), ordered_map_library()]` on the `Application` (Path C needs only the latter two).
 - [ ] **Capture** — Path A (chat apps, identity provider's own API):
       `scopes=[...]` (least privilege) + `store_tokens=True`. Path B
       (any other service; the only path in web apps): your own authorize + callback routes, callback registered `app_internal=True`, the
       OAuth `state` HMAC-signed and verified, `OAuthTokenManager.store`
-      called with the app-internal `external_context(request)`.
+      called with the app-internal `external_context(request)`. Path C
+      (the service uses an API key, not OAuth): `Ciphertext.encrypt`,
+      with the returned `state_id` — never the raw key — kept in state.
 - [ ] Every method that calls the service's API is a `Workflow`, the
       call wrapped in a durability primitive (`at_least_once` /
       `at_most_once`), with `user_id=context.state_id`.
