@@ -486,7 +486,8 @@ async def check_local_envoy_mode(subprocesses: Subprocesses) -> None:
     """Picks the mode in which a local Envoy proxy will run, and checks
     that the mode is usable: that Docker is running and has the Envoy
     proxy image (downloading it if necessary), or that the `envoy`
-    executable has the version we expect. Fails otherwise.
+    executable runs. Fails otherwise. Warns if the `envoy` executable
+    has a version other than the one we expect.
 
     Note that it's entirely possible that we are already inside a
     Docker container, inside which we might run `envoy` as a
@@ -519,10 +520,10 @@ async def check_local_envoy_mode(subprocesses: Subprocesses) -> None:
         #  envoy  version:
         #  d79f6e8d453ee260e9094093b8dd31af0056e67b/1.30.2/Clean/RELEASE/BoringSSL
         if ENVOY_VERSION not in stdout.decode():
-            terminal.fail(
-                f"Expecting Envoy version '{ENVOY_VERSION}', but found "
-                f"'{stdout.decode()}'. Install Envoy version "
-                f"'{ENVOY_VERSION}', or set "
+            terminal.warn(
+                f"Reboot is tested with Envoy version '{ENVOY_VERSION}', "
+                f"but found:\n{stdout.decode()}\nIf you encounter issues, "
+                f"install Envoy version '{ENVOY_VERSION}', or set "
                 f"'{ENVVAR_LOCAL_ENVOY_MODE}=docker' to run Envoy in a "
                 "Docker container instead."
             )
@@ -1320,8 +1321,8 @@ async def __dev_run(
 
     # Pick the mode in which we'll run a local Envoy proxy and check
     # that the mode is usable, e.g. that Docker is running and can
-    # access the Envoy proxy image, or that the `envoy` executable has
-    # the version we expect. Fail otherwise.
+    # access the Envoy proxy image, or that the `envoy` executable
+    # runs. Fail otherwise.
     await check_local_envoy_mode(subprocesses)
     env[ENVVAR_REBOOT_LOCAL_ENVOY] = 'true'
 
