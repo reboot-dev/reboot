@@ -16,10 +16,10 @@ from reboot.version import REBOOT_VERSION
 _VERSION_PATTERN = re.compile(r'(\d+)\.(\d+)\.(\d+)(.*)', re.DOTALL)
 
 
-def _parse_version(version: str) -> tuple[int, int, int, bool]:
+def _parse_version(version: str) -> tuple[int, int, int, str]:
     """
-    Parses `version` into its numeric components plus whether a
-    (development) suffix is present.
+    Parses `version` into its numeric components plus its (possibly
+    empty) development suffix.
     """
     match = _VERSION_PATTERN.fullmatch(version)
     if match is None:
@@ -32,7 +32,7 @@ def _parse_version(version: str) -> tuple[int, int, int, bool]:
         int(match.group(1)),
         int(match.group(2)),
         int(match.group(3)),
-        bool(match.group(4)),
+        match.group(4),
     )
 
 
@@ -42,11 +42,12 @@ def version_less_than(version_a: str, version_b: str) -> bool:
 
     Compares version strings numerically by their components
     (major.minor.patch). A version may carry a suffix (e.g. a
-    development build of the `//reboot:reboot.dev` Bazel target);
-    such a build is made from source AFTER the release it is named
-    for, so when the numeric components are equal the suffixed
-    version is the higher one. Two suffixed versions with equal
-    numeric components are considered equal.
+    development build of the `//reboot:reboot.dev` Bazel target); such a
+    build is made from source AFTER the release it is named for, so when
+    the numeric components are equal the suffixed version is the higher
+    one (any non-empty suffix naturally sorts after an empty one).
+    Suffixes break ties between numerically identical versions by
+    comparing lexicographically.
 
     An empty `version_a` is treated as the lowest possible version
     (always less than any non-empty version). This provides backwards

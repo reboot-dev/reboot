@@ -45,13 +45,13 @@ function extractYarnWorkspaces(): Workspace[] {
 
   const required = parseVersion(YARN_VERSION_REQUIRED);
 
-  const found = parseVersion(spawnAndReturnStdout("yarn", ["--version"]));
+  const foundVersion = spawnAndReturnStdout("yarn", ["--version"]).trim();
+  const found = parseVersion(foundVersion);
 
   if (!supportedVersion({ required, found })) {
     throw new Error(
-      `yarn version >=${YARN_VERSION_REQUIRED} is required, found ${found.join(
-        "."
-      )}`
+      `yarn version >=${YARN_VERSION_REQUIRED} is required, ` +
+        `found ${foundVersion}`
     );
   }
 
@@ -75,13 +75,13 @@ function extractNpmWorkspaces(): Workspace[] {
 
   const required = parseVersion(NPM_VERSION_REQUIRED);
 
-  const found = parseVersion(spawnAndReturnStdout("npm", ["--version"]));
+  const foundVersion = spawnAndReturnStdout("npm", ["--version"]).trim();
+  const found = parseVersion(foundVersion);
 
   if (!supportedVersion({ required, found })) {
     throw new Error(
-      `npm version >=${NPM_VERSION_REQUIRED} is required, found ${found.join(
-        "."
-      )}`
+      `npm version >=${NPM_VERSION_REQUIRED} is required, ` +
+        `found ${foundVersion}`
     );
   }
 

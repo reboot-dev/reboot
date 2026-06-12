@@ -32,6 +32,7 @@ import {
   Response as ExpressResponse,
 } from "express";
 import { ensureError } from "./utils/errors.js";
+import { versionLessThan } from "./utils/index.js";
 import { ensurePythonVenv } from "./venv.js";
 import { REBOOT_VERSION } from "./version.js";
 
@@ -1122,41 +1123,6 @@ export class Application {
   get __external() {
     return this.#external;
   }
-}
-
-/**
- * Returns true if `versionA` is less than `versionB`.
- *
- * Mirrors `version_less_than` in `reboot/versioning.py`: the numeric
- * `major.minor.patch` components are compared first; when they are
- * equal, a version that carries a suffix (e.g. a development build
- * of the `//reboot:reboot.dev` Bazel target) is the higher one,
- * since such a build is made from source AFTER the release it is
- * named for. Two suffixed versions with equal numeric components
- * are considered equal. Throws when a version does not start with
- * three numeric components.
- */
-function versionLessThan(versionA: string, versionB: string): boolean {
-  const parse = (version: string): [number, number, number, number] => {
-    const match = version.trim().match(/^(\d+)\.(\d+)\.(\d+)(.*)$/s);
-    if (match === null) {
-      throw new Error(`Failed to parse '${version}' into a version`);
-    }
-    return [
-      Number(match[1]),
-      Number(match[2]),
-      Number(match[3]),
-      match[4].length > 0 ? 1 : 0,
-    ];
-  };
-  const componentsA = parse(versionA);
-  const componentsB = parse(versionB);
-  for (let i = 0; i < componentsA.length; i++) {
-    if (componentsA[i] !== componentsB[i]) {
-      return componentsA[i] < componentsB[i];
-    }
-  }
-  return false;
 }
 
 /**

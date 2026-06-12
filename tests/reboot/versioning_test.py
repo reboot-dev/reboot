@@ -58,9 +58,10 @@ class VersionLessThanTest(unittest.TestCase):
         self.assertFalse(version_less_than('1.1.1', '1.1.0.dev0'))
         self.assertTrue(version_less_than('0.1.0.0', '0.2.0'))
 
-    def test_dev_suffix_equal_numeric_components_are_equal(self):
-        self.assertFalse(version_less_than('1.1.0.dev0', '1.1.0.dev1'))
+    def test_dev_suffix_breaks_ties_lexicographically(self):
+        self.assertTrue(version_less_than('1.1.0.dev0', '1.1.0.dev1'))
         self.assertFalse(version_less_than('1.1.0.dev1', '1.1.0.dev0'))
+        self.assertFalse(version_less_than('1.1.0.dev0', '1.1.0.dev0'))
 
     def test_invalid_version_second_arg(self):
         with self.assertRaises(ValueError) as error:

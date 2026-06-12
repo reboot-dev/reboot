@@ -2,19 +2,51 @@ import chalk from "chalk";
 import { spawnSync } from "child_process";
 export * from "./errors.js";
 
-export function parseVersion(version: string): [number, number, number] {
-  const match = version.trim().match(/(\d+)\.(\d+)\.(\d+)/);
+export type Version = [number, number, number, string];
+
+/**
+ * Parses `version` into its numeric `major.minor.patch` components
+ * plus its (possibly empty) development suffix. Mirrors
+ * `_parse_version` in `reboot/versioning.py`. Throws when `version`
+ * does not start with three numeric components.
+ */
+export function parseVersion(version: string): Version {
+  const match = version.trim().match(/^(\d+)\.(\d+)\.(\d+)(.*)$/s);
 
   if (!match) {
     throw new Error(`Failed to parse '${version}' into a version`);
   }
 
-  // Convert only the matched components: converting a split of the
-  // full input would produce `NaN` for inputs like `1.2.3rc1`.
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
+  return [Number(match[1]), Number(match[2]), Number(match[3]), match[4]];
 }
 
-export type Version = [number, number, number];
+/**
+ * Returns true if `versionA` is less than `versionB`.
+ *
+ * Mirrors `version_less_than` in `reboot/versioning.py`: the numeric
+ * `major.minor.patch` components are compared first; when they are
+ * equal, a version that carries a suffix (e.g. a development build of
+ * the `//reboot:reboot.dev` Bazel target) is the higher one, since such
+ * a build is made from source AFTER the release it is named for.
+ * Suffixes break ties between numerically identical versions by
+ * comparing lexicographically (any non-empty suffix naturally sorts
+ * after an empty one). Throws when a version does not start with
+ * three numeric components.
+ */
+export function versionLessThan(versionA: string, versionB: string): boolean {
+  const [majorA, minorA, patchA, suffixA] = parseVersion(versionA);
+  const [majorB, minorB, patchB, suffixB] = parseVersion(versionB);
+  if (majorA !== majorB) {
+    return majorA < majorB;
+  }
+  if (minorA !== minorB) {
+    return minorA < minorB;
+  }
+  if (patchA !== patchB) {
+    return patchA < patchB;
+  }
+  return suffixA < suffixB;
+}
 
 export function supportedVersion({
   required: [requiredMajor, requiredMinor, requiredPatch],

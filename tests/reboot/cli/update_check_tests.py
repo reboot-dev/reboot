@@ -65,9 +65,17 @@ class UpdateCheckTestCase(unittest.TestCase):
 
     def test_no_notice_on_unparseable_version(self) -> None:
         with patch.object(
-            update_check, '_fetch_latest_version', return_value='999.0.0rc1'
+            update_check, '_fetch_latest_version', return_value='unparseable'
         ):
             self.assertEqual(self._check(), '')
+
+    def test_notice_on_newer_suffixed_version(self) -> None:
+        # A version with a (development) suffix is parseable; its
+        # numeric components decide that it is newer than this `rbt`.
+        with patch.object(
+            update_check, '_fetch_latest_version', return_value='999.0.0rc1'
+        ):
+            self.assertIn('999.0.0rc1', self._check())
 
     def test_silent_on_fetch_failure(self) -> None:
         with patch.object(
