@@ -1,0 +1,221 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# OAuth Token Manager
+
+An encrypted, per-service store for your users' **OAuth tokens**. Use it
+to keep the access/refresh tokens your application obtains from an
+external service (`Google`, `GitHub`, `Auth0`, etc.) so it can later call that
+service's API **on the user's behalf** — even from a background workflow
+long after the user has left.
+
+Never store OAuth tokens in a plain state field — that is a secret in
+plaintext at rest. And don't hand-roll [`Ciphertext`](./ciphertext) for
+them either: `OAuthTokenManager` already wraps `Ciphertext` plus the
+per-user index, a per-service key manager, and a per-user crypto-shred
+scope.
+
+## How it works
+
+Each `OAuthTokenManager` holds the tokens for **one** external service,
+keyed by `user_id`. It is addressed by a state ID naming that service:
+use the predefined `GOOGLE` / `GITHUB` constants, or any string for a
+service without one (e.g. `"slack.com"`).
+
+- Each user's tokens are serialized and encrypted into a
+  [`Ciphertext`](./ciphertext) under a **dedicated per-service
+  `KeyManager`**, with the user's `user_id` as the crypto-shred
+  `scope` — so one user's tokens can be erased without touching anyone
+  else's.
+- The methods are **application-internal by default** (no authorizer):
+  call them from your own backend, never expose them to untrusted
+  clients.
+- If your application authenticates users with
+  [`Application(oauth=...)`](/learn_more/identity_and_external_apis),
+  the OAuth server can capture and store the identity provider's tokens
+  for you automatically (`store_tokens=True`) — your code then only ever
+  calls `fetch`.
+
+## Imports and servicers
+
+The `oauth` library builds on [`Ciphertext`](./ciphertext) (which builds
+on [`OrderedMap`](./ordered_map)), so include all three when starting
+your `Application`; omitting any of them fails fast at startup.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+
+```py
+from reboot.std.oauth.v1.oauth import oauth_library
+from reboot.std.ciphertext.v1.ciphertext import ciphertext_library
+from reboot.std.collections.ordered_map.v1.ordered_map import (
+    ordered_map_library,
+)
+
+async def main():
+    application = Application(
+        servicers=[MyServicer],
+        libraries=[
+            oauth_library(),
+            ciphertext_library(),
+            ordered_map_library(),
+        ],
+    )
+    await application.run()
+```
+
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+
+```ts
+import { oauthLibrary } from "@reboot-dev/reboot-std/oauth/v1";
+import { ciphertextLibrary } from "@reboot-dev/reboot-std/ciphertext/v1";
+import { orderedMapLibrary } from "@reboot-dev/reboot-std/collections/ordered_map/v1";
+
+new Application({
+  servicers: [MyServicer],
+  libraries: [oauthLibrary(), ciphertextLibrary(), orderedMapLibrary()],
+}).run();
+```
+
+  </TabItem>
+</Tabs>
+
+The encryption is backed by `REBOOT_CRYPTO_ROOT_KEYS`, which `rbt dev`
+and the Reboot Cloud provision automatically — see
+[`Ciphertext`](./ciphertext#the-root-key).
+
+## `OAuthTokens`
+
+The stored value is an `OAuthTokens` message:
+
+| Field           | Type             | Notes                                                |
+| --------------- | ---------------- | ---------------------------------------------------- |
+| `access_token`  | `string`         | Bearer token for the service's API.                  |
+| `refresh_token` | optional `string`| Unset if the service issued none.                    |
+| `expires_at`    | optional `int64` | Absolute expiry, epoch seconds; unset if unknown.    |
+| `scopes`        | repeated `string`| The scopes the service actually granted.             |
+
+## Methods
+
+### Fetch
+
+A `reader` that returns the stored tokens for a user. `found` is false
+when nothing is stored for that user — or once their tokens have been
+crypto-shredded.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+
+```py
+from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager
+from reboot.std.oauth.v1.oauth import GOOGLE
+
+response = await OAuthTokenManager.ref(GOOGLE).fetch(
+    context, user_id=user_id,
+)
+if response.found:
+    access_token = response.tokens.access_token
+```
+
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+
+```ts
+import { GOOGLE, OAuthTokenManager } from "@reboot-dev/reboot-std/oauth/v1";
+
+const response = await OAuthTokenManager.ref(GOOGLE).fetch(context, {
+  userId,
+});
+if (response.found) {
+  const accessToken = response.tokens.accessToken;
+}
+```
+
+  </TabItem>
+</Tabs>
+
+Until *anyone* has stored tokens for a service, its manager doesn't
+exist yet, so the very first `fetch` can abort with a "state not
+constructed" error rather than report `found: false`. Treat both the
+same way — "this user hasn't connected the service yet".
+
+### Store
+
+A `transaction` that encrypts and persists tokens for a user,
+**replacing** any previously stored ones. If the new `tokens` leaves
+`refresh_token` unset but one was stored before, the existing refresh
+token is carried forward (some services issue a refresh token only on
+the first consent).
+
+You call `store` yourself when you run a service's OAuth flow with your
+own endpoints (see
+[Identity and external API calls](/learn_more/identity_and_external_apis));
+with `store_tokens=True` on an `Application(oauth=...)` provider, the
+OAuth server calls it for you.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+
+```py
+from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager, OAuthTokens
+
+await OAuthTokenManager.ref("slack.com").store(
+    context,
+    user_id=user_id,
+    tokens=OAuthTokens(
+        access_token=access_token,
+        refresh_token=refresh_token,  # Omit if none was issued.
+        expires_at=expires_at,        # Epoch seconds, if reported.
+        scopes=granted_scopes,
+    ),
+)
+```
+
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+
+```ts
+import { OAuthTokenManager } from "@reboot-dev/reboot-std/oauth/v1";
+
+await OAuthTokenManager.ref("slack.com").store(context, {
+  userId,
+  tokens: {
+    accessToken,
+    refreshToken, // Omit if none was issued.
+    expiresAt,    // Epoch seconds, if reported.
+    scopes: grantedScopes,
+  },
+});
+```
+
+  </TabItem>
+</Tabs>
+
+:::note
+
+`OAuthTokenManager` stores whatever the service's token endpoint
+returned — it does **not** refresh expired access tokens for you. Check
+`expires_at` and refresh against the service's token endpoint yourself
+(then `store` the result) if you need long-lived background access.
+
+:::
+
+## Erasing a user's tokens
+
+Each manager encrypts under its own dedicated `KeyManager`, with each
+user's tokens in a per-user crypto-shred scope. To erase one user's
+tokens for a service — for example as part of deleting the user —
+shred their scope in that service's manager:
+
+```py
+from rbt.std.ciphertext.v1.ciphertext_rbt import KeyManager
+from reboot.std.oauth.v1.oauth import GOOGLE, _key_manager_id
+
+await KeyManager.ref(_key_manager_id(GOOGLE)).shred(
+    context, scope=user_id,
+)
+```
+
+`fetch` then reports `found: false` for that user. See
+[`Ciphertext`](./ciphertext#crypto-shred-shred) for how shredding works.
