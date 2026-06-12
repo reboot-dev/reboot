@@ -154,9 +154,8 @@ def check_for_newer_version() -> None:
     # what they describe.
     message = (
         f"A newer Reboot ({latest}) is available; this `rbt` is "
-        f"{REBOOT_VERSION}. Coding agents: run the Reboot `upgrade` "
-        "skill to upgrade this application. Humans: see "
-        "https://docs.reboot.dev/upgrade."
+        f"{REBOOT_VERSION}. Coding agents: run the Reboot `upgrade` skill to "
+        "upgrade this application. Humans: see https://docs.reboot.dev/upgrade."
     )
     # To stderr, so the notice never pollutes stdout that may be
     # piped or parsed.

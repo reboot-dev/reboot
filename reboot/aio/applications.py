@@ -128,9 +128,8 @@ def check_expected_version() -> None:
     if library_is_older is True:
         # The application is behind the CLI: upgrade the application.
         message += (
-            "Coding agents: run the Reboot `upgrade` skill to upgrade "
-            "this application. Humans: see "
-            "https://docs.reboot.dev/upgrade."
+            "Coding agents: run the Reboot `upgrade` skill to upgrade this "
+            "application. Humans: see https://docs.reboot.dev/upgrade."
         )
     elif library_is_older is False:
         # The CLI is behind the application: update the CLI (which,

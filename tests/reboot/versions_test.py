@@ -274,7 +274,7 @@ class RebootVersionTest(unittest.TestCase):
             match = re.search(r'REBOOT_VERSION="([^"]+)"', rbt_shim.read())
             if match is None or match.group(1) != version:
                 self.fail(
-                    f'The plugin `bin/rbt` shim pins Reboot version '
+                    'The plugin `bin/rbt` shim pins Reboot version '
                     f'{match.group(1) if match else "<none>"}, which is '
                     f'out of date with version {version}'
                 )
