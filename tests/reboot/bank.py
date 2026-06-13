@@ -391,7 +391,7 @@ class BankServicer(Bank.Servicer):
 
             # At present, even if the exception is caught and handled, the
             # transaction will still be set to abort.
-            assert context.transaction_must_abort
+            assert context.transaction_unrecoverable_abort
         else:
             raise RuntimeError('Expecting to abort!')
 
@@ -425,7 +425,7 @@ class BankServicer(Bank.Servicer):
             assert isinstance(aborted.error, bank_rbt.OverdraftError)
             # Since this is a declared error, we can catch the
             # exception and allow the transaction to not abort.
-            assert not context.transaction_must_abort
+            assert not context.transaction_unrecoverable_abort
         else:
             raise RuntimeError('Expecting to abort!')
 

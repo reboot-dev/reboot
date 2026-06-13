@@ -905,7 +905,7 @@ class Context(ABC, IdempotencyManager):
 
     # Whether or not the transaction enclosing this context should
     # abort.
-    transaction_must_abort: bool
+    transaction_unrecoverable_abort: bool
 
     # Extra machinery for handling reactive contexts. Set when using
     # the `StateManager.reactively()` helper.
@@ -967,7 +967,7 @@ class Context(ABC, IdempotencyManager):
 
         self.participants = Participants()
         self.outstanding_rpcs = 0
-        self.transaction_must_abort = False
+        self.transaction_unrecoverable_abort = False
 
         self.react = None
 

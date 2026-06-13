@@ -507,18 +507,18 @@ class Stub:
                 aborted_type.from_grpc_aio_rpc_error(error)
             )
 
-            if not aborted_type.is_from_backend_and_safe(aborted):
+            if not aborted_type.is_from_backend_and_recoverable(aborted):
                 # TODO(benh): considering stringifying the exception to
                 # include in the error we raise when doing the prepare
                 # stage of two phase commit.
-                self._context.transaction_must_abort = True
+                self._context.transaction_unrecoverable_abort = True
 
             raise aborted
         except:
             # TODO(benh): considering stringifying the exception to
             # include in the error we raise when doing the prepare
             # stage of two phase commit.
-            self._context.transaction_must_abort = True
+            self._context.transaction_unrecoverable_abort = True
 
             raise
         finally:

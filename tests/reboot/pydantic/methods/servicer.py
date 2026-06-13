@@ -254,7 +254,7 @@ class TestServicer(Test.Servicer):
                 assert isinstance(e.error, PermissionDenied)
                 # At present, even if the exception is caught and handled, the
                 # transaction will still be set to abort for undeclared errors.
-                assert context.transaction_must_abort
+                assert context.transaction_unrecoverable_abort
 
     @classmethod
     async def workflow(
@@ -384,7 +384,7 @@ class TestServicer(Test.Servicer):
 
             # At present, even if the exception is caught and handled, the
             # transaction will still be set to abort for undeclared errors.
-            assert context.transaction_must_abort
+            assert context.transaction_unrecoverable_abort
 
             # Make sure we don't see any changes from the failed writer.
             assert self.state.str_value.endswith("(transaction)")

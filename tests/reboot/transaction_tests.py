@@ -1620,8 +1620,8 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
                 # require that the transaction aborts, but the whole
                 # transaction should abort because the error is not
                 # handled and is propagating as `Unknown`.
-                self.assertTrue(transaction.must_abort)
-                self.assertFalse(context.transaction_must_abort)
+                self.assertTrue(transaction.unrecoverable_abort)
+                self.assertFalse(context.transaction_unrecoverable_abort)
             elif context.state_type_name == AccountServicer.__state_type_name__:
                 # We only have failing transaction calls in this test.
                 self.assertIsNotNone(transaction)
@@ -1638,8 +1638,8 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
                 # Let's check that the abort flags are correctly
                 # set. Because we're getting back a
                 # `StateNotConstructed`, nothing should be aborting.
-                self.assertFalse(transaction.must_abort)
-                self.assertFalse(context.transaction_must_abort)
+                self.assertFalse(transaction.unrecoverable_abort)
+                self.assertFalse(context.transaction_unrecoverable_abort)
 
         with self.get_transactionally_patch(
             check_transactionally
@@ -1703,8 +1703,8 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
                 # Let's check that the abort flags are correctly set. On the
                 # bank side, both should be true.
-                self.assertTrue(transaction.must_abort)
-                self.assertTrue(context.transaction_must_abort)
+                self.assertTrue(transaction.unrecoverable_abort)
+                self.assertTrue(context.transaction_unrecoverable_abort)
             elif context.state_type_name == AccountServicer.__state_type_name__:
                 # We only have transaction calls in this test.
                 self.assertIsNotNone(transaction)
@@ -1719,8 +1719,8 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
                 # Let's check that the abort flags are correctly set. On the
                 # account side, only the transaction must abort have been set.
-                self.assertTrue(transaction.must_abort)
-                self.assertFalse(context.transaction_must_abort)
+                self.assertTrue(transaction.unrecoverable_abort)
+                self.assertFalse(context.transaction_unrecoverable_abort)
 
         with self.get_transactionally_patch(
             check_transactionally
@@ -1783,8 +1783,8 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
                 # Let's check that the abort flags are correctly set. On the
                 # bank side, both should be true.
-                self.assertTrue(transaction.must_abort)
-                self.assertTrue(context.transaction_must_abort)
+                self.assertTrue(transaction.unrecoverable_abort)
+                self.assertTrue(context.transaction_unrecoverable_abort)
             elif context.state_type_name == AccountServicer.__state_type_name__:
                 # We only have transaction calls in this test.
                 self.assertIsNotNone(transaction)
@@ -1798,8 +1798,8 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
                 # Let's check that the abort flags are correctly set. On the
                 # account side, only the transaction must abort have been set.
-                self.assertTrue(transaction.must_abort)
-                self.assertFalse(context.transaction_must_abort)
+                self.assertTrue(transaction.unrecoverable_abort)
+                self.assertFalse(context.transaction_unrecoverable_abort)
 
         with self.get_transactionally_patch(
             check_transactionally
