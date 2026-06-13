@@ -91,7 +91,6 @@ from typing import (
     Callable,
     Literal,
     Optional,
-    Set,
     TypeAlias,
     TypeVar,
     cast,
@@ -206,6 +205,13 @@ _StreamingReaderItem: TypeAlias = Optional[tuple[Message, Optional[uuid.UUID]]]
 # A callable that should raise if access to the given state is not authorized.
 # A copy of the state will be created before the call.
 AuthorizeCallable: TypeAlias = Callable[[Optional[StateT]], Awaitable[None]]
+
+# Default time a (nested) transaction waits to claim ownership of a
+# state (and for in-flight leaf calls to drain) before raising
+# `Unavailable` so the surrounding transaction retries. Using a
+# timeout mitigates a nested transaction whose server died before
+# sending `RelinquishOwnership`.
+OWNERSHIP_DEADLINE_DEFAULT = timedelta(seconds=30)
 
 
 class StateManager(ABC):
@@ -339,6 +345,12 @@ class StateManager(ABC):
             # members, e.g., 'stored'.
             self.lock = asyncio.Lock()
 
+            # Holds on to the asynchronous tasks sending
+            # `RelinquishOwnership` to participants of nested
+            # transactions so they aren't garbage collected while
+            # still in flight.
+            self._relinquish_ownerships_tasks: set[asyncio.Task] = set()
+
             # Whether or not the transaction has been stored in the
             # sidecar and thus we are officially a participant. Should
             # be read/written only when holding 'lock'. Use property
@@ -373,15 +385,57 @@ class StateManager(ABC):
             # coordinator.
             self.unrecoverable_abort = False
 
+            # Snapshots of this state's provisional values, taken when
+            # part of the transaction's tree first uses state that was
+            # already part of the transaction, so that if a nested
+            # transaction aborts we can restore the state to its value
+            # from before that nested transaction (dropping its
+            # modifications) and the rest of the transaction can
+            # continue to use this state. See `_push_snapshot()` and
+            # `_maybe_pop_snapshot()`.
+            self._snapshots: list[StateManager.Transaction.Snapshot] = []
+
+            # Ids identifying which part of this transaction's tree
+            # currently "owns" this state, e.g., `[root]` once the
+            # root transaction has claimed it or `[root, nested]`
+            # while a nested transaction is reading/modifying it.
+            # Empty until the first call claims it (see
+            # `claim_ownership()`). A call may proceed only if
+            # `owner_ids` is a prefix of its own transaction ids;
+            # otherwise it waits until the owning nested
+            # transaction(s) relinquish ownership.
+            self.owner_ids: list[uuid.UUID] = []
+
+            # Event swapped out and set whenever `owner_ids` or
+            # `_call_count` changes so that waiters in
+            # `claim_ownership()` and `drain_calls()` re-evaluate
+            # their conditions.
+            self._ownership_changed = asyncio.Event()
+
+            # Number of in-flight `reader`/`writer` ("leaf") calls on
+            # this state within this transaction's tree. A nested
+            # transaction whose method body will mutate the state's
+            # buffer directly waits until this is zero before running
+            # (see `drain_calls()`); counting suffices because at the
+            # moment a nested transaction drains, its own subtree has
+            # not run yet, so every in-flight leaf call is necessarily
+            # from a shallower owner.
+            self._call_count: int = 0
+
             # Provisional state within the transaction.
             self.state: Optional[Message] = None
 
-            # Streaming readers executing within this transaction.
+            # Streaming readers executing within this transaction,
+            # tagged with the transaction ids of the (possibly nested)
+            # transaction they belong to: a nested transaction's
+            # modifications only become visible to an enclosing
+            # level's streaming readers once the nested transaction
+            # completes (see `_notify_streaming_readers()`).
             #
             # An entry in the queue is a tuple of (state,
             # idempotency_key) where 'idempotency_key' may be None.
-            self.streaming_readers: list[asyncio.Queue[_StreamingReaderItem]
-                                        ] = []
+            self.streaming_readers: list[tuple[
+                list[uuid.UUID], asyncio.Queue[_StreamingReaderItem]]] = []
 
             # Aggregated tasks that should be dispatched if this
             # transaction commits.
@@ -403,9 +457,6 @@ class StateManager(ABC):
             # Whether or not the transaction was committed.
             self._committed: asyncio.Future[bool] = asyncio.Future()
 
-            self.actors: defaultdict[StateTypeName,
-                                     Set[StateRef]] = defaultdict(set)
-
         @property
         def ids(self) -> list[uuid.UUID]:
             return self._ids
@@ -414,15 +465,568 @@ class StateManager(ABC):
         def root_id(self) -> uuid.UUID:
             return self._ids[0]
 
-        @property
-        def started_id(self) -> uuid.UUID:
-            """If this transaction was started as a nested transaction this
-            property is the id of the nested transaction that started it."""
-            return self._ids[-1]
+        def is_claimable_by(self, transaction_ids: list[uuid.UUID]) -> bool:
+            """Returns whether a call with `transaction_ids` may claim
+            this state — i.e., whether `owner_ids` is a prefix of
+            `transaction_ids` (the owner is the caller or one of its
+            ancestors), so no sibling or descendant nested transaction
+            holds ownership the caller is not within."""
+            return (
+                len(self.owner_ids) <= len(transaction_ids) and
+                transaction_ids[:len(self.owner_ids)] == self.owner_ids
+            )
 
-        @property
-        def parent_ids(self) -> list[uuid.UUID]:
-            return self._ids[:-1]
+        def _notify_ownership_changed(self) -> None:
+            """Wakes all waiters in `claim_ownership()` and
+            `drain_calls()` so they re-evaluate their conditions."""
+            ownership_changed = self._ownership_changed
+            self._ownership_changed = asyncio.Event()
+            ownership_changed.set()
+
+        async def wait_ownership(
+            self,
+            condition: Callable[[], bool],
+            *,
+            deadline: Optional[timedelta] = OWNERSHIP_DEADLINE_DEFAULT,
+        ) -> None:
+            """Waits until `condition()` holds, re-evaluating every time ownership
+            changes. Raises `SystemAborted(Unavailable())` once
+            `deadline` elapses (pass `None` to wait forever), so the
+            caller retries the surrounding transaction (this also
+            mitigates a nested transaction whose server died before
+            sending `RelinquishOwnership`).
+            """
+            cutoff: Optional[datetime] = (
+                datetime.now(timezone.utc) +
+                deadline if deadline is not None else None
+            )
+            while not condition():
+                if self.finished():
+                    committed_or_aborted = (
+                        "committed" if self.committed() else "aborted"
+                    )
+                    raise RuntimeError(
+                        f'Transaction was {committed_or_aborted}; do you have '
+                        'a rogue RPC, e.g., from an asynchronous computation '
+                        'that you forgot to wait for?'
+                    )
+                elif self.prepared():
+                    raise RuntimeError(
+                        'Transaction has been prepared; do you have a rogue '
+                        'RPC, e.g., from an asynchronous computation that '
+                        'you forgot to wait for?'
+                    )
+                elif self.unrecoverable_abort:
+                    raise RuntimeError('Transaction must abort')
+
+                try:
+                    if cutoff is not None:
+                        remaining = cutoff - datetime.now(timezone.utc)
+                        await asyncio.wait_for(
+                            self._ownership_changed.wait(),
+                            timeout=max(0.0, remaining.total_seconds()),
+                        )
+                    else:
+                        await self._ownership_changed.wait(),
+                except asyncio.TimeoutError:
+                    raise SystemAborted(
+                        Unavailable(),
+                        message=(
+                            f"Timed out waiting for nested transaction "
+                            f"'{self.owner_ids[-1]}' to relinquish state "
+                            f"'{self.state_ref.id}' of type "
+                            f"'{self.state_type}'; retry required."
+                        ),
+                    ) from None
+
+        async def claim_ownership(
+            self,
+            context: Context,
+            *,
+            deadline: Optional[timedelta] = OWNERSHIP_DEADLINE_DEFAULT,
+        ) -> None:
+            """Waits until `owner_ids` is a prefix of `context`'s transaction ids
+            (i.e., no other nested transaction holds ownership we are
+            not within) and then claims ownership. Ownership is
+            relinquished back to an ancestor via
+            `relinquish_ownership()` when the owning nested
+            transaction returns (or rollbacked to the previous owner
+            if it aborts).
+            """
+            transaction_ids = context.transaction_ids
+            assert transaction_ids is not None
+            await self.wait_ownership(
+                lambda: self.is_claimable_by(transaction_ids),
+                deadline=deadline,
+            )
+            if self.owner_ids == transaction_ids:
+                # Transaction already owns this state.
+                return
+
+            # This is the first call within a (possibly nested)
+            # transaction that needs ownership of this state.
+            #
+            # If this is a nested transaction, i.e.,
+            # `len(transaction_ids) > 1`, then we need to take a
+            # snapshot so that on a recoverable abort we can roll the
+            # state back to its previous value; the root never
+            # recoverably aborts and so doesn't need a snapshot.
+            if len(transaction_ids) > 1:
+                self._push_snapshot(transaction_ids)
+
+            self.owner_ids = list(transaction_ids)
+            self._notify_ownership_changed()
+
+        def relinquish_ownership(
+            self,
+            transaction_id: uuid.UUID,
+            *,
+            aborted: bool,
+            lock: Lock,
+        ) -> None:
+            """Relinquishes the ownership of this state claimed by the
+            now completed nested transaction `transaction_id`.
+            """
+            if transaction_id not in self.owner_ids:
+                # The `RelinquishOwnership` RPC is retried until it
+                # succeeds so it may be delivered more than once. Once
+                # we've relinquished ownership (i.e., `transaction_id
+                # not in self.owner_ids`) we can skip any retries.
+                return
+
+            snapshot = self._maybe_pop_snapshot(
+                transaction_id, aborted=aborted
+            )
+            assert snapshot is not None, (
+                "Snapshot missing when nested transaction is still owner"
+            )
+
+            # If we've `aborted` we need to rollback, which will
+            # relinquish ownership to the snapshots' `owner_ids`.
+            #
+            # Otherwise we need to relinquish ownership explicitly
+            # (and then notifying streaming readers).
+            if aborted:
+                exclusive = self.mode == "exclusive"
+                self._rollback(snapshot)
+                if exclusive and self.mode == "shared":
+                    # Nested transaction acquired `lock` exclusively
+                    # but the rolled-back state only needs shared;
+                    # downgrade lock.
+                    lock.downgrade()
+            else:
+                self.owner_ids = (
+                    self.owner_ids[:self.owner_ids.index(transaction_id)]
+                )
+                self._notify_streaming_readers(transaction_id, snapshot)
+
+            assert transaction_id not in self.owner_ids
+
+            # Wake anyone waiting on ownership.
+            self._notify_ownership_changed()
+
+        @asynccontextmanager
+        async def ownership(
+            self,
+            context: ReaderContext | WriterContext | TransactionContext,
+            *,
+            lock: Lock,
+            deadline: Optional[timedelta] = OWNERSHIP_DEADLINE_DEFAULT,
+        ) -> AsyncIterator[None]:
+            """Claims ownership of this state on entry and relinquishes it on
+            exit.
+            """
+            # Compute a single absolute cutoff so the claim and drain
+            # waits share one budget: each is passed the time
+            # remaining until `cutoff`, so together they wait at most
+            # `deadline`. `None` waits forever.
+            cutoff: Optional[datetime] = (
+                datetime.now(timezone.utc) +
+                deadline if deadline is not None else None
+            )
+
+            def remaining() -> Optional[timedelta]:
+                return (
+                    cutoff -
+                    datetime.now(timezone.utc) if cutoff is not None else None
+                )
+
+            await self.claim_ownership(context, deadline=remaining())
+
+            if isinstance(context, TransactionContext):
+                if context.nested:
+                    # Wait until there are no in-flight
+                    # `reader`/`writer` ("leaf") calls on this state,
+                    # so that this nested transaction does not
+                    # interleave with leaf calls made by its
+                    # ancestors, e.g., via `asyncio.gather(...)`. New
+                    # leaf calls from shallower owners will wait on
+                    # `claim_ownership` so waiting for the in-flight
+                    # ones is sufficient.
+                    await self.wait_ownership(
+                        lambda: self._call_count == 0,
+                        deadline=remaining(),
+                    )
+            else:
+                self._call_count += 1
+
+            aborted = False
+            try:
+                yield
+            except BaseException:
+                aborted = True
+                raise
+            finally:
+                if not isinstance(context, TransactionContext):
+                    self._call_count -= 1
+                    self._notify_ownership_changed()
+                    # NOTE: if this call is within a nested
+                    # transaction we'll `relinquish_ownership` when
+                    # the nested transaction later sends
+                    # `RelinquishOwnership` RPCs.
+                elif context.nested:
+                    if self.unrecoverable_abort:
+                        # Nested transactions that have unrecoverably
+                        # aborted should wake any ownership waiters so
+                        # that the whole transaction may proceed to
+                        # getting aborted sooner rather than later.
+                        self._notify_ownership_changed()
+                    elif aborted and not self.using_restart_detection:
+                        # Nested transactions that are not using
+                        # restart detection can not be rolled back
+                        # because they expect writes to disk, and thus
+                        # we must treat a recoverable abort as
+                        # unrecoverable (this should only apply to
+                        # `SortedMap`, i.e., if a nested transaction
+                        # calls a `SortedMap` method which aborts with
+                        # a recoverable/declared error we'll instead
+                        # abort unrecoverably).
+                        #
+                        # We raise here (rather than let the recoverable
+                        # error keep propagating) so the caller can't
+                        # catch it and carry on as if it recovered: the
+                        # transaction is doomed, so surface that as an
+                        # unrecoverable error.
+                        self.unrecoverable_abort = True
+                        self._notify_ownership_changed()
+                        raise RuntimeError('Transaction must abort')
+                    else:
+                        # We are the nested transaction and we need to
+                        # relinquish ownership at all of the
+                        # participants (including ourself) including
+                        # when we have _recoverably_ aborted, so that
+                        # the transaction may continue to execute.
+                        await self._relinquish_ownerships(
+                            context, aborted=aborted, lock=lock
+                        )
+
+                        if aborted:
+                            # If we're aborting then all of the other
+                            # participants within our nested
+                            # transaction will get rolled back as part
+                            # of `relinquish_ownership` being called
+                            # on them via the `RelinquishOwnership`
+                            # RPC. If a participant was not previously
+                            # part of a sibling or ancestor nested
+                            # transaction then rollback will retain
+                            # the participant in "shared" mode. Either
+                            # way, we want to propagate that
+                            # participant as 'read-only', since we
+                            # don't have any effects that need
+                            # committing. If another sibling
+                            # transaction or the ancestor had already
+                            # used the participant exclusively, we'll
+                            # merge the participants correctly and the
+                            # participant will remain requiring a
+                            # commit.
+                            context.participants.retain_as_read_only()
+
+        async def _relinquish_ownerships(
+            self,
+            context: TransactionContext,
+            *,
+            aborted: bool,
+            lock: Lock,
+        ) -> None:
+            """Sends `RelinquishOwnership` RPCs to all the participants of the
+            nested transaction (except for itself, for which we
+            instead call `relinquish_ownership` synchronously). RPCs
+            are retried with backoff until acknowledged so that any
+            other callers waiting on ownership are guaranteed to be
+            woken. The RPC is idempotent so it is safe to retry!
+            """
+            transaction_ids = context.transaction_ids
+            assert transaction_ids is not None
+
+            # Relinquish ownership for "ourself" without an RPC
+            # (reduces overall system load and latency but is not
+            # necessary for correctness).
+            self.relinquish_ownership(
+                transaction_ids[-1], aborted=aborted, lock=lock
+            )
+
+            participants = [
+                (state_type, state_ref)
+                for (state_type,
+                     state_ref) in context.participants.should_prepare()
+                # Don't include "ourself" as a participant as its
+                # ownership was already relinquished above.
+                if (state_type, state_ref
+                   ) != (context.state_type_name, context._state_ref)
+            ]
+
+            if len(participants) == 0:
+                return
+
+            application_id = context.application_id
+            channel_manager = context.channel_manager
+
+            async def relinquish_ownership(
+                state_type: StateTypeName, state_ref: StateRef
+            ) -> None:
+                backoff = Backoff()
+                while True:
+                    try:
+                        channel = channel_manager.get_channel_to_state(
+                            state_type,
+                            state_ref,
+                            # Since this is a Reboot-internal process
+                            # that the user may not be aware is running
+                            # in the background, logging user-visible
+                            # errors is unhelpful.
+                            unresolvable_state_log_level=logging.DEBUG,
+                        )
+
+                        stub = transactions_pb2_grpc.ParticipantStub(channel)
+
+                        await stub.RelinquishOwnership(
+                            transactions_pb2.RelinquishOwnershipRequest(
+                                root_transaction_id=transaction_ids[0].bytes,
+                                transaction_id=transaction_ids[-1].bytes,
+                                aborted=aborted,
+                            ),
+                            metadata=Headers(
+                                application_id=application_id,
+                                state_ref=state_ref,
+                            ).to_grpc_metadata(),
+                        )
+                        return
+                    except asyncio.CancelledError:
+                        raise
+                    except BaseException:
+                        # Any RPC or network error is non-definitive;
+                        # retry after backoff. If the whole transaction
+                        # has finished the participant acks trivially.
+                        await backoff()
+
+            async def relinquish_ownerships():
+                await concurrently(
+                    relinquish_ownership(state_type, state_ref)
+                    for (state_type, state_ref) in participants
+                )
+
+            relinquish_ownerships_task = asyncio.create_task(
+                relinquish_ownerships(),
+                name=f'relinquish_ownerships(...) in {__name__}',
+            )
+
+            self._relinquish_ownerships_tasks.add(relinquish_ownerships_task)
+
+            relinquish_ownerships_task.add_done_callback(
+                self._relinquish_ownerships_tasks.discard
+            )
+
+        @dataclass(frozen=True, kw_only=True)
+        class Snapshot:
+            """Snapshot of a transaction's "state" so nested transactions that
+            abort can "roll back" their effects.
+            """
+            # The full transaction ids of the nested transaction this
+            # snapshot was taken for. We match a snapshot to a
+            # relinquishing transaction by membership in this chain: an
+            # ancestor rolls back every snapshot whose chain still
+            # contains it.
+            transaction_ids: list[uuid.UUID]
+
+            # Who owned this state before the nested transaction
+            # claimed it, so on abort ownership returns to that owner
+            # (i.e., not necessarily the nested transaction's parent,
+            # which may never have used this state).
+            owner_ids: list[uuid.UUID]
+
+            # The lock mode to roll back to.
+            mode: Lock.Mode
+
+            # The serialized state from before the nested transaction,
+            # or `None` if it was not yet constructed.
+            state: Optional[bytes]
+
+            # We keep only the idempotent mutation KEYS, not the
+            # mutations themselves: because mutations are only ever
+            # added within a transaction, on rollback we filter the
+            # live dict down to the keys taken here, dropping those
+            # added. This allows us to avoid copying any (large)
+            # mutation values.
+            idempotent_mutation_keys: set[uuid.UUID]
+
+            # We keep only the task UUIDs, not the tasks because tasks
+            # are only ever added: on rollback we filter the live list
+            # down to these UUIDs.
+            task_uuids: set[bytes]
+
+        def _push_snapshot(self, transaction_ids: list[uuid.UUID]) -> None:
+            """Pushes a snapshot of this transaction's "state", tagged
+            with `transaction_ids`, onto the snapshot stack so that if a
+            nested transaction aborts we can "rollback"."""
+            # `used_by_ancestor` captures whether an ancestor already
+            # used this state (either read or mutated) before the
+            # nested transaction that is taking this snapshot.
+            used_by_ancestor = len(self.owner_ids) > 0
+            self._snapshots.append(
+                StateManager.Transaction.Snapshot(
+                    transaction_ids=list(transaction_ids),
+                    owner_ids=list(self.owner_ids),
+                    # If the nested transaction that is taking this
+                    # snapshot is the first transaction to use this
+                    # state then on rollback we want `mode` to be
+                    # "shared" (because we need to keep this state a
+                    # part of the transaction it just doesn't have any
+                    # effects), otherwise we want what ever the
+                    # ancestor's `mode` was.
+                    mode=self.mode if used_by_ancestor else "shared",
+                    state=(
+                        self.state.SerializeToString(deterministic=True)
+                        if self.state is not None else None
+                    ),
+                    idempotent_mutation_keys=set(self.idempotent_mutations),
+                    task_uuids={task.task_id.task_uuid for task in self.tasks},
+                )
+            )
+
+        def _maybe_pop_snapshot(
+            self,
+            transaction_id: uuid.UUID,
+            *,
+            aborted: bool,
+        ) -> Optional[StateManager.Transaction.Snapshot]:
+            """Finds and returns the oldest snapshot taken within the
+            nested transaction `transaction_id` (the one holding this
+            state from just before `transaction_id`'s subtree first
+            touched it), removing it (and every deeper snapshot) from
+            the stack ONLY when it is no longer needed.
+
+            Consider a transaction R that calls into a nested
+            transaction N1 which calls into another nested transaction
+            N2. Even if N2 "commits", we MUST KEEP THE SNAPSHOT around
+            since N1 may yet abort and we still need to rollback --
+            unless N1 has already pushed an (enclosing) snapshot of its
+            own to roll back to, in which case N2's snapshot is
+            redundant and we pop it.
+
+            A snapshot is no longer needed, and so is popped, when:
+
+            - We aborted: restoring rolls this state back to before
+              the snapshot, so it and every deeper snapshot (all
+              within `transaction_id`) can be popped.
+
+            - We committed and no ancestor of `transaction_id` still
+              needs the snapshot. Those ancestors all lie on the
+              parent's unique path from the root, so this holds exactly
+              when the parent already has an enclosing (older) snapshot
+              to roll back to -- or when `transaction_id` is the
+              outermost nested transaction, whose only ancestor is the
+              root and never rolls back.
+            """
+            for index, snapshot in enumerate(self._snapshots):
+                if transaction_id not in snapshot.transaction_ids:
+                    continue
+                if aborted:
+                    pop = True
+                else:
+                    # On commit we can drop this snapshot once no
+                    # ancestor of `transaction_id` still needs it to
+                    # roll back. Those ancestors all lie on the
+                    # parent's unique path from the root, so it is
+                    # enough to ask whether the parent already has an
+                    # enclosing (older) snapshot to roll back to
+                    # instead: if it does, every shallower ancestor
+                    # does too and this snapshot is redundant; if not,
+                    # the parent still needs it. The outermost nested
+                    # transaction's only ancestor is the root, which
+                    # never rolls back, so it is always free.
+                    depth = snapshot.transaction_ids.index(transaction_id)
+                    parent = snapshot.transaction_ids[depth - 1]
+                    pop = depth == 1 or any(
+                        parent in older.transaction_ids
+                        for older in self._snapshots[:index]
+                    )
+                if pop:
+                    # `[:index]` drops this snapshot and every deeper
+                    # one. It must be the case that any "deeper" ones
+                    # were all taken within `transaction_id` because
+                    # while it owned this state the ownership prefix
+                    # rule forced any newer claim to come from within
+                    # it.
+                    self._snapshots = self._snapshots[:index]
+                return snapshot
+            return None
+
+        def _rollback(
+            self,
+            snapshot: StateManager.Transaction.Snapshot,
+        ) -> None:
+            """Rolls this state's effects, ownership, lock mode, etc,
+            back to `snapshot`.
+            """
+            if snapshot.state is None:
+                self.state = None
+            else:
+                assert self.state is not None
+                state = type(self.state)()
+                state.ParseFromString(snapshot.state)
+                # NOTE: must rollback via `CopyFrom` because an
+                # ancestor transaction method may hold a live
+                # reference to `self.state`.
+                self.state.CopyFrom(state)
+            self.idempotent_mutations = {
+                key: idempotent_mutation
+                for key, idempotent_mutation in
+                self.idempotent_mutations.items()
+                if key in snapshot.idempotent_mutation_keys
+            }
+            self.tasks = [
+                task for task in self.tasks
+                if task.task_id.task_uuid in snapshot.task_uuids
+            ]
+            self.owner_ids = snapshot.owner_ids
+            self.mode = snapshot.mode
+
+        def _notify_streaming_readers(
+            self,
+            transaction_id: uuid.UUID,
+            snapshot: StateManager.Transaction.Snapshot,
+        ) -> None:
+            """Notifies the streaming readers belonging to the parent of the
+            completed nested transaction `transaction_id` of this
+            state's current value: a nested transaction's
+            modifications only become visible to an enclosing level's
+            streaming readers once the nested transaction completes
+            (and never if it aborts). `snapshot`, taken within
+            `transaction_id` tells us which parent-level readers to
+            notify.
+            """
+            # NOTE: we notify unconditionally, even if the nested
+            # transaction did not actually modify this state, matching
+            # `_store()` which notifies on every store regardless of
+            # whether the value changed.
+            index = snapshot.transaction_ids.index(transaction_id)
+            parent_transaction_ids = snapshot.transaction_ids[:index]
+            for (transaction_ids, queue) in self.streaming_readers:
+                if transaction_ids == parent_transaction_ids:
+                    # NOTE: we defer making a reader specific copy of
+                    # this state until the reader actually reads it to
+                    # reduce memory usage.
+                    queue.put_nowait((self.state, None))
 
         @property
         def stored(self) -> bool:
@@ -890,6 +1494,11 @@ class Lock:
       `SystemAborted(Unavailable())` immediately to avoid the deadlock
       where two shared holders both want to upgrade.
 
+    - `downgrade()` is the inverse: a caller that holds `exclusive` is
+      demoted to `shared`, granting any queued `shared` waiters that
+      are now compatible (queued `exclusive` waiters stay queued). It
+      is synchronous and never fails.
+
     - Waiters are FIFO among themselves and a new `shared` request
       does NOT jump the FIFO queue and join an active shared cohort if
       an exclusive waiter is queued, to guard against exclusive-waiter
@@ -985,6 +1594,25 @@ class Lock:
             return
         # Otherwise lets `_wait` as an upgrade.
         await self._wait(upgrade=True, deadline_seconds=deadline_seconds)
+
+    def downgrade(self) -> None:
+        """Atomically demote a held exclusive hold to shared.
+
+        Caller MUST already hold exclusive. On return the caller holds
+        shared, and any queued shared waiters (up to the first queued
+        exclusive waiter) are granted now that they are compatible
+        with the caller's shared hold; queued exclusive waiters stay
+        queued. Synchronous and never fails.
+        """
+        assert self._exclusive, (
+            "downgrade() requires the caller to already hold exclusive"
+        )
+        # An exclusive holder rules out any shared holders, so we
+        # become the sole shared holder and then grant the compatible
+        # (shared) waiters.
+        self._exclusive = False
+        self._shared = 1
+        self._maybe_grant_next(released="exclusive")
 
     def release_shared(self) -> None:
         assert self._shared > 0
@@ -1704,10 +2332,10 @@ class SidecarStateManager(
                 StateManager.Transaction,
             ]]] = defaultdict(lambda: {})
 
-        # Map from transaction UUID to a Future with the
-        # participants of the transaction that have been prepared, or
-        # that all need to be aborted, for all transactions being
-        # coordinated by this state manager.
+        # Map from transaction UUID to a Future with the participants
+        # of the transaction that have been prepared, or `None` to
+        # signal that the whole transaction aborted, for all
+        # transactions being coordinated by this state manager.
         #
         # TODO(benh): need to remove these from this list after some
         # expiration timeout, or better yet, run a control loop that
@@ -1715,7 +2343,7 @@ class SidecarStateManager(
         # afterwards removes this from the list (and from rocksdb).
         self._coordinator_participants: dict[
             uuid.UUID,
-            asyncio.Future[Participants],
+            asyncio.Future[Optional[Participants]],
         ] = {}
 
         # Coordinator "commit control loop" tasks for transactions
@@ -2571,7 +3199,9 @@ class SidecarStateManager(
                                     queue.put_nowait((state, None))
 
                             if transaction is not None:
-                                for queue in transaction.streaming_readers:
+                                for (
+                                    _, queue
+                                ) in transaction.streaming_readers:
                                     # NOTE: we defer making a reader
                                     # specific copy of this state until
                                     # the reader actually reads it to
@@ -2654,6 +3284,7 @@ class SidecarStateManager(
         state_ref: StateRef,
         effects: Optional[Effects] = None,
         transaction: Optional[StateManager.Transaction] = None,
+        transaction_ids: Optional[list[uuid.UUID]] = None,
         task: Optional[database_pb2.Task] = None,
         idempotency_key: Optional[uuid.UUID] = None,
         idempotent_mutation: Optional[database_pb2.IdempotentMutation] = None,
@@ -2841,11 +3472,20 @@ class SidecarStateManager(
                 # NOTE: must do `CopyFrom` here as the state is passed
                 # by _reference_ to the transaction method.
                 transaction.state.CopyFrom(state_copy)
-                queues = transaction.streaming_readers
-
-                # Record the eventual presence of this actor, after
-                # the transaction has committed.
-                transaction.actors[state_type].add(state_ref)
+                # Only notify streaming readers belonging to the
+                # (possibly nested) transaction doing this store: a
+                # nested transaction's modifications only become
+                # visible to an enclosing level's streaming readers
+                # once the nested transaction completes.
+                assert transaction_ids is not None, (
+                    "Within a `transaction` we should always "
+                    "have `transaction_ids`"
+                )
+                queues = [
+                    queue for reader_transaction_ids, queue in
+                    transaction.streaming_readers
+                    if reader_transaction_ids == transaction_ids
+                ]
 
             else:
                 state_was_cached = state_ref in self._states[state_type]
@@ -2960,10 +3600,7 @@ class SidecarStateManager(
                                  context.transaction_root_id,
                              )
 
-        if (
-            transaction is not None and
-            context.transaction_id == transaction.started_id
-        ):
+        if transaction is not None:
             # Another method on this state within the same transaction
             # has already started (i.e., calls were made
             # concurrently). We must wait for that first call to
@@ -2995,51 +3632,10 @@ class SidecarStateManager(
                 #
                 # TODO(while-false): Check code path and add test.
                 raise RuntimeError('Transaction must abort')
-        elif (
-            transaction is not None and
-            transaction.root_id in context.transaction_parent_ids
-        ):
-            raise RuntimeError(
-                "Nested transactions must currently read/modify mutually exclusive "
-                "state from their parent transactions. You are attempting to "
-                f"{'read' if isinstance(context, ReaderContext) else 'modify'} "
-                f"'{state_ref.id}' of type '{state_type}' which is already used "
-                "in a parent transaction. This restriction will be relaxed in a "
-                "future release of Reboot. Do you have a use case where you "
-                "are trying to do this? Please reach out "
-                "to the maintainers and tell us about it!"
-            )
-        elif (
-            transaction is not None and
-            context.transaction_id in transaction.parent_ids
-        ):
-            raise RuntimeError(
-                "Parent transactions must currently read/modify mutually exclusive "
-                "state from their nested transactions. You are attempting to "
-                f"{'read' if isinstance(context, ReaderContext) else 'modify'} "
-                f"'{state_ref.id}' of type '{state_type}' which is already used "
-                "in a nested transaction. This restriction will be relaxed in a "
-                "future release of Reboot. Do you have a use case where you "
-                "are trying to do this? Please reach out "
-                "to the maintainers and tell us about it!"
-            )
-        elif (
-            transaction is not None and any(
-                transaction_id in transaction.parent_ids
-                for transaction_id in context.transaction_parent_ids
-            )
-        ):
-            raise RuntimeError(
-                "Nested transactions must currently read/modify mutually exclusive "
-                "state from their sibling transactions. You are attempting to "
-                f"{'read' if isinstance(context, ReaderContext) else 'modify'} "
-                f"'{state_ref.id}' of type '{state_type}' which is already used "
-                "in a sibling transaction. This restriction will be relaxed in a "
-                "future release of Reboot. Do you have a use case where you "
-                "are trying to do this? Please reach out "
-                "to the maintainers and tell us about it!"
-            )
         else:
+            # We are the first call of a transaction to use this
+            # state; create the transaction participant.
+            #
             # If we can use restart detection for this transaction,
             # ensure that the last restart was before the start of the
             # transaction to ensure consistency.
@@ -3105,69 +3701,125 @@ class SidecarStateManager(
 
         assert transaction is not None
 
-        try:
-            yield transaction
+        # Always add ourselves as a transaction participant, even if
+        # this is not the first time using this state within the
+        # transaction so that nested transactions will get all of
+        # their participants in order to relinquish ownership.
+        context.participants.add(
+            state_type,
+            state_ref,
+            # Add ourselves as a read-only transaction participant iff
+            # we have no effects, which means we hold the shared lock
+            # AND we have no idempotency key (that is an effect, even
+            # if we never mutated state) AND we are using restart
+            # detection (without restart detection, e.g., for types
+            # like `SortedMap` we can't elide the prepare/commit).
+            #
+            # If we later upgrade the lock, e.g., because a `writer()`
+            # on this state gets called or a `transaction()` has
+            # effects that require the exclusive lock, then we'll
+            # update `context.participants` to indicate that this
+            # participant is not read-only which correctly wins/taints
+            # as we merge participants back up to the coordinator.
+            read_only=(
+                transaction.mode == "shared" and
+                context.idempotency_key is None and
+                transaction.using_restart_detection
+            ),
+        )
 
-            # Now that control has resumed here we're exiting the
-            # context manager so we can validate the user is following
-            # the transaction requirements.
-            self.validate_transaction_participant(context, transaction)
-        except BaseException as exception:
-            # Transaction doesn't need to abort if this is from the
-            # backend and recoverable, i.e., declared or generated by
-            # Reboot: a caller can catch it and the transaction can
-            # still commit.
-            if (
-                aborted_type is not None and
-                aborted_type.is_from_backend_and_recoverable(exception)
-            ):
-                # We don't need to abort, but we do need to validate
-                # the user is following the transaction requirements.
+        # Call must have "ownership" in order proceed. Unlike
+        # shared/exclusive locks on the state, which synchronize
+        # independent writers/transactions on the same state,
+        # "ownership" allows multiple writers/transactions _within_
+        # the same transaction to execute atomically. Ownership is
+        # claimed and relinquished as part of
+        # `transaction.ownership()`, adhering to the protocol that
+        # enables nested transactions to correctly "commit" or
+        # "abort".
+        async with transaction.ownership(
+            context,
+            lock=self._locks[state_type][state_ref],
+        ):
+            try:
+                yield transaction
+
+                # Now that control has resumed here we're exiting the
+                # context manager so we can validate the user is following
+                # the transaction requirements.
                 self.validate_transaction_participant(context, transaction)
 
-                raise
+                # The method has returned normally, but it is possible
+                # that it caught and swallowed an unrecoverable abort;
+                # raise so the abort flows back through our caller's
+                # stub, marks the caller unrecoverable too, and
+                # cascades up to the coordinator to abort the whole
+                # transaction.
+                if context.transaction_unrecoverable_abort:
+                    transaction.unrecoverable_abort = True
+                    raise RuntimeError('Transaction must abort')
+            except BaseException as exception:
+                # Transaction doesn't need to abort if this is from
+                # the backend and recoverable, i.e., declared or
+                # generated by Reboot: a caller can catch it and the
+                # transaction can still commit.
+                if (
+                    aborted_type is not None and
+                    aborted_type.is_from_backend_and_recoverable(exception)
+                ):
+                    if context.transaction_unrecoverable_abort:
+                        # We have a recoverable abort, but the
+                        # transaction is already doomed.
+                        transaction.unrecoverable_abort = True
+                        raise RuntimeError('Transaction must abort')
 
-            # All other errors are unrecoverable and abort the
-            # transaction.
-            transaction.unrecoverable_abort = True
-            raise
-        finally:
-            if context.transaction_unrecoverable_abort:
+                    # We don't need to abort, but we do need to validate
+                    # the user is following the transaction requirements.
+                    self.validate_transaction_participant(context, transaction)
+
+                    raise
+
+                # All other errors are unrecoverable and abort the
+                # transaction.
                 transaction.unrecoverable_abort = True
-
-            # Start watching the transaction.
-            #
-            # This needs to be done _after_ the servicer method has
-            # completed because if we find out via watching that the
-            # transaction is committed/aborted we will finish the
-            # transaction, remove it from '_participant_transactions'
-            # (allowing other transactions to proceed), and release
-            # the mutator lock, which can not be done until after the
-            # servicer method has completed!
-            #
-            # NOTE: we CAN NOT preemptively finish the transaction,
-            # e.g., to allow other writers or transactions to proceed,
-            # because it's possible that this state type/actor might be
-            # re-involved in the same transaction until the
-            # transaction has finished.
-            #
-            # Also, the watch task may already be started by a
-            # different RPC (or by recovery) and we only want one of
-            # them!
-            #
-            # Finally, the transaction may already be completed if the
-            # coordinator == participant and two phase commit was
-            # successful so we don't need to watch anything.
-            if transaction.watch_task is None and not transaction.finished():
-                transaction.watch_task = asyncio.create_task(
-                    self._transaction_participant_watch(
-                        context.application_id,
-                        context.channel_manager,
-                        transaction,
-                    ),
-                    name=
-                    f'self._transaction_participant_watch(...) in {__name__}',
-                )
+                raise
+            finally:
+                # Start watching the transaction.
+                #
+                # This needs to be done _after_ the servicer method has
+                # completed because if we find out via watching that the
+                # transaction is committed/aborted we will finish the
+                # transaction, remove it from '_participant_transactions'
+                # (allowing other transactions to proceed), and release
+                # the mutator lock, which can not be done until after the
+                # servicer method has completed!
+                #
+                # NOTE: we CAN NOT preemptively finish the transaction,
+                # e.g., to allow other writers or transactions to proceed,
+                # because it's possible that this state type/actor might be
+                # re-involved in the same transaction until the
+                # transaction has finished.
+                #
+                # Also, the watch task may already be started by a
+                # different RPC (or by recovery) and we only want one of
+                # them!
+                #
+                # Finally, the transaction may already be completed if the
+                # coordinator == participant and two phase commit was
+                # successful so we don't need to watch anything.
+                if (
+                    transaction.watch_task is None and
+                    not transaction.finished()
+                ):
+                    transaction.watch_task = asyncio.create_task(
+                        self._transaction_participant_watch(
+                            context.application_id,
+                            context.channel_manager,
+                            transaction,
+                        ),
+                        name=
+                        f'_transaction_participant_watch(...) in {__name__}',
+                    )
 
     @asynccontextmanager_span(
         # We expect an `EffectValidationRetry` exception; that's not an error.
@@ -3266,7 +3918,10 @@ class SidecarStateManager(
                 [],
             ).append(queue)
         else:
-            transaction.streaming_readers.append(queue)
+            assert context.transaction_ids is not None
+            transaction.streaming_readers.append(
+                (context.transaction_ids, queue)
+            )
 
         async def iterator(
             state: Optional[StateT]
@@ -3330,7 +3985,10 @@ class SidecarStateManager(
                     queue
                 )
             else:
-                transaction.streaming_readers.remove(queue)
+                assert context.transaction_ids is not None
+                transaction.streaming_readers.remove(
+                    (context.transaction_ids, queue)
+                )
 
     @asynccontextmanager
     async def reactively(
@@ -3557,6 +4215,7 @@ class SidecarStateManager(
                             state_ref=state_ref,
                             effects=effects,
                             transaction=transaction,
+                            transaction_ids=context.transaction_ids,
                             idempotency_key=context.idempotency_key,
                             workflow_id=context.workflow_id,
                             workflow_iteration=context.workflow_iteration,
@@ -3910,6 +4569,7 @@ class SidecarStateManager(
                     state_ref=state_ref,
                     effects=effects,
                     transaction=transaction,
+                    transaction_ids=context.transaction_ids,
                     idempotency_key=context.idempotency_key,
                     workflow_id=context.workflow_id,
                     workflow_iteration=context.workflow_iteration,
@@ -3998,13 +4658,9 @@ class SidecarStateManager(
             )
         except:
             if context.nested:
-                # Mark all the participants as needing to be
-                # aborted, then raise the exception up to the
-                # outermost transaction so the coordinator can
-                # handle the failure (including participants
-                # abort, database coordinator record cleanup,
-                # etc.).
-                context.participants.abort()
+                # A nested transaction just re-raises and lets the
+                # abort propagate back to the caller.
+                raise
             else:
                 # Drive Abort RPCs so participants release their
                 # locks and forget the transaction. Covers
@@ -4020,7 +4676,7 @@ class SidecarStateManager(
                     participants=context.participants,
                     coordinator_state_ref=state_ref,
                 )
-            raise
+                raise
 
     async def check_for_idempotent_mutation(
         self,
@@ -4288,40 +4944,6 @@ class SidecarStateManager(
         if not transaction.using_restart_detection:
             await self.transaction_participant_store(transaction)
 
-        # Add ourselves as a read-only transaction participant iff
-        # we have acquired the shared lock AND we have no
-        # idempotency key AND we are using restart detection.
-        # These mirror the gate in `transaction_participant_prepare`'s
-        # elision branch: we must only flag ourselves as read-only
-        # in the coordinator's `Participants` if Prepare will
-        # actually elide and release on the participant side.
-        #
-        # If we mark ourselves read-only while the elision won't
-        # fire (e.g., `SortedMap` participants, which always have
-        # `using_restart_detection == False`), the coordinator
-        # would persist us as read-only and then skip us on
-        # recovery's re-prepare (`skip_read_only=True`) — even
-        # though the legacy non-restart-detection path actually
-        # wrote a record to disk at join time and went through
-        # normal Prepare. That would strand the participant in
-        # an unconfirmed state across coordinator restarts.
-        #
-        # If we later upgrade the lock, e.g., because a `writer()`
-        # on this state gets called or a `transaction()` has
-        # effects that require the exclusive lock, then we'll
-        # update `context.participants` to indicate that this
-        # participant is not read-only which correctly wins/taints
-        # as we merge participants back up to the coordinator.
-        context.participants.add(
-            state_type,
-            state_ref,
-            read_only=(
-                transaction.mode == "shared" and
-                context.idempotency_key is None and
-                transaction.using_restart_detection
-            ),
-        )
-
     def _transaction_coordinator_start(
         self,
         transaction_id: uuid.UUID,
@@ -4346,7 +4968,7 @@ class SidecarStateManager(
         the participants list:
 
         - If every participant is read-only (nothing in
-          `should_commit()` or `should_abort()`) we elide the
+          `should_commit()`) we elide the
           durable `transaction_coordinator_prepare` write and
           the commit phase. The Prepare fan-out runs as a
           fire-and-forget background task so the caller's
@@ -4362,10 +4984,7 @@ class SidecarStateManager(
           commit-control-loop task; on failure the exception
           propagates and the caller is responsible for calling
           `_transaction_coordinator_abort`."""
-        all_read_only = (
-            next(participants.should_commit(), None) is None and
-            next(participants.should_abort(), None) is None
-        )
+        all_read_only = next(participants.should_commit(), None) is None
 
         if all_read_only:
 
@@ -4652,49 +5271,9 @@ class SidecarStateManager(
                     message=error.details(),
                 ) from None
 
-        async def abort(state_type: StateTypeName, state_ref: StateRef):
-            # Do our best to tell the participant that, from their
-            # perspective, the transaction has aborted. If we fail
-            # (e.g. because we can't get a channel), no big deal; the
-            # caller will retry this at a later point.
-            channel = channel_manager.get_channel_to_state(
-                state_type,
-                state_ref,
-                # Since this is a Reboot-internal process that the user
-                # may not be aware is running in the background, logging
-                # user-visible errors is unhelpful.
-                unresolvable_state_log_level=logging.DEBUG,
-            )
-
-            stub = transactions_pb2_grpc.ParticipantStub(channel)
-
-            try:
-                await stub.Abort(
-                    transactions_pb2.AbortRequest(
-                        transaction_id=transaction_id.bytes
-                    ),
-                    metadata=Headers(
-                        application_id=application_id,
-                        state_ref=state_ref,
-                    ).to_grpc_metadata(),
-                )
-            except AioRpcError as error:
-                raise SystemAborted(
-                    TransactionParticipantFailedToCommit(),
-                    message=error.details(),
-                ) from None
-
         await concurrently(
-            itertools.chain(
-                (
-                    commit(state_type, state_ref)
-                    for (state_type, state_ref) in participants.should_commit()
-                ),
-                (
-                    abort(state_type, state_ref)
-                    for (state_type, state_ref) in participants.should_abort()
-                ),
-            )
+            commit(state_type, state_ref)
+            for (state_type, state_ref) in participants.should_commit()
         )
 
     async def _transaction_coordinator_abort(
@@ -4706,17 +5285,13 @@ class SidecarStateManager(
         participants: Participants,
         coordinator_state_ref: Optional[StateRef],
     ):
-        """Aborts a transaction for which we are the coordinator:
-        (1) marks all participants as "to abort"; (2) cleans up
-        the "preparing" record that may be in the database; (3)
-        best-effort sends `Abort` RPCs to all participants; and
-        (4) publishes the aborted participants to the
-        `_coordinator_participants` future so any participant
-        "watch control loops" observe the abort, then deletes
-        the future entry."""
-        # Mark all the participants as need to be aborted.
-        participants.abort()
-
+        """Aborts a transaction for which we are the coordinator: (1) cleans
+        up the "preparing" record that may be in the database; (2)
+        best-effort sends `Abort` RPCs to all participants; and (3)
+        resolves the `_coordinator_participants` future to `None` so
+        any participant "watch control loops" observe the abort, then
+        deletes the future entry.
+        """
         # Clean up the "preparing" record that may be in the database
         # when the coordinator stored the transaction participants
         # (and `preparing=True`). The database write may or may not
@@ -4781,14 +5356,16 @@ class SidecarStateManager(
             for (state_type, state_ref) in participants.should_prepare()
         )
 
-        # To indicate that the transaction has aborted we set the
-        # participants, which will all be in
-        # `participants.should_abort`.
+        # To indicate that the transaction has aborted we resolve the
+        # future to `None`, so a participant `Watch` that already passed
+        # the "is it still in the map" check and is awaiting the future
+        # observes the abort rather than finding itself still listed to
+        # commit.
         #
-        # Not expecting `participants` to ever be cancelled, see:
+        # Not expecting the future to ever be cancelled, see:
         # https://github.com/reboot-dev/mono/issues/3241
         assert not self._coordinator_participants[transaction_id].cancelled()
-        self._coordinator_participants[transaction_id].set_result(participants)
+        self._coordinator_participants[transaction_id].set_result(None)
 
         # Remove transaction so that participants "watch control loop"
         # will determine that the transaction has aborted!
@@ -4903,6 +5480,12 @@ class SidecarStateManager(
             participants = await asyncio.shield(
                 self._coordinator_participants[transaction_id]
             )
+
+            # A `None` result is the coordinator's abort signal (see
+            # `_transaction_coordinator_abort`): the whole transaction
+            # aborted, so this participant aborts too.
+            if participants is None:
+                return transactions_pb2.WatchResponse(aborted=True)
 
             # We may get a `Watch` from both participants that should
             # commit AND read-only participants, so we need to iterate
@@ -5119,6 +5702,34 @@ class SidecarStateManager(
 
         return transactions_pb2.AbortResponse()
 
+    async def RelinquishOwnership(
+        self, request: transactions_pb2.RelinquishOwnershipRequest,
+        grpc_context: grpc.aio.ServicerContext
+    ) -> transactions_pb2.RelinquishOwnershipResponse:
+        """Relinquishes the ownership of this state held by a nested
+        transaction so that other calls within the same outermost
+        transaction may proceed.
+        """
+        headers = Headers.from_grpc_context(grpc_context)
+
+        state_ref = headers.state_ref
+        state_type = self._state_type_for_state_ref(state_ref)
+
+        transaction = self._lookup_participant_transaction(
+            state_type,
+            state_ref,
+            uuid.UUID(bytes=request.root_transaction_id),
+        )
+
+        if transaction is not None:
+            transaction.relinquish_ownership(
+                uuid.UUID(bytes=request.transaction_id),
+                aborted=request.aborted,
+                lock=self._locks[state_type][state_ref],
+            )
+
+        return transactions_pb2.RelinquishOwnershipResponse()
+
     async def transaction_participant_store(
         self,
         transaction: StateManager.Transaction,
@@ -5145,6 +5756,21 @@ class SidecarStateManager(
     ):
         state_type = transaction.state_type
         state_ref = transaction.state_ref
+
+        # We can not prepare while a nested transaction still owns
+        # this state: its `RelinquishOwnership` may not have arrived
+        # yet, so we may still have effects it made that on
+        # a recoverable abort would need to be rolled back.
+        #
+        # Waiting here covers the rolling-upgrade case where a nested
+        # transaction ran on an older server that does not send
+        # `RelinquishOwnership` at all: ownership never returns to the
+        # root, so this wait simply times out to `Unavailable` and the
+        # transaction retries (succeeding once all servers have been
+        # upgraded).
+        await transaction.wait_ownership(
+            lambda: transaction.is_claimable_by([transaction.root_id]),
+        )
 
         async with transaction.lock:
             if not transaction.finished():
@@ -5403,7 +6029,7 @@ class SidecarStateManager(
                 try:
                     # Need to abort all streaming readers that are part of
                     # this transaction!
-                    for queue in transaction.streaming_readers:
+                    for (_, queue) in transaction.streaming_readers:
                         queue.put_nowait(None)
 
                     transaction.abort()

@@ -27,8 +27,6 @@ message PrepareRequest {
   bool read_only_aware = 3;
 }
 
-////////////////////////////////////////////////////////////////////////
-
 message PrepareResponse {
   // True if the participant definitively cannot prepare this
   // transaction and the coordinator must abort it. Only set when the
@@ -49,8 +47,6 @@ message CommitRequest {
   bytes transaction_id = 1;
 }
 
-////////////////////////////////////////////////////////////////////////
-
 message CommitResponse {}
 
 ////////////////////////////////////////////////////////////////////////
@@ -59,9 +55,24 @@ message AbortRequest {
   bytes transaction_id = 1;
 }
 
+message AbortResponse {}
+
 ////////////////////////////////////////////////////////////////////////
 
-message AbortResponse {}
+message RelinquishOwnershipRequest {
+  // The root transaction id identifying which transaction's
+  // participant on this state should relinquish ownership.
+  bytes root_transaction_id = 1;
+  // The id of the completed nested transaction whose ownership of
+  // this state should be relinquished so that other calls may
+  // claim ownership and proceed.
+  bytes transaction_id = 2;
+  // Whether the nested transaction aborted, in which case any effects
+  // on the state will be rolled back.
+  bool aborted = 3;
+}
+
+message RelinquishOwnershipResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -69,6 +80,8 @@ service Participant {
   rpc Prepare(PrepareRequest) returns (PrepareResponse);
   rpc Commit(CommitRequest) returns (CommitResponse);
   rpc Abort(AbortRequest) returns (AbortResponse);
+  rpc RelinquishOwnership(RelinquishOwnershipRequest)
+      returns (RelinquishOwnershipResponse);
 }
 
 ////////////////////////////////////////////////////////////////////////

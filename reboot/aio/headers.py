@@ -59,7 +59,12 @@ TRANSACTION_IDS_HEADER = 'x-reboot-transaction-ids'
 TRANSACTION_COORDINATOR_STATE_TYPE_HEADER = 'x-reboot-transaction-coordinator-state-type'
 TRANSACTION_COORDINATOR_STATE_REF_HEADER = 'x-reboot-transaction-coordinator-state-ref'
 TRANSACTION_PARTICIPANTS_HEADER = 'x-reboot-transaction-participants'
-TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER = 'x-reboot-transaction-participants-to-abort'
+# Deprecated: never emitted anymore. Kept for eagerly failing
+# transactions that contain a mix of servers. Remove once no old
+# servers remain that may emit this header.
+TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER = (
+    'x-reboot-transaction-participants-to-abort'
+)
 # Transaction participants taht are read-only (expect `Prepare` but
 # don't need `Commit`).
 TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER = (

@@ -6,7 +6,8 @@ from contextlib import asynccontextmanager
 from google.protobuf.message import Message
 from grpc.aio import AioRpcError
 from log.log import get_logger
-from reboot.aio.aborted import Aborted
+from rbt.v1alpha1 import errors_pb2
+from reboot.aio.aborted import Aborted, SystemAborted
 from reboot.aio.backoff import Backoff
 from reboot.aio.caller_id import CallerID
 from reboot.aio.contexts import (
@@ -522,10 +523,28 @@ class Stub:
 
             raise
         finally:
+            saw_legacy_to_abort = False
             if call is not None:
                 participants = Participants.from_grpc_metadata(
                     await call.trailing_metadata()
                 )
                 self._context.participants.union(participants)
+                saw_legacy_to_abort = participants.saw_legacy_to_abort
 
             self._context.outstanding_rpcs -= 1
+
+            # Rolling-upgrade compatibility: an older server
+            # propagated participants to abort which we no longer
+            # support so we fail the transaction with the retryable
+            # `Unavailable` so that it can be retried, hopefully after
+            # all servers have been upgraded.
+            if saw_legacy_to_abort:
+                self._context.transaction_unrecoverable_abort = True
+                raise SystemAborted(
+                    errors_pb2.Unavailable(),
+                    message=(
+                        "A transaction participant was marked to abort "
+                        "by an older server during a rolling upgrade; "
+                        "retry required."
+                    ),
+                )

@@ -20,10 +20,9 @@ from reboot.aio.contexts import (
 from reboot.aio.headers import (
     STATE_REF_HEADER,
     TRANSACTION_PARTICIPANTS_HEADER,
-    TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER,
     Headers,
 )
-from reboot.aio.state_managers import SidecarStateManager, StateManager
+from reboot.aio.state_managers import Lock, SidecarStateManager, StateManager
 from reboot.aio.stubs import UnaryRetriedCall
 from reboot.aio.tests import Reboot
 from reboot.aio.types import StateRef
@@ -1846,6 +1845,66 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         # TODO: better error message than just 'Transaction must abort'.
         self.assertIn('Transaction must abort', str(aborted.exception))
 
+    async def test_nested_catch_undeclared_aborts_root(self):
+        """Test that a nested transaction which catches an undeclared
+        error from a sub-call and continues still aborts the whole
+        (root) transaction. The nested transaction returns normally, but
+        the caught undeclared error left it unrecoverable, so doom
+        propagation must make the root abort rather than commit.
+        """
+
+        await self.rbt.up(
+            Application(servicers=[BankServicer, AccountServicer]),
+        )
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+        await bank.SignUp(context, account_id='jonathan')
+
+        with self.assertRaises(
+            Bank.TestNestedCatchUndeclaredAborted
+        ) as aborted:
+            await bank.TestNestedCatchUndeclared(
+                context, account_id='jonathan'
+            )
+
+        self.assertIn('Transaction must abort', str(aborted.exception))
+
+    async def test_nested_read_only_doomed_subtree_aborts_root(self):
+        """Test that a three-level, entirely read-only tree where the
+        doom is buried still aborts the root. A read-only nested
+        transaction aborts with an undeclared error, an intermediate
+        transaction catches it and returns normally, and the root never
+        learns (via its own context flag) that the subtree is doomed.
+        Every participant is read-only, so the root would otherwise take
+        the all-read-only two phase commit elision and silently commit;
+        doom propagation must make it abort instead.
+        """
+
+        await self.rbt.up(
+            Application(servicers=[BankServicer, AccountServicer]),
+        )
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+        await bank.SignUp(context, account_id='catcher')
+        await bank.SignUp(context, account_id='thrower')
+
+        with self.assertRaises(
+            Bank.TestNestedReadOnlyDoomedSubtreeAborted
+        ) as aborted:
+            await bank.TestNestedReadOnlyDoomedSubtree(
+                context,
+                catcher_account_id='catcher',
+                thrower_account_id='thrower',
+            )
+
+        self.assertIn('Transaction must abort', str(aborted.exception))
+
     async def test_transaction_not_aborts_when_catching_declared_errors(self):
         """Test that catching a declared error will not abort the transaction.
         """
@@ -1950,6 +2009,223 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         response = await Account.ref('jonathan-parent').Balance(context)
 
         self.assertEqual(42, response.amount)
+
+    async def test_inherited_ownership_abort(self):
+        """Test that when a nested transaction aborts a state that an
+        _intermediate_ transaction never touched (so ownership is
+        inherited back up the tree on abort), the rest of the
+        transaction can still use that state. Regression test for a
+        deadlock where the aborted nested transaction left the
+        intermediate transaction owning the state without a record to
+        relinquish it.
+        """
+        await self.rbt.up(
+            Application(servicers=[BankServicer, AccountServicer]),
+        )
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+        # Opens 'inherited' (balance 10), then via a nested transaction
+        # that does NOT touch 'inherited' calls a deeper nested
+        # transaction that writes and aborts 'inherited', then deposits
+        # 5 into 'inherited'.
+        await bank.TestInheritedOwnershipAbort(context, account_id='inherited')
+
+        # The aborted nested transaction's write must have been dropped
+        # (10 + 5, not 10 + 10 + 5).
+        response = await Account.ref('inherited').Balance(context)
+        self.assertEqual(15, response.amount)
+
+        # And the account the aborted nested transaction tried to
+        # construct must not exist.
+        with self.assertRaises(Account.BalanceAborted) as aborted:
+            await Account.ref('inherited-nested').Balance(context)
+
+        self.assertTrue(
+            isinstance(aborted.exception.error, StateNotConstructed),
+        )
+
+    async def test_retain_read_lock_after_declared_abort(self):
+        """Test that when a nested transaction reads a state and then
+        aborts with a declared error that escapes to a catching caller,
+        the root transaction keeps the state read-locked so a concurrent
+        writer can not change the value the caller observed before the
+        root commits.
+        """
+        from tests.reboot.bank import (
+            retain_read_lock_nested_aborted,
+            retain_read_lock_release,
+        )
+
+        # These module-level events coordinate the servicer with us;
+        # make sure they start clear (they persist across test methods).
+        retain_read_lock_nested_aborted.clear()
+        retain_read_lock_release.clear()
+
+        # Detect when the concurrent writer reaches the per-state
+        # exclusive lock acquisition so that we only release the root
+        # transaction once the writer is genuinely contending for the
+        # retained read lock. We only start watching after the root has
+        # parked, so the only exclusive acquisition we observe is the
+        # writer's.
+        watching = False
+        real_acquire_exclusive = Lock.acquire_exclusive
+        writer_reached_lock = asyncio.Event()
+
+        async def mock_acquire_exclusive(lock, *args, **kwargs):
+            if watching:
+                writer_reached_lock.set()
+            return await real_acquire_exclusive(lock, *args, **kwargs)
+
+        with mock.patch(
+            'reboot.aio.state_managers.Lock.acquire_exclusive',
+            mock_acquire_exclusive,
+        ):
+            # Disable effect validation so that the transaction body
+            # (which coordinates with us via module-level events) runs
+            # exactly once.
+            await self.rbt.up(
+                Application(servicers=[BankServicer, AccountServicer]),
+                effect_validation=EffectValidation.DISABLED,
+            )
+
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+            await bank.SignUp(
+                context, account_id='retainacct', initial_deposit=10
+            )
+
+            # The root transaction reads 'retainacct' via a nested
+            # transaction that declared-aborts, then (once we release
+            # it) reads the balance again.
+            root_task = asyncio.create_task(
+                bank.TestRetainReadLockAfterDeclaredAbort(
+                    context,
+                    account_id='retainacct',
+                )
+            )
+
+            # Wait until the root has aborted the nested transaction and
+            # thus retained the read lock on 'retainacct'.
+            await retain_read_lock_nested_aborted.wait()
+
+            # Now launch a concurrent writer (a separate transaction)
+            # that must block on the retained read lock.
+            watching = True
+            deposit_context = self.rbt.create_external_context(
+                name=self.id() + '-deposit'
+            )
+            deposit_task = asyncio.create_task(
+                Account.ref('retainacct').Deposit(deposit_context, amount=5)
+            )
+
+            # Wait until the writer is contending for the exclusive lock
+            # before letting the root read the balance again.
+            await writer_reached_lock.wait()
+
+            # Release the root: it reads the balance (which must still be
+            # the value the nested transaction observed since the writer
+            # is blocked) and commits.
+            retain_read_lock_release.set()
+
+            response = await root_task
+            self.assertEqual(10, response.amount)
+
+            # Only once the root has committed (releasing the read lock)
+            # can the writer proceed.
+            await deposit_task
+
+            self.assertEqual(
+                15,
+                (await Account.ref('retainacct').Balance(context)).amount,
+            )
+
+    async def test_prepare_waits_for_nested_abort_rollback(self):
+        """A participant must not prepare while a nested (sub)transaction
+        still owns it. When a nested transaction writes a remote state
+        and then declared-aborts, the root must wait for that state's
+        rollback (`RelinquishOwnership`) to land before preparing it,
+        otherwise it would persist the aborted write. Here we delay the
+        rollback past the root's prepare and assert that prepare parks
+        on the still-nested ownership until the rollback lands.
+        """
+        real_relinquish = SidecarStateManager.RelinquishOwnership
+        real_wait_ownership = StateManager.Transaction.wait_ownership
+
+        relinquish_blocked = asyncio.Event()
+        release_relinquish = asyncio.Event()
+        prepare_parked = asyncio.Event()
+
+        async def mock_relinquish_ownership(
+            state_manager, request, grpc_context
+        ):
+            # Hold up the aborted nested transaction's rollback of
+            # 'prepwait' so that the root's prepare reaches it first.
+            headers = Headers.from_grpc_context(grpc_context)
+            if (
+                request.aborted and headers.state_id == 'prepwait' and
+                not relinquish_blocked.is_set()
+            ):
+                relinquish_blocked.set()
+                await release_relinquish.wait()
+            return await real_relinquish(state_manager, request, grpc_context)
+
+        async def mock_wait_ownership(transaction, condition, *args, **kwargs):
+            # Once 'prepwait's rollback is blocked, the next ownership
+            # wait whose condition is unmet is the prepare-wait parking
+            # on the still-nested owner.
+            if relinquish_blocked.is_set() and not condition():
+                prepare_parked.set()
+            return await real_wait_ownership(
+                transaction, condition, *args, **kwargs
+            )
+
+        with mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager.RelinquishOwnership',
+            mock_relinquish_ownership,
+        ), mock.patch(
+            'reboot.aio.state_managers.StateManager.Transaction.wait_ownership',
+            mock_wait_ownership,
+        ):
+            # Disable effect validation so the transaction body runs
+            # exactly once (otherwise a re-run would abort and fan out a
+            # second time, past our one-shot block).
+            await self.rbt.up(
+                Application(servicers=[BankServicer, AccountServicer]),
+                effect_validation=EffectValidation.DISABLED,
+            )
+
+            context = self.rbt.create_external_context(name=self.id())
+
+            bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+            root_task = asyncio.create_task(
+                bank.TestPrepareWaitForNestedAbortRollback(
+                    context,
+                    remote_account_id='prepwait',
+                    amount=50,
+                )
+            )
+
+            # The nested transaction has aborted and 'prepwait's rollback
+            # is blocked; the root proceeds to prepare 'prepwait' and
+            # must park on the still-nested ownership.
+            await prepare_parked.wait()
+            self.assertFalse(root_task.done())
+
+            # Let the rollback land: prepare now drains and the root
+            # commits.
+            release_relinquish.set()
+            await root_task
+
+            # The nested deposit must have been rolled back before
+            # 'prepwait' was prepared: it has only its opening balance.
+            response = await Account.ref('prepwait').Balance(context)
+            self.assertEqual(100, response.amount)
 
     async def test_unconstructed_reader_fails_during_transaction(self):
         """Call Bank.TestUnconstructedReaderFails from inside a
@@ -2091,9 +2367,9 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             isinstance(r_aborted.exception.error, StateNotConstructed)
         )
 
-    async def test_unsupported_nested_transactions(self):
-        """Tests that we will currently fail if a nested transaction and
-        parent transaction are not mutually exclusive.
+    async def test_nested_transactions(self):
+        """Tests that a nested transaction and parent transaction may
+        read/modify shared state (previously unsupported shapes).
         """
         await self.rbt.up(
             Application(servicers=[AccountServicer, BankServicer])
@@ -2103,43 +2379,73 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
 
-        try:
-            await bank.TestUnsupportedNestedTransactions(
-                context,
-                type=bank_rbt.TestUnsupportedNestedTransactionsRequest.
-                NESTED_TXN_SAME_STATE,
-            )
-        except Bank.TestUnsupportedNestedTransactionsAborted as aborted:
-            assert (
-                "Nested transactions must currently read/modify mutually exclusive "
-                "state from their parent transactions. You are attempting to "
-                f"modify '{bank.state_id}' of type 'tests.reboot.Bank' which is "
-                "already used in a parent transaction. This restriction will be "
-                "relaxed in a future release of Reboot. Do you have a use case "
-                "where you are trying to do this? Please reach out "
-                "to the maintainers and tell us about it!"
-            ) in str(aborted)
+        # A nested transaction (`Bank.Transfer`) on the same `Bank`
+        # state as the parent transaction, also modifying accounts
+        # the parent opened.
+        await bank.TestNestedTransactions(
+            context,
+            type=bank_rbt.TestNestedTransactionsRequest.NESTED_TXN_SAME_STATE,
+        )
 
-        # Need to acknowledge idempotency uncertainty so that we
-        # can continue running the test!
-        context.acknowledge_idempotency_uncertainty()
+        response = await Account.ref('jonathan-same-state').Balance(context)
+        self.assertEqual(1, response.amount)
 
-        try:
-            await bank.TestUnsupportedNestedTransactions(
-                context,
-                type=bank_rbt.TestUnsupportedNestedTransactionsRequest.
-                NESTED_TXN_PARENT_WRITER,
-            )
-        except Bank.TestUnsupportedNestedTransactionsAborted as aborted:
-            assert (
-                "Parent transactions must currently read/modify mutually exclusive "
-                "state from their nested transactions. You are attempting to "
-                "modify 'jonathan' of type 'tests.reboot.Account' which is "
-                "already used in a nested transaction. This restriction will be "
-                "relaxed in a future release of Reboot. Do you have a use case "
-                "where you are trying to do this? Please reach out "
-                "to the maintainers and tell us about it!"
-            ) in str(aborted)
+        response = await Account.ref('ben-same-state').Balance(context)
+        self.assertEqual(1, response.amount)
+
+        # The parent transaction modifies account state that a nested
+        # transaction (`Bank.Transfer`) modified, exercising the
+        # `RelinquishOwnership` after the nested transaction
+        # completes.
+        await bank.TestNestedTransactions(
+            context,
+            type=bank_rbt.TestNestedTransactionsRequest.
+            NESTED_TXN_PARENT_WRITER,
+        )
+
+        response = await Account.ref('jonathan-parent-writer').Balance(context)
+        self.assertEqual(6, response.amount)
+
+        response = await Account.ref('ben-parent-writer').Balance(context)
+        self.assertEqual(1, response.amount)
+
+        # A nested transaction that aborts after modifying state
+        # shared with the parent restores that state to its value
+        # from before the nested transaction; the parent catches the
+        # error, continues, and commits.
+        await bank.TestNestedTransactions(
+            context,
+            type=bank_rbt.TestNestedTransactionsRequest.
+            NESTED_TXN_SHARED_WRITE_ABORT,
+        )
+
+        # The accounts keep the values from before the aborted
+        # nested transaction (`Bank.Transfer`) modified them.
+        response = await Account.ref('jonathan-shared-write-abort'
+                                    ).Balance(context)
+        self.assertEqual(1, response.amount)
+
+        response = await Account.ref('ben-shared-write-abort').Balance(context)
+        self.assertEqual(0, response.amount)
+
+        # A nested transaction that aborts after only _reading_ state
+        # does not abort that state: the parent can still use (and
+        # even modify) it and commit.
+        await bank.SignUp(
+            context,
+            account_id='jonathan-read-only-abort',
+            initial_deposit=7,
+        )
+
+        await bank.TestNestedTransactions(
+            context,
+            type=bank_rbt.TestNestedTransactionsRequest.
+            NESTED_TXN_READ_ONLY_ABORT,
+        )
+
+        response = await Account.ref('jonathan-read-only-abort'
+                                    ).Balance(context)
+        self.assertEqual(12, response.amount)
 
     async def test_colocated_range_transaction_abort(self):
         """
@@ -2281,12 +2587,6 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
                 f"Expected no '{TRANSACTION_PARTICIPANTS_HEADER}' in "
                 f"trailing metadata, but got: {trailing_metadata_tuples}",
             )
-            self.assertNotIn(
-                TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER,
-                trailing_metadata_keys,
-                f"Expected no '{TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER}' "
-                f"in trailing metadata, but got: {trailing_metadata_tuples}",
-            )
 
     async def test_failing_transaction_no_trailing_metadata(self) -> None:
         """
@@ -2338,13 +2638,6 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
                 trailing_metadata_keys,
                 f"Expected no '{TRANSACTION_PARTICIPANTS_HEADER}' in "
                 f"trailing metadata on failed transaction, but got: "
-                f"{trailing_metadata_tuples}",
-            )
-            self.assertNotIn(
-                TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER,
-                trailing_metadata_keys,
-                f"Expected no '{TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER}' "
-                f"in trailing metadata on failed transaction, but got: "
                 f"{trailing_metadata_tuples}",
             )
 

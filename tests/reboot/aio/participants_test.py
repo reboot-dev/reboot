@@ -99,12 +99,8 @@ class ParticipantsUnionTest(unittest.TestCase):
 
 class ParticipantsGrpcMetadataTest(unittest.TestCase):
 
-    def test_legacy_roundtrip_omits_read_only_header(self) -> None:
-        """Default `to_grpc_metadata()` (no `read_only_aware`)
-        targets pre-Phase-2 receivers and emits only the two
-        headers they understand. Read-only entries fold into the
-        main commit header — the receiver treats them all as
-        exclusive committers, which is the safe degradation."""
+    def test_legacy_roundtrip_omits_deprecated_headers(self) -> None:
+        """Tests that deprecated headers are treated correctly."""
         participants = Participants()
         write_ref = StateRef.from_id(ACCOUNT, 'writer')
         read_ref = StateRef.from_id(ACCOUNT, 'reader')
@@ -114,7 +110,8 @@ class ParticipantsGrpcMetadataTest(unittest.TestCase):
         metadata = participants.to_grpc_metadata()
         keys = [k for (k, _) in metadata]
         self.assertIn(TRANSACTION_PARTICIPANTS_HEADER, keys)
-        self.assertIn(TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER, keys)
+        # We never emit the to-abort header anymore.
+        self.assertNotIn(TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER, keys)
         self.assertNotIn(TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER, keys)
         # The main header carries BOTH the write and read-only refs
         # — the receiver wouldn't have the read-only header to
@@ -129,16 +126,35 @@ class ParticipantsGrpcMetadataTest(unittest.TestCase):
             {write_ref.to_str(), read_ref.to_str()},
         )
 
-        # Round-trip through `from_grpc_metadata`: a receiver
-        # parsing this legacy form (no read-only header) sees
-        # both refs as exclusive committers (in-memory
-        # `_read_only` ends up empty). That's the same safe
-        # degradation a pre-Phase-2 binary would do.
+        # Round-trip through `from_grpc_metadata`: a receiver parsing
+        # this legacy form (no read-only header) sees both refs as
+        # exclusive committers (in-memory `_read_only` ends up
+        # empty). That's the same safe degradation an old server that
+        # hasn't upgraded would do.
         restored = Participants.from_grpc_metadata(metadata)
         self.assertEqual(
             set(restored.should_commit()),
             {(ACCOUNT, write_ref), (ACCOUNT, read_ref)},
         )
+        self.assertEqual(list(restored.read_only()), [])
+
+    def test_to_abort_header_flags_rolling_upgrade_abort(self) -> None:
+        """Rolling-upgrade compatibility: a header from an old server is not
+        recorded as a participant; it only sets `saw_legacy_to_abort`
+        so the stub merging the metadata can abort the transaction
+        with a retryable `Unavailable`. We never emit this header
+        ourselves.
+        """
+        old_ref = StateRef.from_id(ACCOUNT, 'old')
+        metadata = (
+            (
+                TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER,
+                json.dumps({ACCOUNT: [old_ref.to_str()]}),
+            ),
+        )
+        restored = Participants.from_grpc_metadata(metadata)
+        self.assertTrue(restored.saw_legacy_to_abort)
+        self.assertEqual(list(restored.should_commit()), [])
         self.assertEqual(list(restored.read_only()), [])
 
     def test_legacy_metadata_without_read_header_treats_all_as_write(
@@ -153,7 +169,6 @@ class ParticipantsGrpcMetadataTest(unittest.TestCase):
                 TRANSACTION_PARTICIPANTS_HEADER,
                 json.dumps({ACCOUNT: [ref.to_str()]}),
             ),
-            (TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER, json.dumps({})),
         )
         restored = Participants.from_grpc_metadata(metadata)
         self.assertEqual(list(restored.read_only()), [])
@@ -275,26 +290,21 @@ class ParticipantsSidecarTest(unittest.TestCase):
 
 class ParticipantsShouldPrepareTest(unittest.TestCase):
 
-    def test_should_prepare_skip_read_only_includes_aborts(self) -> None:
-        """`should_prepare(skip_read_only=True)` is what the
-        recovery path uses. It must include abort-marked
-        participants (they still need to be told to release their
-        lock) but exclude read-only committers (already released
-        their locks via Phase 2 elision and forgotten the
-        transaction)."""
+    def test_should_prepare_skip_read_only_excludes_read_only(self) -> None:
+        """`should_prepare(skip_read_only=True)` is what the recovery
+        path uses. It includes the committers but excludes read-only
+        committers (already released their locks via read-only
+        elision and forgotten the transaction)."""
         participants = Participants()
 
         write_ref = StateRef.from_id(BANK, 'b')
         read_ref = StateRef.from_id(ACCOUNT, 'a')
-        abort_ref = StateRef.from_id(ACCOUNT, 'aborted')
 
         participants.add(BANK, write_ref, read_only=False)
         participants.add(ACCOUNT, read_ref, read_only=True)
-        participants.add(ACCOUNT, abort_ref, abort=True)
 
         prepared = list(participants.should_prepare(skip_read_only=True))
         self.assertIn((BANK, write_ref), prepared)
-        self.assertIn((ACCOUNT, abort_ref), prepared)
         self.assertNotIn((ACCOUNT, read_ref), prepared)
 
     def test_should_prepare_default_includes_read_only(self) -> None:
@@ -310,23 +320,6 @@ class ParticipantsShouldPrepareTest(unittest.TestCase):
         prepared = list(participants.should_prepare())
         self.assertIn((BANK, write_ref), prepared)
         self.assertIn((ACCOUNT, read_ref), prepared)
-
-
-class ParticipantsAbortTest(unittest.TestCase):
-
-    def test_abort_clears_read_only(self) -> None:
-        """When the whole transaction aborts (e.g., a nested
-        transaction raises), all participants must be contacted
-        with an Abort RPC regardless of mode. The read-only set
-        must be cleared so the coordinator doesn't skip them."""
-        participants = Participants()
-        read_ref = StateRef.from_id(ACCOUNT, 'a')
-        participants.add(ACCOUNT, read_ref, read_only=True)
-        self.assertEqual(list(participants.read_only()), [(ACCOUNT, read_ref)])
-
-        participants.abort()
-        self.assertEqual(list(participants.read_only()), [])
-        self.assertIn((ACCOUNT, read_ref), list(participants.should_abort()))
 
 
 if __name__ == "__main__":

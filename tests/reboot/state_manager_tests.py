@@ -987,6 +987,68 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(first_upgrade_task, timeout=1.0)
         lock.release_exclusive()
 
+    async def test_downgrade_when_sole_holder(self) -> None:
+        lock = Lock()
+        await lock.acquire_exclusive()
+        lock.downgrade()
+        self.assertTrue(lock.is_shared_locked())
+        self.assertFalse(lock.is_exclusive_locked())
+        lock.release_shared()
+        self.assertFalse(lock.is_locked())
+
+    async def test_downgrade_grants_queued_shared(self) -> None:
+        """Downgrading from exclusive to shared lets a queued shared
+        waiter join the (now shared) holder."""
+        lock = Lock()
+        await lock.acquire_exclusive()
+
+        queued_shared_acquired = asyncio.Event()
+
+        async def queued_shared() -> None:
+            await lock.acquire_shared()
+            queued_shared_acquired.set()
+
+        queued_shared_task = asyncio.create_task(queued_shared())
+        await asyncio.sleep(0)
+        # The exclusive hold blocks the shared waiter.
+        self.assertFalse(queued_shared_acquired.is_set())
+
+        lock.downgrade()
+        await asyncio.wait_for(queued_shared_acquired.wait(), timeout=1.0)
+        # Both the downgrader and the queued waiter now hold shared.
+        self.assertTrue(lock.is_shared_locked())
+        self.assertFalse(lock.is_exclusive_locked())
+
+        lock.release_shared()
+        lock.release_shared()
+        await queued_shared_task
+
+    async def test_downgrade_keeps_exclusive_waiter_queued(self) -> None:
+        """Downgrading to shared must NOT grant a queued exclusive
+        waiter, since the downgrader still holds shared."""
+        lock = Lock()
+        await lock.acquire_exclusive()
+
+        queued_exclusive_acquired = asyncio.Event()
+
+        async def queued_exclusive() -> None:
+            await lock.acquire_exclusive()
+            queued_exclusive_acquired.set()
+
+        queued_exclusive_task = asyncio.create_task(queued_exclusive())
+        await asyncio.sleep(0)
+
+        lock.downgrade()
+        await asyncio.sleep(0)
+        # We still hold shared, so the exclusive waiter must wait.
+        self.assertFalse(queued_exclusive_acquired.is_set())
+
+        # Release our shared hold; the exclusive waiter can now proceed.
+        lock.release_shared()
+        await asyncio.wait_for(queued_exclusive_acquired.wait(), timeout=1.0)
+        lock.release_exclusive()
+        await queued_exclusive_task
+
     async def test_shared_deadline_raises_unavailable(self) -> None:
         lock = Lock()
         await lock.acquire_exclusive()
