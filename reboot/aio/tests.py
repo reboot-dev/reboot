@@ -8,9 +8,9 @@ from reboot.aio.auth.oauth_providers import (
     OAuthProvider,
     OAuthProviderSelector,
 )
-from reboot.aio.auth.oauth_server import signing_secret
-from reboot.aio.auth.token_verifiers import TokenVerifier
-from reboot.aio.contexts import EffectValidation
+from reboot.aio.auth.oauth_server import OAuthTokenVerifier, signing_secret
+from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
+from reboot.aio.contexts import EffectValidation, ReaderContext
 from reboot.aio.external import InitializeContext
 from reboot.aio.http import WebFramework
 from reboot.aio.libraries import AbstractLibrary
@@ -40,6 +40,32 @@ class OAuthProviderForTest(OAuthProviderSelector):
 
     def _select(self) -> OAuthProvider:
         return self._provider
+
+
+class TokenVerifierForTest(TokenVerifier):
+    """A `TokenVerifier` that accepts the tokens minted by
+    `Reboot.make_valid_oauth_access_token(...)` (and `make_jwt(...)`).
+
+    For testing applications that wire identity via
+    `Application(token_verifier=...)` (e.g. web apps integrating an external
+    identity provider in production): tests pass
+    `Application(..., token_verifier=TokenVerifierForTest())` and create
+    contexts with
+    `bearer_token=rbt.make_valid_oauth_access_token(user_id=...)`.
+
+    This substitutes only the identity layer; authorizers still run for
+    real.
+    """
+
+    async def verify_token(
+        self,
+        context: ReaderContext,
+        token: Optional[str],
+    ) -> VerifyTokenResult:
+        # Constructed lazily: `signing_secret()` derives from the test
+        # cryptographic root keys that `Reboot.__init__` sets.
+        verifier = OAuthTokenVerifier(signing_secret())
+        return await verifier.verify_token(context, token)
 
 
 def assert_called_twice_with(

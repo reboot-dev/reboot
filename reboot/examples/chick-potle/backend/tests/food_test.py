@@ -4,36 +4,20 @@ Covers `User.start_order` and `FoodOrder` CRUD via direct
 Reboot calls."""
 import unittest
 from ai_chat_food.v1.food_rbt import FoodOrder, User
+from reboot.aio.aborted import Aborted
 from reboot.aio.applications import Application
-from reboot.aio.auth.authorizers import allow
 from reboot.aio.auth.oauth_providers import Anonymous
 from reboot.aio.tests import OAuthProviderForTest, Reboot
 from servicers.food import FoodOrderServicer, UserServicer
 
-# Production servicers intentionally don't define an
-# `authorizer()`: in development Reboot defaults to allow-all,
-# but in production an absent authorizer denies by default,
-# which we rely on so that no permissive code accidentally
-# ships. The tests run against the production-mode harness, so
-# we extend each servicer here and grant `allow()` for the
-# duration of the suite.
-
-
-class PermissiveUserServicer(UserServicer):
-
-    def authorizer(self):
-        return allow()
-
-
-class PermissiveFoodOrderServicer(FoodOrderServicer):
-
-    def authorizer(self):
-        return allow()
-
+# The tests register the real servicers, with their real authorizers,
+# and impersonate an authenticated user by minting a bearer token. That
+# way the authorization rules are exercised by every test, exactly as in
+# production.
 
 APPLICATION_SERVICERS = [
-    PermissiveUserServicer,
-    PermissiveFoodOrderServicer,
+    UserServicer,
+    FoodOrderServicer,
 ]
 
 
@@ -60,7 +44,7 @@ class ServicerTest(unittest.IsolatedAsyncioTestCase):
         # production the MCP session's "new session" hook
         # calls `_auto_construct` for the authenticated user.
         # Tests don't go through that hook, so we do it here.
-        await PermissiveUserServicer._auto_construct(
+        await UserServicer._auto_construct(
             self.context,
             state_id=self.user_id,
         )
@@ -156,3 +140,21 @@ class ServicerTest(unittest.IsolatedAsyncioTestCase):
             )
         with self.assertRaises(Exception):
             await order.add_to_cart(self.context, item_index=-1, quantity=1)
+
+    async def test_other_user_cannot_access_order(self) -> None:
+        """The `FoodOrder` authorizer only admits the user who started the
+        order; a different authenticated user is denied."""
+        user = User.ref(self.user_id)
+        start_response = await user.start_order(self.context)
+        order = FoodOrder.ref(start_response.order_id)
+
+        other_context = self.rbt.create_external_context(
+            name=f"other-{self.id()}",
+            bearer_token=self.rbt.make_valid_oauth_access_token(
+                user_id="bob",
+            ),
+        )
+        with self.assertRaises(Aborted):
+            await order.get_cart(other_context)
+        with self.assertRaises(Aborted):
+            await order.add_to_cart(other_context, item_index=0, quantity=1)

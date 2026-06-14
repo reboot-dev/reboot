@@ -441,8 +441,8 @@ the real provider. Both arms are required; either may be `None`, and a
 selected `None` arm makes the app **fail to start** with a clear
 message, so you can't silently ship without sensible auth.
 Servicer-side code doesn't change between providers. (In unit tests you
-use `reboot.aio.tests.Application(oauth_provider=...)`, not this
-selector.)
+use `Application(oauth=OAuthProviderForTest(Anonymous()))`, with
+`OAuthProviderForTest` from `reboot.aio.tests`.)
 
 > **Choose your production provider deliberately.** See
 > [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md).
@@ -621,12 +621,16 @@ application directory.**
     `IsolatedAsyncioTestCase`, one external context per test
     (`name=f"test-{self.id()}"`), and
     `Service.ref(id).method(context, ...)` for all calls —
-    never instantiate Servicers directly. If any servicer has a
-    real `authorizer()`, use the permissive-subclass pattern
-    from `testing-harness.md`. Run `cd backend && uv run pytest`
-    and fix anything that fails. Then type-check: run
-    `uv run mypy backend/` from the project root and fix every
-    error (config and rationale in
+    never instantiate Servicers directly. Register the **real**
+    servicers — never subclass a servicer in tests to weaken its
+    `authorizer()`. Impersonate users instead:
+    `Application(..., oauth=OAuthProviderForTest(Anonymous()))`
+    plus
+    `bearer_token=rbt.make_valid_oauth_access_token(user_id=...)`
+    — see the impersonation pattern in `testing-harness.md`. Run
+    `cd backend && uv run pytest` and fix anything that fails.
+    Then type-check: run `uv run mypy backend/` from the project
+    root and fix every error (config and rationale in
     `python/references/lifecycle-project-setup.md`). Do not
     proceed to the next step until every user-story test passes
     and mypy is green — together they are the gate that catches

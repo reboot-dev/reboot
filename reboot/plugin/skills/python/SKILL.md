@@ -355,8 +355,9 @@ with "unknown actor type."
 - `references/testing-project-setup.md` — `backend/tests/` layout,
   `.pytest.ini`, dev-deps, `uv run pytest`
 - `references/testing-harness.md` — `Reboot()` harness, multi-servicer
-  `Application(...)`, permissive authorizers, bearer tokens,
-  `_auto_construct`
+  `Application(...)`, impersonation with bearer tokens
+  (`OAuthProviderForTest` / `TokenVerifierForTest`),
+  `app_internal=True`, `_auto_construct`
 - `references/testing-external-context.md` — `create_external_context`,
   asserting on `<Method>Aborted`, waiting on tasks/workflows, mocking
   external services / LLMs, one-test-per-user-story

@@ -38,10 +38,11 @@ response = await chat_room.messages(context)
 self.assertEqual(response.messages, ["Hello, World"])
 ```
 
-For setup that needs to bypass authorization (e.g. an MCP-style
-app where the production authorizer is `state_id_is_user_id`), see
-"Bearer Tokens for Authorized Tests" in
-[testing-harness.md](testing-harness.md).
+To satisfy real authorizers (e.g. an MCP-style app where the
+production authorizer is `state_id_is_user_id`), impersonate a user
+with a bearer token — see "Test Against the Real Authorizers" in
+[testing-harness.md](testing-harness.md). Don't bypass authorization
+by weakening `authorizer()` in tests.
 
 ## `name` Should Be Unique per Test
 
@@ -198,7 +199,9 @@ class NoFulfillOrderServicer(OrderServicer):
 
 Then register `NoFulfillOrderServicer` in `Application(...)`
 instead of `OrderServicer`. The rest of the system still uses
-the production code.
+the production code. Subclassing to mock _behavior_ like this is
+fine; overriding `authorizer()` is not — see "Test Against the
+Real Authorizers" in [testing-harness.md](testing-harness.md).
 
 **2. `unittest.mock.patch` for plain Python helpers.** Best when
 the external call is a free function or async helper the
