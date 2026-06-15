@@ -203,7 +203,16 @@ message RevokeResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
-message RewrapUnderRootKeyRequest {}
+message RewrapUnderRootKeyRequest {
+  // The root key version to re-wrap this key's material onto. `Rotate`
+  // always sets it, to the rotation's pinned `rotation_target_version`,
+  // so every key migrates onto a single, already-marked-in-use version.
+  // It is unset only for a rotation that began under the pre-fix code —
+  // before this field and `rotation_target_version` existed — and is
+  // still resuming after an upgrade; that case falls back to the
+  // current active version.
+  optional uint32 root_key_version = 1;
+}
 
 message RewrapUnderRootKeyResponse {}
 
@@ -295,6 +304,13 @@ message KeyManager {
 
   // Whether the `Watch` control loop has been started.
   bool watch_started = 3;
+
+  // The root key version the in-flight rotation is migrating every wrapping
+  // key onto. Pinned when the rotation begins (see `BeginRotation`) so the
+  // sweep re-wraps onto a single, already-marked-in-use version instead of
+  // re-reading the (possibly newer, post-restart) active version per key.
+  // Unset when no rotation is running.
+  optional uint32 rotation_target_version = 4;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -311,6 +327,20 @@ message RegisterRequest {
 message RegisterResponse {
   // The UUIDv7 under which the wrapping key was registered.
   string uuid = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message BeginRotationRequest {}
+
+message BeginRotationResponse {
+  // The version this rotation migrates every wrapping key onto (the active
+  // version at the moment it began) - now pinned in `rotation_target` and
+  // marked in use on the `Application`, atomically.
+  uint32 root_key_version = 1;
+  // The versions older than the target this manager still holds keys under
+  // (the ones the sweep migrates off, then disuses).
+  repeated uint32 stale_versions = 2;
 }
 
 ////////////////////////////////////////////////////////////////////////
@@ -356,6 +386,17 @@ service KeyManagerMethods {
   // registered under. Called automatically when a `WrappingKey` is first
   // generated; also lazily starts the `Watch` control loop.
   rpc Register(RegisterRequest) returns (RegisterResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+    };
+  }
+
+  // Atomically begins a rotation: reads the active root key version, pins it
+  // as the rotation target, appends it to `consuming_versions`, and marks it
+  // in use on the `Application` - all in one transaction, so no wrapping key is
+  // ever migrated onto the target before its usage marker exists. Called by
+  // `Watch`.
+  rpc BeginRotation(BeginRotationRequest) returns (BeginRotationResponse) {
     option (rbt.v1alpha1.method) = {
       transaction: {},
     };
