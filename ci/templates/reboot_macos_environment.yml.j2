@@ -5,7 +5,7 @@ name: Reusable Workflow for Reboot MacOS
 #   # The nested job needs write permissions, which means this job also needs them.
 #   secrets: inherit
 #   with:
-#     runs-on: depot-macos-14
+#     runs-on: depot-macos-15
 #     run: |
 #       # Command 1:
 #       bazel build //...
@@ -38,8 +38,8 @@ env:
   TZ: ${{ inputs.timezone }}
   # There is no Python 3.10.12 available for MacOS.
   PYTHON_VERSION: 3.10.11
-  # The latest of 02/24/2025.
-  XCODE_VERSION: 15.2
+  # The default Xcode on the 'depot-macos-15' image.
+  XCODE_VERSION: 16.4
   AUTOCONF_VERSION: 2.72
   MYPY_VERSION: 1.18.1
   LLVM_VERSION: 19
@@ -47,15 +47,15 @@ env:
 jobs:
   check-runner:
     name: Validate runner
-    # There is no reason to run that job on the 'depot-macos-14', which
+    # There is no reason to run that job on the 'depot-macos-15', which
     # is a more expensive runner, since we are just checking the arguments
     # provided to the workflow.
     runs-on: depot-ubuntu-24.04
     steps:
-      - name: Fail if runner is not 'depot-macos-14'
-        if: ${{ inputs.runs-on != 'depot-macos-14' }}
+      - name: Fail if runner is not 'depot-macos-15'
+        if: ${{ inputs.runs-on != 'depot-macos-15' }}
         run: |
-          echo "Error: Unsupported runner. Must be 'depot-macos-14'."; exit 1
+          echo "Error: Unsupported runner. Must be 'depot-macos-15'."; exit 1
 
   # Helper job that we run before any other jobs to ensure that we
   # have all of the secrets that we need.
@@ -64,7 +64,7 @@ jobs:
   # 'https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#example-using-secrets'.
   check-secrets:
     name: Check Secrets
-    # There is no reason to run that job on the 'depot-macos-14',
+    # There is no reason to run that job on the 'depot-macos-15',
     # which is a more expensive runner, since we are just checking the secrets.
     runs-on: depot-ubuntu-24.04
     steps:

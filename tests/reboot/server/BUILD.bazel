@@ -71,6 +71,25 @@ py_test(
     ],
 )
 
+py_test(
+    name = "database_native_min_macos_version_test_py",
+    timeout = "short",
+    srcs = ["database_native_min_macos_version_test.py"],
+    args = ["$(rootpath //reboot/server:database_native)"],
+    data = ["//reboot/server:database_native"],
+    main = "database_native_min_macos_version_test.py",
+    # `target_compatible_with` makes wildcard invocations (`bazel build
+    # //...`, `bazel test //...`) skip this on non-macOS hosts. The
+    # `requires-macos` tag additionally keeps it out of the CI job that
+    # enumerates `tests(//tests/...)` and passes the list to `xargs
+    # bazel build`, where an incompatible target named explicitly would
+    # be a error rather than a skip.
+    tags = ["requires-macos"],
+    # `otool` and the `.dylib`'s macOS minimum-version load command only
+    # exist on macOS; on other hosts there is no floor to check.
+    target_compatible_with = ["@platforms//os:osx"],
+)
+
 cc_test(
     name = "database_tests",
     srcs = [

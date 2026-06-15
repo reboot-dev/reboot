@@ -120,6 +120,7 @@ jobs:
         QUERY="$QUERY \
         except attr(\"tags\",\"requires-pulumi\",//tests/...) \
         except attr(\"tags\",\"requires-linux-x86\",//tests/...) \
+        except attr(\"tags\",\"requires-macos\",//tests/...) \
         except attr(\"tags\",\"manual\",//tests/...)"
 
         # 3) If this is a PR labelled "reboot-release", also drop flaky
@@ -193,7 +194,7 @@ jobs:
     uses: ./.github/workflows/reboot_macos_environment.yml
     secrets: inherit
     with:
-      runs-on: depot-macos-14
+      runs-on: depot-macos-15
       # TODO: Make "LocalEnvoy" tests work on MacOS.
       # See https://github.com/reboot-dev/mono/issues/2345
       run: |

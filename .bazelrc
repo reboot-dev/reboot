@@ -140,6 +140,44 @@ build --incompatible_strict_action_env
 # creating symlinks in `/usr/local/bin`, which we always want to be loaded first.
 build --action_env=PATH=/usr/local/bin:/usr/bin:/bin
 
+# Apply `build:<os>` configs automatically based on the host OS, so
+# the MacOS-only settings below don't leak into Linux builds.
+build --enable_platform_specific_config
+
+# Pin the MacOS deployment target so the published wheel's
+# compatibility floor is decoupled from whichever MacOS/Xcode the
+# build host happens to ship. Two things determine that floor, and
+# each needs its own knob:
+#   - The `minos` load command on the native binaries comes from the
+#     `-target arm64-apple-macosx<version>` triple that the MacOS
+#     toolchain's `wrapped_clang` injects. That `<version>` is
+#     `--macos_minimum_os`, which defaults to the SDK version (i.e.
+#     the build host's) when unset, so we pin it.
+#   - The wheel's platform tag is forced by our `pip_package` rule
+#     (see `MACOS_PLATFORM_TAG`); the `--action_env` just keeps
+#     `MACOSX_DEPLOYMENT_TARGET` consistent for any wheel-build tool
+#     that reads it.
+# Pinning these to the same version means a newer SDK can't silently
+# raise the floor and produce a wheel that fails to install (tag) or
+# fails to load at runtime (minos) on MacOS versions we still support.
+# We pin to the MacOS 14 floor; the minor is 0 because `pip` only
+# accepts `macosx_<major>_0` wheels for MacOS >= 11. Must stay in
+# sync with the `MACOS_PLATFORM_TAG` constant in
+# `bazel/pip_package_rule/pip_package.bzl`.
+build:macos --macos_minimum_os=14.0
+build:macos --action_env=MACOSX_DEPLOYMENT_TARGET=14.0
+
+# Building for an old deployment target (14.0, below the build host's
+# MacOS) only protects users on those older systems if our code never
+# calls an API introduced after it. `clang` already flags
+# unguarded use of such an API (one reached without an `@available`
+# guard), but only as a warning by default, which is easy to miss in
+# CI output. Promoting `-Wunguarded-availability` to an error makes
+# the build fail on it instead, so we can't ship a wheel that would
+# hit a missing symbol at runtime on a MacOS version we still claim
+# to support.
+build:macos --copt=-Werror=unguarded-availability
+
 # Allow `rules_oci` to (attempt to) pull images, even when it first
 # calls a credential helper that fails  (i.e. one with no credentials
 # set up). The images we pull tend to not need any auth, so a lack of
