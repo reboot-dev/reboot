@@ -10,3 +10,14 @@ py_test(
     },
     main = "auto_approve_test.py",
 )
+
+py_test(
+    name = "remind_test",
+    size = "small",
+    srcs = ["remind_test.py"],
+    data = ["//reboot/plugin/hooks-handlers:remind_sh"],
+    env = {
+        "REMIND_SH": "$(location //reboot/plugin/hooks-handlers:remind_sh)",
+    },
+    main = "remind_test.py",
+)

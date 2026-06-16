@@ -1,0 +1,5 @@
+filegroup(
+    name = "remind_sh",
+    srcs = ["remind.sh"],
+    visibility = ["//visibility:public"],
+)

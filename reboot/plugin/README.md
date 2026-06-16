@@ -152,6 +152,17 @@ In Claude Code you can also invoke a skill directly, e.g.
 first — they analyze your description, propose a state model and method
 map, and wait for your approval before writing any code.
 
+## Skill reminders
+
+In sessions running inside a Reboot project (the working directory, or
+an ancestor, holds a `.rbtrc`), the plugin injects a short reminder
+into the agent's context — at session start, after compaction, and
+again whenever it has scrolled out of the transcript's recent tail —
+to read the plugin's skill references (including Reboot's standard
+library) instead of inferring Reboot behavior from trial and error.
+See [`hooks-handlers/remind.sh`](hooks-handlers/remind.sh); it works
+identically in Claude Code and Codex.
+
 ## Repository Structure
 
 ```
@@ -172,9 +183,10 @@ plugin/
 │                             # cloudflared, …)
 ├── lib/                      # shim install scripts
 ├── hooks/
-│   ├── hooks.json            # Claude Code hook registrations
+│   ├── hooks.json            # hook registrations (Claude Code + Codex)
 │   └── auto-approve.sh       # Claude Code PreToolUse auto-approval
-├── hooks-handlers/           # Claude Code SessionStart
+├── hooks-handlers/           # SessionStart PATH prepend (Claude Code)
+│                             # and the skill reminder (both CLIs)
 └── skills/
     └── <name>/
         ├── SKILL.md          # skill definition (YAML frontmatter)

@@ -1,5 +1,5 @@
 {
-  "description": "SessionStart prepends the plugin's bin/ to the agent's PATH so our shims take precedence over system-installed binaries. PreToolUse auto-approves this plugin's own skills, read-only calls on its files, and the run skill's Reboot dev commands when they run inside a Reboot project.",
+  "description": "SessionStart prepends the plugin's bin/ to the agent's PATH so our shims take precedence over system-installed binaries, and injects a reminder to consult the plugin's skills instead of guessing Reboot behavior. UserPromptSubmit re-injects that reminder once it has scrolled out of the transcript's recent tail. PreToolUse auto-approves this plugin's own skills, read-only calls on its files, and the run skill's Reboot dev commands when they run inside a Reboot project.",
   "hooks": {
     "SessionStart": [
       {
@@ -7,6 +7,20 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/session-start.sh\""
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/remind.sh\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks-handlers/remind.sh\""
           }
         ]
       }
