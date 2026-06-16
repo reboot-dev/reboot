@@ -338,6 +338,10 @@ class UserWithoutOAuthTest(unittest.IsolatedAsyncioTestCase):
                 dev=Development(),
                 prod=None,
             ),
+            # Same-origin-only browser auth: this test exercises
+            # selector resolution, and `oauth=` requires an explicit
+            # `allowed_origins` choice outside `rbt dev run`.
+            allowed_origins=[],
         )
         with mock.patch(
             "reboot.aio.auth.oauth_providers.running_rbt_dev",

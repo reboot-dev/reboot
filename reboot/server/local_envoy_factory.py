@@ -15,6 +15,7 @@ from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_TLS_KEY_PATH,
     LocalEnvoyMode,
 )
+from typing import Optional
 
 REBOOT_LOCAL_ENVOY_DEBUG: bool = os.environ.get(
     ENVVAR_LOCAL_ENVOY_DEBUG,
@@ -70,6 +71,7 @@ class LocalEnvoyFactory:
         use_tls: bool,
         application_id: ApplicationId,
         routables: list[Routable],
+        allowed_origins: Optional[list[str]],
     ) -> LocalEnvoy:
         file_descriptor_set = generate_proto_descriptor_set(routables)
 
@@ -96,6 +98,7 @@ class LocalEnvoyFactory:
                 certificate=certificate,
                 key=key,
                 debug_mode=REBOOT_LOCAL_ENVOY_DEBUG,
+                allowed_origins=allowed_origins,
             )
 
         assert mode is LocalEnvoyMode.EXECUTABLE
@@ -107,4 +110,5 @@ class LocalEnvoyFactory:
             certificate=certificate,
             key=key,
             debug_mode=REBOOT_LOCAL_ENVOY_DEBUG,
+            allowed_origins=allowed_origins,
         )

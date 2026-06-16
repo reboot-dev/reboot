@@ -30,6 +30,7 @@ py_test(
         # `Pydantic-to-proto` generation.
         "//reboot/ping:ping_py",
         "//reboot/std/collections/v1:sorted_map_py",
+        "//reboot:settings_py",
         "//tests/reboot:greeter_servicers_py",
     ],
 )

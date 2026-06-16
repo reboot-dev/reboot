@@ -55,6 +55,7 @@ class DockerLocalEnvoy(LocalEnvoy):
         certificate: Optional[Path],
         key: Optional[Path],
         debug_mode: bool,
+        allowed_origins: Optional[list[str]],
     ):
         local_envoy_nanny_path = self._envoy_nanny_path()
 
@@ -110,6 +111,7 @@ class DockerLocalEnvoy(LocalEnvoy):
             application_id=application_id,
             file_descriptor_set=file_descriptor_set,
             use_tls=self._use_tls,
+            allowed_origins=allowed_origins,
         )
 
         self._envoy_config_observed_path = self._write_envoy_dir(

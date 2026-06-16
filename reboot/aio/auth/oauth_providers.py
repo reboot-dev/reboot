@@ -991,6 +991,15 @@ class OAuthProviderSelector(ABC):
         """
         raise NotImplementedError()
 
+    def requires_allowed_origins_in_production(self) -> bool:
+        """
+        Whether an `Application` using this selector must set
+        `allowed_origins=[...]` explicitly when running in production.
+        Selectors that never serve real users (e.g. the unit-test
+        selector) override this to return `False`.
+        """
+        return True
+
 
 class OAuthProviderByEnvironment(OAuthProviderSelector):
     """

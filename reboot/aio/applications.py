@@ -67,6 +67,7 @@ from reboot.version import REBOOT_VERSION
 from reboot.versioning import version_less_than
 from starlette.staticfiles import StaticFiles
 from typing import Any, Awaitable, Callable, NoReturn, Optional
+from urllib.parse import urlparse
 
 logger = get_logger(__name__)
 
@@ -254,6 +255,7 @@ class Application:
         initialize_bearer_token: Optional[str] = None,
         token_verifier: Optional[TokenVerifier] = None,
         oauth: Optional[OAuthProviderSelector] = None,
+        allowed_origins: Optional[list[str]] = None,
         title: Optional[str] = None,
         description: Optional[str] = None,
         example_prompts: Optional[list[ExamplePrompt]] = None,
@@ -294,6 +296,38 @@ class Application:
             automatically) whenever it is set, even for an app with
             nothing to auto-construct. May be combined with
             `token_verifier`; see there for the ordering semantics.
+        :param allowed_origins: exact-match list of HTTP origins
+            (`scheme://host[:port]`, e.g.
+            `"https://app.example.com"`) that browsers are allowed
+            to talk to this backend from when the request needs to
+            carry credentials (the OAuth session cookie or, post
+            sign-in, the bearer JWT minted by `/__/oauth/whoami`).
+            The backend's own origin is always trusted on top of
+            this list, so same-origin browser clients work no matter
+            what; `allowed_origins` only ever *widens* trust to
+            additional, cross-origin SPAs. An explicit empty list
+            (`[]`) means *no* cross-origin credentialed traffic; only
+            same-origin browser clients can sign in or call RPCs. An
+            app with neither `oauth=...`
+            nor `allowed_origins` keeps serving permissive CORS (any
+            origin): without browser credentials there is nothing an
+            allow-list would protect.
+
+            Two environment-driven defaults sit on top of this:
+
+            - **Dev (`rbt dev run`)**: `http://localhost(:*)?` and
+              `http://127.0.0.1(:*)?` are allowed automatically, so
+              a Vite/webpack/parcel dev server on any port works
+              without ceremony.
+
+            - **Prod with `oauth=...`**: omitting `allowed_origins`
+              entirely (leaving it at the default `None`) is a
+              hard error at construction time. Pass `[]` explicitly
+              to opt into same-origin-only browser auth; pass the
+              SPA's real origin to enable cross-origin sign-in. The
+              default-None case almost always means "the developer
+              forgot", and we'd rather raise loudly than silently
+              CORS-block every sign-in attempt in production.
         :param title: a human-readable name for the application.
             Defaults to `application_name()` if unset.
         :param description: a human-readable description of the
@@ -411,6 +445,99 @@ class Application:
         # authenticated" flag from a sibling test.
         self._post_authenticated_user_ids: OrderedDict[str,
                                                        None] = (OrderedDict())
+        # `allowed_origins=None` (the default) is meaningfully
+        # distinct from `allowed_origins=[]` (an explicit choice).
+        # The default tells us the developer hasn't thought about
+        # cross-origin CORS yet — which is fine in dev (we'll fill
+        # in `http://localhost(:*)?` automatically downstream) and
+        # for MCP-only / same-origin deployments, but in prod with
+        # `oauth=...` it's almost always a forgotten config.
+        # Reject loudly there so production never silently 403s
+        # every cross-origin sign-in attempt; in dev, warn so the
+        # gap is caught before `rbt cloud up`.
+        if (
+            oauth is not None and
+            oauth.requires_allowed_origins_in_production() and
+            allowed_origins is None
+        ):
+            if not running_rbt_dev():
+                raise InputError(
+                    reason=(
+                        "`Application(oauth=...)` requires "
+                        "`allowed_origins=[...]` to be set explicitly "
+                        "in production. List the SPA's origin (e.g. "
+                        "`['https://app.example.com']`), or pass an "
+                        "empty list `allowed_origins=[]` to opt into "
+                        "same-origin-only browser auth. The default "
+                        "(`None`) is forbidden in production because "
+                        "almost every `oauth=` app has a browser SPA "
+                        "and a missing `allowed_origins` silently "
+                        "blocks every cross-origin sign-in. In dev "
+                        "(`rbt dev run`) the default is honored — "
+                        "`http://localhost(:*)?` is allowed "
+                        "automatically. See the "
+                        "`Application.allowed_origins` docstring for "
+                        "the JWT-exfiltration argument behind the "
+                        "exact-match requirement."
+                    ),
+                )
+            logger.warning(
+                "`Application(oauth=...)` is running without "
+                "`allowed_origins=[...]`. Under `rbt dev run` that "
+                "works — `http://localhost(:*)?` is allowed "
+                "automatically — but the same configuration will fail "
+                "to deploy to production. Before `rbt cloud up`, list "
+                "the SPA's origin (e.g. `['https://app.example.com']`), "
+                "or pass an empty list `allowed_origins=[]` to opt "
+                "into same-origin-only browser auth."
+            )
+        # `None` — kept distinct from an empty list — means the
+        # application has no credentialed browser traffic to protect
+        # (neither `oauth=` nor `allowed_origins`), and CORS stays
+        # permissive. Once the app has either, the exact-match
+        # allow-list (possibly empty) applies.
+        self._allowed_origins: Optional[list[str]] = (
+            None if allowed_origins is None and oauth is None else
+            list(allowed_origins or [])
+        )
+        # Light validation: surface obvious typos at construction
+        # rather than waiting for a browser to silently fail a CORS
+        # preflight at runtime.
+        for origin in self._allowed_origins or []:
+            if not isinstance(origin, str):
+                raise ValueError(
+                    "`allowed_origins` must be a list of strings; "
+                    f"got entry of type {type(origin).__name__}"
+                )
+            if not (
+                origin.startswith("http://") or origin.startswith("https://")
+            ):
+                raise ValueError(
+                    f"`allowed_origins` entry {origin!r} must be a full "
+                    "origin starting with 'http://' or 'https://' (e.g. "
+                    "'https://app.example.com'); paths, wildcards, and "
+                    "bare hostnames are not accepted"
+                )
+            if origin.endswith("/"):
+                raise ValueError(
+                    f"`allowed_origins` entry {origin!r} must not have "
+                    "a trailing slash (CORS `Origin` headers never carry "
+                    "one)"
+                )
+            # Reject anything beyond `scheme://host[:port]` — a path,
+            # query, or fragment would slip past validation but never
+            # match the browser's `Origin: scheme://host[:port]` header
+            # at Envoy's exact-match CORS filter, producing a silent
+            # cross-origin block with no diagnostic.
+            parsed = urlparse(origin)
+            if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+                raise ValueError(
+                    f"`allowed_origins` entry {origin!r} must be just "
+                    "an origin (`scheme://host[:port]`) — no path, "
+                    "query string, or fragment. CORS `Origin` headers "
+                    "never carry them, so an entry with a path would "
+                    "never match."
+                )
         self._title = title or application_name()
         self._description = description
         self._example_prompts = example_prompts or []
@@ -969,6 +1096,7 @@ class Application:
             initialize_bearer_token=self._initialize_bearer_token,
             local_envoy=local_envoy,
             local_envoy_port=local_envoy_port,
+            allowed_origins=self._allowed_origins,
             servers=int(servers),
         )
 

@@ -42,6 +42,11 @@ class OAuthProviderForTest(OAuthProviderSelector):
     def _select(self) -> OAuthProvider:
         return self._provider
 
+    def requires_allowed_origins_in_production(self) -> bool:
+        # Unit tests aren't a production deployment; they pick their
+        # `allowed_origins` per test via `Application(allowed_origins=...)`.
+        return False
+
 
 # Error message shared by `FakeOnly`'s flow entry points: a pointer to
 # the impersonation helper a unit test uses in place of a real OAuth
@@ -263,6 +268,7 @@ class Reboot(reboot.aio.reboot.Reboot):
         local_envoy: Optional[bool] = None,
         local_envoy_port: int = 0,
         local_envoy_tls: Optional[bool] = None,
+        allowed_origins: Optional[list[str]] = None,
         servers: Optional[int] = None,
         effect_validation: Optional[EffectValidation] = None,
         revision: Optional[ApplicationRevision] = None,
@@ -287,6 +293,7 @@ class Reboot(reboot.aio.reboot.Reboot):
         local_envoy: Optional[bool] = None,
         local_envoy_port: int = 0,
         local_envoy_tls: Optional[bool] = None,
+        allowed_origins: Optional[list[str]] = None,
         servers: Optional[int] = None,
         effect_validation: Optional[EffectValidation] = None,
         revision: Optional[ApplicationRevision] = None,
@@ -318,6 +325,12 @@ class Reboot(reboot.aio.reboot.Reboot):
         if initialize_bearer_token is not None:
             raise ValueError("Not expecting 'initialize_bearer_token'")
 
+        if allowed_origins is not None:
+            raise ValueError(
+                "Not expecting 'allowed_origins'; set it via "
+                "`Application(allowed_origins=...)`"
+            )
+
         if revision is not None:
             if servers is not None:
                 raise ValueError("Not expecting 'servers'")
@@ -341,7 +354,11 @@ class Reboot(reboot.aio.reboot.Reboot):
         # gets a `FakeOnly` provider, whose verifier composes ahead of
         # any `token_verifier=` (Reboot-minted access JWTs verify
         # first, everything else falls through), so a custom verifier
-        # still authenticates its own tokens.
+        # still authenticates its own tokens. Leave
+        # `application._allowed_origins` untouched: the injected server
+        # tolerates its `None` as an empty redirect allow-list (which
+        # governs only browser-flow redirect validation), and Envoy
+        # keeps its permissive-CORS default.
         # Node.js applications can't serve the OAuth server's
         # endpoints from their process, so they get no injected
         # provider (and `create_external_context_as` stays
@@ -380,6 +397,9 @@ class Reboot(reboot.aio.reboot.Reboot):
             local_envoy=local_envoy,
             local_envoy_port=local_envoy_port,
             local_envoy_tls=local_envoy_tls,
+            # `allowed_origins` comes only from `Application(...)`; Envoy
+            # and the OAuth server share this one list.
+            allowed_origins=application._allowed_origins,
             servers=servers,
             effect_validation=effect_validation,
         )

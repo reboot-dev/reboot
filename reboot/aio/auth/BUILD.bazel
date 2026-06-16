@@ -51,6 +51,16 @@ py_library(
 )
 
 py_library(
+    name = "allowed_origins_py",
+    srcs = ["allowed_origins.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot:run_environments_py",
+    ],
+)
+
+py_library(
     name = "oauth_providers_py",
     srcs = ["oauth_providers.py"],
     data = ["development_login_page.html.j2"],

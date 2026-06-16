@@ -296,6 +296,7 @@ class Reboot:
         local_envoy: Optional[bool] = None,
         local_envoy_port: int = 0,
         local_envoy_tls: Optional[bool] = None,
+        allowed_origins: Optional[list[str]] = None,
         servers: Optional[int] = None,
         effect_validation: Optional[EffectValidation] = None,
     ) -> ApplicationRevision:
@@ -319,6 +320,7 @@ class Reboot:
         local_envoy: Optional[bool] = None,
         local_envoy_port: int = 0,
         local_envoy_tls: Optional[bool] = None,
+        allowed_origins: Optional[list[str]] = None,
         servers: Optional[int] = None,
         effect_validation: Optional[EffectValidation] = None,
         revision: Optional[ApplicationRevision] = None,
@@ -482,6 +484,7 @@ class Reboot:
                 local_envoy=local_envoy,
                 local_envoy_port=local_envoy_port,
                 local_envoy_use_tls=self._local_envoy_tls or False,
+                allowed_origins=allowed_origins,
                 effect_validation=effect_validation,
             )
 

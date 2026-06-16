@@ -24,19 +24,18 @@ from google.protobuf import any_pb2
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from google.protobuf.duration_pb2 import Duration
 from google.protobuf.message import Message
-from google.protobuf.wrappers_pb2 import UInt32Value
+from google.protobuf.wrappers_pb2 import BoolValue, UInt32Value
 from pathlib import Path
-from reboot.aio.headers import (
-    APPLICATION_ID_HEADER,
-    AUTHORIZATION_HEADER,
-    CALLER_ID_HEADER,
-    IDEMPOTENCY_KEY_HEADER,
-    SERVER_ID_HEADER,
-    STATE_REF_HEADER,
-    WORKFLOW_ID_HEADER,
-)
+from reboot.aio.auth.allowed_origins import DEV_ORIGIN_REGEXES
+from reboot.aio.headers import CALLER_ID_HEADER, SERVER_ID_HEADER
 from reboot.aio.types import ApplicationId, ServerId
 from reboot.helpers import get_path_prefixes_from_file_descriptor_set
+from reboot.routing.cors_settings import (
+    CORS_ALLOW_HEADERS,
+    CORS_ALLOW_METHODS,
+    CORS_EXPOSE_HEADERS,
+    CORS_MAX_AGE_SECONDS,
+)
 from reboot.routing.filters.lua import (
     ADD_HEADER_X_REBOOT_APPLICATION_ID_TEMPLATE_FILENAME,
     COMPUTE_HEADER_X_REBOOT_SERVER_ID_TEMPLATE_FILENAME,
@@ -45,13 +44,14 @@ from reboot.routing.filters.lua import (
     load_lua,
     render_lua_template,
 )
-from reboot.run_environments import on_cloud
+from reboot.run_environments import on_cloud, running_rbt_dev
 from reboot.settings import (
     ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_FRONTEND_HOST,
     LocalEnvoyMode,
 )
+from typing import Optional
 from urllib.parse import urlparse
 
 
@@ -156,6 +156,98 @@ def _lua_any(source_code: str) -> any_pb2.Any:
                 inline_string=source_code,
             ),
         )
+    )
+
+
+# The canonical CORS policy values from `cors_settings`, formatted
+# the way Envoy's `CorsPolicy` proto wants them: comma-joined
+# strings.
+_CORS_ALLOW_METHODS = ", ".join(CORS_ALLOW_METHODS)
+_CORS_ALLOW_HEADERS = ",".join(CORS_ALLOW_HEADERS)
+_CORS_EXPOSE_HEADERS = ",".join(CORS_EXPOSE_HEADERS)
+_CORS_MAX_AGE = str(CORS_MAX_AGE_SECONDS)
+
+
+def _cors_origin_matchers(
+    allowed_origins: list[str],
+) -> list[string_pb2.StringMatcher]:
+    """Build the CORS `allow_origin_string_match` list — every entry
+    in `allowed_origins` as an exact match, plus (only under `rbt dev
+    run`) the shared local-development origin regexes, so a normal
+    `vite`/`webpack` workflow works without the developer enumerating
+    every Vite-defaulted port (5173, 5174, …) in
+    `Application(allowed_origins=...)`. Production and Reboot Cloud
+    apply the exact-match allow-list verbatim.
+    """
+    # Exact-match only — never a wildcard — because this list is paired
+    # with `Access-Control-Allow-Credentials: true`. A signed-in user's
+    # browser attaches the Reboot session cookie automatically, and the
+    # SPA can read its access JWT from `/__/oauth/whoami`; so if the
+    # CORS policy advertised credentials alongside an open
+    # `Access-Control-Allow-Origin` (the natural "just make it work"
+    # default, `regex=".*"`), any third-party site the signed-in user
+    # visits could:
+    #
+    #     const r = await fetch(".../__/oauth/whoami",
+    #                           { credentials: "include" });
+    #     const { access_token } = await r.json();  // portable bearer
+    #
+    # and replay that bearer against `/__/oauth/refresh` and the unary
+    # `/__/reboot/rpc/*` path until it expires. Browsers only ship
+    # credentials cross-origin when the response echoes a specific
+    # allow-listed origin (not `*`, nor an echoed origin under a
+    # permissive policy), so restricting the echoed set to exactly
+    # `allowed_origins` is what closes the hole.
+    matchers = [
+        string_pb2.StringMatcher(exact=origin) for origin in allowed_origins
+    ]
+    if running_rbt_dev():
+        # RE2 syntax. Envoy's `SafeRegex` matches against the whole
+        # origin string (a full-string match, not a substring search).
+        matchers.extend(
+            string_pb2.StringMatcher(
+                safe_regex=regex_pb2.RegexMatcher(regex=regex),
+            ) for regex in DEV_ORIGIN_REGEXES
+        )
+    return matchers
+
+
+def _cors_policy(
+    allowed_origins: Optional[list[str]],
+) -> route_components_pb2.CorsPolicy:
+    """The route's CORS policy. `None` means the application has no
+    credentialed browser traffic to protect (neither `oauth=` nor
+    `allowed_origins`), and any origin may call — MCP sandboxes, for
+    example, can show up with arbitrary origins. A list (possibly
+    empty) means credentialed cross-origin browser traffic is
+    restricted to the exact-match allow-list; `allow_credentials`
+    is paired with exact-match origins, never a wildcard.
+    """
+    if allowed_origins is None:
+        return route_components_pb2.CorsPolicy(
+            allow_origin_string_match=[
+                string_pb2.StringMatcher(
+                    safe_regex=regex_pb2.RegexMatcher(
+                        # The correct incantation for Envoy is `".*"`,
+                        # not `"*"` (which only matches a literal
+                        # star).
+                        google_re2=regex_pb2.RegexMatcher.GoogleRE2(),
+                        regex=".*",
+                    ),
+                )
+            ],
+            allow_methods=_CORS_ALLOW_METHODS,
+            allow_headers=_CORS_ALLOW_HEADERS,
+            max_age=_CORS_MAX_AGE,
+            expose_headers=_CORS_EXPOSE_HEADERS,
+        )
+    return route_components_pb2.CorsPolicy(
+        allow_credentials=BoolValue(value=True),
+        allow_origin_string_match=_cors_origin_matchers(allowed_origins),
+        allow_methods=_CORS_ALLOW_METHODS,
+        allow_headers=_CORS_ALLOW_HEADERS,
+        max_age=_CORS_MAX_AGE,
+        expose_headers=_CORS_EXPOSE_HEADERS,
     )
 
 
@@ -661,6 +753,7 @@ def _filter_http_connection_manager(
     servers: list[ServerInfo],
     file_descriptor_set: FileDescriptorSet,
     trust_caller_id: bool,
+    allowed_origins: Optional[list[str]],
 ) -> listener_components_pb2.Filter:
     http_connection_manager = http_connection_manager_pb2.HttpConnectionManager(
         stat_prefix="grpc_json",
@@ -691,38 +784,7 @@ def _filter_http_connection_manager(
                     #            instead we should set it directly on the
                     #            `envoy.filters.http.cors` filter in the filter
                     #            chain.
-                    cors=route_components_pb2.CorsPolicy(
-                        allow_origin_string_match=[
-                            string_pb2.StringMatcher(
-                                safe_regex=regex_pb2.RegexMatcher(
-                                    # TODO(rjh): deprecated; can remove?
-                                    # We do not know or control where
-                                    # frontends get hosted, and neither
-                                    # do our customers: depending on the
-                                    # MCP client used, a sandbox may
-                                    # have any origin. Permit all
-                                    # origins. Note that the correct
-                                    # incantation for Envoy is `".*"`,
-                                    # not `"*"` (which only matches a
-                                    # literal star).
-                                    google_re2=regex_pb2.RegexMatcher.
-                                    GoogleRE2(),
-                                    regex=".*",
-                                ),
-                            )
-                        ],
-                        allow_methods="GET, PUT, DELETE, POST, OPTIONS",
-                        allow_headers=
-                        f"{APPLICATION_ID_HEADER},{STATE_REF_HEADER},{SERVER_ID_HEADER},{IDEMPOTENCY_KEY_HEADER},{WORKFLOW_ID_HEADER},keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,grpc-timeout,{AUTHORIZATION_HEADER}"
-                        +
-                        # `ngrok-skip-browser-warning` is needed so
-                        # HTML fetches when using ngrok tunnels will
-                        # not get the free-tier interstitial that
-                        # blocks CORS preflight.
-                        ",ngrok-skip-browser-warning",
-                        max_age="1728000",
-                        expose_headers="grpc-status,grpc-message",
-                    ),
+                    cors=_cors_policy(allowed_origins),
                     routes=(
                         # Frontend routes (if configured) must come
                         # first since they match specific prefixes.
@@ -820,6 +882,7 @@ def listeners(
     use_tls: bool,
     certificate_path: Path,
     key_path: Path,
+    allowed_origins: Optional[list[str]],
 ) -> list[listener_pb2.Listener]:
 
     @dataclass
@@ -871,6 +934,7 @@ def listeners(
                             servers=servers,
                             file_descriptor_set=file_descriptor_set,
                             trust_caller_id=listener.trust_caller_id,
+                            allowed_origins=allowed_origins,
                         ),
                     ],
                     transport_socket=_tls_socket(certificate_path, key_path)
