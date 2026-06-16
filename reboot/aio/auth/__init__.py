@@ -3,17 +3,25 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from google.protobuf import json_format, struct_pb2
 from rbt.v1alpha1 import auth_pb2
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
-if TYPE_CHECKING:
-    # For type checkers only; the runtime re-export is lazy (see
-    # `__getattr__` below) to avoid an import cycle — `OAuthTokenManager`
-    # pulls in the `oauth` library, which imports `reboot.aio.applications`,
-    # which imports this package.
-    from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager
-    from reboot.aio.auth.oauth_providers import OAuthTokens
-
-__all__ = ["Auth", "OAuthTokens", "OAuthTokenManager"]
+# Names of the cookies the OAuth server sets on a browser session,
+# defined in this lightweight module so they can be referenced without
+# importing the OAuth server's heavy dependency chain.
+#
+# - `SESSION_COOKIE_NAME` carries the OAuth access-token JWT, HttpOnly,
+#   as the browser's durable session. Reboot RPCs authenticate from the
+#   `Authorization: Bearer` header; since a SPA can't read an HttpOnly
+#   cookie, it fetches the token via `/__/oauth/whoami` and sets it as
+#   that bearer itself. (MCP clients hold the token from `/token`
+#   directly and don't use this cookie or `/whoami`.)
+# - `REFRESH_COOKIE_NAME` carries the refresh-token JWT, scoped to
+#   `/__/oauth/` so it only reaches the OAuth endpoints.
+# - `PENDING_COOKIE_NAME` holds the server-side PKCE verifier between
+#   `/__/oauth/start` and `/__/oauth/finish`.
+SESSION_COOKIE_NAME = "rbt_session"
+REFRESH_COOKIE_NAME = "rbt_refresh"
+PENDING_COOKIE_NAME = "rbt_oauth_pending"
 
 
 def __getattr__(name: str) -> Any:

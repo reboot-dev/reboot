@@ -88,6 +88,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":__init___py",
+        ":allowed_origins_py",
         ":oauth_providers_py",
         ":token_verifiers_py",
         "//reboot:settings_py",

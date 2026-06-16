@@ -580,14 +580,13 @@ class Application:
             # error and exits). The serving setup below is deferred.
             self._run_environment = None
 
-        # A Reboot Cloud config server validates configuration and never
+        # `_config_mode` is `True` when this process is a Reboot Cloud
+        # config server, which only validates configuration and never
         # serves, so it mounts neither the OAuth server nor the MCP
-        # factory. Remember the mode so the serve-time mount (in `run()`
-        # and, for tests, `Reboot.up`) can skip it.
+        # factory.
         self._config_mode = config_mode
-        # Guards `_mount_oauth_and_mcp` so the serve paths (entry
-        # process, server subprocess `run()`, and the test harness's
-        # repeatable `up()`) mount at most once per `Application`.
+        # `_mounted` records whether `_mount_oauth_and_mcp` has already
+        # run, so that mounting happens at most once per `Application`.
         self._mounted = False
 
         if self._run_environment is None or config_mode:
@@ -792,6 +791,7 @@ class Application:
                     auto_construct_state_type_full_names
                 ),
                 post_authenticate=self._post_authenticate,
+                allowed_origins=self._allowed_origins,
             )
             self._oauth_server = oauth_server
             if self._token_verifier is not None:

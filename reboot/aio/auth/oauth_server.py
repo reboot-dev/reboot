@@ -18,7 +18,13 @@ import secrets
 import time
 from jinja2 import Template
 from mcp.server.auth.provider import AccessToken
-from reboot.aio.auth import Auth
+from reboot.aio.auth import (
+    PENDING_COOKIE_NAME,
+    REFRESH_COOKIE_NAME,
+    SESSION_COOKIE_NAME,
+    Auth,
+)
+from reboot.aio.auth.allowed_origins import is_allowed_origin
 from reboot.aio.auth.oauth_providers import (
     OAuthProvider,
     OAuthTokens,
@@ -31,7 +37,12 @@ from reboot.aio.external import ExternalContext
 from reboot.aio.http import PythonWebFramework, external_context
 from reboot.crypto import root_keys
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
+from starlette.responses import (
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from typing import Any, Awaitable, Callable, Optional, Sequence
 from urllib.parse import urlencode, urlparse
 
@@ -77,6 +88,21 @@ _CONSENT_PAGE_TEMPLATE_PATH = os.path.join(
 # the JWT (and the `/authorize` URLs that carry it).
 _MAX_CLIENT_METADATA_LENGTH = 256
 
+# Browser-flow endpoints for standalone SPAs. They wrap the same
+# `/authorize` → IdP → `/callback` → token-minting machinery the MCP
+# flow uses, plus the cookie-based session that browser apps need.
+_START_PATH = "/__/oauth/start"
+_FINISH_PATH = "/__/oauth/finish"
+_REFRESH_PATH = "/__/oauth/refresh"
+_SIGNOUT_PATH = "/__/oauth/signout"
+_WHOAMI_PATH = "/__/oauth/whoami"
+
+# `client_id` JWT type used for the internal "browser client" we
+# register on the fly in `/start`. Kept distinct from the MCP-client
+# `type=client` so that a public MCP client_id (handed out via DCR)
+# can't be used to drive the browser flow and vice versa.
+_BROWSER_CLIENT_TYPE = "browser-client"
+
 # CORS headers for browser-based MCP clients (e.g. MCPJam, MCP
 # Inspector). Allow any origin since the server is an OAuth
 # Authorization Server that public clients talk to.
@@ -107,6 +133,14 @@ def signing_secret() -> bytes:
     return root_keys.derive_key(
         info=_SIGNING_INFO, version=root_keys.active_version()
     )
+
+
+def _compute_code_challenge(code_verifier: str) -> str:
+    """The PKCE S256 code challenge for `code_verifier` (RFC 7636
+    4.2): the URL-safe, unpadded base64 of its SHA-256 digest."""
+    return base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode()).digest()
+    ).rstrip(b"=").decode()
 
 
 def _oauth_error(
@@ -287,16 +321,23 @@ class OAuthServer:
         auto_construct_state_type_full_names: Optional[Sequence[str]] = None,
         post_authenticate: Optional[Callable[[ExternalContext, str],
                                              Awaitable[None]]] = None,
+        allowed_origins: Optional[Sequence[str]] = None,
     ):
         """`post_authenticate`, if given, runs right after each fresh
         access token is minted for a user, receiving an app-internal
         `ExternalContext` and the `user_id` the token was minted for.
         It must be idempotent and inexpensive — it can run on every
         mint for the same user.
+
+        `allowed_origins` is `Application(allowed_origins=...)`'s
+        explicit allow-list (with `None` meaning it, like `oauth=`,
+        was never set); browser-flow redirect targets are validated
+        against the same trusted-origins set Envoy's CORS uses.
         """
         self._provider = provider
         self._protected_resources = protected_resources
         self._application_title = application_title
+        self._allowed_origins: list[str] = list(allowed_origins or [])
         self._auto_construct_state_type_full_names: list[str] = list(
             auto_construct_state_type_full_names or []
         )
@@ -366,6 +407,18 @@ class OAuthServer:
         http.post(_TOKEN_PATH, app_internal=True)(self.token)
         http.options(_TOKEN_PATH)(self.cors_preflight)
 
+        # Browser-flow endpoints. Envoy's CORS filter (configured in
+        # `reboot/routing/envoy_config.py`) echoes the request's
+        # `Origin` and sets `Access-Control-Allow-Credentials: true`
+        # for these paths, so a cross-origin SPA can complete the
+        # `credentials: "include"` flow without per-route headers
+        # here.
+        http.get(_START_PATH)(self.start)
+        http.get(_FINISH_PATH, app_internal=True)(self.finish)
+        http.post(_REFRESH_PATH, app_internal=True)(self.refresh)
+        http.post(_SIGNOUT_PATH)(self.signout)
+        http.get(_WHOAMI_PATH)(self.whoami)
+
         # Let the provider register any additional routes it needs.
         self._provider.mount_routes(http)
 
@@ -414,16 +467,9 @@ class OAuthServer:
         )
         # Fire the post-authenticate hook before returning the tokens,
         # so a failure surfaces as a 500 with no token body /
-        # `Set-Cookie`, as if we'd minted nothing. It may auto-construct
-        # the user's `User` actor via a Writer
-        # (`User.idempotently(...).Create(...)`); that call is permitted
-        # because `context` is app-internal — auto-construct `User`
-        # types allow app-internal callers. The hook is idempotent —
-        # repeat calls for the same user no-op via the Application's
-        # in-process cache, and Reboot's `uuid5`-keyed storage
-        # idempotency makes the construct durable across processes, so a
-        # token minted by one server and replayed against another still
-        # finds the actor. If the hook raises we propagate it.
+        # `Set-Cookie` rather than handing back a token whose
+        # post-authenticate side effects never ran. If the hook raises
+        # we propagate it.
         if self._post_authenticate is not None:
             await self._post_authenticate(context, user_id)
         return {
@@ -432,6 +478,101 @@ class OAuthServer:
             "expires_in": self._access_token_ttl_seconds,
             "refresh_token": refresh_token,
         }
+
+    def _set_session_cookies(
+        self,
+        response: Response,
+        *,
+        access_token: str,
+        refresh_token: str,
+        expires_in: int,
+    ) -> None:
+        """Set the three session cookies on `response`.
+
+        `SameSite=None; Secure` because Reboot's only deployment mode
+        today serves the SPA on a different origin than the backend,
+        and `SameSite=Lax` cookies aren't sent on cross-site fetches.
+        Users with strict tracking prevention (Safari ITP, Firefox
+        ETP, Chrome 3PC blocking) may have these stripped and be
+        unable to sign in. TODO: prefer `SameSite=Lax; Secure`
+        (optionally with `Domain=` set to a shared parent) when the
+        SPA and backend share an origin or share a registrable
+        domain. We can detect this at cookie-set time by comparing
+        the request's `Origin` header against the backend's own
+        origin. Same-site is robust against tracking prevention and
+        should be the default for production deployments that can
+        arrange a shared parent domain.
+        Note that `Secure` is enforced by all major browsers *except*
+        on `http://localhost` (and `http://127.0.0.1`), so dev under
+        `rbt dev` continues to work without HTTPS; production
+        requires HTTPS.
+        """
+        response.set_cookie(
+            key=SESSION_COOKIE_NAME,
+            value=access_token,
+            max_age=expires_in,
+            path="/",
+            secure=True,
+            httponly=True,
+            samesite="none",
+        )
+        # Refresh cookie's path is restricted so the browser only
+        # sends it on requests to the OAuth endpoints, never on RPC.
+        response.set_cookie(
+            key=REFRESH_COOKIE_NAME,
+            value=refresh_token,
+            max_age=_REFRESH_TOKEN_TTL_SECONDS,
+            path="/__/oauth/",
+            secure=True,
+            httponly=True,
+            samesite="none",
+        )
+
+    def _clear_session_cookies(self, response: Response) -> None:
+        """Clear all session-related cookies on `response`.
+
+        Match the `Path` / `SameSite` / `Secure` attributes of the
+        original `set_cookie` calls; browsers won't honor a
+        delete-cookie request whose attributes don't match.
+        """
+        for name, path in (
+            (SESSION_COOKIE_NAME, "/"),
+            (REFRESH_COOKIE_NAME, "/__/oauth/"),
+        ):
+            response.delete_cookie(
+                key=name,
+                path=path,
+                secure=True,
+                httponly=True,
+                samesite="none",
+            )
+
+    def _verify_session_cookie(
+        self,
+        request: Request,
+    ) -> Optional[UserId]:
+        """The user id from the access JWT in `request`'s
+        `rbt_session` cookie, or `None` when the cookie is absent or
+        its JWT is invalid."""
+        decoded = self._decode_session_cookie(request)
+        if decoded is None:
+            return None
+        sub = decoded.get("sub", "")
+        if not sub:
+            return None
+        return UserId(sub)
+
+    def _decode_session_cookie(
+        self,
+        request: Request,
+    ) -> Optional[dict[str, Any]]:
+        """The decoded access-JWT claims from `request`'s
+        `rbt_session` cookie, or `None` when the cookie is absent or
+        its JWT is invalid."""
+        token = request.cookies.get(SESSION_COOKIE_NAME)
+        if token is None:
+            return None
+        return self._verify_jwt(token, "access")
 
     def _make_jwt(self, payload: dict[str, Any], ttl_seconds: int) -> str:
         """Sign a payload as a JWT with the given TTL."""
@@ -443,19 +584,48 @@ class OAuthServer:
         }
         return jwt.encode(payload, self._signing_secret, algorithm=_ALGORITHM)
 
+    def _redirect_with_auth_code(
+        self,
+        *,
+        user_id: str,
+        client_id: str,
+        redirect_uri: str,
+        code_challenge: str,
+        state: str,
+    ) -> RedirectResponse:
+        """Mint a short-lived authorization-code JWT for `user_id` and
+        302 the client to `redirect_uri` carrying the `code` (plus the
+        client's opaque `state`, echoed verbatim per RFC 6749)."""
+        auth_code = self._make_jwt(
+            {
+                "type": "code",
+                "sub": user_id,
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "code_challenge": code_challenge,
+            },
+            ttl_seconds=_AUTH_CODE_TTL_SECONDS,
+        )
+        query = urlencode({"code": auth_code, "state": state})
+        return RedirectResponse(
+            url=f"{redirect_uri}?{query}",
+            status_code=302,
+        )
+
     def _verify_jwt(
         self,
         token: str,
-        expected_type: str,
+        *expected_types: str,
     ) -> Optional[dict[str, Any]]:
-        """Verify and decode a JWT, checking the `type` claim.
+        """Verify and decode a JWT, checking that its `type` claim is
+        one of `expected_types`.
 
         Returns the decoded payload, or `None` if invalid.
         """
         try:
             # Access tokens have an `aud` claim; others don't.
             kwargs: dict[str, Any] = {}
-            if expected_type == "access":
+            if "access" in expected_types:
                 kwargs["audience"] = _AUDIENCE
             else:
                 kwargs["options"] = {"verify_aud": False}
@@ -466,7 +636,7 @@ class OAuthServer:
                 algorithms=[_ALGORITHM],
                 **kwargs,
             )
-            if decoded.get("type") != expected_type:
+            if decoded.get("type") not in expected_types:
                 return None
             return decoded
         except jwt.exceptions.PyJWTError:
@@ -751,8 +921,15 @@ class OAuthServer:
                 status_code=400,
             )
 
-        # Decode the client_id JWT.
-        client_data = self._verify_jwt(client_id_token, "client")
+        # Decode the client_id JWT. Accept both DCR-registered MCP
+        # clients (`type=client`) and the internal browser client
+        # minted by `/__/oauth/start` (`type=browser-client`); they
+        # carry the same `redirect_uris` shape.
+        client_data = self._verify_jwt(
+            client_id_token,
+            "client",
+            _BROWSER_CLIENT_TYPE,
+        )
         if client_data is None:
             return _oauth_error(
                 error="invalid_client",
@@ -787,6 +964,32 @@ class OAuthServer:
             )
 
         mcp_state = params.get("state", "")
+
+        # The first-party browser client (minted by `/__/oauth/start`)
+        # skips the consent screen: it's server-minted with a fixed,
+        # same-origin `redirect_uri`, so the confused-deputy attack the
+        # consent screen guards against — an attacker registering a
+        # client with their own `redirect_uri` — can't arise. Go
+        # straight to the browser-flow behavior: reuse an existing
+        # session if there is one, otherwise sign in at the IdP.
+        if client_data.get("type") == _BROWSER_CLIENT_TYPE:
+            existing_user_id = self._verify_session_cookie(request)
+            if existing_user_id is not None:
+                return self._redirect_with_auth_code(
+                    user_id=existing_user_id,
+                    client_id=client_id_token,
+                    redirect_uri=redirect_uri,
+                    code_challenge=str(code_challenge),
+                    state=mcp_state,
+                )
+            return self._redirect_to_idp(
+                request=request,
+                client_id_token=client_id_token,
+                redirect_uri=redirect_uri,
+                code_challenge=code_challenge,
+                code_challenge_method=code_challenge_method,
+                mcp_state=mcp_state,
+            )
 
         # Don't redirect to the identity provider yet: show a consent
         # screen first. Clients register dynamically (RFC 7591), so the
@@ -942,6 +1145,26 @@ class OAuthServer:
             denied.delete_cookie(_CONSENT_CSRF_COOKIE, path=_CONSENT_PATH)
             return denied
 
+        # Web→MCP SSO: the user has approved consent, so the
+        # confused-deputy check the consent screen exists for is
+        # satisfied. If their browser already carries a valid
+        # `rbt_session` cookie (from a prior browser sign-in via
+        # `/finish` or an earlier MCP `/callback`), skip the
+        # identity-provider round-trip and mint an authorization code
+        # directly — they've already proven who they are; only their
+        # consent was still needed.
+        existing_user_id = self._verify_session_cookie(request)
+        if existing_user_id is not None:
+            sso = self._redirect_with_auth_code(
+                user_id=existing_user_id,
+                client_id=str(consent_data["client_id"]),
+                redirect_uri=redirect_uri,
+                code_challenge=str(consent_data["code_challenge"]),
+                state=mcp_state,
+            )
+            sso.delete_cookie(_CONSENT_CSRF_COOKIE, path=_CONSENT_PATH)
+            return sso
+
         response = self._redirect_to_idp(
             request=request,
             client_id_token=consent_data["client_id"],
@@ -1051,28 +1274,36 @@ class OAuthServer:
         if result.tokens is not None:
             await self._store_oauth_tokens(request, user_id, result.tokens)
 
-        # Mint the auth code JWT.
-        auth_code = self._make_jwt(
-            {
-                "type": "code",
-                "sub": user_id,
-                "client_id": pending["client_id"],
-                "redirect_uri": pending["redirect_uri"],
-                "code_challenge": pending["code_challenge"],
-            },
-            ttl_seconds=_AUTH_CODE_TTL_SECONDS,
+        response = self._redirect_with_auth_code(
+            user_id=user_id,
+            client_id=str(pending["client_id"]),
+            redirect_uri=str(pending["redirect_uri"]),
+            code_challenge=str(pending["code_challenge"]),
+            state=pending.get("mcp_state", ""),
         )
-
-        redirect_uri = pending["redirect_uri"]
-        mcp_state = pending.get("mcp_state", "")
-        query = urlencode({
-            "code": auth_code,
-            "state": mcp_state,
-        })
-        return RedirectResponse(
-            url=f"{redirect_uri}?{query}",
-            status_code=302,
+        # MCP→web SSO: also set the browser session cookies on the
+        # callback response. The callback is reached via a top-level
+        # navigation through the user's browser, so the cookies land
+        # in the Reboot backend's first-party jar — usable by the
+        # standalone SPA on the same Reboot origin next time the
+        # user opens it, even when the original MCP flow was launched
+        # from inside an MCP host like Claude. For pure-MCP-client
+        # flows that don't go through a browser these cookies are
+        # set but ignored (the MCP client doesn't process
+        # `Set-Cookie`).
+        tokens = await self._mint_tokens_for_user(
+            user_id=user_id,
+            client_id=str(pending["client_id"]),
+            base=origin_from_request(request),
+            context=external_context(request),
         )
+        self._set_session_cookies(
+            response,
+            access_token=tokens["access_token"],
+            refresh_token=tokens["refresh_token"],
+            expires_in=tokens["expires_in"],
+        )
+        return response
 
     async def token(self, request: Request) -> JSONResponse:
         """POST /token
@@ -1147,11 +1378,7 @@ class OAuthServer:
                 status_code=400,
             )
 
-        expected_challenge = (
-            base64.urlsafe_b64encode(
-                hashlib.sha256(str(code_verifier).encode()).digest()
-            ).rstrip(b"=").decode()
-        )
+        expected_challenge = _compute_code_challenge(str(code_verifier))
         if expected_challenge != code_data.get("code_challenge"):
             return _oauth_error(
                 error="invalid_grant",
@@ -1221,4 +1448,430 @@ class OAuthServer:
                 context=external_context(request),
             ),
             headers=_CORS_HEADERS,
+        )
+
+    # ---- Browser-flow endpoints ----
+
+    def _is_valid_return_to(self, return_to: str, request: Request) -> bool:
+        """Decide whether `return_to` is safe to 302 to from
+        `/finish`. Accepts same-origin relative paths
+        unconditionally; accepts an absolute `http(s)://host[:port]`
+        URL only when its origin is trusted for credentialed browser
+        traffic — the same set Envoy's CORS uses (see
+        `reboot.aio.auth.allowed_origins`): the explicit
+        `Application(allowed_origins=...)` list, the backend's own
+        origin, or, under `rbt dev run`, any localhost origin.
+        Rejects everything else (`//evil.example`, `javascript:`,
+        `data:`, absolute URLs whose origin isn't trusted).
+
+        This prevents a so-called "open-redirect" / "phishing-aid"
+        attack: without the trusted-origins check, a
+        `/start?return_to=https://evil.example`
+        link tricks the user into a "I just signed in" mental state
+        on an attacker-controlled page (no tokens leak — those stay
+        in HttpOnly cookies on the backend origin — but trust does).
+        MCP clients are unaffected: they never use `/start` or
+        `/finish`; they go through DCR + `/authorize` + `/callback`
+        and validate their `redirect_uri` against what the client
+        registered via DCR.
+        """
+        if not return_to:
+            return False
+        if return_to.startswith("/") and not return_to.startswith("//"):
+            return True
+        try:
+            parsed = urlparse(return_to)
+        except ValueError:
+            return False
+        if parsed.scheme not in ("http", "https"):
+            return False
+        if not parsed.netloc:
+            return False
+        return is_allowed_origin(
+            f"{parsed.scheme}://{parsed.netloc}",
+            allowed_origins=self._allowed_origins,
+            own_origin=origin_from_request(request),
+        )
+
+    async def start(self, request: Request) -> Response:
+        """GET /__/oauth/start[?return_to=...]
+
+        Browser entry point for sign-in. Generates a PKCE verifier,
+        stashes it in a signed `rbt_oauth_pending` cookie, mints an
+        internal browser `client_id`, and 302s into `/authorize`
+        with the right parameters. The user ends up at `/finish`
+        after the IdP round-trip (or directly, if `/authorize`
+        short-circuits because the browser already has a session
+        cookie).
+        """
+        return_to = request.query_params.get("return_to", "/")
+        if not self._is_valid_return_to(return_to, request):
+            return _oauth_error(
+                error="invalid_request",
+                description=(
+                    "The 'return_to' parameter must be a same-"
+                    "origin path or an absolute http(s) URL."
+                ),
+                status_code=400,
+            )
+
+        code_verifier = secrets.token_urlsafe(64)
+        code_challenge = _compute_code_challenge(code_verifier)
+
+        base = origin_from_request(request)
+        finish_uri = f"{base}{_FINISH_PATH}"
+
+        # The browser client_id is just-in-time; its only registered
+        # `redirect_uri` is our own `/finish`, so `/authorize` will
+        # accept it but no other relying party can reuse it.
+        browser_client_id = self._make_jwt(
+            {
+                "type": _BROWSER_CLIENT_TYPE,
+                "redirect_uris": [finish_uri],
+            },
+            ttl_seconds=_PENDING_STATE_TTL_SECONDS,
+        )
+
+        # Pending cookie holds the PKCE verifier and where to send
+        # the user when `/finish` completes. JWT-signed so a
+        # tampered cookie can't redirect the user elsewhere.
+        pending_value = self._make_jwt(
+            {
+                "type": "pending-browser",
+                "code_verifier": code_verifier,
+                "return_to": return_to,
+            },
+            ttl_seconds=_PENDING_STATE_TTL_SECONDS,
+        )
+
+        authorize_url = f"{base}{_AUTHORIZE_PATH}?" + urlencode(
+            {
+                "response_type": "code",
+                "client_id": browser_client_id,
+                "redirect_uri": finish_uri,
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+                # `state` is required by OAuth servers; it's opaque
+                # for us since the pending cookie carries everything
+                # we need at `/finish`.
+                "state": secrets.token_urlsafe(16),
+            }
+        )
+
+        response = RedirectResponse(url=authorize_url, status_code=302)
+        # `SameSite=Lax` is fine here: the browser only needs to send
+        # this cookie when it lands back at `/finish` via a top-level
+        # navigation (302 redirect chain), which `Lax` allows.
+        response.set_cookie(
+            key=PENDING_COOKIE_NAME,
+            value=pending_value,
+            max_age=_PENDING_STATE_TTL_SECONDS,
+            path="/__/oauth/",
+            secure=True,
+            httponly=True,
+            samesite="lax",
+        )
+        return response
+
+    async def finish(self, request: Request) -> Response:
+        """GET /__/oauth/finish?code=...&state=...
+
+        Browser-flow completion: redeems the auth code against the
+        PKCE verifier stashed in `rbt_oauth_pending`, sets the
+        session cookies, and 302s the user back to `return_to`.
+        """
+        params = request.query_params
+
+        # The provider may have returned an error from `/callback`.
+        # Surface a clean response and clear the pending cookie.
+        idp_error = params.get("error")
+        if idp_error is not None:
+            response = _oauth_error(
+                error=idp_error,
+                description=params.get("error_description") or
+                "Identity provider returned an error.",
+                status_code=400,
+            )
+            response.delete_cookie(
+                key=PENDING_COOKIE_NAME,
+                path="/__/oauth/",
+            )
+            return response
+
+        # Any 400 return on this handler should also clear
+        # `rbt_oauth_pending`. A failed `/finish` leaves the user
+        # back at the SPA; the stale cookie would otherwise sit
+        # for `_PENDING_STATE_TTL_SECONDS` and confuse a fresh
+        # `/start` flow if the user retries.
+        def _finish_error(error: str, description: str) -> JSONResponse:
+            response = _oauth_error(
+                error=error,
+                description=description,
+                status_code=400,
+            )
+            response.delete_cookie(
+                key=PENDING_COOKIE_NAME,
+                path="/__/oauth/",
+            )
+            return response
+
+        code_token = params.get("code")
+        if code_token is None:
+            return _finish_error(
+                error="invalid_request",
+                description="Missing 'code' parameter.",
+            )
+
+        pending_value = request.cookies.get(PENDING_COOKIE_NAME)
+        if pending_value is None:
+            return _finish_error(
+                error="invalid_request",
+                description=(
+                    "Missing pending-flow cookie. The sign-in flow "
+                    "may have expired; try signing in again."
+                ),
+            )
+
+        pending = self._verify_jwt(pending_value, "pending-browser")
+        if pending is None:
+            return _finish_error(
+                error="invalid_request",
+                description=(
+                    "Invalid or expired pending-flow cookie. Try "
+                    "signing in again."
+                ),
+            )
+
+        code_data = self._verify_jwt(str(code_token), "code")
+        if code_data is None:
+            return _finish_error(
+                error="invalid_grant",
+                description="Authorization code is invalid or expired.",
+            )
+
+        # PKCE: the verifier in the cookie must hash to the
+        # challenge baked into the auth code.
+        code_verifier = str(pending["code_verifier"])
+        expected_challenge = _compute_code_challenge(code_verifier)
+        if expected_challenge != code_data.get("code_challenge"):
+            return _finish_error(
+                error="invalid_grant",
+                description="PKCE verification failed.",
+            )
+
+        user_id: UserId = UserId(code_data["sub"])
+        base = origin_from_request(request)
+
+        tokens = await self._mint_tokens_for_user(
+            user_id=user_id,
+            client_id=str(code_data["client_id"]),
+            base=base,
+            context=external_context(request),
+        )
+
+        return_to = str(pending["return_to"])
+        response = RedirectResponse(url=return_to, status_code=302)
+        self._set_session_cookies(
+            response,
+            access_token=tokens["access_token"],
+            refresh_token=tokens["refresh_token"],
+            expires_in=tokens["expires_in"],
+        )
+        response.delete_cookie(
+            key=PENDING_COOKIE_NAME,
+            path="/__/oauth/",
+        )
+        return response
+
+    async def refresh(self, request: Request) -> Response:
+        """POST /__/oauth/refresh
+
+        Reads `rbt_refresh`, mints a fresh access/refresh pair, sets
+        new cookies, and returns the new access token and its
+        `expires_at` expiry in the body, so a client can schedule its
+        next refresh to land before the access token lapses.
+        """
+        # CSRF protection: `/refresh` is state-changing and cookie-
+        # authorized — a cross-site page could otherwise re-mint the
+        # session's cookies at will, keeping a victim's 30-day
+        # refresh window alive for as long as that page stays open.
+        forbidden = self._forbidden_cross_site_response(
+            request, action="refresh"
+        )
+        if forbidden is not None:
+            return forbidden
+        refresh_token = request.cookies.get(REFRESH_COOKIE_NAME)
+        if refresh_token is None:
+            return JSONResponse(
+                status_code=401,
+                content={"error": "not_signed_in"},
+            )
+
+        refresh_data = self._verify_jwt(refresh_token, "refresh")
+        if refresh_data is None:
+            response = JSONResponse(
+                status_code=401,
+                content={"error": "refresh_invalid"},
+            )
+            # Clear stale cookies so the SPA observes a clean
+            # signed-out state on the next request.
+            self._clear_session_cookies(response)
+            return response
+
+        user_id: UserId = UserId(refresh_data["sub"])
+        base = origin_from_request(request)
+
+        tokens = await self._mint_tokens_for_user(
+            user_id=user_id,
+            client_id=str(refresh_data.get("client_id", "")),
+            base=base,
+            context=external_context(request),
+        )
+        # Returning the new access_token in the body — alongside
+        # rotating the cookies — lets the SPA's `onUnauthenticated`
+        # 401-retry hook update `setBearerToken(...)` without a
+        # second `/whoami` round-trip. Same `tokenizeAs`-style
+        # bridge as the Cloud/Kratos pattern documented on
+        # `/__/oauth/whoami`. `expires_at` is the absolute Unix-
+        # epoch deadline (mirrors `/__/oauth/whoami`) so the SPA
+        # can re-arm its proactive-refresh timer off the wall
+        # clock without re-decoding the JWT.
+        response = JSONResponse(
+            {
+                "access_token": tokens["access_token"],
+                "expires_in": tokens["expires_in"],
+                "expires_at": (int(time.time()) + tokens["expires_in"]),
+            }
+        )
+        self._set_session_cookies(
+            response,
+            access_token=tokens["access_token"],
+            refresh_token=tokens["refresh_token"],
+            expires_in=tokens["expires_in"],
+        )
+        return response
+
+    def _forbidden_cross_site_response(
+        self,
+        request: Request,
+        *,
+        action: str,
+    ) -> Optional[JSONResponse]:
+        """CSRF protection for a state-changing, cookie-authorized
+        browser endpoint: a 403 response when `request` carries an
+        `Origin` header naming an untrusted origin, or `None` when the
+        request may proceed. Browsers attach an `Origin` header to every
+        cross-origin POST; require it to name a trusted origin (the same
+        set Envoy's CORS uses). Requests without an `Origin` header come
+        from non-browser clients, which attach cookies deliberately
+        rather than ambiently, so they pass. `action` names the
+        forbidden operation in the error description."""
+        origin = request.headers.get("origin")
+        if origin is not None and not is_allowed_origin(
+            origin,
+            allowed_origins=self._allowed_origins,
+            own_origin=origin_from_request(request),
+        ):
+            return _oauth_error(
+                error="invalid_request",
+                description=f"Cross-site {action} is not allowed.",
+                status_code=403,
+            )
+        return None
+
+    async def signout(self, request: Request) -> Response:
+        """POST /__/oauth/signout
+
+        Local sign-out only: clears the session cookies and returns 204.
+
+        **Known limitation.** The access JWT itself is stateless —
+        we have no server-side blocklist — so a copy of the cookie
+        value scraped before sign-out remains a valid bearer until
+        its `exp` claim (typically 30 minutes; `access_token_ttl_seconds`
+        on the provider). For an attacker to exploit this, they need
+        to have already exfiltrated the cookie value — which requires
+        either an XSS on a SPA that called `setBearerToken(...)`
+        with the JWT, or a CORS misconfiguration that let a third-
+        party origin read `/whoami` credentialed. Both are blocked
+        by the framework's defaults (HttpOnly cookie, exact-match
+        `Application(allowed_origins=...)`). Accepted as a follow-up;
+        adding a `jti` blocklist on this endpoint is the natural
+        fix when it becomes load-bearing.
+        """
+        # CSRF protection: a cross-site `<form>` or `fetch` could
+        # otherwise sign the user out at will.
+        forbidden = self._forbidden_cross_site_response(
+            request, action="sign-out"
+        )
+        if forbidden is not None:
+            return forbidden
+        response = Response(status_code=204)
+        self._clear_session_cookies(response)
+        return response
+
+    async def whoami(self, request: Request) -> JSONResponse:
+        """GET /__/oauth/whoami
+
+        Lightweight initial-load probe for the SPA. Returns
+        `{authenticated: true, user_id, access_token, default_ids}`
+        when `rbt_session` is present and valid, `{authenticated:
+        false}` otherwise. The `default_ids` map carries
+        `{state_type_full_name: state_id}` for every auto-construct
+        state type — same shape MCP delivers via tool results, so
+        generated React hooks can resolve without the SPA threading
+        the user_id through every call.
+
+        Why a server round-trip exists at all, rather than the SPA
+        just reading the cookie from JavaScript: Reboot serves the
+        SPA on a different origin — indeed a different site — than
+        the backend, so the backend's `rbt_session` cookie is not
+        visible in the SPA's `document.cookie`. Cookies are scoped
+        to the host that set them; a cross-site SPA cannot read
+        another host's cookie from JS even if it weren't HttpOnly
+        (and dropping HttpOnly would only widen XSS exposure without
+        enabling the read). A *credentialed* fetch does send that
+        cookie back to the backend, so `/whoami` is the bridge that
+        reads it server-side and hands the JWT to the SPA.
+
+        `access_token` returns the access JWT that's also in the
+        `rbt_session` HttpOnly cookie. The SPA hands it to
+        `setBearerToken(...)`, and it becomes the bearer on every
+        Reboot call — cross-origin requests can't rely on the
+        cookie alone.
+
+        Security: returning the bearer in the JSON body makes
+        the response a JWT-exfiltration vector for any origin we
+        let read it credentialed. That's the load-bearing reason
+        `Application(allowed_origins=...)` is an exact-match
+        allow-list rather than a wildcard.
+        """
+        decoded = self._decode_session_cookie(request)
+        user_id = decoded.get("sub", "") if decoded is not None else ""
+        if decoded is None or not user_id:
+            return JSONResponse({"authenticated": False})
+        # The cookie's value IS the access JWT — surface it inline
+        # so the SPA's bearer and the cookie expire in lockstep
+        # (the SPA's refresh path renews both at once).
+        access_token = request.cookies.get(SESSION_COOKIE_NAME)
+        # `expires_at` lets the SPA's `RebootClientProvider`
+        # schedule a `refreshBearer(...)` a few seconds before
+        # the access JWT expires, so unary RPCs / WebSocket
+        # mutations never observe a 401-due-to-expiry.
+        expires_at = int(decoded["exp"])
+        # All currently-supported auto-construct types key off the
+        # user_id, so the map is `{<state-type>: user_id}` for each.
+        # If a future auto-construct mode derives state_id from
+        # something else, this is the place to compute it.
+        ids = {
+            full_name: user_id
+            for full_name in self._auto_construct_state_type_full_names
+        }
+        return JSONResponse(
+            {
+                "authenticated": True,
+                "user_id": user_id,
+                "access_token": access_token,
+                "expires_at": expires_at,
+                "default_ids": ids,
+            }
         )
