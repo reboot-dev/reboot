@@ -1509,3 +1509,6 @@ wraps the underlying model call in `at_least_once` for you. The
   contract behind declared aborts.
 - `stdlib-queue.md` / `stdlib-pubsub.md` — the stdlib actors most
   often driven from a workflow control loop.
+- `scheduling-recurring.md` — recurring / "cron" jobs: a
+  self-rescheduling writer tick that dispatches one of these workflows
+  per run for the durable work.

@@ -52,7 +52,7 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 10. Scheduling (scheduling)
 
 **Impact:** MEDIUM
-**Description:** Deferred work via `ref.schedule(when=timedelta(...)).method(context)` and recurring schedules driven from inside writer methods.
+**Description:** Deferred work via `ref.schedule(when=...).method(context)` — `when=` takes a `timedelta` (relative) or an absolute timezone-aware `datetime`. Recurring / "cron" jobs are built by self-rescheduling from inside a writer method (at an absolute wall-clock time for true cron), optionally dispatching a `Workflow` per run for the durable work.
 
 ## 11. Testing (testing)
 
