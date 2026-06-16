@@ -38,9 +38,9 @@ import { v4 as uuidv4 } from "uuid";
 {% endfor %}
 {% if mcp_ns.needed %}
 import type { App as McpApp } from "@modelcontextprotocol/ext-apps/react";
-import { useMcpApp, useMcpToolData } from "@reboot-dev/reboot-react/internal";
+import { useMcpApp } from "@reboot-dev/reboot-react/internal";
 {% endif %}
-import { useRefreshMCPBearerToken } from "@reboot-dev/reboot-react/internal";
+import { useDefaultStateIds, useRefreshMCPBearerToken } from "@reboot-dev/reboot-react/internal";
 {% if proto.messages_and_enums|length > 0 or states|length > 0 %}
 // NOTE NOTE NOTE
 //
@@ -1384,7 +1384,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
    name a symbol that was never declared.
      - `client_has_ui`: this client has `UI()` methods. Drives the
        hook's `id`-handling — optional param, URL fallback,
-       `useMcpToolData()` for tool-input id resolution.
+       `useDefaultStateIds()` for tool-input / whoami id resolution.
      - `client_needs_mcp_app`: this client's hook declares
        `mcpApp` (via `useMcpApp()`). True for any UI-having
        client and any client with a Writer/Transaction whose
@@ -1414,10 +1414,11 @@ export const use{{ client.proto.state_name | to_camel }} = (
   const mcpApp = useMcpApp();
 {% endif %}
 {% if client_has_ui %}
-  // Read below to resolve `id` from MCP tool-input context.
-  const mcpToolData = useMcpToolData();
+  // Read below to resolve `id` from the surface-agnostic
+  // state-ID map: MCP tool-input or web `/__/oauth/whoami`.
+  const stateIdsMap = useDefaultStateIds();
 
-  // Resolve ID: explicit > URL param (dev) > `ids` mapping.
+  // Resolve ID: explicit > URL param (dev) > default-ID map.
   const devId = useMemo(() => {
     // React Native defines `window` but not `window.location`, so both
     // must be checked.
@@ -1432,11 +1433,9 @@ export const use{{ client.proto.state_name | to_camel }} = (
     return null;
   }, []);
 
-  const idsMap = mcpToolData?.ids as
-    Record<string, string> | undefined;
   const toolInputId =
-    typeof idsMap?.["{{ client.proto.state_full_name }}"] === "string"
-      ? idsMap["{{ client.proto.state_full_name }}"]
+    typeof stateIdsMap?.["{{ client.proto.state_full_name }}"] === "string"
+      ? stateIdsMap["{{ client.proto.state_full_name }}"]
       : null;
 
   const resolvedId = providedId ?? devId ?? toolInputId;

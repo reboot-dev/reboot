@@ -25,7 +25,12 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { McpAppContext, type McpAppContextValue } from "./index.js";
+import {
+  McpAppContext,
+  DefaultStateIdsContext,
+  type McpAppContextValue,
+  type DefaultStateIdsContextValue,
+} from "./index.js";
 import { useAppSafe } from "./useAppSafe.js";
 
 export default function McpConnector({
@@ -229,6 +234,46 @@ export default function McpConnector({
   // Apply host theme and style variables.
   useHostStyleVariables(mcpApp, initialContext);
 
+  // These `useMemo`s must run before the early returns below.
+  // Otherwise the hook count grows the moment we stop bailing out
+  // for the loading state, which violates React's rules of hooks
+  // ("rendered more hooks than during the previous render").
+  //
+  // We memoize even though building the object is trivial: it's a
+  // context `Provider` value, and React re-renders consumers when
+  // that value changes by reference (`Object.is`), not
+  // structurally. An inline object literal would be a fresh
+  // reference on every render of this component, and this
+  // component re-renders for reasons unrelated to these three
+  // values (`isConnected` / `error` from `useAppSafe`, a parent
+  // re-render, host-style churn) — each of which would otherwise
+  // re-render every `useMcpApp()` / `useMcpToolData()` consumer
+  // (every generated hook in the subtree) for nothing. The deps
+  // list isn't a no-op for naming the same three values: it
+  // defines what "really changed" means. This component's renders
+  // are the big set; the renders where a dep actually changed are
+  // the subset that should propagate, and the memo holds the
+  // reference stable across all the others.
+  const contextValue = useMemo<McpAppContextValue>(
+    () => ({ mcpApp, toolData, refreshMCPBearerToken }),
+    [mcpApp, toolData, refreshMCPBearerToken]
+  );
+  // State-IDs come out of `toolData.ids` for MCP — same shape
+  // the web flow populates from `/__/oauth/whoami`. Generated
+  // hooks read them via `useDefaultStateIds()` regardless of
+  // surface. Memoize so unrelated `toolData` updates (e.g. a
+  // bearer-token refresh that touches a non-`ids` key) don't
+  // re-render every state-ids consumer.
+  const stateIdsContextValue = useMemo<DefaultStateIdsContextValue>(
+    () => ({
+      defaultIds:
+        toolData?.ids != null && typeof toolData.ids === "object"
+          ? (toolData.ids as Record<string, string>)
+          : null,
+    }),
+    [toolData?.ids]
+  );
+
   if (error) {
     return (
       <div style={{ color: "red", padding: "1rem" }}>
@@ -253,12 +298,6 @@ export default function McpConnector({
     );
   }
 
-  const contextValue: McpAppContextValue = {
-    mcpApp,
-    toolData,
-    refreshMCPBearerToken,
-  };
-
   // Auto-inject the AI-supplied request props onto the single
   // child component, so customer `main.tsx` can write a plain
   // `<MyApp />` and the App's typed `FC<<Model>>` props get
@@ -280,7 +319,9 @@ export default function McpConnector({
 
   return (
     <McpAppContext.Provider value={contextValue}>
-      {child}
+      <DefaultStateIdsContext.Provider value={stateIdsContextValue}>
+        {child}
+      </DefaultStateIdsContext.Provider>
     </McpAppContext.Provider>
   );
 }

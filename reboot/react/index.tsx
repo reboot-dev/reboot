@@ -25,10 +25,12 @@ declare global {
 // don't break.
 export {
   McpAppContext,
+  DefaultStateIdsContext,
   useMcpApp,
   useMcpToolData,
   useRefreshMCPBearerToken,
   type McpAppContextValue,
+  type DefaultStateIdsContextValue,
 } from "./internal/index.js";
 
 // ---------------------------------------------------------------------------
