@@ -485,7 +485,7 @@ class StateManager(ABC):
             self,
             condition: Callable[[], bool],
             *,
-            deadline: Optional[timedelta] = OWNERSHIP_DEADLINE_DEFAULT,
+            deadline: Optional[timedelta],
         ) -> None:
             """Waits until `condition()` holds, re-evaluating every time ownership
             changes. Raises `SystemAborted(Unavailable())` once
@@ -494,6 +494,8 @@ class StateManager(ABC):
             mitigates a nested transaction whose server died before
             sending `RelinquishOwnership`).
             """
+            # Compute a single absolute cutoff so we'll never wait
+            # more than `deadline` across loop iterations.
             cutoff: Optional[datetime] = (
                 datetime.now(timezone.utc) +
                 deadline if deadline is not None else None
@@ -518,14 +520,14 @@ class StateManager(ABC):
                     raise RuntimeError('Transaction must abort')
 
                 try:
-                    if cutoff is not None:
-                        remaining = cutoff - datetime.now(timezone.utc)
-                        await asyncio.wait_for(
-                            self._ownership_changed.wait(),
-                            timeout=max(0.0, remaining.total_seconds()),
-                        )
-                    else:
-                        await self._ownership_changed.wait(),
+                    timeout = None if cutoff is None else max(
+                        0.0,
+                        (cutoff - datetime.now(timezone.utc)).total_seconds(),
+                    )
+                    await asyncio.wait_for(
+                        self._ownership_changed.wait(),
+                        timeout=timeout,
+                    )
                 except asyncio.TimeoutError:
                     raise SystemAborted(
                         Unavailable(),
@@ -541,7 +543,7 @@ class StateManager(ABC):
             self,
             context: Context,
             *,
-            deadline: Optional[timedelta] = OWNERSHIP_DEADLINE_DEFAULT,
+            deadline: Optional[timedelta],
         ) -> None:
             """Waits until `owner_ids` is a prefix of `context`'s transaction ids
             (i.e., no other nested transaction holds ownership we are
@@ -629,15 +631,13 @@ class StateManager(ABC):
             context: ReaderContext | WriterContext | TransactionContext,
             *,
             lock: Lock,
-            deadline: Optional[timedelta] = OWNERSHIP_DEADLINE_DEFAULT,
+            deadline: Optional[timedelta],
         ) -> AsyncIterator[None]:
             """Claims ownership of this state on entry and relinquishes it on
             exit.
             """
-            # Compute a single absolute cutoff so the claim and drain
-            # waits share one budget: each is passed the time
-            # remaining until `cutoff`, so together they wait at most
-            # `deadline`. `None` waits forever.
+            # Compute a single absolute cutoff so `claim_ownership`
+            # and waiting for call counts to drain share `deadline`.
             cutoff: Optional[datetime] = (
                 datetime.now(timezone.utc) +
                 deadline if deadline is not None else None
@@ -1476,10 +1476,11 @@ try:
 except RuntimeError:
     asyncio.run(validate_semaphore_semantics_once())
 
-# Default seconds we will wait to acquire one of the per-state locks
-# before raising `Unavailable`. We bound the wait instead of blocking
-# forever so that a deadlock can not wedge the system indefinitely.
-LOCK_ACQUIRE_DEADLINE_DEFAULT_SECONDS = 30.0
+# Default amount of time we will wait to acquire one of the per-state
+# locks before raising `Unavailable`. We bound the wait instead of
+# blocking forever so that a deadlock can not wedge the system
+# indefinitely.
+LOCK_ACQUIRE_DEADLINE_DEFAULT = timedelta(seconds=30)
 
 
 class Lock:
@@ -1551,33 +1552,26 @@ class Lock:
 
     async def acquire_shared(
         self,
-        deadline_seconds: Optional[float] = (
-            LOCK_ACQUIRE_DEADLINE_DEFAULT_SECONDS
-        ),
+        *,
+        deadline: Optional[timedelta],
     ) -> None:
         if self.try_acquire_shared():
             return
-        await self._wait(
-            mode=Lock.Mode.SHARED, deadline_seconds=deadline_seconds
-        )
+        await self._wait(mode=Lock.Mode.SHARED, deadline=deadline)
 
     async def acquire_exclusive(
         self,
-        deadline_seconds: Optional[float] = (
-            LOCK_ACQUIRE_DEADLINE_DEFAULT_SECONDS
-        ),
+        *,
+        deadline: Optional[timedelta],
     ) -> None:
         if self.try_acquire_exclusive():
             return
-        await self._wait(
-            mode=Lock.Mode.EXCLUSIVE, deadline_seconds=deadline_seconds
-        )
+        await self._wait(mode=Lock.Mode.EXCLUSIVE, deadline=deadline)
 
     async def upgrade(
         self,
-        deadline_seconds: Optional[float] = (
-            LOCK_ACQUIRE_DEADLINE_DEFAULT_SECONDS
-        ),
+        *,
+        deadline: Optional[timedelta],
     ) -> None:
         """Atomically promote a held shared hold to exclusive.
 
@@ -1598,7 +1592,7 @@ class Lock:
             self._exclusive = True
             return
         # Otherwise lets `_wait` as an upgrade.
-        await self._wait(upgrade=True, deadline_seconds=deadline_seconds)
+        await self._wait(upgrade=True, deadline=deadline)
 
     def downgrade(self) -> None:
         """Atomically demote a held exclusive hold to shared.
@@ -1633,11 +1627,10 @@ class Lock:
     @asynccontextmanager
     async def shared(
         self,
-        deadline_seconds: Optional[float] = (
-            LOCK_ACQUIRE_DEADLINE_DEFAULT_SECONDS
-        ),
+        *,
+        deadline: Optional[timedelta],
     ) -> AsyncIterator[None]:
-        await self.acquire_shared(deadline_seconds)
+        await self.acquire_shared(deadline=deadline)
         try:
             yield
         finally:
@@ -1646,11 +1639,10 @@ class Lock:
     @asynccontextmanager
     async def exclusive(
         self,
-        deadline_seconds: Optional[float] = (
-            LOCK_ACQUIRE_DEADLINE_DEFAULT_SECONDS
-        ),
+        *,
+        deadline: Optional[timedelta],
     ) -> AsyncIterator[None]:
-        await self.acquire_exclusive(deadline_seconds)
+        await self.acquire_exclusive(deadline=deadline)
         try:
             yield
         finally:
@@ -1682,7 +1674,7 @@ class Lock:
         self,
         *,
         mode: Lock.Mode,
-        deadline_seconds: Optional[float],
+        deadline: Optional[timedelta],
     ) -> None:
         ...
 
@@ -1691,7 +1683,7 @@ class Lock:
         self,
         *,
         upgrade: Literal[True],
-        deadline_seconds: Optional[float],
+        deadline: Optional[timedelta],
     ) -> None:
         ...
 
@@ -1700,7 +1692,7 @@ class Lock:
         *,
         mode: Optional[Lock.Mode] = None,
         upgrade: bool = False,
-        deadline_seconds: Optional[float],
+        deadline: Optional[timedelta],
     ) -> None:
         """
         Construct a waiter and block until it is granted by
@@ -1730,8 +1722,9 @@ class Lock:
         else:
             self._waiters.append(waiter)
 
+        timeout = deadline.total_seconds() if deadline is not None else None
         try:
-            await asyncio.wait_for(waiter.future, timeout=deadline_seconds)
+            await asyncio.wait_for(waiter.future, timeout=timeout)
         except asyncio.TimeoutError:
             if upgrade:
                 self._upgrader = None
@@ -1740,9 +1733,9 @@ class Lock:
             raise SystemAborted(
                 Unavailable(),
                 message=(
-                    f"Timed out waiting {deadline_seconds:.1f}s to "
+                    f"Timed out waiting {timeout:.1f}s to "
                     f"{'upgrade to' if upgrade else 'acquire'} "
-                    f"{mode} lock; retry the transaction."
+                    f"{mode.value} lock; retry the transaction."
                 ),
             )
         except BaseException:
@@ -2697,9 +2690,7 @@ class SidecarStateManager(
         *,
         sync: bool = True,
     ) -> None:
-        async with self._locks[state_type][state_ref].exclusive(
-            deadline_seconds=None
-        ):
+        async with self._locks[state_type][state_ref].exclusive(deadline=None):
             pending_task_effect = (
                 None if task.status == database_pb2.Task.Status.COMPLETED else
                 self._get_task_effect_from_sidecar_task(middleware, task)
@@ -2725,9 +2716,7 @@ class SidecarStateManager(
         *,
         sync: bool = True,
     ) -> None:
-        async with self._locks[state_type][state_ref].exclusive(
-            deadline_seconds=None
-        ):
+        async with self._locks[state_type][state_ref].exclusive(deadline=None):
             await self._store(
                 state_type=state_type,
                 state_ref=state_ref,
@@ -2775,9 +2764,7 @@ class SidecarStateManager(
             _colocated_upserts=[(state_id, state)],
         )
 
-        async with self._locks[state_type][state_ref].exclusive(
-            deadline_seconds=None
-        ):
+        async with self._locks[state_type][state_ref].exclusive(deadline=None):
             await self._store(
                 state_type=state_type,
                 state_ref=state_ref,
@@ -2793,9 +2780,7 @@ class SidecarStateManager(
         *,
         sync: bool = True,
     ) -> None:
-        async with self._locks[state_type][state_ref].exclusive(
-            deadline_seconds=None
-        ):
+        async with self._locks[state_type][state_ref].exclusive(deadline=None):
             # Recover idempotent mutations before trying to import any
             # since there is an invariant that we won't do a store on
             # a state before recovering its idempotent mutations.
@@ -3750,6 +3735,7 @@ class SidecarStateManager(
         async with transaction.ownership(
             context,
             lock=self._locks[state_type][state_ref],
+            deadline=OWNERSHIP_DEADLINE_DEFAULT,
         ):
             try:
                 yield transaction
@@ -4158,7 +4144,9 @@ class SidecarStateManager(
             # the later it fails the more of the transaction's work is
             # wasted.
             if transaction.mode == Lock.Mode.SHARED:
-                await self._locks[state_type_name][state_ref].upgrade()
+                await self._locks[state_type_name][state_ref].upgrade(
+                    deadline=LOCK_ACQUIRE_DEADLINE_DEFAULT
+                )
                 transaction.mode = Lock.Mode.EXCLUSIVE
                 # And now `context.participants` should no longer
                 # propagate this participant as read-only.
@@ -4176,7 +4164,9 @@ class SidecarStateManager(
         # writers.
         if transaction is None:
             lock: AsyncContextManager[None] = (
-                self._locks[state_type_name][state_ref].exclusive()
+                self._locks[state_type_name][state_ref].exclusive(
+                    deadline=LOCK_ACQUIRE_DEADLINE_DEFAULT
+                )
             )
         else:
             lock = self._transaction_writer_locks[state_type_name][state_ref]
@@ -4254,9 +4244,7 @@ class SidecarStateManager(
         state_ref = StateRef(task_effect.task_id.state_ref)
         response, status = response_or_status
 
-        async with self._locks[state_type][state_ref].exclusive(
-            deadline_seconds=None
-        ):
+        async with self._locks[state_type][state_ref].exclusive(deadline=None):
             # Store response and mark this Task as completed in
             # persistent storage. Even though we're writing here, we're
             # not writing the actor's state.
@@ -4422,7 +4410,7 @@ class SidecarStateManager(
                             await result
 
                     async with self._locks[state_type][state_ref].exclusive(
-                        deadline_seconds=None
+                        deadline=None
                     ):
                         task_effect.iteration += 1
 
@@ -4569,7 +4557,9 @@ class SidecarStateManager(
                 if transaction.mode == Lock.Mode.SHARED and effects.requires_exclusive(
                     initial_state_bytes=initial_state_bytes,
                 ):
-                    await self._locks[state_type_name][state_ref].upgrade()
+                    await self._locks[state_type_name][state_ref].upgrade(
+                        deadline=LOCK_ACQUIRE_DEADLINE_DEFAULT
+                    )
                     transaction.mode = Lock.Mode.EXCLUSIVE
                     # And now `context.participants` should no longer
                     # propagate this participant as read-only.
@@ -4941,9 +4931,13 @@ class SidecarStateManager(
         # proceed (or propagate our failure).
         try:
             if transaction.mode == Lock.Mode.SHARED:
-                await self._locks[state_type][state_ref].acquire_shared()
+                await self._locks[state_type][state_ref].acquire_shared(
+                    deadline=LOCK_ACQUIRE_DEADLINE_DEFAULT
+                )
             else:
-                await self._locks[state_type][state_ref].acquire_exclusive()
+                await self._locks[state_type][state_ref].acquire_exclusive(
+                    deadline=LOCK_ACQUIRE_DEADLINE_DEFAULT
+                )
         except BaseException as exception:
             transaction.acquired_lock.set_exception(exception)
             del transactions[transaction.root_id]
@@ -5784,6 +5778,7 @@ class SidecarStateManager(
         # upgraded).
         await transaction.wait_ownership(
             lambda: transaction.is_claimable_by([transaction.root_id]),
+            deadline=OWNERSHIP_DEADLINE_DEFAULT,
         )
 
         async with transaction.lock:
@@ -6249,7 +6244,7 @@ class SidecarStateManager(
 
             await self._locks[transaction.state_type][transaction.state_ref
                                                      ].acquire_exclusive(
-                                                         deadline_seconds=None,
+                                                         deadline=None,
                                                      )
 
             # TODO(benh): don't just "watch" the transaction, also

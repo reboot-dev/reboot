@@ -4,6 +4,7 @@ import os
 import unittest
 import unittest.mock
 import uuid
+from datetime import timedelta
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.timestamp_pb2 import Timestamp
 from google.protobuf.wrappers_pb2 import StringValue
@@ -786,7 +787,7 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_acquire_shared_grants_immediately(self) -> None:
         lock = Lock()
-        await lock.acquire_shared()
+        await lock.acquire_shared(deadline=None)
         self.assertTrue(lock.is_shared_locked())
         self.assertFalse(lock.is_exclusive_locked())
         lock.release_shared()
@@ -794,7 +795,7 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_acquire_exclusive_grants_immediately(self) -> None:
         lock = Lock()
-        await lock.acquire_exclusive()
+        await lock.acquire_exclusive(deadline=None)
         self.assertTrue(lock.is_exclusive_locked())
         self.assertFalse(lock.is_shared_locked())
         lock.release_exclusive()
@@ -804,11 +805,11 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         """Two `acquire_shared` calls both succeed without either
         blocking."""
         lock = Lock()
-        await lock.acquire_shared()
+        await lock.acquire_shared(deadline=None)
         # A second shared acquire should be immediate; if it were
         # blocking we would hang here rather than the explicit
         # timeout below.
-        await asyncio.wait_for(lock.acquire_shared(), timeout=1.0)
+        await asyncio.wait_for(lock.acquire_shared(deadline=None), timeout=1.0)
         self.assertTrue(lock.is_shared_locked())
         lock.release_shared()
         lock.release_shared()
@@ -816,12 +817,12 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_exclusive_waits_for_shared(self) -> None:
         lock = Lock()
-        await lock.acquire_shared()
+        await lock.acquire_shared(deadline=None)
 
         exclusive_acquired = asyncio.Event()
 
         async def exclusive() -> None:
-            await lock.acquire_exclusive()
+            await lock.acquire_exclusive(deadline=None)
             exclusive_acquired.set()
 
         exclusive_task = asyncio.create_task(exclusive())
@@ -837,12 +838,12 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_shared_waits_for_exclusive(self) -> None:
         lock = Lock()
-        await lock.acquire_exclusive()
+        await lock.acquire_exclusive(deadline=None)
 
         shared_acquired = asyncio.Event()
 
         async def shared() -> None:
-            await lock.acquire_shared()
+            await lock.acquire_shared(deadline=None)
             shared_acquired.set()
 
         shared_task = asyncio.create_task(shared())
@@ -860,17 +861,17 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         queues behind the exclusive waiter.
         """
         lock = Lock()
-        await lock.acquire_shared()
+        await lock.acquire_shared(deadline=None)
 
         exclusive_acquired = asyncio.Event()
         late_shared_acquired = asyncio.Event()
 
         async def exclusive() -> None:
-            await lock.acquire_exclusive()
+            await lock.acquire_exclusive(deadline=None)
             exclusive_acquired.set()
 
         async def late_shared() -> None:
-            await lock.acquire_shared()
+            await lock.acquire_shared(deadline=None)
             late_shared_acquired.set()
 
         exclusive_task = asyncio.create_task(exclusive())
@@ -898,8 +899,8 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         lock = Lock()
-        await lock.acquire_shared()
-        await asyncio.wait_for(lock.upgrade(), timeout=1.0)
+        await lock.acquire_shared(deadline=None)
+        await asyncio.wait_for(lock.upgrade(deadline=None), timeout=1.0)
         self.assertTrue(lock.is_exclusive_locked())
         self.assertFalse(lock.is_shared_locked())
         lock.release_exclusive()
@@ -910,12 +911,12 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         transaction's shared-consistent view of the state.
         """
         lock = Lock()
-        await lock.acquire_shared()
+        await lock.acquire_shared(deadline=None)
 
         queued_exclusive_acquired = asyncio.Event()
 
         async def queued_exclusive() -> None:
-            await lock.acquire_exclusive()
+            await lock.acquire_exclusive(deadline=None)
             queued_exclusive_acquired.set()
 
         # Queue an exclusive waiter behind the shared hold.
@@ -925,7 +926,7 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         # Upgrade should be immediate (we are sole shared holder) and
         # the queued exclusive must NOT have been granted in the
         # meantime.
-        await asyncio.wait_for(lock.upgrade(), timeout=1.0)
+        await asyncio.wait_for(lock.upgrade(deadline=None), timeout=1.0)
         self.assertTrue(lock.is_exclusive_locked())
         self.assertFalse(queued_exclusive_acquired.is_set())
 
@@ -939,13 +940,13 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         lock = Lock()
-        await lock.acquire_shared()
-        await lock.acquire_shared()  # second shared holder
+        await lock.acquire_shared(deadline=None)
+        await lock.acquire_shared(deadline=None)  # Second shared holder.
 
         upgraded = asyncio.Event()
 
         async def upgrader() -> None:
-            await lock.upgrade()
+            await lock.upgrade(deadline=None)
             upgraded.set()
 
         upgrader_task = asyncio.create_task(upgrader())
@@ -967,18 +968,18 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         attempt.
         """
         lock = Lock()
-        await lock.acquire_shared()
-        await lock.acquire_shared()
+        await lock.acquire_shared(deadline=None)
+        await lock.acquire_shared(deadline=None)
 
         # The first upgrade waits for the other shared holder to
         # drain.
-        first_upgrade_task = asyncio.create_task(lock.upgrade())
+        first_upgrade_task = asyncio.create_task(lock.upgrade(deadline=None))
         await asyncio.sleep(0)
         self.assertFalse(first_upgrade_task.done())
 
         # The second upgrade attempt must fail immediately.
         with self.assertRaises(SystemAborted) as aborted:
-            await lock.upgrade()
+            await lock.upgrade(deadline=None)
         self.assertEqual(type(aborted.exception.error), Unavailable)
 
         # Cleanup: release the other shared holder so the first
@@ -989,7 +990,7 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_downgrade_when_sole_holder(self) -> None:
         lock = Lock()
-        await lock.acquire_exclusive()
+        await lock.acquire_exclusive(deadline=None)
         lock.downgrade()
         self.assertTrue(lock.is_shared_locked())
         self.assertFalse(lock.is_exclusive_locked())
@@ -1000,12 +1001,12 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         """Downgrading from exclusive to shared lets a queued shared
         waiter join the (now shared) holder."""
         lock = Lock()
-        await lock.acquire_exclusive()
+        await lock.acquire_exclusive(deadline=None)
 
         queued_shared_acquired = asyncio.Event()
 
         async def queued_shared() -> None:
-            await lock.acquire_shared()
+            await lock.acquire_shared(deadline=None)
             queued_shared_acquired.set()
 
         queued_shared_task = asyncio.create_task(queued_shared())
@@ -1027,12 +1028,12 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
         """Downgrading to shared must NOT grant a queued exclusive
         waiter, since the downgrader still holds shared."""
         lock = Lock()
-        await lock.acquire_exclusive()
+        await lock.acquire_exclusive(deadline=None)
 
         queued_exclusive_acquired = asyncio.Event()
 
         async def queued_exclusive() -> None:
-            await lock.acquire_exclusive()
+            await lock.acquire_exclusive(deadline=None)
             queued_exclusive_acquired.set()
 
         queued_exclusive_task = asyncio.create_task(queued_exclusive())
@@ -1051,9 +1052,9 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_shared_deadline_raises_unavailable(self) -> None:
         lock = Lock()
-        await lock.acquire_exclusive()
+        await lock.acquire_exclusive(deadline=None)
         with self.assertRaises(SystemAborted) as aborted:
-            await lock.acquire_shared(deadline_seconds=0.05)
+            await lock.acquire_shared(deadline=timedelta(seconds=0.05))
         self.assertEqual(type(aborted.exception.error), Unavailable)
         # Lock state should be unchanged after a failed acquire.
         self.assertTrue(lock.is_exclusive_locked())
@@ -1062,9 +1063,9 @@ class LockTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_exclusive_deadline_raises_unavailable(self) -> None:
         lock = Lock()
-        await lock.acquire_shared()
+        await lock.acquire_shared(deadline=None)
         with self.assertRaises(SystemAborted) as aborted:
-            await lock.acquire_exclusive(deadline_seconds=0.05)
+            await lock.acquire_exclusive(deadline=timedelta(seconds=0.05))
         self.assertEqual(type(aborted.exception.error), Unavailable)
         self.assertTrue(lock.is_shared_locked())
         self.assertFalse(lock.is_exclusive_locked())
