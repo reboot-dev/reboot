@@ -3826,10 +3826,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.CreateAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             async with self._state_manager.writer(
                 context,
                 self._servicer.__state_type__,
@@ -3936,10 +3932,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.CreateAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -4074,7 +4066,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -4109,7 +4103,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -4314,10 +4310,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.GreetAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             authorizer = self._maybe_authorize(
                 method_name='tests.reboot.GreeterMethods.Greet',
                 headers=context._headers,
@@ -4414,10 +4406,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.GreetAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -4552,7 +4540,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -4587,7 +4577,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -4812,10 +4804,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.SetAdjectiveAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             async with self._state_manager.writer(
                 context,
                 self._servicer.__state_type__,
@@ -4922,10 +4910,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.SetAdjectiveAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -5060,7 +5044,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -5095,7 +5081,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -5315,10 +5303,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.TransactionSetAdjectiveAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             assert transaction is not None
             async with self._state_manager.transaction(
                 context,
@@ -5426,10 +5410,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.TransactionSetAdjectiveAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -5564,7 +5544,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -5599,7 +5581,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -5804,10 +5788,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.TryToConstructContextAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             authorizer = self._maybe_authorize(
                 method_name='tests.reboot.GreeterMethods.TryToConstructContext',
                 headers=context._headers,
@@ -5904,10 +5884,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.TryToConstructContextAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -6042,7 +6018,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -6077,7 +6055,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -6282,10 +6262,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.TryToConstructExternalContextAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             authorizer = self._maybe_authorize(
                 method_name='tests.reboot.GreeterMethods.TryToConstructExternalContext',
                 headers=context._headers,
@@ -6382,10 +6358,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.TryToConstructExternalContextAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -6520,7 +6492,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -6555,7 +6529,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -6760,10 +6736,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.TestLongRunningFetchAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             authorizer = self._maybe_authorize(
                 method_name='tests.reboot.GreeterMethods.TestLongRunningFetch',
                 headers=context._headers,
@@ -6860,10 +6832,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.TestLongRunningFetchAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -6998,7 +6966,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -7033,7 +7003,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -7258,10 +7230,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.TestLongRunningWriterAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             async with self._state_manager.writer(
                 context,
                 self._servicer.__state_type__,
@@ -7368,10 +7336,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.TestLongRunningWriterAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -7506,7 +7470,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -7541,7 +7507,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -7746,10 +7714,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.GetWholeStateAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             authorizer = self._maybe_authorize(
                 method_name='tests.reboot.GreeterMethods.GetWholeState',
                 headers=context._headers,
@@ -7846,10 +7810,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.GetWholeStateAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -7984,7 +7944,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -8019,7 +7981,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -8224,10 +8188,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.FailWithExceptionAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             authorizer = self._maybe_authorize(
                 method_name='tests.reboot.GreeterMethods.FailWithException',
                 headers=context._headers,
@@ -8324,10 +8284,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.FailWithExceptionAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -8462,7 +8418,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -8497,7 +8455,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -8702,10 +8662,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.FailWithAbortedAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             authorizer = self._maybe_authorize(
                 method_name='tests.reboot.GreeterMethods.FailWithAborted',
                 headers=context._headers,
@@ -8802,10 +8758,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.FailWithAbortedAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -8940,7 +8892,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -8975,7 +8929,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -9215,10 +9171,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.WorkflowAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -9340,7 +9292,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -9375,7 +9329,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -9600,10 +9556,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.DangerousFieldsAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             async with self._state_manager.writer(
                 context,
                 self._servicer.__state_type__,
@@ -9710,10 +9662,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.DangerousFieldsAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -9848,7 +9796,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -9883,7 +9833,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -10108,10 +10060,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.StoreRecursiveMessageAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             async with self._state_manager.writer(
                 context,
                 self._servicer.__state_type__,
@@ -10218,10 +10166,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.StoreRecursiveMessageAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -10356,7 +10300,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -10391,7 +10337,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -10596,10 +10544,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.ReadRecursiveMessageAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             authorizer = self._maybe_authorize(
                 method_name='tests.reboot.GreeterMethods.ReadRecursiveMessage',
                 headers=context._headers,
@@ -10696,10 +10640,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.ReadRecursiveMessageAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -10834,7 +10774,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -10869,7 +10811,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -11089,10 +11033,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.ConstructAndStoreRecursiveMessageAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             assert transaction is not None
             async with self._state_manager.transaction(
                 context,
@@ -11200,10 +11140,6 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
             self.tasks_dispatcher,
             aborted_type=Greeter.ConstructAndStoreRecursiveMessageAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -11338,7 +11274,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -11373,7 +11311,9 @@ class GreeterServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middlewar
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):

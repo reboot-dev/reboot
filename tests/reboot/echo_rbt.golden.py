@@ -3481,10 +3481,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.ReplyAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             async with self._state_manager.writer(
                 context,
                 self._servicer.__state_type__,
@@ -3591,10 +3587,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.ReplyAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -3729,7 +3721,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -3764,7 +3758,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -3969,10 +3965,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.ReplayAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             authorizer = self._maybe_authorize(
                 method_name='tests.reboot.EchoMethods.Replay',
                 headers=context._headers,
@@ -4069,10 +4061,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.ReplayAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -4207,7 +4195,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -4242,7 +4232,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -4444,10 +4436,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.WaitForAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             authorizer = self._maybe_authorize(
                 method_name='tests.reboot.EchoMethods.WaitFor',
                 headers=context._headers,
@@ -4544,10 +4532,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.WaitForAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -4682,7 +4666,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -4717,7 +4703,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -4904,10 +4892,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.StreamAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             authorizer = self._maybe_authorize(
                 method_name='tests.reboot.EchoMethods.Stream',
                 headers=context._headers,
@@ -5001,7 +4985,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -5036,7 +5022,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -5224,10 +5212,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.RegexStreamAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             authorizer = self._maybe_authorize(
                 method_name='tests.reboot.EchoMethods.RegexStream',
                 headers=context._headers,
@@ -5320,7 +5304,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -5355,7 +5341,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -5581,10 +5569,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.SearchAndReplaceAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             async with self._state_manager.writer(
                 context,
                 self._servicer.__state_type__,
@@ -5691,10 +5675,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.SearchAndReplaceAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -5829,7 +5809,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -5864,7 +5846,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -6089,10 +6073,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.FailOnceShouldBeRetriedAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             async with self._state_manager.writer(
                 context,
                 self._servicer.__state_type__,
@@ -6199,10 +6179,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.FailOnceShouldBeRetriedAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -6337,7 +6313,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -6372,7 +6350,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -6612,10 +6592,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.FailOnceShouldBeRetriedWorkflowAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -6737,7 +6713,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -6772,7 +6750,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -6997,10 +6977,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.TooManyTasksAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             async with self._state_manager.writer(
                 context,
                 self._servicer.__state_type__,
@@ -7107,10 +7083,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.TooManyTasksAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -7245,7 +7217,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -7280,7 +7254,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -7520,10 +7496,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.HangingAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -7645,7 +7617,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -7680,7 +7654,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -7920,10 +7896,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.ReactiveWorkflowAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -8045,7 +8017,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -8080,7 +8054,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -8320,10 +8296,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.ControlLoopAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -8445,7 +8417,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -8480,7 +8454,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -8720,10 +8696,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.AtMostOnceWorkflowAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -8845,7 +8817,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -8880,7 +8854,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -9120,10 +9096,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.WorkflowCallingWorkflowAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -9245,7 +9217,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -9280,7 +9254,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -9505,10 +9481,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.RaiseValueErrorAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             async with self._state_manager.writer(
                 context,
                 self._servicer.__state_type__,
@@ -9615,10 +9587,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.RaiseValueErrorAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -9753,7 +9721,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -9788,7 +9758,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -10013,10 +9985,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.RaiseSpecifiedErrorAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
             async with self._state_manager.writer(
                 context,
                 self._servicer.__state_type__,
@@ -10123,10 +10091,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.RaiseSpecifiedErrorAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -10261,7 +10225,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -10296,7 +10262,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
@@ -10536,10 +10504,6 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             self.tasks_dispatcher,
             aborted_type=Echo.FailingWorkflowAborted,
         ) as transaction:
-            if transaction is not None:
-                context.participants.add(
-                    self._servicer.__state_type_name__, context._state_ref
-                )
 
             async with self._state_manager.writer(
                 context,
@@ -10661,7 +10625,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 if context is not None and headers.transaction_ids is not None:
                     assert context.transaction_id is not None
                     status = status._replace(
-                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata()
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
                 await grpc_context.abort_with_status(status)
                 raise  # Unreachable but necessary for mypy.
@@ -10696,7 +10662,9 @@ class EchoServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     assert context.transaction_id is not None
                     grpc_context.set_trailing_metadata(
                         grpc_context.trailing_metadata() +
-                        context.participants.to_grpc_metadata()
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
                     )
 
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
