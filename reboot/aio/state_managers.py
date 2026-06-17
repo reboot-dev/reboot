@@ -267,6 +267,13 @@ class StateManager(ABC):
                 state_type=context.state_type_name,
                 state_ref=context._state_ref,
                 tasks_dispatcher=tasks_dispatcher,
+                # A `writer` is always exclusive; a `reader` is
+                # shared, and a `transaction` starts shared and may
+                # upgrade later if it requires exclusive.
+                mode=(
+                    Lock.Mode.EXCLUSIVE
+                    if isinstance(context, WriterContext) else Lock.Mode.SHARED
+                ),
                 idempotency_key=context.idempotency_key,
                 using_restart_detection=using_restart_detection,
             )
@@ -291,6 +298,12 @@ class StateManager(ABC):
                 state_type=StateTypeName(transaction.state_type),
                 state_ref=StateRef(transaction.state_ref),
                 tasks_dispatcher=middleware.tasks_dispatcher,
+                # Because we elide persisting read-only transactions
+                # we can assume a persisted transaction held the lock
+                # exclusively. This shouldn't actually matter,
+                # however, since, the lock will have been released at
+                # this point.
+                mode=Lock.Mode.EXCLUSIVE,
                 stored=True,
                 prepared=transaction.prepared,
                 # During recovery any transactions that were not
@@ -320,6 +333,7 @@ class StateManager(ABC):
             state_type: StateTypeName,
             state_ref: StateRef,
             tasks_dispatcher: TasksDispatcher,
+            mode: Lock.Mode,
             stored: bool = False,
             prepared: bool = False,
             unrecoverable_abort: bool = False,
@@ -363,9 +377,8 @@ class StateManager(ABC):
             self.using_restart_detection = using_restart_detection
 
             # The mode in which this transaction currently holds the
-            # per-state `Lock` for `(state_type,
-            # state_ref)`. Initialized to shared.
-            self.mode: Lock.Mode = Lock.Mode.SHARED
+            # per-state `Lock` for `(state_type, state_ref)`.
+            self.mode = mode
 
             # Resolved by the first method called on the state as part
             # of this transaction once the per-state lock has been
@@ -607,13 +620,7 @@ class StateManager(ABC):
             # Otherwise we need to relinquish ownership explicitly
             # (and then notifying streaming readers).
             if aborted:
-                exclusive = self.mode == Lock.Mode.EXCLUSIVE
-                self._rollback(snapshot)
-                if exclusive and self.mode == Lock.Mode.SHARED:
-                    # Nested transaction acquired `lock` exclusively
-                    # but the rolled-back state only needs shared;
-                    # downgrade lock.
-                    lock.downgrade()
+                self._rollback(snapshot, lock=lock)
             else:
                 self.owner_ids = (
                     self.owner_ids[:self.owner_ids.index(transaction_id)]
@@ -972,9 +979,12 @@ class StateManager(ABC):
         def _rollback(
             self,
             snapshot: StateManager.Transaction.Snapshot,
+            *,
+            lock: Lock,
         ) -> None:
             """Rolls this state's effects, ownership, lock mode, etc,
-            back to `snapshot`.
+            back to `snapshot`, downgrading `lock` to shared if the
+            rolled-back mode no longer needs it exclusively.
             """
             if snapshot.state is None:
                 self.state = None
@@ -997,7 +1007,13 @@ class StateManager(ABC):
                 if task.task_id.task_uuid in snapshot.task_uuids
             ]
             self.owner_ids = snapshot.owner_ids
+            # A nested transaction may have acquired `lock` exclusively,
+            # but the rolled-back state only needs shared; downgrade to
+            # match the restored mode.
+            exclusive = self.mode == Lock.Mode.EXCLUSIVE
             self.mode = snapshot.mode
+            if exclusive and self.mode == Lock.Mode.SHARED:
+                lock.downgrade()
 
         def _notify_streaming_readers(
             self,
@@ -1806,7 +1822,7 @@ class Lock:
                 if not waiter.future.done():
                     waiter.future.set_result(None)
                 return
-            # mode == Lock.Mode.SHARED
+            # The mode is `Lock.Mode.SHARED`.
             self._waiters.pop(0)
             self._shared += 1
             if not waiter.future.done():
@@ -2311,10 +2327,10 @@ class SidecarStateManager(
                                   dict[StateRef,
                                        Message]] = defaultdict(lambda: {})
 
-        # A "mutator" is either a writer or a transaction. Now a
-        # read/write lock so that read-only transactions on the same
-        # state can run concurrently while writers and write-mode
-        # transactions remain exclusive.
+        # Per-state read/write lock, held by writers and transactions,
+        # so that read-only transactions on the same state can run
+        # concurrently while writers and write-mode transactions remain
+        # exclusive.
         #
         # TODO(benh): replace this with a semaphore so that we can
         # free up memory for state_types, actors that are no longer
@@ -2354,7 +2370,7 @@ class SidecarStateManager(
                                                           asyncio.Task] = {}
 
         # When a writer is invoked from within a transaction only we
-        # will abstain from taking the mutator lock but we still
+        # will abstain from taking the lock but we still
         # want to only execute one writer at a time which we ensure by
         # having each writer within a transaction take a sublock.
         self._transaction_writer_locks: defaultdict[StateTypeName, defaultdict[
@@ -2480,7 +2496,7 @@ class SidecarStateManager(
         transaction: StateManager.Transaction,
     ) -> None:
         """Pop the transaction from `_participant_transactions` and
-        release the mutator lock in the mode the transaction held it.
+        release the lock in the mode the transaction held it.
         """
         transactions = self._participant_transactions[state_type].get(
             state_ref
@@ -2616,21 +2632,22 @@ class SidecarStateManager(
 
     async def wait(self) -> None:
         """Waits for this state manager to be fully shut down."""
-        for task in self._coordinator_commit_control_loop_tasks.values():
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+        await wait_for_tasks(
+            self._coordinator_commit_control_loop_tasks.values(),
+            cancel=False,
+        )
 
         # Wait for all participant watch tasks to complete.
-        for state_type_transactions in self._participant_transactions.values():
-            for transactions in state_type_transactions.values():
-                for transaction in transactions.values():
-                    if transaction.watch_task is not None:
-                        try:
-                            await transaction.watch_task
-                        except asyncio.CancelledError:
-                            pass
+        await wait_for_tasks(
+            [
+                transaction.watch_task
+                for state_type_transactions in
+                self._participant_transactions.values()
+                for transactions in state_type_transactions.values()
+                for transaction in transactions.values()
+            ],
+            cancel=False,
+        )
 
     async def shutdown_and_wait(self):
         await self.shutdown()
@@ -3062,13 +3079,13 @@ class SidecarStateManager(
         # load the state at the same time, we use a "load" event
         # which once triggered implies the state has been loaded.
         #
-        # We are specifically _not_ using the actor lock because a
-        # writer will have already acquired the lock at this point
-        # (see the 'writer()' method below) and _will not release_
-        # the lock until some later point (e.g., after it has
-        # serviced the RPC) which will hold up other readers! Once
-        # the state is loaded we want all the readers to be able
-        # to begin execution immediately.
+        # We are specifically _not_ using the lock because a writer
+        # will have already acquired the lock at this point (see the
+        # 'writer()' method below) and _will not release_ the lock
+        # until some later point (e.g., after it has serviced the RPC)
+        # which will hold up other readers! Once the state is loaded
+        # we want all the readers to be able to begin execution
+        # immediately.
         load = self._loads[state_type_name].get(state_ref)
         if load is None:
             with span(
@@ -3304,8 +3321,8 @@ class SidecarStateManager(
         state_copy: Optional[Message] = None
 
         if effects is not None:
-            # Invariant for storing actor state is that the caller
-            # holds the mutator actor lock!
+            # Invariant for storing state is that the caller holds the
+            # lock!
             #
             # TODO(benh): better yet would be to check that the current
             # asyncio context holds the lock ... maybe use a contextvar?
@@ -3676,17 +3693,6 @@ class SidecarStateManager(
                 using_restart_detection=using_restart_detection,
             )
 
-            # Mode is determined by the kind of method we're initially
-            # calling as part of this transaction. A `writer` is
-            # always exclusive, a `reader` and `transaction` start
-            # shared, but we may upgrade if we either determine that
-            # the transaction requires exclusive or if we later call a
-            # `writer`.
-            transaction.mode = (
-                Lock.Mode.EXCLUSIVE
-                if isinstance(context, WriterContext) else Lock.Mode.SHARED
-            )
-
             await self._transaction_participant_start(
                 context,
                 state_type,
@@ -3787,12 +3793,12 @@ class SidecarStateManager(
                 # transaction is committed/aborted we will finish the
                 # transaction, remove it from '_participant_transactions'
                 # (allowing other transactions to proceed), and release
-                # the mutator lock, which can not be done until after the
+                # the lock, which can not be done until after the
                 # servicer method has completed!
                 #
                 # NOTE: we CAN NOT preemptively finish the transaction,
                 # e.g., to allow other writers or transactions to proceed,
-                # because it's possible that this state type/actor might be
+                # because it's possible that this state type might be
                 # re-involved in the same transaction until the
                 # transaction has finished.
                 #
@@ -4129,7 +4135,7 @@ class SidecarStateManager(
         state_ref = context._state_ref
         # To ensure only one writer at a time we use a lock. If we're
         # in a transaction then we should already have acquired the
-        # mutator lock but we still need to acquire the "transaction
+        # lock but we still need to acquire the "transaction
         # writer lock" so that only one writer will execute at a time
         # within a transaction.
         if transaction is not None:
@@ -4581,10 +4587,6 @@ class SidecarStateManager(
                 )
 
         if not context.nested:
-            # We're starting a new transaction here, so we should
-            # have a unique identifier, and it should not already
-            # be tracked as a transaction that we're coordinating.
-            #
             # We need to register as the coordinator _before_ we
             # try and `_load()` the actor in case that raises and
             # _before_ we yield control to the servicer so any
@@ -4959,6 +4961,9 @@ class SidecarStateManager(
         """Register `transaction_id` as a transaction this server
         is the coordinator for. Called by `transaction()` for a
         top-level transaction call."""
+        # We're starting a new transaction here, so we should
+        # have a unique identifier, and it should not already
+        # be tracked as a transaction that we're coordinating.
         assert transaction_id not in self._coordinator_participants
         self._coordinator_participants[transaction_id] = asyncio.Future()
 
@@ -5805,7 +5810,7 @@ class SidecarStateManager(
                     # transaction can never have tasks.
                     assert len(
                         transaction.tasks
-                    ) == 0, ("A read-only transaction unexpectedly has tasks")
+                    ) == 0, "A read-only transaction unexpectedly has tasks"
                     transaction.prepare()
                     transaction.commit()
                     # Release the shared lock and drop the participant
@@ -6224,11 +6229,6 @@ class SidecarStateManager(
                 sidecar_transaction, middleware
             )
 
-            # Mark recovered transactions exclusive-mode. In an
-            # upcoming commit we'll never recover transactions that
-            # were read-only.
-            transaction.mode = Lock.Mode.EXCLUSIVE
-
             # This transaction should NOT already be recovered. There
             # may not yet be ANY transactions for this state.
             transactions = self._participant_transactions[
@@ -6236,7 +6236,7 @@ class SidecarStateManager(
             assert transaction.root_id not in transactions
             transactions[transaction.root_id] = transaction
 
-            # The mutator lock should not be held yet as recovery
+            # The lock should not be held yet as recovery
             # _must_ occur before we start serving and we expect at
             # most one transaction per state during recovery!
             assert not self._locks[transaction.state_type][

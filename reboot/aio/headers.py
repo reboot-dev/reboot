@@ -65,7 +65,7 @@ TRANSACTION_PARTICIPANTS_HEADER = 'x-reboot-transaction-participants'
 TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER = (
     'x-reboot-transaction-participants-to-abort'
 )
-# Transaction participants taht are read-only (expect `Prepare` but
+# Transaction participants that are read-only (expect `Prepare` but
 # don't need `Commit`).
 TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER = (
     'x-reboot-transaction-participants-read-only'

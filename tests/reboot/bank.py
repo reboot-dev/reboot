@@ -278,11 +278,10 @@ class BankServicer(Bank.Servicer):
             ),
         )
 
-        # NOTE: nested transactions no longer need to read/modify
-        # mutually exclusive state, so this could also be done by
-        # calling `Bank.Transfer` (see
-        # `test_nested_transactions` which exercises
-        # exactly that shape).
+        # A nested transaction may read and modify state shared with
+        # its ancestors, so this could also be done by calling
+        # `Bank.Transfer` (see `test_nested_transactions`, which
+        # exercises exactly that shape).
         if request.HasField('initial_deposit_transfer_from_account_id'):
             from_account = Account.ref(
                 request.initial_deposit_transfer_from_account_id

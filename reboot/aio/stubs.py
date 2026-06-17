@@ -205,7 +205,7 @@ class Stub:
             transaction_coordinator_state_ref = context.transaction_coordinator_state_ref
 
             # If we are the transaction coordinator then let our
-            # participants know that are are read-only aware.
+            # participants know that we are read-only aware.
             #
             # NOTE: we MUST NOT set `coordinator_read_only_aware =
             # True` unless we are the coordinator because otherwise we
