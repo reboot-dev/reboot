@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import bitarray  # type: ignore[import]
+import enum
 import grpc
 import hashlib
 import inspect
@@ -362,12 +363,9 @@ class StateManager(ABC):
             self.using_restart_detection = using_restart_detection
 
             # The mode in which this transaction currently holds the
-            # per-actor Lock for `(state_type, state_ref)`. Starts
-            # at `"shared"` when joined via a `ReaderContext`,
-            # otherwise `"exclusive"`. A shared-then-exclusive
-            # transaction transitions to `"exclusive"` after a
-            # successful `Lock.upgrade()`.
-            self.mode: Lock.Mode = "exclusive"
+            # per-state `Lock` for `(state_type,
+            # state_ref)`. Initialized to shared.
+            self.mode: Lock.Mode = Lock.Mode.SHARED
 
             # Resolved by the first method called on the state as part
             # of this transaction once the per-state lock has been
@@ -607,9 +605,9 @@ class StateManager(ABC):
             # Otherwise we need to relinquish ownership explicitly
             # (and then notifying streaming readers).
             if aborted:
-                exclusive = self.mode == "exclusive"
+                exclusive = self.mode == Lock.Mode.EXCLUSIVE
                 self._rollback(snapshot)
-                if exclusive and self.mode == "shared":
+                if exclusive and self.mode == Lock.Mode.SHARED:
                     # Nested transaction acquired `lock` exclusively
                     # but the rolled-back state only needs shared;
                     # downgrade lock.
@@ -893,7 +891,7 @@ class StateManager(ABC):
                     # part of the transaction it just doesn't have any
                     # effects), otherwise we want what ever the
                     # ancestor's `mode` was.
-                    mode=self.mode if used_by_ancestor else "shared",
+                    mode=self.mode if used_by_ancestor else Lock.Mode.SHARED,
                     state=(
                         self.state.SerializeToString(deterministic=True)
                         if self.state is not None else None
@@ -1515,7 +1513,9 @@ class Lock:
     ensures a single exclusive holder.
     """
 
-    Mode: TypeAlias = Literal["shared", "exclusive"]
+    class Mode(enum.Enum):
+        SHARED = "shared"
+        EXCLUSIVE = "exclusive"
 
     class _Waiter:
 
@@ -1556,7 +1556,9 @@ class Lock:
     ) -> None:
         if self.try_acquire_shared():
             return
-        await self._wait(mode="shared", deadline_seconds=deadline_seconds)
+        await self._wait(
+            mode=Lock.Mode.SHARED, deadline_seconds=deadline_seconds
+        )
 
     async def acquire_exclusive(
         self,
@@ -1566,7 +1568,9 @@ class Lock:
     ) -> None:
         if self.try_acquire_exclusive():
             return
-        await self._wait(mode="exclusive", deadline_seconds=deadline_seconds)
+        await self._wait(
+            mode=Lock.Mode.EXCLUSIVE, deadline_seconds=deadline_seconds
+        )
 
     async def upgrade(
         self,
@@ -1612,17 +1616,17 @@ class Lock:
         # (shared) waiters.
         self._exclusive = False
         self._shared = 1
-        self._maybe_grant_next(released="exclusive")
+        self._maybe_grant_next(released=Lock.Mode.EXCLUSIVE)
 
     def release_shared(self) -> None:
         assert self._shared > 0
         self._shared -= 1
-        self._maybe_grant_next(released="shared")
+        self._maybe_grant_next(released=Lock.Mode.SHARED)
 
     def release_exclusive(self) -> None:
         assert self._exclusive
         self._exclusive = False
-        self._maybe_grant_next(released="exclusive")
+        self._maybe_grant_next(released=Lock.Mode.EXCLUSIVE)
 
     @asynccontextmanager
     async def shared(
@@ -1654,7 +1658,7 @@ class Lock:
         if self._exclusive or self._upgrader is not None:
             return False
         # Exclusive-waiter-starvation guard.
-        if any(waiter.mode == "exclusive" for waiter in self._waiters):
+        if any(waiter.mode == Lock.Mode.EXCLUSIVE for waiter in self._waiters):
             return False
         self._shared += 1
         return True
@@ -1702,7 +1706,7 @@ class Lock:
         """
         assert (mode is None) == upgrade
         if upgrade:
-            mode = "exclusive"
+            mode = Lock.Mode.EXCLUSIVE
         assert mode is not None
 
         waiter = Lock._Waiter(mode)
@@ -1743,7 +1747,7 @@ class Lock:
                 waiter.future.done() and not waiter.future.cancelled() and
                 waiter.future.exception() is None
             ):
-                if mode == "shared":
+                if mode == Lock.Mode.SHARED:
                     self.release_shared()
                 else:
                     self.release_exclusive()
@@ -1770,7 +1774,7 @@ class Lock:
             # shared hold). An upgrader can be granted if there are no
             # other remaining shared holders, bypassing any queued
             # exclusive waiters.
-            assert released == "shared"
+            assert released == Lock.Mode.SHARED
             if self._shared == 1:
                 upgrader = self._upgrader
                 self._upgrader = None
@@ -1783,17 +1787,17 @@ class Lock:
 
         # Nothing to do if we released a shared hold but still have
         # shared holders.
-        if released == "shared" and self._shared > 0:
+        if released == Lock.Mode.SHARED and self._shared > 0:
             return
 
         # Otherwise we just released exclusive or we just released the
         # last shared hold.
-        assert released == "exclusive" or self._shared == 0
+        assert released == Lock.Mode.EXCLUSIVE or self._shared == 0
 
         # Grant waiters in FIFO ordering.
         while self._waiters:
             waiter = self._waiters[0]
-            if waiter.mode == "exclusive":
+            if waiter.mode == Lock.Mode.EXCLUSIVE:
                 # We may have granted a shared waiter below if the
                 # _first_ waiter was not exclusive and thus we've now
                 # hit an exclusive waiter and need to return.
@@ -1804,7 +1808,7 @@ class Lock:
                 if not waiter.future.done():
                     waiter.future.set_result(None)
                 return
-            # mode == "shared"
+            # mode == Lock.Mode.SHARED
             self._waiters.pop(0)
             self._shared += 1
             if not waiter.future.done():
@@ -2497,7 +2501,7 @@ class SidecarStateManager(
             del self._participant_transactions[state_type][state_ref]
 
         lock = self._locks[state_type][state_ref]
-        if transaction.mode == "exclusive":
+        if transaction.mode == Lock.Mode.EXCLUSIVE:
             lock.release_exclusive()
         else:
             lock.release_shared()
@@ -3000,7 +3004,7 @@ class SidecarStateManager(
                     state_type_name, state_ref
                 ).values():
                     if (
-                        ongoing_transaction.mode == "exclusive" and
+                        ongoing_transaction.mode == Lock.Mode.EXCLUSIVE and
                         ongoing_transaction.prepared()
                     ):
                         # There is an exclusive transaction ongoing
@@ -3689,7 +3693,8 @@ class SidecarStateManager(
             # the transaction requires exclusive or if we later call a
             # `writer`.
             transaction.mode = (
-                "exclusive" if isinstance(context, WriterContext) else "shared"
+                Lock.Mode.EXCLUSIVE
+                if isinstance(context, WriterContext) else Lock.Mode.SHARED
             )
 
             await self._transaction_participant_start(
@@ -3722,7 +3727,7 @@ class SidecarStateManager(
             # participant is not read-only which correctly wins/taints
             # as we merge participants back up to the coordinator.
             read_only=(
-                transaction.mode == "shared" and
+                transaction.mode == Lock.Mode.SHARED and
                 context.idempotency_key is None and
                 transaction.using_restart_detection
             ),
@@ -4143,9 +4148,9 @@ class SidecarStateManager(
             # `"exclusive"` so we serialize against any other holder.
             # `upgrade()` beats exclusive waiters queued for the lock,
             # preserving the transaction's initial read of state.
-            if transaction.mode == "shared":
+            if transaction.mode == Lock.Mode.SHARED:
                 await self._locks[state_type_name][state_ref].upgrade()
-                transaction.mode = "exclusive"
+                transaction.mode = Lock.Mode.EXCLUSIVE
                 # And now `context.participants` should no longer
                 # propagate this participant as read-only.
                 context.participants.add(
@@ -4552,11 +4557,11 @@ class SidecarStateManager(
                 # Upgrade the lock if we're currently only holding the
                 # lock as shared but we've got effects that need
                 # exclusive.
-                if transaction.mode == "shared" and effects.requires_exclusive(
+                if transaction.mode == Lock.Mode.SHARED and effects.requires_exclusive(
                     initial_state_bytes=initial_state_bytes,
                 ):
                     await self._locks[state_type_name][state_ref].upgrade()
-                    transaction.mode = "exclusive"
+                    transaction.mode = Lock.Mode.EXCLUSIVE
                     # And now `context.participants` should no longer
                     # propagate this participant as read-only.
                     context.participants.add(
@@ -4926,7 +4931,7 @@ class SidecarStateManager(
         # so concurrent callers on the same transaction can
         # proceed (or propagate our failure).
         try:
-            if transaction.mode == "shared":
+            if transaction.mode == Lock.Mode.SHARED:
                 await self._locks[state_type][state_ref].acquire_shared()
             else:
                 await self._locks[state_type][state_ref].acquire_exclusive()
@@ -5784,7 +5789,7 @@ class SidecarStateManager(
                 # prepared + committed in memory, and release the read
                 # lock immediately.
                 if (
-                    transaction.mode == "shared" and
+                    transaction.mode == Lock.Mode.SHARED and
                     # NOTE: at this point if
                     # `transaction.idempotency_key is not None` then
                     # `len(transaction.idempotent_mutations) > 0`.
@@ -5845,7 +5850,7 @@ class SidecarStateManager(
                             # shared lock means its
                             # `transaction.state` has not been
                             # mutated!
-                            transaction.mode == "exclusive" else None
+                            transaction.mode == Lock.Mode.EXCLUSIVE else None
                         ),
                         task_upserts=[
                             task.to_sidecar_task()
@@ -6218,7 +6223,7 @@ class SidecarStateManager(
             # Mark recovered transactions exclusive-mode. In an
             # upcoming commit we'll never recover transactions that
             # were read-only.
-            transaction.mode = "exclusive"
+            transaction.mode = Lock.Mode.EXCLUSIVE
 
             # This transaction should NOT already be recovered. There
             # may not yet be ANY transactions for this state.
