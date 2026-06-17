@@ -1477,7 +1477,8 @@ except RuntimeError:
     asyncio.run(validate_semaphore_semantics_once())
 
 # Default seconds we will wait to acquire one of the per-state locks
-# before raising `Unavailable`.
+# before raising `Unavailable`. We bound the wait instead of blocking
+# forever so that a deadlock can not wedge the system indefinitely.
 LOCK_ACQUIRE_DEADLINE_DEFAULT_SECONDS = 30.0
 
 
@@ -1611,10 +1612,11 @@ class Lock:
         assert self._exclusive, (
             "downgrade() requires the caller to already hold exclusive"
         )
+        self._exclusive = False
         # An exclusive holder rules out any shared holders, so we
         # become the sole shared holder and then grant the compatible
         # (shared) waiters.
-        self._exclusive = False
+        assert self._shared == 0
         self._shared = 1
         self._maybe_grant_next(released=Lock.Mode.EXCLUSIVE)
 
@@ -1712,6 +1714,9 @@ class Lock:
         waiter = Lock._Waiter(mode)
 
         if upgrade:
+            # If we've already got a upgrader that is waiting we fail
+            # fast because otherwise each upgrader would sit on their
+            # shared hold and we'd deadlock.
             if self._upgrader is not None:
                 raise SystemAborted(
                     Unavailable(),
@@ -4143,11 +4148,15 @@ class SidecarStateManager(
         # within a transaction.
         if transaction is not None:
             assert self._locks[state_type_name][state_ref].is_locked()
-            # If the transaction joined this state in `"shared"` mode
-            # (because the first call was a reader), upgrade to
-            # `"exclusive"` so we serialize against any other holder.
-            # `upgrade()` beats exclusive waiters queued for the lock,
-            # preserving the transaction's initial read of state.
+            # A writer is very likely to mutate this state, so it
+            # needs the lock "exclusive". If the transaction joined in
+            # "shared" mode (its first call was a reader), upgrade
+            # now, eagerly, before the writer runs — rather than
+            # waiting to see whether it actually stores. The upgrade
+            # can fail (when another upgrader is already pending it
+            # raises `Unavailable` and the transaction retries), and
+            # the later it fails the more of the transaction's work is
+            # wasted.
             if transaction.mode == Lock.Mode.SHARED:
                 await self._locks[state_type_name][state_ref].upgrade()
                 transaction.mode = Lock.Mode.EXCLUSIVE
