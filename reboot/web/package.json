@@ -1,6 +1,6 @@
 {
   "name": "@reboot-dev/reboot-web",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "npm package for Reboot Web",
   "main": "index.js",
   "type": "module",
@@ -10,13 +10,13 @@
   },
   "author": "reboot-dev",
   "dependencies": {
-    "@reboot-dev/reboot-api": "1.1.0",
+    "@reboot-dev/reboot-api": "1.2.0",
     "@scarf/scarf": "1.4.0",
     "js-sha1": "0.7.0",
     "lru-cache-idb": "^0.5.2",
     "tslib": "^2.6.2",
     "typescript": "4.8.4",
-    "uuid": "11.1.0"
+    "uuid": "^11.1.1"
   },
   "peerDependencies": {
     "@bufbuild/protobuf": "1.10.1"

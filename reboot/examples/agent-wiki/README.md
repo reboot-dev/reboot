@@ -74,14 +74,13 @@ for manual fix-ups).
 
 ```bash
 # Install Python dependencies and create the virtualenv.
-rye sync
-source .venv/bin/activate
+uv sync
 
 # Install web dependencies.
 cd web && npm install && cd ..
 
 # Generate API code (Python + React bindings).
-rbt generate
+uv run rbt generate
 
 # Build the React UIs.
 cd web && npm run build && cd ..
@@ -99,7 +98,7 @@ When deployed to Reboot Cloud, store the key as a Reboot
 secret instead:
 
 ```bash
-rbt cloud secret set --application-name=agent-wiki ANTHROPIC_API_KEY=sk-ant-...
+uv run rbt cloud secret set --application-name=agent-wiki ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 Cloud injects each secret into the application's environment
@@ -108,21 +107,24 @@ is what the Anthropic SDK reads directly — the same code works
 in both places.
 
 Then run the app (each command in its own terminal, from the
-project directory, with `.venv` activated):
+project directory):
 
 ```bash
 # Terminal 1: start the Reboot backend.
-rbt dev run
+uv run rbt dev run
 
 # Terminal 2: start the Vite dev server for Hot Module Replacement.
 cd web && npm run dev
 ```
 
+Then open <http://localhost:9991> and follow the setup wizard to
+connect a chat host (such as Claude or ChatGPT) to the app.
+
 State persists between restarts under the name `agent-wiki`
 (configured in `.rbtrc`). To wipe it:
 
 ```bash
-rbt dev expunge --application-name=agent-wiki
+uv run rbt dev expunge --application-name=agent-wiki
 ```
 
 ## Running the tests
@@ -133,24 +135,17 @@ making any real Anthropic calls (the LLM is replaced by a
 scripted Pydantic AI `FunctionModel`).
 
 ```bash
-rye sync
-source .venv/bin/activate
-pytest backend/
+uv sync
+uv run pytest backend/
 ```
 
-## Testing with MCPJam Inspector
+## Try it out
 
-`mcp_servers.json` is pre-configured. In another terminal:
-
-```bash
-npx @mcpjam/inspector@2.9.3 --config mcp_servers.json --server agent-wiki
-```
-
-Try these prompts to exercise each capability. The librarian
-works asynchronously, so after an `add_transcript` call watch
-the backend log for `librarian[...] tool call ...` lines to see
-it read the wiki, decide where material belongs, and rewrite
-pages.
+From the connected chat host, try these prompts to exercise
+each capability. The librarian works asynchronously, so after
+an `add_transcript` call watch the backend log for
+`librarian[...] tool call ...` lines to see it read the wiki,
+decide where material belongs, and rewrite pages.
 
 1. `Create a wiki called "Team Knowledge Base" about
    engineering runbooks.` — exercises `create_wiki`, which

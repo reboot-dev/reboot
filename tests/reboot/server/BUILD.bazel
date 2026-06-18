@@ -27,7 +27,9 @@ py_library(
 
 py_test(
     name = "docker_local_envoy_test_py",
-    timeout = "short",
+    # Dockerized Envoy startup makes this too slow for a "short" (60s)
+    # budget on slower CI runners, where it times out.
+    timeout = "moderate",
     srcs = ["docker_local_envoy_runner.py"],
     main = "docker_local_envoy_runner.py",
     tags = ["requires-docker"],
@@ -39,6 +41,17 @@ py_test(
         "//reboot/ssl:localhost_py",
         "//tests/reboot:general_boilerplate_py_reboot",
         "//tests/reboot:test_helpers_py",
+    ],
+)
+
+py_test(
+    name = "local_envoy_factory_test_py",
+    timeout = "short",
+    srcs = ["local_envoy_factory_test.py"],
+    main = "local_envoy_factory_test.py",
+    deps = [
+        "//reboot:settings_py",
+        "//reboot/server:local_envoy_factory_py",
     ],
 )
 
@@ -56,6 +69,25 @@ py_test(
         "//tests/reboot:general_boilerplate_py_reboot",
         "//tests/reboot:test_helpers_py",
     ],
+)
+
+py_test(
+    name = "database_native_min_macos_version_test_py",
+    timeout = "short",
+    srcs = ["database_native_min_macos_version_test.py"],
+    args = ["$(rootpath //reboot/server:database_native)"],
+    data = ["//reboot/server:database_native"],
+    main = "database_native_min_macos_version_test.py",
+    # `target_compatible_with` makes wildcard invocations (`bazel build
+    # //...`, `bazel test //...`) skip this on non-macOS hosts. The
+    # `requires-macos` tag additionally keeps it out of the CI job that
+    # enumerates `tests(//tests/...)` and passes the list to `xargs
+    # bazel build`, where an incompatible target named explicitly would
+    # be a error rather than a skip.
+    tags = ["requires-macos"],
+    # `otool` and the `.dylib`'s macOS minimum-version load command only
+    # exist on macOS; on other hosts there is no floor to check.
+    target_compatible_with = ["@platforms//os:osx"],
 )
 
 cc_test(

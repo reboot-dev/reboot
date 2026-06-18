@@ -6,7 +6,7 @@ import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <RebootClientProvider url={"https://dev.localhost.direct:9991"}>
+    <RebootClientProvider url={"http://localhost:9991"}>
       <App />
     </RebootClientProvider>
   </React.StrictMode>

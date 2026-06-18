@@ -8,6 +8,7 @@ from log.log import get_logger
 from pathlib import Path
 from reboot.aio.types import ApplicationId
 from reboot.server.local_envoy import LocalEnvoy
+from reboot.settings import LocalEnvoyMode
 from typing import Optional
 
 logger = get_logger(__name__)
@@ -77,6 +78,10 @@ class ExecutableLocalEnvoy(LocalEnvoy):
         )
 
         self._process: Optional[asyncio.subprocess.Process] = None
+
+    @property
+    def _mode(self) -> LocalEnvoyMode:
+        return LocalEnvoyMode.EXECUTABLE
 
     @property
     def public_port(self) -> int:

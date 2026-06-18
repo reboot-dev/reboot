@@ -7,8 +7,6 @@ backend/api/
 # Reboot runtime state
 .rbt/
 
-# uv lockfile (regenerated from pyproject.toml)
-uv.lock
 
 # Byte-compiled files
 __pycache__/

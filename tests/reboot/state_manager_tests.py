@@ -4,6 +4,7 @@ import os
 import unittest
 import unittest.mock
 import uuid
+from datetime import timedelta
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.timestamp_pb2 import Timestamp
 from google.protobuf.wrappers_pb2 import StringValue
@@ -31,6 +32,7 @@ from reboot.aio.resolvers import NoResolver
 from reboot.aio.servicers import RebootServiceable, Servicer
 from reboot.aio.state_managers import (
     Effects,
+    Lock,
     ScalableBloomFilter,
     SidecarStateManager,
 )
@@ -773,6 +775,395 @@ class StateManagerTestCase(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(transaction)
             # Legacy behavior is the transaction should be stored.
             self.assertTrue(transaction._stored)
+
+
+class LockTest(unittest.IsolatedAsyncioTestCase):
+
+    async def test_initial_state_is_unlocked(self) -> None:
+        lock = Lock()
+        self.assertFalse(lock.is_locked())
+        self.assertFalse(lock.is_shared_locked())
+        self.assertFalse(lock.is_exclusive_locked())
+
+    async def test_acquire_shared_grants_immediately(self) -> None:
+        lock = Lock()
+        await lock.acquire_shared(deadline=None)
+        self.assertTrue(lock.is_shared_locked())
+        self.assertFalse(lock.is_exclusive_locked())
+        lock.release_shared()
+        self.assertFalse(lock.is_locked())
+
+    async def test_acquire_exclusive_grants_immediately(self) -> None:
+        lock = Lock()
+        await lock.acquire_exclusive(deadline=None)
+        self.assertTrue(lock.is_exclusive_locked())
+        self.assertFalse(lock.is_shared_locked())
+        lock.release_exclusive()
+        self.assertFalse(lock.is_locked())
+
+    async def test_two_shared_holders_run_concurrently(self) -> None:
+        """Two `acquire_shared` calls both succeed without either
+        blocking."""
+        lock = Lock()
+        await lock.acquire_shared(deadline=None)
+        # A second shared acquire should be immediate; if it were
+        # blocking we would hang here rather than the explicit
+        # timeout below.
+        await asyncio.wait_for(lock.acquire_shared(deadline=None), timeout=1.0)
+        self.assertTrue(lock.is_shared_locked())
+        lock.release_shared()
+        lock.release_shared()
+        self.assertFalse(lock.is_locked())
+
+    async def test_exclusive_waits_for_shared(self) -> None:
+        lock = Lock()
+        await lock.acquire_shared(deadline=None)
+
+        exclusive_acquired = asyncio.Event()
+
+        async def exclusive() -> None:
+            await lock.acquire_exclusive(deadline=None)
+            exclusive_acquired.set()
+
+        exclusive_task = asyncio.create_task(exclusive())
+        # Exclusive must not have acquired yet.
+        await asyncio.sleep(0)
+        self.assertFalse(exclusive_acquired.is_set())
+        # Release the shared hold and the exclusive should proceed.
+        lock.release_shared()
+        await asyncio.wait_for(exclusive_acquired.wait(), timeout=1.0)
+        self.assertTrue(lock.is_exclusive_locked())
+        lock.release_exclusive()
+        await exclusive_task
+
+    async def test_shared_waits_for_exclusive(self) -> None:
+        lock = Lock()
+        await lock.acquire_exclusive(deadline=None)
+
+        shared_acquired = asyncio.Event()
+
+        async def shared() -> None:
+            await lock.acquire_shared(deadline=None)
+            shared_acquired.set()
+
+        shared_task = asyncio.create_task(shared())
+        await asyncio.sleep(0)
+        self.assertFalse(shared_acquired.is_set())
+        lock.release_exclusive()
+        await asyncio.wait_for(shared_acquired.wait(), timeout=1.0)
+        self.assertTrue(lock.is_shared_locked())
+        lock.release_shared()
+        await shared_task
+
+    async def test_exclusive_starvation_guard(self) -> None:
+        """A fresh `acquire_shared` arriving after an exclusive
+        waiter is queued does not join the active shared cohort: it
+        queues behind the exclusive waiter.
+        """
+        lock = Lock()
+        await lock.acquire_shared(deadline=None)
+
+        exclusive_acquired = asyncio.Event()
+        late_shared_acquired = asyncio.Event()
+
+        async def exclusive() -> None:
+            await lock.acquire_exclusive(deadline=None)
+            exclusive_acquired.set()
+
+        async def late_shared() -> None:
+            await lock.acquire_shared(deadline=None)
+            late_shared_acquired.set()
+
+        exclusive_task = asyncio.create_task(exclusive())
+        # Give the exclusive a chance to queue.
+        await asyncio.sleep(0)
+        late_shared_task = asyncio.create_task(late_shared())
+        await asyncio.sleep(0)
+
+        # Neither queued waiter has acquired yet.
+        self.assertFalse(exclusive_acquired.is_set())
+        self.assertFalse(late_shared_acquired.is_set())
+
+        # Release the original shared hold; the exclusive should win,
+        # not the late shared.
+        lock.release_shared()
+        await asyncio.wait_for(exclusive_acquired.wait(), timeout=1.0)
+        self.assertFalse(late_shared_acquired.is_set())
+        lock.release_exclusive()
+        await asyncio.wait_for(late_shared_acquired.wait(), timeout=1.0)
+        lock.release_shared()
+        await exclusive_task
+        await late_shared_task
+
+    async def test_upgrade_when_sole_shared_holder_is_immediate(
+        self,
+    ) -> None:
+        lock = Lock()
+        await lock.acquire_shared(deadline=None)
+        await asyncio.wait_for(lock.upgrade(deadline=None), timeout=1.0)
+        self.assertTrue(lock.is_exclusive_locked())
+        self.assertFalse(lock.is_shared_locked())
+        lock.release_exclusive()
+
+    async def test_upgrade_beats_queued_exclusive(self) -> None:
+        """A shared-to-exclusive upgrade jumps past exclusive waiters
+        queued for the lock — this preserves the upgrading
+        transaction's shared-consistent view of the state.
+        """
+        lock = Lock()
+        await lock.acquire_shared(deadline=None)
+
+        queued_exclusive_acquired = asyncio.Event()
+
+        async def queued_exclusive() -> None:
+            await lock.acquire_exclusive(deadline=None)
+            queued_exclusive_acquired.set()
+
+        # Queue an exclusive waiter behind the shared hold.
+        queued_exclusive_task = asyncio.create_task(queued_exclusive())
+        await asyncio.sleep(0)
+
+        # Upgrade should be immediate (we are sole shared holder) and
+        # the queued exclusive must NOT have been granted in the
+        # meantime.
+        await asyncio.wait_for(lock.upgrade(deadline=None), timeout=1.0)
+        self.assertTrue(lock.is_exclusive_locked())
+        self.assertFalse(queued_exclusive_acquired.is_set())
+
+        # Release; the queued exclusive can now proceed.
+        lock.release_exclusive()
+        await asyncio.wait_for(queued_exclusive_acquired.wait(), timeout=1.0)
+        lock.release_exclusive()
+        await queued_exclusive_task
+
+    async def test_upgrade_waits_for_other_shared_holders_to_drain(
+        self,
+    ) -> None:
+        lock = Lock()
+        await lock.acquire_shared(deadline=None)
+        await lock.acquire_shared(deadline=None)  # Second shared holder.
+
+        upgraded = asyncio.Event()
+
+        async def upgrader() -> None:
+            await lock.upgrade(deadline=None)
+            upgraded.set()
+
+        upgrader_task = asyncio.create_task(upgrader())
+        await asyncio.sleep(0)
+        # Other shared holder still holds the lock; upgrade must wait.
+        self.assertFalse(upgraded.is_set())
+
+        # Release the second shared holder; upgrade should now be
+        # granted.
+        lock.release_shared()
+        await asyncio.wait_for(upgraded.wait(), timeout=1.0)
+        self.assertTrue(lock.is_exclusive_locked())
+        lock.release_exclusive()
+        await upgrader_task
+
+    async def test_second_upgrade_fast_fails(self) -> None:
+        """Two shared holders both trying to upgrade is a deadlock
+        by construction. The lock should fast-fail the second
+        attempt.
+        """
+        lock = Lock()
+        await lock.acquire_shared(deadline=None)
+        await lock.acquire_shared(deadline=None)
+
+        # The first upgrade waits for the other shared holder to
+        # drain.
+        first_upgrade_task = asyncio.create_task(lock.upgrade(deadline=None))
+        await asyncio.sleep(0)
+        self.assertFalse(first_upgrade_task.done())
+
+        # The second upgrade attempt must fail immediately.
+        with self.assertRaises(SystemAborted) as aborted:
+            await lock.upgrade(deadline=None)
+        self.assertEqual(type(aborted.exception.error), Unavailable)
+
+        # Cleanup: release the other shared holder so the first
+        # upgrade completes, then release the exclusive hold.
+        lock.release_shared()
+        await asyncio.wait_for(first_upgrade_task, timeout=1.0)
+        lock.release_exclusive()
+
+    async def test_downgrade_when_sole_holder(self) -> None:
+        lock = Lock()
+        await lock.acquire_exclusive(deadline=None)
+        lock.downgrade()
+        self.assertTrue(lock.is_shared_locked())
+        self.assertFalse(lock.is_exclusive_locked())
+        lock.release_shared()
+        self.assertFalse(lock.is_locked())
+
+    async def test_downgrade_grants_queued_shared(self) -> None:
+        """Downgrading from exclusive to shared lets a queued shared
+        waiter join the (now shared) holder."""
+        lock = Lock()
+        await lock.acquire_exclusive(deadline=None)
+
+        queued_shared_acquired = asyncio.Event()
+
+        async def queued_shared() -> None:
+            await lock.acquire_shared(deadline=None)
+            queued_shared_acquired.set()
+
+        queued_shared_task = asyncio.create_task(queued_shared())
+        await asyncio.sleep(0)
+        # The exclusive hold blocks the shared waiter.
+        self.assertFalse(queued_shared_acquired.is_set())
+
+        lock.downgrade()
+        await asyncio.wait_for(queued_shared_acquired.wait(), timeout=1.0)
+        # Both the downgrader and the queued waiter now hold shared.
+        self.assertTrue(lock.is_shared_locked())
+        self.assertFalse(lock.is_exclusive_locked())
+
+        lock.release_shared()
+        lock.release_shared()
+        await queued_shared_task
+
+    async def test_downgrade_keeps_exclusive_waiter_queued(self) -> None:
+        """Downgrading to shared must NOT grant a queued exclusive
+        waiter, since the downgrader still holds shared."""
+        lock = Lock()
+        await lock.acquire_exclusive(deadline=None)
+
+        queued_exclusive_acquired = asyncio.Event()
+
+        async def queued_exclusive() -> None:
+            await lock.acquire_exclusive(deadline=None)
+            queued_exclusive_acquired.set()
+
+        queued_exclusive_task = asyncio.create_task(queued_exclusive())
+        await asyncio.sleep(0)
+
+        lock.downgrade()
+        await asyncio.sleep(0)
+        # We still hold shared, so the exclusive waiter must wait.
+        self.assertFalse(queued_exclusive_acquired.is_set())
+
+        # Release our shared hold; the exclusive waiter can now proceed.
+        lock.release_shared()
+        await asyncio.wait_for(queued_exclusive_acquired.wait(), timeout=1.0)
+        lock.release_exclusive()
+        await queued_exclusive_task
+
+    async def test_shared_deadline_raises_unavailable(self) -> None:
+        lock = Lock()
+        await lock.acquire_exclusive(deadline=None)
+        with self.assertRaises(SystemAborted) as aborted:
+            await lock.acquire_shared(deadline=timedelta(seconds=0.05))
+        self.assertEqual(type(aborted.exception.error), Unavailable)
+        # Lock state should be unchanged after a failed acquire.
+        self.assertTrue(lock.is_exclusive_locked())
+        self.assertFalse(lock.is_shared_locked())
+        lock.release_exclusive()
+
+    async def test_exclusive_deadline_raises_unavailable(self) -> None:
+        lock = Lock()
+        await lock.acquire_shared(deadline=None)
+        with self.assertRaises(SystemAborted) as aborted:
+            await lock.acquire_exclusive(deadline=timedelta(seconds=0.05))
+        self.assertEqual(type(aborted.exception.error), Unavailable)
+        self.assertTrue(lock.is_shared_locked())
+        self.assertFalse(lock.is_exclusive_locked())
+        lock.release_shared()
+
+
+class EffectsRequiresExclusiveTest(unittest.TestCase):
+    """Unit tests for `Effects.requires_exclusive()`, which decides
+    whether a transaction running in shared mode must upgrade
+    to exclusive."""
+
+    def _state(
+        self,
+        title: str = "",
+        name: str = "",
+        adjective: str = "",
+    ) -> greeter_rbt.Greeter.State:
+        return greeter_rbt.Greeter.State(
+            title=title, name=name, adjective=adjective
+        )
+
+    def test_no_state_no_effects_is_no_mutation(self) -> None:
+        """Empty effects with no prior state is a read-only no-op."""
+        self.assertFalse(
+            Effects().requires_exclusive(initial_state_bytes=None)
+        )
+
+    def test_unchanged_state_is_no_mutation(self) -> None:
+        """`effects.state` byte-equal to the initial snapshot is a
+        read-only no-op (e.g., the user touched the yielded state
+        reference but mutated it back before `complete()`)."""
+        state = self._state(title="Dr", name="Jonathan", adjective="best")
+        initial_state_bytes = state.SerializeToString(deterministic=True)
+        self.assertFalse(
+            Effects(state=state).requires_exclusive(
+                initial_state_bytes=initial_state_bytes,
+            )
+        )
+
+    def test_changed_state_is_mutation(self) -> None:
+        """`effects.state` whose bytes differ from the initial
+        snapshot is a mutation."""
+        initial_state = self._state(
+            title="Dr", name="Jonathan", adjective="best"
+        )
+        initial_state_bytes = initial_state.SerializeToString(
+            deterministic=True
+        )
+        modified_state = self._state(
+            title="Dr", name="Jonathan", adjective="worst"
+        )
+        self.assertTrue(
+            Effects(state=modified_state).requires_exclusive(
+                initial_state_bytes=initial_state_bytes,
+            )
+        )
+
+    def test_construction_is_mutation(self) -> None:
+        """A non-`None` `effects.state` with no initial bytes means
+        the state didn't exist yet — i.e., this is a constructor — and
+        must persist to disk."""
+        state = self._state(title="Dr", name="Jonathan", adjective="best")
+        self.assertTrue(
+            Effects(state=state).requires_exclusive(
+                initial_state_bytes=None,
+            )
+        )
+
+    def test_tasks_alone_is_mutation(self) -> None:
+        """Scheduling a task is a write side effect that must be
+        persisted even if the state is byte-identical."""
+        state = self._state(title="Dr", name="Jonathan", adjective="best")
+        initial_state_bytes = state.SerializeToString(deterministic=True)
+        state_type = StateTypeName("tests.reboot.Greeter")
+        task = TaskEffect(
+            state_type=state_type,
+            state_ref=StateRef.from_id(state_type, "test-1234"),
+            method_name="MyCoolMethod",
+            request=Empty(),
+        )
+        self.assertTrue(
+            Effects(
+                state=state,
+                tasks=[task],
+            ).requires_exclusive(initial_state_bytes=initial_state_bytes)
+        )
+
+    def test_colocated_upserts_alone_is_mutation(self) -> None:
+        """Writing a colocated key is a write side effect that must
+        be persisted even if the state is byte-identical."""
+        state = self._state(title="Dr", name="Jonathan", adjective="best")
+        initial_state_bytes = state.SerializeToString(deterministic=True)
+        self.assertTrue(
+            Effects(
+                state=state,
+                _colocated_upserts=[("key", b"value")],
+            ).requires_exclusive(initial_state_bytes=initial_state_bytes)
+        )
 
 
 if __name__ == '__main__':

@@ -2,7 +2,7 @@
 title: Spin Up Tests with the `Reboot()` Harness
 impact: MEDIUM
 impactDescription: Without the harness, Servicer methods can't be exercised end-to-end
-tags: testing, Reboot, harness, IsolatedAsyncioTestCase, setup, authorizer, libraries
+tags: testing, Reboot, harness, IsolatedAsyncioTestCase, setup, authorizer, libraries, impersonation, bearer-token, oauth, token-verifier
 ---
 
 ## Spin Up Tests with the `Reboot()` Harness
@@ -114,70 +114,87 @@ Things to know:
   )
   ```
 
-## Permissive Authorizers in Tests
+## Test Against the Real Authorizers — Impersonate, Don't Disable
 
-Production Reboot servicers should leave `authorizer()` undefined or
-return a strict policy (e.g. `state_id_is_user_id`,
-`has_verified_token`). In production mode that means tests cannot
-just call methods — they'll be denied.
+The harness runs production-mode authorization, and that's the
+point: register the **real** servicers — the exact classes `main.py`
+registers — and give each test context a real, verified identity. A
+test that only passes with authorization disabled proves nothing
+about the application the user actually runs; the agent's
+`authorizer()` code would ship untested.
 
-The standard pattern is to **subclass each servicer and override
-`authorizer()` to `allow()` for the test suite only**, then register
-the subclasses with `Application`:
-
-```python
-from reboot.aio.auth.authorizers import allow
-from servicers.food import FoodOrderServicer, UserServicer
-
-
-class PermissiveUserServicer(UserServicer):
-    def authorizer(self):
-        return allow()
-
-
-class PermissiveFoodOrderServicer(FoodOrderServicer):
-    def authorizer(self):
-        return allow()
-
-
-APPLICATION_SERVICERS = [
-    PermissiveUserServicer,
-    PermissiveFoodOrderServicer,
-]
-```
-
-Use this when:
-
-- The servicer's real authorizer is `state_id_is_user_id` or
-  similar, and you don't care to thread a per-test user identity.
-- You want to test method **behavior** rather than authorization
-  rules.
-
-When you specifically want to test the **real** authorizer (e.g.
-"a different user cannot read this cart"), keep the production
-authorizer in place and use bearer tokens — see the next section.
-
-## Bearer Tokens for Authorized Tests
+The rule of thumb: tests may substitute the **identity layer** (the
+OAuth provider or `TokenVerifier`) — **never the authorizers**.
 
 `rbt.make_valid_oauth_access_token(user_id=...)` mints a token the
-runtime treats as a real, verified OAuth identity. Pair it with
-`create_external_context(..., bearer_token=...)` to test the
-production authorizer end-to-end:
+runtime treats as a real, verified identity. Pair it with
+`create_external_context(..., bearer_token=...)` to impersonate that
+user and exercise the production authorizer end-to-end:
 
 ```python
-self.user_id = "test-user"
-self.context = self.rbt.create_external_context(
-    name=f"test-{self.id()}",
-    bearer_token=self.rbt.make_valid_oauth_access_token(
-        user_id=self.user_id,
-    ),
-)
+from reboot.aio.auth.oauth_providers import Anonymous
+from reboot.aio.tests import OAuthProviderForTest, Reboot
+from servicers.food import APPLICATION_SERVICERS, UserServicer
+
+
+class TestFoodOrder(unittest.IsolatedAsyncioTestCase):
+
+    async def asyncSetUp(self) -> None:
+        self.rbt = Reboot()
+        await self.rbt.start()
+        await self.rbt.up(
+            Application(
+                # The REAL servicers, with their REAL authorizers.
+                servicers=APPLICATION_SERVICERS,
+                oauth=OAuthProviderForTest(Anonymous()),
+            ),
+        )
+        self.user_id = "test-user"
+        self.context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            bearer_token=self.rbt.make_valid_oauth_access_token(
+                user_id=self.user_id,
+            ),
+        )
 ```
+
+If a call is denied under the real authorizer, either the context is
+missing the right identity (fix the test, see below), or the
+authorizer has a bug — which is exactly what the test just caught.
+Don't react by weakening the authorizer.
 
 Negative auth tests use a **second** context with a different
 `user_id` and assert that calls from it are aborted. See
 [testing-external-context.md](testing-external-context.md) for
 asserting on aborts.
+
+## Identity Wiring per App Type
+
+Tests mirror the production identity wiring, substituting only the
+test-friendly arm:
+
+- **Chat app** (production uses
+  `oauth=OAuthProviderByEnvironment(...)`): pass
+  `oauth=OAuthProviderForTest(Anonymous())` (both from
+  `reboot.aio.tests` / `reboot.aio.auth.oauth_providers`) to the
+  test's `Application(...)`, as in the template above.
+- **Web app** (production uses `token_verifier=<your IdP verifier>`): pass `token_verifier=TokenVerifierForTest()` (from
+  `reboot.aio.tests`) instead. Minted tokens won't — and don't need
+  to — pass your production verifier; the verifier seam is the
+  supported swap point, and the authorizers still run for real.
+- **No identity wiring** (app has no `User` type and no rules that
+  need identity): a plain `create_external_context(name=...)`
+  without a bearer token is fine.
+
+## App-Internal-Only Methods
+
+Methods whose rule is `is_app_internal()` are reachable only from
+inside the application (e.g. other servicers), not from external
+callers. To call one from a test, create a context with
+`create_external_context(name=..., app_internal=True)`. Keep that
+context separate from user contexts: it impersonates the
+_application_, not a user, so don't reuse it for calls that should
+be attributed to a user.
 
 ## Auto-Construct Under Auth
 
@@ -188,7 +205,7 @@ authenticated user. Tests that don't use MCP skip that hook, so trigger
 it manually right after creating the context:
 
 ```python
-await PermissiveUserServicer._auto_construct(
+await UserServicer._auto_construct(
     self.context,
     state_id=self.user_id,
 )
@@ -196,6 +213,23 @@ await PermissiveUserServicer._auto_construct(
 
 Symptom if you forget: the first call into `User.ref(self.user_id)`
 aborts because the state was never constructed.
+
+## Last Resort: Permissive Authorizers
+
+It is possible to subclass a servicer and override `authorizer()` to
+`allow()` for the test suite only. **Don't reach for this** — it
+tests a different application: the one with no authorization. With
+impersonation (above) just as easy to set up, the legitimate uses
+are narrow, e.g. exercising the pure behavior of a state type whose
+authorization rules are themselves covered by other tests. If you do
+use it, say why in a comment, and keep at least one test that runs
+the real authorizers.
+
+Subclassing a servicer to mock **non-auth** behavior (e.g. replacing
+a method that calls an external service) is fine — see
+[testing-external-context.md](testing-external-context.md). The line
+is `authorizer()`: overriding it discards the very code the tests
+exist to protect.
 
 ## Use a Unique Actor ID per Test
 

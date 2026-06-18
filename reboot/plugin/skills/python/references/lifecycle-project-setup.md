@@ -31,6 +31,7 @@ my-app/
 ```
 my-app/
   .rbtrc                 # required: per-project rbt CLI config
+  .mypy.ini              # required: type-check config (see below)
   pyproject.toml         # required: Python deps
   api/                   # API definition root (referenced from .rbtrc)
     <pkg>/v1/<name>.py
@@ -46,25 +47,100 @@ my-app/
 ## `pyproject.toml`
 
 Reboot supports Python 3.10+. The only required runtime dependency is
-`reboot`. Use `rye`, `uv`, or `pip` — Reboot doesn't care.
+`reboot`. Use `uv` or `pip` — Reboot doesn't care.
 
 ```toml
 [project]
+name = "my-app"
+version = "0.1.0"
 requires-python = ">= 3.10"
 dependencies = [
-    "reboot==1.1.0",
+    "reboot==1.2.0",
 ]
 
-[tool.rye]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "mypy==1.18.1",
     "pytest>=7.4.2",
     "types-protobuf>=4.24.0.20240129",
-    "reboot==1.1.0",
 ]
-virtual = true
-managed = true
 ```
+
+`name` and `version` are required — `uv` refuses to sync without them.
+There is **no `[build-system]` table**: that tells `uv` this is a
+virtual (non-package) project — it installs the dependencies into
+`.venv` but never tries to build/install the app itself. `uv sync`
+installs the runtime deps plus the `dev` group (a uv default group)
+in one shot; then `uv run mypy backend/` and `uv run pytest` use
+that environment.
+
+If an older project still has a `[tool.rye]` table (`dev-dependencies`,
+`virtual = true`, `managed = true`), migrate it to this shape: move the
+dev dependencies into `[dependency-groups].dev` (dropping any `reboot`
+entry duplicated from the runtime deps), delete the `[tool.rye]` table,
+add `name`/`version`, and replace `requirements*.lock` with `uv lock`.
+
+## `.mypy.ini` — Type-Check Config (required)
+
+Reboot generated modules (`backend/api/<pkg>/<v>/<name>_rbt.py`) and
+your servicer code (`backend/src/`) have **no `__init__.py`** —
+`protoc` doesn't emit them — so mypy can't resolve imports like
+`from chat_room.v1.chat_room_rbt import ChatRoom` out of the box. A
+project-root `.mypy.ini` fixes this by adding the source roots to
+`mypy_path` and turning on `explicit_package_bases`. Without it,
+`mypy backend/` fails with bogus "module not found" errors and the
+type-check is useless. Create it at the project root, substituting
+your API package name for `<pkg>` in the last stanza:
+
+```ini
+# .mypy.ini — documented at
+#   https://mypy.readthedocs.io/en/stable/config_file.html
+[mypy]
+warn_unused_configs = True
+
+# Find modules in our source tree (and tests). Since `protoc` doesn't
+# generate `__init__.py` files, treat these as explicit package bases:
+#   https://mypy.readthedocs.io/en/stable/running_mypy.html#mapping-file-paths-to-modules
+mypy_path = backend/tests:backend/src:backend/api
+explicit_package_bases = True
+
+# Stricter than the default, but cheap to adhere to and high value.
+check_untyped_defs = True
+strict_equality = True
+
+# gRPC stubs ship incomplete type info; don't flag them.
+[mypy-google.api.*]
+ignore_missing_imports = True
+[mypy-google.rpc.*]
+ignore_missing_imports = True
+[mypy-grpc.*]
+ignore_missing_imports = True
+[mypy-grpc_status.*]
+ignore_missing_imports = True
+
+# The generated `*_rbt.py` for your API package is not hand-written;
+# don't type-check it (you never edit it anyway). Repeat per package.
+[mypy-<pkg>.v1.*]
+ignore_errors = True
+ignore_missing_imports = True
+```
+
+## Always Type-Check What You Write
+
+After writing or changing any Python in `backend/`, run mypy from the
+project root and fix every error before considering the work done —
+the same way you'd run the tests. The generated `*_rbt.py` stubs are
+fully typed, so mypy catches the mistakes that pass a glance (a field
+set to the wrong type, a missing or misspelled keyword argument, a
+method called with the wrong context type, a response field that
+doesn't exist):
+
+```bash
+uv run mypy backend/   # or `mypy backend/`
+```
+
+A green mypy run plus passing `uv run pytest` (see
+`testing-project-setup.md`) is the bar for "done."
 
 ## Do Not Create `__init__.py` Inside `api/`
 

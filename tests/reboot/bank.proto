@@ -64,6 +64,10 @@ message OverdraftError {
 
 message UserError {}
 
+message CatchReadOnlyUndeclaredRequest {
+  string callee_account_id = 1;
+}
+
 service AccountMethods {
   rpc Open(OpenRequest) returns (OpenResponse) {
     option (rbt.v1alpha1.method) = {
@@ -130,6 +134,31 @@ service AccountMethods {
     option (rbt.v1alpha1.method) = {
       transaction: {},
       errors: [ "UserError" ],
+    };
+  }
+
+  rpc TestReadOnlyNestedTransactionThatAborts(google.protobuf.Empty)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+      errors: [ "UserError" ],
+    };
+  }
+
+  // A read-only transaction (it never writes its state) that aborts
+  // with an _undeclared_ (unrecoverable) error.
+  rpc ReadOnlyUndeclaredAbort(google.protobuf.Empty)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // A read-only transaction that calls `ReadOnlyUndeclaredAbort` on
+  // another account and catches the resulting (unrecoverable) error,
+  // then returns normally.
+  rpc CatchReadOnlyUndeclared(CatchReadOnlyUndeclaredRequest)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
     };
   }
 }
@@ -209,10 +238,12 @@ message TestUndeclaredErrorResponse {}
 message TestCallingLegacyGrpcServiceRequest {}
 message TestCallingLegacyGrpcServiceResponse {}
 
-message TestUnsupportedNestedTransactionsRequest {
+message TestNestedTransactionsRequest {
   enum Type {
     NESTED_TXN_SAME_STATE = 0;
     NESTED_TXN_PARENT_WRITER = 1;
+    NESTED_TXN_SHARED_WRITE_ABORT = 2;
+    NESTED_TXN_READ_ONLY_ABORT = 3;
   }
 
   Type type = 1;
@@ -220,6 +251,37 @@ message TestUnsupportedNestedTransactionsRequest {
 
 message TestNestedTransactionThatAbortsRequest {
   string account_id = 1;
+}
+
+message TestInheritedOwnershipAbortRequest {
+  string account_id = 1;
+}
+
+message TestRetainReadLockAfterDeclaredAbortRequest {
+  string account_id = 1;
+}
+
+message TestRetainReadLockAfterDeclaredAbortResponse {
+  uint32 amount = 1;
+}
+
+message TestNestedCatchUndeclaredRequest {
+  string account_id = 1;
+}
+
+message TestNestedReadOnlyDoomedSubtreeRequest {
+  string catcher_account_id = 1;
+  string thrower_account_id = 2;
+}
+
+message DepositRemoteThenAbortRequest {
+  string remote_account_id = 1;
+  uint32 amount = 2;
+}
+
+message TestPrepareWaitForNestedAbortRollbackRequest {
+  string remote_account_id = 1;
+  uint32 amount = 2;
 }
 
 service BankMethods {
@@ -332,9 +394,8 @@ service BankMethods {
     };
   }
 
-  // Test unsupported nested transactions.
-  rpc TestUnsupportedNestedTransactions(
-      TestUnsupportedNestedTransactionsRequest)
+  // Test nested transactions.
+  rpc TestNestedTransactions(TestNestedTransactionsRequest)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
     };
@@ -357,6 +418,75 @@ service BankMethods {
   rpc TestNestedTransactionThatAborts(TestNestedTransactionThatAbortsRequest)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  rpc TestInheritedOwnershipAbort(TestInheritedOwnershipAbortRequest)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  rpc TestInheritedOwnershipAbortNested(TestInheritedOwnershipAbortRequest)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // Test that a nested transaction that reads a state and then aborts
+  // with a declared error keeps the state read-locked by the root
+  // transaction so a concurrent writer can not change the value we
+  // observed before the root commits.
+  rpc TestRetainReadLockAfterDeclaredAbort(
+      TestRetainReadLockAfterDeclaredAbortRequest)
+      returns (TestRetainReadLockAfterDeclaredAbortResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // Test that a nested transaction which catches an undeclared error
+  // from a sub-call and continues still aborts the whole (root)
+  // transaction.
+  rpc TestNestedCatchUndeclared(TestNestedCatchUndeclaredRequest)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // Root of a three-level, entirely read-only tree where the doom is
+  // buried: this (root) calls `Account.CatchReadOnlyUndeclared`, which
+  // calls `Account.ReadOnlyUndeclaredAbort` (read-only, undeclared
+  // abort) and catches it. Every participant is read-only, so the root
+  // would take the all-read-only two phase commit elision; the whole
+  // transaction must nonetheless abort.
+  rpc TestNestedReadOnlyDoomedSubtree(TestNestedReadOnlyDoomedSubtreeRequest)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // Test that a participant does not prepare while a nested
+  // (sub)transaction still owns it. The root deposits into a remote
+  // account via a nested transaction that then declared-aborts; the
+  // root catches the error and commits. The nested transaction's
+  // write to the remote account must be rolled back (via
+  // `RelinquishOwnership`) before the root prepares it, otherwise the
+  // root would persist the aborted write.
+  rpc TestPrepareWaitForNestedAbortRollback(
+      TestPrepareWaitForNestedAbortRollbackRequest)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // Nested transaction used by `TestPrepareWaitForNestedAbortRollback`:
+  // deposits into a remote account and then aborts with a declared
+  // error.
+  rpc DepositRemoteThenAbort(DepositRemoteThenAbortRequest)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+      errors: [ "UserError" ],
     };
   }
 }

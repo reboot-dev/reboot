@@ -17,9 +17,9 @@
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@docusaurus/core": "3.8.0",
-    "@docusaurus/plugin-google-gtag": "^3.8.0",
-    "@docusaurus/preset-classic": "3.8.0",
+    "@docusaurus/core": "3.10.1",
+    "@docusaurus/plugin-google-gtag": "^3.10.1",
+    "@docusaurus/preset-classic": "3.10.1",
     "@mdx-js/react": "^3.1.0",
     "clsx": "^2.0.0",
     "npm-run-all": "^4.1.5",
@@ -33,9 +33,9 @@
     "watch": "^0.13.0"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "3.8.0",
-    "@docusaurus/tsconfig": "3.8.0",
-    "@docusaurus/types": "3.8.0",
+    "@docusaurus/module-type-aliases": "3.10.1",
+    "@docusaurus/tsconfig": "3.10.1",
+    "@docusaurus/types": "3.10.1",
     "@tsconfig/docusaurus": "^2.0.3",
     "autoprefixer": "^10.4.20",
     "param-case": "4.0.0",
@@ -56,6 +56,6 @@
     ]
   },
   "engines": {
-    "node": ">=16.14"
+    "node": ">=20.0"
   }
 }

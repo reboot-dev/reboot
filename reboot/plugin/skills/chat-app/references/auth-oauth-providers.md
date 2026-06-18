@@ -17,20 +17,25 @@ tags: auth, oauth, development, anonymous, google, github, auth0, provider, prod
 > state**, and don't launch on a throwaway intending to "upgrade
 > later."
 
-`Application(oauth=...)` is the identity slot for an MCP Chat App. It
-takes an **`OAuthProviderSelector`** — not a provider directly — so the
-provider can depend on the run environment. The selector that ships is
+`Application(oauth=...)` is the identity slot for an MCP Chat App: what
+you pass there stands first and foremost for **identity** — it
+determines who `context.auth.user_id` says the caller is, and in an MCP
+app that principal is **the user**. There's no middle ground in an MCP
+app: either every user signs in through this OAuth flow, or the app has
+no per-user auth at all. The slot takes an **`OAuthProviderSelector`** —
+not a provider directly — so the provider can depend on the run
+environment. The selector that ships is
 `OAuthProviderByEnvironment(dev=..., prod=...)`.
 
 The **providers** you place in the `dev` / `prod` arms ship in
 `reboot.aio.auth.oauth_providers`:
 
-| Provider        | Construction                                          | Identity issued                                          | When to use                                                                                            |
-| --------------- | ----------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `Development()` | `Development()` — no args                             | stable `dev-{hash}` per fake identity, account-picker UI | Local dev only; **never in production**.                                                               |
-| `Google(...)`   | `Google(client_id=..., client_secret=...)`            | Google account's OIDC `sub` claim                        | Production apps where users sign in with Google.                                                       |
-| `GitHub(...)`   | `GitHub(client_id=..., client_secret=...)`            | GitHub user's numeric ID (as `str`)                      | Production apps where users sign in with GitHub.                                                       |
-| `Auth0(...)`    | `Auth0(domain=..., client_id=..., client_secret=...)` | Auth0 OIDC `sub` (e.g. `google-oauth2\|108…`)            | Production apps that broker sign-in through Auth0 (Google, GitHub, password, SSO) behind one provider. |
+| Provider        | Construction                                          | Identity issued                                          | When to use                                                                                                                                                    |
+| --------------- | ----------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Development()` | `Development()` — no args                             | stable `dev-{hash}` per fake identity, account-picker UI | Local dev only; **never in production**.                                                                                                                       |
+| `Google(...)`   | `Google(client_id=..., client_secret=...)`            | Google account's OIDC `sub` claim                        | Production apps where users sign in with Google.                                                                                                               |
+| `GitHub(...)`   | `GitHub(client_id=..., client_secret=...)`            | GitHub user's numeric ID (as `str`)                      | Production apps where users sign in with GitHub.                                                                                                               |
+| `Auth0(...)`    | `Auth0(domain=..., client_id=..., client_secret=...)` | Auth0 OIDC `sub` (e.g. `google-oauth2\|108…`)            | Production apps that broker sign-in through Auth0 (Google, GitHub, password, SSO) behind one provider, or that need **user management** beyond a bare user id. |
 
 `Auth0` takes a `domain=` (your tenant, e.g. `your-tenant.us.auth0.com`)
 on top of the client credentials — all its endpoints live under that
@@ -42,6 +47,19 @@ upstream in Auth0, not in your code. Because the `sub` it issues encodes
 the upstream connection (`google-oauth2|…`, `auth0|…`, `github|…`), the
 namespace-permanence rule below still applies: changing which Auth0
 connections you offer can change users' `sub`s.
+
+**Need user management, not just a user id?** `Google` / `GitHub` give
+you exactly one thing: a stable `context.auth.user_id`. If the app needs
+more — user profiles, email/password accounts, password resets, email
+verification, MFA, blocking users, an admin dashboard of who signed up —
+don't build that yourself; use `Auth0`, whose tenant provides all of it,
+and keep Reboot pointed at the one OIDC provider.
+
+**None of the shipped providers fit?** If the users live in an IdP that
+isn't Google/GitHub and can't be brokered through Auth0 (a self-hosted
+Keycloak, an internal SSO, an exotic OAuth service), you can write your
+own provider class and pass it in the same `dev=` / `prod=` arms — see
+[`auth-custom-oauth-provider.md`](auth-custom-oauth-provider.md).
 
 There is also an `Anonymous()` provider that mints a fresh
 `anon-{ULID}` per OAuth flow with no sign-in UI. It's a real provider
@@ -72,9 +90,12 @@ same OAuth machinery can also let the app act **as the user** at an
 external service — call your identity provider's own API (built in via
 `scopes=[...]` + `store_tokens=True`), or **any other** third-party
 service (which you wire up yourself with your own OAuth endpoints). That's
-a separate concern from picking a provider; the full setup for both is in
-[`auth-provider-api-calls.md`](auth-provider-api-calls.md). The rest of
-this reference is only about **identity**.
+a separate concern from picking a provider: the chat-app `store_tokens=True`
+shortcut is in
+[`auth-store-tokens.md`](auth-store-tokens.md), and the full
+host-agnostic recipe (custom endpoints + the in-`Workflow` call) is in
+[`python/references/auth-external-api-calls.md`](../../python/references/auth-external-api-calls.md).
+The rest of this reference is only about **identity**.
 
 ## Replace `Development` Before Production
 
@@ -153,7 +174,7 @@ we won't try to mirror here:
   Secret are what you pass to `GitHub(...)`. (If you need
   `store_tokens=True` with refresh tokens, register a **GitHub App**
   with expiring user tokens instead — see
-  [`auth-provider-api-calls.md`](auth-provider-api-calls.md).)
+  [`auth-store-tokens.md`](auth-store-tokens.md).)
 - **Auth0**: in the [Auth0 dashboard](https://auth0.com/docs/get-started/auth0-overview/create-applications),
   create a **Regular Web Application**. Its Domain, Client ID, and
   Client Secret are what you pass as `domain=`, `client_id=`, and

@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Skills for building AI Chat Apps with Reboot.",
-    "version": "1.0.0"
+    "version": "1.2.0"
   },
   "plugins": [
     {
@@ -19,7 +19,8 @@
         "./skills/chat-app",
         "./skills/web-app",
         "./skills/run",
-        "./skills/python"
+        "./skills/python",
+        "./skills/upgrade"
       ]
     }
   ]

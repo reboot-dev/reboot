@@ -33,6 +33,7 @@ service TopicMethods {
 
 message Topic {
   option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
   };
 
   bool broker_started = 1;

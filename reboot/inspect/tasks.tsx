@@ -96,9 +96,9 @@ function stateInfoFromTask(task: TaskInfo) {
   const stateType = task.taskId.stateType;
   const stateRef = task.taskId.stateRef;
 
-  // stateRef is formatted as "TypeName:ID". We want to extract just the
-  // ID part.
-  const colonIndex = stateRef.lastIndexOf(":");
+  // stateRef is formatted as "TypeName:ID", where the ID may itself
+  // contain colons. We want to extract just the ID part.
+  const colonIndex = stateRef.indexOf(":");
   const stateId = stateRef.substring(colonIndex + 1);
 
   return { stateType, stateId };

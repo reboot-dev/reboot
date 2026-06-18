@@ -96,23 +96,24 @@ conflict with that path.
 ```toml
 # pyproject.toml
 [project]
+name = "my-app"
+version = "0.1.0"
 requires-python = ">= 3.10"
 dependencies = [
     "reboot==<your-pinned-version>",
 ]
 
-[tool.rye]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "mypy==<pinned>",
     "pytest>=7.4.2",
     "types-protobuf>=4.24.0.20240129",
-    "reboot==<your-pinned-version>",
 ]
 ```
 
-For `uv`-managed projects, the equivalent section is
-`[dependency-groups]` with a `dev = [...]` list, or
-`[tool.uv.dev-dependencies]`.
+`uv sync` installs the `dev` group by default (it's a uv default
+group), so `uv run pytest` and `uv run mypy backend/` just work.
+`[tool.uv.dev-dependencies]` is an accepted alias for the same list.
 
 ## Running Tests
 

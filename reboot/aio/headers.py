@@ -59,7 +59,23 @@ TRANSACTION_IDS_HEADER = 'x-reboot-transaction-ids'
 TRANSACTION_COORDINATOR_STATE_TYPE_HEADER = 'x-reboot-transaction-coordinator-state-type'
 TRANSACTION_COORDINATOR_STATE_REF_HEADER = 'x-reboot-transaction-coordinator-state-ref'
 TRANSACTION_PARTICIPANTS_HEADER = 'x-reboot-transaction-participants'
-TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER = 'x-reboot-transaction-participants-to-abort'
+# Deprecated: never emitted anymore. Kept for eagerly failing
+# transactions that contain a mix of servers. Remove once no old
+# servers remain that may emit this header.
+TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER = (
+    'x-reboot-transaction-participants-to-abort'
+)
+# Transaction participants that are read-only (expect `Prepare` but
+# don't need `Commit`).
+TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER = (
+    'x-reboot-transaction-participants-read-only'
+)
+# Whether the transaction coordinator supports read-only
+# participants. New coordinators set this to `True` for
+# transactional RPCs; old coordinators never set it.
+TRANSACTION_COORDINATOR_READ_ONLY_AWARE_HEADER = (
+    'x-reboot-transaction-coordinator-read-only-aware'
+)
 
 # The header that carries the idempotency key for a mutation.
 #
@@ -101,6 +117,18 @@ INTERNAL_CALL_HEADER = 'x-reboot-internal-call'
 @dataclass(kw_only=True, frozen=True)
 class Headers:
     """Dataclass for working with reboot metadata headers.
+
+    NOTE: `from_grpc_metadata` extracts only the known headers and
+    drops others. THIS IS BY DESIGN, so that Reboot will NOT
+    transitively forward unknown headers from its inbound RPCs to its
+    outbound sub-RPCs. This enables patterns like passing flags that
+    change behavior in callee's but being able to guarnatee that if an
+    upstream callee propagates said flag that means that it also is
+    understand and will do the correct thing for that flag. An example
+    is `TRANSACTION_COORDINATOR_READ_ONLY_AWARE_HEADER`, which if it
+    gets dropped by a callee that has not yet been updated is fine,
+    but would be catastrophic if it got blindly forwarded on from a
+    callee that doesn't properly support it.
     """
     # The _target_ (callee) application's ID. May or may not be the same
     # as the caller's application ID, if they even have one.
@@ -146,6 +174,10 @@ class Headers:
     # Whether this call originates from within a Reboot method, i.e.,
     # not an `ExternalContext`.
     internal_call: bool = False
+
+    # Whether the transaction coordinator supports read-only
+    # participants.
+    coordinator_read_only_aware: bool = False
 
     def __post_init__(self):
         validate_ascii(
@@ -319,6 +351,10 @@ class Headers:
             convert=lambda value: value == 'true',
         ) or False
 
+        coordinator_read_only_aware: bool = (
+            TRANSACTION_COORDINATOR_READ_ONLY_AWARE_HEADER in raw_headers
+        )
+
         return cls(
             application_id=application_id,
             server_id=server_id,
@@ -337,6 +373,7 @@ class Headers:
             traceparent=traceparent,
             tracestate=tracestate,
             internal_call=internal_call,
+            coordinator_read_only_aware=coordinator_read_only_aware,
         )
 
     @property
@@ -431,6 +468,14 @@ class Headers:
                 return ((INTERNAL_CALL_HEADER, 'true'),)
             return ()
 
+        def maybe_add_coordinator_read_only_aware_header(
+        ) -> GrpcMetadata | tuple[()]:
+            if self.coordinator_read_only_aware:
+                return (
+                    (TRANSACTION_COORDINATOR_READ_ONLY_AWARE_HEADER, 'true'),
+                )
+            return ()
+
         return (
             ((STATE_REF_HEADER, self.state_ref.to_str()),) +
             maybe_add_application_id_header() + maybe_add_server_id_header() +
@@ -438,5 +483,6 @@ class Headers:
             maybe_add_transaction_headers() + maybe_add_workflow_headers() +
             maybe_add_idempotency_key_header() +
             maybe_add_opentelemetry_headers() + maybe_add_caller_id_header() +
-            maybe_add_internal_call_header()
+            maybe_add_internal_call_header() +
+            maybe_add_coordinator_read_only_aware_header()
         )

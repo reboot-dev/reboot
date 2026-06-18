@@ -31,7 +31,10 @@
     // Since several parts of Reboot rely on Docker, and since Dev Containers
     // don't run Docker-on-Docker, we need to be able to run Docker-in-Docker.
     "ghcr.io/devcontainers/features/docker-in-docker:2": {
-      "version": "latest"
+      // Buildx is already installed via `docker-buildx-plugin` in the
+      // Dockerfile, so skip the feature's own `buildx` download.
+      "version": "latest",
+      "installDockerBuildx": false
     },
     // GitHub no longer installs sshd by default. See:
     //   https://github.com/cli/cli/issues/5739.

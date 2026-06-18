@@ -6,10 +6,16 @@ from contextlib import asynccontextmanager
 from google.protobuf.message import Message
 from grpc.aio import AioRpcError
 from log.log import get_logger
-from reboot.aio.aborted import Aborted
+from rbt.v1alpha1 import errors_pb2
+from reboot.aio.aborted import Aborted, SystemAborted
 from reboot.aio.backoff import Backoff
 from reboot.aio.caller_id import CallerID
-from reboot.aio.contexts import Context, Participants, WorkflowContext
+from reboot.aio.contexts import (
+    Context,
+    Participants,
+    TransactionContext,
+    WorkflowContext,
+)
 from reboot.aio.external import ExternalContext, InitializeContext
 from reboot.aio.headers import IDEMPOTENCY_KEY_HEADER, Headers
 from reboot.aio.idempotency import (
@@ -182,6 +188,8 @@ class Stub:
 
         workflow_iteration: Optional[int] = None
 
+        coordinator_read_only_aware: bool = False
+
         if context is not None:
             caller_id = CallerID(application_id=context.application_id)
 
@@ -195,6 +203,22 @@ class Stub:
             transaction_ids = context.transaction_ids
             transaction_coordinator_state_type = context.transaction_coordinator_state_type
             transaction_coordinator_state_ref = context.transaction_coordinator_state_ref
+
+            # If we are the transaction coordinator then let our
+            # participants know that we are read-only aware.
+            #
+            # NOTE: we MUST NOT set `coordinator_read_only_aware =
+            # True` unless we are the coordinator because otherwise we
+            # might set it in _participant_ that is aware of read-only
+            # but an upstream caller might _not_ be aware and thus we
+            # may propagate read-only participants that get dropped!
+            if isinstance(context, TransactionContext) and not context.nested:
+                coordinator_read_only_aware = True
+            else:
+                # Propagate the read-only-aware flag from the inbound RPC.
+                coordinator_read_only_aware = (
+                    context._headers.coordinator_read_only_aware
+                )
         else:
             # When we're creating a `Stub` via an `ExternalContext`,
             # we use the application ID from the asyncio context
@@ -216,6 +240,7 @@ class Stub:
             bearer_token=bearer_token,
             caller_id=caller_id,
             internal_call=context is not None,
+            coordinator_read_only_aware=coordinator_read_only_aware,
         )
 
     def _should_call_retry_unavailable(
@@ -483,25 +508,43 @@ class Stub:
                 aborted_type.from_grpc_aio_rpc_error(error)
             )
 
-            if not aborted_type.is_from_backend_and_safe(aborted):
+            if not aborted_type.is_from_backend_and_recoverable(aborted):
                 # TODO(benh): considering stringifying the exception to
                 # include in the error we raise when doing the prepare
                 # stage of two phase commit.
-                self._context.transaction_must_abort = True
+                self._context.transaction_unrecoverable_abort = True
 
             raise aborted
         except:
             # TODO(benh): considering stringifying the exception to
             # include in the error we raise when doing the prepare
             # stage of two phase commit.
-            self._context.transaction_must_abort = True
+            self._context.transaction_unrecoverable_abort = True
 
             raise
         finally:
+            saw_legacy_to_abort = False
             if call is not None:
                 participants = Participants.from_grpc_metadata(
                     await call.trailing_metadata()
                 )
                 self._context.participants.union(participants)
+                saw_legacy_to_abort = participants.saw_legacy_to_abort
 
             self._context.outstanding_rpcs -= 1
+
+            # Rolling-upgrade compatibility: an older server
+            # propagated participants to abort which we no longer
+            # support so we fail the transaction with the retryable
+            # `Unavailable` so that it can be retried, hopefully after
+            # all servers have been upgraded.
+            if saw_legacy_to_abort:
+                self._context.transaction_unrecoverable_abort = True
+                raise SystemAborted(
+                    errors_pb2.Unavailable(),
+                    message=(
+                        "A transaction participant was marked to abort "
+                        "by an older server during a rolling upgrade; "
+                        "retry required."
+                    ),
+                )

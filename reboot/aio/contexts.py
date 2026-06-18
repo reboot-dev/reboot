@@ -19,6 +19,7 @@ from reboot.aio.auth import Auth
 from reboot.aio.backoff import Backoff
 from reboot.aio.headers import (
     TRANSACTION_PARTICIPANTS_HEADER,
+    TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER,
     TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER,
     Headers,
 )
@@ -55,7 +56,6 @@ from typing import (
     Awaitable,
     Callable,
     Generic,
-    Iterable,
     Iterator,
     Optional,
     Protocol,
@@ -99,31 +99,37 @@ class MethodCompleteCallable(Protocol):
         ...
 
 
+# Module-level immutable empty set, used as the default in
+# `dict.get(..., _EMPTY)` membership checks inside `Participants`
+# so we don't allocate a throwaway `set()` per call. `frozenset`
+# is also a defense-in-depth measure: anyone accidentally mutating
+# the default would hit an `AttributeError` rather than silently
+# corrupting a one-off empty set.
+_EMPTY: frozenset[StateRef] = frozenset()
+
+
 class Participants:
     # Participants that we should commit.
     _should_commit: defaultdict[StateTypeName, set[StateRef]]
 
-    # Participants that we should abort. This is used to support a
-    # nested transaction which aborts with a declared error. In that
-    # case, we want all of its participants to abort but the parent
-    # transaction to commit.
-    _should_abort: defaultdict[StateTypeName, set[StateRef]]
-
-    # Whether or not this set of participants should all be considered
-    # aborted. Initially is `False` but once set to `True` is used to
-    # ensure no more participants are added.
-    _aborted: bool
+    # Participants that are read-only and only need to be `Prepare`'ed
+    # and should never be re-`Prepare`'ed.
+    _read_only: defaultdict[StateTypeName, set[StateRef]]
 
     @classmethod
     def from_sidecar(cls, participants: database_pb2.Participants):
-        """Constructs an instance from the sidecar protobuf representation."""
+        """Constructs an instance from the sidecar protobuf representation.
+        Goes through `add()` rather than writing the underlying sets
+        directly so the disjoint invariant gets revalidated (catches
+        any future bug in `to_sidecar` or in a hand-built proto).
+        """
         result = cls()
         for (state_type, state_refs) in participants.should_commit.items():
             for state_ref in state_refs.state_refs:
                 result.add(state_type, StateRef(state_ref))
-        for (state_type, state_refs) in participants.should_abort.items():
+        for (state_type, state_refs) in participants.read_only.items():
             for state_ref in state_refs.state_refs:
-                result.add(state_type, StateRef(state_ref), abort=True)
+                result.add(state_type, StateRef(state_ref), read_only=True)
         return result
 
     def to_sidecar(self) -> database_pb2.Participants:
@@ -137,142 +143,202 @@ class Participants:
                         ]
                     )
                 for (state_type, state_refs) in self._should_commit.items()
+                if len(state_refs) > 0
             },
-            should_abort={
+            read_only={
                 state_type:
                     database_pb2.Participants.StateRefs(
                         state_refs=[
                             state_ref.to_str() for state_ref in state_refs
                         ]
-                    ) for (state_type, state_refs) in self._should_abort.items()
+                    )
+                for (state_type, state_refs) in self._read_only.items()
+                if len(state_refs) > 0
             },
         )
 
     def __init__(self):
         self._should_commit = defaultdict(set)
-        self._should_abort = defaultdict(set)
-        self._aborted = False
+        self._read_only = defaultdict(set)
+        # Set by `from_grpc_metadata` when it decodes a deprecated
+        # `TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER` from an older
+        # server during a rolling upgrade; see the handling there.
+        self._saw_legacy_to_abort = False
 
-    def should_prepare(self) -> Iterator[Tuple[StateTypeName, StateRef]]:
+    @property
+    def saw_legacy_to_abort(self) -> bool:
+        return self._saw_legacy_to_abort
+
+    def should_prepare(
+        self,
+        *,
+        skip_read_only: bool = False,
+    ) -> Iterator[Tuple[StateTypeName, StateRef]]:
         """Returns an iterator of (state_type, state_ref) tuples for each
-        participant to prepare."""
+        participant to prepare. Includes read-only participants by
+        default, pass `skip_read_only=True` to exclude them.
+        """
         for state_type, state_ref in self.should_commit():
             yield (state_type, state_ref)
-        for state_type, state_ref in self.should_abort():
-            yield (state_type, state_ref)
+        if not skip_read_only:
+            for state_type, state_ref in self.read_only():
+                yield (state_type, state_ref)
 
     def should_commit(self) -> Iterator[Tuple[StateTypeName, StateRef]]:
         """Returns an iterator of (state_type, state_ref) tuples for each
-        participant to commit."""
+        participant that needs to be committed (read-only participants
+        are NOT included).
+        """
         for state_type, state_refs in self._should_commit.items():
             for state_ref in state_refs:
                 yield (state_type, state_ref)
 
-    def should_abort(self) -> Iterator[Tuple[StateTypeName, StateRef]]:
-        """Returns an iterator of (state_type, state_ref) tuples for each
-        participant to abort."""
-        for state_type, state_refs in self._should_abort.items():
+    def read_only(self) -> Iterator[Tuple[StateTypeName, StateRef]]:
+        """Returns the read-only participants."""
+        for state_type, state_refs in self._read_only.items():
             for state_ref in state_refs:
                 yield (state_type, state_ref)
 
-    def abort(self):
-        """Marks all participants as "to abort"."""
+    def retain_as_read_only(self):
+        """Demotes our to-commit participants to read-only.
+
+        Used when a nested transaction aborts with a declared error
+        that escapes to a catching caller: the states it observed must
+        stay read-locked by the root transaction, at their rolled-back
+        values, until the root commits — otherwise a concurrent
+        transaction could change a value the caller inferred from the
+        error. As read-only participants they propagate up the tree
+        and are prepared-and-released (not committed) at the root's two
+        phase commit."""
         for state_type, state_refs in self._should_commit.items():
-            self._should_abort[state_type].update(state_refs)
+            self._read_only[state_type].update(state_refs)
         self._should_commit.clear()
-        self._aborted = True
 
     def add(
         self,
         state_type: StateTypeName,
         state_ref: StateRef,
         *,
-        abort: bool = False,
+        read_only: bool = False,
     ):
+        """Add a participant. `read_only=True` records it in the read-only set
+        unless it is already in the commit set.  Similarly, adding a
+        participant with `read_only=False` (the default) when it was
+        previously read-only moves it to the commit set.
+        """
         assert isinstance(state_type, str)
         assert isinstance(state_ref, StateRef)
-        assert not self._aborted
-        if abort:
-            assert (
-                state_type not in self._should_commit or
-                state_ref not in self._should_commit[state_type]
-            )
-            self._should_abort[state_type].add(state_ref)
-        else:
-            assert (
-                state_type not in self._should_abort or
-                state_ref not in self._should_abort[state_type]
-            )
-            self._should_commit[state_type].add(state_ref)
-
-    def update(
-        self,
-        state_type: StateTypeName,
-        state_refs: Iterable[StateRef],
-        *,
-        abort: bool = False,
-    ):
-        # NOTE: manually looping through and calling `self.add()`
-        # instead of just using `update()` on `self._participants` and
-        # `self._participants_to_abort` to assert invariant check
-        # that participants to commit and abort are mutually
-        # exclusive.
-        for state_ref in state_refs:
-            self.add(state_type, state_ref, abort=abort)
+        if read_only:
+            # Non-read-only wins.
+            if state_ref not in self._should_commit.get(state_type, _EMPTY):
+                self._read_only[state_type].add(state_ref)
+            return
+        # Move out of `_read_only` if it was there. Callers use this
+        # path to promote a previously-read-only entry to commit.
+        if state_type in self._read_only:
+            self._read_only[state_type].discard(state_ref)
+        self._should_commit[state_type].add(state_ref)
 
     def union(self, participants: 'Participants'):
+        """Merge another `Participants` instance into this one.
+        Write-wins for the commit-vs-read classification (an entry
+        committed on either side is committed in the result)."""
         for (state_type, state_refs) in participants._should_commit.items():
-            self.update(state_type, state_refs)
-        for (state_type, state_refs) in participants._should_abort.items():
-            self.update(state_type, state_refs, abort=True)
+            for state_ref in state_refs:
+                self.add(state_type, state_ref, read_only=False)
+        for (state_type, state_refs) in participants._read_only.items():
+            for state_ref in state_refs:
+                self.add(state_type, state_ref, read_only=True)
 
-    def to_grpc_metadata(self) -> GrpcMetadata:
-        """Helper to encode transaction participants into gRPC metadata.
+    def to_grpc_metadata(
+        self,
+        *,
+        read_only_aware: bool = False,
+    ) -> GrpcMetadata:
+        """Helper to encode transaction participants into gRPC
+        metadata.
+
+        - `read_only_aware=False` (default): only
+          `TRANSACTION_PARTICIPANTS_HEADER` is emitted, carrying every
+          participant; no read-only header is sent because the
+          coordinator wouldn't understand it.
+
+        - `read_only_aware=True`: `TRANSACTION_PARTICIPANTS_HEADER` and
+          `TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER` carry disjoint
+          subsets (participants that need to be committed vs read-only
+          participants).
         """
-        return (
+        if read_only_aware:
+            should_commit = self._should_commit
+        else:
+            should_commit = defaultdict(set)
+            for (state_type, state_refs) in self._should_commit.items():
+                should_commit[state_type].update(state_refs)
+            for (state_type, state_refs) in self._read_only.items():
+                should_commit[state_type].update(state_refs)
+        metadata: GrpcMetadata = (
             (
                 TRANSACTION_PARTICIPANTS_HEADER,
                 json.dumps(
                     {
                         state_type:
                             [state_ref.to_str() for state_ref in state_refs]
-                        for (state_type,
-                             state_refs) in self._should_commit.items()
-                    }
-                )
-            ),
-            (
-                TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER,
-                json.dumps(
-                    {
-                        state_type:
-                            [state_ref.to_str() for state_ref in state_refs]
-                        for (state_type,
-                             state_refs) in self._should_abort.items()
+                        for (state_type, state_refs) in should_commit.items()
+                        if len(state_refs) > 0
                     }
                 )
             ),
         )
+        if read_only_aware:
+            metadata += (
+                (
+                    TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER,
+                    json.dumps(
+                        {
+                            state_type:
+                                [
+                                    state_ref.to_str()
+                                    for state_ref in state_refs
+                                ]
+                            for (state_type,
+                                 state_refs) in self._read_only.items()
+                            if len(state_refs) > 0
+                        }
+                    )
+                ),
+            )
+        return metadata
 
     @classmethod
     def from_grpc_metadata(cls, metadata: GrpcMetadata) -> 'Participants':
-        """Helper to decode transaction participants from gRPC metadata.
-        """
+        """Helper to decode transaction participants from gRPC metadata."""
         participants = cls()
         for (key, value) in metadata:
             if key == TRANSACTION_PARTICIPANTS_HEADER:
                 for (state_type_name, state_refs) in json.loads(value).items():
-                    participants.update(
-                        state_type_name,
-                        [StateRef(state_ref) for state_ref in state_refs],
-                    )
+                    for state_ref in state_refs:
+                        participants.add(state_type_name, StateRef(state_ref))
             elif key == TRANSACTION_PARTICIPANTS_TO_ABORT_HEADER:
+                # Rolling-upgrade compatibility: an old server (one
+                # that still has `should_abort`) propagates a nested
+                # transaction's participants that need to abort in
+                # this header. We no longer perform per-participant
+                # abort (nested transactions handle ownership
+                # relinquishment instead), so we just flag that we saw
+                # it and the stub merging this metadata
+                # (`reboot/aio/stubs.py`) turns the flag into a
+                # retryable `Unavailable` that forces the transaction
+                # to retry, hopefully, with all servers now upgraded
+                # to the new release.
+                participants._saw_legacy_to_abort = True
+            elif key == TRANSACTION_PARTICIPANTS_READ_ONLY_HEADER:
                 for (state_type_name, state_refs) in json.loads(value).items():
-                    participants.update(
-                        state_type_name,
-                        [StateRef(state_ref) for state_ref in state_refs],
-                        abort=True,
-                    )
+                    for state_ref in state_refs:
+                        participants.add(
+                            state_type_name,
+                            StateRef(state_ref),
+                            read_only=True,
+                        )
         return participants
 
 
@@ -792,7 +858,7 @@ class Context(ABC, IdempotencyManager):
 
     # Whether or not the transaction enclosing this context should
     # abort.
-    transaction_must_abort: bool
+    transaction_unrecoverable_abort: bool
 
     # Extra machinery for handling reactive contexts. Set when using
     # the `StateManager.reactively()` helper.
@@ -854,7 +920,7 @@ class Context(ABC, IdempotencyManager):
 
         self.participants = Participants()
         self.outstanding_rpcs = 0
-        self.transaction_must_abort = False
+        self.transaction_unrecoverable_abort = False
 
         self.react = None
 

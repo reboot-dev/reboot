@@ -50,8 +50,10 @@ Predicates can be `async def`. `allow_if` awaits them when needed:
 
 ```python
 async def is_team_member(*, context, state, request, **kwargs):
-    team = await Team.ref(state.team_id).read(context)
-    if context.auth.user_id in team.member_ids:
+    # `members` is a declared `Reader` method on `Team` — reading
+    # another actor always goes through its declared `Reader`s.
+    response = await Team.ref(state.team_id).members(context)
+    if context.auth.user_id in response.member_ids:
         return errors.Ok()
     return errors.PermissionDenied()
 

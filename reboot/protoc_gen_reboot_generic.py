@@ -216,6 +216,9 @@ class ProtoState:
     auto_construct: options_pb2.AutoConstruct.ValueType = (
         options_pb2.AUTO_CONSTRUCT_UNSPECIFIED
     )
+    # Whether this is a trusted Reboot library whose methods skip
+    # effect-validation re-runs (see `trusted_effects` in `options.proto`).
+    trusted_effects: bool = False
 
 
 @dataclass
@@ -696,6 +699,7 @@ class RebootProtocPlugin(ProtocPlugin):
             implements=implements,
             uis=uis,
             auto_construct=state_options.auto_construct,
+            trusted_effects=state_options.trusted_effects,
         )
 
     @staticmethod

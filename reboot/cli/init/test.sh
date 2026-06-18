@@ -37,11 +37,14 @@ cd "$TEST_TMPDIR/$TEST_DIR"
 
 echo "$PYTHON_VERSION" > .python-version
 
-rye init --virtual
-rye add --dev reboot --absolute --path=$REBOOT_WHL_FILE
+# `--bare` creates just a minimal `pyproject.toml`, without a
+# `[build-system]` table, so `uv` treats the project as virtual (not
+# itself a package).
+uv init --bare
+uv add --no-sync --dev "$REBOOT_WHL_FILE"
 
 # Create and activate a virtual environment.
-rye sync --no-lock
+uv sync
 source .venv/bin/activate
 
 rbt init --application-name=bazel_init_test

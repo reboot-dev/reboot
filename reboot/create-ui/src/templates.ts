@@ -3,12 +3,12 @@ import type { UiEntryWithPackage } from "./discover.js";
 // Templates imported as strings via esbuild's text loader
 // (`--loader:.tmpl=text`). Parameterized templates use
 // `{{variable}}` placeholders filled by `render()`.
-import viteConfigTmpl from "../templates/vite.config.ts.tmpl";
-import indexCssTmpl from "../templates/index.css.tmpl";
 import appModuleCssTmpl from "../templates/App.module.css.tmpl";
+import appTsxTmpl from "../templates/App.tsx.tmpl";
+import indexCssTmpl from "../templates/index.css.tmpl";
 import indexHtmlTmpl from "../templates/index.html.tmpl";
 import mainTsxTmpl from "../templates/main.tsx.tmpl";
-import appTsxTmpl from "../templates/App.tsx.tmpl";
+import viteConfigTmpl from "../templates/vite.config.ts.tmpl";
 
 /** Replace `{{key}}` placeholders with values. */
 function render(template: string, vars: Record<string, string>): string {
@@ -70,11 +70,11 @@ export function packageJson(
     dependencies: {
       "@modelcontextprotocol/ext-apps": "1.5.0",
       "@modelcontextprotocol/sdk": "1.29.0",
-      "@reboot-dev/reboot-react": "1.1.0",
-      "@reboot-dev/reboot-api": "1.1.0",
+      "@reboot-dev/reboot-react": "1.2.0",
+      "@reboot-dev/reboot-api": "1.2.0",
       react: "^18.2.0",
       "react-dom": "^18.2.0",
-      zod: "^3.25.0",
+      zod: "^4.0.0",
     },
     devDependencies: {
       "@types/react": "^18.2.67",

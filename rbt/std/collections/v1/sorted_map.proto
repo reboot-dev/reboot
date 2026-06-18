@@ -11,6 +11,7 @@ import "rbt/v1alpha1/options.proto";
 /// NOTE: A `SortedMap`'s state must always be empty. See #3328.
 message SortedMap {
   option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
   };
 }
 

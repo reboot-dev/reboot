@@ -24,6 +24,7 @@ from reboot.naming import (
     UserId,
     make_qualified_application_name_from_owner_id_and_application_name,
 )
+from reboot.settings import ENVVAR_REBOOT_CLOUD_API_KEY
 from typing import Optional
 
 DEFAULT_REBOOT_CLOUD_URL = "https://cloud.prod1.rbt.cloud"
@@ -49,6 +50,10 @@ def _add_common_cloud_args(subcommand: SubcommandParser) -> None:
         help="the API key to use to connect to the Reboot Cloud API",
         default=None,
         required=True,
+        # Allow passing the API key via an environment variable so that it
+        # does not appear in the shell's process listing (e.g. `ps`), which
+        # is the case when it is passed on the command line.
+        environment_variables=[ENVVAR_REBOOT_CLOUD_API_KEY],
         non_empty_string=True,
     )
     subcommand.add_argument(

@@ -203,24 +203,9 @@ dashboard.
 
 ## Connect an MCP client
 
-The app exposes an MCP server at `http://localhost:9991/mcp`.
-You can connect any MCP-compatible client.
-
-### Claude Desktop / VS Code / other clients
-
-Add the following to your MCP client configuration (also
-available in `mcp_servers.json`):
-
-```json
-{
-  "mcpServers": {
-    "reboot-swag-store": {
-      "url": "http://localhost:9991/mcp",
-      "useOAuth": true
-    }
-  }
-}
-```
+Once the app is running, open <http://localhost:9991> and
+follow the setup wizard to connect a chat host (such as Claude
+or ChatGPT) to the app.
 
 ### Try it out
 

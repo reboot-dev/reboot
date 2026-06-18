@@ -52,6 +52,7 @@ service MemoizeMethods {
 
 message Memoize {
   option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
   };
 
   bool started = 1;

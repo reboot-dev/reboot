@@ -43,8 +43,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG DIND_VERSION=2.6.0
 RUN curl https://raw.githubusercontent.com/devcontainers/features/feature_docker-in-docker_${DIND_VERSION}/src/docker-in-docker/install.sh -o /tmp/install_dind.sh \
   && chmod +x /tmp/install_dind.sh \
-  && /tmp/install_dind.sh \
+  # Skip the script's `buildx` GitHub download, since the `moby-buildx`
+  # apt package installed by this same script already provides `docker
+  # buildx`.
+  && INSTALLDOCKERBUILDX=false /tmp/install_dind.sh \
   && rm /tmp/install_dind.sh
+
+# The inner Docker daemon stores its images and containers under
+# /var/lib/docker. That directory must NOT live on this container's
+# own overlayfs: mounting an overlay whose layers themselves live on
+# an overlayfs is rejected by the kernel with `invalid argument`,
+# which breaks every `docker run` inside this container. (Docker's
+# containerd image store, the default since Docker 29, fails hard on
+# this; the older `overlay2` driver silently fell back to the slow
+# `vfs` driver.) Declaring the directory a VOLUME makes Docker place
+# it on an anonymous volume on the host's real filesystem, exactly
+# like the official `docker:dind` image does. When this image is
+# used as a Dev Container, the docker-in-docker feature mounts its
+# own named volume here instead.
+VOLUME /var/lib/docker
 
 ### Non-root user.
 #
@@ -184,19 +201,18 @@ RUN mkdir $NVM_DIR && \
 # Have the non-root user load `nvm` on login.
 RUN echo ". $NVM_DIR/nvm.sh" >> /home/$USERNAME/.bashrc
 
-# Install Rye as the target user. We configure rye to use uv and to only install
-# Python inside of a project directory.
+# Install uv as the target user.
 USER $USERNAME
-RUN curl -sSf https://raw.githubusercontent.com/astral-sh/rye/main/scripts/install.sh | RYE_VERSION="0.31.0" RYE_INSTALL_OPTION="--yes" bash \
-    && "$HOME/.rye/shims/rye" config --set-bool behavior.use-uv=true \
-    && "$HOME/.rye/shims/rye" config --set-bool behavior.global-python=false
+RUN curl -LsSf https://astral.sh/uv/0.11.13/install.sh | sh
 
 # Bazel's `--incompatible_strict_action_env` causes a hardcoded PATH to be used which
-# does not include the path where `rye` is installed. Rather than changing Bazel's PATH,
-# we ensure that `rye` is accessible on it.
+# does not include the path where `uv` is installed. Rather than changing Bazel's PATH,
+# we ensure that `uv` is accessible on it.
 # TODO: See https://github.com/reboot-dev/mono/issues/2652.
-RUN sudo ln -s "$HOME/.rye/shims/rye" /usr/local/bin/rye
-RUN echo "source \"$HOME/.rye/env\"" >> "$HOME/.bashrc"
+# Use `-f`: base images / Dev Container features may already provide a
+# `uv` there, and ours (pinned) must win.
+RUN sudo ln -sf "$HOME/.local/bin/uv" /usr/local/bin/uv
+RUN echo "export PATH=\"$HOME/.local/bin:\$PATH\"" >> "$HOME/.bashrc"
 # Then return to root.
 USER root
 

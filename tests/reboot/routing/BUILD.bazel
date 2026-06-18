@@ -11,6 +11,7 @@ py_generated_file(
         requirement("protobuf"),
         requirement("pyyaml"),
         "//reboot:helpers_py",
+        "//reboot:settings_py",
         "//reboot/server:local_envoy_py",
         "//tests/reboot:greeter_servicers_py",
     ],

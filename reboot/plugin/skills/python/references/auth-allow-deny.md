@@ -65,6 +65,14 @@ Common anti-patterns the agent should refuse:
   integrates an external IdP (typical for web apps; until it's wired,
   omit `authorizer()` so the dev-mode warning flags what's
   outstanding). See `servicer-authorizer.md` for the full table.
+- "Subclass each servicer in the test suite and override
+  `authorizer()` to `allow()`." Don't make this the default — it
+  leaves the app's authorization untested. Impersonate users
+  instead with `rbt.make_valid_oauth_access_token(user_id=...)`;
+  for web apps, substitute only the identity layer with
+  `TokenVerifierForTest`. See "Test Against the Real Authorizers"
+  in the `python` skill's `testing-harness.md` (which also covers
+  the narrow last-resort carve-out).
 
 ## `deny()` for Locked-Out Methods
 

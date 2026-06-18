@@ -9,6 +9,7 @@ The standard library uses Reboot's capabilities to build powerful data structure
 
 The current libraries are:
 * [Ciphertext](./ciphertext) - Envelope encryption with a revocable wrapping key: encrypt values at rest and crypto-shred them by destroying a single key.
+* [OAuth Token Manager](./oauth_token_manager) - An encrypted, per-service store for your users' OAuth tokens, so your application can call external services on their behalf.
 * [PubSub](./pubsub) - A pub/sub implementation that enables you to subscribe and broadcast to topics.
 * [Queue](./queue) - A durable queue implementation that allows you to enqueue and dequeue items.
 * [OrderedMap](./ordered_map) - A newer implementation of a collection / dictionary / map that may be larger than memory. We recommend using this.

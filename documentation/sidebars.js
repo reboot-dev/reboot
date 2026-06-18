@@ -116,6 +116,7 @@ const sidebars = {
         },
         "learn_more/testing",
         "learn_more/auth",
+        "learn_more/identity_and_external_apis",
         "learn_more/secrets",
         "learn_more/errors",
         "learn_more/tasks",
@@ -132,6 +133,7 @@ const sidebars = {
         "library_services/overview",
         "library_services/ciphertext",
         "library_services/mailgun",
+        "library_services/oauth_token_manager",
         "library_services/ordered_map",
         "library_services/pubsub",
         "library_services/queue",
@@ -143,6 +145,11 @@ const sidebars = {
       type: "doc",
       id: "develop_locally",
       label: "Develop locally",
+    },
+    {
+      type: "doc",
+      id: "upgrade",
+      label: "Upgrade Reboot",
     },
     "tools/cli",
     {

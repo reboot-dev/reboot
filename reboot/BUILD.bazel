@@ -622,32 +622,14 @@ sh_binary(
     deps = [":stage_and_publish_local_lib"],
 )
 
-# TODO: This `sh_library` is a necessary indirection until Bazel 6, because a `sh_binary`
-# does not actually force a `data` attribute to build, but a `sh_library` does. We can
-# remove the indirection once we upgrade. See https://github.com/bazelbuild/bazel/issues/12348
-sh_library(
-    name = "update_lockfiles_lib",
-    srcs = [
-        "update_lockfiles.sh",
-    ],
-    data = [
-        ":reboot.dev",
-    ],
-)
-
 sh_binary(
     name = "update_lockfiles",
     srcs = [
         "update_lockfiles.sh",
     ],
     args = [
-        "$(location :reboot.dev)",
         REBOOT_VERSION,
     ],
-    data = [
-        ":reboot.dev",
-    ],
-    deps = [":update_lockfiles_lib"],
 )
 
 # TODO: This `sh_library` is a necessary indirection until Bazel 6, because a `sh_binary`

@@ -11,8 +11,13 @@ transaction._
 
 A `transaction` method gets passed a context of type `TransactionContext`.
 A `TransactionContext` can be used to make calls to `reader`'s, `writer`'s,
-and other `transaction` methods (although currently nested calls to a
-`transaction` method may only read/write mutually exclusive state.)
+and other `transaction` methods. Nested calls to a `transaction` method
+may read and write the same state as their callers; each nested
+`transaction` executes atomically with respect to the rest of the
+transaction. If a nested `transaction` aborts, all of its modifications
+are dropped: state it used is restored to its value from before the
+nested `transaction` (state first created within it is forgotten
+entirely), so a caller can catch the error, continue, and commit.
 
 Here's an example of a `transaction` method called `Transfer` on our
 `Bank` state that deposits money in one account and withdraws it from
