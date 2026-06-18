@@ -43,7 +43,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG DIND_VERSION=2.6.0
 RUN curl https://raw.githubusercontent.com/devcontainers/features/feature_docker-in-docker_${DIND_VERSION}/src/docker-in-docker/install.sh -o /tmp/install_dind.sh \
   && chmod +x /tmp/install_dind.sh \
-  && /tmp/install_dind.sh \
+  # Skip the script's `buildx` GitHub download, since the `moby-buildx`
+  # apt package installed by this same script already provides `docker
+  # buildx`.
+  && INSTALLDOCKERBUILDX=false /tmp/install_dind.sh \
   && rm /tmp/install_dind.sh
 
 # The inner Docker daemon stores its images and containers under
