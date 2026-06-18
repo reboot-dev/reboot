@@ -2367,6 +2367,47 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
             isinstance(r_aborted.exception.error, StateNotConstructed)
         )
 
+    async def test_constructor_transaction_without_writes_persists(self):
+        """Tests that a transactional constructor whose body does not mutate
+        the state still persists, so the actor exists afterwards. The body
+        produces no state mutation, so the all-read-only 2PC elision must not
+        treat the transaction as read-only and drop the construction.
+        """
+
+        class ConstructorServicer(GeneralServicer):
+
+            def authorizer(self):
+                return allow()
+
+            async def ConstructorTransaction(
+                self,
+                context: TransactionContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                # Deliberately leave `state` at its default: the
+                # construction itself is the only effect.
+                return GeneralResponse()
+
+            async def Reader(
+                self,
+                context: ReaderContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse(content=state.content)
+
+        await self.rbt.up(
+            Application(servicers=[ConstructorServicer]),
+        )
+        context = self.rbt.create_external_context(name=self.id())
+
+        item, _ = await General.ConstructorTransaction(context, "item")
+
+        # The actor must be constructed: reading it must succeed rather
+        # than abort with `StateNotConstructed`.
+        self.assertEqual({}, dict((await item.Reader(context)).content))
+
     async def test_nested_transactions(self):
         """Tests that a nested transaction and parent transaction may
         read/modify shared state (previously unsupported shapes).

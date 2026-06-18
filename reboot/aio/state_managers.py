@@ -4557,18 +4557,22 @@ class SidecarStateManager(
             # state when we do a 2PC prepare, we might still need to
             # store here to record the idempotent mutation!
             async with transaction.lock:
-                # Upgrade the lock if we're currently only holding the
-                # lock as shared but we've got effects that need
-                # exclusive.
-                if transaction.mode == Lock.Mode.SHARED and effects.requires_exclusive(
+                # A participant with effects to commit must not be
+                # propagated as read-only, or the all-read-only elision
+                # would drop its write. A constructor counts even when
+                # the body left the state at its default: constructing
+                # an actor makes it exist and must persist.
+                if context.constructor or effects.requires_exclusive(
                     initial_state_bytes=initial_state_bytes,
                 ):
-                    await self._locks[state_type_name][state_ref].upgrade(
-                        deadline=LOCK_ACQUIRE_DEADLINE_DEFAULT
-                    )
-                    transaction.mode = Lock.Mode.EXCLUSIVE
-                    # And now `context.participants` should no longer
-                    # propagate this participant as read-only.
+                    # Upgrade the lock if we're currently only holding
+                    # it as shared but we've got effects that need
+                    # exclusive.
+                    if transaction.mode == Lock.Mode.SHARED:
+                        await self._locks[state_type_name][state_ref].upgrade(
+                            deadline=LOCK_ACQUIRE_DEADLINE_DEFAULT
+                        )
+                        transaction.mode = Lock.Mode.EXCLUSIVE
                     context.participants.add(
                         state_type_name,
                         state_ref,
