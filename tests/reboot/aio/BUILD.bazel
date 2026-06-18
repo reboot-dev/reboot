@@ -1,6 +1,18 @@
 load("@rules_python//python:defs.bzl", "py_test")
 
 py_test(
+    name = "check_expected_version_test_py",
+    timeout = "short",
+    srcs = [":check_expected_version_test.py"],
+    main = "check_expected_version_test.py",
+    deps = [
+        "//reboot:version_py",
+        "//reboot/aio:applications_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+    ],
+)
+
+py_test(
     name = "applications_test_py",
     timeout = "short",
     srcs = [":applications_test.py"],
@@ -64,5 +76,18 @@ py_test(
     main = "concurrently_test.py",
     deps = [
         "//reboot/aio:concurrently_py",
+    ],
+)
+
+py_test(
+    name = "participants_test_py",
+    timeout = "short",
+    srcs = [":participants_test.py"],
+    main = "participants_test.py",
+    deps = [
+        "//rbt/v1alpha1:database_py_proto",
+        "//reboot/aio:contexts_py",
+        "//reboot/aio:headers_py",
+        "//reboot/aio:types_py",
     ],
 )

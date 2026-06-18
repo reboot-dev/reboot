@@ -40,8 +40,13 @@ the shortest path from `rbt dev run` to production.
 ## Getting Access
 
 Sign up at [`cloud.reboot.dev`](https://cloud.reboot.dev/), and create
-an API key. Then run `rbt cloud up --api-key=<your-key>` to get your
-application running in production!
+an API key. Export it as `REBOOT_CLOUD_API_KEY` and run `rbt cloud up` to
+get your application running in production! Every `rbt cloud`
+subcommand reads the API key from the `REBOOT_CLOUD_API_KEY` environment
+variable, which is preferred over passing `--api-key` on the command
+line: a value passed on the command line — even via `--api-key=$VAR` —
+is visible in the host's process listing (e.g. `ps`), whereas the
+environment variable is not.
 
 For organizations with strict compliance requirements, Reboot
 Cloud can also be deployed onto an enterprise-owned Kubernetes
@@ -58,8 +63,8 @@ canonical layout. `rbt cloud up` builds it, pushes it to Reboot's
 managed registry, and rolls out a new revision:
 
 ```sh
+export REBOOT_CLOUD_API_KEY=<your-key>
 rbt cloud up \
-  --api-key=$REBOOT_CLOUD_API_KEY \
   --application-name=my-app \
   --organization=my-org \
   --size=xsmall
@@ -107,10 +112,11 @@ platform.
 
 ```sh
 # Set values, reading them out of your shell environment so
-# they don't appear in shell history or process listings:
+# they don't appear in shell history or process listings (the
+# `REBOOT_CLOUD_API_KEY` env var is read automatically):
+export REBOOT_CLOUD_API_KEY=<your-key>
 export STRIPE_API_KEY=sk_live_...
 rbt cloud secret set STRIPE_API_KEY \
-  --api-key=$REBOOT_CLOUD_API_KEY \
   --application-name=my-app \
   --organization=my-org
 

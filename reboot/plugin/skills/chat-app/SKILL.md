@@ -7,6 +7,10 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 
 # chat-app — Build Reboot AI Chat Apps
 
+> **Version notices:** if `rbt` reports a version mismatch or that a
+> newer Reboot is available, the [upgrade skill](../upgrade/SKILL.md)
+> says how and when to react.
+
 Build complete Reboot AI Chat Apps from a user description.
 
 > **Reads from `python`.** This skill is the MCP-App + React
@@ -126,17 +130,18 @@ Chat-app–specific topics, organized by layer. Read them on demand
 the same way you would any other skill reference — the patterns
 they cover aren't restated inline below.
 
-| Reference                                                                        | What's in it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`references/project-shell.md`](references/project-shell.md)                     | `.python-version`, `.rbtrc` deltas (HMR + dist configs), `pyproject.toml` extras, `main.py` shape, the `example_prompts.py` module wired into `Application(example_prompts=...)`, durable-state setup.                                                                                                                                                                                                                                                                                                                                                       |
-| [`references/api-method-types.md`](references/api-method-types.md)               | The pydantic API file. `User`-type front door, `mcp=Tool()` / `mcp=None`, `UI()` (including parameterized UI props), `factory=True` on `create`, `Workflow(...)` declaration shape. Full Counter API example.                                                                                                                                                                                                                                                                                                                                                |
-| [`references/api-state-shapes.md`](references/api-state-shapes.md)               | Two recurring state shapes: `list[Item]` with `default_factory=list`; single nested `Model` sub-objects as `Optional[X] = Field(tag=N, default=None)` hydrated in factory `create` (Gotcha #13). The state-inside-state regression and how to compose state actors via string ID + `ref(id)`.                                                                                                                                                                                                                                                                |
-| [`references/servicer-patterns.md`](references/servicer-patterns.md)             | Servicer-side patterns: `UserServicer` calling `<X>.create(context)`, Workflow Servicer with `MyType.ref()` (no-arg) magic, inline writers via `.per_workflow("alias").write(context, fn)` / `.per_iteration("alias").write(...)` / `.always().write(...)`, scheduling a workflow from a Transaction with `.schedule()`.                                                                                                                                                                                                                                     |
-| [`references/react-scaffolding.md`](references/react-scaffolding.md)             | The `web/` shell: `package.json` (per-UI `build:<name>` scripts, no auto-discovery wrappers), `vite.config.ts` (load-bearing — copy exactly), `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json`, `index.css` theme variables, `ui/<name>/index.html`, `ui/<name>/main.tsx`.                                                                                                                                                                                                                                                                       |
-| [`references/react-app-tsx.md`](references/react-app-tsx.md)                     | `App.tsx` — generated `use<Type>()` hook usage (reader subscriptions + mutation calls), Python-snake → TypeScript-camel field naming, Zod-validated request/response types. Full Counter `App.tsx` + `App.module.css` example.                                                                                                                                                                                                                                                                                                                               |
-| [`references/gotchas.md`](references/gotchas.md)                                 | The numbered MCP-Chat-App–specific trip list (1–19): `mcp=Tool()`/`mcp=None` required, `factory=True` on app-type `create`, `MyType.ref()` not `cls.ref()`/`self.ref()` in workflows, `.schedule()` from a Transaction, Optional+`default=None` for nested Models, `.read()` only on no-arg ref inside a workflow, method-name PascalCase → generated `<Type>.<Method>Request`, etc.                                                                                                                                                                         |
-| [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md)       | Choosing your `Application(oauth=...)` provider via `OAuthProviderByEnvironment(dev=..., prod=...)` (the recommended `dev=Development(), prod=Google(...)` shape; a selected `None` arm fails startup), the `Google` / `GitHub` / `Auth0` / `Development` / `Anonymous` providers and where credentials come from (incl. the `/__/oauth/callback` URL), and the user-ID-namespace gotcha that makes switching providers after launch infeasible — choose deliberately **before** real users have state.                                                      |
-| [`references/auth-provider-api-calls.md`](references/auth-provider-api-calls.md) | **Acting on the user's behalf** at an external service. Part A — your identity provider's own API: extra OAuth `scopes=[...]` + `store_tokens=True` (needs `oauth_library()` + `ciphertext_library()` + `ordered_map_library()`). Part B — any other service (e.g. Slack): your own `app_internal=True` authorize/callback endpoints calling `OAuthTokenManager.ref("<service>").store(...)`. Both then read back with `OAuthTokenManager.ref(...).fetch(...)` and call the API **inside a `Workflow`**. Per-provider refresh-token behavior; token erasure. |
+| Reference                                                                              | What's in it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`references/project-shell.md`](references/project-shell.md)                           | `.python-version`, `.rbtrc` deltas (HMR + dist configs), `pyproject.toml` extras, `main.py` shape, the `example_prompts.py` module wired into `Application(example_prompts=...)`, durable-state setup.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| [`references/api-method-types.md`](references/api-method-types.md)                     | The pydantic API file. `User`-type front door, `mcp=Tool()` / `mcp=None`, `UI()` (including parameterized UI props), `factory=True` on `create`, `Workflow(...)` declaration shape. Full Counter API example.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| [`references/api-state-shapes.md`](references/api-state-shapes.md)                     | Two recurring state shapes: `list[Item]` with `default_factory=list`; single nested `Model` sub-objects as `Optional[X] = Field(tag=N, default=None)` hydrated in factory `create` (Gotcha #13). The state-inside-state regression and how to compose state actors via string ID + `ref(id)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| [`references/servicer-patterns.md`](references/servicer-patterns.md)                   | Servicer-side patterns: `UserServicer` calling `<X>.create(context)`, Workflow Servicer with `MyType.ref()` (no-arg) magic, inline writers via `.per_workflow("alias").write(context, fn)` / `.per_iteration("alias").write(...)` / `.always().write(...)`, scheduling a workflow from a Transaction with `.schedule()`.                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| [`references/react-scaffolding.md`](references/react-scaffolding.md)                   | The `web/` shell: `package.json` (per-UI `build:<name>` scripts, no auto-discovery wrappers), `vite.config.ts` (load-bearing — copy exactly), `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json`, `index.css` theme variables, `ui/<name>/index.html`, `ui/<name>/main.tsx`.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| [`references/react-app-tsx.md`](references/react-app-tsx.md)                           | `App.tsx` — generated `use<Type>()` hook usage (reader subscriptions + mutation calls), Python-snake → TypeScript-camel field naming, Zod-validated request/response types. Full Counter `App.tsx` + `App.module.css` example.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| [`references/gotchas.md`](references/gotchas.md)                                       | The numbered MCP-Chat-App–specific trip list (1–19): `mcp=Tool()`/`mcp=None` required, `factory=True` on app-type `create`, `MyType.ref()` not `cls.ref()`/`self.ref()` in workflows, `.schedule()` from a Transaction, Optional+`default=None` for nested Models, `.read()` only on no-arg ref inside a workflow, method-name PascalCase → generated `<Type>.<Method>Request`, etc.                                                                                                                                                                                                                                                                                                                                                              |
+| [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md)             | Choosing your `Application(oauth=...)` provider via `OAuthProviderByEnvironment(dev=..., prod=...)` (the recommended `dev=Development(), prod=Google(...)` shape; a selected `None` arm fails startup), the `Google` / `GitHub` / `Auth0` / `Development` / `Anonymous` providers and where credentials come from (incl. the `/__/oauth/callback` URL), and the user-ID-namespace gotcha that makes switching providers after launch infeasible — choose deliberately **before** real users have state.                                                                                                                                                                                                                                           |
+| [`references/auth-custom-oauth-provider.md`](references/auth-custom-oauth-provider.md) | **Writing your own OAuth provider** when none of the shipped ones fits (self-hosted Keycloak, internal SSO, an IdP Auth0 can't broker): subclass `RegisteredOAuthProvider`, implement `authorization_url` + `exchange_code` → `ExchangeResult` (the user id must be **stable** — it becomes `context.auth.user_id`), the `validate()` / `mount_routes()` hooks, and `token_service_id` + `OAuthTokens` for `store_tokens=True` support.                                                                                                                                                                                                                                                                                                           |
+| [`references/auth-store-tokens.md`](references/auth-store-tokens.md)                   | **Acting on the user's behalf** at an external service — the **chat-app-only shortcut**: when the API belongs to your `Application(oauth=...)` identity provider, add extra OAuth `scopes=[...]` + `store_tokens=True` (needs `oauth_library()` + `ciphertext_library()` + `ordered_map_library()`) and the server captures its tokens. Reboot stores **the provider's own tokens only** (an `Auth0` sign-in stores an Auth0 token, not the upstream Google token). The full host-agnostic recipe — custom OAuth endpoints for any _other_ service, reading tokens back, calling the API **inside a `Workflow`**, refresh tokens, erasure — is [`python/references/auth-external-api-calls.md`](../python/references/auth-external-api-calls.md). |
 
 ## Workflow: Plan First, Then Build
 
@@ -421,8 +426,12 @@ chat-app spelling of a constructor (see `python`'s
 
 ### Auth: `oauth=` Provider Selection and Real Authorizers from Day One
 
-MCP Chat Apps wire identity via `Application(oauth=...)`, which takes an
-`OAuthProviderSelector`. The typical shape is
+MCP Chat Apps wire identity via `Application(oauth=...)`: what you pass
+there stands primarily for **identity** — it determines who
+`context.auth.user_id` says the caller is, and in an MCP app that
+principal is the user. There's no middle ground: either every user
+signs in through this OAuth flow, or the app has no per-user auth at
+all. The slot takes an `OAuthProviderSelector`. The typical shape is
 `oauth=OAuthProviderByEnvironment(dev=Development(), prod=Google(...))`:
 under `rbt dev` you get `Development()` — a real provider that shows a
 fake account picker and issues every caller a verified, stable
@@ -432,8 +441,8 @@ the real provider. Both arms are required; either may be `None`, and a
 selected `None` arm makes the app **fail to start** with a clear
 message, so you can't silently ship without sensible auth.
 Servicer-side code doesn't change between providers. (In unit tests you
-use `reboot.aio.tests.Application(oauth_provider=...)`, not this
-selector.)
+use `Application(oauth=OAuthProviderForTest(Anonymous()))`, with
+`OAuthProviderForTest` from `reboot.aio.tests`.)
 
 > **Choose your production provider deliberately.** See
 > [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md).
@@ -441,7 +450,12 @@ selector.)
 > providers after launch strands every user-keyed piece of state.
 > `Development` is dev-only — replace it before shipping — and don't
 > launch on a throwaway like `Anonymous` planning to "upgrade later";
-> do it **before** real users have state.
+> do it **before** real users have state. `Google` / `GitHub` give you
+> a user id and nothing more; if the app needs **user management**
+> (profiles, password resets, MFA, blocking users), use `Auth0`. If no
+> shipped provider fits (self-hosted Keycloak, internal SSO), write
+> your own — see
+> [`references/auth-custom-oauth-provider.md`](references/auth-custom-oauth-provider.md).
 
 Consequences for authorizers:
 
@@ -469,11 +483,16 @@ is just **which mode you're in**: `oauth=` + real rules from day one.
 `Google` / `GitHub` / `Auth0` can request extra OAuth `scopes=[...]` and
 capture the provider's tokens (`store_tokens=True`) so the app can call
 that provider's API as the signed-in user (their calendar, repos, etc.).
-The tokens are stored encrypted and read back with
+Reboot stores the **provider's own** tokens only — with `Auth0` that's
+an Auth0 token, not the upstream Google token a brokered sign-in went
+through. The tokens are stored encrypted and read back with
 `OAuthTokenManager.ref(GOOGLE).fetch(context, user_id=context.state_id)`,
-and the outbound call goes **inside a `Workflow`**. Full setup,
-libraries, and the read path are in
-[`references/auth-provider-api-calls.md`](references/auth-provider-api-calls.md).
+and the outbound call goes **inside a `Workflow`**. The chat-app
+`store_tokens=True` shortcut is in
+[`references/auth-store-tokens.md`](references/auth-store-tokens.md);
+the full read-path and in-`Workflow` call recipe (shared with web apps)
+is in
+[`python/references/auth-external-api-calls.md`](../python/references/auth-external-api-calls.md).
 
 ### Declarative, Not Decorator
 
@@ -529,6 +548,7 @@ a worked set are in
 <project>/
 ├── .python-version          # "3.10"
 ├── .rbtrc                   # Line-based config (NOT YAML!)
+├── .mypy.ini                # Type-check config (python skill)
 ├── pyproject.toml           # Python deps (uv)
 ├── api/
 │   └── <pkg>/v1/
@@ -559,8 +579,11 @@ a worked set are in
 **Only execute after plan approval. All commands run from the
 application directory.**
 
-1. Create `.python-version`, `pyproject.toml`, `.rbtrc` — see
-   [`references/project-shell.md`](references/project-shell.md).
+1. Create `.python-version`, `pyproject.toml`, `.rbtrc`, and
+   `.mypy.ini` — see
+   [`references/project-shell.md`](references/project-shell.md);
+   the `.mypy.ini` template lives in
+   `python/references/lifecycle-project-setup.md`.
 2. `uv sync`.
 3. Write API definition (`api/<pkg>/v1/<name>.py`) — see
    [`references/api-method-types.md`](references/api-method-types.md)
@@ -598,13 +621,20 @@ application directory.**
     `IsolatedAsyncioTestCase`, one external context per test
     (`name=f"test-{self.id()}"`), and
     `Service.ref(id).method(context, ...)` for all calls —
-    never instantiate Servicers directly. If any servicer has a
-    real `authorizer()`, use the permissive-subclass pattern
-    from `testing-harness.md`. Run `cd backend && uv run pytest`
-    and fix anything that fails. Do not proceed to the next
-    step until every user-story test passes — these tests are
-    the gate that catches contract bugs before the user sees
-    them in MCPJam.
+    never instantiate Servicers directly. Register the **real**
+    servicers — never subclass a servicer in tests to weaken its
+    `authorizer()`. Impersonate users instead:
+    `Application(..., oauth=OAuthProviderForTest(Anonymous()))`
+    plus
+    `bearer_token=rbt.make_valid_oauth_access_token(user_id=...)`
+    — see the impersonation pattern in `testing-harness.md`. Run
+    `cd backend && uv run pytest` and fix anything that fails.
+    Then type-check: run `uv run mypy backend/` from the project
+    root and fix every error (config and rationale in
+    `python/references/lifecycle-project-setup.md`). Do not
+    proceed to the next step until every user-story test passes
+    and mypy is green — together they are the gate that catches
+    contract bugs before the user sees them in MCPJam.
 13. Create `mcp_servers.json` with
     `{"mcpServers":{"<name>":{"url":"http://localhost:9991/mcp","useOAuth":true}}}`.
 14. Run the app — load the [`run` skill](../run/SKILL.md) and
@@ -629,14 +659,20 @@ application directory.**
 When modifying an existing app:
 
 1. Read `.rbtrc`, API definition, servicer, `main.py`.
-2. Assess state model changes.
+2. Assess state model changes. If the app has persisted state or
+   has been deployed, read
+   `python/references/api-schema-evolution.md` to understand the
+   rules you must follow for API schema evolution.
 3. Update API definition → re-run `uv run rbt generate`.
 4. Update servicer methods.
 5. Update React components.
 6. When the change adds a new user-facing capability, add or update
    an example prompt in `backend/src/example_prompts.py` so the
    wizard surfaces the new flow.
-7. If the app isn't already running, bring it up with the
+7. Re-verify the backend: run `uv run mypy backend/` from the
+   project root and `cd backend && uv run pytest`; fix every
+   error and failure before handing back.
+8. If the app isn't already running, bring it up with the
    [`run` skill](../run/SKILL.md). If it is already running under
    `rbt dev run`, the `--watch` globs reload it automatically — no
    restart needed. Editing `.env` likewise triggers a restart, so

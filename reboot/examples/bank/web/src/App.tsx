@@ -149,8 +149,7 @@ function App() {
 export default App;
 
 const url =
-  (import.meta.env.VITE_REBOOT_URL as string) ||
-  "https://dev.localhost.direct:9991";
+  (import.meta.env.VITE_REBOOT_URL as string) || "http://localhost:9991";
 
 const Layout: FC<{ children: React.ReactNode }> = ({ children }) => {
   return (

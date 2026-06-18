@@ -1,18 +1,18 @@
 [project]
+name = "boutique"
+version = "0.1.0"
 requires-python = ">= 3.10"
 dependencies = [
-    "reboot==1.1.0",
+    "reboot==1.2.0",
 ]
 
-[tool.rye]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "mypy==1.18.1",
     "pytest>=7.4.2",
     "types-protobuf>=4.24.0.20240129",
-    "reboot==1.1.0",
 ]
 
-# This project only uses `rye` to provide `python` and its dependencies, so
-# these settings remove the need to name or version the project.
-virtual = true
-managed = true
+# There is no `[build-system]` table: that tells `uv` this is a virtual
+# (non-package) project — it installs the dependencies into `.venv` but
+# never tries to build/install the project itself.

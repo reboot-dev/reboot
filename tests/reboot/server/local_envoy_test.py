@@ -244,6 +244,37 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
                         "for the same state ref"
                     )
 
+        # State IDs may contain colons (and escaped slashes). Requests
+        # for such states must route to the same server both via gRPC
+        # calls (which send tagged state refs) and via HTTP calls with
+        # human-readable state refs.
+        _, response = await General.ConstructorWriter(context, "foo:bar/baz")
+        id_server_pair = (
+            response.content["id"],
+            response.content[SERVER_ID_HEADER],
+        )
+        async with aiohttp.ClientSession() as session:
+            async with session.request(
+                "POST",
+                f"https://{endpoint}/tests.reboot.GeneralMethods/Reader",
+                headers={
+                    'x-reboot-state-ref': 'tests.reboot.General:foo:bar\\baz',
+                },
+                ssl=False,  # Disables SSL verification; self-signed cert.
+            ) as http_response:
+                self.assertEqual(http_response.status, 200)
+                self.assertEqual(
+                    http_response.headers['content-type'], 'application/json'
+                )
+                response_json = await http_response.json()
+                self.assertEqual(
+                    id_server_pair, (
+                        response_json['content']['id'],
+                        response_json['content'][SERVER_ID_HEADER],
+                    ), "Envoy is not consistently choosing the same server "
+                    "for the same state ref"
+                )
+
         # Sending a request with an illegal state ref should result in a helpful
         # error message.
         async with aiohttp.ClientSession() as session:
@@ -262,10 +293,28 @@ class LocalEnvoyTestCase(unittest.IsolatedAsyncioTestCase):
                 response_text = await response.text()
                 self.assertIn(
                     "Invalid state reference component "
-                    "'this-is-not-a-state-ref': must contain exactly one ':'. "
-                    "If your state ID contains slashes ('/'), remember to "
-                    "replace them with their escape character: a backslash "
-                    "('\\').",
+                    "'this-is-not-a-state-ref': must contain an encoded "
+                    "state type or state type string, separated from an id "
+                    "by a ':'. If your state ID contains slashes ('/'), "
+                    "remember to replace them with their escape character: "
+                    "a backslash ('\\').",
+                    response_text,
+                )
+
+        # A state ref with an empty state type is also rejected.
+        async with aiohttp.ClientSession() as session:
+            async with session.request(
+                "POST",
+                f"https://{endpoint}/tests.reboot.GeneralMethods/Reader",
+                headers={
+                    'x-reboot-state-ref': ':some-id',
+                },
+                ssl=False,  # Disables SSL verification; self-signed cert.
+            ) as response:
+                self.assertEqual(response.status, 400)
+                response_text = await response.text()
+                self.assertIn(
+                    "Invalid state reference component ':some-id'",
                     response_text,
                 )
 

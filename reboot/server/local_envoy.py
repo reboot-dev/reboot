@@ -24,6 +24,7 @@ from reboot.aio.types import ApplicationId, ServerId
 from reboot.routing import envoy_config
 from reboot.routing.envoy_config import ServerInfo
 from reboot.routing.xds_server import AggregatedDiscoveryServiceServicer
+from reboot.settings import LocalEnvoyMode
 from reboot.ssl.localhost import (
     LOCALHOST_CRT,
     LOCALHOST_CRT_DATA,
@@ -112,6 +113,12 @@ class LocalEnvoy(ABC):
 
     @property
     @abstractmethod
+    def _mode(self) -> LocalEnvoyMode:
+        """The mode in which this local Envoy runs."""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
     def public_port(self) -> int:
         raise NotImplementedError()
 
@@ -152,6 +159,7 @@ class LocalEnvoy(ABC):
             clusters=envoy_config.clusters(
                 application_id=self._application_id,
                 servers=servers,
+                local_envoy_mode=self._mode,
             ),
             listeners=self._get_listeners_from_servers(servers),
             # NOTE: when using a `LocalEnvoy` we're expecting only _one_

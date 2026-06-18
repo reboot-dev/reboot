@@ -1,0 +1,297 @@
+# Identity and External API Calls
+
+OAuth plays two distinct roles in a Reboot application:
+
+1. **Identity** — establishing *who* is calling, so that
+   `context.auth.user_id` is populated and authorizers can act on it.
+2. **Acting as the user** at an external service — calling their Google
+   Calendar, their GitHub repos, their Slack — using OAuth tokens your
+   application has been granted.
+
+This page walks through the expected flow for both, and what to do for
+external services that don't use OAuth at all.
+
+## Identity: `Application(oauth=...)`
+
+What you pass to `Application(oauth=...)` stands first and foremost for
+**identity**: the provider determines who `context.auth.user_id` says
+the caller is. In an MCP application that principal is **the user**, and
+there is no middle ground — either every user signs in through this
+OAuth flow, or the application has no per-user auth at all.
+
+:::note
+
+The `oauth=` slot currently serves MCP applications (and is Python
+only). Browser-facing web applications integrate an external identity
+provider via `Application(token_verifier=...)` instead — see
+[Authorization](/learn_more/auth).
+
+:::
+
+The slot takes an `OAuthProviderSelector` — not a provider directly —
+so the provider can depend on the run environment:
+
+```py
+import os
+from reboot.aio.auth.oauth_providers import (
+    Development,
+    Google,
+    OAuthProviderByEnvironment,
+)
+
+async def main():
+    await Application(
+        servicers=[UserServicer],
+        oauth=OAuthProviderByEnvironment(
+            dev=Development(),
+            prod=Google(
+                client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
+                client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"),
+            ),
+        ),
+    ).run()
+```
+
+Under `rbt dev run` the `dev` arm is used; everywhere else (`rbt serve`,
+the Reboot Cloud, or any unrecognized environment) the `prod` arm is.
+Both arms are required, and a selected `None` arm fails at startup — so
+you can't silently ship without choosing a provider.
+
+The providers that ship in `reboot.aio.auth.oauth_providers`:
+
+| Provider        | Identity issued                                   | When to use                                                                                   |
+| --------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `Development()` | A stable fake ID per picked account               | Local development only; shows a fake account picker.                                          |
+| `Google(...)`   | The Google account's OIDC `sub` claim             | Users sign in with Google.                                                                    |
+| `GitHub(...)`   | The GitHub user's numeric ID                      | Users sign in with GitHub.                                                                    |
+| `Auth0(...)`    | The Auth0 OIDC `sub` (e.g. `google-oauth2\|108…`) | Multiple sign-in methods behind one provider, or user management beyond a bare user ID.       |
+| `Anonymous()`   | A fresh `anon-{ULID}` per flow                    | No sign-in UI at all; don't launch on it — every returning user gets a brand-new identity.    |
+
+For every real provider, register your application in the provider's
+own console and register Reboot's callback URL —
+`<your-app-base-url>/__/oauth/callback` — as an authorized redirect
+URI. Deliver the client ID/secret as
+[environment variables](/learn_more/secrets), never hard-coded.
+
+:::important
+
+The provider you launch with **fixes your user-ID namespace**. Each
+provider issues IDs in its own space with no mapping between them, so
+switching providers once you have real users strands every user-keyed
+piece of state. Choose deliberately before you have production users.
+
+:::
+
+### Need user management, not just a user ID?
+
+`Google` and `GitHub` give you exactly one thing: a stable
+`context.auth.user_id`. If your application needs more — user profiles,
+email/password accounts, password resets, email verification, MFA,
+blocking users, an admin view of who signed up — don't build that
+yourself. Use `Auth0`: its tenant provides all of it, brokers most
+upstream identity providers (Google, GitHub, enterprise SSO,
+username/password), and your application still sees a single OIDC
+provider.
+
+### Writing your own provider
+
+If no shipped provider fits — your users live in a self-hosted Keycloak,
+an internal SSO, or another identity provider that Auth0 can't broker —
+subclass `RegisteredOAuthProvider` (from
+`reboot.aio.auth.oauth_providers`) and pass an instance in the same
+`dev=` / `prod=` arms. You implement two methods, and Reboot's OAuth
+server does the rest (endpoints, `state` verification, minting your
+application's own tokens):
+
+- `authorization_url(state, redirect_uri)` — build the identity
+  provider's authorize URL, passing `state` and `redirect_uri` through
+  verbatim.
+- `exchange_code(code, redirect_uri)` — exchange the code at the
+  identity provider's token endpoint and return an `ExchangeResult`
+  with the user's ID.
+
+The returned user ID must be **stable**: the same human must get the
+same ID on every sign-in (an OIDC `sub` claim or a numeric account ID —
+never an email address, which can change). It becomes
+`context.auth.user_id` and the key of all user-keyed state, so the
+namespace-permanence warning above applies to your custom provider too.
+
+## Acting as the user at an external service
+
+Calling an external service's API on the user's behalf always has two
+halves:
+
+1. **Capture** the service's OAuth tokens once, stored encrypted in an
+   [`OAuthTokenManager`](/library_services/oauth_token_manager) — one
+   manager per external service.
+2. **Use** them: `fetch` the tokens back and make the outbound API call
+   from a [workflow](/learn_more/implement/workflows).
+
+How you capture depends on *whose* API you want to call.
+
+### Your identity provider's own API: `store_tokens=True`
+
+If the API belongs to the provider you already sign in with, Reboot
+captures its tokens for you. Pass the extra OAuth `scopes=[...]` your
+calls need (on top of the base identity scope the provider always
+requests) and `store_tokens=True`:
+
+```py
+oauth=OAuthProviderByEnvironment(
+    # `Development()` issues no tokens, so to exercise the
+    # provider's API locally use the real provider in `dev=` too.
+    dev=_google(),
+    prod=_google(),
+)
+
+def _google() -> Google:
+    return Google(
+        client_id=os.environ.get("GOOGLE_OAUTH_CLIENT_ID"),
+        client_secret=os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET"),
+        # Request the least you need.
+        scopes=["https://www.googleapis.com/auth/calendar.events"],
+        store_tokens=True,
+    )
+```
+
+During each sign-in, the OAuth server captures the provider's
+access/refresh tokens at the code exchange and persists them encrypted
+under the matching `OAuthTokenManager` (`GOOGLE` here). Your code only
+ever calls `fetch`. This requires the `oauth`, `ciphertext`, and
+`ordered_map` libraries on your `Application` — see
+[OAuth Token Manager](/library_services/oauth_token_manager).
+
+:::important
+
+**Reboot stores only the provider's *own* tokens.** This matters most
+with `Auth0`: it is a broker, so when a user signs in "with Google"
+through Auth0, what gets stored is an **Auth0** token — it authorizes
+Auth0's own APIs, not Google's. To call the upstream service, either
+retrieve the federated identity provider's token from Auth0 (it keeps
+it on the user's profile, retrievable via Auth0's Management API with
+the `read:user_idp_tokens` scope), or capture the upstream service's
+tokens yourself as described next.
+
+:::
+
+### Any other OAuth service: run its flow yourself
+
+When the service is *not* your identity provider — you sign in with
+Google but want the user's Slack — there is no shortcut: a Google grant
+only authorizes Google's APIs. Run the other service's OAuth flow
+yourself with your own HTTP endpoints, then store what it issues in
+that service's `OAuthTokenManager`, so that **all** of your
+application's OAuth tokens live consistently in the same kind of store:
+
+1. Register an **authorize** route that redirects the browser to the
+   service's authorize URL (your client ID, the scopes you need, your
+   callback as the redirect URI, and a signed `state` carrying the
+   signed-in user's ID).
+2. Register a **callback** route that verifies the `state`, exchanges
+   the `code` at the service's token endpoint, and calls
+   [`OAuthTokenManager.store`](/library_services/oauth_token_manager#store)
+   under a service ID of your choosing (e.g. `"slack.com"`).
+
+Since `OAuthTokenManager`'s methods are application-internal, the
+callback route must opt into an application-internal context:
+
+```py
+# In `main()`, after constructing `application`:
+application.http.get("/__/oauth/slack/authorize")(slack_authorize)
+application.http.get("/__/oauth/slack/callback", app_internal=True)(
+    slack_callback
+)
+```
+
+:::caution
+
+`app_internal=True` bypasses authorizers. Only set it on a route you
+are certain serves trusted traffic — here, a callback that runs only
+after you've verified the OAuth `state` you issued. Never set it on a
+route that acts on unvalidated request input.
+
+:::
+
+### Using the tokens: call the API from a workflow
+
+Reading tokens back and calling the service is the same no matter how
+the tokens were captured — and the outbound HTTP call belongs in a
+[workflow](/learn_more/implement/workflows), wrapped in a durability
+primitive (usually `at_least_once`), like any other
+[side effect](/learn_more/side_effects):
+
+```py
+from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager
+from reboot.aio.workflows import at_least_once
+from reboot.std.oauth.v1.oauth import GOOGLE
+
+@classmethod
+async def create_event(
+    cls,
+    context: WorkflowContext,
+    request: User.CreateEventRequest,
+) -> User.CreateEventResponse:
+    stored = await OAuthTokenManager.ref(GOOGLE).fetch(
+        context, user_id=context.state_id,
+    )
+    if not stored.found:
+        # Not connected yet: surface a "connect" path, don't crash.
+        return User.CreateEventResponse(connected=False)
+
+    async def do_create():
+        return await calendar_api.create_event(
+            access_token=stored.tokens.access_token,
+            summary=request.summary,
+        )
+
+    result = await at_least_once("Create event", context, do_create)
+    return User.CreateEventResponse(connected=True)
+```
+
+### Services where the user provides an API key instead of OAuth
+
+Some services don't expose per-user OAuth at all — the user pastes an
+API key or personal access token into your UI.
+
+:::note
+
+This section is about a key **the user** provides so your application
+can act *as that user* — a per-user secret, stored per user. A key
+**you, the developer,** hold for the whole application (your Stripe
+secret key, your OpenAI key) is not per-user state and doesn't belong
+in application state at all: deliver it as an application
+[secret](/learn_more/secrets) via environment variables.
+
+:::
+
+`OAuthTokenManager` is
+purpose-built for OAuth tokens; don't shoehorn an API key into it. The
+key is still a secret at rest, so encrypt it with
+[`Ciphertext`](/library_services/ciphertext) and keep the returned
+`Ciphertext` state ID — itself a harmless string — in your state as the
+reference to the encrypted value:
+
+```py
+ciphertext, _ = await Ciphertext.encrypt(
+    context,
+    plaintext=request.api_key.encode(),
+    associated_data=make_associated_data(
+        user_id=user_id, purpose="acme-api-key",
+    ),
+    scope=f"user:{user_id}",  # The crypto-shred unit.
+    key_manager_id=APP_SHARED_KEY_MANAGER_ID,
+)
+# The reference to the encrypted key; never the key itself.
+self.state.acme_api_key_id = ciphertext.state_id
+```
+
+To use it, `decrypt` (with the same `associated_data`) and make the
+call from a workflow, exactly as above.
+
+## Erasing a user's credentials
+
+Both stores support per-user erasure by crypto-shredding: see
+[erasing a user's tokens](/library_services/oauth_token_manager#erasing-a-users-tokens)
+for `OAuthTokenManager`, and
+[crypto-shred](/library_services/ciphertext#crypto-shred-shred) for
+`Ciphertext`-encrypted API keys.

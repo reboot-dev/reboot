@@ -43,7 +43,7 @@ Running directly on a host requires:
    - Linux: `x86_64` or `arm64`, with `glibc>=2.35` (Ubuntu Jammy and other equivalent-generation distributions)
    - Mac: `arm64` (Apple M1 and newer) with `MacOS>=14.0` and `Xcode>=15.2`
    - ... or [talk to us](https://discord.gg/cRbdcS94Nr) if your desired platform isn't currently supported!
-- [Rye](https://rye-up.com/) - A tool to manage `python`, `pip`, and `venv`.
+- [uv](https://docs.astral.sh/uv/) - A tool to manage `python`, `pip`, and `venv`.
    - If you are already familiar with Python [virtual environments](https://docs.python.org/3/library/venv.html), feel free to use your tool of choice with [`pyproject.toml`](./pyproject.toml). Python >= 3.10 and < 3.13 is required.
 - Node.js
     - Including `npm`.
@@ -64,9 +64,9 @@ running it. The most notable of those dependencies is the `reboot` PyPI
 distribution, which contains both the Reboot CLI (`rbt`) and the `reboot`
 Python package.
 
-Using `rye`, we can create and activate a virtualenv containing this project's dependencies (as well as fetch an appropriate Python version) using:
+Using `uv`, we can create and activate a virtualenv containing this project's dependencies (as well as fetch an appropriate Python version) using:
 ```sh
-rye sync --no-lock
+uv sync
 source .venv/bin/activate
 ```
 

@@ -12,6 +12,7 @@ agent. The same skills work in both **Claude Code** and **Codex**.
 | [`web-app`](skills/web-app/)   | Build standalone Reboot Web Apps — a Reboot backend behind a browser-facing React frontend — layers on top of `python` |
 | [`run`](skills/run/)           | Run an existing Reboot app — detects MCP Chat App vs. Web App and starts every process it needs                        |
 | [`python`](skills/python/)     | Reboot Python framework reference: proto- or pydantic-defined APIs, Servicers, contexts, refs, scheduling, and testing |
+| [`upgrade`](skills/upgrade/)   | Upgrade an existing Reboot app to this plugin's Reboot version — applies migration steps, bumps pins, regenerates      |
 
 The skill files are tool-agnostic. Claude Code invokes skills by name
 (e.g. `/chat-app`); Codex selects a skill automatically from its
@@ -137,17 +138,6 @@ differ because of Codex limitations:
   hooks can only _deny_ a tool, never approve one, so there is no
   equivalent — reduce prompts with Codex's own `approval_policy` /
   `sandbox_mode` (e.g. `workspace-write` with network access) instead.
-- **Tunnel cleanup.** Claude Code reaps the cloudflared tunnel (and the
-  MCPJam inspector) from a `SessionEnd` hook. Codex has no session-end
-  event, so the SessionStart handler instead starts a watchdog that
-  kills the tunnel when the owning `codex` process exits. If anything is
-  left behind, find the plugin's install path with `codex plugin list`
-  and run its `hooks/codex/reap.sh`, e.g.:
-
-  ```bash
-  bash "$(codex plugin list \
-      | awk '/^reboot@/ {for(i=NF;i>=1;i--) if($i~"^/") {print $i; exit}}')/hooks/codex/reap.sh"
-  ```
 
 ## Usage
 
@@ -162,6 +152,17 @@ In Claude Code you can also invoke a skill directly, e.g.
 first — they analyze your description, propose a state model and method
 map, and wait for your approval before writing any code.
 
+## Skill reminders
+
+In sessions running inside a Reboot project (the working directory, or
+an ancestor, holds a `.rbtrc`), the plugin injects a short reminder
+into the agent's context — at session start, after compaction, and
+again whenever it has scrolled out of the transcript's recent tail —
+to read the plugin's skill references (including Reboot's standard
+library) instead of inferring Reboot behavior from trial and error.
+See [`hooks-handlers/remind.sh`](hooks-handlers/remind.sh); it works
+identically in Claude Code and Codex.
+
 ## Repository Structure
 
 ```
@@ -173,19 +174,19 @@ plugin/
 ├── .claude-plugin/
 │   └── marketplace.json      # Claude Code marketplace + plugin defs
 ├── .codex-plugin/
-│   └── plugin.json           # Codex plugin manifest (skills + hooks)
+│   └── plugin.json           # Codex plugin manifest (skills); see
+│                             # "Differences in Codex vs. Claude Code"
+│                             # above for how PATH is wired under Codex
 ├── README.md
 ├── install.sh                # installs for Claude Code and/or Codex
-├── bin/                      # pinned tool shims (uv, node, rbt, …)
+├── bin/                      # pinned tool shims (uv, node, rbt,
+│                             # cloudflared, …)
 ├── lib/                      # shim install scripts
 ├── hooks/
-│   ├── hooks.json            # Claude Code hook registrations
-│   ├── auto-approve.sh       # Claude Code PreToolUse auto-approval
-│   └── codex/                # Codex hook port
-│       ├── hooks.json        # referenced by .codex-plugin/plugin.json
-│       ├── session-start.sh  # cloudflared tunnel + watchdog
-│       └── reap.sh           # manual cleanup fallback
-├── hooks-handlers/           # Claude Code SessionStart/SessionEnd
+│   ├── hooks.json            # hook registrations (Claude Code + Codex)
+│   └── auto-approve.sh       # Claude Code PreToolUse auto-approval
+├── hooks-handlers/           # SessionStart PATH prepend (Claude Code)
+│                             # and the skill reminder (both CLIs)
 └── skills/
     └── <name>/
         ├── SKILL.md          # skill definition (YAML frontmatter)

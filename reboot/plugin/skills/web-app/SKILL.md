@@ -7,6 +7,10 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 
 # web-app — Build Reboot Web Apps
 
+> **Version notices:** if `rbt` reports a version mismatch or that a
+> newer Reboot is available, the [upgrade skill](../upgrade/SKILL.md)
+> says how and when to react.
+
 Build complete Reboot Web Apps from a user description: a Reboot
 backend behind a standalone React frontend served at a normal URL.
 
@@ -83,10 +87,76 @@ Recommended sequence:
    externally reachable. See
    `python/references/servicer-authorizer.md`,
    `python/references/auth-allow-if.md`, and
-   `python/references/auth-built-in-predicates.md`.
+   `python/references/auth-built-in-predicates.md`. In unit tests,
+   substitute `TokenVerifierForTest()` (from `reboot.aio.tests`)
+   for your IdP verifier and impersonate users with
+   `bearer_token=rbt.make_valid_oauth_access_token(user_id=...)`
+   — the authorizer rules still run for real.
 3. **Public, unauthenticated endpoints** (health checks, public
    sign-up, public catalog reads): mark these explicitly with
    `allow()`. That's the one legitimate use.
+
+### Feeding the user's identity into hooks — never fabricate an id
+
+A generated `use<Type>({ id })` hook needs a **real, non-empty
+actor id on every render**. It is not SWR-style: there is no
+"pass `null`/`undefined` to skip the subscription" mode. A falsy
+id is a hard throw during render, not a paused hook —
+`id: ''` throws `state ID must have a length of at least 1` and
+`id: undefined` throws a `TypeError` inside `stateIdToRef`. Either
+one crashes the component.
+
+The trap: browser identity (Auth0, Firebase, your own JWT)
+resolves **asynchronously**, so on the first renders you have no
+user id yet. Do **not** dodge the throw by fabricating a
+placeholder — `useUser({ id: userId || '__no-user__' })` is
+wrong. An actor id is a **global key**, so every loading session
+subscribes to the same shared `__no-user__` actor, it's one
+missed write-guard away from cross-user state, and the placeholder
+addresses nothing — it just silences the crash.
+
+Since the hook can't be told "no id" and can't be called
+conditionally (React's rules of hooks), the fix is to **not mount
+the component that calls the hook until you have the real id**.
+Gate at the parent and pass a guaranteed-real id down:
+
+```tsx
+function UserHome() {
+  const { user, isAuthenticated, isLoading } = useAuth0();
+  if (isLoading) return <Spinner />;
+  if (!isAuthenticated || !user?.sub) return <LoginPrompt />;
+  // From here, user.sub is guaranteed present and non-empty.
+  return <UserView userId={user.sub} />;
+}
+
+function UserView({ userId }: { userId: string }) {
+  // Hook always runs, always with a real, per-user id.
+  const { create } = useUser({ id: userId });
+  // ...
+}
+```
+
+No placeholder, no fake actor, no `userId && create(...)` guards
+scattered around mutations — the hook simply never runs until the
+key is real.
+
+### Calling external APIs on the user's behalf
+
+To act **as the user** at an external service (call their Slack,
+Google, a partner API), store that service's OAuth tokens encrypted in
+an `OAuthTokenManager` and make the call inside a `Workflow`. Because a
+web app has no `Application(oauth=...)`, the chat-app `store_tokens=True`
+shortcut isn't available — you always run the service's OAuth flow
+yourself with your own authorize/callback HTTP endpoints (a callback
+registered `app_internal=True`) and call `OAuthTokenManager.store`. The
+full host-agnostic recipe — endpoints, storage, reading tokens back, the
+in-`Workflow` call, refresh, and erasure — is
+`python/references/auth-external-api-calls.md` (Path B). Never store
+tokens in a plain `str` field or hand-roll `Ciphertext`
+(`python/references/stdlib-oauth-tokens.md`). If the service doesn't do
+OAuth at all and the user pastes an **API key** instead, that key goes
+through `Ciphertext` (the ciphertext id kept in state) — Path C in the
+same recipe.
 
 ## Read These From `python` First
 
@@ -154,6 +224,12 @@ mechanics. The patterns in this skill assume you've read them.
 - `python/references/auth-allow-deny.md` — narrow uses of
   unconditional rules; specifically, when **not** to reach for
   `allow()`.
+- `python/references/auth-external-api-calls.md` and
+  `python/references/stdlib-oauth-tokens.md` — **calling an external
+  service's API as the user**: custom OAuth endpoints (web apps use
+  Path B — no `store_tokens=True` shortcut) → `OAuthTokenManager.store`
+  → read back + call inside a `Workflow`. Never a plain `str` token
+  field.
 
 ## Workflow: Plan First, Then Build
 
@@ -303,6 +379,7 @@ Before writing code, analyze the user's request:
 <project-root>/
 ├── .python-version
 ├── .rbtrc
+├── .mypy.ini                # Type-check config (python skill)
 ├── pyproject.toml
 ├── api/
 │   └── <pkg>/v1/
@@ -342,8 +419,8 @@ Key differences from a `chat-app` layout:
 **Only execute after plan approval. All commands run from the
 application directory.**
 
-1. Create `.python-version`, `pyproject.toml`, `.rbtrc` — same
-   shape as in
+1. Create `.python-version`, `pyproject.toml`, `.rbtrc`, and
+   `.mypy.ini` — same shape as in
    `python/references/lifecycle-{project-setup,rbtrc}.md`. In
    `.rbtrc`, point the React codegen at `web/src/api`:
    ```sh
@@ -381,6 +458,10 @@ application directory.**
     `isLoading` with stale `response`. Transport disconnects
     auto-reconnect and do **not** surface via `aborted`, so don't
     reach for `aborted` or a heartbeat for an online/offline badge.
+    When a hook's `id` comes from the authenticated user, gate the
+    component so it only mounts once the id is real — see "Feeding
+    the user's identity into hooks" above. Never fabricate a
+    placeholder id to get past the non-empty-id validation.
 11. `cd web && npm run build` (sanity check the bundle).
 12. **Write and run backend unit tests covering each user-facing
     user story before handing the app off.** Enumerate the user
@@ -396,13 +477,21 @@ application directory.**
     `IsolatedAsyncioTestCase`, one external context per test
     (`name=f"test-{self.id()}"`), and
     `Service.ref(id).method(context, ...)` for all calls —
-    never instantiate Servicers directly. If any servicer has a
-    real `authorizer()`, use the permissive-subclass pattern
-    from `testing-harness.md`. Run `cd backend && uv run pytest`
-    and fix anything that fails. Do not proceed to the next
-    step until every user-story test passes — these tests are
-    the gate that catches contract bugs before the user opens
-    the browser.
+    never instantiate Servicers directly. Register the **real**
+    servicers — never subclass a servicer in tests to weaken its
+    `authorizer()`. Impersonate users instead:
+    `Application(..., token_verifier=TokenVerifierForTest())`
+    (from `reboot.aio.tests`; it swaps only the identity layer,
+    standing in for your production IdP verifier) plus
+    `bearer_token=rbt.make_valid_oauth_access_token(user_id=...)`
+    — see the impersonation pattern in `testing-harness.md`. Run
+    `cd backend && uv run pytest` and fix anything that fails.
+    Then type-check: run `uv run mypy backend/` from the project
+    root and fix every error (config and rationale in
+    `python/references/lifecycle-project-setup.md`). Do not
+    proceed to the next step until every user-story test passes
+    and mypy is green — together they are the gate that catches
+    contract bugs before the user opens the browser.
 13. Run the app — load the [`run` skill](../run/SKILL.md) and
     follow it. It is the single canonical "start the app"
     procedure: it makes sure dependencies and secrets are in
@@ -416,11 +505,17 @@ When modifying an existing app:
 
 1. Read `.rbtrc`, the API definition, servicer, `main.py`, and
    `web/src/App.tsx`.
-2. Assess state model changes.
+2. Assess state model changes. If the app has persisted state or
+   has been deployed, read
+   `python/references/api-schema-evolution.md` to understand the
+   rules you must follow for API schema evolution.
 3. Update the API definition → re-run `uv run rbt generate`.
 4. Update servicer methods.
 5. Update React components and routes.
-6. If the app isn't already running, bring it up with the
+6. Re-verify the backend: run `uv run mypy backend/` from the
+   project root and `cd backend && uv run pytest`; fix every
+   error and failure before handing back.
+7. If the app isn't already running, bring it up with the
    [`run` skill](../run/SKILL.md). If it is already running under
    `rbt dev run`, the `--watch` globs reload it automatically — no
    restart needed. Editing `.env` likewise triggers a restart, so

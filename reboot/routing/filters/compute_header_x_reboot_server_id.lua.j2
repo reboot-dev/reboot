@@ -97,17 +97,18 @@ local function state_ref_from_maybe_human_readable(state_ref)
 
     -- Use 'gmatch' to split the state ref into components separated by "/".
     for component in state_ref:gmatch("[^/]+") do
-        -- Each component is a state type and state ID separated by a colon.
-        local component_pieces = {}
-        for piece in component:gmatch("[^:]+") do
-            table.insert(component_pieces, piece)
-        end
+        -- Each component is a state type and a state ID separated by
+        -- the first colon; the state ID itself may contain colons. The
+        -- state type must not be empty.
+        local colon_index = component:find(":", 1, true)
 
-        if #component_pieces ~= 2 then
+        if colon_index == nil or colon_index == 1 then
             error({message=string.format(
-                "Invalid state reference component '%s': must contain exactly one ':'. "
-                .. "If your state ID contains slashes ('/'), remember to replace them "
-                .. "with their escape character: a backslash ('\\').",
+                "Invalid state reference component '%s': must contain an "
+                .. "encoded state type or state type string, separated from an "
+                .. "id by a ':'. If your state ID contains slashes ('/'), "
+                .. "remember to replace them with their escape character: a "
+                .. "backslash ('\\').",
                 component
             )})
         end
@@ -117,14 +118,14 @@ local function state_ref_from_maybe_human_readable(state_ref)
         -- (before the ":"). If the state type is human-readable then it must
         -- contain a proto package name, so must contain a period. State type
         -- tags don't have periods.
-        local state_type = component_pieces[1]
+        local state_type = component:sub(1, colon_index - 1)
         if string.find(state_type, "%.") == nil then
             -- This component is already tagged; keep it as-is.
             table.insert(result, component)
         else
             -- This is a human-readable state type; convert it into a tag.
             local state_type_tag = state_type_tag_for_name(state_type)
-            local state_id = component_pieces[2]
+            local state_id = component:sub(colon_index + 1)
             table.insert(result, state_type_tag .. ":" .. state_id)
         end
     end

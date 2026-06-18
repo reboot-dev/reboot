@@ -12,7 +12,7 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 2. API (api)
 
 **Impact:** CRITICAL
-**Description:** Pydantic API definition — state models, reader/writer/transaction method factories, the `factory=True` constructor option, and typed error models. The pydantic API file is the source of truth; everything else is generated from it.
+**Description:** Pydantic API definition — state models, reader/writer/transaction method factories, the `factory=True` constructor option, and typed error models. The pydantic API file is the source of truth; everything else is generated from it. Also covers schema evolution: the rules to follow when changing the API of an application that has persisted state or has been deployed.
 
 ## 3. Servicer (servicer)
 
@@ -42,7 +42,7 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 8. Auth (auth)
 
 **Impact:** HIGH
-**Description:** Authorizer composition: `allow()` / `deny()`, `allow_if(all=...)` / `allow_if(any=...)`, the built-in predicates (`has_verified_token`, `is_app_internal`, `state_id_is_user_id`), and writing custom predicates.
+**Description:** Authorizer composition: `allow()` / `deny()`, `allow_if(all=...)` / `allow_if(any=...)`, the built-in predicates (`has_verified_token`, `is_app_internal`, `state_id_is_user_id`), and writing custom predicates. Also the host-agnostic recipe for acting as the user at an external service — capturing a provider's OAuth tokens via your own endpoints (or, for a service that only issues API keys, encrypting the key with `Ciphertext`), storing OAuth tokens in an `OAuthTokenManager`, and calling the API inside a `Workflow` (`auth-external-api-calls.md`).
 
 ## 9. RPC (rpc)
 
@@ -52,7 +52,7 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 10. Scheduling (scheduling)
 
 **Impact:** MEDIUM
-**Description:** Deferred work via `ref.schedule(when=timedelta(...)).method(context)` and recurring schedules driven from inside writer methods.
+**Description:** Deferred work via `ref.schedule(when=...).method(context)` — `when=` takes a `timedelta` (relative) or an absolute timezone-aware `datetime`. Recurring / "cron" jobs are built by self-rescheduling from inside a writer method (at an absolute wall-clock time for true cron), optionally dispatching a `Workflow` per run for the durable work.
 
 ## 11. Testing (testing)
 

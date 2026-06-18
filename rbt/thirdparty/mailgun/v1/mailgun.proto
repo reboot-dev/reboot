@@ -45,6 +45,7 @@ service MessageMethods {
 /// PRIVATE
 message Message {
   option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
   };
 
   // An idempotency key passed through the Mailgun API to ensure this message is

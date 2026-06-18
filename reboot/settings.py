@@ -1,3 +1,5 @@
+import enum
+
 # The settings below must match their equivalents, if applicable, in:
 # * reboot/settings.h
 # * <possibly other languages by the time you read this>
@@ -99,13 +101,22 @@ REBOOT_STATE_DIRECTORY = '/var/run/reboot/state'
 # e.g., for inspect.
 ADMIN_SECRET_NAME = 'rbt-admin-secret'
 
-# The names of environment variables that are present both in `rbt dev run` and
-# in Kubernetes.
-#
-# TODO: The API key should likely be provided by a file in production, to allow
-# for rotation.
-ENVVAR_RBT_CLOUD_API_KEY = 'RBT_CLOUD_API_KEY'
-ENVVAR_RBT_CLOUD_URL = 'RBT_CLOUD_URL'
+# The name of the environment variable used by the `rbt cloud` CLI
+# subcommands as the fallback for the `--api-key` flag.
+ENVVAR_REBOOT_CLOUD_API_KEY = 'REBOOT_CLOUD_API_KEY'
+
+# Set (to any non-empty value) to disable the `rbt` CLI's check for
+# newer Reboot releases on PyPI. The check is also disabled when the
+# `CI` environment variable is set.
+ENVVAR_REBOOT_NO_VERSION_CHECK = 'REBOOT_NO_VERSION_CHECK'
+
+# Set by the `rbt` CLI (to its own version) on the environment of any
+# application it runs. The application's `reboot` library refuses to
+# start when its own version differs, since the CLI and library are
+# released in lockstep and must match exactly. Absent when the
+# application is run without `rbt` (e.g. under `pytest`), in which
+# case there is no expectation to enforce.
+ENVVAR_REBOOT_EXPECTED_VERSION = 'REBOOT_EXPECTED_VERSION'
 
 # The names of environment variables that are only present when
 # running in specific modes, e.g., `rbt dev` or `rbt serve`.
@@ -113,6 +124,12 @@ ENVVAR_RBT_DEV = 'RBT_DEV'
 ENVVAR_RBT_SERVE = 'RBT_SERVE'
 ENVVAR_RBT_NAME = 'RBT_NAME'
 ENVVAR_RBT_EFFECT_VALIDATION = 'RBT_EFFECT_VALIDATION'
+# When set to 'true', effect validation also runs for "trusted" Reboot
+# library servicers (those with the `trusted_effects` state option), which
+# otherwise skip their effect-validation re-runs. Set for all of Reboot's
+# own tests via `.bazelrc`. See
+# https://github.com/reboot-dev/mono/issues/4499.
+ENVVAR_RBT_VALIDATE_TRUSTED_EFFECTS = 'RBT_VALIDATE_TRUSTED_EFFECTS'
 ENVVAR_RBT_STATE_DIRECTORY = 'RBT_STATE_DIRECTORY'
 ENVVAR_RBT_NODEJS = 'RBT_NODEJS'
 ENVVAR_RBT_SERVERS = 'RBT_SERVERS'
@@ -236,16 +253,25 @@ DATABASE_SUFFIX = "-sidecar"
 #
 # Keep in sync with top-level `Dockerfile` and
 # `reboot/containers/reboot-base/Dockerfile`.
-ENVOY_VERSION = '1.30.2'
+ENVOY_VERSION = '1.38.2'
 ENVOY_PROXY_IMAGE = f'envoyproxy/envoy:v{ENVOY_VERSION}'
 
 ENVVAR_LOCAL_ENVOY_USE_TLS = 'REBOOT_LOCAL_ENVOY_USE_TLS'
 ENVVAR_LOCAL_ENVOY_TLS_CERTIFICATE_PATH = 'REBOOT_LOCAL_ENVOY_TLS_CERTIFICATE_PATH'
 ENVVAR_LOCAL_ENVOY_TLS_KEY_PATH = 'REBOOT_LOCAL_ENVOY_TLS_KEY_PATH'
 
-# The name of the environment variable, which should be set by 'rbt serve' or
-# 'rbt dev run', that contains the mode in which the Envoy should run
-# (executable/docker).
+
+class LocalEnvoyMode(enum.Enum):
+    """The mode in which a local Envoy proxy runs: as a stand-alone
+    `envoy` executable found on the `PATH`, or inside a Docker
+    container."""
+    EXECUTABLE = 'executable'
+    DOCKER = 'docker'
+
+
+# The name of the environment variable that a developer may set to a
+# `LocalEnvoyMode` value ('executable' or 'docker') to explicitly pick
+# the mode in which a local Envoy proxy will run.
 ENVVAR_LOCAL_ENVOY_MODE = 'REBOOT_LOCAL_ENVOY_MODE'
 ENVVAR_LOCAL_ENVOY_DEBUG = 'REBOOT_LOCAL_ENVOY_DEBUG'
 

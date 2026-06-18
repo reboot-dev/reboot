@@ -4,18 +4,22 @@
 # locally before `docker build` so that `web/dist/` contains the
 # bundled UIs. This image copies that prebuilt bundle rather
 # than installing Node and rebuilding it here.
-FROM ghcr.io/reboot-dev/reboot-base:1.1.0
+FROM ghcr.io/reboot-dev/reboot-base:1.2.0
 
 WORKDIR /app
 
-# Install Python dependencies from the rye-generated lockfile.
-# `pip` accepts the `requirements.lock` format directly. This
+# Install Python dependencies from the uv lockfile. `pip` can't
+# read `uv.lock` directly, so `uv` exports it to
+# `requirements.txt` format, which `pip` accepts. This
 # layer is cached until the lockfile changes, so app-code edits
 # don't trigger a re-install of the dependency tree. The base
 # image already includes Reboot itself; the lockfile pins it to
 # the matching version.
-COPY requirements.lock requirements.txt
-RUN pip install -r requirements.txt
+COPY --from=ghcr.io/astral-sh/uv:0.11.13 /uv /usr/local/bin/uv
+COPY pyproject.toml uv.lock ./
+RUN uv export --frozen --no-dev --no-emit-project \
+    --format requirements-txt -o requirements.txt \
+    && pip install -r requirements.txt
 
 # Copy the API definition and `.rbtrc`, then generate Reboot
 # code. Separate layer so regeneration only reruns when the

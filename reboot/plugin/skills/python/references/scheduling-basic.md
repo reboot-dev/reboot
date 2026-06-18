@@ -2,7 +2,7 @@
 title: Schedule Future Work with `ref.schedule(when=...)`
 impact: MEDIUM
 impactDescription: Without scheduling, deferred work has to live in external timers
-tags: scheduling, schedule, timedelta, deferred, async
+tags: scheduling, schedule, timedelta, datetime, deferred, async
 ---
 
 ## Schedule Future Work with `ref.schedule(when=...)`
@@ -56,6 +56,21 @@ class AccountServicer(Account.Servicer):
         self, context: WriterContext, request: Account.OpenRequest,
     ) -> None:
         await self.ref().schedule(when=timedelta(seconds=1)).interest(context)
+```
+
+## `when=` Also Takes an Absolute `datetime`
+
+`when=` accepts either a `timedelta` (fire after that delay) or a
+**timezone-aware `datetime`** (fire at that wall-clock instant). The
+absolute form is what you want for "cron" — running at a fixed time of
+day. See `scheduling-recurring.md` for the recurring/cron pattern.
+
+```python
+from datetime import datetime, timezone
+
+await self.ref().schedule(
+    when=datetime(2030, 1, 1, 2, 0, tzinfo=timezone.utc),
+).interest(context)
 ```
 
 ## Schedule Other Actors, Not Just `self`

@@ -27,6 +27,7 @@ py_library(
         "@com_github_reboot_dev_reboot//rbt/cloud/v1alpha1/organizations:organizations_py_reboot",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
         "@com_github_reboot_dev_reboot//reboot:naming_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
         "@com_github_reboot_dev_reboot//reboot/aio:aborted_py",
         "@com_github_reboot_dev_reboot//reboot/aio:external_py",
     ],

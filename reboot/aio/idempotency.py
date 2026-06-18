@@ -469,7 +469,7 @@ class IdempotencyManager:
 
             if (
                 aborted_type is not None and
-                aborted_type.is_from_backend_and_safe(exception)
+                aborted_type.is_from_backend_and_recoverable(exception)
             ):
                 # We are not uncertain because we _must_ have gotten
                 # this from the backend, so just let it propagate.

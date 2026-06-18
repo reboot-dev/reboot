@@ -41,6 +41,7 @@ message OAuthTokens {
 
 message OAuthTokenManager {
   option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
   };
 }
 

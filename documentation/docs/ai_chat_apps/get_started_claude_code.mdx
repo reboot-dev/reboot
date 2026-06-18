@@ -5,18 +5,15 @@ import TabItem from "@theme/TabItem";
 
 Build an AI Chat App using
 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)
-and the Reboot skill. Claude Code writes the code for you — you
+and the Reboot plugin. Claude Code writes the code for you — you
 describe what you want, approve the plan, and it scaffolds the
 entire project.
 
-:::info Prerequisites
-Reboot requires Python >= 3.10 and &lt; 3.13, Docker, and
-Node.js >= 20.10. You also need
-[Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)
-installed.
-:::
+## Install the Reboot plugin
 
-## Install the Reboot skill
+The plugin bundles everything Reboot needs, so
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)
+itself is the only thing you need to have installed.
 
 <Tabs groupId="install-method">
   <TabItem value="quick" label="Quick install">
@@ -32,6 +29,9 @@ This registers the Reboot marketplace, installs the plugin,
 and pre-installs its pinned dependencies so your first build
 runs without waiting on downloads.
 
+Then start Claude Code — or, if it was already running while you
+installed, restart it — so the plugin loads.
+
   </TabItem>
   <TabItem value="manual" label="Manual install">
 
@@ -45,11 +45,6 @@ claude plugin marketplace add reboot-dev/reboot-plugin
 ```
 claude plugin install reboot@reboot-plugin
 ```
-
-:::note
-If you install the plugin within `claude` with `/plugin` you need to restart for
-the configuration and skill to load correctly.
-:::
 
 Or, to auto-enable the skill for your whole team, add this to your
 project's `.claude/settings.json`:
@@ -70,6 +65,9 @@ project's `.claude/settings.json`:
 }
 ```
 
+Restart any Claude Code session that was already running when you
+installed the Reboot plugin so the new plugin loads.
+
   </TabItem>
 </Tabs>
 
@@ -78,18 +76,24 @@ project's `.claude/settings.json`:
 Once installed, invoke the skill with a description of your app:
 
 ```
-/chat-app Build a counter app with an interactive clicker UI
+/app Build a counter app with an interactive clicker UI
 ```
+
+You can also just describe what you want to build in a normal
+prompt — Claude Code selects the right Reboot skill from your
+description. Either way, the skill may ask whether you want an AI
+Chat App or a standalone Web App — for this guide, pick the Chat
+App.
 
 The skill enters **plan mode** first. It will:
 
 1. Analyze your description and propose a state model
-2. Map out which types, methods, and UIs your app needs
+2. Map out which types, methods, AI tools, and UIs your app needs
 3. Present the plan and wait for your approval
 
 Once you approve, Claude Code scaffolds the full project —
 API definition, backend servicers, React UI, and configuration —
-then builds and runs it.
+then builds it, writes and runs backend tests, and starts the app.
 
 ## What gets created
 
@@ -99,15 +103,19 @@ files are:
 ```
 my-app/
 ├── .rbtrc                    # Reboot CLI config
+├── mcp_servers.json          # MCP client connection config
 ├── pyproject.toml            # Python deps (uv)
 ├── api/
 │   └── my_app/v1/
 │       └── my_app.py         # API definition (Pydantic)
 ├── backend/
-│   └── src/
-│       ├── main.py           # Application entrypoint
-│       └── servicers/
-│           └── my_app.py     # Servicer implementation
+│   ├── src/
+│   │   ├── main.py           # Application entrypoint
+│   │   ├── example_prompts.py  # Setup wizard example prompts
+│   │   └── servicers/
+│   │       └── my_app.py     # Servicer implementation
+│   └── tests/
+│       └── my_app_test.py    # Backend behavior tests
 └── web/
     ├── package.json
     ├── index.css             # Styling
@@ -128,11 +136,22 @@ by the AI.
 
 ## Test your app
 
-Once the build succeeds, Claude will run the program for you. You'll see
-a link, click it to try your app out! 
+Claude Code writes backend unit tests covering your app's user
+stories and runs them before handing the app off — they help to
+make sure that your app works, and keeps working.
 
-Claude will also write unit tests for your app, which help to make sure
-that your app works - and keeps working.
+Once the tests pass, Claude Code starts everything the app needs:
+
+* the Reboot backend (`rbt dev run`), which also serves the MCP
+  endpoint,
+* the Vite frontend dev server, and
+* a Cloudflare quick tunnel, so that remote MCP clients (like
+  ChatGPT) can reach your local app.
+
+It then opens the app's **setup wizard** at `http://localhost:9991`
+— a page served by your app that walks you through connecting an
+MCP client (Claude, ChatGPT, or the MCPJam Inspector) and suggests
+example prompts to try.
 
 ## Iterate on your app
 
@@ -145,8 +164,23 @@ You can also use the skill to modify an existing app:
 The skill reads your current code, plans the changes, and waits
 for approval before editing.
 
+## Run it again later
+
+If you come back to your project in a new session, ask Claude Code
+to bring the app back up:
+
+```
+/run my-app
+```
+
+Or just say "Run this Reboot app" from the project directory. The
+run skill starts everything your app needs and reopens the setup
+wizard.
+
 ## Next steps
 
+* **[Get Started (with Codex)](/ai_chat_apps/get_started_codex)** —
+  the equivalent agent-driven workflow for Codex.
 * **[Get Started (hand-written)](/ai_chat_apps/get_started)** —
   build the same app step by step to understand every file.
 * **[UIs for AI Chat Apps](/learn_more/implement/ui_methods)** —

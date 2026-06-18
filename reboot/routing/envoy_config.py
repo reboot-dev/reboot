@@ -48,9 +48,9 @@ from reboot.routing.filters.lua import (
 from reboot.run_environments import on_cloud
 from reboot.settings import (
     ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES,
-    ENVVAR_LOCAL_ENVOY_MODE,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_MCP_FRONTEND_HOST,
+    LocalEnvoyMode,
 )
 from urllib.parse import urlparse
 
@@ -116,21 +116,11 @@ def _get_mcp_frontend_config() -> McpFrontendConfig | None:
         raise ValueError(
             f"RBT_MCP_FRONTEND_HOST must include a hostname; got '{frontend_url}'"
         )
-    port = parsed.port
-    host = parsed.hostname
-
-    # For localhost-like hostnames, use the appropriate address based on
-    # Envoy mode. Docker Envoy needs `host.docker.internal` to reach the
-    # host machine; executable Envoy can use `localhost` directly.
-    localhost_aliases = ("localhost", "127.0.0.1", "0.0.0.0")
-    if host in localhost_aliases:
-        envoy_mode = os.environ.get(ENVVAR_LOCAL_ENVOY_MODE, "docker")
-        if envoy_mode == "docker":
-            host = "host.docker.internal"
-        else:
-            host = "localhost"
-
-    return McpFrontendConfig(host=host, port=port, original_url=frontend_url)
+    return McpFrontendConfig(
+        host=parsed.hostname,
+        port=parsed.port,
+        original_url=frontend_url,
+    )
 
 
 # Helper for packing an `Any`.
@@ -532,7 +522,9 @@ def _mcp_frontend_routes() -> list[route_components_pb2.Route]:
     return [web_route]
 
 
-def _mcp_frontend_cluster() -> cluster_pb2.Cluster | None:
+def _mcp_frontend_cluster(
+    local_envoy_mode: LocalEnvoyMode,
+) -> cluster_pb2.Cluster | None:
     """Cluster for MCP frontend host (web dev server).
 
     Returns None if MCP frontend is not configured.
@@ -540,6 +532,17 @@ def _mcp_frontend_cluster() -> cluster_pb2.Cluster | None:
     config = _get_mcp_frontend_config()
     if config is None:
         return None
+
+    # For localhost-like hostnames, use the appropriate address based
+    # on the mode in which Envoy runs. Envoy in a Docker container
+    # needs `host.docker.internal` to reach the host machine; Envoy
+    # running as a stand-alone executable can use `localhost` directly.
+    host = config.host
+    if host in ("localhost", "127.0.0.1", "0.0.0.0"):
+        if local_envoy_mode is LocalEnvoyMode.DOCKER:
+            host = "host.docker.internal"
+        else:
+            host = "localhost"
 
     return cluster_pb2.Cluster(
         name=MCP_FRONTEND_CLUSTER_NAME,
@@ -559,7 +562,7 @@ def _mcp_frontend_cluster() -> cluster_pb2.Cluster | None:
                             endpoint=endpoint_components_pb2.Endpoint(
                                 address=address_pb2.Address(
                                     socket_address=address_pb2.SocketAddress(
-                                        address=config.host,
+                                        address=host,
                                         port_value=config.port,
                                     )
                                 )
@@ -991,11 +994,12 @@ def _cluster(
 def clusters(
     application_id: ApplicationId,
     servers: list[ServerInfo],
+    local_envoy_mode: LocalEnvoyMode,
 ) -> list[cluster_pb2.Cluster]:
     result: list[cluster_pb2.Cluster] = []
 
     # Add MCP frontend cluster if configured.
-    frontend_cluster = _mcp_frontend_cluster()
+    frontend_cluster = _mcp_frontend_cluster(local_envoy_mode)
     if frontend_cluster is not None:
         result.append(frontend_cluster)
 

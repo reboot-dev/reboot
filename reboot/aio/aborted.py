@@ -385,11 +385,14 @@ class Aborted(Exception):
         return rbt.v1alpha1.errors_pb2.Unknown()
 
     @classmethod
-    def is_from_backend_and_safe(cls, exception: BaseException):
+    def is_from_backend_and_recoverable(cls, exception: BaseException):
         """Helper to determine if an exception is from the backend, i.e., the
         developer or Reboot raised it, and thus we know that there is
         not any network connectivity issue or concerns about
-        idempotency.
+        idempotency. Such errors are recoverable: a caller can catch
+        them and the transaction can still commit (in contrast to an
+        undeclared or transport error, which leaves the transaction in
+        an unrecoverable state that must abort).
         """
         # We are only looking to see if this is an instance of
         # `Aborted` vs `cls` because we allow a developer to just
@@ -401,8 +404,8 @@ class Aborted(Exception):
         return (
             isinstance(exception, Aborted) and (
                 cls.is_declared_error(exception.error) or
-                # We consider it a safe pattern to either check if
-                # something is already constructed, e.g., by calling a
+                # We consider it a recoverable pattern to either check
+                # if something is already constructed, e.g., by calling a
                 # reader on it, or try to construct something to
                 # ensure it is constructed, e.g., by calling a
                 # constructor. Moreover, these errors are only

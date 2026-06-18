@@ -1,11 +1,15 @@
 ---
 name: run
-description: Run an existing Reboot application locally. Detects whether the project is an MCP Chat App or a standalone Web App, makes sure dependencies and secrets are in place, then starts every process the app needs — the backend (`rbt dev run`) and the frontend dev server (for Chat Apps it also opens the setup wizard, from which the user can launch MCPJam on demand). Use this to bring an app back up, e.g. at the start of a new session.
+description: Run an existing Reboot application locally. Detects whether the project is an MCP Chat App or a standalone Web App, makes sure dependencies and secrets are in place, then starts every process the app needs — a Cloudflare quick tunnel (so external MCP clients can reach the dev server) via the bundled `cloudflared` shim, the backend (`rbt dev run`), and the frontend dev server (for Chat Apps it also opens the setup wizard, from which the user can launch MCPJam on demand). Use this to bring an app back up, e.g. at the start of a new session.
 argument-hint: [<project-directory>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit, AskUserQuestion
 ---
 
 # run — Run a Reboot Application
+
+> **Version notices:** if `rbt` reports a version mismatch or that a
+> newer Reboot is available, the [upgrade skill](../upgrade/SKILL.md)
+> says how and when to react.
 
 Bring an existing Reboot application up locally. This skill is the
 single canonical "start the app" procedure: it figures out what
@@ -96,6 +100,34 @@ root.
 
 ### Backend — both app types
 
+Before starting the backend, kick off a Cloudflare quick tunnel
+pointed at the dev server's port so external MCP clients (e.g.
+ChatGPT) can reach it. Run the bundled `cloudflared` shim in its
+own background shell with two flags you choose:
+
+- `--url http://localhost:<BACKEND_PORT>` — the dev server's HTTP
+  port (the default is `9991`; pick a different free port if `9991`
+  is taken and configure `rbt dev run` to match below).
+- `--metrics localhost:<METRICS_PORT>` — a free local port for
+  cloudflared's metrics endpoint (the default is `4040`; pick a
+  different free port if `4040` is taken). Once the tunnel is up,
+  `http://localhost:<METRICS_PORT>/quicktunnel` returns the
+  allocated `*.trycloudflare.com` URL.
+
+```sh
+cloudflared tunnel \
+    --metrics localhost:4040 \
+    --url http://localhost:9991
+```
+
+Pass the **same** `<BACKEND_PORT>` to `rbt dev run` so the dev
+server and the tunnel agree on the port — Reboot's default is
+`9991`, so no extra flag is needed if you stuck with the default;
+otherwise see `python/references/lifecycle-rbtrc.md` for the
+`application_port` knob.
+
+Then start the backend itself in its own background shell:
+
 ```sh
 uv run rbt dev run --no-chaos
 ```
@@ -169,11 +201,7 @@ so it does not pop a browser tab — you surface the URL instead):
 mcpjam-inspector --url http://localhost:9991/mcp --oauth
 ```
 
-Either way the inspector binds the fixed port 6274; its launcher
-orphans the server on `SIGTERM`, so the plugin reaps whatever is on
-6274 when the agent session ends. Claude Code does this
-automatically via a `SessionEnd` hook; Codex has no session-end
-event, so see the README for how cleanup is handled there.
+Either way the inspector binds the fixed port 6274.
 
 ## Step 6 — Hand off
 

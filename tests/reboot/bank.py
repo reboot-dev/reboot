@@ -27,6 +27,13 @@ from typing import AsyncIterable
 # state IDs.
 SINGLETON_BANK_ID = "(singleton)/bank"
 
+# Coordination events for `test_retain_read_lock_after_declared_abort`:
+# the servicer signals once it has aborted its nested transaction (and
+# thus retained the read lock), then waits for the test to launch a
+# concurrent writer before reading the balance again.
+retain_read_lock_nested_aborted = asyncio.Event()
+retain_read_lock_release = asyncio.Event()
+
 
 # The `AccountServicer` is a `Singleton` servicer, since it need to
 # support state streaming.
@@ -167,6 +174,47 @@ class AccountServicer(Account.singleton.Servicer):
             bank_rbt.UserError()
         )
 
+    async def test_read_only_nested_transaction_that_aborts(
+        self,
+        context: TransactionContext,
+        state: Account.State,
+        request: Empty,
+    ) -> Empty:
+        # We don't modify any state before aborting so this nested
+        # transaction's participants stay read-only and must not be
+        # aborted.
+        raise Account.TestReadOnlyNestedTransactionThatAbortsAborted(
+            bank_rbt.UserError()
+        )
+
+    async def read_only_undeclared_abort(
+        self,
+        context: TransactionContext,
+        state: Account.State,
+        request: Empty,
+    ) -> Empty:
+        # A read-only transaction (we never modify `state`) that aborts
+        # with an _undeclared_ (hence unrecoverable) error.
+        raise ValueError('Jazz hands!')
+
+    async def catch_read_only_undeclared(
+        self,
+        context: TransactionContext,
+        state: Account.State,
+        request: bank_rbt.CatchReadOnlyUndeclaredRequest,
+    ) -> Empty:
+        # Call a read-only transaction that aborts undeclared and catch
+        # the (unrecoverable) error, then return normally. We never
+        # modify our own `state`, so every participant in this subtree
+        # is read-only.
+        try:
+            await Account.ref(request.callee_account_id
+                             ).read_only_undeclared_abort(context)
+        except Account.ReadOnlyUndeclaredAbortAborted:
+            pass
+
+        return Empty()
+
 
 class BankServicer(Bank.Servicer):
 
@@ -230,9 +278,10 @@ class BankServicer(Bank.Servicer):
             ),
         )
 
-        # TODO: rather than passing `initial_deposit` to the opened
-        # account we could consider calling `Bank.Transfer` once nested
-        # transactions don't need to be mutually exclusive.
+        # A nested transaction may read and modify state shared with
+        # its ancestors, so this could also be done by calling
+        # `Bank.Transfer` (see `test_nested_transactions`, which
+        # exercises exactly that shape).
         if request.HasField('initial_deposit_transfer_from_account_id'):
             from_account = Account.ref(
                 request.initial_deposit_transfer_from_account_id
@@ -391,7 +440,7 @@ class BankServicer(Bank.Servicer):
 
             # At present, even if the exception is caught and handled, the
             # transaction will still be set to abort.
-            assert context.transaction_must_abort
+            assert context.transaction_unrecoverable_abort
         else:
             raise RuntimeError('Expecting to abort!')
 
@@ -425,7 +474,7 @@ class BankServicer(Bank.Servicer):
             assert isinstance(aborted.error, bank_rbt.OverdraftError)
             # Since this is a declared error, we can catch the
             # exception and allow the transaction to not abort.
-            assert not context.transaction_must_abort
+            assert not context.transaction_unrecoverable_abort
         else:
             raise RuntimeError('Expecting to abort!')
 
@@ -493,6 +542,13 @@ class BankServicer(Bank.Servicer):
 
         account = Account.ref(request.account_id)
 
+        # Read the account's balance _before_ calling the nested
+        # transaction so that this transaction also participates in
+        # (shares) the account's state; since we only read it while
+        # unmodified the nested transaction's abort must not cascade
+        # to us.
+        await account.balance(context)
+
         try:
             await account.test_nested_transaction_that_aborts(context)
         except Account.TestNestedTransactionThatAbortsAborted as aborted:
@@ -507,6 +563,180 @@ class BankServicer(Bank.Servicer):
         )
 
         return Empty()
+
+    async def test_inherited_ownership_abort(
+        self,
+        context: TransactionContext,
+        request: bank_rbt.TestInheritedOwnershipAbortRequest,
+    ) -> Empty:
+        # We (the root transaction) first join the account by opening
+        # it.
+        account, _ = await Account.open(
+            context,
+            request.account_id,
+            initial_deposit=10,
+        )
+
+        # Call a nested transaction that, via a _deeper_ nested
+        # transaction, writes and aborts the account WITHOUT us
+        # touching the account ourselves, so when the deeper nested
+        # transaction aborts, ownership of the account is inherited
+        # back to us (its abort returns ownership to whoever owned it
+        # before it, i.e., us).
+        await self.ref().test_inherited_ownership_abort_nested(
+            context,
+            account_id=request.account_id,
+        )
+
+        # Now touch the account again. The aborted nested transaction
+        # must have returned ownership to us (and not left us owning it
+        # without a record to relinquish), otherwise this would block
+        # forever waiting to claim ownership.
+        await account.deposit(context, amount=5)
+
+        return Empty()
+
+    async def test_inherited_ownership_abort_nested(
+        self,
+        context: TransactionContext,
+        request: bank_rbt.TestInheritedOwnershipAbortRequest,
+    ) -> Empty:
+        # Call a nested transaction that writes the account and aborts,
+        # WITHOUT touching the account ourselves, so ownership of it is
+        # inherited back to _our_ caller (not us) when it aborts.
+        account = Account.ref(request.account_id)
+        try:
+            await account.test_nested_transaction_that_aborts(context)
+        except Account.TestNestedTransactionThatAbortsAborted as aborted:
+            assert isinstance(aborted.error, bank_rbt.UserError)
+        else:
+            raise RuntimeError('Expecting to abort!')
+
+        return Empty()
+
+    async def test_retain_read_lock_after_declared_abort(
+        self,
+        context: TransactionContext,
+        request: bank_rbt.TestRetainReadLockAfterDeclaredAbortRequest,
+    ) -> bank_rbt.TestRetainReadLockAfterDeclaredAbortResponse:
+        account = Account.ref(request.account_id)
+
+        # Call a nested transaction that reads the account and then
+        # aborts with a declared error, which we catch and continue
+        # past. Because that error escaped to us, the account must stay
+        # read-locked by us (the root transaction) at the value the
+        # nested transaction observed, so a concurrent writer can not
+        # change it out from under us before we commit.
+        try:
+            await account.test_read_only_nested_transaction_that_aborts(
+                context
+            )
+        except Account.TestReadOnlyNestedTransactionThatAbortsAborted \
+                as aborted:
+            assert isinstance(aborted.error, bank_rbt.UserError)
+        else:
+            raise RuntimeError('Expecting to abort!')
+
+        # Let the test know we've retained the read lock, then wait for
+        # it to launch a concurrent writer (which must block on our read
+        # lock) before we read the balance again.
+        retain_read_lock_nested_aborted.set()
+        await retain_read_lock_release.wait()
+
+        # The balance must be unchanged: the concurrent writer is
+        # blocked on the read lock we retained from the aborted nested
+        # transaction.
+        response = await account.balance(context)
+
+        return bank_rbt.TestRetainReadLockAfterDeclaredAbortResponse(
+            amount=response.amount,
+        )
+
+    async def test_nested_catch_undeclared(
+        self,
+        context: TransactionContext,
+        request: bank_rbt.TestNestedCatchUndeclaredRequest,
+    ) -> Empty:
+        # Call, as a nested transaction, a transaction that catches an
+        # undeclared error from a sub-call and continues. Even though
+        # the nested transaction returns normally, the caught undeclared
+        # error leaves the transaction unrecoverable, so the whole
+        # (root) transaction must still abort.
+        bank = Bank.ref(SINGLETON_BANK_ID)
+        await bank.try_catch_undeclared_error(
+            context,
+            account_id=request.account_id,
+        )
+
+        return Empty()
+
+    async def test_nested_read_only_doomed_subtree(
+        self,
+        context: TransactionContext,
+        request: bank_rbt.TestNestedReadOnlyDoomedSubtreeRequest,
+    ) -> Empty:
+        # Root of a three-level, entirely read-only tree. We call the
+        # "catcher", which calls a read-only transaction that aborts
+        # undeclared and catches it, then returns normally. We never
+        # learn (via our own context flag) that the subtree is doomed,
+        # and every participant is read-only — so without doom
+        # propagation we would take the all-read-only two phase commit
+        # elision and wrongly commit.
+        await Account.ref(request.catcher_account_id
+                         ).catch_read_only_undeclared(
+                             context,
+                             callee_account_id=request.thrower_account_id,
+                         )
+
+        return Empty()
+
+    async def test_prepare_wait_for_nested_abort_rollback(
+        self,
+        context: TransactionContext,
+        request: bank_rbt.TestPrepareWaitForNestedAbortRollbackRequest,
+    ) -> Empty:
+        # Open the remote account with a known balance so that the
+        # nested transaction below shares (rather than constructs) it.
+        await Account.open(
+            context,
+            request.remote_account_id,
+            initial_deposit=100,
+        )
+
+        # Call a nested transaction that deposits into the remote
+        # account and then aborts with a declared error, which we catch
+        # and continue past. The nested transaction's write to the
+        # remote account is relinquished via a `RelinquishOwnership`
+        # RPC; we (the root) must not prepare that account until the
+        # rollback has landed, otherwise we would persist the aborted
+        # deposit.
+        try:
+            await self.ref().deposit_remote_then_abort(
+                context,
+                remote_account_id=request.remote_account_id,
+                amount=request.amount,
+            )
+        except Bank.DepositRemoteThenAbortAborted as aborted:
+            assert isinstance(aborted.error, bank_rbt.UserError)
+        else:
+            raise RuntimeError('Expecting to abort!')
+
+        return Empty()
+
+    async def deposit_remote_then_abort(
+        self,
+        context: TransactionContext,
+        request: bank_rbt.DepositRemoteThenAbortRequest,
+    ) -> Empty:
+        # Write a _remote_ account (not our own coordinator state, so
+        # the rollback travels via `RelinquishOwnership`) and then abort
+        # with a declared error so our caller can catch it.
+        await Account.ref(request.remote_account_id).deposit(
+            context,
+            amount=request.amount,
+        )
+
+        raise Bank.DepositRemoteThenAbortAborted(bank_rbt.UserError())
 
     async def test_calling_legacy_grpc_service(
         self,
@@ -535,34 +765,121 @@ class BankServicer(Bank.Servicer):
 
         return bank_rbt.TestCallingLegacyGrpcServiceResponse()
 
-    async def test_unsupported_nested_transactions(
+    async def test_nested_transactions(
         self,
         context: TransactionContext,
-        request: bank_rbt.TestUnsupportedNestedTransactionsRequest,
+        request: bank_rbt.TestNestedTransactionsRequest,
     ) -> Empty:
-        jonathan, _ = await Account.open(
-            context,
-            'jonathan',
-            Options(bearer_token=context.caller_bearer_token),
-        )
-
+        # Nested transactions may now read/modify state shared with
+        # their ancestors; this method exercises the two previously
+        # unsupported shapes. Each shape uses its own account ids
+        # since this method gets called once per shape.
         if (
-            request.type == bank_rbt.TestUnsupportedNestedTransactionsRequest.
-            NESTED_TXN_SAME_STATE
+            request.type ==
+            bank_rbt.TestNestedTransactionsRequest.NESTED_TXN_SAME_STATE
         ):
+            await Account.open(
+                context,
+                'jonathan-same-state',
+                Options(bearer_token=context.caller_bearer_token),
+                initial_deposit=2,
+            )
+            await Account.open(
+                context,
+                'ben-same-state',
+                Options(bearer_token=context.caller_bearer_token),
+            )
+            # A nested transaction on the SAME `Bank` state as this
+            # parent transaction which also modifies the accounts
+            # opened above.
             await self.ref(
                 bearer_token=context.caller_bearer_token,
             ).transfer(
                 context,
-                from_account_id='jonathan',
-                to_account_id='ben',
+                from_account_id='jonathan-same-state',
+                to_account_id='ben-same-state',
                 amount=1,
             )
         elif (
-            request.type == bank_rbt.TestUnsupportedNestedTransactionsRequest.
-            NESTED_TXN_PARENT_WRITER
+            request.type ==
+            bank_rbt.TestNestedTransactionsRequest.NESTED_TXN_PARENT_WRITER
         ):
-            await jonathan.deposit(context, amount=1)
+            jonathan, _ = await Account.open(
+                context,
+                'jonathan-parent-writer',
+                Options(bearer_token=context.caller_bearer_token),
+                initial_deposit=2,
+            )
+            await Account.open(
+                context,
+                'ben-parent-writer',
+                Options(bearer_token=context.caller_bearer_token),
+            )
+            await self.ref(
+                bearer_token=context.caller_bearer_token,
+            ).transfer(
+                context,
+                from_account_id='jonathan-parent-writer',
+                to_account_id='ben-parent-writer',
+                amount=1,
+            )
+            # The parent transaction modifies state that the nested
+            # transaction above also modified.
+            await jonathan.deposit(context, amount=5)
+        elif (
+            request.type == bank_rbt.TestNestedTransactionsRequest.
+            NESTED_TXN_SHARED_WRITE_ABORT
+        ):
+            await Account.open(
+                context,
+                'jonathan-shared-write-abort',
+                Options(bearer_token=context.caller_bearer_token),
+                initial_deposit=1,
+            )
+            await Account.open(
+                context,
+                'ben-shared-write-abort',
+                Options(bearer_token=context.caller_bearer_token),
+            )
+            # This nested transaction will abort (with a declared
+            # overdraft error) due to insufficient funds, restoring
+            # the accounts above to their values from before it; we
+            # catch the error, continue, and commit.
+            try:
+                await self.ref(
+                    bearer_token=context.caller_bearer_token,
+                ).transfer(
+                    context,
+                    from_account_id='jonathan-shared-write-abort',
+                    to_account_id='ben-shared-write-abort',
+                    amount=100,
+                )
+            except Bank.TransferAborted as aborted:
+                assert isinstance(aborted.error, bank_rbt.OverdraftError)
+            else:
+                raise RuntimeError('Expecting to abort!')
+        elif (
+            request.type ==
+            bank_rbt.TestNestedTransactionsRequest.NESTED_TXN_READ_ONLY_ABORT
+        ):
+            account = Account.ref('jonathan-read-only-abort')
+
+            TestReadOnlyNestedTransactionThatAbortsAborted = (
+                Account.TestReadOnlyNestedTransactionThatAbortsAborted
+            )
+            try:
+                await account.test_read_only_nested_transaction_that_aborts(
+                    context
+                )
+            except TestReadOnlyNestedTransactionThatAbortsAborted as aborted:
+                assert isinstance(aborted.error, bank_rbt.UserError)
+            else:
+                raise RuntimeError('Expecting to abort!')
+
+            # The aborted nested transaction only _read_ the account
+            # so the account is not aborted and we can still use (and
+            # even modify) it.
+            await account.deposit(context, amount=5)
 
         return Empty()
 

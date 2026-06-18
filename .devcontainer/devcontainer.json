@@ -73,7 +73,10 @@
     // but that's complicated.
     //   https://github.com/microsoft/vscode-dev-containers/blob/main/script-library/docs/docker-in-docker.md
     "ghcr.io/devcontainers/features/docker-in-docker:2": {
-      "version": "latest"
+      // Buildx is already installed via `docker-buildx-plugin` in the
+      // Dockerfile, so skip the feature's own `buildx` download.
+      "version": "latest",
+      "installDockerBuildx": false
     },
     // GitHub recently changed their default to no longer install sshd by default.
     // See: https://github.com/cli/cli/issues/5739. We now need to add it in

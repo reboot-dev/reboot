@@ -60,6 +60,7 @@ service NodeMethods {
 
 message Node {
   option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
   };
 
   uint32 degree = 1;
@@ -247,6 +248,7 @@ service OrderedMapMethods {
 
 message OrderedMap {
   option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
   };
 
   uint32 degree = 1;

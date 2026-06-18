@@ -11,7 +11,7 @@ PACKAGE_JSON = """
   "name": "zod_to_proto",
   "type": "module",
   "dependencies": {
-    "zod": "^3.25.51",
+    "zod": "^4.0.0",
     "chalk": "^4.1.2",
     "tsx": "^4.19.2"
   }

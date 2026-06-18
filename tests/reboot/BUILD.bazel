@@ -613,6 +613,21 @@ py_reboot_library(
     visibility = ["//visibility:public"],
 )
 
+proto_library(
+    name = "trusted_library_proto",
+    srcs = [":trusted_library.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "trusted_library_py_reboot",
+    proto = "trusted_library.proto",
+    proto_library = ":trusted_library_proto",
+    visibility = ["//visibility:public"],
+)
+
 py_boilerplate_reboot_library(
     name = "general_boilerplate_py_reboot",
     proto = "general.proto",
@@ -754,6 +769,7 @@ py_test(
     main = "effect_validation_tests.py",
     deps = [
         ":general_boilerplate_py_reboot",
+        ":trusted_library_py_reboot",
         "//rbt/v1alpha1:tasks_py_proto",
         "//reboot/aio:external_py",
         "//reboot/aio:tests_py",

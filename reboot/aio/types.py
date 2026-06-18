@@ -53,6 +53,8 @@ class StateRef:
 
     Each component in the StateRef is tagged with a hash of its type, to prevent
     collisions between ids when states are colocated. See `_state_type_tag`.
+    The type tag is separated from the state id by the first `:` in the
+    component; the state id itself may contain `:`.
 
     An example state ref for a `com.example.Parent` named `parent`, with a
     colocated `com.example.Child` named `child` is:
@@ -95,8 +97,10 @@ class StateRef:
         result = []
         readable = False
         for component in candidate.split('/'):
-            component_pieces = component.split(':', maxsplit=2)
-            if len(component_pieces) != 2:
+            # Split at the first `:` only; the state ID itself may
+            # contain `:`. The state type must not be empty.
+            component_pieces = component.split(':', maxsplit=1)
+            if len(component_pieces) != 2 or component_pieces[0] == '':
                 raise ValueError(
                     f"Invalid state reference component `{component}` in "
                     f"`{candidate}`: must contain either an encoded state type "

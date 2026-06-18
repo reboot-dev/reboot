@@ -40,10 +40,8 @@ sh_test_in_working_directory(
     }),
     # The following path is relative to the working directory.
     script = ".tests/test.sh",
-    # TODO: Rye has issues with concurrent bootstrap.
-    # https://github.com/astral-sh/rye/issues/960
-    # Additionally, in all our example tests, we initiate LocalEnvoy on the
-    # default secure port 9991. We require 'exclusive' to not run multiple
+    # In all our example tests, we initiate LocalEnvoy on the default
+    # secure port 9991. We require 'exclusive' to not run multiple
     # tests, that use the same port, concurrently.
     tags = ["exclusive"],
     working_directory = "reboot/examples/bank/",

@@ -29,6 +29,8 @@ import log.log
 import reboot.application
 from cryptography.exceptions import InvalidTag
 from rbt.std.ciphertext.v1.ciphertext_rbt import (
+    BeginRotationRequest,
+    BeginRotationResponse,
     Ciphertext,
     CiphertextsRequest,
     CiphertextsResponse,
@@ -402,8 +404,18 @@ class WrappingKeyServicer(WrappingKey.Servicer):
         ):
             return RewrapUnderRootKeyResponse()
 
-        active_version = root_keys.active_version()
-        if self.state.root_key_version == active_version:
+        # Re-wrap onto the version `Rotate` pinned (`request.root_key_version`,
+        # = the manager's `rotation_target_version`), not a freshly-read active
+        # version — so a restart that moves the active version mid-rotation
+        # can't make this key's version diverge from the one the rotation marked
+        # in use. It is unset only for a rotation that began under the pre-fix
+        # code (no `rotation_target_version`) and is resuming across an upgrade;
+        # that falls back to the current active version.
+        target_version = (
+            request.root_key_version if request.HasField("root_key_version")
+            else root_keys.active_version()
+        )
+        if self.state.root_key_version == target_version:
             return RewrapUnderRootKeyResponse()
 
         try:
@@ -414,13 +426,13 @@ class WrappingKeyServicer(WrappingKey.Servicer):
             )
 
         self.state.wrapped_key_material = _crypto.encrypt(
-            key=_crypto.kek(active_version),
+            key=_crypto.kek(target_version),
             plaintext=material,
             associated_data=_material_associated_data(
-                context.state_id, active_version
+                context.state_id, target_version
             ),
         )
-        self.state.root_key_version = active_version
+        self.state.root_key_version = target_version
         return RewrapUnderRootKeyResponse()
 
     async def ciphertexts(
@@ -486,6 +498,37 @@ class KeyManagerServicer(KeyManager.Servicer):
             self.state.watch_started = True
         return RegisterResponse(uuid=uuid)
 
+    async def begin_rotation(
+        self,
+        context: TransactionContext,
+        request: BeginRotationRequest,
+    ) -> BeginRotationResponse:
+        # Atomically capture the rotation target: the active root key
+        # version at this moment. Recording it in `consuming_versions` and
+        # `rotation_target_version` AND marking it in use on the
+        # `Application` — all in this one transaction — closes the window
+        # where keys are migrated onto that version before its usage marker
+        # exists (which a mid-rotation restart, where the captured version
+        # and `RewrapUnderRootKey`'s own active read could diverge, would
+        # otherwise open; see `rotate` / `rewrap_under_root_key`).
+        active_version = root_keys.active_version()
+        stale_versions = [
+            version for version in self.state.consuming_versions
+            if version < active_version
+        ]
+        if active_version not in self.state.consuming_versions:
+            self.state.consuming_versions.append(active_version)
+            await reboot.application.ref().use_root_key_version(
+                context,
+                consumer=_consumer(context.state_id),
+                version=active_version,
+            )
+        self.state.rotation_target_version = active_version
+        return BeginRotationResponse(
+            root_key_version=active_version,
+            stale_versions=stale_versions,
+        )
+
     async def shred(
         self,
         context: TransactionContext,
@@ -524,18 +567,19 @@ class KeyManagerServicer(KeyManager.Servicer):
         # necessary.
         async for _ in context.loop("Watch"):
 
-            async def newer_version() -> tuple[int, list[int]] | bool:
+            consumer = _consumer(context.state_id)
+
+            async def newer_version() -> bool:
                 key_manager = await KeyManager.ref().read(context)
                 active_version = root_keys.active_version()
 
                 # Rotate if we still hold any version older than the env's
                 # active one — those keys need migrating forward.
-                stale_versions = [
-                    version for version in key_manager.consuming_versions
-                    if version < active_version
-                ]
-                if stale_versions:
-                    return active_version, stale_versions
+                if any(
+                    version < active_version
+                    for version in key_manager.consuming_versions
+                ):
+                    return True
 
                 if any(
                     version > active_version
@@ -549,36 +593,22 @@ class KeyManagerServicer(KeyManager.Servicer):
                     )
                 return False
 
-            active_version, stale_versions = await until(
-                "Newer root key version",
-                context,
-                newer_version,
-            )
+            await until("Newer root key version", context, newer_version)
 
-            consumer = _consumer(context.state_id)
+            # Atomically capture the target version, record it consumed,
+            # mark it in use, and pin it in `rotation_target_version` — all
+            # in `begin_rotation`, so there is no window where keys are
+            # migrated onto that version before its marker exists, and so
+            # the sweep re-wraps onto exactly this pinned version rather
+            # than re-reading the active one per key.
+            begin = await KeyManager.ref().per_iteration(
+                "Begin rotation",
+            ).begin_rotation(context)
+            target_version = begin.root_key_version
+            stale_versions = list(begin.stale_versions)
 
-            # The sweep below migrates every stale key onto `active_version`.
-            # Start consuming it and mark it in use *before* the sweep, so a
-            # key wrapped under it while the sweep is in flight is never left
-            # unmarked. Idempotent if `register` already recorded it.
-            await reboot.application.ref(
-            ).per_iteration("Use root key version").use_root_key_version(
-                context,
-                consumer=consumer,
-                version=active_version,
-            )
-
-            async def start_consuming(state: KeyManager.State) -> None:
-                if active_version not in state.consuming_versions:
-                    state.consuming_versions.append(active_version)
-
-            await KeyManager.ref().per_iteration(
-                "Start consuming",
-            ).write(context, start_consuming)
-
-            await KeyManager.ref().per_iteration(
-                f"Rotate from v{min(stale_versions)} to v{active_version}"
-            ).rotate(context)
+            await KeyManager.ref(
+            ).per_iteration(f"Rotate to v{target_version}").rotate(context)
 
             # Every stale key is now on `active_version`. Stop consuming the
             # old versions *locally first*, then release their `Application`
@@ -613,10 +643,13 @@ class KeyManagerServicer(KeyManager.Servicer):
         request: RotateRequest,
     ) -> RotateResponse:
         # Re-wrap every wrapping key registered with this manager onto the
-        # active root key version. The paging cursor is persisted in
-        # `rotation_cursor` so the loop is deterministic across
-        # `context.loop` effect-validation re-runs and resumes correctly
-        # after a restart.
+        # rotation's pinned `rotation_target_version` (set atomically by
+        # `begin_rotation`), NOT a freshly-read active version — so even if a
+        # restart moves the active version mid-sweep, every key migrates onto the
+        # single version that was marked in use when the rotation began, and the
+        # markers can never lag the keys. The paging cursor is persisted in
+        # `rotation_cursor` so the loop is deterministic across `context.loop`
+        # effect-validation re-runs and resumes correctly after a restart.
         #
         # A single pass is sufficient — we never miss a wrapping key
         # registered concurrently with the sweep. Two facts combine:
@@ -627,7 +660,7 @@ class KeyManagerServicer(KeyManager.Servicer):
         # (2) `Wrap` always wraps new material under the current active
         # root key version, which during this sweep is the version we
         # are rotating onto. So a key inserted while we run is already
-        # on the target version: if the sweep reaches it,
+        # on the target version already: if the sweep reaches it,
         # `rewrap_under_root_key` is a no-op; if it slips in after our
         # final empty page, it needed no rotation anyway. Either way
         # nothing is left on an older version.
@@ -639,6 +672,13 @@ class KeyManagerServicer(KeyManager.Servicer):
             cursor = (
                 key_manager.rotation_cursor
                 if key_manager.HasField("rotation_cursor") else None
+            )
+            # The version every key is migrated onto, pinned by `begin_rotation`.
+            # `None` (a legacy manager mid-rotation across an upgrade) lets
+            # `rewrap_under_root_key` fall back to the active version.
+            target_version = (
+                key_manager.rotation_target_version
+                if key_manager.HasField("rotation_target_version") else None
             )
 
             response = await registry.range(
@@ -655,17 +695,19 @@ class KeyManagerServicer(KeyManager.Servicer):
 
                 async def finish(state: KeyManager.State) -> None:
                     state.ClearField("rotation_cursor")
+                    state.ClearField("rotation_target_version")
 
                 await KeyManager.ref().per_iteration(
                     "Finish rotation",
                 ).write(context, finish)
                 break
 
-            # Re-wrap every key in this page concurrently.
+            # Re-wrap every key in this page concurrently, onto the pinned target_version.
             await concurrently(
-                WrappingKey.ref(
-                    entry.bytes.decode(),
-                ).rewrap_under_root_key(context) for entry in entries
+                WrappingKey.ref(entry.bytes.decode()).rewrap_under_root_key(
+                    context,
+                    root_key_version=target_version,
+                ) for entry in entries
             )
 
             next_cursor = entries[-1].key

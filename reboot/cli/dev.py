@@ -48,10 +48,12 @@ from reboot.cli.subprocesses import Subprocesses
 from reboot.cli.transpile import auto_transpile, ensure_can_auto_transpile
 from reboot.cli.watch import FileWatcher, file_watcher
 from reboot.controller.plan_makers import validate_num_servers
+from reboot.server.local_envoy_factory import LocalEnvoyFactory
 from reboot.settings import (
     DEFAULT_SECURE_PORT,
     DOCS_BASE_URL,
     ENVOY_PROXY_IMAGE,
+    ENVOY_VERSION,
     ENVVAR_LOCAL_ENVOY_MODE,
     ENVVAR_LOCAL_ENVOY_TLS_CERTIFICATE_PATH,
     ENVVAR_LOCAL_ENVOY_TLS_KEY_PATH,
@@ -64,13 +66,15 @@ from reboot.settings import (
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
+    ENVVAR_REBOOT_EXPECTED_VERSION,
     ENVVAR_REBOOT_LOCAL_ENVOY,
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
     ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
     ENVVAR_REBOOT_USE_TTY,
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
+    LocalEnvoyMode,
 )
-from reboot.ssl.localhost import LOCALHOST_CRT_DATA
+from reboot.version import REBOOT_VERSION
 from typing import Any, Awaitable, Callable, Optional, TextIO, TypeVar
 
 TLS_CERTIFICATE_BEGINNING = "-----BEGIN CERTIFICATE-----"
@@ -280,13 +284,6 @@ def _register_dev_run(parser: ArgumentParser):
     )
 
     parser.subcommand('dev run').add_argument(
-        "--use-localhost-direct",
-        type=bool,
-        default=False,
-        help=argparse.SUPPRESS,
-    )
-
-    parser.subcommand('dev run').add_argument(
         "--terminate-after-health-check",
         type=bool,
         help=argparse.SUPPRESS,
@@ -485,12 +482,58 @@ async def check_docker_status(subprocesses: Subprocesses):
                     )
 
 
+async def check_local_envoy_mode(subprocesses: Subprocesses) -> None:
+    """Picks the mode in which a local Envoy proxy will run, and checks
+    that the mode is usable: that Docker is running and has the Envoy
+    proxy image (downloading it if necessary), or that the `envoy`
+    executable runs. Fails otherwise. Warns if the `envoy` executable
+    has a version other than the one we expect.
+
+    Note that it's entirely possible that we are already inside a
+    Docker container, inside which we might run `envoy` as a
+    stand-alone process."""
+    try:
+        local_envoy_mode = LocalEnvoyFactory.pick_mode()
+    except ValueError as e:
+        terminal.fail(str(e))
+
+    if local_envoy_mode is LocalEnvoyMode.DOCKER:
+        return await check_docker_status(subprocesses)
+
+    assert local_envoy_mode is LocalEnvoyMode.EXECUTABLE
+
+    async with subprocesses.exec(
+        'envoy',
+        '--version',
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    ) as process:
+        stdout, _ = await process.communicate()
+        if process.returncode != 0:
+            terminal.fail(
+                "Could not use Envoy:\n"
+                "\n"
+                f"{stdout.decode() if stdout is not None else '<no output>'}"
+            )
+
+        # 'envoy --version' outputs something like:
+        #  envoy  version:
+        #  <commit-sha>/1.38.2/Clean/RELEASE/BoringSSL
+        if ENVOY_VERSION not in stdout.decode():
+            terminal.warn(
+                f"Reboot is tested with Envoy version '{ENVOY_VERSION}', "
+                f"but found:\n{stdout.decode()}\nIf you encounter issues, "
+                f"install Envoy version '{ENVOY_VERSION}', or set "
+                f"'{ENVVAR_LOCAL_ENVOY_MODE}=docker' to run Envoy in a "
+                "Docker container instead."
+            )
+
+
 async def _check_local_envoy_status(
     *,
     port: int,
     terminate_after_health_check: bool,
     application_started_event: asyncio.Event,
-    use_localhost_direct: bool,
     tls_certificate: Optional[str],
     root_certificate: Optional[str],
     tracing: Tracing,
@@ -502,22 +545,9 @@ async def _check_local_envoy_status(
     # Wait until application is running with starting health check.
     await application_started_event.wait()
 
-    # If we've been asked to use `localhost.direct` we use the 'dev'
-    # subdomain as a workaround on a gRPC bug that produces log
-    # message error about not matching the entry (*.localhost.direct)
-    # in the certificate. See
-    # https://github.com/reboot-dev/mono/issues/2305
-    #
-    # We also want to print out 'dev.localhost.direct' so that our
-    # users copy that to also avoid getting the log message error from
-    # their gRPC or Reboot calls.
-    address = (
-        f'dev.localhost.direct:{port}'
-        if use_localhost_direct else f'127.0.0.1:{port}'
-    )
+    address = f'127.0.0.1:{port}'
 
     if tls_certificate is not None:
-        assert not use_localhost_direct
         assert root_certificate is not None
 
         cert_data = b''
@@ -555,7 +585,7 @@ async def _check_local_envoy_status(
             # similar.
             address = f'localhost:{port}'
 
-    protocol = "https" if use_localhost_direct or tls_certificate else "http"
+    protocol = "https" if tls_certificate else "http"
 
     backoff = Backoff(
         initial_backoff_seconds=0.01,
@@ -565,17 +595,9 @@ async def _check_local_envoy_status(
 
     def create_channel(
         address: str,
-        use_localhost_direct: bool,
         root_certificate: Optional[bytes],
     ):
-        if use_localhost_direct:
-            return grpc.aio.secure_channel(
-                address,
-                grpc.ssl_channel_credentials(
-                    root_certificates=LOCALHOST_CRT_DATA,
-                ),
-            )
-        elif root_certificate is not None:
+        if root_certificate is not None:
             return grpc.aio.secure_channel(
                 address,
                 grpc.ssl_channel_credentials(
@@ -597,7 +619,6 @@ async def _check_local_envoy_status(
         try:
             async with create_channel(
                 address,
-                use_localhost_direct,
                 binary_root_certificate,
             ) as channel:
                 response = await health_pb2_grpc.HealthStub(channel).Check(
@@ -958,23 +979,6 @@ async def dev_run(
 
     _check_common_args(args)
 
-    # We don't expect developers to have Envoy installed
-    # on their own machines, so we pull and run it as a
-    # Docker container, unless specified otherwise via the
-    # `ENVVAR_LOCAL_ENVOY_MODE` env variable, which
-    # we at least use to run nodejs examples on macOS
-    # GitHub runners since they don't have Docker.
-    local_envoy_mode = os.environ.get(ENVVAR_LOCAL_ENVOY_MODE, 'docker')
-    os.environ[ENVVAR_LOCAL_ENVOY_MODE] = local_envoy_mode
-
-    if args.use_localhost_direct and (
-        args.tls_certificate or args.tls_key or args.tls_root_certificate
-    ):
-        terminal.fail(
-            "Cannot use '--use-localhost-direct' with '--tls-certificate', "
-            "'--tls-key' or '--tls-root-certificate'."
-        )
-
     tls_args = [args.tls_certificate, args.tls_key, args.tls_root_certificate]
 
     if any(tls_args) and not all(tls_args):
@@ -983,11 +987,7 @@ async def dev_run(
             "and '--tls-root-certificate' must be specified."
         )
 
-    if args.use_localhost_direct:
-        # We ask for TLS without specifying a specific certificate,
-        # which means Envoy will use the one for `localhost.direct`.
-        os.environ[ENVVAR_LOCAL_ENVOY_USE_TLS] = 'True'
-    elif args.tls_certificate:
+    if args.tls_certificate:
         await _set_tls_env_or_fail(args)
 
         if not await aiofiles.os.path.isfile(args.tls_root_certificate):
@@ -1301,6 +1301,10 @@ async def __dev_run(
 
     env[ENVVAR_RBT_DEV] = 'true'
 
+    # The application's `reboot` library must be the same version as
+    # this CLI; the library enforces this at startup.
+    env[ENVVAR_REBOOT_EXPECTED_VERSION] = REBOOT_VERSION
+
     if args.application_name is not None:
         env[ENVVAR_RBT_NAME] = args.application_name
         # Use a state directory specific to the application name. For some
@@ -1315,10 +1319,11 @@ async def __dev_run(
 
     health_check_task: Optional[asyncio.Task] = None
 
-    if os.environ[ENVVAR_LOCAL_ENVOY_MODE] == 'docker':
-        # Check if Docker is running and can access the Envoy proxy image. Fail
-        # otherwise.
-        await check_docker_status(subprocesses)
+    # Pick the mode in which we'll run a local Envoy proxy and check
+    # that the mode is usable, e.g. that Docker is running and can
+    # access the Envoy proxy image, or that the `envoy` executable
+    # runs. Fail otherwise.
+    await check_local_envoy_mode(subprocesses)
     env[ENVVAR_REBOOT_LOCAL_ENVOY] = 'true'
 
     health_check_task = asyncio.create_task(
@@ -1327,7 +1332,6 @@ async def __dev_run(
             terminate_after_health_check=args.terminate_after_health_check or
             False,
             application_started_event=application_started_event,
-            use_localhost_direct=args.use_localhost_direct,
             tls_certificate=args.tls_certificate,
             root_certificate=args.tls_root_certificate,
             tracing=tracing,

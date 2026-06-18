@@ -46,6 +46,7 @@ class UserState(Model):
 class FoodOrderState(Model):
     menu: list[MenuItem] = Field(tag=1, default_factory=list)
     cart: list[CartEntry] = Field(tag=2, default_factory=list)
+    user_id: str = Field(tag=3, default="")
 
 
 class MenuResponse(Model):
@@ -69,8 +70,9 @@ class RemoveFromCartRequest(Model):
 
 
 class CreateOrderRequest(Model):
-    """Initial menu items."""
+    """Initial menu items and the ordering user."""
     menu: list[MenuItem] = Field(tag=1, default_factory=list)
+    user_id: str = Field(tag=2, default="")
 
 
 api = API(

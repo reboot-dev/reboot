@@ -52,10 +52,10 @@ py_library(
         ":transpile_py",
         ":watch_py",
         "//reboot/controller:plan_makers_py",
+        "//reboot/server:local_envoy_factory_py",
         "@com_github_reboot_dev_reboot//reboot:settings_py",
         "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
         "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
-        "@com_github_reboot_dev_reboot//reboot/ssl:localhost_py",
     ],
 )
 
@@ -201,6 +201,20 @@ py_library(
 )
 
 py_library(
+    name = "update_check_py",
+    srcs = ["update_check.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("pydantic"),
+        ":terminal_py",
+        "//reboot:version_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot:versioning_py",
+    ],
+)
+
+py_library(
     # We have to name that `cli.py` instead of `rbt.py`, because we keep protos
     # in `rbt/` and it will be a name conflict with the `rbt` package.
     name = "cli_py",
@@ -225,6 +239,7 @@ py_library(
         ":rc_py",
         ":serve_py",
         ":task_py",
+        ":update_check_py",
         "//reboot/cli/cloud:__init___py",
         "//reboot/cli/cloud:down_py",
         "//reboot/cli/cloud:logs_py",

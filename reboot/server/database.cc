@@ -3180,9 +3180,7 @@ size_t EstimateTransactionCoordinatorSize(
   // To avoid for-looping over all participants, we can guesstimate the
   // size of each participant. Overestimate each `string` field as 100
   // bytes and each map value is a list of ~50 entries.
-  size += (coordinator.participants().should_commit_size()
-           + coordinator.participants().should_abort_size())
-      * (100 * 50);
+  size += coordinator.participants().should_commit_size() * (100 * 50);
   return size;
 }
 

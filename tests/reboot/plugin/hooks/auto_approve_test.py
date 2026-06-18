@@ -3,13 +3,13 @@
 The hook auto-approves two categories of tool call: (1) safe
 read-only calls on this plugin's own skill files, and (2) the Reboot
 dev commands the `run` skill issues (`uv sync`, `npm install`, `npm
-run dev`, `uv run rbt dev run …`, `npx @mcpjam/inspector …`) when
-they run inside a Reboot project. These tests encode the edge cases
-observed during plugin development (legitimate reads, look-alike
-paths, traversal attempts, command chaining, shell metacharacter
-abuse, the Reboot-project gate, …) so regressions get caught at CI
-time rather than surfacing as unexpected permission prompts to end
-users.
+run dev`, `cloudflared tunnel …`, `uv run rbt dev run …`,
+`npx @mcpjam/inspector …`) when they run inside a Reboot project.
+These tests encode the edge cases observed during plugin development
+(legitimate reads, look-alike paths, traversal attempts, command
+chaining, shell metacharacter abuse, the Reboot-project gate, …) so
+regressions get caught at CI time rather than surfacing as unexpected
+permission prompts to end users.
 
 The hook script is invoked as a subprocess with mocked
 `$CLAUDE_PLUGIN_ROOT`. Category-1 paths need not exist on disk — the
@@ -615,6 +615,50 @@ REBOOT_DEV_CASES: list[tuple[str, str, Where, Decision]] = [
         "uv run rbt dev run --no-chaos --env-file=.env",
         Where.PROJECT,
         Decision.APPROVE,
+    ),
+    (
+        # `run` skill starts the Cloudflare quick tunnel right
+        # before `rbt dev run`. The LLM picks `--metrics` and
+        # `--url` host:port values to match whatever free ports it
+        # routed the backend to; those positional values are guarded
+        # by the project gate and the metacharacter screen.
+        "dev: cloudflared tunnel with default ports",
+        "cloudflared tunnel --metrics localhost:4040 "
+        "--url http://localhost:9991",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        # An LLM that had to route the backend off the default port
+        # passes the new ports through to the tunnel — same approval.
+        "dev: cloudflared tunnel with non-default ports",
+        "cloudflared tunnel --metrics localhost:14040 "
+        "--url http://localhost:12345",
+        Where.PROJECT,
+        Decision.APPROVE,
+    ),
+    (
+        # Outside a Reboot project the tunnel command defers, like
+        # the rest of the dev commands.
+        "dev: cloudflared tunnel outside a Reboot project",
+        "cloudflared tunnel --metrics localhost:4040 "
+        "--url http://localhost:9991",
+        Where.NON_PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        # Other `cloudflared` subcommands fall through; the LLM
+        # has no business invoking those from the `run` skill.
+        "dev: bare `cloudflared` is not the tunnel subcommand",
+        "cloudflared --version",
+        Where.PROJECT,
+        Decision.REJECT,
+    ),
+    (
+        "dev: `cloudflared service install` is not approved",
+        "cloudflared service install",
+        Where.PROJECT,
+        Decision.REJECT,
     ),
     (
         "dev: npx @mcpjam/inspector",

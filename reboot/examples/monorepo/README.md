@@ -45,7 +45,7 @@ Running directly on a host requires:
    - Linux: `x86_64` or `arm64`, with `glibc>=2.35` (Ubuntu Jammy and other equivalent-generation distributions)
    - Mac: `arm64` (Apple M1 and newer) with `MacOS>=14.0` and `Xcode>=15.2`
    - ... or [talk to us](https://discord.gg/cRbdcS94Nr) if your desired platform isn't currently supported!
-- [Rye](https://rye-up.com/) - A tool to manage `python`, `pip`, and `venv`.
+- [uv](https://docs.astral.sh/uv/) - A tool to manage `python`, `pip`, and `venv`.
    - If you are already familiar with Python [virtual environments](https://docs.python.org/3/library/venv.html), feel free to use your tool of choice with [`pyproject.toml`](./pyproject.toml). Python >= 3.10 and < 3.13 is required.
 - Docker
     - Note: the example does not run "inside of" Docker, but Docker is used to host a native support service for local development.
@@ -64,9 +64,9 @@ running it. The most notable of those dependencies is the `reboot` PyPI
 distribution, which contains both the Reboot CLI (`rbt`) and the `reboot`
 Python package.
 
-Using `rye`, we can create and activate a virtualenv containing this project's dependencies (as well as fetch an appropriate Python version) using:
+Using `uv`, we can create and activate a virtualenv containing this project's dependencies (as well as fetch an appropriate Python version) using:
 ```sh
-rye sync --no-lock
+uv sync
 source .venv/bin/activate
 ```
 
@@ -77,7 +77,7 @@ way of keeping the options you have to type (and remember!) to a minimum. We
 provide a different `.rbtrc` for every application in this repository, and by
 selecting an application directory you select the `.rbtrc` that will be used:
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=./.tests/readme_test.sh&lines=24-24) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=./.tests/readme_test.sh&lines=31-31) -->
 <!-- The below code snippet is automatically added from ./.tests/readme_test.sh -->
 
 ```sh

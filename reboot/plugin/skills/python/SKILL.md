@@ -1,6 +1,6 @@
 ---
 name: python
-description: Reboot Python framework for building transactional microservices with durable actor state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, implementing Servicers, calling actor refs across services, scheduling work, building durable workflows with the right call primitive (`.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` for Reboot calls; `at_least_once` / `at_most_once` for external calls; `until` / `until_changes` for reactive waiting on Reboot state), calling an LLM / building an AI agent in the backend via the durable `reboot.agents.pydantic_ai.Agent`, or testing Reboot applications with the `Reboot()` test harness.
+description: Reboot Python framework for building transactional microservices with durable actor state. APIs are defined in pydantic Python (`reboot.api`). Use this skill when writing Python code for a Reboot application, defining APIs with reader/writer/transaction/workflow methods, changing an API of an application that has already been deployed or has persisted state (schema evolution rules; see `references/api-schema-evolution.md`), implementing Servicers, calling actor refs across services, scheduling work (including recurring / "cron" jobs), building durable workflows with the right call primitive (`.per_workflow(alias)` / `.per_iteration(alias)` / `.always()` for Reboot calls; `at_least_once` / `at_most_once` for external calls; `until` / `until_changes` for reactive waiting on Reboot state), calling an LLM / building an AI agent in the backend via the durable `reboot.agents.pydantic_ai.Agent`, or testing Reboot applications with the `Reboot()` test harness.
 license: Apache-2.0
 metadata:
   author: reboot
@@ -11,6 +11,10 @@ metadata:
 ---
 
 # Reboot Python Best Practices
+
+> **Version notices:** if `rbt` reports a version mismatch or that a
+> newer Reboot is available, the [upgrade skill](../upgrade/SKILL.md)
+> says how and when to react.
 
 Guide for building transactional microservices in Python with the Reboot
 framework. Reboot APIs are defined in pydantic Python
@@ -27,6 +31,8 @@ Reference these guidelines when:
   application entry point)
 - Defining or modifying an API in pydantic Python (state,
   reader/writer/transaction/workflow methods, errors, constructors)
+- Changing the API of an application that has persisted state or has
+  been deployed — read `references/api-schema-evolution.md` first
 - Implementing or modifying a Servicer
 - Calling another actor via `Service.ref(id).method(context, ...)`
 - Building a durable workflow with `WorkflowContext`, picking the right
@@ -35,11 +41,16 @@ Reference these guidelines when:
   external calls default to `at_least_once`, with `at_most_once` for
   the rare non-retryable call)
   plus `until` / `until_changes` for reactive waiting
-- Scheduling work via `ref.schedule(when=...).method(context)`
+- Scheduling work via `ref.schedule(when=...).method(context)`,
+  including recurring / "cron" jobs (self-rescheduling at an absolute
+  wall-clock time)
 - Calling an LLM or building an AI agent in the backend via the
   durable `reboot.agents.pydantic_ai.Agent`
 - Using the standard library (`OrderedMap`, mailgun, etc.)
 - Writing tests with the `Reboot()` harness
+- Verifying any change: **type-check with `mypy backend/` and fix all
+  errors** before considering Python work done (see "Type-checking"
+  below)
 
 ## Rule Categories by Priority
 
@@ -187,6 +198,9 @@ messages nested as attributes, the `Servicer` base class, and the
   request/response, and error Models.
 - Cross-actor and external-service calls belong in `TransactionContext`
   (one-shot) or `WorkflowContext` (durable, long-running).
+- **Changing an API after the application has persisted state or has
+  been deployed?** Read `references/api-schema-evolution.md` to
+  understand the rules you must follow for API schema evolution.
 - Pass arguments to actor methods as **kwargs**, not as Request wrappers:
   `await ref.deposit(context, amount=10)`, not
   `await ref.deposit(context, DepositRequest(amount=10))`.
@@ -259,6 +273,10 @@ The `Agent` runs only inside a `WorkflowContext`, so also read the
 - `references/state-nested-models.md` — same rule from the nested-
   `Model` angle: state Models never appear as fields of other
   state Models
+- `references/api-schema-evolution.md` — **always read before
+  modifying an API that has already been deployed or run with
+  persisted state**: the rules you must follow for API schema
+  evolution
 
 ### Implementing a Servicer
 
@@ -285,14 +303,16 @@ reference **before** writing your own actor type — defining your
 own `Queue` / `OrderedMap` / etc. is almost always wrong
 and forfeits durability, ordering, and concurrency guarantees:
 
-| You need...                                       | Use          | Reference               |
-| ------------------------------------------------- | ------------ | ----------------------- |
-| Durable FIFO — work queue, job queue, intake      | `Queue`      | `stdlib-queue.md`       |
-| Sorted key-value with pagination / ordering       | `OrderedMap` | `stdlib-ordered-map.md` |
-| Presence — who's online / connected               | `Presence`   | `stdlib-presence.md`    |
-| Pubsub / broadcast / fan-out to subscribers       | `PubSub`     | `stdlib-pubsub.md`      |
-| Item builder for `Queue` / `PubSub` payloads      | `Item`       | `stdlib-item.md`        |
-| Encrypt at rest / crypto-shred (right-to-erasure) | `Ciphertext` | `stdlib-ciphertext.md`  |
+| You need...                                       | Use                 | Reference                |
+| ------------------------------------------------- | ------------------- | ------------------------ |
+| Durable FIFO — work queue, job queue, intake      | `Queue`             | `stdlib-queue.md`        |
+| Sorted key-value with pagination / ordering       | `OrderedMap`        | `stdlib-ordered-map.md`  |
+| Presence — who's online / connected               | `Presence`          | `stdlib-presence.md`     |
+| Pubsub / broadcast / fan-out to subscribers       | `PubSub`            | `stdlib-pubsub.md`       |
+| Item builder for `Queue` / `PubSub` payloads      | `Item`              | `stdlib-item.md`         |
+| Store OAuth access/refresh tokens from a provider | `OAuthTokenManager` | `stdlib-oauth-tokens.md` |
+| A field holds a password/API key/secret/PII       | `Ciphertext`        | `stdlib-ciphertext.md`   |
+| Encrypt at rest / crypto-shred (right-to-erasure) | `Ciphertext`        | `stdlib-ciphertext.md`   |
 
 Each stdlib reference also lists its library registration —
 forgetting `<thing>_library()` and the stdlib actor's
@@ -306,6 +326,10 @@ with "unknown actor type."
   `Ciphertext` library handles envelope encryption, per-scope erasure,
   and automatic root-key rotation for you. Reach here before
   hand-rolling any encryption.
+- `references/stdlib-oauth-tokens.md` — **storing an external provider's
+  OAuth access/refresh tokens**: use the purpose-built
+  `OAuthTokenManager` (with `store_tokens=True` the OAuth server captures
+  them for you), not a `str` field and not hand-rolled `Ciphertext`.
 - `references/crypto-root-keys.md` — only when building your **own**
   key-deriving library/feature: HKDF-deriving purpose-specific keys
   from Reboot's managed root keys, and the rotation control loop +
@@ -318,17 +342,48 @@ with "unknown actor type."
 - `references/auth-allow-if.md` and `references/auth-built-in-predicates.md`
   — composition patterns
 - `references/auth-custom-predicates.md` — for app-specific rules
+- `references/auth-external-api-calls.md` — **acting as the user at an
+  external service**: capture a provider's OAuth tokens (your own
+  authorize/callback HTTP endpoints → `OAuthTokenManager.store`), read
+  them back with `fetch`, and make the outbound call **inside a
+  `Workflow`**. Also the **user-provided API-key path** for services
+  without OAuth (`Ciphertext`-encrypted, the ciphertext id kept in
+  state; the developer's own service keys are env-var secrets instead).
+  Host-agnostic (chat apps and web apps). Pairs with
+  `stdlib-oauth-tokens.md` (the `OAuthTokenManager` type).
 
 ### Testing
 
 - `references/testing-project-setup.md` — `backend/tests/` layout,
   `.pytest.ini`, dev-deps, `uv run pytest`
 - `references/testing-harness.md` — `Reboot()` harness, multi-servicer
-  `Application(...)`, permissive authorizers, bearer tokens,
-  `_auto_construct`
+  `Application(...)`, impersonation with bearer tokens
+  (`OAuthProviderForTest` / `TokenVerifierForTest`),
+  `app_internal=True`, `_auto_construct`
 - `references/testing-external-context.md` — `create_external_context`,
   asserting on `<Method>Aborted`, waiting on tasks/workflows, mocking
   external services / LLMs, one-test-per-user-story
+
+### Type-checking (do this after every change)
+
+The generated `*_rbt.py` stubs are fully typed, so mypy checks the
+code you write against them and catches the mistakes that pass a
+visual read — a field set to the wrong type, a missing or misspelled
+keyword argument, a method called with the wrong context type, a
+response field that doesn't exist, a servicer method returning the
+wrong type. Treat a clean type-check as part of finishing, not an
+optional extra:
+
+- Every project ships a project-root `.mypy.ini` (config and rationale
+  in `references/lifecycle-project-setup.md`). It puts `backend/src`,
+  `backend/api`, and `backend/tests` on `mypy_path` with
+  `explicit_package_bases = True` so the generated `*_rbt.py` modules
+  resolve. If it's missing, create it first — `mypy` is useless
+  without it.
+- After writing or editing any Python under `backend/`, run
+  `uv run mypy backend/` (or `mypy backend/`) from the project root and
+  fix **every** error.
+- "Done" means both `mypy backend/` and `uv run pytest` are green.
 
 ### Always relevant
 
@@ -359,6 +414,8 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/api-pydantic.md`
 - `references/api-methods.md`
 - `references/api-errors.md`
+- `references/api-schema-evolution.md` — schema evolution rules for
+  deployed applications / persisted state
 
 **Servicer** (`servicer-`):
 
@@ -385,6 +442,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/stdlib-presence.md`
 - `references/stdlib-item.md`
 - `references/stdlib-ciphertext.md`
+- `references/stdlib-oauth-tokens.md`
 
 **Crypto** (`crypto-`):
 
@@ -402,6 +460,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/auth-allow-if.md`
 - `references/auth-built-in-predicates.md`
 - `references/auth-custom-predicates.md`
+- `references/auth-external-api-calls.md`
 
 **RPC** (`rpc-`):
 

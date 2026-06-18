@@ -198,7 +198,29 @@ mcp
 
 Set `mcp=None` for non-tool workflows.
 
-### 18. Inline Writer Parameter Must Be Named `state`
+### 18. Secrets Don't Belong in Plain `str` Fields
+
+A `str`/`bytes` scalar field is plaintext at rest. Passwords, API keys,
+session tokens, and PII must **never** be stored that way — the "it's
+just a string" reflex is the trap. Encrypt with the `Ciphertext` stdlib
+type and store the returned `state_id` instead:
+
+```python
+# Wrong — API key in plaintext at rest:
+api_key: str = Field(tag=1, default="")
+# Right — store the Ciphertext id; the secret is encrypted:
+api_key_id: str = Field(tag=1, default="")
+```
+
+**OAuth access/refresh tokens are the exception** — don't hand-roll
+`Ciphertext` for them; use the purpose-built `OAuthTokenManager`
+(`stdlib-oauth-tokens.md`), which with `store_tokens=True` captures and
+encrypts them automatically.
+
+See `stdlib-ciphertext.md` and "Never Store Secrets in Plain Scalar
+Fields" in `state-scalar-fields.md`.
+
+### 19. Inline Writer Parameter Must Be Named `state`
 
 The runtime calls the writer as `writer(state=typed_state)`. Renaming
 the parameter raises `TypeError: ... got an unexpected keyword argument 'state'`. Always:
@@ -208,3 +230,11 @@ async def fn(state):
     state.x += 1
 await Service.ref().write(context, fn)
 ```
+
+### 19. Schema Evolution Is Additive-Only Once State Persists
+
+Changing the API of an application that has persisted state or has
+been deployed can make it fail to boot ("Updated state or method
+definitions are not backwards compatible") and get its deploy
+rejected. Read `api-schema-evolution.md` for the rules you must
+follow before changing such an API.

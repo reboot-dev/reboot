@@ -89,10 +89,11 @@ the minimum to remember:
 
 ```sh
 # Read the value from your shell env (recommended — keeps the
-# secret out of shell history and process listings):
+# secret out of shell history and process listings; the API key
+# is read from the `REBOOT_CLOUD_API_KEY` env var automatically):
+export REBOOT_CLOUD_API_KEY=<your-key>
 export STRIPE_API_KEY=sk_live_...
 rbt cloud secret set STRIPE_API_KEY \
-  --api-key=$REBOOT_CLOUD_API_KEY \
   --application-name=my-app \
   --organization=my-org
 

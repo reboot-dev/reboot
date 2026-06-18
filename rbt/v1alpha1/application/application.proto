@@ -13,6 +13,7 @@ import "rbt/v1alpha1/options.proto";
 // (dev and production), so libraries can rely on it being present.
 message Application {
   option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
   };
 
   // Human-readable name of the application, set by the developer via

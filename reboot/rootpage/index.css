@@ -1,4 +1,4 @@
-/* Reboot brand tokens — mirror `marketing/reboot.dev-3.0/src/index.css`. */
+/* Reboot brand tokens — mirror `marketing/reboot.dev/src/index.css`. */
 :root {
   --cream: #f7f5ed;
   --navy: #103761;
@@ -922,7 +922,7 @@ li code,
 
 /* ---------------- Decorative shapes ---------------- */
 
-/* Reuses the brand SVG from `marketing/reboot.dev-3.0/src/assets/
+/* Reuses the brand SVG from `marketing/reboot.dev/src/assets/
    decorative-shapes.svg` (mix of tan / green / teal half-rings).
    Anchored to the right gutter and allowed to spill past the page
    edge — body's `overflow-x: hidden` handles the clip. Hidden on

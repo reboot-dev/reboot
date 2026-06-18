@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package tests.reboot;
+
+import "rbt/v1alpha1/options.proto";
+
+// A state type that stands in for a "trusted" Reboot library (e.g.
+// `SortedMap`) in `effect_validation_tests.py`: its `trusted_effects`
+// option means its methods skip effect-validation re-runs unless
+// `RBT_VALIDATE_TRUSTED_EFFECTS` is set. See
+// https://github.com/reboot-dev/mono/issues/4499.
+message TrustedLibrary {
+  option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
+  };
+}
+
+service TrustedLibraryMethods {
+  rpc ConstructorWriter(TrustedLibraryRequest)
+      returns (TrustedLibraryResponse) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {},
+    };
+  }
+}
+
+message TrustedLibraryRequest {}
+message TrustedLibraryResponse {}

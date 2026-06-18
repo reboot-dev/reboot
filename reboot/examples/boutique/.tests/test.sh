@@ -23,13 +23,20 @@ check_lines_in_file() {
 if [ -n "$REBOOT_WHL_FILE" ]; then
   # Install the `reboot` package from the specified path explicitly, over-
   # writing the version from `pyproject.toml`.
-  rye remove --no-sync reboot
-  rye remove --no-sync --dev reboot
-  rye add --dev reboot --absolute --path=${SANDBOX_ROOT}$REBOOT_WHL_FILE
+  uv add --no-sync "${SANDBOX_ROOT}$REBOOT_WHL_FILE"
 fi
 
-# Create and activate a virtual environment.
-rye sync --no-lock
+# Force a fresh virtualenv. A pre-existing `.venv/` (e.g., carried
+# over from a pre-baked image, or copied between containers/host
+# paths during the dev-container test) has its original creation
+# path baked into its `activate` script and console-script
+# shebangs, which breaks them when the venv is used from a
+# different location. `uv sync` only regenerates entry-point
+# scripts for packages it reinstalls, so it can't repair a
+# relocated venv. Nuking and re-syncing guarantees the venv lives
+# at the current path, which makes it safe to `activate`.
+rm -rf .venv
+uv sync
 source .venv/bin/activate
 
 # When running in a Bazel test, our `.rbtrc` file ends up in a very deep
@@ -52,9 +59,5 @@ if [ -n "$EXPECTED_RBT_DEV_OUTPUT_FILE" ]; then
 
   rm "$actual_output_file"
 fi
-
-# Deactivate the virtual environment, since we can run a test which may require
-# another virtual environment (currently we do that only in `all_tests.sh`).
-deactivate
 
 # TODO: also test that we can build the Docker container.

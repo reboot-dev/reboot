@@ -8,14 +8,14 @@
   },
   "dependencies": {
     "@reboot-dev/docubot-api": "0.1.0",
-    "@reboot-dev/reboot": "1.1.0",
-    "@reboot-dev/reboot-api": "1.1.0",
+    "@reboot-dev/reboot": "1.2.0",
+    "@reboot-dev/reboot-api": "1.2.0",
     "create-temp-directory": "^2.4.0",
     "openai": "^4.52.7",
     "puppeteer": "^22.14.0",
     "sitemapper": "^3.2.9",
     "typescript": "^4.9.5",
-    "zod": "^3.25.51"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.12.4",

@@ -1,5 +1,6 @@
 import inspect
 import logging
+import os
 import unittest
 from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow
@@ -20,6 +21,12 @@ from reboot.time import DateTimeWithTimeZone
 from tests.reboot import general_rbt
 from tests.reboot.general_rbt import General, GeneralRequest, GeneralResponse
 from tests.reboot.general_servicer import GeneralServicer
+from tests.reboot.trusted_library_rbt import (
+    TrustedLibrary,
+    TrustedLibraryRequest,
+    TrustedLibraryResponse,
+)
+from unittest import mock
 
 _EFFECTS: list[str] = []
 # Counts how many times the callable passed to `at_least_once` with
@@ -131,6 +138,23 @@ class EffectValidationPerCallDisabledServicer(EffectServicer):
             expensive_call,
             effect_validation=EffectValidation.DISABLED,
         )
+
+
+class TrustedLibraryServicer(TrustedLibrary.Servicer):
+    """Stands in for a "trusted" Reboot library servicer (e.g.
+    `SortedMap`), whose proto sets the `trusted_effects` option.
+    """
+
+    def authorizer(self):
+        return allow()
+
+    async def ConstructorWriter(
+        self,
+        context: WriterContext,
+        request: TrustedLibraryRequest,
+    ) -> TrustedLibraryResponse:
+        record_effect()
+        return TrustedLibraryResponse()
 
 
 class EffectValidationTestCase(unittest.IsolatedAsyncioTestCase):
@@ -351,6 +375,42 @@ class EffectValidationTestCase(unittest.IsolatedAsyncioTestCase):
         await (await general.spawn().Workflow(context))
 
         self.assertEqual(1, _DIRECT_CALLS)
+
+    async def up_trusted(
+        self, effect_validation: EffectValidation
+    ) -> ExternalContext:
+        await self.rbt.up(
+            Application(servicers=[TrustedLibraryServicer]),
+            effect_validation=effect_validation,
+        )
+        return self.rbt.create_external_context(name=self.id())
+
+    async def test_trusted_servicer_skips_reruns_for_app_developer(
+        self,
+    ) -> None:
+        # An app developer (no `RBT_VALIDATE_TRUSTED_EFFECTS`) does not
+        # re-run a trusted library's methods to validate effects, even
+        # with effect validation otherwise enabled.
+        with mock.patch.dict(os.environ):
+            os.environ.pop('RBT_VALIDATE_TRUSTED_EFFECTS', None)
+            context = await self.up_trusted(EffectValidation.ENABLED)
+            await TrustedLibrary.ConstructorWriter(context)
+
+        self.assert_effects("ConstructorWriter")
+
+    async def test_trusted_servicer_reruns_when_validation_requested(
+        self,
+    ) -> None:
+        # With `RBT_VALIDATE_TRUSTED_EFFECTS` set (as Reboot's own tests
+        # do), a trusted library's methods are re-run to validate
+        # effects just like any other servicer's.
+        with mock.patch.dict(
+            os.environ, {'RBT_VALIDATE_TRUSTED_EFFECTS': 'true'}
+        ):
+            context = await self.up_trusted(EffectValidation.ENABLED)
+            await TrustedLibrary.ConstructorWriter(context)
+
+        self.assert_effects("ConstructorWriter", "ConstructorWriter")
 
 
 if __name__ == '__main__':

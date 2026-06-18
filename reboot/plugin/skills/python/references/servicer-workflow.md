@@ -522,7 +522,10 @@ For mutations of **other** actors, call their declared `Writer` /
 `Transaction` method with a scope (e.g.
 `await Service.ref(id).per_workflow("Step").method(context, ...)`);
 use `.write(context, fn)` only to mutate **this** workflow actor's
-state directly.
+state directly. The same boundary applies to reads: inline `.read()`
+exists **only on the no-arg `ref()`** — a ref with an explicit id has
+no `.read()` / `.write()` (calling them raises a `RuntimeError`), so
+observe another actor through its declared `Reader` methods.
 
 ## Iterating with `context.loop(...)`
 
@@ -618,6 +621,19 @@ External call from workflow
                  `at_most_once` **and** in try/except, then ASK
                  THE DEVELOPER how to handle errors.
 ```
+
+### The Difference Is What Happens on Failure
+
+Both primitives memoize a **successful** result identically: on
+replay the cached value is returned and `callable` is not invoked
+again. They differ only when `callable` **fails** (raises, or the
+machine crashes mid-call):
+
+| On failure            | `at_least_once`                                                              | `at_most_once`                                                                        |
+| --------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| What gets recorded    | Nothing — the step stays un-memoized                                         | The failure — the alias is **poisoned**                                               |
+| Next workflow attempt | Re-invokes `callable`, and keeps re-invoking on each retry until it succeeds | **Never** invokes `callable` again; raises `AtMostOnceFailedBeforeCompleting` instead |
+| Net guarantee         | The call happens **one or more** times                                       | The call happens **zero or one** times                                                |
 
 ### `at_least_once` — the Default for Every External Call
 
@@ -772,17 +788,91 @@ The distinction from the anti-pattern is _where_ `uuid4()` runs:
 inside the effecting callable it regenerates on every attempt; inside
 its own `at_least_once` it's captured once.
 
-**Failures retry via workflow replay.** When `callable` raises, the
-exception propagates and the runtime replays the workflow from its
-last checkpoint; the step is attempted again on each replay until it
-succeeds, at which point the result is memoized. There's no built-in
-retry-budget or backoff configuration on the call itself; if you need
-bounded retries, catch failures inside `callable` and return them as
-data (a `Result`-style object), then inspect the result in the
-workflow body. To **terminate** the workflow on a business-logic
-failure that
-should not be retried, raise a declared abort from the body — see
-[How a workflow exits](#how-a-workflow-exits).
+**Failures retry via workflow replay — the callable is never
+re-invoked in-process.** When `callable` raises, the exception
+propagates and fails the whole workflow attempt; the runtime then
+re-executes the workflow method **from the top**, replaying every
+already-memoized step from its cached result until it reaches this
+step and runs `callable` again. Because each retry re-runs the body
+from the top, every local variable and closure is recreated from
+scratch — **state captured in the callable's closure does not
+survive a retry**.
+
+**Don't bound retries — retrying indefinitely via replay is the
+design.** There's no built-in retry-budget or backoff configuration
+on the call itself, and that's deliberate: a workflow is durable
+precisely so a step can keep retrying across transient failures and
+machine restarts without losing already-memoized progress. The right
+response to "this external call might fail" is usually no extra code
+at all — let the raise propagate, and the step retries until it
+succeeds. When the business logic expects the call to succeed under
+normal circumstances (the resource exists, the provider is up), a
+failure is abnormal by definition and indefinite retry is exactly
+the handling you want — extra retry logic only obscures that. In
+particular, never count attempts in a closure to "give up":
+
+```python
+fetch_attempts = 0
+
+async def fetch() -> list[League]:
+    nonlocal fetch_attempts
+    fetch_attempts += 1
+    if fetch_attempts > 5:
+        # WRONG — dead code. `at_least_once` invokes `fetch` once
+        # per workflow attempt; on a raise the attempt fails and the
+        # retry re-executes the workflow body from the top, which
+        # resets `fetch_attempts` to 0. The counter never exceeds 1,
+        # so this "give up" branch can never run — the step retries
+        # forever.
+        return []
+    return await fetch_leagues(token)
+
+leagues = await at_least_once("Fetch leagues", context, fetch)
+```
+
+The fix is simply to drop the counter and let the step retry:
+
+```python
+async def fetch() -> list[League]:
+    return await fetch_leagues(token)
+
+leagues = await at_least_once("Fetch leagues", context, fetch)
+```
+
+**Rare: a genuine retry budget.** Only when giving up is the
+_product_ behavior — failure is an expected business outcome and the
+workflow should degrade rather than wait out a provider outage —
+does a budget make sense. Even then, first consider whether simply
+letting the raise propagate — failing this attempt and retrying the
+whole workflow — is acceptable; for many cases it is, and it keeps
+the code free of retry machinery. When a budget really is warranted,
+the attempt loop must live **inside** the callable (within a single
+invocation) and surface exhaustion as **data**, never a `raise`:
+
+```python
+async def fetch() -> Optional[list[League]]:
+    for attempt in range(5):
+        try:
+            return await fetch_leagues(token)
+        except aiohttp.ClientError:
+            await asyncio.sleep(2**attempt)
+    # Exhausted the budget: return the failure as data so the
+    # workflow body decides what to do; raising here would retry
+    # the step forever via replay.
+    return None
+
+leagues = await at_least_once("Fetch leagues", context, fetch)
+if leagues is None:
+    ...  # Degrade, fall back, or raise a declared abort.
+```
+
+The `for` loop runs within a **single invocation** of `callable`, so
+the attempt counter genuinely counts; once the budget is exhausted
+the callable returns the failure as data (a `None`, a `Result`-style
+object) and the memoized step **succeeds**, handing the decision to
+the workflow body. To **terminate** the workflow on a business-logic
+failure that should not be retried, raise a declared abort from the
+body — see [How a workflow exits](#how-a-workflow-exits).
 
 **Aliases.** The alias is the memoization key _and_ the step's
 title — keep it stable and descriptive, unique per logical step (see
@@ -974,8 +1064,10 @@ twice".
 ## Bucket 3 — Reactive Waiting on Reboot State
 
 > **Critical:** `until` and `until_changes` work **only with Reboot
-> types** — the callable they take must derive its answer from a
-> Reboot `Service.ref(...).read()` or a stdlib actor. **Never put
+> types** — the callable they take must derive its answer from Reboot
+> state: a declared `Reader` call on another actor (e.g.
+> `Order.ref(id).get(context)`), the workflow's own state via the
+> no-arg `Service.ref().read(context)`, or a stdlib actor. **Never put
 > an external API call (HTTP poll, SDK status check, filesystem
 > read) inside the callable.** The runtime detects "the answer
 > might have changed" by tracking Reboot-state dependencies; an
@@ -1006,8 +1098,8 @@ to flip, state to reach a particular shape.
 @classmethod
 async def control_loop(cls, context: WorkflowContext, request):
     while True:
-        state = await Order.ref(request.order_id).read(context)
-        if state.approved:
+        response = await Order.ref(request.order_id).get(context)
+        if response.approved:
             break
         await asyncio.sleep(5)  # naive poll — burns ticks, not durable
 ```
@@ -1020,9 +1112,13 @@ from reboot.aio.workflows import until
 
 @classmethod
 async def control_loop(cls, context: WorkflowContext, request):
+    # `get` is a declared `Reader` method on `Order`; inside `until`
+    # its result is tracked reactively. Observing *another* actor
+    # always goes through a declared `Reader` — inline `.read()`
+    # exists only on the workflow's own no-arg `ref()`.
     async def is_approved() -> bool:
-        state = await Order.ref(request.order_id).read(context)
-        return state.approved
+        response = await Order.ref(request.order_id).get(context)
+        return response.approved
 
     await until("Order approval", context, is_approved)
     # Execution resumes here only after `is_approved()` returns True.
@@ -1034,12 +1130,12 @@ that value. The conventional shape is
 `Callable[[], Awaitable[bool]]`, but anything truthy works:
 
 ```python
-async def get_settled() -> Optional[Order]:
-    order = await Order.ref(request.order_id).read(context)
-    return order if order.settled else None  # None is falsy
+async def get_settled() -> Optional[Order.GetResponse]:
+    response = await Order.ref(request.order_id).get(context)
+    return response if response.settled else None  # None is falsy
 
 settled_order = await until("Settlement", context, get_settled)
-# settled_order is the populated Order, not just True.
+# settled_order is the populated response, not just True.
 ```
 
 `until` resolves once and memoizes; subsequent replays see the
@@ -1058,33 +1154,40 @@ the same flag). To make "wait until X, then act on X" a single atomic
 step, put the check **and** the mutation in an inline writer and let
 `until` wait on the writer's return value. Because the inline writer
 runs as one atomic operation on the actor, the read-decide-mutate
-can't be interleaved:
+can't be interleaved. An inline writer exists only on the workflow's
+own no-arg `ref()`, so this pattern applies to the actor the workflow
+runs on — here, a workflow on the `Worker` being claimed:
 
 ```python
-@classmethod
-async def claim_slot(
-    cls, context: WorkflowContext, request: ClaimRequest,
-) -> None:
-    def try_claim(state) -> bool:
-        # Runs as a single atomic writer: read, decide, mutate.
-        if state.ready and not state.claimed:
-            state.claimed = True
-            return True  # the writer's return value resolves `until`.
-        return False
+class WorkerServicer(Worker.Servicer):
 
-    # `until` re-runs the writer reactively until it returns truthy;
-    # the actor guarantees no other caller claims the slot first.
-    await until(
-        "Claim slot",
-        context,
-        lambda: Worker.ref(request.worker_id).write(context, try_claim),
-    )
+    @classmethod
+    async def claim_slot(
+        cls, context: WorkflowContext, request: ClaimRequest,
+    ) -> None:
+        def try_claim(state) -> bool:
+            # Runs as a single atomic writer: read, decide, mutate.
+            if state.ready and not state.claimed:
+                state.claimed = True
+                return True  # the writer's return value resolves `until`.
+            return False
+
+        # `until` re-runs the writer reactively until it returns truthy;
+        # the actor guarantees no other caller claims the slot first.
+        await until(
+            "Claim slot",
+            context,
+            lambda: Worker.ref().write(context, try_claim),
+        )
 ```
 
 This works because an inline `write(context, fn)` callback may return
 a value and `.write(...)` propagates it (see
 [Mutating this actor's state](#mutating-this-actors-state)) — so the
-truthy return both performs the claim and satisfies the wait.
+truthy return both performs the claim and satisfies the wait. To
+claim atomically on **another** actor, declare a `Writer` method on
+it that does the check-and-mutate and returns the decision, and have
+`until` wait on that method's return value instead.
 
 ### `until_changes` — React Every Time a Value Moves
 
@@ -1104,10 +1207,10 @@ from the previous iteration's result.
 async def control_loop(cls, context: WorkflowContext, request):
     last_seen = None
     async for iteration in context.loop("Watch order"):
-        state = await Order.ref(request.order_id).read(context)
-        if state.status == last_seen:
+        response = await Order.ref(request.order_id).get(context)
+        if response.status == last_seen:
             continue
-        last_seen = state.status
+        last_seen = response.status
         # ... handle change ...
 ```
 
@@ -1119,9 +1222,11 @@ from reboot.aio.workflows import until_changes
 
 @classmethod
 async def control_loop(cls, context: WorkflowContext, request):
+    # `get` is a declared `Reader` method on `Order` (see the note
+    # on `until` above — inline `.read()` is own-actor-only).
     async def order_status() -> str:
-        state = await Order.ref(request.order_id).read(context)
-        return state.status
+        response = await Order.ref(request.order_id).get(context)
+        return response.status
 
     async for iteration in context.loop("Watch order"):
         new_status = await until_changes(
@@ -1138,8 +1243,8 @@ pass an `equals=` callback:
 from typing import Set
 
 async def tag_set() -> Set[str]:
-    state = await Doc.ref(doc_id).read(context)
-    return set(state.tags)
+    response = await Doc.ref(doc_id).get(context)
+    return set(response.tags)
 
 new_tags = await until_changes(
     "Doc tags",
@@ -1344,10 +1449,16 @@ the workflow failed on the first transient hiccup.
 ### Inside an `at_most_once` / `at_least_once` Callable, Never `raise` to Signal "Stop"
 
 A `raise` inside an `at_most_once` callable **poisons the alias
-forever**. A `raise` inside an `at_least_once` callable causes the
-runtime to **retry that callable indefinitely**. Neither is "stop
-the workflow". Surface the failure as **data** from the callable
-(the `try/except` shape used throughout
+forever**. A `raise` inside an `at_least_once` callable fails the
+whole workflow attempt, and the runtime retries **indefinitely** —
+each retry re-executes the workflow body from the top (memoized
+steps replay from cache) until it reaches this step and runs the
+callable again. The callable is never re-invoked in-process, so
+closure state (e.g. an attempt counter) resets on every retry and
+cannot bound the retries (see
+[Failures retry via workflow replay](#at_least_once--the-default-for-every-external-call)).
+Neither is "stop the workflow". Surface the failure as **data** from
+the callable (the `try/except` shape used throughout
 [Bucket 2](#bucket-2--calling-an-external-system)), then decide
 **after** the call what the workflow should do:
 
@@ -1357,8 +1468,10 @@ the workflow". Surface the failure as **data** from the callable
   (inline writer with a scope) and proceed.
 - **Try a fallback path** → call a different actor/method.
 - **Retry the whole workflow** → let an undeclared exception
-  propagate (rare; usually you'd want the `at_least_once` callable to
-  handle the retry instead).
+  propagate from the workflow body (rare; usually retrying just the
+  failed step — by not catching the exception in the callable — is
+  what you want; see
+  [Bucket 2](#bucket-2--calling-an-external-system)).
 
 ```python
 outcome = await at_most_once("Wire", context, do_wire)
@@ -1396,3 +1509,6 @@ wraps the underlying model call in `at_least_once` for you. The
   contract behind declared aborts.
 - `stdlib-queue.md` / `stdlib-pubsub.md` — the stdlib actors most
   often driven from a workflow control loop.
+- `scheduling-recurring.md` — recurring / "cron" jobs: a
+  self-rescheduling writer tick that dispatches one of these workflows
+  per run for the durable work.

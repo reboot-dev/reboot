@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "skipLibCheck": true,
     "declaration": true,
     "moduleResolution": "node",
     "target": "es2020",

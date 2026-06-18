@@ -33,6 +33,14 @@ Under the hood, there are three components to be aware of:
 
 load("@host_arch_detector//:host_arch.bzl", "host_arch")
 
+# The platform tag for wheels we build on MacOS. Its major/minor must
+# match the deployment target pinned for MacOS hosts in `.bazelrc`
+# (`--macos_minimum_os`). The minor must be 0: for MacOS >= 11
+# `pip` only treats `macosx_<major>_0` wheels as compatible (it never
+# generates a `macosx_14_2`-style tag), so a non-zero minor would make
+# the wheel uninstallable.
+MACOS_PLATFORM_TAG = "macosx_14_0"
+
 def _debug_print(*args, **kwargs):
     """A helper to print information only while debugging.
 
@@ -574,7 +582,7 @@ def _pip_package_impl(ctx):
     if is_platform_dependent:
         if ctx.attr.os_name == "linux":
             classifiers.append("Operating System :: POSIX :: Linux")
-        elif ctx.attr.os_name == "macosx_13_0":
+        elif ctx.attr.os_name == MACOS_PLATFORM_TAG:
             classifiers.append("Operating System :: MacOS :: MacOS X")
         else:
             fail("Unsupported OS: %s" % ctx.attr.os_name)
@@ -1034,9 +1042,10 @@ def pip_package(name, visibility, tags = [], **kwargs):
         os_name = select(
             {
                 "@platforms//os:linux": "linux",
-                # The 'macosx_13_0' tag is what we get running on a GitHub
-                # Actions M1 runner.
-                "@platforms//os:osx": "macosx_13_0",
+                # The MacOS wheel's platform tag, it must stay in sync
+                # with the `minos` floor we pin for MacOS
+                # hosts in `.bazelrc` (`--macos_minimum_os`).
+                "@platforms//os:osx": MACOS_PLATFORM_TAG,
             },
         ),
         tags = tags,

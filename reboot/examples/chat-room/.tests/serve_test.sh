@@ -20,29 +20,39 @@ get_reboot_version_from() {
   echo $version
 }
 
+get_reboot_version_from_lock() {
+  # In a `uv.lock` the version is on the line following the package
+  # name, e.g.:
+  #   name = "reboot"
+  #   version = "1.1.0"
+  version=$(grep -A 1 '^name = "reboot"$' $1 | egrep -o '[.0-9]+' | head -n 1)
+  if [ -z "$version" ]; then
+    echo "No reboot version found in $1."
+    exit 1
+  fi
+  echo "reboot==$version"
+}
+
 # During Reboot's release process, consumed versions (but not lockfiles) have
 # been updated everywhere. During that period, our image claims to consume a
 # a version which does not yet exist. Rather than adding a bunch of conditionals to
 # our Dockerfile, which would make it harder to grok, we skip this test while the
 # lockfile is out of sync. See #3495.
-if [[ $(get_reboot_version_from "pyproject.toml") != $(get_reboot_version_from "requirements.lock") ]]; then
+if [[ $(get_reboot_version_from "pyproject.toml") != $(get_reboot_version_from_lock "uv.lock") ]]; then
   echo "Lockfile does not match pyproject.toml: assuming we're mid-publish."
   exit 0
 fi
 
-# Use the published Reboot pip package by default, but allow the test system
-# to override it with a different value. This is important even when using the
-# `reboot-base` image with the `reboot` package already installed, since the
-# `requirements.lock` file in this example might be out of date with the version
-# of `reboot` used in that base image, and in particular may list the wrong
-# dependencies.
-if [ -n "$REBOOT_WHL_FILE" ]; then
-  # Install the `reboot` package from the specified path explicitly, over-
-  # writing the version from `pyproject.toml`.
-  rye remove --no-sync reboot
-  rye remove --no-sync --dev reboot
-  rye add --dev reboot --absolute --path="${SANDBOX_ROOT}$REBOOT_WHL_FILE"
-fi
+# When run under Bazel, this test DOES exercise the unpublished dev
+# version of Reboot. This version is installed in the dev version of
+# Reboot base image, not through this project's lockfile: the
+# `setup_script` (see `reboot/containers/reboot-base/build.sh`) builds
+# the `ghcr.io/reboot-dev/reboot-base:<version>` image locally from
+# `$REBOOT_WHL_FILE`, and the example's `FROM` line picks that image
+# up. The `pip install` of the `uv export`ed lockfile inside the
+# Docker build then leaves that dev install in place, because the dev
+# wheel reports the same version that `uv.lock` pins (pip treats the
+# requirement as already satisfied).
 
 stop_container() {
   if [ -n "$container_id" ]; then

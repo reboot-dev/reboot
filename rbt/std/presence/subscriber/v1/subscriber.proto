@@ -8,6 +8,7 @@ import "rbt/v1alpha1/options.proto";
 
 message Subscriber {
   option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
   };
 
   // Incremented after subscriber is successfully connected and decremented

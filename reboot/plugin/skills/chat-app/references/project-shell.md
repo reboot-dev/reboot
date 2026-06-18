@@ -9,7 +9,10 @@ tags: project, shell, rbtrc, pyproject, python-version, main, application-entry,
 
 The `python` skill covers the canonical project shape
 (`lifecycle-project-setup.md`) and the `.rbtrc` format
-(`lifecycle-rbtrc.md`). What an MCP Chat App adds on top:
+(`lifecycle-rbtrc.md`). That shape includes a project-root
+`.mypy.ini` (template in `lifecycle-project-setup.md`) — create it
+when scaffolding; it has no chat-app delta. What an MCP Chat App
+adds on top:
 
 ### `.python-version`
 
@@ -96,15 +99,11 @@ dependencies = [
     "reboot>=1.0.3",
 ]
 
-[tool.rye]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "mypy==1.18.1",
     "types-protobuf>=4.24.0.20240129",
-    "reboot>=1.0.3",
 ]
-
-virtual = true
-managed = true
 ```
 
 ### `example_prompts.py`

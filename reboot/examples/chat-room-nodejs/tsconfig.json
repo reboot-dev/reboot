@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "skipLibCheck": true,
     // Don't emit any output files, since we just want to type-check
     // and then we will run the test with `npx tsx`.
     "noEmit": true,

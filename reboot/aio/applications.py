@@ -53,10 +53,13 @@ from reboot.settings import (
     ENVVAR_RBT_STATE_DIRECTORY,
     ENVVAR_REBOOT_CLOUD_DATABASE_ADDRESS,
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
+    ENVVAR_REBOOT_EXPECTED_VERSION,
     ENVVAR_REBOOT_LOCAL_ENVOY,
     ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
 )
+from reboot.version import REBOOT_VERSION
+from reboot.versioning import version_less_than
 from typing import Any, Awaitable, Callable, NoReturn, Optional
 
 logger = get_logger(__name__)
@@ -90,6 +93,58 @@ def _handle_unknown_exception(
         'You can get in touch via Discord: https://discord.gg/cRbdcS94Nr\n'
         '\n'
     )
+
+
+def check_expected_version() -> None:
+    """Refuse to run with a `reboot` library that does not match the
+    `rbt` CLI that spawned this application.
+
+    The `rbt` CLI sets `REBOOT_EXPECTED_VERSION` to its own version
+    on the environment of any application it runs. The CLI and the
+    `reboot` library are released in lockstep and must match exactly;
+    a mismatch means one of the two is out of date, which in the case
+    of a coding agent also means that its plugin with instructions
+    doesn't match. When the variable is absent (e.g. under `pytest`,
+    or when the application is run without `rbt`) there is no
+    expectation to enforce.
+    """
+    expected_version = os.environ.get(ENVVAR_REBOOT_EXPECTED_VERSION)
+    if expected_version is None or expected_version == REBOOT_VERSION:
+        return
+
+    library_is_older: Optional[bool] = None
+    try:
+        library_is_older = version_less_than(REBOOT_VERSION, expected_version)
+    except ValueError:
+        # We can't tell which side is newer, but it is still a
+        # mismatch; fail with a direction-less message below.
+        pass
+
+    message = (
+        f"This application depends on `reboot` {REBOOT_VERSION}, but it "
+        f"is being run by an `rbt` CLI at version {expected_version}; "
+        "these versions must match. "
+    )
+    if library_is_older is True:
+        # The application is behind the CLI: upgrade the application.
+        message += (
+            "Coding agents: run the Reboot `upgrade` skill to upgrade this "
+            "application. Humans: see https://docs.reboot.dev/upgrade."
+        )
+    elif library_is_older is False:
+        # The CLI is behind the application: update the CLI (which,
+        # for coding agents, ships with the Reboot plugin).
+        message += (
+            "Your `rbt` is older than this application. Coding agents: "
+            "ask the user to update the Reboot plugin (re-run `curl "
+            "-fsSL https://reboot.dev/install.sh | bash`) and restart "
+            "their agent session. Humans: upgrade your `rbt` install; "
+            "see https://docs.reboot.dev/upgrade."
+        )
+    else:
+        message += "See https://docs.reboot.dev/upgrade."
+
+    terminal.fail(message)
 
 
 def _handle_input_error(input_error: InputError) -> None:
@@ -733,6 +788,10 @@ class Application:
 
         Does 'sys.exit' in case of failure.
         """
+        # Refuse to run with a `reboot` library that doesn't match the
+        # `rbt` CLI that spawned us.
+        check_expected_version()
+
         # Before running, do any pre-run library set up.
         for library in self.libraries:
             await library.pre_run(self)
