@@ -59,6 +59,7 @@ RebootError: TypeAlias = Union[
     rbt.v1alpha1.errors_pb2.StateNotConstructed,
     rbt.v1alpha1.errors_pb2.TransactionParticipantFailedToPrepare,
     rbt.v1alpha1.errors_pb2.TransactionParticipantFailedToCommit,
+    rbt.v1alpha1.errors_pb2.TransactionShouldRetryWithoutBackoff,
     rbt.v1alpha1.errors_pb2.UnknownService,
     rbt.v1alpha1.errors_pb2.UnknownTask,
     rbt.v1alpha1.errors_pb2.InvalidMethod,
@@ -88,6 +89,7 @@ REBOOT_ERROR_TYPES: list[type[Message]] = [
     rbt.v1alpha1.errors_pb2.StateNotConstructed,
     rbt.v1alpha1.errors_pb2.TransactionParticipantFailedToPrepare,
     rbt.v1alpha1.errors_pb2.TransactionParticipantFailedToCommit,
+    rbt.v1alpha1.errors_pb2.TransactionShouldRetryWithoutBackoff,
     rbt.v1alpha1.errors_pb2.UnknownService,
     rbt.v1alpha1.errors_pb2.UnknownTask,
     rbt.v1alpha1.errors_pb2.InvalidMethod,
@@ -302,6 +304,16 @@ class Aborted(Exception):
             return grpc.StatusCode.INTERNAL
 
         elif isinstance(error, rbt.v1alpha1.errors_pb2.Unavailable):
+            return grpc.StatusCode.UNAVAILABLE
+
+        elif isinstance(
+            error,
+            rbt.v1alpha1.errors_pb2.TransactionShouldRetryWithoutBackoff,
+        ):
+            # Behaves like `Unavailable` (it is retryable), but its
+            # distinct type lets the runtime recognize the restart,
+            # refresh the coordinator's timestamp, and skip the
+            # backoff before the first retry.
             return grpc.StatusCode.UNAVAILABLE
 
         elif isinstance(error, rbt.v1alpha1.errors_pb2.DataLoss):

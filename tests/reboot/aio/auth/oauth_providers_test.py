@@ -35,6 +35,16 @@ from typing import Optional
 from unittest import mock
 from urllib.parse import parse_qs, urlencode, urlparse
 
+# Generous per-request HTTP timeout for the in-process OAuth flows
+# below. Each request hits a full Reboot cluster plus a local Envoy,
+# and some — notably the OAuth callback, which runs a distributed
+# token-store transaction — can take several seconds on a loaded or
+# degraded CI runner. `httpx`'s 5-second default is tight enough that
+# such a request occasionally trips it and fails as a `ReadTimeout`;
+# this headroom keeps that latency from reading as a failure, while
+# Bazel's test timeout stays the real backstop against a genuine hang.
+_HTTP_TIMEOUT_SECONDS = 30.0
+
 
 class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
 
@@ -64,7 +74,7 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
 
         # Discover the OAuth endpoints the way a real client does, via
         # the RFC 8414 authorization server metadata.
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             response = await client.get(
                 self.rbt.
                 http_localhost_url("/.well-known/oauth-authorization-server"),
@@ -85,7 +95,9 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
                 hashlib.sha256(code_verifier.encode()).digest()
             ).rstrip(b"=").decode()
 
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(
+                timeout=_HTTP_TIMEOUT_SECONDS
+            ) as client:
                 # Register a client.
                 response = await client.post(
                     register_url,
@@ -154,6 +166,7 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
                     "Authorization": f"Bearer {access_token}",
                 },
                 follow_redirects=True,
+                timeout=_HTTP_TIMEOUT_SECONDS,
             ) as http_client:
                 async with streamable_http_client(
                     mcp_url,
@@ -196,7 +209,7 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         dev_login_url = self.rbt.http_localhost_url("/__/oauth/dev-login")
         same_origin = self.rbt.http_localhost_url("/__/oauth/callback")
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             # Same-origin callback: accepted, page renders.
             response = await client.get(
                 dev_login_url,
@@ -607,7 +620,7 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
         → follow into the callback), which causes the OAuth server to store
         the provider's tokens. The token exchange isn't needed: storage
         happens in the callback."""
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             metadata = (
                 await client.get(
                     self.rbt.http_localhost_url(
@@ -695,7 +708,7 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             metadata = (
                 await client.get(
                     self.rbt.http_localhost_url(
@@ -775,7 +788,7 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
         # re-authorize at the identity provider: the stored provider
         # tokens are left untouched (storage is for the app to use, not
         # to drive re-authorization).
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             response = await client.post(
                 token_url,
                 data={
