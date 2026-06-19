@@ -97,6 +97,50 @@ host-agnostic recipe (custom endpoints + the in-`Workflow` call) is in
 [`python/references/auth-external-api-calls.md`](../../python/references/auth-external-api-calls.md).
 The rest of this reference is only about **identity**.
 
+## How MCP Clients Sign In: The Consent Screen
+
+MCP clients register with your app **dynamically** (RFC 7591 Dynamic
+Client Registration): any MCP host — claude.ai, ChatGPT, Cursor, Codex,
+or one that doesn't exist yet — can `POST /__/oauth/register` and get a
+`client_id`, with no prior coordination with your deployment. That open
+registration is the whole point: it's what lets new MCP hosts integrate
+with your app without you shipping an allow-list of every client.
+
+The flip side is that **anyone** can register a client, including an
+attacker. They can register one whose `redirect_uri` points at a server
+_they_ control, then send a victim a link to your app's own
+`/__/oauth/authorize` endpoint. The victim is on your real origin —
+nothing in the URL bar looks wrong — so if they sign in, the
+authorization code (and the access token it exchanges for) would be
+delivered to the attacker's `redirect_uri`, handing the attacker a
+session as the victim. PKCE doesn't help: the attacker is the
+registered client, so they hold the verifier. This is the classic
+OAuth "open client" / confused-deputy attack.
+
+Reboot closes this with a **consent screen**. Before redirecting to
+your identity provider, `/__/oauth/authorize` shows the user who is
+asking — the client's self-reported name, and **prominently the
+`redirect_uri` host** the tokens would be sent to — and requires an
+explicit approval (a CSRF-protected `POST /__/oauth/consent`) to
+continue. A victim handed an attacker's link gets a clear chance to
+notice an unfamiliar destination (`evil.example` next to a host they
+recognize) and cancel before any sign-in happens.
+
+This is automatic — there's nothing to configure, and it applies to
+every dynamically-registered client (i.e. every MCP host). Two things
+worth knowing:
+
+- **The user is the last line of defense.** The consent screen makes
+  the unknown client _visible_; it can't tell a careful "yes" from a
+  careless one. The client name is attacker-controlled, so the
+  `redirect_uri` host shown beneath it — not the name — is the signal
+  to trust.
+- **Custom-IdP apps are unaffected.** An app that sets
+  `Application(token_verifier=...)` to validate tokens from its own
+  external IdP doesn't run Reboot's OAuth server at all — there's no
+  Reboot `/__/oauth/*` flow, so there's no consent screen and nothing
+  here applies.
+
 ## Replace `Development` Before Production
 
 This part is obvious: `Development` is a local-development convenience.
