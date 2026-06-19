@@ -230,10 +230,16 @@ async def main():
     )
 
     dev_oauth = Development(
-        # Set a short access token TTL so that most manual tests
-        # with this app naturally also exercise the access token
-        # refresh flow.
-        access_token_ttl_seconds=30,
+        # Use a comfortable access-token TTL: the MCP inspectors we
+        # drive this app with don't refresh the access token on their
+        # own MCP connection, so a short TTL made their `tools/list`
+        # and `tools/call` calls fail with `invalid_token` partway
+        # through a session. The in-UI flow does refresh (see
+        # `useRefreshMCPBearerToken`), so a short TTL only broke the
+        # inspector side of manual testing.
+        # TODO: investigate why MCP inspectors don't refresh this
+        # token.
+        access_token_ttl_seconds=3600,
     )
 
     application = Application(
