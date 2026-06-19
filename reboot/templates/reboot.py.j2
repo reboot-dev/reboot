@@ -3558,18 +3558,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         yield  # Necessary for type checking.
         {% endif %}
     {% elif method.options.proto.kind == 'writer' %}
-    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
-    # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`.
-    # Override in your Servicer to run custom initialization
-    # on new {{ state.proto.name }} instances.
-    async def _{{ method.proto.name }}(
-        self,
-        context: IMPORT_reboot_aio_contexts.WriterContext,
-        state: {{ state.proto.name }}.State,
-        request: {{ method.input_type }},
-    ) -> {{ method.output_type }}:
-        pass
-    {% else %}
     @IMPORT_abc_abstractmethod
     async def _{{ method.proto.name }}(
         self,
@@ -3578,7 +3566,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
         raise NotImplementedError
-    {% endif %}
     {% elif method.options.proto.kind == 'transaction' %}
     @IMPORT_abc_abstractmethod
     async def _{{ method.proto.name }}(
@@ -3692,13 +3679,52 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         yield  # Necessary for type checking.
         {% endif %}
     {% elif method.options.proto.kind == 'writer' %}
+    # To be backwards compatible during the renaming don't make this
+    # method to be 'abstractmethod', so that new code that
+    # doesn't implement it continues to work.
+    # TODO: make it abstractmethod when renaming is done.
+    async def {{ method.proto.name }}(
+        self,
+        context: IMPORT_reboot_aio_contexts.WriterContext,
+        state: {{ state.proto.name }}.State,
+        {% if method.has_non_none_request %}
+        request: {{ state.proto.name}}.{{ method.proto.name }}Request,
+        {% endif %}
+    ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
+        # During the migration from 'PascalCase' to 'snake_case' method
+        # naming in Python servicers, we call the 'snake_case' version
+        # by default, so new names will do the correct thing making the
+        # code to be backwards compatible for some time and if a servicer
+        # overrides the 'PascalCase' version - it will override that
+        # method and will just work.
+        return await self.{{ method.proto.name | to_snake }}(
+            context,
+            state,
+            {% if method.has_non_none_request %}
+            request,
+            {% endif %}
+        )
+
+    # To be backwards compatible during the renaming don't make this
+    # method to be 'abstractmethod', so that existing code that
+    # doesn't implement it continues to work.
+    async def {{ method.proto.name | to_snake }}(
+        self,
+        context: IMPORT_reboot_aio_contexts.WriterContext,
+        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        {% if method.has_non_none_request %}
+        request: {{ state.proto.name}}.{{ method.proto.name }}Request,
+        {% endif %}
+    ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
+        raise NotImplementedError
+    {% elif method.options.proto.kind == 'transaction' %}
     {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
     # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`.
     # Override in your Servicer to run custom initialization
     # on new {{ state.proto.name }} instances.
     async def {{ method.proto.name }}(
         self,
-        context: IMPORT_reboot_aio_contexts.WriterContext,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
         state: {{ state.proto.name }}.State,
         {% if method.has_non_none_request %}
         request: {{ state.proto.name}}.{{ method.proto.name }}Request,
@@ -3708,7 +3734,7 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
 
     async def {{ method.proto.name | to_snake }}(
         self,
-        context: IMPORT_reboot_aio_contexts.WriterContext,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
         state: {{ state.pb2_name }}.{{ state.proto.name }},
         {% if method.has_non_none_request %}
         request: {{ state.proto.name}}.{{ method.proto.name }}Request,
@@ -3722,7 +3748,7 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     # TODO: make it abstractmethod when renaming is done.
     async def {{ method.proto.name }}(
         self,
-        context: IMPORT_reboot_aio_contexts.WriterContext,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
         state: {{ state.proto.name }}.State,
         {% if method.has_non_none_request %}
         request: {{ state.proto.name}}.{{ method.proto.name }}Request,
@@ -3747,53 +3773,14 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     # doesn't implement it continues to work.
     async def {{ method.proto.name | to_snake }}(
         self,
-        context: IMPORT_reboot_aio_contexts.WriterContext,
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
+        state: {{ state.proto.name }}.State,
         {% if method.has_non_none_request %}
         request: {{ state.proto.name}}.{{ method.proto.name }}Request,
         {% endif %}
     ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
         raise NotImplementedError
     {% endif %}
-    {% elif method.options.proto.kind == 'transaction' %}
-    # To be backwards compatible during the renaming don't make this
-    # method to be 'abstractmethod', so that new code that
-    # doesn't implement it continues to work.
-    # TODO: make it abstractmethod when renaming is done.
-    async def {{ method.proto.name }}(
-        self,
-        context: IMPORT_reboot_aio_contexts.TransactionContext,
-        state: {{ state.proto.name }}.State,
-        {% if method.has_non_none_request %}
-        request: {{ state.proto.name}}.{{ method.proto.name }}Request,
-        {% endif %}
-    ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
-        # During the migration from 'PascalCase' to 'snake_case' method
-        # naming in Python servicers, we call the 'snake_case' version
-        # by default, so new names will do the correct thing making the
-        # code to be backwards compatible for some time and if a servicer
-        # overrides the 'PascalCase' version - it will override that
-        # method and will just work.
-        return await self.{{ method.proto.name | to_snake }}(
-            context,
-            state,
-            {% if method.has_non_none_request %}
-            request,
-            {% endif %}
-        )
-
-    # To be backwards compatible during the renaming don't make this
-    # method to be 'abstractmethod', so that existing code that
-    # doesn't implement it continues to work.
-    async def {{ method.proto.name | to_snake }}(
-        self,
-        context: IMPORT_reboot_aio_contexts.TransactionContext,
-        state: {{ state.proto.name }}.State,
-        {% if method.has_non_none_request %}
-        request: {{ state.proto.name}}.{{ method.proto.name }}Request,
-        {% endif %}
-    ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
-        raise NotImplementedError
     {% elif method.options.proto.kind == 'workflow' %}
     # To be backwards compatible during the renaming don't make this
     # method to be 'abstractmethod', so that new code that
@@ -4027,12 +4014,14 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
     {% for method in service.methods %}
     # For '{{ method.proto.full_name }}'.
     {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
-    # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`.
+    # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`. The
+    # auto-constructed `{{ AUTO_CONSTRUCT_METHOD }}` is always a
+    # `Transaction` (see `api.py`), so it takes a `TransactionContext`.
     # Override in your Servicer to run custom initialization
     # on new {{ state.proto.name }} instances.
     async def {{ method.proto.name }}(
         self,
-        context: IMPORT_reboot_aio_contexts.WriterContext,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
         {% if method.has_non_none_request %}
         request: {{ state.proto.name }}.{{ method.proto.name }}Request,
         {% endif %}
@@ -4046,7 +4035,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
 
     async def {{ method.proto.name | to_snake }}(
         self,
-        context: IMPORT_reboot_aio_contexts.WriterContext,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
         {% if method.has_non_none_request %}
         request: {{ state.proto.name }}.{{ method.proto.name }}Request,
         {% endif %}

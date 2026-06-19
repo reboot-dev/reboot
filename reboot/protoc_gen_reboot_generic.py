@@ -918,13 +918,13 @@ class RebootProtocPlugin(ProtocPlugin):
             if not has_auto_construct:
                 raise UserProtoError(
                     f"State type '{proto_state.name}' requires "
-                    f"a '{AUTO_CONSTRUCT_PROTO_METHOD}' Writer "
-                    "method. Add to your service:\n"
+                    f"a '{AUTO_CONSTRUCT_PROTO_METHOD}' "
+                    "Transaction method. Add to your service:\n"
                     f"  rpc {AUTO_CONSTRUCT_PROTO_METHOD}"
                     "(google.protobuf.Empty) returns "
                     "(google.protobuf.Empty) {\n"
                     "    option (rbt.v1alpha1.method) = "
-                    "{ writer: {} };\n"
+                    "{ transaction: {} };\n"
                     "  }"
                 )
 

@@ -1223,19 +1223,23 @@ class API(pydantic.BaseModel):
                         f"{type_name} types. If you want "
                         "custom initialization logic, "
                         "override the default "
-                        f"'{AUTO_CONSTRUCT_METHOD}' Writer "
-                        "in your servicer implementation "
-                        "instead of declaring it in the API "
-                        "definition. You may also declare "
-                        "alternative factory methods for "
-                        "your own use, but note the system "
-                        "will always use "
+                        f"'{AUTO_CONSTRUCT_METHOD}' "
+                        "Transaction in your servicer "
+                        "implementation instead of declaring "
+                        "it in the API definition. You may "
+                        "also declare alternative factory "
+                        "methods for your own use, but note "
+                        "the system will always use "
                         f"'{AUTO_CONSTRUCT_METHOD}' when "
                         "automatically constructing a "
                         f"'{type_name}' for a new AI "
                         "session."
                     )
-                data_type.methods[AUTO_CONSTRUCT_METHOD] = Writer(
+                # The auto-constructed `create` is a `Transaction`, so
+                # that a servicer overriding it can call other state
+                # machines while constructing a `User`, e.g. "when a
+                # `User` is created, also create a `Cart`".
+                data_type.methods[AUTO_CONSTRUCT_METHOD] = Transaction(
                     request=None,
                     response=None,
                     factory=True,
