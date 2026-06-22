@@ -122,5 +122,10 @@
   // updateContent runs inside the container after repo content is updated
   // with new commits. We use it to build new content so users' builds are
   // mostly incremental.
-  "updateContentCommand": ".devcontainer/update_content.sh"
+  "updateContentCommand": ".devcontainer/update_content.sh",
+  // postStartCommand runs inside the container every time it starts, so on
+  // every `devpod up`. We use it to (re-)fetch the shared workstation
+  // secrets from Secret Manager on each start; it is a no-op off GCP
+  // (e.g. Codespaces).
+  "postStartCommand": ".devcontainer/devpod/fetch-workstation-secrets.sh || true"
 }
