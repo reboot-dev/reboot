@@ -1257,8 +1257,13 @@ class API(pydantic.BaseModel):
     def get_types(self) -> Dict[str, Type]:
         """Get all Reboot data types defined in this API."""
         types = {}
-        for field_name in self.model_fields_set:
-            field_value = getattr(self, field_name, None)
+        # Iterate `__pydantic_extra__`, which preserves the order in
+        # which the types were passed to `API(...)`, rather than
+        # `model_fields_set`, which is a `set` whose iteration order
+        # is randomized per process. The types' order flows through
+        # to the synthesized `.proto` and thus the generated code, so
+        # a stable order keeps generated output deterministic.
+        for field_name, field_value in (self.__pydantic_extra__ or {}).items():
             if isinstance(field_value, Type):
                 types[field_name] = field_value
 

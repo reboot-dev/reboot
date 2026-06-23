@@ -100,6 +100,16 @@ class CounterState(Model):
     description: str = Field(tag=2, default="")
 
 
+class ShowClickerProps(Model):
+    # Visual style for the clicker UI; the AI picks a primary
+    # color to match the user's mood or the counter's purpose.
+    # The snake_case field name is intentional — it exercises the
+    # Python→TS camelCase conversion path that any real Reboot
+    # app needs for multi-word UI request fields. Empty string
+    # means use the app's default style.
+    primary_color: str = Field(tag=1, default="")
+
+
 api = API(
     Ping=Type(
         state=PingState,
@@ -182,7 +192,7 @@ api = API(
         state=CounterState,
         methods=Methods(
             show_clicker=UI(
-                request=None,
+                request=ShowClickerProps,
                 path="web/ui/clicker",
                 title="Counter Clicker",
                 description=("Interactive clicker for the Counter."),

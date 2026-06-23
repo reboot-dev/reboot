@@ -2888,6 +2888,10 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
         async def {{ mcp_name_prefix }}{{ ui.name }}_tool(
             ctx: IMPORT_mcp_server_fastmcp.Context,
+{% if ui.request_message %}
+            *,
+            request: {{ state.proto.name }}.{{ ui.request_message }},
+{% endif %}
         ) -> dict:
             _ids: dict[IMPORT_reboot_aio_types.StateTypeName, str | None] = {
                 IMPORT_reboot_aio_types.StateTypeName("{{ state.proto.full_name }}"):
@@ -2898,7 +2902,31 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 if _auto_construct_full_name not in _ids:
                     _ids[_auto_construct_full_name] = (
                         IMPORT_reboot_mcp_context.get_mcp_user_id(ctx))
+{% if ui.request_message %}
+            # Echo the validated request under `request` so
+            # `McpConnector.ontoolresult` carries it across to the
+            # React side without colliding with framework-reserved
+            # keys (`ids`, `bearer_token`). `McpConnector` injects
+            # these fields as props onto the single UI component via
+            # `React.cloneElement` (reading them from
+            # `toolData.request`), so customers write a plain
+            # `<MyApp />` and don't read `useMcpToolData()?.request`
+            # themselves. The payload is camelCased to match the
+            # protobuf-es generated TypeScript field names —
+            # Pydantic's default `model_dump` returns snake_case, but
+            # the customer's generated `...Props` interface (the type
+            # parameter of their App's `FC<...>`) is camelCase, so a
+            # field named `primary_color` here must land as
+            # `primaryColor` in the prop.
+            result: dict = {
+                "ids": _ids,
+                "request": IMPORT_reboot_mcp_ui.camelize_request_payload(
+                    request.model_dump(mode="json")
+                ),
+            }
+{% else %}
             result: dict = {"ids": _ids}
+{% endif %}
 
             # Invariant: the MCP server has a bearer token for this tool
             # call because opening a UI requires an authenticated
@@ -2918,6 +2946,10 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         async def {{ mcp_name_prefix }}{{ ui.name }}_tool(
             ctx: IMPORT_mcp_server_fastmcp.Context,
             {{ mcp_name_prefix }}id: str,
+{% if ui.request_message %}
+            *,
+            request: {{ state.proto.name }}.{{ ui.request_message }},
+{% endif %}
         ) -> dict:
             _ids: dict[IMPORT_reboot_aio_types.StateTypeName, str | None] = {
                 IMPORT_reboot_aio_types.StateTypeName("{{ state.proto.full_name }}"): {{ mcp_name_prefix }}id,
@@ -2926,7 +2958,31 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             for _auto_construct_full_name in auto_construct_state_type_full_names:
                 _ids[_auto_construct_full_name] = (
                     IMPORT_reboot_mcp_context.get_mcp_user_id(ctx))
+{% if ui.request_message %}
+            # Echo the validated request under `request` so
+            # `McpConnector.ontoolresult` carries it across to the
+            # React side without colliding with framework-reserved
+            # keys (`ids`, `bearer_token`). `McpConnector` injects
+            # these fields as props onto the single UI component via
+            # `React.cloneElement` (reading them from
+            # `toolData.request`), so customers write a plain
+            # `<MyApp />` and don't read `useMcpToolData()?.request`
+            # themselves. The payload is camelCased to match the
+            # protobuf-es generated TypeScript field names —
+            # Pydantic's default `model_dump` returns snake_case, but
+            # the customer's generated `...Props` interface (the type
+            # parameter of their App's `FC<...>`) is camelCase, so a
+            # field named `primary_color` here must land as
+            # `primaryColor` in the prop.
+            result: dict = {
+                "ids": _ids,
+                "request": IMPORT_reboot_mcp_ui.camelize_request_payload(
+                    request.model_dump(mode="json")
+                ),
+            }
+{% else %}
             result: dict = {"ids": _ids}
+{% endif %}
 
             # Invariant: the MCP server has a bearer token for this tool
             # call because opening a UI requires an authenticated
@@ -4357,6 +4413,21 @@ class {{ client.proto.state_name }}:
 
     {% endfor %}
     {% endfor %}
+{%- if client.state is not none %}
+{%- for ui in client.state.proto.uis %}
+{%- if ui.request_message %}
+
+    {# UI request type alias. The generated MCP tool annotates its
+    `request:` parameter with `<State>.<RequestMessage>` (see the UI
+    tool bodies above); FastMCP reads that annotation to derive the
+    tool's parameter schema, so without this alias the AI would see
+    no parameters to pass. Mirrors the per-method Request alias
+    above, and matches the TS-side re-export in
+    `reboot_react.ts.j2`. #}
+    {{ ui.request_message }}: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.{{ client.proto.state_name }}.methods['{{ ui.name }}'].request)
+{%- endif %}
+{%- endfor %}
+{%- endif %}
 
     __state_type_name__ = IMPORT_reboot_aio_types.StateTypeName("{{ client.proto.state_full_name }}")
 

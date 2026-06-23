@@ -14,7 +14,17 @@ import {
   useHostStyleVariables,
   type App as McpApp,
 } from "@modelcontextprotocol/ext-apps/react";
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { McpAppContext, type McpAppContextValue } from "./index.js";
 import { useAppSafe } from "./useAppSafe.js";
 
@@ -27,6 +37,41 @@ export default function McpConnector({
   setBearerToken: (token?: string) => void;
   children: ReactNode;
 }) {
+  // Reboot auto-injects the AI-supplied `UI(request=...)` props onto
+  // the single child element via `React.cloneElement` (see the render
+  // at the bottom of this component), so `RebootClientProvider` in MCP
+  // mode must wrap exactly one React element — the customer's UI App.
+  // Validate eagerly here, before any other render or state setup, so a
+  // misconfigured provider tree fails fast with a Reboot-specific
+  // message that points at the fix, rather than silently injecting the
+  // props onto just one of several siblings while the rest render
+  // untouched. Common mistakes this catches:
+  //   - multiple siblings: <A /><B />
+  //   - fragment wrapper:  <>...</>
+  //   - text/null/array:   "loading", null, [<A />, <B />]
+  //   - empty provider:    <RebootClientProvider />
+  const childArray = Children.toArray(children);
+  if (childArray.length !== 1 || !isValidElement(childArray[0])) {
+    const count = childArray.length;
+    throw new Error(
+      `RebootClientProvider must wrap exactly one React ` +
+        `element (your UI App component); got ${count} ` +
+        `${count === 1 ? "child" : "children"}. Reboot ` +
+        `auto-injects UI request props (from ` +
+        `UI(request=<Model>) declarations) onto that single ` +
+        `child via React.cloneElement, so a fragment, an ` +
+        `array of siblings, or a non-element child would ` +
+        `silently drop the props. Wrap multiple top-level ` +
+        `components in a single parent component (e.g. ` +
+        `<MyAppShell><Header /><App /></MyAppShell>) and ` +
+        `render that one component here.`
+    );
+  }
+  // The validated single child — used below in place of the
+  // raw `children` prop so the cloneElement path and the
+  // pass-through path share the same element.
+  const onlyChild = childArray[0] as ReactElement;
+
   // Merged tool data from ontoolinput + ontoolresult.
   const [toolData, setToolData] = useState<Record<string, unknown> | null>(
     null
@@ -214,9 +259,28 @@ export default function McpConnector({
     refreshMCPBearerToken,
   };
 
+  // Auto-inject the AI-supplied request props onto the single
+  // child component, so customer `main.tsx` can write a plain
+  // `<MyApp />` and the App's typed `FC<<Model>>` props get
+  // populated automatically. The MCP tool stub puts the
+  // validated, camelCased request payload under
+  // `toolData.request`. UIs declared with `UI(request=None)`
+  // have no `request` field and the child renders unchanged.
+  // `onlyChild` is the validated single element from the top of
+  // this component.
+  const requestProps =
+    toolData?.request != null &&
+    typeof toolData.request === "object" &&
+    !Array.isArray(toolData.request)
+      ? (toolData.request as Record<string, unknown>)
+      : null;
+
+  const child =
+    requestProps !== null ? cloneElement(onlyChild, requestProps) : onlyChild;
+
   return (
     <McpAppContext.Provider value={contextValue}>
-      {children}
+      {child}
     </McpAppContext.Provider>
   );
 }
