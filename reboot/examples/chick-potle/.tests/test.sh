@@ -51,18 +51,7 @@ pytest backend/
 if [ -n "$EXPECTED_RBT_DEV_OUTPUT_FILE" ]; then
   actual_output_file=$(mktemp)
 
-  # `--config=dist` overrides `.rbtrc`'s default `hmr` config,
-  # whose `--mcp-frontend-host=http://localhost:4444` would
-  # have Envoy proxy `/__/web/**` to a Vite dev server. There
-  # is no Vite running in CI, and on the macOS executable-Envoy
-  # path that proxy target makes cluster init hang
-  # indefinitely, so `--terminate-after-health-check` never
-  # fires. The `dist` config sets `--mcp-frontend-host=""`,
-  # which skips the proxy entirely. `web/dist/` doesn't need
-  # to actually exist; the health check only probes gRPC and
-  # Envoy listeners.
   rbt $RBT_FLAGS dev run \
-    --config=dist \
     --terminate-after-health-check \
     > "$actual_output_file"
 

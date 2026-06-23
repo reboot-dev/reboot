@@ -93,7 +93,7 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
             )
         )
         # Authenticated context for a "guest" user. With
-        # `useOAuth: true` enabled in `mcp_servers.json`, every
+        # `--oauth` flag for MCPJam, every
         # session — including anonymous ones — gets a stable
         # OAuth user-id, which our authorizers rely on. Tests
         # bypass the MCP session hook that auto-constructs

@@ -526,6 +526,9 @@ export const ZOD_ERRORS = z.discriminatedUnion("type", [
     type: z.literal("TransactionParticipantFailedToCommit"),
   }),
   z.object({
+    type: z.literal("TransactionShouldRetryWithoutBackoff"),
+  }),
+  z.object({
     type: z.literal("Cancelled"),
   }),
   z.object({
@@ -619,6 +622,7 @@ export const REBOOT_ERROR_TYPES = [
   errors_pb.StateNotConstructed,
   errors_pb.TransactionParticipantFailedToPrepare,
   errors_pb.TransactionParticipantFailedToCommit,
+  errors_pb.TransactionShouldRetryWithoutBackoff,
   errors_pb.UnknownService,
   errors_pb.UnknownTask,
 ] as const; // Need `as const` to ensure TypeScript infers this as a tuple!
@@ -687,6 +691,13 @@ export function grpcStatusCodeFromError<ErrorType>(
   }
 
   if (error instanceof errors_pb.Unavailable) {
+    return StatusCode.UNAVAILABLE;
+  }
+
+  // Behaves like `Unavailable` (the call is retried); the distinct type
+  // lets the runtime recognize the restart and refresh its timestamp
+  // before retrying.
+  if (error instanceof errors_pb.TransactionShouldRetryWithoutBackoff) {
     return StatusCode.UNAVAILABLE;
   }
 
@@ -869,6 +880,8 @@ export function errorFromZodError(
       return new errors_pb.TransactionParticipantFailedToPrepare();
     case "TransactionParticipantFailedToCommit":
       return new errors_pb.TransactionParticipantFailedToCommit();
+    case "TransactionShouldRetryWithoutBackoff":
+      return new errors_pb.TransactionShouldRetryWithoutBackoff();
   }
 }
 
@@ -924,6 +937,8 @@ export function zodErrorFromError(
     return { type: "TransactionParticipantFailedToPrepare" };
   } else if (error instanceof errors_pb.TransactionParticipantFailedToCommit) {
     return { type: "TransactionParticipantFailedToCommit" };
+  } else if (error instanceof errors_pb.TransactionShouldRetryWithoutBackoff) {
+    return { type: "TransactionShouldRetryWithoutBackoff" };
   }
   throw new Error(`Unknown error type '${error.getType().typeName}'`);
 }

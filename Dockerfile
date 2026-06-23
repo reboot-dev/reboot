@@ -514,6 +514,20 @@ RUN curl -LsSf https://astral.sh/uv/0.11.13/install.sh | sh \
 # `uv` there, and ours (pinned) must win.
 RUN sudo ln -sf "$HOME/.local/bin/uv" /usr/local/bin/uv
 RUN echo "export PATH=\"$HOME/.local/bin:\$PATH\"" >> "$HOME/.bashrc"
+
+# Install Claude Code as the target user so it lands in the user's home
+# (where its auto-updater writes), and symlink it onto the system PATH
+# like `uv` above so non-interactive shells and other users find it too.
+# It's a human-driven tool, so we don't pin the version and leave
+# auto-update on.
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+    && sudo ln -sf "$HOME/.local/bin/claude" /usr/local/bin/claude
+
+# Give Claude Code the headless Chrome DevTools MCP server in the user's
+# config, so it can drive a browser out of the box.
+RUN claude mcp add -s user chrome-devtools \
+    -- npx --yes chrome-devtools-mcp@latest --headless=true
+
 # Then return to root.
 USER root
 
@@ -564,11 +578,17 @@ RUN set -e; \
     && chmod -R a+rX "${KREW_ROOT}" \
     && rm -rf "${TMPDIR}"
 
-# Install Claude Code. We're not worried about breaking changes in this
-# tool (we don't use its API or CLI, it's human-driven) so we don't need
-# to pin its version, and in fact leave its default auto-update function
-# enabled.
-RUN curl -fsSL https://claude.ai/install.sh | bash
+# Install the Codex CLI globally via npm so it's on PATH for every user.
+# Like Claude Code (installed in the user's home above) it's a
+# human-driven tool, so we don't pin the version.
+RUN npm install -g @openai/codex
+
+# Give Codex the same headless Chrome DevTools MCP server in the target
+# user's config, mirroring the Claude Code setup above.
+USER $UNAME
+RUN codex mcp add chrome-devtools \
+    -- npx --yes chrome-devtools-mcp@latest --headless=true
+USER root
 
 ###############################################################################
 # The following is a partial copy-paste from

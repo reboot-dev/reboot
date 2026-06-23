@@ -5,7 +5,7 @@ requires-python = ">= 3.10"
 dependencies = [
     "langchain>=0.3.27",
     "langchain-anthropic>=0.3.18",
-    "reboot==1.2.0",
+    "reboot==1.2.1",
 ]
 [dependency-groups]
 dev = [

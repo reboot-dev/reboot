@@ -22,25 +22,9 @@ MCPJam picks up changes immediately.
 [MCPJam Inspector](https://mcpjam.com) is a browser-based MCP client
 ideal for testing during development.
 
-Add an `mcp_servers.json` file in your project root, and fill it in:
-```json
-{
-  "mcpServers": {
-    "my-app": {
-      "url": "http://localhost:9991/mcp",
-      "useOAuth": true
-    }
-  }
-}
-```
-
-Replace `my-app` with a name for your server, and update the URL if your
-app runs on a different port or host.
-
-Then run MCPJam:
+Run MCPJam:
 ```sh
-npx @mcpjam/inspector@2.9.3 \
-  --config mcp_servers.json --server my-app
+npx @mcpjam/inspector@2.18.1 --url http://localhost:9991/mcp --oauth
 ```
 
 This opens an interface where you can browse your app's tools, call

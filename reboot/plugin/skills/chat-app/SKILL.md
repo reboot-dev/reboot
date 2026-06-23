@@ -635,9 +635,7 @@ application directory.**
     proceed to the next step until every user-story test passes
     and mypy is green — together they are the gate that catches
     contract bugs before the user sees them in MCPJam.
-13. Create `mcp_servers.json` with
-    `{"mcpServers":{"<name>":{"url":"http://localhost:9991/mcp","useOAuth":true}}}`.
-14. Run the app — load the [`run` skill](../run/SKILL.md) and
+13. Run the app — load the [`run` skill](../run/SKILL.md) and
     follow it. It is the single canonical "start the app"
     procedure: it detects the app type, makes sure dependencies
     and secrets are in place, and starts the backend and

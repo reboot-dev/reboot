@@ -7,7 +7,7 @@ dependencies = [
     "uuid7>=0.1.0",
     "anyio>=4.0.0",
     "pydantic-ai-slim[anthropic]>=1.0.0",
-    "reboot==1.2.0",
+    "reboot==1.2.1",
 ]
 
 [dependency-groups]

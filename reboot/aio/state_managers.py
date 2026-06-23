@@ -37,6 +37,7 @@ from rbt.v1alpha1.errors_pb2 import (
     StateNotConstructed,
     TransactionParticipantFailedToCommit,
     TransactionParticipantFailedToPrepare,
+    TransactionShouldRetryWithoutBackoff,
     Unavailable,
 )
 from reboot.admin.export_import_converters import ExportImportItemConverters
@@ -103,6 +104,21 @@ logger = log.log.get_logger(__name__)
 # level per-module or globally. For now, default to `WARNING`: we have warnings
 # in this file that we expect users to want to see.
 logger.setLevel(logging.WARNING)
+
+
+def _should_retry_without_backoff(exception: BaseException) -> bool:
+    """Whether `exception` is an `Aborted` carrying a
+    `TransactionShouldRetryWithoutBackoff` (raised by a participant
+    that recovered after the transaction began). The error may be
+    wrapped in any method's generated `Aborted` subtype, so we inspect
+    `.error` rather than the exception type."""
+    if not isinstance(exception, Aborted):
+        return False
+    try:
+        error = exception.error
+    except NotImplementedError:
+        return False
+    return isinstance(error, TransactionShouldRetryWithoutBackoff)
 
 
 def check_idempotency_key_not_expired(idempotency_key: uuid.UUID) -> None:
@@ -3666,9 +3682,12 @@ class SidecarStateManager(
                 ):
                     # Server recovered after this transaction started,
                     # which means it may have already participated and
-                    # lost in-memory state when it restarted. Return
-                    # UNAVAILABLE so the caller retries with a fresh
-                    # transaction.
+                    # lost in-memory state when it restarted. Abort with
+                    # `TransactionShouldRetryWithoutBackoff` (retried
+                    # like `Unavailable`) so the caller retries with a
+                    # fresh transaction; the distinct type lets the
+                    # coordinator refresh its timestamp and skip the
+                    # first retry's backoff.
                     transaction_time = datetime.fromtimestamp(
                         transaction_timestamp_ms / 1000,
                         tz=timezone.utc,
@@ -3678,7 +3697,7 @@ class SidecarStateManager(
                         tz=timezone.utc,
                     ).isoformat()
                     raise SystemAborted(
-                        Unavailable(),
+                        TransactionShouldRetryWithoutBackoff(),
                         message=(
                             f"Transaction {root_transaction_id} was "
                             f"created at {transaction_time} but this "
@@ -4666,12 +4685,30 @@ class SidecarStateManager(
                 coordinator_state_ref=state_ref,
                 participants=context.participants,
             )
-        except:
+        except BaseException as exception:
             if context.nested:
                 # A nested transaction just re-raises and lets the
                 # abort propagate back to the caller.
                 raise
             else:
+                # We are the coordinator, so we are the one who stamps
+                # the transaction with a timestamp. If a participant
+                # aborted with `TransactionShouldRetryWithoutBackoff`,
+                # advance our clock so the upcoming retry is stamped
+                # with a newer timestamp - that addresses a reason why
+                # `TransactionShouldRetryWithoutBackoff` might have been
+                # raised (the participant might have restarted after the
+                # transaction started).
+                if _should_retry_without_backoff(exception):
+                    try:
+                        self._update_latest_timestamp(
+                            await self._database_client.refresh_timestamp()
+                        )
+                    except Exception:
+                        # Best-effort: on failure we fall back to the
+                        # periodic refresh loop.
+                        pass
+
                 # Drive Abort RPCs so participants release their
                 # locks and forget the transaction. Covers
                 # failures from `_load` / the body / validation /

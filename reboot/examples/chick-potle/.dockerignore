@@ -35,5 +35,4 @@ web/index.css
 .DS_Store
 
 # Local-only files.
-mcp_servers.json
 README.md

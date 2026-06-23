@@ -213,7 +213,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "reboot", specifier = "==1.2.0" }]
+requires-dist = [{ name = "reboot", specifier = "==1.2.1" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1878,7 +1878,7 @@ wheels = [
 
 [[package]]
 name = "reboot"
-version = "1.2.0"
+version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiofiles" },
@@ -1928,9 +1928,9 @@ dependencies = [
     { name = "websockets" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ae/01/d67f4c2cfa6cd6605f25f50d8d6dd962cda3dbb1a3be5a413b27cecfe5ba/reboot-1.2.0-py3-none-macosx_14_0_arm64.whl", hash = "sha256:45c74d870833b0a092c451c117006623363fc559d1224522859d94993d0f6c1e", size = 20440626, upload-time = "2026-06-18T15:42:03.995Z" },
-    { url = "https://files.pythonhosted.org/packages/62/fb/32f27dc3d16d5446ca8987cd81961ebc70c4d9d8e8b0cea71257f1a6b4b1/reboot-1.2.0-py3-none-manylinux_2_34_aarch64.whl", hash = "sha256:e3d026f55c1b084f50e417c70fe211d33ac1a796f42eefddd3e288ceb8ea2fd1", size = 24124117, upload-time = "2026-06-18T15:27:54.363Z" },
-    { url = "https://files.pythonhosted.org/packages/74/e0/51021d59e6bc3802b1726aee7503d28d7ea0eb507896f0a4b7cac81fccf2/reboot-1.2.0-py3-none-manylinux_2_34_x86_64.whl", hash = "sha256:fb27f3b851e25b797d5cb6e9f93e606ac8ba0c3a138d83f126a2ca26bdfbbd57", size = 24254127, upload-time = "2026-06-18T15:29:00.942Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/85/082fea1aaf65904b2f732c893469cb1d2534dff96ba527ca5575c5afbf55/reboot-1.2.1-py3-none-macosx_14_0_arm64.whl", hash = "sha256:b54cbf0233f297926ce516d39578efaea47953d113eca7095d4d0f07a1e4b192", size = 20452221, upload-time = "2026-06-23T19:41:33.886Z" },
+    { url = "https://files.pythonhosted.org/packages/64/3a/e004b65f1bbef40d8da6051fcff73925fae358a4c3ccf7b00d00bd2c7421/reboot-1.2.1-py3-none-manylinux_2_34_aarch64.whl", hash = "sha256:bb91ee132940d66c6779c2e5038f2fbf70fd567351c912bf0acf33ba60111860", size = 24135744, upload-time = "2026-06-23T19:28:20.962Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/a3/7c8b5caf625a3f1b87b075b5bf23040a6f7761c797c245822144900999ce/reboot-1.2.1-py3-none-manylinux_2_34_x86_64.whl", hash = "sha256:988cb8d6e84981d35c1bf4c9040eda4181d4d221d0ff1e9a48922b7f50c123de", size = 24265726, upload-time = "2026-06-23T19:27:45.447Z" },
 ]
 
 [[package]]

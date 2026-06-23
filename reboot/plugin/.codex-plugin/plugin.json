@@ -1,6 +1,6 @@
 {
   "name": "reboot",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Build Reboot apps (MCP Chat Apps and standalone Web Apps) from your coding agent. Includes skills for routing, scaffolding, running, and a full Reboot Python reference.",
   "author": {
     "name": "Reboot",

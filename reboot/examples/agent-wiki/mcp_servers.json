@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "agent-wiki": {
-      "url": "http://localhost:9991/mcp",
-      "useOAuth": true
-    }
-  }
-}

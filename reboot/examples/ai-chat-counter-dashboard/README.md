@@ -25,11 +25,11 @@ uv run rbt dev run
 
 ## Testing with MCPJam Inspector
 
-The project includes `mcp_servers.json` for testing with MCPJam Inspector:
+For testing with MCPJam Inspector:
 
 ```bash
 # In another terminal, run MCPJam:
-npx @mcpjam/inspector@2.9.3 --config mcp_servers.json --server counter-server
+npx @mcpjam/inspector@2.18.1 --url http://localhost:9991/mcp --oauth
 ```
 
 This opens a browser-based inspector where you can test tools.

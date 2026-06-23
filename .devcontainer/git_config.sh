@@ -30,8 +30,12 @@ git config --global submodule.recurse true
 #  https://stackoverflow.com/questions/27417656/should-diff3-be-default-conflictstyle-on-git
 git config --global merge.conflictstyle diff3
 
-# Do some extra work to pre-configure GitHub authentication when running
-# in a codespace. Skip this for a local devcontainer.
+# Codespaces-specific GitHub auth: Codespaces provides HTTPS-only
+# credentials and a `GITHUB_TOKEN` scoped to a single repo, so here we
+# rewrite SSH remotes to HTTPS and register `gh` as the git credential
+# helper. Gated on `CODESPACES` alone because other environments bring
+# their own git credentials — DevPod injects them, and a local
+# devcontainer uses the host's.
 if [[ "${CODESPACES:-}" == "true" ]]; then
   # Use HTTPS instead of SSH for git operations on this workstation: in
   # Codespaces we have credentials ONLY for HTTPS. See:
@@ -39,21 +43,29 @@ if [[ "${CODESPACES:-}" == "true" ]]; then
   #   https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token#using-a-token-on-the-command-line
   git config --global url."https://github.com/".insteadOf "git@github.com:"
 
-  # Make it possible for us to push commits to all repos, not just to
-  # `reboot-dev/mono`. To do so, we...
-  # 1. Set the `gh` (GitHub CLI) tool as a `git` credential helper.
+  # Register `gh` as a git credential helper so we can push to every
+  # repo our GitHub user can access, not only the one this workstation
+  # was created for.
   gh auth setup-git
+fi
 
-  # 2. Set up a script that on every terminal start:
-  #    * Unsets `GITHUB_TOKEN`, so it uses the credential helper instead.
-  #    * Tells the user to run `gh auth login` if they haven't yet.
+# A separate, broader block: on any managed workstation (Codespaces or
+# DevPod), install a per-terminal reminder to run `gh auth login` when
+# the `gh` CLI isn't authenticated. It's its own `if` because `gh` CLI
+# auth is useful on DevPod too (for `gh`/agent commands), whereas the
+# HTTPS rewrite and credential helper above are Codespaces-only. On
+# DevPod plain `git` is authenticated by DevPod's injected credentials,
+# so this is purely a `gh`-CLI reminder — the sourced script's
+# `unset GITHUB_TOKEN` is a no-op there (that variable exists only in
+# Codespaces). Gated to managed workstations so a plain local
+# devcontainer isn't nagged.
+if [[ "${CODESPACES:-}" == "true" || "${DEVPOD:-}" == "true" ]]; then
   grep -q "gh_auth_for_all_repos.sh" ~/.bashrc \
     || { \
       echo "" >> ~/.bashrc \
         && echo "# Installed by .devcontainer/git_config.sh" >> ~/.bashrc \
         && echo "source .devcontainer/gh_auth_for_all_repos.sh" >> ~/.bashrc \
     ;}
-
 fi
 
 # Install a script that on every terminal start checks if the precommit

@@ -13,11 +13,11 @@ features:
 
 ## Using MCPJam
 
-The application contains MCP functionality. Test it using MCPJam:
+For testing with MCPJam Inspector:
 
-```
-# From the root of the Bazel repo:
-npx @mcpjam/inspector@2.9.3 --config reboot/ping/mcp_servers.json --server ping-server
+```bash
+# In another terminal, run MCPJam:
+npx @mcpjam/inspector@2.18.1 --url http://localhost:9991/mcp --oauth
 ```
 
 ## On the local cluster
