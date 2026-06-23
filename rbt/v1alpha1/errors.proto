@@ -35,6 +35,14 @@ message TransactionParticipantFailedToPrepare {}
 message TransactionParticipantFailedToCommit {}
 
 ////////////////////////////////////////////////////////////////////////
+
+// Raised by a transaction participant that detects that the current
+// transaction should be retried from scratch for any reason. As
+// opposed to `Unavailable` (which also results in a retry), this error
+// signals that no backoff is required before the retry.
+message TransactionShouldRetryWithoutBackoff {}
+
+////////////////////////////////////////////////////////////////////////
 // gRPC:
 ////////////////////////////////////////////////////////////////////////
 

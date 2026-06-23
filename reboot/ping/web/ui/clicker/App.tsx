@@ -1,12 +1,21 @@
 import { useState, type FC } from "react";
-import { useCounter } from "../../../ping_api_zod_rbt_react";
+import {
+  type ShowClickerProps,
+  useCounter,
+} from "../../../ping_api_zod_rbt_react";
 import css from "./App.module.css";
 
 /**
  * Compact clicker widget. Uses generated MCP-aware hook:
- * WebSocket for reads, MCP tools for writes.
+ * WebSocket for reads, MCP tools for writes. The `primaryColor`
+ * prop comes from the `ShowClickerProps` request the AI passes
+ * to the `show_clicker` MCP tool; `main.tsx` renders a bare
+ * `<ClickerApp />`, and `RebootClientProvider` (via its internal
+ * `McpConnector`) auto-injects the request fields as props onto
+ * it with `React.cloneElement`. Python `primary_color` is
+ * generated as TypeScript `primaryColor` by protobuf-es.
  */
-export const ClickerApp: FC = () => {
+export const ClickerApp: FC<ShowClickerProps> = ({ primaryColor }) => {
   const [isPending, setIsPending] = useState(false);
 
   const counter = useCounter();
@@ -32,7 +41,10 @@ export const ClickerApp: FC = () => {
   }
 
   return (
-    <div className={css.container}>
+    <div
+      className={css.container}
+      style={primaryColor ? { color: primaryColor } : undefined}
+    >
       <div className={css.counter}>{count}</div>
       <button
         onClick={handleIncrement}

@@ -27,7 +27,7 @@ backend is the API server; any UI is deployed separately). Matches
 verbatim:
 
 ```dockerfile
-FROM ghcr.io/reboot-dev/reboot-base:1.2.0
+FROM ghcr.io/reboot-dev/reboot-base:1.2.1
 
 WORKDIR /app
 
@@ -160,7 +160,6 @@ web/
 .DS_Store
 
 # Local-only files.
-mcp_servers.json
 README.md
 ```
 
@@ -197,7 +196,6 @@ web/dist/
 .DS_Store
 
 # Local-only files.
-mcp_servers.json
 README.md
 ```
 

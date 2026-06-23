@@ -90,11 +90,15 @@ class LocalEnvoy(ABC):
         self._register_xds_port()
 
         self._servicer = AggregatedDiscoveryServiceServicer(
-            clusters=[],
-            # Initialize our xDS servicer with `listeners` so that our
-            # connecting Envoy at least gets a port it should listen
-            # to, otherwise any Envoy connecting will have no
+            # Initialize our xDS servicer with `clusters` and `listeners`
+            # so that our connecting Envoy at least gets a port it can
+            # listen to, otherwise any Envoy connecting will have no
             # configuration at all.
+            clusters=envoy_config.clusters(
+                application_id=self._application_id,
+                servers=[],
+                local_envoy_mode=self._mode,
+            ),
             listeners=self._get_listeners_from_servers([]),
         )
         ads_pb2_grpc.add_AggregatedDiscoveryServiceServicer_to_server(

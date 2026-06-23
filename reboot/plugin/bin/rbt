@@ -17,7 +17,7 @@ set -eu
 # automatically.
 # We expect that the latest plugin version will use the
 # latest version of the Reboot library.
-REBOOT_VERSION="1.2.0"
+REBOOT_VERSION="1.2.1"
 # The highest Python version we currently support.
 PYTHON_VERSION="3.12"
 

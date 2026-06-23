@@ -1223,19 +1223,23 @@ class API(pydantic.BaseModel):
                         f"{type_name} types. If you want "
                         "custom initialization logic, "
                         "override the default "
-                        f"'{AUTO_CONSTRUCT_METHOD}' Writer "
-                        "in your servicer implementation "
-                        "instead of declaring it in the API "
-                        "definition. You may also declare "
-                        "alternative factory methods for "
-                        "your own use, but note the system "
-                        "will always use "
+                        f"'{AUTO_CONSTRUCT_METHOD}' "
+                        "Transaction in your servicer "
+                        "implementation instead of declaring "
+                        "it in the API definition. You may "
+                        "also declare alternative factory "
+                        "methods for your own use, but note "
+                        "the system will always use "
                         f"'{AUTO_CONSTRUCT_METHOD}' when "
                         "automatically constructing a "
                         f"'{type_name}' for a new AI "
                         "session."
                     )
-                data_type.methods[AUTO_CONSTRUCT_METHOD] = Writer(
+                # The auto-constructed `create` is a `Transaction`, so
+                # that a servicer overriding it can call other state
+                # machines while constructing a `User`, e.g. "when a
+                # `User` is created, also create a `Cart`".
+                data_type.methods[AUTO_CONSTRUCT_METHOD] = Transaction(
                     request=None,
                     response=None,
                     factory=True,
@@ -1253,8 +1257,13 @@ class API(pydantic.BaseModel):
     def get_types(self) -> Dict[str, Type]:
         """Get all Reboot data types defined in this API."""
         types = {}
-        for field_name in self.model_fields_set:
-            field_value = getattr(self, field_name, None)
+        # Iterate `__pydantic_extra__`, which preserves the order in
+        # which the types were passed to `API(...)`, rather than
+        # `model_fields_set`, which is a `set` whose iteration order
+        # is randomized per process. The types' order flows through
+        # to the synthesized `.proto` and thus the generated code, so
+        # a stable order keeps generated output deterministic.
+        for field_name, field_value in (self.__pydantic_extra__ or {}).items():
             if isinstance(field_value, Type):
                 types[field_name] = field_value
 

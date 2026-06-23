@@ -276,13 +276,162 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
 
                     # The `counter_show_clicker` UI tool should
                     # return an `ids` mapping with the Counter ID.
+                    # `counter_show_clicker` declares
+                    # `request=ShowClickerProps`, so we need to pass a
+                    # `primary_color`.
                     result = await session.call_tool(
                         "counter_show_clicker",
-                        {"counter_id": counter_id},
+                        {
+                            "counter_id": counter_id,
+                            "request": {
+                                "primary_color": "green"
+                            },
+                        },
                     )
                     data = json.loads(result.content[0].text)
                     ids = data["ids"]
                     self.assertEqual(ids["reboot.ping.Counter"], counter_id)
+
+    async def test_ui_tool_request_echo(self):
+        """Verify the `UI(request=<Model>)` round-trip.
+
+        Three things to check:
+
+        1. `tools/list` exposes `counter_show_clicker` with a
+           nested `request` parameter in its `inputSchema`,
+           and that nested schema's `properties` contains
+           `primary_color` (the snake_case Pydantic field
+           name — protobuf and Pydantic both use snake_case
+           on the wire to the AI).
+        2. Calling the tool with
+           `{counter_id, request: {primary_color: "green"}}`
+           succeeds and returns the validated request under a
+           top-level `request` key in the result, so
+           `McpConnector.ontoolresult` will spread it into
+           tool-data context.
+        3. The echoed result is camelCased (`primary_color`
+           lands as `primaryColor`) so the protobuf-es
+           generated TypeScript field name on the React side
+           matches at runtime. This is the casing path tested
+           by `camelize_request_payload` in `reboot/mcp/ui.py`.
+        """
+        await self.rbt.up(
+            Application(
+                servicers=[
+                    UserServicer, CounterServicer, PingServicer, PongServicer
+                ],
+                oauth=OAuthProviderForTest(Anonymous()),
+            ),
+        )
+
+        mcp_url = self.rbt.http_localhost_url("/mcp")
+        access_token = self.rbt.make_valid_oauth_access_token()
+
+        async with httpx.AsyncClient(
+            headers={"Authorization": f"Bearer {access_token}"},
+            follow_redirects=True,
+        ) as http_client:
+            async with streamable_http_client(
+                mcp_url, http_client=http_client
+            ) as (read_stream, write_stream, _):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+
+                    # (1) Schema: `counter_show_clicker` must expose
+                    # `request` as a parameter, and `request`'s
+                    # nested schema must declare `primary_color`.
+                    tools = await session.list_tools()
+                    show_clicker = next(
+                        t for t in tools.tools
+                        if t.name == "counter_show_clicker"
+                    )
+                    properties = (
+                        show_clicker.inputSchema.get("properties", {})
+                    )
+                    self.assertIn(
+                        "request",
+                        properties,
+                        f"`counter_show_clicker.inputSchema` should "
+                        f"expose a `request` parameter, got "
+                        f"properties: {list(properties.keys())}",
+                    )
+                    # The `request` schema is a `$ref` into `$defs`
+                    # (Pydantic's default), so resolve it.
+                    request_schema = properties["request"]
+                    if "$ref" in request_schema:
+                        ref = request_schema["$ref"]
+                        # e.g., '#/$defs/ShowClickerProps'.
+                        def_name = ref.rsplit("/", 1)[-1]
+                        request_schema = (
+                            show_clicker.inputSchema.get("$defs",
+                                                         {}).get(def_name, {})
+                        )
+                    self.assertIn(
+                        "primary_color",
+                        request_schema.get("properties", {}),
+                        f"`request` schema for `counter_show_clicker` "
+                        f"should declare `primary_color`, got "
+                        f"{request_schema}",
+                    )
+
+                    # Create a counter so we can show its clicker.
+                    create_result = await session.call_tool(
+                        "create_counter",
+                        {"request": {
+                            "description": "test counter"
+                        }},
+                    )
+                    counter_id = json.loads(create_result.content[0].text
+                                           )["counter_id"]
+
+                    # (2) and (3): invoke with a request and verify
+                    # the echoed payload is camelCased.
+                    result = await session.call_tool(
+                        "counter_show_clicker",
+                        {
+                            "counter_id": counter_id,
+                            "request": {
+                                "primary_color": "green"
+                            },
+                        },
+                    )
+                    data = json.loads(result.content[0].text)
+                    self.assertIn(
+                        "request",
+                        data,
+                        f"UI tool result should echo `request` so "
+                        f"React's `McpConnector` can inject it as "
+                        f"props, got keys: {list(data.keys())}",
+                    )
+                    echoed = data["request"]
+                    self.assertEqual(
+                        echoed,
+                        {"primaryColor": "green"},
+                        f"Echoed request should be camelCased "
+                        f"(`primary_color` → `primaryColor`), got "
+                        f"{echoed}",
+                    )
+
+                    # A UI tool with `request=None`
+                    # (`ping_show_pinger`) should NOT include a
+                    # `request` key in its result — the auto-
+                    # injection in `McpConnector` keys off that
+                    # field, and a stray `null` would clone the
+                    # child with `null` props.
+                    no_request_result = await session.call_tool(
+                        "ping_show_pinger",
+                        {"ping_id": "my-ping"},
+                    )
+                    no_request_data = json.loads(
+                        no_request_result.content[0].text
+                    )
+                    self.assertNotIn(
+                        "request",
+                        no_request_data,
+                        f"`UI(request=None)` tools must not echo a "
+                        f"`request` key, got keys: "
+                        f"{list(no_request_data.keys())}",
+                    )
 
     async def test_ui_resource_metadata(self):
         """Verify UI resources include CSP metadata.

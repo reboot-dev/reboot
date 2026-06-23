@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Authorize application</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link
+  href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400..700&display=swap"
+  rel="stylesheet">
+<style>
+  :root {
+    --cream: #F7F5ED;
+    --navy: #103761;
+    --blue: #266AB2;
+    --light-blue: #A4D1FF;
+    --tan: #A39382;
+    --gray: #6E7884;
+    --amber: #B26B00;
+    --amber-bg: #FFF4E0;
+  }
+  body {
+    font-family: "DM Sans", "Helvetica Neue", Arial, sans-serif;
+    background: var(--cream);
+    margin: 0;
+    display: flex;
+    min-height: 100vh;
+    align-items: center;
+    justify-content: center;
+    color: var(--navy);
+  }
+  .card {
+    background: #fff;
+    border: 1px solid rgba(16, 55, 97, 0.12);
+    border-radius: 16px;
+    width: 380px;
+    padding: 36px 32px 24px;
+    box-shadow: 0 10px 30px rgba(16, 55, 97, 0.12);
+    text-align: center;
+  }
+  .app-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--gray);
+    margin: 0 0 24px;
+    word-break: break-word;
+  }
+  h1 {
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0 0 4px;
+    color: var(--navy);
+  }
+  .subtitle {
+    color: var(--tan);
+    font-size: 14px;
+    margin: 0 0 22px;
+  }
+  .client {
+    background: rgba(164, 209, 255, 0.18);
+    border: 1px solid rgba(38, 106, 178, 0.3);
+    border-radius: 12px;
+    padding: 16px;
+    margin: 0 0 22px;
+    line-height: 1.5;
+  }
+  .client-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--navy);
+    margin: 0;
+  }
+  .hosted-at {
+    font-size: 13px;
+    color: var(--tan);
+    margin: 2px 0;
+  }
+  .host {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--navy);
+  }
+  /* Fold-down disclosure: a small marker after the summary text that
+     reveals the source / callback URL on click. */
+  details.disclosure {
+    display: inline-block;
+  }
+  details.disclosure > summary {
+    list-style: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  details.disclosure > summary::-webkit-details-marker {
+    display: none;
+  }
+  /* A CSS-drawn triangle, so the fold-down marker doesn't depend on a
+     font glyph (which renders as tofu in some fonts). */
+  details.disclosure > summary::after {
+    content: "";
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid var(--tan);
+    transition: transform 0.15s ease;
+  }
+  details.disclosure[open] > summary::after {
+    transform: rotate(180deg);
+  }
+  .disclosure-body {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--tan);
+    word-break: break-all;
+  }
+  .disclosure-body a {
+    color: var(--blue);
+  }
+  .warning {
+    background: var(--amber-bg);
+    border: 1px solid rgba(178, 107, 0, 0.3);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin: 0 0 22px;
+    color: var(--amber);
+    font-size: 13px;
+    line-height: 1.45;
+    text-align: left;
+  }
+  .actions {
+    display: flex;
+    gap: 12px;
+  }
+  button {
+    flex: 1;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    padding: 12px 0;
+    border-radius: 10px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .approve {
+    background: var(--navy);
+    color: #fff;
+  }
+  .approve:hover {
+    background: var(--blue);
+  }
+  .deny {
+    background: #fff;
+    color: var(--navy);
+    border-color: rgba(16, 55, 97, 0.25);
+  }
+  .deny:hover {
+    background: rgba(16, 55, 97, 0.06);
+  }
+  .footer {
+    color: var(--tan);
+    font-size: 12px;
+    margin: 20px 0 0;
+  }
+  .footer a {
+    color: var(--blue);
+    text-decoration: none;
+  }
+  .footer a:hover {
+    text-decoration: underline;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <p class="app-title">{{ application_title }}</p>
+    <h1>Do you trust this AI?</h1>
+    <p class="subtitle">
+      An AI wants to use {{ application_title }} on your behalf
+    </p>
+    <div class="client">
+      {% if client_uri %}
+      <details class="disclosure">
+        <summary class="client-name">{{ client_name or "An application" }}</summary>
+        <div class="disclosure-body">
+          {% if client_uri_safe %}
+          <a href="{{ client_uri }}" target="_blank"
+             rel="noopener noreferrer">{{ client_uri }}</a>
+          {% else %}
+          {{ client_uri }}
+          {% endif %}
+        </div>
+      </details>
+      {% else %}
+      <p class="client-name">{{ client_name or "An application" }}</p>
+      {% endif %}
+      <p class="hosted-at">hosted at</p>
+      <details class="disclosure">
+        <summary class="host">{{ redirect_origin }}</summary>
+        <div class="disclosure-body">{{ redirect_uri }}</div>
+      </details>
+    </div>
+    <div class="warning">
+      Only continue if you started this sign-in and recognize this
+      address. If anything looks unfamiliar, do not approve &mdash;
+      approving lets this AI act as you.
+    </div>
+    <form method="post" action="{{ consent_path }}">
+      <input type="hidden" name="consent" value="{{ consent_token }}">
+      <div class="actions">
+        <button class="deny" type="submit" name="action" value="deny">
+          Cancel
+        </button>
+        <button class="approve" type="submit" name="action"
+                value="approve">
+          Yes, I trust it
+        </button>
+      </div>
+    </form>
+    <p class="footer">Built with <a href="https://reboot.dev">Reboot</a></p>
+  </div>
+</body>
+</html>

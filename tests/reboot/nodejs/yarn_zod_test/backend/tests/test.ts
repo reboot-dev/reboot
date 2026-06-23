@@ -43,8 +43,13 @@ test("Bank test", async (t) => {
 
     const response = await bank.accountBalances(context);
 
-    assert.deepEqual(response, {
-      balances: [{ accountId: "test@reboot.dev", balance: 1000 }],
-    });
+    // The account's scheduled `interest` task may tick between `signUp`
+    // and this read, so the `balance` can be at or above the initial
+    // deposit. Assert the deposit landed without depending on that
+    // timing.
+    assert.equal(response.balances.length, 1);
+    const [account] = response.balances;
+    assert.equal(account.accountId, "test@reboot.dev");
+    assert.ok(account.balance >= 1000);
   });
 });

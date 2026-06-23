@@ -2888,6 +2888,10 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
         async def {{ mcp_name_prefix }}{{ ui.name }}_tool(
             ctx: IMPORT_mcp_server_fastmcp.Context,
+{% if ui.request_message %}
+            *,
+            request: {{ state.proto.name }}.{{ ui.request_message }},
+{% endif %}
         ) -> dict:
             _ids: dict[IMPORT_reboot_aio_types.StateTypeName, str | None] = {
                 IMPORT_reboot_aio_types.StateTypeName("{{ state.proto.full_name }}"):
@@ -2898,7 +2902,31 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 if _auto_construct_full_name not in _ids:
                     _ids[_auto_construct_full_name] = (
                         IMPORT_reboot_mcp_context.get_mcp_user_id(ctx))
+{% if ui.request_message %}
+            # Echo the validated request under `request` so
+            # `McpConnector.ontoolresult` carries it across to the
+            # React side without colliding with framework-reserved
+            # keys (`ids`, `bearer_token`). `McpConnector` injects
+            # these fields as props onto the single UI component via
+            # `React.cloneElement` (reading them from
+            # `toolData.request`), so customers write a plain
+            # `<MyApp />` and don't read `useMcpToolData()?.request`
+            # themselves. The payload is camelCased to match the
+            # protobuf-es generated TypeScript field names —
+            # Pydantic's default `model_dump` returns snake_case, but
+            # the customer's generated `...Props` interface (the type
+            # parameter of their App's `FC<...>`) is camelCase, so a
+            # field named `primary_color` here must land as
+            # `primaryColor` in the prop.
+            result: dict = {
+                "ids": _ids,
+                "request": IMPORT_reboot_mcp_ui.camelize_request_payload(
+                    request.model_dump(mode="json")
+                ),
+            }
+{% else %}
             result: dict = {"ids": _ids}
+{% endif %}
 
             # Invariant: the MCP server has a bearer token for this tool
             # call because opening a UI requires an authenticated
@@ -2918,6 +2946,10 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         async def {{ mcp_name_prefix }}{{ ui.name }}_tool(
             ctx: IMPORT_mcp_server_fastmcp.Context,
             {{ mcp_name_prefix }}id: str,
+{% if ui.request_message %}
+            *,
+            request: {{ state.proto.name }}.{{ ui.request_message }},
+{% endif %}
         ) -> dict:
             _ids: dict[IMPORT_reboot_aio_types.StateTypeName, str | None] = {
                 IMPORT_reboot_aio_types.StateTypeName("{{ state.proto.full_name }}"): {{ mcp_name_prefix }}id,
@@ -2926,7 +2958,31 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             for _auto_construct_full_name in auto_construct_state_type_full_names:
                 _ids[_auto_construct_full_name] = (
                     IMPORT_reboot_mcp_context.get_mcp_user_id(ctx))
+{% if ui.request_message %}
+            # Echo the validated request under `request` so
+            # `McpConnector.ontoolresult` carries it across to the
+            # React side without colliding with framework-reserved
+            # keys (`ids`, `bearer_token`). `McpConnector` injects
+            # these fields as props onto the single UI component via
+            # `React.cloneElement` (reading them from
+            # `toolData.request`), so customers write a plain
+            # `<MyApp />` and don't read `useMcpToolData()?.request`
+            # themselves. The payload is camelCased to match the
+            # protobuf-es generated TypeScript field names —
+            # Pydantic's default `model_dump` returns snake_case, but
+            # the customer's generated `...Props` interface (the type
+            # parameter of their App's `FC<...>`) is camelCase, so a
+            # field named `primary_color` here must land as
+            # `primaryColor` in the prop.
+            result: dict = {
+                "ids": _ids,
+                "request": IMPORT_reboot_mcp_ui.camelize_request_payload(
+                    request.model_dump(mode="json")
+                ),
+            }
+{% else %}
             result: dict = {"ids": _ids}
+{% endif %}
 
             # Invariant: the MCP server has a bearer token for this tool
             # call because opening a UI requires an authenticated
@@ -3558,18 +3614,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         yield  # Necessary for type checking.
         {% endif %}
     {% elif method.options.proto.kind == 'writer' %}
-    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
-    # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`.
-    # Override in your Servicer to run custom initialization
-    # on new {{ state.proto.name }} instances.
-    async def _{{ method.proto.name }}(
-        self,
-        context: IMPORT_reboot_aio_contexts.WriterContext,
-        state: {{ state.proto.name }}.State,
-        request: {{ method.input_type }},
-    ) -> {{ method.output_type }}:
-        pass
-    {% else %}
     @IMPORT_abc_abstractmethod
     async def _{{ method.proto.name }}(
         self,
@@ -3578,7 +3622,6 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         request: {{ method.input_type }},
     ) -> {{ method.output_type }}:
         raise NotImplementedError
-    {% endif %}
     {% elif method.options.proto.kind == 'transaction' %}
     @IMPORT_abc_abstractmethod
     async def _{{ method.proto.name }}(
@@ -3692,13 +3735,52 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         yield  # Necessary for type checking.
         {% endif %}
     {% elif method.options.proto.kind == 'writer' %}
+    # To be backwards compatible during the renaming don't make this
+    # method to be 'abstractmethod', so that new code that
+    # doesn't implement it continues to work.
+    # TODO: make it abstractmethod when renaming is done.
+    async def {{ method.proto.name }}(
+        self,
+        context: IMPORT_reboot_aio_contexts.WriterContext,
+        state: {{ state.proto.name }}.State,
+        {% if method.has_non_none_request %}
+        request: {{ state.proto.name}}.{{ method.proto.name }}Request,
+        {% endif %}
+    ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
+        # During the migration from 'PascalCase' to 'snake_case' method
+        # naming in Python servicers, we call the 'snake_case' version
+        # by default, so new names will do the correct thing making the
+        # code to be backwards compatible for some time and if a servicer
+        # overrides the 'PascalCase' version - it will override that
+        # method and will just work.
+        return await self.{{ method.proto.name | to_snake }}(
+            context,
+            state,
+            {% if method.has_non_none_request %}
+            request,
+            {% endif %}
+        )
+
+    # To be backwards compatible during the renaming don't make this
+    # method to be 'abstractmethod', so that existing code that
+    # doesn't implement it continues to work.
+    async def {{ method.proto.name | to_snake }}(
+        self,
+        context: IMPORT_reboot_aio_contexts.WriterContext,
+        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        {% if method.has_non_none_request %}
+        request: {{ state.proto.name}}.{{ method.proto.name }}Request,
+        {% endif %}
+    ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
+        raise NotImplementedError
+    {% elif method.options.proto.kind == 'transaction' %}
     {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
     # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`.
     # Override in your Servicer to run custom initialization
     # on new {{ state.proto.name }} instances.
     async def {{ method.proto.name }}(
         self,
-        context: IMPORT_reboot_aio_contexts.WriterContext,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
         state: {{ state.proto.name }}.State,
         {% if method.has_non_none_request %}
         request: {{ state.proto.name}}.{{ method.proto.name }}Request,
@@ -3708,7 +3790,7 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
 
     async def {{ method.proto.name | to_snake }}(
         self,
-        context: IMPORT_reboot_aio_contexts.WriterContext,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
         state: {{ state.pb2_name }}.{{ state.proto.name }},
         {% if method.has_non_none_request %}
         request: {{ state.proto.name}}.{{ method.proto.name }}Request,
@@ -3722,7 +3804,7 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     # TODO: make it abstractmethod when renaming is done.
     async def {{ method.proto.name }}(
         self,
-        context: IMPORT_reboot_aio_contexts.WriterContext,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
         state: {{ state.proto.name }}.State,
         {% if method.has_non_none_request %}
         request: {{ state.proto.name}}.{{ method.proto.name }}Request,
@@ -3747,53 +3829,14 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     # doesn't implement it continues to work.
     async def {{ method.proto.name | to_snake }}(
         self,
-        context: IMPORT_reboot_aio_contexts.WriterContext,
-        state: {{ state.pb2_name }}.{{ state.proto.name }},
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
+        state: {{ state.proto.name }}.State,
         {% if method.has_non_none_request %}
         request: {{ state.proto.name}}.{{ method.proto.name }}Request,
         {% endif %}
     ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
         raise NotImplementedError
     {% endif %}
-    {% elif method.options.proto.kind == 'transaction' %}
-    # To be backwards compatible during the renaming don't make this
-    # method to be 'abstractmethod', so that new code that
-    # doesn't implement it continues to work.
-    # TODO: make it abstractmethod when renaming is done.
-    async def {{ method.proto.name }}(
-        self,
-        context: IMPORT_reboot_aio_contexts.TransactionContext,
-        state: {{ state.proto.name }}.State,
-        {% if method.has_non_none_request %}
-        request: {{ state.proto.name}}.{{ method.proto.name }}Request,
-        {% endif %}
-    ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
-        # During the migration from 'PascalCase' to 'snake_case' method
-        # naming in Python servicers, we call the 'snake_case' version
-        # by default, so new names will do the correct thing making the
-        # code to be backwards compatible for some time and if a servicer
-        # overrides the 'PascalCase' version - it will override that
-        # method and will just work.
-        return await self.{{ method.proto.name | to_snake }}(
-            context,
-            state,
-            {% if method.has_non_none_request %}
-            request,
-            {% endif %}
-        )
-
-    # To be backwards compatible during the renaming don't make this
-    # method to be 'abstractmethod', so that existing code that
-    # doesn't implement it continues to work.
-    async def {{ method.proto.name | to_snake }}(
-        self,
-        context: IMPORT_reboot_aio_contexts.TransactionContext,
-        state: {{ state.proto.name }}.State,
-        {% if method.has_non_none_request %}
-        request: {{ state.proto.name}}.{{ method.proto.name }}Request,
-        {% endif %}
-    ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
-        raise NotImplementedError
     {% elif method.options.proto.kind == 'workflow' %}
     # To be backwards compatible during the renaming don't make this
     # method to be 'abstractmethod', so that new code that
@@ -4027,12 +4070,14 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
     {% for method in service.methods %}
     # For '{{ method.proto.full_name }}'.
     {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
-    # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`.
+    # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`. The
+    # auto-constructed `{{ AUTO_CONSTRUCT_METHOD }}` is always a
+    # `Transaction` (see `api.py`), so it takes a `TransactionContext`.
     # Override in your Servicer to run custom initialization
     # on new {{ state.proto.name }} instances.
     async def {{ method.proto.name }}(
         self,
-        context: IMPORT_reboot_aio_contexts.WriterContext,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
         {% if method.has_non_none_request %}
         request: {{ state.proto.name }}.{{ method.proto.name }}Request,
         {% endif %}
@@ -4046,7 +4091,7 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
 
     async def {{ method.proto.name | to_snake }}(
         self,
-        context: IMPORT_reboot_aio_contexts.WriterContext,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
         {% if method.has_non_none_request %}
         request: {{ state.proto.name }}.{{ method.proto.name }}Request,
         {% endif %}
@@ -4368,6 +4413,21 @@ class {{ client.proto.state_name }}:
 
     {% endfor %}
     {% endfor %}
+{%- if client.state is not none %}
+{%- for ui in client.state.proto.uis %}
+{%- if ui.request_message %}
+
+    {# UI request type alias. The generated MCP tool annotates its
+    `request:` parameter with `<State>.<RequestMessage>` (see the UI
+    tool bodies above); FastMCP reads that annotation to derive the
+    tool's parameter schema, so without this alias the AI would see
+    no parameters to pass. Mirrors the per-method Request alias
+    above, and matches the TS-side re-export in
+    `reboot_react.ts.j2`. #}
+    {{ ui.request_message }}: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.{{ client.proto.state_name }}.methods['{{ ui.name }}'].request)
+{%- endif %}
+{%- endfor %}
+{%- endif %}
 
     __state_type_name__ = IMPORT_reboot_aio_types.StateTypeName("{{ client.proto.state_full_name }}")
 

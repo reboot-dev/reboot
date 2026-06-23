@@ -53,6 +53,7 @@ import re
 import urllib.request
 import uuid
 from pathlib import Path
+from reboot.api import snake_to_camel
 from reboot.mcp.iframe import (
     cache_busting_iframe_html,
     dev_iframe_html,
@@ -802,3 +803,28 @@ def _read_and_inject(
     del cache_bust  # Intentionally unused in the body.
     html = dist_path.read_text()
     return _inject_globals(html, reboot_url, ui_name)
+
+
+def camelize_request_payload(value: Any) -> Any:
+    """Recursively convert snake_case dict keys to camelCase.
+
+    Produces the protobuf-canonical JSON shape for a validated
+    `request: <Model>` payload — i.e., `primary_color` becomes
+    `primaryColor`, matching the protobuf-es generated TypeScript
+    field names that customer components are typed against.
+    Pydantic's `model_dump(mode='json')` defaults to Python
+    attribute names (snake_case), so without this step a UI request
+    field named `personalized_message` would land as
+    `personalized_message` on the React side while the TS type
+    expected `personalizedMessage`, and the prop would silently be
+    undefined. Recurses through lists and nested dicts so nested
+    Models in the request payload convert too.
+    """
+    if isinstance(value, dict):
+        return {
+            snake_to_camel(key): camelize_request_payload(inner)
+            for key, inner in value.items()
+        }
+    if isinstance(value, list):
+        return [camelize_request_payload(item) for item in value]
+    return value

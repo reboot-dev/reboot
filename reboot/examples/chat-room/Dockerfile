@@ -1,4 +1,4 @@
-FROM ghcr.io/reboot-dev/reboot-base:1.2.0
+FROM ghcr.io/reboot-dev/reboot-base:1.2.1
 
 WORKDIR /app
 

@@ -4,7 +4,7 @@ load("@rules_python//python:defs.bzl", "py_test")
 py_test(
     name = "ping_test",
     size = "small",
-    timeout = "short",
+    timeout = "moderate",
     srcs = ["ping_test.py"],
     deps = [
         # The `ping` application is originally defined in

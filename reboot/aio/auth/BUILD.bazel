@@ -73,6 +73,7 @@ py_library(
 py_library(
     name = "oauth_server_py",
     srcs = ["oauth_server.py"],
+    data = ["consent_page.html.j2"],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
@@ -83,6 +84,7 @@ py_library(
         "//reboot/aio:http_py",
         "//reboot/crypto:root_keys_py",
         "@com_github_reboot_dev_reboot//rbt/std/oauth/v1:oauth_py_reboot",
+        requirement("jinja2"),
         requirement("pyjwt"),
         requirement("starlette"),
     ],

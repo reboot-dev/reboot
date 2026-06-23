@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "reboot-swag-store": {
-      "url": "http://localhost:9991/mcp",
-      "useOAuth": true
-    }
-  }
-}

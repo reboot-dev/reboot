@@ -35,6 +35,48 @@ from typing import Optional
 from unittest import mock
 from urllib.parse import parse_qs, urlencode, urlparse
 
+# Generous per-request HTTP timeout for the in-process OAuth flows
+# below. Each request hits a full Reboot cluster plus a local Envoy,
+# and some — notably the OAuth callback, which runs a distributed
+# token-store transaction — can take several seconds on a loaded or
+# degraded CI runner. `httpx`'s 5-second default is tight enough that
+# such a request occasionally trips it and fails as a `ReadTimeout`;
+# this headroom keeps that latency from reading as a failure, while
+# Bazel's test timeout stays the real backstop against a genuine hang.
+_HTTP_TIMEOUT_SECONDS = 30.0
+
+# Path of the consent endpoint the `/authorize` consent screen POSTs to.
+_CONSENT_PATH = "/__/oauth/consent"
+
+
+def _extract_consent_token(consent_page_html: str) -> str:
+    """Pull the signed consent token out of the consent page's hidden
+    form field. The page HTML-escapes attribute values, so unescape what
+    we scrape back to its raw form."""
+    match = re.search(r'name="consent" value="([^"]+)"', consent_page_html)
+    assert match is not None, "consent page is missing its consent token"
+    return html.unescape(match.group(1))
+
+
+async def _approve_consent(
+    client: httpx.AsyncClient,
+    consent_url: str,
+    consent_page_html: str,
+) -> httpx.Response:
+    """Approve the consent screen: extract its token and POST an approval
+    to `/__/oauth/consent`, returning the resulting (302) response.
+
+    `client` must be the same cookie-aware client that fetched the
+    consent page, so the CSRF cookie set on `/authorize` is sent back
+    with the approval (the server requires the two to match)."""
+    return await client.post(
+        consent_url,
+        data={
+            "consent": _extract_consent_token(consent_page_html),
+            "action": "approve",
+        },
+    )
+
 
 class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
 
@@ -64,7 +106,7 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
 
         # Discover the OAuth endpoints the way a real client does, via
         # the RFC 8414 authorization server metadata.
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             response = await client.get(
                 self.rbt.
                 http_localhost_url("/.well-known/oauth-authorization-server"),
@@ -74,6 +116,7 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         register_url = metadata["registration_endpoint"]
         authorize_url = metadata["authorization_endpoint"]
         token_url = metadata["token_endpoint"]
+        consent_url = self.rbt.http_localhost_url(_CONSENT_PATH)
 
         async def login_as(identity: str) -> str:
             """Run the full OAuth flow picking `identity`; return an
@@ -85,7 +128,9 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
                 hashlib.sha256(code_verifier.encode()).digest()
             ).rstrip(b"=").decode()
 
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(
+                timeout=_HTTP_TIMEOUT_SECONDS
+            ) as client:
                 # Register a client.
                 response = await client.post(
                     register_url,
@@ -94,7 +139,7 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status_code, 201)
                 client_id = response.json()["client_id"]
 
-                # GET /authorize → 302 to the dev-login page.
+                # GET /authorize → 200 consent screen.
                 response = await client.get(
                     authorize_url,
                     params={
@@ -105,6 +150,12 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
                         "code_challenge_method": "S256",
                         "state": "mcp-state-123",
                     },
+                )
+                self.assertEqual(response.status_code, 200)
+
+                # Approving consent → 302 to the dev-login page.
+                response = await _approve_consent(
+                    client, consent_url, response.text
                 )
                 self.assertEqual(response.status_code, 302)
                 login_location = response.headers["location"]
@@ -154,6 +205,7 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
                     "Authorization": f"Bearer {access_token}",
                 },
                 follow_redirects=True,
+                timeout=_HTTP_TIMEOUT_SECONDS,
             ) as http_client:
                 async with streamable_http_client(
                     mcp_url,
@@ -196,7 +248,7 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         dev_login_url = self.rbt.http_localhost_url("/__/oauth/dev-login")
         same_origin = self.rbt.http_localhost_url("/__/oauth/callback")
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             # Same-origin callback: accepted, page renders.
             response = await client.get(
                 dev_login_url,
@@ -250,6 +302,265 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
             "No OAuth provider is configured",
             str(context.exception),
         )
+
+
+class ConsentScreenTest(unittest.IsolatedAsyncioTestCase):
+    """The `/authorize` consent screen is what stands between a
+    dynamically-registered ("open") client and a victim's identity. It
+    surfaces the client's `redirect_uri` host before the user signs in,
+    and only an explicit, same-browser POST to `/__/oauth/consent`
+    resumes the flow — closing the "open client" / confused-deputy
+    token-theft hole. See
+    https://github.com/reboot-dev/mono/issues/5560.
+    """
+
+    async def asyncSetUp(self):
+        self.rbt = Reboot()
+        await self.rbt.start()
+
+    async def asyncTearDown(self):
+        await self.rbt.stop()
+
+    async def _up(
+        self,
+        provider: Optional[OAuthProvider] = None,
+        *,
+        title: Optional[str] = None,
+    ) -> None:
+        await self.rbt.up(
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(provider or Anonymous()),
+                title=title,
+            ),
+        )
+
+    async def _register(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        redirect_uri: str,
+        client_name: Optional[str] = None,
+        client_uri: Optional[str] = None,
+    ) -> str:
+        body: dict = {"redirect_uris": [redirect_uri]}
+        if client_name is not None:
+            body["client_name"] = client_name
+        if client_uri is not None:
+            body["client_uri"] = client_uri
+        response = await client.post(
+            self.rbt.http_localhost_url("/__/oauth/register"),
+            json=body,
+        )
+        self.assertEqual(response.status_code, 201)
+        return response.json()["client_id"]
+
+    async def _authorize(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        client_id: str,
+        redirect_uri: str,
+        state: str = "mcp-state",
+    ) -> httpx.Response:
+        # A fixed PKCE pair (verifier "verifier"); the consent screen
+        # doesn't depend on its value, but `/authorize` requires PKCE.
+        code_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(b"verifier").digest()
+        ).rstrip(b"=").decode()
+        return await client.get(
+            self.rbt.http_localhost_url("/__/oauth/authorize"),
+            params={
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
+                "state": state,
+            },
+        )
+
+    async def test_authorize_shows_consent_screen_not_idp_redirect(self):
+        # The heart of the fix: `/authorize` renders a consent screen
+        # that names the client and, prominently, the `redirect_uri`
+        # host the tokens would be sent to — so a victim handed an
+        # attacker's `/authorize` link on this trusted origin can notice
+        # the unfamiliar destination before signing in.
+        await self._up(title="Reboot Chat")
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            redirect_uri = "https://evil.example/callback"
+            client_id = await self._register(
+                client,
+                redirect_uri=redirect_uri,
+                client_name="Totally Legit MCP",
+                client_uri="https://evil.example/about",
+            )
+            response = await self._authorize(
+                client,
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+            )
+            # A consent screen, not a redirect to the identity provider.
+            self.assertEqual(response.status_code, 200)
+            self.assertNotIn("location", response.headers)
+            # The screen frames the app (via `Application(title=...)`) as
+            # the thing being acted on behalf of, not "Reboot".
+            self.assertIn("Do you trust this AI?", response.text)
+            self.assertIn("Reboot Chat", response.text)
+            # The redirect host is surfaced, and the client's
+            # self-reported metadata is shown as a hint.
+            self.assertIn("evil.example", response.text)
+            self.assertIn("Totally Legit MCP", response.text)
+            self.assertIn("https://evil.example/about", response.text)
+            # The double-submit CSRF cookie is set for the POST back.
+            self.assertIn(
+                "rbt_oauth_consent",
+                response.headers.get("set-cookie", ""),
+            )
+
+    async def test_authorize_strips_userinfo_from_displayed_host(self):
+        # A `redirect_uri` can smuggle `userinfo@` ahead of the real
+        # host (`https://trusted.example@evil.example/...`). The
+        # prominent host on the consent screen must show the real
+        # destination (`evil.example`), not the trusted-looking left
+        # side, so the user checks the address tokens actually go to.
+        await self._up()
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            redirect_uri = "https://trusted.example@evil.example/callback"
+            client_id = await self._register(client, redirect_uri=redirect_uri)
+            response = await self._authorize(
+                client, client_id=client_id, redirect_uri=redirect_uri
+            )
+            self.assertEqual(response.status_code, 200)
+            host = re.search(
+                r'<summary class="host">([^<]*)</summary>',
+                response.text,
+            )
+            self.assertIsNotNone(host)
+            assert host is not None  # Narrow for the type checker.
+            self.assertEqual(host.group(1).strip(), "https://evil.example")
+
+    async def test_consent_approval_completes_flow(self):
+        # Approving on the consent screen resumes the flow all the way to
+        # a usable access token — the screen gates the flow, it doesn't
+        # break it.
+        await self._up(Anonymous())
+        redirect_uri = "http://localhost/callback"
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            client_id = await self._register(client, redirect_uri=redirect_uri)
+            response = await self._authorize(
+                client, client_id=client_id, redirect_uri=redirect_uri
+            )
+            self.assertEqual(response.status_code, 200)
+
+            # Approve → 302 onward to the (here, `Anonymous`) provider,
+            # which redirects straight into our own callback.
+            response = await _approve_consent(
+                client,
+                self.rbt.http_localhost_url(_CONSENT_PATH),
+                response.text,
+            )
+            self.assertEqual(response.status_code, 302)
+            self.assertIn("/__/oauth/callback", response.headers["location"])
+
+            # Follow into the callback; it 302s back to the client with
+            # an authorization code.
+            response = await client.get(response.headers["location"])
+            self.assertEqual(response.status_code, 302)
+            auth_code = httpx.URL(response.headers["location"]).params["code"]
+
+            # The code exchanges for an access token (PKCE verifier
+            # "verifier", matching the challenge `_authorize` sent).
+            response = await client.post(
+                self.rbt.http_localhost_url("/__/oauth/token"),
+                data={
+                    "grant_type": "authorization_code",
+                    "code": auth_code,
+                    "redirect_uri": redirect_uri,
+                    "client_id": client_id,
+                    "code_verifier": "verifier",
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("access_token", response.json())
+
+    async def test_consent_denial_redirects_with_error(self):
+        # Cancelling is reported back to the client as `access_denied`
+        # per RFC 6749 4.1.2.1, carrying the client's `state` and no
+        # authorization code.
+        await self._up()
+        redirect_uri = "https://evil.example/callback"
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            client_id = await self._register(client, redirect_uri=redirect_uri)
+            page = await self._authorize(
+                client,
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+                state="client-state-xyz",
+            )
+            response = await client.post(
+                self.rbt.http_localhost_url(_CONSENT_PATH),
+                data={
+                    "consent": _extract_consent_token(page.text),
+                    "action": "deny",
+                },
+            )
+            self.assertEqual(response.status_code, 302)
+            location = httpx.URL(response.headers["location"])
+            self.assertEqual(
+                f"{location.scheme}://{location.host}{location.path}",
+                redirect_uri,
+            )
+            self.assertEqual(location.params["error"], "access_denied")
+            self.assertEqual(location.params["state"], "client-state-xyz")
+            self.assertNotIn("code", location.params)
+
+    async def test_consent_rejects_cross_site_submit_without_cookie(self):
+        # The CSRF guard: a cross-site auto-submit can't carry the
+        # consent cookie (it isn't sent on a cross-site POST, and an
+        # attacker can't set it on our origin). Model that with a fresh
+        # client that holds a *valid* consent token but not the cookie
+        # the matching `/authorize` set — the server must refuse to act
+        # on it, so the screen can't be silently clicked through.
+        await self._up()
+        redirect_uri = "https://evil.example/callback"
+        async with httpx.AsyncClient(
+            timeout=_HTTP_TIMEOUT_SECONDS
+        ) as victim_browser:
+            client_id = await self._register(
+                victim_browser, redirect_uri=redirect_uri
+            )
+            page = await self._authorize(
+                victim_browser,
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+            )
+            consent_token = _extract_consent_token(page.text)
+
+        async with httpx.AsyncClient(
+            timeout=_HTTP_TIMEOUT_SECONDS
+        ) as no_cookie_client:
+            response = await no_cookie_client.post(
+                self.rbt.http_localhost_url(_CONSENT_PATH),
+                data={
+                    "consent": consent_token,
+                    "action": "approve"
+                },
+            )
+            self.assertEqual(response.status_code, 403)
+
+    async def test_consent_rejects_invalid_token(self):
+        # A garbage / unsigned consent token never resumes the flow.
+        await self._up()
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            response = await client.post(
+                self.rbt.http_localhost_url(_CONSENT_PATH),
+                data={
+                    "consent": "not-a-real-jwt",
+                    "action": "approve"
+                },
+            )
+            self.assertEqual(response.status_code, 400)
 
 
 class GoogleValidateTest(unittest.TestCase):
@@ -607,7 +918,7 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
         → follow into the callback), which causes the OAuth server to store
         the provider's tokens. The token exchange isn't needed: storage
         happens in the callback."""
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             metadata = (
                 await client.get(
                     self.rbt.http_localhost_url(
@@ -637,6 +948,14 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
                     "code_challenge_method": "S256",
                     "state": "mcp-state",
                 },
+            )
+            self.assertEqual(response.status_code, 200)
+            # Approve consent → 302 to the (fake) identity provider, which
+            # here is just our own callback.
+            response = await _approve_consent(
+                client,
+                self.rbt.http_localhost_url(_CONSENT_PATH),
+                response.text,
             )
             self.assertEqual(response.status_code, 302)
             # Follow the redirect into the callback; it stores the tokens.
@@ -695,7 +1014,7 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             metadata = (
                 await client.get(
                     self.rbt.http_localhost_url(
@@ -706,6 +1025,7 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
             register_url = metadata["registration_endpoint"]
             authorize_url = metadata["authorization_endpoint"]
             token_url = metadata["token_endpoint"]
+            consent_url = self.rbt.http_localhost_url(_CONSENT_PATH)
             client_redirect_uri = "http://localhost/callback"
 
             code_verifier = base64.urlsafe_b64encode(os.urandom(32)
@@ -721,8 +1041,7 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
                 )
             ).json()["client_id"]
 
-            # GET /authorize → 302 to the (fake) identity provider, which
-            # here is just our own callback.
+            # GET /authorize → 200 consent screen.
             response = await client.get(
                 authorize_url,
                 params={
@@ -733,6 +1052,13 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
                     "code_challenge_method": "S256",
                     "state": "mcp-state",
                 },
+            )
+            self.assertEqual(response.status_code, 200)
+
+            # Approve consent → 302 to the (fake) identity provider, which
+            # here is just our own callback.
+            response = await _approve_consent(
+                client, consent_url, response.text
             )
             self.assertEqual(response.status_code, 302)
 
@@ -775,7 +1101,7 @@ class StoredTokensTest(unittest.IsolatedAsyncioTestCase):
         # re-authorize at the identity provider: the stored provider
         # tokens are left untouched (storage is for the app to use, not
         # to drive re-authorization).
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             response = await client.post(
                 token_url,
                 data={

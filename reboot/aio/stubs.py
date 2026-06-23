@@ -112,8 +112,26 @@ class UnaryRetriedCall(Generic[ResponseT]):
         # For now, the only retriable error is UNAVAILABLE.
         return error.code() == grpc.StatusCode.UNAVAILABLE
 
+    async def _should_retry_without_backoff(self) -> bool:
+        """Whether the failed call aborted with
+        `TransactionShouldRetryWithoutBackoff`."""
+        if self._call is None:
+            return False
+        status = await rpc_status.from_call(self._call)
+        if status is None:
+            return False
+        return Aborted.error_from_google_rpc_status_details(
+            status,
+            [errors_pb2.TransactionShouldRetryWithoutBackoff],
+        ) is not None
+
     async def _call_with_retries(self) -> ResponseT:
         backoff = Backoff()
+        # A `TransactionShouldRetryWithoutBackoff` asks us to retry
+        # immediately, but we elide the backoff only once: a transaction
+        # that keeps restarting should still back off rather than hammer
+        # the cluster with immediate retries.
+        backoff_elided = False
         while True:
             if self._call is None:
                 new_call = self._stub_method(
@@ -125,12 +143,17 @@ class UnaryRetriedCall(Generic[ResponseT]):
                 return await self._call
             except grpc.aio.AioRpcError as error:
                 if self._should_retry(error):
-                    # Retry this, with some backoff.
                     logger.debug(
                         f"Unary call to '{self._method_name}' encountered "
                         f"retryable error: {error}; will retry..."
                     )
-                    await backoff()
+                    apply_backoff = backoff_elided or not (
+                        await self._should_retry_without_backoff()
+                    )
+                    if apply_backoff:
+                        await backoff()
+                    else:
+                        backoff_elided = True
                     # We need to create a fresh call object for the
                     # retry.
                     self._call = None

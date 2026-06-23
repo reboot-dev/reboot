@@ -12,8 +12,11 @@ import hashlib
 import json
 import jwt
 import logging
+import os
 import rbt.v1alpha1.errors_pb2
+import secrets
 import time
+from jinja2 import Template
 from mcp.server.auth.provider import AccessToken
 from reboot.aio.auth import Auth
 from reboot.aio.auth.oauth_providers import (
@@ -27,9 +30,9 @@ from reboot.aio.contexts import ReaderContext
 from reboot.aio.http import PythonWebFramework, external_context
 from reboot.crypto import root_keys
 from starlette.requests import Request
-from starlette.responses import JSONResponse, RedirectResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 from typing import Any, Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -53,9 +56,26 @@ _AUDIENCE = "reboot-mcp"
 # with developer-specified routes. The `/.well-known/` discovery paths
 # (mandated by RFC 8414 / RFC 9728) stay at their standard locations.
 _AUTHORIZE_PATH = "/__/oauth/authorize"
+_CONSENT_PATH = "/__/oauth/consent"
 _TOKEN_PATH = "/__/oauth/token"
 _REGISTER_PATH = "/__/oauth/register"
 _CALLBACK_PATH = "/__/oauth/callback"
+
+# Name of the CSRF cookie set when the consent screen is rendered. See
+# below for more details on how this cookie is used.
+_CONSENT_CSRF_COOKIE = "rbt_oauth_consent"
+
+_CONSENT_PAGE_TEMPLATE_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "consent_page.html.j2",
+)
+
+# Cap on the optional RFC 7591 display metadata (`client_name`,
+# `client_uri`) we copy into the signed `client_id`. These are
+# attacker-controlled and purely cosmetic on the consent screen, so a
+# generous-but-finite limit keeps a hostile registration from bloating
+# the JWT (and the `/authorize` URLs that carry it).
+_MAX_CLIENT_METADATA_LENGTH = 256
 
 # CORS headers for browser-based MCP clients (e.g. MCPJam, MCP
 # Inspector). Allow any origin since the server is an OAuth
@@ -218,7 +238,15 @@ class OAuthServer:
        JWT encoding the registered URIs).
 
     3. **Authorization.** The client redirects the user to `GET
-       /authorize` with PKCE parameters. We redirect to the identity
+       /authorize` with PKCE parameters. Because clients register
+       dynamically (step 2), we don't redirect to the identity provider
+       straight away: we first show a **consent screen** naming the
+       client and, prominently, the `redirect_uri` host its tokens will
+       be sent to, so the user can catch an unknown client trying to
+       harvest their identity (an "open client" / confused-deputy
+       attack — see
+       https://github.com/reboot-dev/mono/issues/5560). Only after the
+       user approves (`POST /consent`) do we redirect to the identity
        provider (Google, GitHub, or straight back for Anonymous).
 
     4. **identity provider callback.** The identity provider redirects
@@ -249,15 +277,21 @@ class OAuthServer:
         *,
         provider: OAuthProvider,
         protected_resources: list[str],
+        # The application's human-readable title, e.g. "Hipster Chat".
+        application_title: str,
     ):
         self._provider = provider
         self._protected_resources = protected_resources
+        self._application_title = application_title
         self._access_token_ttl_seconds = provider.access_token_ttl_seconds
         # Derived from the Reboot-managed cryptographic root keys; raises
         # if `REBOOT_CRYPTO_ROOT_KEYS` is unset/malformed (fail fast at
         # construction rather than per-request).
         self._signing_secret = signing_secret()
         self._token_verifier = OAuthTokenVerifier(self._signing_secret)
+        # The consent page template, compiled lazily on first render so
+        # only apps that actually serve an OAuth flow pay for it.
+        self._consent_page_template: Optional[Template] = None
 
     @property
     def token_verifier(self) -> OAuthTokenVerifier:
@@ -299,6 +333,10 @@ class OAuthServer:
 
         # Authorization and token endpoints.
         http.get(_AUTHORIZE_PATH)(self.authorize)
+        # The consent screen `/authorize` renders POSTs the user's
+        # decision here (same-origin form submission, so no CORS
+        # preflight is needed).
+        http.post(_CONSENT_PATH)(self.consent)
         # The callback persists the provider's tokens (when
         # `store_tokens=True`) via the app-internal-only `Ciphertext` /
         # `OrderedMap` servicers, so it opts in to an app-internal context
@@ -353,6 +391,71 @@ class OAuthServer:
             return decoded
         except jwt.exceptions.PyJWTError:
             return None
+
+    def _render_consent_page(self, **context: Any) -> str:
+        """Render the consent screen HTML, compiling the template on
+        first use. `autoescape` is on because every interpolated value
+        (client name/URI, redirect URI, the app origin) is
+        attacker-influenced — anyone can register a client.
+        """
+        if self._consent_page_template is None:
+            with open(_CONSENT_PAGE_TEMPLATE_PATH) as template_file:
+                self._consent_page_template = Template(
+                    template_file.read(),
+                    autoescape=True,
+                )
+        return self._consent_page_template.render(**context)
+
+    def _redirect_to_idp(
+        self,
+        *,
+        request: Request,
+        client_id_token: str,
+        redirect_uri: str,
+        code_challenge: str,
+        code_challenge_method: str,
+        mcp_state: str,
+    ) -> RedirectResponse:
+        """Mint the `pending` state JWT and redirect the user to the
+        identity provider to sign in. Reached only after the user
+        approves on the consent screen; the `pending` token carries
+        everything needed to resume in `/callback` once the provider
+        redirects back.
+
+        OAuth's `state` parameter is an opaque string that the identity
+        provider passes back unchanged in the callback. We use it to
+        carry a signed JWT with everything we need to resume:
+        `client_id`, `redirect_uri`, PKCE challenge, and the MCP
+        client's own state. This avoids server-side session storage, and
+        is safe because...
+        1. The communication with the identity provider is over TLS
+           (required by the OAuth spec), so it won't be observed in
+           transit.
+        2. None of the fields are secret to either the client or the
+           identity provider.
+        3. Since the token is signed, the identity provider can't alter
+           it to e.g. misdirect the redirect.
+        """
+        pending = self._make_jwt(
+            {
+                "type": "pending",
+                "client_id": client_id_token,
+                "redirect_uri": redirect_uri,
+                "code_challenge": code_challenge,
+                "code_challenge_method": code_challenge_method,
+                "mcp_state": mcp_state,
+            },
+            ttl_seconds=_PENDING_STATE_TTL_SECONDS,
+        )
+
+        # Our own callback URL.
+        callback_uri = f"{origin_from_request(request)}{_CALLBACK_PATH}"
+
+        idp_url = self._provider.authorization_url(
+            state=pending,
+            redirect_uri=callback_uri,
+        )
+        return RedirectResponse(url=idp_url, status_code=302)
 
     async def _store_oauth_tokens(
         self,
@@ -506,11 +609,30 @@ class OAuthServer:
         # in `/authorize` without needing a database. Client
         # registrations are normally permanent, but JWTs require an
         # `exp`, so we use an effectively-forever TTL.
+        client_metadata: dict[str, Any] = {
+            "type": "client",
+            "redirect_uris": redirect_uris,
+        }
+        # RFC 7591 client metadata we surface on the consent screen so a
+        # user can recognize who's asking. Optional and
+        # attacker-controlled (anyone can register), so they're shown
+        # only as hints next to the authoritative `redirect_uri` host,
+        # never trusted. Carried in the signed `client_id` so they're
+        # available statelessly at `/authorize`.
+        # Over-limit values are dropped (not truncated), leaving the
+        # consent screen to fall back to the authoritative
+        # `redirect_uri` host.
+        client_name = body.get("client_name")
+        if isinstance(client_name, str
+                     ) and (len(client_name) <= _MAX_CLIENT_METADATA_LENGTH):
+            client_metadata["client_name"] = client_name
+        client_uri = body.get("client_uri")
+        if isinstance(client_uri, str
+                     ) and (len(client_uri) <= _MAX_CLIENT_METADATA_LENGTH):
+            client_metadata["client_uri"] = client_uri
+
         client_id = self._make_jwt(
-            {
-                "type": "client",
-                "redirect_uris": redirect_uris,
-            },
+            client_metadata,
             ttl_seconds=1000 * 365 * 24 * 3600,  # ~1000 years.
         )
 
@@ -527,7 +649,9 @@ class OAuthServer:
     async def authorize(self, request: Request):
         """GET /authorize
 
-        Validates the request, then redirects to the identity provider.
+        Validates the request, then renders a consent screen naming the
+        client and its `redirect_uri` host. The flow only continues to
+        the identity provider once the user approves via `POST /consent`.
         """
         params = request.query_params
 
@@ -584,40 +708,170 @@ class OAuthServer:
 
         mcp_state = params.get("state", "")
 
-        # OAuth's `state` parameter is an opaque string that the
-        # identity provider passes back unchanged in the callback. We
-        # use it to carry a signed JWT with everything we need to resume
-        # after the identity provider redirects back: `client_id`,
-        # `redirect_uri`, PKCE challenge, and the MCP client's own
-        # state. This avoids server-side session storage, and is safe
-        # because...
-        # 1. The communication with the identity provider is over TLS
-        #    (required by the OAuth spec), so it won't be observed in
-        #    transit.
-        # 2. None of the fields are secret to either the client or the
-        #    identity provider.
-        # 3. Since the token is signed, the identity provider can't
-        #    alter it to e.g. misdirect the redirect.
-        pending = self._make_jwt(
+        # Don't redirect to the identity provider yet: show a consent
+        # screen first. Clients register dynamically (RFC 7591), so the
+        # `client_id` and `redirect_uri` are whatever some caller asked
+        # for — absent this checkpoint an attacker can register a client
+        # with their own `redirect_uri`, send a victim an `/authorize`
+        # link on this trusted origin, and harvest an access token for
+        # the victim's identity once they sign in (an "open client" /
+        # confused-deputy attack;
+        # https://github.com/reboot-dev/mono/issues/5560). PKCE doesn't
+        # help — the attacker is the registered client, so they hold the
+        # verifier. The consent screen gives the user a chance to notice
+        # the unfamiliar `redirect_uri` host before signing in.
+        #
+        # See the discussion on `_CONSENT_CSRF_COOKIE` below for info on
+        # how the `nonce` helps prevent CSRF attacks.
+        nonce = secrets.token_urlsafe(32)
+        consent_token = self._make_jwt(
             {
-                "type": "pending",
+                "type": "consent",
                 "client_id": client_id_token,
                 "redirect_uri": redirect_uri,
                 "code_challenge": code_challenge,
                 "code_challenge_method": code_challenge_method,
                 "mcp_state": mcp_state,
+                "nonce": nonce,
             },
             ttl_seconds=_PENDING_STATE_TTL_SECONDS,
         )
 
-        # Our own callback URL.
-        callback_uri = f"{origin_from_request(request)}{_CALLBACK_PATH}"
-
-        idp_url = self._provider.authorization_url(
-            state=pending,
-            redirect_uri=callback_uri,
+        origin = origin_from_request(request)
+        parsed_redirect = urlparse(redirect_uri)
+        # The prominent host on the consent screen is what the user
+        # checks, so strip any `userinfo@` from the netloc: a
+        # `redirect_uri` like `https://trusted.example@evil.com/cb`
+        # would otherwise show the trusted-looking left side while the
+        # tokens actually go to `evil.com`.
+        redirect_host = parsed_redirect.netloc.rsplit("@", 1)[-1]
+        client_uri = client_data.get("client_uri")
+        # Only render `client_uri` as a clickable link when it's an
+        # http(s) URL; a `javascript:`/`data:` scheme would be an XSS
+        # vector even with autoescaping, which doesn't neutralize a
+        # dangerous URL scheme.
+        client_uri_safe = (
+            isinstance(client_uri, str) and
+            urlparse(client_uri).scheme in ("http", "https")
         )
-        return RedirectResponse(url=idp_url, status_code=302)
+        html = self._render_consent_page(
+            application_title=self._application_title,
+            client_name=client_data.get("client_name") or None,
+            client_uri=client_uri if isinstance(client_uri, str) else None,
+            client_uri_safe=client_uri_safe,
+            redirect_uri=redirect_uri,
+            redirect_origin=f"{parsed_redirect.scheme}://{redirect_host}",
+            consent_token=consent_token,
+            consent_path=_CONSENT_PATH,
+        )
+        response = HTMLResponse(html)
+        response.set_cookie(
+            _CONSENT_CSRF_COOKIE,
+            nonce,
+            max_age=_PENDING_STATE_TTL_SECONDS,
+            path=_CONSENT_PATH,
+            httponly=True,
+            # `Strict`: the only request that ever consumes this cookie
+            # is the same-site `POST /consent` triggered by a user
+            # click; our CSRF protection relies on this cookie never
+            # getting delivered cross-site.
+            samesite="strict",
+            # Only mark `Secure` over https; in local `http://` dev a
+            # `Secure` cookie would be silently dropped by the browser,
+            # breaking the double-submit check.
+            secure=origin.startswith("https://"),
+        )
+        return response
+
+    async def consent(self, request: Request):
+        """POST /consent
+
+        Receives the user's decision from the consent screen rendered by
+        `/authorize`. On approval, resumes the flow by redirecting to the
+        identity provider; on denial (or any non-approval), redirects
+        back to the client with an `access_denied` error per RFC 6749
+        4.1.2.1.
+        """
+        form = await request.form()
+
+        consent_token = form.get("consent")
+        if consent_token is None:
+            return _oauth_error(
+                error="invalid_request",
+                description="The 'consent' parameter is required.",
+                status_code=400,
+            )
+
+        # `_verify_jwt` checks the HS256 signature (and `type`/`exp`)
+        # with our signing secret, so from here the token's `nonce` is
+        # known to be one we issued, not an attacker's.
+        consent_data = self._verify_jwt(str(consent_token), "consent")
+        if consent_data is None:
+            return _oauth_error(
+                error="invalid_request",
+                description="Invalid or expired consent request.",
+                status_code=400,
+            )
+
+        # CSRF defense — the "double-submit cookie" pattern. When the
+        # consent page was rendered (in `authorize`) we generated one
+        # random `nonce` and put it in two places: the
+        # `rbt_oauth_consent` cookie (set on that GET response) and,
+        # signed, inside the consent token in the form. `/consent`
+        # requires the two to match — the same secret arrives once via
+        # the cookie and once via the form body.
+        #
+        # This protects against a cross-site attacker (a different
+        # site): they can mint a valid consent token for their own
+        # client (so they control the form half), but they can't read
+        # our cookie or make the browser send it. `SameSite=Strict`
+        # keeps the cookie off every cross-site request, so a forged
+        # POST from their page carries no cookie of ours to pair with
+        # their token — reject.
+        #
+        # Putting our nonce into our _signed_ token additionally covers
+        # a *same-site* attacker — e.g. a compromised sibling subdomain,
+        # which can write a parent-domain cookie. In that case they
+        # could set both the cookie and the form field, but they still
+        # wouldn't be able to forge our signature. We already validated
+        # the token signature above, so here we just need to check that
+        # the cookie matches.
+        cookie_nonce = request.cookies.get(_CONSENT_CSRF_COOKIE)
+        if cookie_nonce is None or not secrets.compare_digest(
+            cookie_nonce, str(consent_data.get("nonce", ""))
+        ):
+            return _oauth_error(
+                error="access_denied",
+                description="Consent could not be verified; please restart "
+                "the sign-in.",
+                status_code=403,
+            )
+
+        redirect_uri = consent_data["redirect_uri"]
+        mcp_state = consent_data.get("mcp_state", "")
+
+        if form.get("action") != "approve":
+            # Anything that isn't an explicit approval — the "Cancel"
+            # button, a malformed submission — is reported to the client
+            # as a denial.
+            query = urlencode({"error": "access_denied", "state": mcp_state})
+            denied = RedirectResponse(
+                url=f"{redirect_uri}?{query}",
+                status_code=302,
+            )
+            denied.delete_cookie(_CONSENT_CSRF_COOKIE, path=_CONSENT_PATH)
+            return denied
+
+        response = self._redirect_to_idp(
+            request=request,
+            client_id_token=consent_data["client_id"],
+            redirect_uri=redirect_uri,
+            code_challenge=consent_data["code_challenge"],
+            code_challenge_method=consent_data["code_challenge_method"],
+            mcp_state=mcp_state,
+        )
+        response.delete_cookie(_CONSENT_CSRF_COOKIE, path=_CONSENT_PATH)
+        return response
 
     async def callback(self, request: Request):
         """GET /oauth/callback

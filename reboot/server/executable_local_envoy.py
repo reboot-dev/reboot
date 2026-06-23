@@ -107,6 +107,15 @@ class ExecutableLocalEnvoy(LocalEnvoy):
             )
         return self._trusted_port
 
+    async def _raise_if_fatal_error(self):
+        """If the xDS server has hit a fatal error (e.g. the connected
+        Envoy rejected our config), tear down the Envoy process and
+        raise it."""
+        fatal_error = self._servicer.fatal_error
+        if fatal_error is not None:
+            await self._stop()
+            raise fatal_error
+
     async def _start(self):
         # We have Envoy write its logs to a file. This has two benefits:
         # 1. Unlike when writing to a stream like `stdout`, we can't
@@ -187,6 +196,10 @@ class ExecutableLocalEnvoy(LocalEnvoy):
         # ready.
         logger.debug("Waiting for Envoy admin address file...")
         while True:
+            # If Envoy rejected our xDS config it won't come up, so bail
+            # out of this poll instead of spinning until the timeout.
+            await self._raise_if_fatal_error()
+
             # Check if process has exited.
             if self._process.returncode is not None:
                 raise RuntimeError(
@@ -227,6 +240,11 @@ class ExecutableLocalEnvoy(LocalEnvoy):
 
         listeners_url = f"http://127.0.0.1:{self._admin_port}/listeners?format=json"
         while True:
+            # If Envoy rejected our xDS config the listeners never come
+            # up, so this poll would hang forever; surface the error and
+            # bail instead.
+            await self._raise_if_fatal_error()
+
             try:
                 listeners_data = await asyncio.to_thread(
                     _fetch_listeners, listeners_url
@@ -293,6 +311,8 @@ class ExecutableLocalEnvoy(LocalEnvoy):
             )
 
     async def _stop(self):
+        """Terminate the Envoy process, escalating to a kill if it
+        doesn't exit promptly. Safe to call if it has already exited."""
         assert self._process is not None
         try:
             self._process.terminate()

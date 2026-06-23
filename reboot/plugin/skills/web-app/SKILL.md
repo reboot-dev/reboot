@@ -30,8 +30,7 @@ backend behind a standalone React frontend served at a normal URL.
 > MCP host (ChatGPT, Claude, VSCode, Goose, …) with MCP tools and
 > embedded UIs, use the [chat-app skill](../chat-app/SKILL.md) instead.
 > Signals you're in the wrong place: `mcp=Tool()`, `UI()`, `User`
-> auto-construct from the MCP host, `mcp_servers.json`, MCPJam
-> inspector.
+> auto-construct from the MCP host, MCPJam inspector.
 
 ## When to Use
 
@@ -52,7 +51,7 @@ The Reboot backend is identical. The deltas are all on the surface:
 | API exposure | `mcp=Tool()` on writer/transaction methods.              | Methods exposed only through the generated React client. |
 | UI shape     | `UI()` methods → artifacts embedded in the MCP host.     | A normal SPA at `web/` opened at a URL.                  |
 | Vite config  | Special — nested `dist/<ui-path>/index.html` for MCP.    | Stock single-page Vite output.                           |
-| Test surface | MCPJam inspector + `mcp_servers.json`.                   | Browser + the standard React devtools / Playwright.      |
+| Test surface | MCPJam inspector.                                        | Browser + the standard React devtools / Playwright.      |
 | `User` type  | Required — the MCP entry point.                          | Optional — only if your app needs per-user state.        |
 
 Backend mechanics (state, methods, Servicers, workflows, refs,
@@ -412,7 +411,7 @@ Key differences from a `chat-app` layout:
 - `vite.config.ts` is the **stock** Vite config — no nested-output
   override, no `viteSingleFile` plugin. There's no MCP host
   resolving artifacts by path.
-- No `mcp_servers.json`. No MCPJam inspector.
+- No MCPJam inspector.
 
 ## Step-by-Step Build Flow
 

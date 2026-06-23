@@ -67,6 +67,7 @@ const ERROR_TYPES = [
     reboot_api.errors_pb.StateNotConstructed,
     reboot_api.errors_pb.TransactionParticipantFailedToPrepare,
     reboot_api.errors_pb.TransactionParticipantFailedToCommit,
+    reboot_api.errors_pb.TransactionShouldRetryWithoutBackoff,
     reboot_api.errors_pb.UnknownService,
     reboot_api.errors_pb.UnknownTask,
 ]; // Need `as const` to ensure TypeScript infers this as a tuple!

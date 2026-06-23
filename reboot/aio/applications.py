@@ -393,7 +393,7 @@ class Application:
         self._token_verifier = token_verifier
         self._initialize_bearer_token = initialize_bearer_token
         self._oauth = oauth
-        self._title = title
+        self._title = title or application_name()
         self._description = description
         self._example_prompts = example_prompts or []
 
@@ -642,6 +642,7 @@ class Application:
             oauth_server = OAuthServer(
                 provider=provider,
                 protected_resources=[_MCP_PATH],
+                application_title=self._title,
             )
             self._token_verifier = oauth_server.token_verifier
             mcp_sdk_token_verifier = oauth_server.mcp_sdk_token_verifier
@@ -719,7 +720,7 @@ class Application:
             # authorizer requires.
             await reboot.application.ref().always().initialize(
                 context,
-                title=self._title or application_name(),
+                title=self._title,
                 description=self._description,
                 port=local_envoy_port,
                 mcp=any(

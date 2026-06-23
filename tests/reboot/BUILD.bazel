@@ -187,6 +187,27 @@ py_test(
     ],
 )
 
+# The `ping` example is valuable as a golden since it uses Pydantic APIs
+# with MCP tools and UIs.
+py_test(
+    name = "ping_generation_tests_py",
+    srcs = [
+        "golden_test.py",
+    ],
+    args = [
+        "--golden_file=ping_api_rbt.golden.py",
+        "--generated_file=../../reboot/ping/ping_api_rbt.py",
+    ],
+    data = [
+        ":ping_api_rbt.golden.py",
+    ],
+    main = "golden_test.py",
+    deps = [
+        ":test_helpers_py",
+        "//reboot/ping:ping_py_reboot",
+    ],
+)
+
 py_boilerplate_reboot_library(
     name = "echo_boilerplate_py_reboot",
     proto = "echo.proto",
