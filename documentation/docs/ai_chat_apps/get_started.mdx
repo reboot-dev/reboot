@@ -800,33 +800,12 @@ uv run rbt dev run
   title="Test with MCPJam Inspector"
   description={`
 
-Create an \`mcp_servers.json\` file that tells MCPJam where
-your app is running, then launch the inspector.
+Run MCPJam Inspector to interact with your app.
 
 `}>
 
 ```sh
-touch mcp_servers.json
-```
-
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/mcp_servers.json&syntax=json) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/mcp_servers.json -->
-
-```json
-{
-  "mcpServers": {
-    "counter-server": {
-      "url": "http://localhost:9991/mcp",
-      "useOAuth": true
-    }
-  }
-}
-```
-
-<!-- MARKDOWN-AUTO-DOCS:END -->
-
-```sh
-npx @mcpjam/inspector@2.9.3 --config mcp_servers.json --server counter-server
+npx @mcpjam/inspector@2.18.1 --url http://localhost:9991/mcp --oauth
 ```
 
 </Step>
@@ -858,8 +837,7 @@ including `session_create_counter`, `counter_get`,
 
 Under the hood, your app communicates via MCP (Model Context Protocol),
 the standard that AI clients like ChatGPT, Claude, and VS Code use to
-discover and interact with apps. The `mcp_servers.json` format works
-with any MCP-compatible client.
+discover and interact with apps.
 
 <h1>Next steps</h1>
 

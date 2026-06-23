@@ -39,7 +39,6 @@ strongest first.
 
 **MCP Chat App** — any of:
 
-- `mcp_servers.json` exists in the project root.
 - An API file under `api/` uses `mcp=Tool()`, `mcp=None`, or `UI(`
   (the `UI()` method type).
 - `.rbtrc` has a `dev run --default-config=hmr` line together with
@@ -48,7 +47,6 @@ strongest first.
 
 **Web App** — all of:
 
-- No `mcp_servers.json`.
 - No `mcp=` / `UI(` anywhere under `api/`.
 - A single SPA entry at `web/index.html` (top of `web/`, not under
   `web/ui/`).
@@ -189,7 +187,7 @@ the app's `/mcp` endpoint with OAuth — for the user to run from
 their own terminal:
 
 ```sh
-npx @mcpjam/inspector@2.9.3 --url http://localhost:9991/mcp --oauth
+npx @mcpjam/inspector@2.18.1 --url http://localhost:9991/mcp --oauth
 ```
 
 Leave the launch to the wizard. Only run it yourself if the user

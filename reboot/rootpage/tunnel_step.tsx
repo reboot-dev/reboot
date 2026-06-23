@@ -115,7 +115,7 @@ const MCPJAM_LOCAL_URL = "http://localhost:6274";
 // MCPJam inspector version the launch command pins to. Kept in
 // sync with the plugin's `bin/mcpjam-inspector` shim so a
 // hand-launched inspector matches the one an agent would start.
-const MCPJAM_VERSION = "2.9.3";
+const MCPJAM_VERSION = "2.18.1";
 
 // Step 01 variant for MCPJam — no tunnel needed, and MCPJam runs
 // locally so there's no separate "install" step either. The

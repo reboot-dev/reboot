@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "counter-server": {
-      "url": "http://localhost:9991/mcp",
-      "useOAuth": true
-    }
-  }
-}
