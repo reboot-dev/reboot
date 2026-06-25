@@ -183,3 +183,18 @@ The list below is what's specific to the MCP-Chat-App layer:
     Effects: Transaction or Workflow?),
     `python/references/servicer-workflow.md`, and
     `python/references/agent-pydantic-ai.md`.
+
+21. **Don't add `generate --react-extensions` to `.rbtrc`.** This is
+    a Python-backend app that generates the React client on its own
+    into `web/api/`. Vite — plus `tsc` under the
+    `moduleResolution: "bundler"` the scaffolded tsconfigs use —
+    resolves the generated client's relative imports without explicit
+    `.js` extensions, so the flag buys nothing here. The two cases
+    where a project _does_ need it both require something this skill
+    never produces: a webpack/`ts-loader` bundler (this skill uses
+    Vite), or a `--nodejs`/`--web` target sharing the React output
+    directory and forcing matching extensions (a Python backend has
+    no Node.js client). Adding the flag anyway also breaks a future
+    `--mobile` (React Native) client — `rbt generate` rejects
+    `--react-extensions` with `--mobile`, because Metro can't resolve
+    the `.js`-suffixed imports back to their `.ts` sources.

@@ -1669,31 +1669,79 @@ class GreeterInstance {
         this.useCreateMutations = [];
         this.useCreateSetPendings = {};
         this.useGreetReaders = {};
-        this.greetFinalizationRegistry = new FinalizationRegistry((finalize) => finalize());
+        // `FinalizationRegistry` lets us abort a reader once React has
+        // garbage-collected its promise (i.e. abandoned it). It is absent on
+        // some runtimes (e.g. React Native's Hermes engine), where we simply
+        // skip this cleanup and rely on the `unuse...` timeout path instead.
+        this.greetFinalizationRegistry = typeof FinalizationRegistry !== "undefined"
+            ? new FinalizationRegistry((finalize) => finalize())
+            : undefined;
         this.useSetAdjectiveMutations = [];
         this.useSetAdjectiveSetPendings = {};
         this.useTransactionSetAdjectiveMutations = [];
         this.useTransactionSetAdjectiveSetPendings = {};
         this.useTryToConstructContextReaders = {};
-        this.tryToConstructContextFinalizationRegistry = new FinalizationRegistry((finalize) => finalize());
+        // `FinalizationRegistry` lets us abort a reader once React has
+        // garbage-collected its promise (i.e. abandoned it). It is absent on
+        // some runtimes (e.g. React Native's Hermes engine), where we simply
+        // skip this cleanup and rely on the `unuse...` timeout path instead.
+        this.tryToConstructContextFinalizationRegistry = typeof FinalizationRegistry !== "undefined"
+            ? new FinalizationRegistry((finalize) => finalize())
+            : undefined;
         this.useTryToConstructExternalContextReaders = {};
-        this.tryToConstructExternalContextFinalizationRegistry = new FinalizationRegistry((finalize) => finalize());
+        // `FinalizationRegistry` lets us abort a reader once React has
+        // garbage-collected its promise (i.e. abandoned it). It is absent on
+        // some runtimes (e.g. React Native's Hermes engine), where we simply
+        // skip this cleanup and rely on the `unuse...` timeout path instead.
+        this.tryToConstructExternalContextFinalizationRegistry = typeof FinalizationRegistry !== "undefined"
+            ? new FinalizationRegistry((finalize) => finalize())
+            : undefined;
         this.useTestLongRunningFetchReaders = {};
-        this.testLongRunningFetchFinalizationRegistry = new FinalizationRegistry((finalize) => finalize());
+        // `FinalizationRegistry` lets us abort a reader once React has
+        // garbage-collected its promise (i.e. abandoned it). It is absent on
+        // some runtimes (e.g. React Native's Hermes engine), where we simply
+        // skip this cleanup and rely on the `unuse...` timeout path instead.
+        this.testLongRunningFetchFinalizationRegistry = typeof FinalizationRegistry !== "undefined"
+            ? new FinalizationRegistry((finalize) => finalize())
+            : undefined;
         this.useTestLongRunningWriterMutations = [];
         this.useTestLongRunningWriterSetPendings = {};
         this.useGetWholeStateReaders = {};
-        this.getWholeStateFinalizationRegistry = new FinalizationRegistry((finalize) => finalize());
+        // `FinalizationRegistry` lets us abort a reader once React has
+        // garbage-collected its promise (i.e. abandoned it). It is absent on
+        // some runtimes (e.g. React Native's Hermes engine), where we simply
+        // skip this cleanup and rely on the `unuse...` timeout path instead.
+        this.getWholeStateFinalizationRegistry = typeof FinalizationRegistry !== "undefined"
+            ? new FinalizationRegistry((finalize) => finalize())
+            : undefined;
         this.useFailWithExceptionReaders = {};
-        this.failWithExceptionFinalizationRegistry = new FinalizationRegistry((finalize) => finalize());
+        // `FinalizationRegistry` lets us abort a reader once React has
+        // garbage-collected its promise (i.e. abandoned it). It is absent on
+        // some runtimes (e.g. React Native's Hermes engine), where we simply
+        // skip this cleanup and rely on the `unuse...` timeout path instead.
+        this.failWithExceptionFinalizationRegistry = typeof FinalizationRegistry !== "undefined"
+            ? new FinalizationRegistry((finalize) => finalize())
+            : undefined;
         this.useFailWithAbortedReaders = {};
-        this.failWithAbortedFinalizationRegistry = new FinalizationRegistry((finalize) => finalize());
+        // `FinalizationRegistry` lets us abort a reader once React has
+        // garbage-collected its promise (i.e. abandoned it). It is absent on
+        // some runtimes (e.g. React Native's Hermes engine), where we simply
+        // skip this cleanup and rely on the `unuse...` timeout path instead.
+        this.failWithAbortedFinalizationRegistry = typeof FinalizationRegistry !== "undefined"
+            ? new FinalizationRegistry((finalize) => finalize())
+            : undefined;
         this.useDangerousFieldsMutations = [];
         this.useDangerousFieldsSetPendings = {};
         this.useStoreRecursiveMessageMutations = [];
         this.useStoreRecursiveMessageSetPendings = {};
         this.useReadRecursiveMessageReaders = {};
-        this.readRecursiveMessageFinalizationRegistry = new FinalizationRegistry((finalize) => finalize());
+        // `FinalizationRegistry` lets us abort a reader once React has
+        // garbage-collected its promise (i.e. abandoned it). It is absent on
+        // some runtimes (e.g. React Native's Hermes engine), where we simply
+        // skip this cleanup and rely on the `unuse...` timeout path instead.
+        this.readRecursiveMessageFinalizationRegistry = typeof FinalizationRegistry !== "undefined"
+            ? new FinalizationRegistry((finalize) => finalize())
+            : undefined;
         this.useConstructAndStoreRecursiveMessageMutations = [];
         this.useConstructAndStoreRecursiveMessageSetPendings = {};
         this.id = id;
@@ -2081,6 +2129,7 @@ class GreeterInstance {
         delete this.useCreateSetPendings[id];
     }
     startGreet(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+        var _a;
         let reader = this.useGreetReaders[requestBearerTokenHash];
         if (reader === undefined) {
             const event = new reboot_api.Event();
@@ -2132,7 +2181,7 @@ class GreeterInstance {
                     }
                 },
             };
-            this.greetFinalizationRegistry.register(promise, () => {
+            (_a = this.greetFinalizationRegistry) === null || _a === void 0 ? void 0 : _a.register(promise, () => {
                 if (!reader.used) {
                     delete this.useGreetReaders[requestBearerTokenHash];
                     reader.abortController.abort();
@@ -2422,6 +2471,7 @@ class GreeterInstance {
         delete this.useTransactionSetAdjectiveSetPendings[id];
     }
     startTryToConstructContext(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+        var _a;
         let reader = this.useTryToConstructContextReaders[requestBearerTokenHash];
         if (reader === undefined) {
             const event = new reboot_api.Event();
@@ -2473,7 +2523,7 @@ class GreeterInstance {
                     }
                 },
             };
-            this.tryToConstructContextFinalizationRegistry.register(promise, () => {
+            (_a = this.tryToConstructContextFinalizationRegistry) === null || _a === void 0 ? void 0 : _a.register(promise, () => {
                 if (!reader.used) {
                     delete this.useTryToConstructContextReaders[requestBearerTokenHash];
                     reader.abortController.abort();
@@ -2567,6 +2617,7 @@ class GreeterInstance {
         }
     }
     startTryToConstructExternalContext(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+        var _a;
         let reader = this.useTryToConstructExternalContextReaders[requestBearerTokenHash];
         if (reader === undefined) {
             const event = new reboot_api.Event();
@@ -2618,7 +2669,7 @@ class GreeterInstance {
                     }
                 },
             };
-            this.tryToConstructExternalContextFinalizationRegistry.register(promise, () => {
+            (_a = this.tryToConstructExternalContextFinalizationRegistry) === null || _a === void 0 ? void 0 : _a.register(promise, () => {
                 if (!reader.used) {
                     delete this.useTryToConstructExternalContextReaders[requestBearerTokenHash];
                     reader.abortController.abort();
@@ -2712,6 +2763,7 @@ class GreeterInstance {
         }
     }
     startTestLongRunningFetch(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+        var _a;
         let reader = this.useTestLongRunningFetchReaders[requestBearerTokenHash];
         if (reader === undefined) {
             const event = new reboot_api.Event();
@@ -2763,7 +2815,7 @@ class GreeterInstance {
                     }
                 },
             };
-            this.testLongRunningFetchFinalizationRegistry.register(promise, () => {
+            (_a = this.testLongRunningFetchFinalizationRegistry) === null || _a === void 0 ? void 0 : _a.register(promise, () => {
                 if (!reader.used) {
                     delete this.useTestLongRunningFetchReaders[requestBearerTokenHash];
                     reader.abortController.abort();
@@ -2955,6 +3007,7 @@ class GreeterInstance {
         delete this.useTestLongRunningWriterSetPendings[id];
     }
     startGetWholeState(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+        var _a;
         let reader = this.useGetWholeStateReaders[requestBearerTokenHash];
         if (reader === undefined) {
             const event = new reboot_api.Event();
@@ -3006,7 +3059,7 @@ class GreeterInstance {
                     }
                 },
             };
-            this.getWholeStateFinalizationRegistry.register(promise, () => {
+            (_a = this.getWholeStateFinalizationRegistry) === null || _a === void 0 ? void 0 : _a.register(promise, () => {
                 if (!reader.used) {
                     delete this.useGetWholeStateReaders[requestBearerTokenHash];
                     reader.abortController.abort();
@@ -3100,6 +3153,7 @@ class GreeterInstance {
         }
     }
     startFailWithException(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+        var _a;
         let reader = this.useFailWithExceptionReaders[requestBearerTokenHash];
         if (reader === undefined) {
             const event = new reboot_api.Event();
@@ -3151,7 +3205,7 @@ class GreeterInstance {
                     }
                 },
             };
-            this.failWithExceptionFinalizationRegistry.register(promise, () => {
+            (_a = this.failWithExceptionFinalizationRegistry) === null || _a === void 0 ? void 0 : _a.register(promise, () => {
                 if (!reader.used) {
                     delete this.useFailWithExceptionReaders[requestBearerTokenHash];
                     reader.abortController.abort();
@@ -3245,6 +3299,7 @@ class GreeterInstance {
         }
     }
     startFailWithAborted(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+        var _a;
         let reader = this.useFailWithAbortedReaders[requestBearerTokenHash];
         if (reader === undefined) {
             const event = new reboot_api.Event();
@@ -3296,7 +3351,7 @@ class GreeterInstance {
                     }
                 },
             };
-            this.failWithAbortedFinalizationRegistry.register(promise, () => {
+            (_a = this.failWithAbortedFinalizationRegistry) === null || _a === void 0 ? void 0 : _a.register(promise, () => {
                 if (!reader.used) {
                     delete this.useFailWithAbortedReaders[requestBearerTokenHash];
                     reader.abortController.abort();
@@ -3586,6 +3641,7 @@ class GreeterInstance {
         delete this.useStoreRecursiveMessageSetPendings[id];
     }
     startReadRecursiveMessage(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+        var _a;
         let reader = this.useReadRecursiveMessageReaders[requestBearerTokenHash];
         if (reader === undefined) {
             const event = new reboot_api.Event();
@@ -3637,7 +3693,7 @@ class GreeterInstance {
                     }
                 },
             };
-            this.readRecursiveMessageFinalizationRegistry.register(promise, () => {
+            (_a = this.readRecursiveMessageFinalizationRegistry) === null || _a === void 0 ? void 0 : _a.register(promise, () => {
                 if (!reader.used) {
                     delete this.useReadRecursiveMessageReaders[requestBearerTokenHash];
                     reader.abortController.abort();
@@ -4064,11 +4120,12 @@ export const useGreeter = ({ id }) => {
                     //
                     // See also 'reboot/helpers.py'.
                     return {
-                        response: await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/Greet`, {
+                        response: await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/Greet`, {
+                            ...options,
                             method: "POST",
                             headers,
                             body: request.toJsonString()
-                        }), options)
+                        })
                     };
                 }
                 catch (e) {
@@ -4102,11 +4159,12 @@ export const useGreeter = ({ id }) => {
                 retryHeaders.append("Connection", "keep-alive");
                 retryHeaders.append("Authorization", `Bearer ${newToken}`);
                 try {
-                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/Greet`, {
+                    const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/Greet`, {
+                        ...options,
                         method: "POST",
                         headers: retryHeaders,
                         body: request.toJsonString()
-                    }), options);
+                    });
                     if (retryResponse.ok) {
                         return {
                             response: GreeterGreetResponseFromProtobufShape((greeter_pb.GreetResponse.fromJson(await retryResponse.json())))
@@ -4150,11 +4208,12 @@ export const useGreeter = ({ id }) => {
                         retryHeaders.append("Connection", "keep-alive");
                         retryHeaders.append("Authorization", `Bearer ${newToken}`);
                         try {
-                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/Greet`, {
+                            const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/Greet`, {
+                                ...options,
                                 method: "POST",
                                 headers: retryHeaders,
                                 body: request.toJsonString()
-                            }), options);
+                            });
                             if (retryResponse.ok) {
                                 return {
                                     response: GreeterGreetResponseFromProtobufShape((greeter_pb.GreetResponse.fromJson(await retryResponse.json())))
@@ -4411,11 +4470,12 @@ export const useGreeter = ({ id }) => {
                     //
                     // See also 'reboot/helpers.py'.
                     return {
-                        response: await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructContext`, {
+                        response: await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructContext`, {
+                            ...options,
                             method: "POST",
                             headers,
                             body: request.toJsonString()
-                        }), options)
+                        })
                     };
                 }
                 catch (e) {
@@ -4449,11 +4509,12 @@ export const useGreeter = ({ id }) => {
                 retryHeaders.append("Connection", "keep-alive");
                 retryHeaders.append("Authorization", `Bearer ${newToken}`);
                 try {
-                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructContext`, {
+                    const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructContext`, {
+                        ...options,
                         method: "POST",
                         headers: retryHeaders,
                         body: request.toJsonString()
-                    }), options);
+                    });
                     if (retryResponse.ok) {
                         return {
                             response: GreeterTryToConstructContextResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -4497,11 +4558,12 @@ export const useGreeter = ({ id }) => {
                         retryHeaders.append("Connection", "keep-alive");
                         retryHeaders.append("Authorization", `Bearer ${newToken}`);
                         try {
-                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructContext`, {
+                            const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructContext`, {
+                                ...options,
                                 method: "POST",
                                 headers: retryHeaders,
                                 body: request.toJsonString()
-                            }), options);
+                            });
                             if (retryResponse.ok) {
                                 return {
                                     response: GreeterTryToConstructContextResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -4692,11 +4754,12 @@ export const useGreeter = ({ id }) => {
                     //
                     // See also 'reboot/helpers.py'.
                     return {
-                        response: await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructExternalContext`, {
+                        response: await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructExternalContext`, {
+                            ...options,
                             method: "POST",
                             headers,
                             body: request.toJsonString()
-                        }), options)
+                        })
                     };
                 }
                 catch (e) {
@@ -4730,11 +4793,12 @@ export const useGreeter = ({ id }) => {
                 retryHeaders.append("Connection", "keep-alive");
                 retryHeaders.append("Authorization", `Bearer ${newToken}`);
                 try {
-                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructExternalContext`, {
+                    const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructExternalContext`, {
+                        ...options,
                         method: "POST",
                         headers: retryHeaders,
                         body: request.toJsonString()
-                    }), options);
+                    });
                     if (retryResponse.ok) {
                         return {
                             response: GreeterTryToConstructExternalContextResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -4778,11 +4842,12 @@ export const useGreeter = ({ id }) => {
                         retryHeaders.append("Connection", "keep-alive");
                         retryHeaders.append("Authorization", `Bearer ${newToken}`);
                         try {
-                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructExternalContext`, {
+                            const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructExternalContext`, {
+                                ...options,
                                 method: "POST",
                                 headers: retryHeaders,
                                 body: request.toJsonString()
-                            }), options);
+                            });
                             if (retryResponse.ok) {
                                 return {
                                     response: GreeterTryToConstructExternalContextResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -4973,11 +5038,12 @@ export const useGreeter = ({ id }) => {
                     //
                     // See also 'reboot/helpers.py'.
                     return {
-                        response: await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TestLongRunningFetch`, {
+                        response: await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TestLongRunningFetch`, {
+                            ...options,
                             method: "POST",
                             headers,
                             body: request.toJsonString()
-                        }), options)
+                        })
                     };
                 }
                 catch (e) {
@@ -5011,11 +5077,12 @@ export const useGreeter = ({ id }) => {
                 retryHeaders.append("Connection", "keep-alive");
                 retryHeaders.append("Authorization", `Bearer ${newToken}`);
                 try {
-                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TestLongRunningFetch`, {
+                    const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TestLongRunningFetch`, {
+                        ...options,
                         method: "POST",
                         headers: retryHeaders,
                         body: request.toJsonString()
-                    }), options);
+                    });
                     if (retryResponse.ok) {
                         return {
                             response: GreeterTestLongRunningFetchResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -5059,11 +5126,12 @@ export const useGreeter = ({ id }) => {
                         retryHeaders.append("Connection", "keep-alive");
                         retryHeaders.append("Authorization", `Bearer ${newToken}`);
                         try {
-                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TestLongRunningFetch`, {
+                            const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TestLongRunningFetch`, {
+                                ...options,
                                 method: "POST",
                                 headers: retryHeaders,
                                 body: request.toJsonString()
-                            }), options);
+                            });
                             if (retryResponse.ok) {
                                 return {
                                     response: GreeterTestLongRunningFetchResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -5287,11 +5355,12 @@ export const useGreeter = ({ id }) => {
                     //
                     // See also 'reboot/helpers.py'.
                     return {
-                        response: await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/GetWholeState`, {
+                        response: await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/GetWholeState`, {
+                            ...options,
                             method: "POST",
                             headers,
                             body: request.toJsonString()
-                        }), options)
+                        })
                     };
                 }
                 catch (e) {
@@ -5325,11 +5394,12 @@ export const useGreeter = ({ id }) => {
                 retryHeaders.append("Connection", "keep-alive");
                 retryHeaders.append("Authorization", `Bearer ${newToken}`);
                 try {
-                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/GetWholeState`, {
+                    const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/GetWholeState`, {
+                        ...options,
                         method: "POST",
                         headers: retryHeaders,
                         body: request.toJsonString()
-                    }), options);
+                    });
                     if (retryResponse.ok) {
                         return {
                             response: GreeterGetWholeStateResponseFromProtobufShape((GreeterProto.fromJson(await retryResponse.json())))
@@ -5373,11 +5443,12 @@ export const useGreeter = ({ id }) => {
                         retryHeaders.append("Connection", "keep-alive");
                         retryHeaders.append("Authorization", `Bearer ${newToken}`);
                         try {
-                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/GetWholeState`, {
+                            const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/GetWholeState`, {
+                                ...options,
                                 method: "POST",
                                 headers: retryHeaders,
                                 body: request.toJsonString()
-                            }), options);
+                            });
                             if (retryResponse.ok) {
                                 return {
                                     response: GreeterGetWholeStateResponseFromProtobufShape((GreeterProto.fromJson(await retryResponse.json())))
@@ -5568,11 +5639,12 @@ export const useGreeter = ({ id }) => {
                     //
                     // See also 'reboot/helpers.py'.
                     return {
-                        response: await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithException`, {
+                        response: await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithException`, {
+                            ...options,
                             method: "POST",
                             headers,
                             body: request.toJsonString()
-                        }), options)
+                        })
                     };
                 }
                 catch (e) {
@@ -5606,11 +5678,12 @@ export const useGreeter = ({ id }) => {
                 retryHeaders.append("Connection", "keep-alive");
                 retryHeaders.append("Authorization", `Bearer ${newToken}`);
                 try {
-                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithException`, {
+                    const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithException`, {
+                        ...options,
                         method: "POST",
                         headers: retryHeaders,
                         body: request.toJsonString()
-                    }), options);
+                    });
                     if (retryResponse.ok) {
                         return {
                             response: GreeterFailWithExceptionResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -5654,11 +5727,12 @@ export const useGreeter = ({ id }) => {
                         retryHeaders.append("Connection", "keep-alive");
                         retryHeaders.append("Authorization", `Bearer ${newToken}`);
                         try {
-                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithException`, {
+                            const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithException`, {
+                                ...options,
                                 method: "POST",
                                 headers: retryHeaders,
                                 body: request.toJsonString()
-                            }), options);
+                            });
                             if (retryResponse.ok) {
                                 return {
                                     response: GreeterFailWithExceptionResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -5849,11 +5923,12 @@ export const useGreeter = ({ id }) => {
                     //
                     // See also 'reboot/helpers.py'.
                     return {
-                        response: await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithAborted`, {
+                        response: await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithAborted`, {
+                            ...options,
                             method: "POST",
                             headers,
                             body: request.toJsonString()
-                        }), options)
+                        })
                     };
                 }
                 catch (e) {
@@ -5887,11 +5962,12 @@ export const useGreeter = ({ id }) => {
                 retryHeaders.append("Connection", "keep-alive");
                 retryHeaders.append("Authorization", `Bearer ${newToken}`);
                 try {
-                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithAborted`, {
+                    const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithAborted`, {
+                        ...options,
                         method: "POST",
                         headers: retryHeaders,
                         body: request.toJsonString()
-                    }), options);
+                    });
                     if (retryResponse.ok) {
                         return {
                             response: GreeterFailWithAbortedResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -5935,11 +6011,12 @@ export const useGreeter = ({ id }) => {
                         retryHeaders.append("Connection", "keep-alive");
                         retryHeaders.append("Authorization", `Bearer ${newToken}`);
                         try {
-                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithAborted`, {
+                            const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithAborted`, {
+                                ...options,
                                 method: "POST",
                                 headers: retryHeaders,
                                 body: request.toJsonString()
-                            }), options);
+                            });
                             if (retryResponse.ok) {
                                 return {
                                     response: GreeterFailWithAbortedResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -6196,11 +6273,12 @@ export const useGreeter = ({ id }) => {
                     //
                     // See also 'reboot/helpers.py'.
                     return {
-                        response: await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/ReadRecursiveMessage`, {
+                        response: await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/ReadRecursiveMessage`, {
+                            ...options,
                             method: "POST",
                             headers,
                             body: request.toJsonString()
-                        }), options)
+                        })
                     };
                 }
                 catch (e) {
@@ -6234,11 +6312,12 @@ export const useGreeter = ({ id }) => {
                 retryHeaders.append("Connection", "keep-alive");
                 retryHeaders.append("Authorization", `Bearer ${newToken}`);
                 try {
-                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/ReadRecursiveMessage`, {
+                    const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/ReadRecursiveMessage`, {
+                        ...options,
                         method: "POST",
                         headers: retryHeaders,
                         body: request.toJsonString()
-                    }), options);
+                    });
                     if (retryResponse.ok) {
                         return {
                             response: GreeterReadRecursiveMessageResponseFromProtobufShape((greeter_pb.ReadRecursiveMessageResponse.fromJson(await retryResponse.json())))
@@ -6282,11 +6361,12 @@ export const useGreeter = ({ id }) => {
                         retryHeaders.append("Connection", "keep-alive");
                         retryHeaders.append("Authorization", `Bearer ${newToken}`);
                         try {
-                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/ReadRecursiveMessage`, {
+                            const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/ReadRecursiveMessage`, {
+                                ...options,
                                 method: "POST",
                                 headers: retryHeaders,
                                 body: request.toJsonString()
-                            }), options);
+                            });
                             if (retryResponse.ok) {
                                 return {
                                     response: GreeterReadRecursiveMessageResponseFromProtobufShape((greeter_pb.ReadRecursiveMessageResponse.fromJson(await retryResponse.json())))

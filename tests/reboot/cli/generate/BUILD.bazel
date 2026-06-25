@@ -59,6 +59,13 @@ py_test(
 )
 
 py_test(
+    name = "mobile_out_specified_tests_py",
+    srcs = ["mobile_out_specified.py"],
+    main = "mobile_out_specified.py",
+    deps = [":tests_helper"],
+)
+
+py_test(
     name = "out_directory_specified_tests_py",
     srcs = ["out_directory_specified.py"],
     main = "out_directory_specified.py",

@@ -1128,8 +1128,14 @@ class {{ client.proto.state_name | to_camel }}Instance {
     [requestBearerTokenHash: string]: reboot_react.Reader<{{ method.output_type }}>
   } = {};
 
+  // `FinalizationRegistry` lets us abort a reader once React has
+  // garbage-collected its promise (i.e. abandoned it). It is absent on
+  // some runtimes (e.g. React Native's Hermes engine), where we simply
+  // skip this cleanup and rely on the `unuse...` timeout path instead.
   private {{ method.proto.name | to_lower_camel }}FinalizationRegistry =
-    new FinalizationRegistry((finalize) => finalize());
+    typeof FinalizationRegistry !== "undefined"
+      ? new FinalizationRegistry<() => void>((finalize) => finalize())
+      : undefined;
 
   start{{ method.proto.name | to_camel }}(
     requestBearerTokenHash: string,
@@ -1206,7 +1212,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
         },
       };
 
-      this.{{ method.proto.name | to_lower_camel }}FinalizationRegistry.register(
+      this.{{ method.proto.name | to_lower_camel }}FinalizationRegistry?.register(
         promise,
         () => {
           if (!reader.used) {
@@ -1413,7 +1419,12 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
   // Resolve ID: explicit > URL param (dev) > `ids` mapping.
   const devId = useMemo(() => {
-    if (typeof window !== "undefined") {
+    // React Native defines `window` but not `window.location`, so both
+    // must be checked.
+    if (
+      typeof window !== "undefined" &&
+      typeof window.location !== "undefined"
+    ) {
       return new URLSearchParams(
         window.location.search
       ).get("{{ client.proto.state_full_name }}.id");
@@ -1725,7 +1736,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
 			reboot_api.assert(aborted === undefined);
             suspensePromiseRef.current = reader.promise.then(() => {});
           }
-		}        
+		}
 		return suspensePromiseRef.current;
       },
       [options.suspense, reader, response, aborted]
@@ -1775,14 +1786,13 @@ export const use{{ client.proto.state_name | to_camel }} = (
           // See also 'reboot/helpers.py'.
           return {
             response: await reboot_web.guardedFetch(
-              new Request(
-                `${rebootClient.url}/__/reboot/rpc/${stateRef}/{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}`, {
-                  method: "POST",
-                  headers,
-                  body: request.toJsonString()
-                }
-              ),
-              options
+              `${rebootClient.url}/__/reboot/rpc/${stateRef}/{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}`,
+              {
+                ...options,
+                method: "POST",
+                headers,
+                body: request.toJsonString()
+              }
             )
           };
         } catch (e: unknown) {
@@ -1819,14 +1829,13 @@ export const use{{ client.proto.state_name | to_camel }} = (
         retryHeaders.append("Authorization", `Bearer ${newToken}`);
         try {
           const retryResponse = await reboot_web.guardedFetch(
-            new Request(
-              `${rebootClient.url}/__/reboot/rpc/${stateRef}/{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}`, {
-                method: "POST",
-                headers: retryHeaders,
-                body: request.toJsonString()
-              }
-            ),
-            options
+            `${rebootClient.url}/__/reboot/rpc/${stateRef}/{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}`,
+            {
+              ...options,
+              method: "POST",
+              headers: retryHeaders,
+              body: request.toJsonString()
+            }
           );
           if (retryResponse.ok) {
             return {
@@ -1888,14 +1897,13 @@ export const use{{ client.proto.state_name | to_camel }} = (
             try {
               const retryResponse =
                 await reboot_web.guardedFetch(
-                  new Request(
-                    `${rebootClient.url}/__/reboot/rpc/${stateRef}/{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}`, {
-                      method: "POST",
-                      headers: retryHeaders,
-                      body: request.toJsonString()
-                    }
-                  ),
-                  options
+                  `${rebootClient.url}/__/reboot/rpc/${stateRef}/{{ proto.package_name }}.{{ service.proto.name }}/{{ method.proto.name }}`,
+                  {
+                    ...options,
+                    method: "POST",
+                    headers: retryHeaders,
+                    body: request.toJsonString()
+                  }
                 );
               if (retryResponse.ok) {
                 return {

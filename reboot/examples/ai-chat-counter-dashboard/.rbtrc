@@ -6,7 +6,6 @@ generate --python=backend/api/
 
 # Generate React hooks.
 generate --react=frontend/api
-generate --react-extensions
 
 # Watch for source changes.
 dev run --watch=backend/**/*.py

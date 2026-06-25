@@ -149,9 +149,7 @@ example](https://github.com/reboot-dev/reboot-hello).
 :::
 
 To have the `rbt` command line utility generate React code when running
-`rbt generate`, add the `--react` flag to `.rbtrc`. For AI Chat Apps,
-also add `generate --react-extensions` to enable hooks to work in
-both AI chat and browser contexts. For example:
+`rbt generate`, add the `--react` flag to `.rbtrc`. For example:
 
 <!-- MARKDOWN-AUTO-DOCS:START
 (CODE:src=../../../../reboot/examples/chat-room/.rbtrc&&lines=33-33) -->
@@ -259,10 +257,6 @@ export const DashboardApp: FC<DashboardConfig> = ({
   // ...
 };
 ```
-
-- **`--react-extensions` required.** Add
-  `generate --react-extensions` to your `.rbtrc` to enable
-  AI Chat App support in the generated hooks.
 
 ## Reading state
 

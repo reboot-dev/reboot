@@ -120,3 +120,52 @@ sh_test_in_working_directory(
     ],
     working_directory = "reboot/examples/chat-room/",
 )
+
+# The locally built Reboot npm packages that the React Native front
+# end is type-checked against, instead of the published releases.
+mobile_test_packages = [
+    "//rbt/v1alpha1:reboot-dev-reboot-api",
+    "//reboot:reboot.dev",
+    "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+    "//reboot/web:reboot-dev-reboot-web",
+    "//reboot/react:reboot-dev-reboot-react",
+]
+
+mobile_env = {
+    "REBOOT_API_NPM_PACKAGE": "$(location //rbt/v1alpha1:reboot-dev-reboot-api)",
+    "REBOOT_NPM_PACKAGE": "$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
+    "REBOOT_REACT_NPM_PACKAGE": "$(location //reboot/react:reboot-dev-reboot-react)",
+    "REBOOT_WEB_NPM_PACKAGE": "$(location //reboot/web:reboot-dev-reboot-web)",
+    "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+}
+
+osx_mobile_env = dict(mobile_env)
+
+osx_mobile_env.update({
+    # Our OSX CI machines don't have Docker.
+    "REBOOT_LOCAL_ENVOY_MODE": "executable",
+})
+
+# Builds and type-checks the React Native (Expo) front end against the
+# locally built Reboot client. See `mobile/.tests/react_native_test.sh`.
+sh_test_in_working_directory(
+    name = "mobile_test",
+    size = "large",
+    data = mobile_test_packages + [
+        # The actual test script will be given access to all of the
+        # files in the example.
+        "//reboot/examples/chat-room:everything",
+    ],
+    env = select({
+        "@platforms//os:linux": mobile_env,
+        "@platforms//os:osx": osx_mobile_env,
+    }),
+    # The following path is relative to the working directory. We use
+    # the whole example as the working directory (not just `mobile/`)
+    # so the sibling `api/` protos that the mobile client is generated
+    # from are copied into the test sandbox; the script `cd`s into
+    # `mobile/` itself.
+    script = "mobile/.tests/react_native_test.sh",
+    tags = ["exclusive"],
+    working_directory = "reboot/examples/chat-room/",
+)

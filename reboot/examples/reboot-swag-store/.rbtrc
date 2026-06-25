@@ -9,7 +9,6 @@ generate --python=backend/api/
 # Generate React bindings for web apps (into "frontend/api/").
 
 generate --react=frontend/api
-generate --react-extensions
 
 # Watch if any source files are modified.
 

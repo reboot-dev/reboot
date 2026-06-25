@@ -145,15 +145,16 @@ export async function httpCall<
         //
         // See also 'reboot/helpers.py'.
         const response = await guardedFetch(
-          new Request(`${url}/__/reboot/rpc/${stateRef}/${method}`, {
+          `${url}/__/reboot/rpc/${stateRef}/${method}`,
+          {
+            ...options,
             method: "POST",
             headers,
             // Tell browser to pass cookies, even cross-origin.
             // TODO: Enable when the backend supports CORS.
             // credentials: "include",
             body: request.toJsonString(),
-          }),
-          options
+          }
         );
 
         // Since it is a 'fetch', we could get a retryable error, but
@@ -421,7 +422,7 @@ const WEBSOCKET_LIMIT =
   // TODO: figure out a better way to detect that this is Chrome.
   // @ts-ignore: `window.navigator.vendor` is deprecated.
   // Check that window is defined. We might be on the server if in e.g. Next.js.
-  typeof window !== "undefined" && window.navigator.vendor === "Google Inc."
+  typeof window !== "undefined" && window.navigator?.vendor === "Google Inc."
     ? 255
     : 200;
 
@@ -464,15 +465,13 @@ export class WebSockets {
       // ever remove the warning because the fetch to
       // `WebSocketsConnection` waits indefinitely.
       await fetch(
-        new Request(
-          `${endpoint}/__/reboot/rpc/${stateRef}/rbt.v1alpha1.React/WebSocketsConnection`,
-          {
-            method: "POST",
-            headers,
-            body: new react_pb.WebSocketsConnectionRequest().toJsonString(),
-          }
-        ),
-        { signal: abortController.signal }
+        `${endpoint}/__/reboot/rpc/${stateRef}/rbt.v1alpha1.React/WebSocketsConnection`,
+        {
+          method: "POST",
+          headers,
+          body: new react_pb.WebSocketsConnectionRequest().toJsonString(),
+          signal: abortController.signal,
+        }
       ).catch((error: unknown) => {
         // Retry forever unless we were aborted.
         if (!abortController.signal.aborted) {
@@ -498,10 +497,10 @@ export class WebSockets {
     // the existing HTTP/2 connection set up by calling
     // `rbt.v1alpha1.React/WebSocketsConnection` in `connect()`.
     if (url.protocol === "wss:") {
-      return new WebSocket(url);
+      return new WebSocket(url.toString());
     }
 
-    const websocket = new WebSocket(url);
+    const websocket = new WebSocket(url.toString());
 
     this.count += 1;
 
@@ -559,14 +558,12 @@ export async function* grpcServerStream<
   // Keep the connection alive as long as server is sending data.
   headers.append("Connection", "keep-alive");
 
-  const response = await guardedFetch(
-    new Request(endpoint, {
-      method,
-      headers,
-      body: request.toJsonString(),
-    }),
-    { signal }
-  );
+  const response = await guardedFetch(endpoint, {
+    method,
+    headers,
+    body: request.toJsonString(),
+    signal,
+  });
 
   if (!response.ok) {
     if (response.headers.get("content-type") === "application/json") {
@@ -780,7 +777,11 @@ export async function* grpcWebsocketServerStream<
       ]);
 
       if (
-        event instanceof MessageEvent ||
+        // `MessageEvent` is not defined in all JavaScript runtimes
+        // (notably React Native), so guard the reference before using
+        // `instanceof`.
+        (typeof MessageEvent !== "undefined" &&
+          event instanceof MessageEvent) ||
         // When we use 'WebSocket' class in the backend it is not the
         // same one as the frontend has, so the event type differs as
         // well. When `closed` wins the race `event` is `undefined`.
@@ -911,6 +912,14 @@ const ignoredWarningIds: Set<string> = new Set();
 const pendingWarningIds: { [key: string]: ReturnType<typeof setTimeout> } = {};
 
 function renderWarnings() {
+  // Warnings are rendered as banners in the DOM, which only exists in a
+  // browser. On other runtimes (e.g. React Native) `document` is
+  // undefined; `addWarning` still surfaces the message via
+  // `console.warn`, so here we skip the visual banner.
+  if (typeof document === "undefined") {
+    return;
+  }
+
   const html = document.documentElement;
 
   // Remove previously rendered warnings so that we compute the proper
@@ -1044,16 +1053,28 @@ function maybeScheduleLocalhostWarning({ url }: { url: string }) {
   });
 }
 
-export async function guardedFetch(request: Request, options?: RequestInit) {
+export async function guardedFetch(
+  input: RequestInfo | URL,
+  options?: RequestInit
+) {
   // If not in development mode, just fetch.
   if (process.env.NODE_ENV !== "development") {
-    return fetch(request, options);
+    return fetch(input, options);
   }
 
-  const { completeFetch } = trackFetch(new URL(request.url));
+  // Mirror the `fetch()` signature: `input` may be a URL string, a
+  // `URL`, or a `Request`. Extract the URL string for diagnostics.
+  const url =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+      ? input.href
+      : input.url;
+
+  const { completeFetch } = trackFetch(new URL(url));
 
   try {
-    const response = await fetch(request, options);
+    const response = await fetch(input, options);
 
     // If no exception was thrown while doing a fetch, then we must be able to
     // reach the server, so if we previously had displayed a warning stop
@@ -1068,7 +1089,7 @@ export async function guardedFetch(request: Request, options?: RequestInit) {
     if (!options?.signal?.aborted) {
       // The fetch failed due to some network error. Tell the developer, if this
       // situation persists.
-      maybeScheduleLocalhostWarning({ url: request.url });
+      maybeScheduleLocalhostWarning({ url });
     }
     throw error;
   } finally {

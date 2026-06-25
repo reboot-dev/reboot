@@ -35,6 +35,25 @@ export {
 // URL and MCP title auto-detection.
 // ---------------------------------------------------------------------------
 
+// React Native (and other non-browser runtimes) define a global
+// `window` but no `window.location`, so reading `.search`/`.origin`
+// throws there. These helpers degrade to "no query string" and "no
+// origin", which disables the browser-only auto-detection paths; on
+// native the URL is always passed explicitly to `RebootClientProvider`.
+function locationSearch(): string {
+  if (typeof window === "undefined" || typeof window.location === "undefined") {
+    return "";
+  }
+  return window.location.search;
+}
+
+function locationOrigin(): string | undefined {
+  if (typeof window === "undefined" || typeof window.location === "undefined") {
+    return undefined;
+  }
+  return window.location.origin;
+}
+
 /**
  * Auto-detect the Reboot server URL.
  *
@@ -49,11 +68,11 @@ function detectRebootUrl(): string {
   if (injectedUrl) return injectedUrl;
 
   // Query param URL (for iframe-based loading).
-  const queryUrl = new URLSearchParams(window.location.search).get("rebootUrl");
+  const queryUrl = new URLSearchParams(locationSearch()).get("rebootUrl");
   if (queryUrl) return queryUrl;
 
   // Same-origin deployment.
-  const origin = window.location.origin;
+  const origin = locationOrigin();
   if (origin && origin !== "null" && origin.startsWith("http")) {
     return origin;
   }
@@ -81,9 +100,7 @@ function detectMcpProperties(
   const injectedTitle = window.REBOOT_MCP_UI_TITLE;
   if (injectedTitle) return { uiTitle: injectedTitle };
 
-  const queryTitle = new URLSearchParams(window.location.search).get(
-    "mcpUiTitle"
-  );
+  const queryTitle = new URLSearchParams(locationSearch()).get("mcpUiTitle");
   if (queryTitle) return { uiTitle: queryTitle };
 
   return null;

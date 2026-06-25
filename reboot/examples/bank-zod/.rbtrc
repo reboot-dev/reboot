@@ -6,7 +6,11 @@ generate --nodejs=api
 
 generate --react=api
 
-# Add extensions so that we can run the application with `node` in tests.
+# The Node.js client needs `.js` import extensions to run under `node`
+# (ESM) in tests. The React and Node.js clients share the `api/`
+# output directory, and Reboot requires every target writing to the
+# same directory to agree on extensions, so the React client opts in
+# too (it would otherwise not need them — see `--react-extensions`).
 generate --nodejs-extensions
 generate --react-extensions
 

@@ -218,7 +218,6 @@ to your `.rbtrc`:
 ```shell
 # Generate React hooks for AI Chat App UIs.
 generate --react=frontend/api
-generate --react-extensions
 
 # Proxy UIs through Vite for hot module replacement.
 dev run --frontend-root-path=frontend
@@ -231,7 +230,6 @@ dev run --default-config=hmr
 
 | Flag | Description |
 | --- | --- |
-| `generate --react-extensions` | Generates extensions that enable React hooks to work in both AI chat and browser contexts. |
 | `dev run --frontend-root-path=<dir>` | Names the frontend root (e.g. `frontend`). Set once on the base `dev run` line so the `:hmr` and `:dist` configs inherit it. |
 | `dev run --frontend-host=<url>` | HMR: point at the Vite dev server URL (e.g. `http://localhost:4444`); Envoy proxies `/__/frontend/**` to it. |
 | `dev run --frontend-dist-path=<dir>` | Dist: serve pre-built frontend assets from `<dir>` (e.g. `frontend/dist`) on disk; mutually exclusive with `--frontend-host`. |
