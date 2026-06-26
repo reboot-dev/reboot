@@ -1,7 +1,10 @@
-# Patched copy of the DevPod gcloud provider (v0.0.12). The ONLY change
-# from upstream is `agent.exec.shutdown` (more details below). When bumping
-# the provider version, re-sync this file from the upstream release and
-# re-apply that one change:
+# Patched copy of the DevPod gcloud provider (v0.0.12). It differs from
+# upstream in two places, both marked `PATCHED` below: `agent.exec.shutdown`
+# and the bottom `exec` block (`start`/`stop`/`status`). Together they make
+# an idle timeout or `devpod stop` SUSPEND the VM and `devpod up` RESUME it,
+# instead of terminating and cold-starting, so terminals and in-flight work
+# survive. When bumping the provider version, re-sync this file from the
+# upstream release and re-apply those changes:
 #   https://github.com/loft-sh/devpod-provider-gcloud/releases
 name: gcloud
 version: v0.0.12
@@ -180,18 +183,26 @@ agent:
         path: https://github.com/loft-sh/devpod-provider-gcloud/releases/download/v0.0.12/devpod-provider-gcloud-linux-arm64
         checksum: b333374e0f97c514e4ce7c3433a7f1fd6aa46922ca18856d470203145ffc2f0f
   exec:
-    # PATCHED. The stock provider runs `${GCLOUD_PROVIDER} stop --raw`,
-    # which calls the GCP stop API with a token minted at `up` time. That
-    # token expires after ~1 hour, so an inactivity timeout longer than
-    # ~1 h fires its stop after the token is dead — and the provider's
-    # `rawStop` swallows the resulting auth error, so the VM never shuts
-    # down.
-    #
-    # Our replacement is a guest-side `poweroff` which needs no token;
-    # GCP turns a guest shutdown into TERMINATED (compute billing stops).
-    # The daemon runs as root, so no sudo is needed.
+    # PATCHED. On the inactivity timeout we SUSPEND the VM (saving its
+    # RAM and process state to disk) instead of terminating it, so open
+    # terminals and in-flight work survive until the next `devpod up`.
+    # GCE suspend is API-only, so we call the suspend REST API,
+    # authenticating with the instance's OWN attached service-account
+    # token from the metadata server. We avoid using the `up`-time token,
+    # which may have expired. The daemon runs as root so no sudo is needed.
+    # The VM's service account must have `compute.instances.suspend`
+    # permissions.
     shutdown: |-
-      /sbin/poweroff
+      meta="http://metadata.google.internal/computeMetadata/v1"
+      flavor="Metadata-Flavor: Google"
+      name=$(curl -s -H "$flavor" "$meta/instance/name")
+      zone=$(curl -s -H "$flavor" "$meta/instance/zone" | sed 's@.*/@@')
+      project=$(curl -s -H "$flavor" "$meta/project/project-id")
+      token=$(curl -s -H "$flavor" \
+        "$meta/instance/service-accounts/default/token" \
+        | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')
+      curl -s -X POST -H "Authorization: Bearer $token" \
+        "https://compute.googleapis.com/compute/v1/projects/$project/zones/$zone/instances/$name/suspend"
 binaries:
   GCLOUD_PROVIDER:
     - os: linux
@@ -219,6 +230,31 @@ exec:
   command: ${GCLOUD_PROVIDER} command
   create: ${GCLOUD_PROVIDER} create
   delete: ${GCLOUD_PROVIDER} delete
-  start: ${GCLOUD_PROVIDER} start
-  stop: ${GCLOUD_PROVIDER} stop
-  status: ${GCLOUD_PROVIDER} status
+  # PATCHED start/stop/status to use GCE suspend/resume rather than
+  # stop/start, so the VM keeps its RAM and running processes across
+  # idle periods: `devpod stop` suspends and `devpod up` resumes. The
+  # stock gcloud binary has no resume and aborts its `status` with
+  # "unexpected status: SUSPENDED", so we special-case that state. These
+  # run client-side, where `gcloud` is already a dependency (see the
+  # PROJECT/ZONE option commands above).
+  start: |-
+    if ${GCLOUD_PROVIDER} status 2>&1 | grep -q SUSPENDED; then
+      gcloud compute instances resume "devpod-${MACHINE_ID}" \
+        --zone "${ZONE}" --project "${PROJECT}"
+    else
+      ${GCLOUD_PROVIDER} start
+    fi
+  stop: |-
+    gcloud compute instances suspend "devpod-${MACHINE_ID}" \
+      --zone "${ZONE}" --project "${PROJECT}"
+  status: |-
+    out=$(${GCLOUD_PROVIDER} status 2>&1)
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+      printf '%s\n' "$out"
+    elif printf '%s' "$out" | grep -q SUSPENDED; then
+      echo "Stopped"
+    else
+      printf '%s\n' "$out" >&2
+      exit "$rc"
+    fi
