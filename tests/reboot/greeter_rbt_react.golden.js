@@ -6351,6 +6351,7 @@ export const useGreeter = ({ id }) => {
     const constructAndStoreRecursiveMessage = useConstructAndStoreRecursiveMessage();
     // Don't re-render if `id` hasn't changed.
     return useMemo(() => ({
+        state_id: id,
         mutators: {
             create,
             setAdjective,

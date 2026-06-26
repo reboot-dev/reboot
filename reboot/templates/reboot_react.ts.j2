@@ -507,6 +507,11 @@ export class {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_c
 {% endfor %}
 
 export interface Use{{ client.proto.state_name }}Api {
+  // The resolved state ID this hook is bound to. For UI states it
+  // may have been inferred from the MCP session or a URL param
+  // rather than passed explicitly, so reading it here is the way
+  // to recover the concrete ID.
+  state_id: string;
   mutators: {{ client.proto.state_name }}Mutators;
   idempotently: (args: { key: string }) => {{ client.proto.state_name }}Idempotently;
   {% for service in client.services %}
@@ -1936,6 +1941,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
   // Don't re-render if `id` hasn't changed.
     return useMemo(() => ({
+      state_id: id,
       mutators: {
         {% for service in client.services %}
         {% for method in service.methods %}
