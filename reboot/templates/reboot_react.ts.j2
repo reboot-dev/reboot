@@ -589,8 +589,13 @@ class {{ client.proto.state_name | to_camel }}Instance {
     this.url = url;
     this.refs = 1;
 
-     reboot_web.websockets.connect(this.url, this.stateRef);
-    this.initializeWebSocket();
+    // An empty `id` marks the inert instance shared by every no-id
+    // caller while no default ID has resolved (e.g. signed out): it
+    // opens no socket so there's nothing to connect to.
+    if (id !== "") {
+      reboot_web.websockets.connect(this.url, this.stateRef);
+      this.initializeWebSocket();
+    }
   }
 
   private ref() {
@@ -653,7 +658,7 @@ class {{ client.proto.state_name | to_camel }}Instance {
   }
 
   private initializeWebSocket() {
-    if (this.websocket === undefined && this.refs > 0) {
+    if (this.websocket === undefined && this.refs > 0 && this.id !== "") {
       const url = new URL(`${this.url}/__/reboot/rpc/${this.stateRef}`);
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
 
@@ -1379,18 +1384,22 @@ class {{ client.proto.state_name | to_camel }}Instance {
   }
 }
 
-{# Two per-client MCP gates. References at each declaration / use
-   site must stay aligned with the gate, or generated code will
+{# Three per-client flags. References at each declaration / use
+   site must stay aligned with the flag, or generated code will
    name a symbol that was never declared.
-     - `client_has_ui`: this client has `UI()` methods. Drives the
-       hook's `id`-handling — optional param, URL fallback,
-       `useDefaultStateIds()` for tool-input / whoami id resolution.
+     - `client_has_ui`: this client has `UI()` methods. Forces the
+       `mcpApp` dependency below even absent an `mcp=Tool()` method.
+     - `client_has_default_id`: this client has a state, so its ID
+       can be resolved from the surface-agnostic default-IDs map.
+       Drives the hook's `id`-handling: the no-id overload, the
+       URL-param fallback, and `useDefaultStateIds()`.
      - `client_needs_mcp_app`: this client's hook declares
        `mcpApp` (via `useMcpApp()`). True for any UI-having
        client and any client with a Writer/Transaction whose
        `mcp=Tool()` — the per-method useMemo lists `mcpApp` in
        its deps. #}
 {% set client_has_ui = client.state is not none and client.state.proto.uis | length > 0 %}
+{% set client_has_default_id = client.state is not none %}
 {% set client_needs_mcp_app = namespace(value=client_has_ui) %}
 {% for service in client.services %}
 {% for method in service.methods %}
@@ -1400,23 +1409,48 @@ class {{ client.proto.state_name | to_camel }}Instance {
 {% endfor %}
 {% endfor %}
 
-export const use{{ client.proto.state_name | to_camel }} = (
-{% if client_has_ui %}
+{% if client_has_default_id %}
+// Called with an explicit `id`: bound to that state, returns the
+// `Use{{ client.proto.state_name | to_camel }}Api` handle directly.
+export function use{{ client.proto.state_name | to_camel }}(
+  args: { id: string }
+): Use{{ client.proto.state_name | to_camel }}Api;
+// Called without an explicit `id`: resolves the default ID for this
+// state. `{{ client.proto.state_name | to_lower_camel }}` is the
+// handle once a default ID resolves, or `undefined` when there is
+// none (e.g. signed out); `isLoading` is true until resolution
+// settles.
+export function use{{ client.proto.state_name | to_camel }}(
+  args?: undefined
+): {
+  {{ client.proto.state_name | to_lower_camel }}: Use{{ client.proto.state_name | to_camel }}Api | undefined;
+  isLoading: boolean;
+};
+export function use{{ client.proto.state_name | to_camel }}(
   { id: providedId }: { id?: string } = {}
+):
+  | Use{{ client.proto.state_name | to_camel }}Api
+  | {
+      {{ client.proto.state_name | to_lower_camel }}: Use{{ client.proto.state_name | to_camel }}Api | undefined;
+      isLoading: boolean;
+    } {
 {% else %}
+export const use{{ client.proto.state_name | to_camel }} = (
   { id }: { id: string }
-{% endif %}
 ): Use{{ client.proto.state_name | to_camel }}Api => {
+{% endif %}
 {% if client_needs_mcp_app.value %}
   // Listed in the useMemo deps of each Writer/Transaction with
   // `mcp=Tool()` below, so memoized mutations invalidate when the
   // MCP host context identity changes.
   const mcpApp = useMcpApp();
 {% endif %}
-{% if client_has_ui %}
-  // Read below to resolve `id` from the surface-agnostic
-  // state-ID map: MCP tool-input or web `/__/oauth/whoami`.
-  const stateIdsMap = useDefaultStateIds();
+{% if client_has_default_id %}
+  // Resolve `id` from the surface-agnostic state-ID map. A `null` map
+  // means that resolution is still in flight; an empty map means it
+  // resolved with no default ID for us.
+  const defaultIds = useDefaultStateIds();
+  const isLoading = defaultIds === null;
 
   // Resolve ID: explicit > URL param (dev) > default-ID map.
   const devId = useMemo(() => {
@@ -1434,25 +1468,28 @@ export const use{{ client.proto.state_name | to_camel }} = (
   }, []);
 
   const toolInputId =
-    typeof stateIdsMap?.["{{ client.proto.state_full_name }}"] === "string"
-      ? stateIdsMap["{{ client.proto.state_full_name }}"]
+    typeof defaultIds?.["{{ client.proto.state_full_name }}"] === "string"
+      ? defaultIds["{{ client.proto.state_full_name }}"]
       : null;
 
   const resolvedId = providedId ?? devId ?? toolInputId;
-  if (!resolvedId) {
-    throw new Error(
-      "use{{ client.proto.state_name | to_camel }}: no state ID available. " +
-      "Ensure this component is inside <RebootClientProvider>, " +
-      "or pass id explicitly, or use " +
-      "?{{ client.proto.state_full_name }}.id=... URL param."
-    );
-  }
-  const id = resolvedId;
-{% endif %}
+  // Without a resolved ID we still run every hook below (rules of
+  // hooks), binding to the inert empty-ID instance that opens no
+  // socket.
+  const id = resolvedId ?? "";
+  // The unresolved no-id case carries an empty `stateRef` rather than
+  // computing one. Keyed on the id being unresolved — an explicitly
+  // passed empty id still reaches `stateIdToRef`, which rejects it.
+  const stateRef =
+    resolvedId == null
+      ? ""
+      : reboot_api.stateIdToRef("{{ client.proto.state_full_name }}", id);
+{% else %}
   const stateRef = reboot_api.stateIdToRef(
     "{{ client.proto.state_full_name }}",
     id,
   );
+{% endif %}
 
   const rebootClient = reboot_react.useRebootClient();
 
@@ -1508,7 +1545,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
       return () => {
         instance.unuse{{ method.proto.name | to_camel }}(id);
       };
-    }, []);
+    }, [instance]);
 
     const rebootClient = reboot_react.useRebootClient();
 
@@ -1947,7 +1984,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
   {% endfor %}
 
   // Don't re-render if `id` hasn't changed.
-    return useMemo(() => ({
+    const api: Use{{ client.proto.state_name | to_camel }}Api = useMemo(() => ({
       state_id: id,
       mutators: {
         {% for service in client.services %}
@@ -1986,6 +2023,22 @@ export const use{{ client.proto.state_name | to_camel }} = (
       {% endfor %}
       {% endfor %}
     }), [id, instance, bearerToken]);
+{% if client_has_default_id %}
+
+  // An explicit `id` caller gets the handle directly; a no-id caller
+  // gets the `{ {{ client.proto.state_name | to_lower_camel }}, isLoading }`
+  // shape, where the handle is `undefined` until a default ID
+  // resolves.
+  if (providedId !== undefined) {
+    return api;
+  }
+  return {
+    {{ client.proto.state_name | to_lower_camel }}: resolvedId ? api : undefined,
+    isLoading,
+  };
+{% else %}
+  return api;
+{% endif %}
 };
 
 

@@ -1,5 +1,10 @@
 import { useState, type FC } from "react";
-import { useCounter, usePing } from "../../../ping_api_zod_rbt_react";
+import {
+  type UseCounterApi,
+  type UsePingApi,
+  useCounter,
+  usePing,
+} from "../../../ping_api_zod_rbt_react";
 import css from "./App.module.css";
 
 /**
@@ -11,10 +16,36 @@ import css from "./App.module.css";
  * session.
  */
 export const PingerApp: FC = () => {
-  const [isPending, setIsPending] = useState(false);
+  const { ping, isLoading: pingResolving } = usePing();
+  const { counter, isLoading: counterResolving } = useCounter();
 
-  const ping = usePing();
-  const counter = useCounter();
+  if (pingResolving || counterResolving) {
+    return (
+      <div className={css.container}>
+        <div style={{ opacity: 0.5 }}>Loading...</div>
+      </div>
+    );
+  }
+
+  if (ping === undefined || counter === undefined) {
+    console.error(
+      "No default Ping or Counter id was available; cannot render."
+    );
+    return (
+      <div className={css.container}>
+        <div style={{ opacity: 0.5 }}>An error occurred, sorry about that!</div>
+      </div>
+    );
+  }
+
+  return <Pinger ping={ping} counter={counter} />;
+};
+
+const Pinger: FC<{ ping: UsePingApi; counter: UseCounterApi }> = ({
+  ping,
+  counter,
+}) => {
+  const [isPending, setIsPending] = useState(false);
 
   const { response: pingResponse, isLoading: pingLoading } = ping.useNumPings();
   const { response: counterResponse, isLoading: counterLoading } =

@@ -1,12 +1,33 @@
 // frontend/mcp/clicker/App.tsx
-import { useCounter } from "@api/ai_chat_counter/v1/counter_rbt_react";
+import {
+  type UseCounterApi,
+  useCounter,
+} from "@api/ai_chat_counter/v1/counter_rbt_react";
 import { useMcpApp } from "@reboot-dev/reboot-react";
 import { useState, type FC } from "react";
 import css from "./App.module.css";
 
 export const ClickerApp: FC = () => {
+  const { counter, isLoading } = useCounter();
+
+  if (isLoading) {
+    return <div>loading...</div>;
+  }
+
+  // `isLoading` is checked first: while it is true, `counter` is
+  // still `undefined`. Reaching this check with `undefined` therefore
+  // means resolution finished and there is genuinely no default
+  // Counter id.
+  if (counter === undefined) {
+    console.error("No default Counter id was available; cannot render.");
+    return <div>An error occurred, sorry about that!</div>;
+  }
+
+  return <Clicker counter={counter} />;
+};
+
+const Clicker: FC<{ counter: UseCounterApi }> = ({ counter }) => {
   const [isPending, setIsPending] = useState(false);
-  const counter = useCounter();
   const { response, isLoading } = counter.useGet();
 
   // Reuse the MCP-inferred id to deep-link into the standalone web

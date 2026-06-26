@@ -1,5 +1,8 @@
 import { useState, useMemo, useCallback, type FC } from "react";
-import { useUser } from "@api/reboot_swag_store/v1/store_rbt_react";
+import {
+  type UseUserApi,
+  useUser,
+} from "@api/reboot_swag_store/v1/store_rbt_react";
 import { useMcpApp, useMcpToolData } from "@reboot-dev/reboot-react";
 import css from "./App.module.css";
 
@@ -162,8 +165,30 @@ const ProductCard: FC<ProductCardProps> = ({ product, onAdd }) => {
 };
 
 export const StoreApp: FC = () => {
+  const { user, isLoading } = useUser();
+
+  if (isLoading) {
+    return (
+      <div className={css.container}>
+        <div className={css.loading}>Loading store...</div>
+      </div>
+    );
+  }
+
+  if (user === undefined) {
+    console.error("No default User id was available; cannot render.");
+    return (
+      <div className={css.container}>
+        <div className={css.loading}>An error occurred, sorry about that!</div>
+      </div>
+    );
+  }
+
+  return <Store user={user} />;
+};
+
+const Store: FC<{ user: UseUserApi }> = ({ user }) => {
   const app = useMcpApp();
-  const user = useUser();
   // The MCP host merges the tool's input arguments into
   // `toolData`, so a call of `browse_store({"product_ids":
   // ["abc", "def"]})` lands at `toolData.product_ids`. The

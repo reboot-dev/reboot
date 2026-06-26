@@ -1,5 +1,8 @@
 import { type FC } from "react";
-import { useOrder } from "@api/reboot_swag_store/v1/store_rbt_react";
+import {
+  type UseOrderApi,
+  useOrder,
+} from "@api/reboot_swag_store/v1/store_rbt_react";
 import css from "./App.module.css";
 
 function formatPrice(cents: number): string {
@@ -19,7 +22,29 @@ function formatDate(iso: string): string {
 }
 
 export const ConfirmationApp: FC = () => {
-  const order = useOrder();
+  const { order, isLoading } = useOrder();
+
+  if (isLoading) {
+    return (
+      <div className={css.container}>
+        <div className={css.loading}>Loading order...</div>
+      </div>
+    );
+  }
+
+  if (order === undefined) {
+    console.error("No default Order id was available; cannot render.");
+    return (
+      <div className={css.container}>
+        <div className={css.loading}>An error occurred, sorry about that!</div>
+      </div>
+    );
+  }
+
+  return <Confirmation order={order} />;
+};
+
+const Confirmation: FC<{ order: UseOrderApi }> = ({ order }) => {
   const { response, isLoading } = order.useGetDetails();
 
   if (isLoading && !response) {

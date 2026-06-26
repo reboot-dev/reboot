@@ -1,10 +1,27 @@
 import { useState, type FC } from "react";
-import { useCounter } from "@api/ai_chat_counter/v1/counter_rbt_react";
+import {
+  type UseCounterApi,
+  useCounter,
+} from "@api/ai_chat_counter/v1/counter_rbt_react";
 import css from "./App.module.css";
 
 export const ClickerApp: FC = () => {
+  const { counter, isLoading } = useCounter();
+
+  if (isLoading) {
+    return <div>loading...</div>;
+  }
+
+  if (counter === undefined) {
+    console.error("No default Counter id was available; cannot render.");
+    return <div>An error occurred, sorry about that!</div>;
+  }
+
+  return <Clicker counter={counter} />;
+};
+
+const Clicker: FC<{ counter: UseCounterApi }> = ({ counter }) => {
   const [isPending, setIsPending] = useState(false);
-  const counter = useCounter();
   const { response, isLoading } = counter.useGet();
 
   const value = response?.value ?? 0;

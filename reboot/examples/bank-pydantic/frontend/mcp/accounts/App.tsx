@@ -1,5 +1,5 @@
 // frontend/mcp/accounts/App.tsx
-import { useBank } from "@api/bank/v1/bank_rbt_react";
+import { type UseBankApi, useBank } from "@api/bank/v1/bank_rbt_react";
 import { type FC } from "react";
 import css from "./App.module.css";
 
@@ -9,7 +9,23 @@ import css from "./App.module.css";
 // the AI (or anybody else) signs up customers, opens accounts, and
 // transfers funds.
 export const AccountsApp: FC = () => {
-  const bank = useBank();
+  const { bank, isLoading } = useBank();
+
+  if (isLoading) {
+    return <div className={css.loading}>loading...</div>;
+  }
+
+  if (bank === undefined) {
+    console.error("No default Bank id was available; cannot render.");
+    return (
+      <div className={css.loading}>An error occurred, sorry about that!</div>
+    );
+  }
+
+  return <Accounts bank={bank} />;
+};
+
+const Accounts: FC<{ bank: UseBankApi }> = ({ bank }) => {
   const { response, isLoading } = bank.useAccountBalances();
 
   if (isLoading && response === undefined) {

@@ -1,5 +1,6 @@
 import { useEffect, useState, type FC } from "react";
 import {
+  type UseCounterApi,
   type DashboardConfig,
   useCounter,
 } from "@api/ai_chat_counter/v1/counter_rbt_react";
@@ -17,8 +18,41 @@ interface HistoryEntry {
  * Uses generated MCP-aware hook: WebSocket for reads, MCP tools for writes.
  */
 export const DashboardApp: FC<DashboardConfig> = ({ personalizedMessage }) => {
+  const { counter, isLoading } = useCounter();
+
+  if (isLoading) {
+    return (
+      <div className={css.container}>
+        <div className={css.headerLoading}>
+          <span className={css.loading}>loading...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (counter === undefined) {
+    console.error("No default Counter id was available; cannot render.");
+    return (
+      <div className={css.container}>
+        <div className={css.headerLoading}>
+          <span className={css.loading}>
+            An error occurred, sorry about that!
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Dashboard counter={counter} personalizedMessage={personalizedMessage} />
+  );
+};
+
+const Dashboard: FC<DashboardConfig & { counter: UseCounterApi }> = ({
+  counter,
+  personalizedMessage,
+}) => {
   const [isPending, setIsPending] = useState(false);
-  const counter = useCounter();
   const { response, isLoading } = counter.useGet();
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 

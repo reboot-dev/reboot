@@ -1,6 +1,7 @@
 import { useMcpApp } from "@reboot-dev/reboot-react";
 import { useState, type FC } from "react";
 import {
+  type UseCounterApi,
   type ShowClickerProps,
   useCounter,
 } from "../../../ping_api_zod_rbt_react";
@@ -17,9 +18,34 @@ import css from "./App.module.css";
  * generated as TypeScript `primaryColor` by protobuf-es.
  */
 export const ClickerApp: FC<ShowClickerProps> = ({ primaryColor }) => {
+  const { counter, isLoading } = useCounter();
+
+  if (isLoading) {
+    return (
+      <div className={css.container}>
+        <div style={{ opacity: 0.5 }}>Loading...</div>
+      </div>
+    );
+  }
+
+  if (counter === undefined) {
+    console.error("No default Counter id was available; cannot render.");
+    return (
+      <div className={css.container}>
+        <div style={{ opacity: 0.5 }}>An error occurred, sorry about that!</div>
+      </div>
+    );
+  }
+
+  return <Clicker counter={counter} primaryColor={primaryColor} />;
+};
+
+const Clicker: FC<ShowClickerProps & { counter: UseCounterApi }> = ({
+  counter,
+  primaryColor,
+}) => {
   const [isPending, setIsPending] = useState(false);
 
-  const counter = useCounter();
   const { response, isLoading } = counter.useValue();
 
   // Reuse the MCP-inferred id to deep-link into the standalone web

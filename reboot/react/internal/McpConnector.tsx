@@ -103,7 +103,7 @@ export default function McpConnector({
   const setBearerTokenRef = useRef(setBearerToken);
   setBearerTokenRef.current = setBearerToken;
 
-  const { mcpApp, isConnected, error } = useAppSafe({
+  const { mcpApp, error } = useAppSafe({
     appInfo: {
       name: appName,
       version: "1.0.0",
@@ -245,7 +245,7 @@ export default function McpConnector({
   // structurally. An inline object literal would be a fresh
   // reference on every render of this component, and this
   // component re-renders for reasons unrelated to these three
-  // values (`isConnected` / `error` from `useAppSafe`, a parent
+  // values (`error` from `useAppSafe`, a parent
   // re-render, host-style churn) — each of which would otherwise
   // re-render every `useMcpApp()` / `useMcpToolData()` consumer
   // (every generated hook in the subtree) for nothing. The deps
@@ -266,6 +266,8 @@ export default function McpConnector({
   // re-render every state-ids consumer.
   const stateIdsContextValue = useMemo<DefaultStateIdsContextValue>(
     () => ({
+      // `null` until the host delivers tool input carrying `ids` (so a
+      // no-id hook reports loading); the map itself once it arrives.
       defaultIds:
         toolData?.ids != null && typeof toolData.ids === "object"
           ? (toolData.ids as Record<string, string>)
@@ -278,22 +280,6 @@ export default function McpConnector({
     return (
       <div style={{ color: "red", padding: "1rem" }}>
         MCP Error: {error.message}
-      </div>
-    );
-  }
-
-  // Wait for connection and state IDs. The MCP host (Claude, MCPJam,
-  // etc.) delivers IDs by invoking the UI tool, which fires
-  // `ontoolinput`/`ontoolresult` events. The `ids` field maps fully
-  // qualified state type names to their IDs (e.g. `{"rbt.ping.v1.Ping":
-  // "...", "rbt.ping.v1.User": "..."}`). Without IDs the generated
-  // hooks (e.g. `usePing()`, `useUser()`) can't connect to the right
-  // state instances, so we show a loading state until they arrive.
-  const hasIds = toolData?.ids != null && typeof toolData.ids === "object";
-  if (!isConnected || !mcpApp || !hasIds) {
-    return (
-      <div style={{ padding: "1rem", opacity: 0.7 }}>
-        Connecting to MCP host...
       </div>
     );
   }

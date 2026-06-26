@@ -20,7 +20,7 @@ import * as reboot_web from "@reboot-dev/reboot-web";
 import * as reboot_api from "@reboot-dev/reboot-api";
 import React, { useEffect, useMemo, useRef, useState, } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { useRefreshMCPBearerToken } from "@reboot-dev/reboot-react/internal";
+import { useDefaultStateIds, useRefreshMCPBearerToken } from "@reboot-dev/reboot-react/internal";
 // NOTE NOTE NOTE
 //
 // If you are reading this comment because you are trying to debug
@@ -1748,8 +1748,13 @@ class GreeterInstance {
         this.stateRef = stateRef;
         this.url = url;
         this.refs = 1;
-        reboot_web.websockets.connect(this.url, this.stateRef);
-        this.initializeWebSocket();
+        // An empty `id` marks the inert instance shared by every no-id
+        // caller while no default ID has resolved (e.g. signed out): it
+        // opens no socket so there's nothing to connect to.
+        if (id !== "") {
+            reboot_web.websockets.connect(this.url, this.stateRef);
+            this.initializeWebSocket();
+        }
     }
     ref() {
         this.refs += 1;
@@ -1792,7 +1797,7 @@ class GreeterInstance {
         }
     }
     initializeWebSocket() {
-        if (this.websocket === undefined && this.refs > 0) {
+        if (this.websocket === undefined && this.refs > 0 && this.id !== "") {
             const url = new URL(`${this.url}/__/reboot/rpc/${this.stateRef}`);
             url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
             this.websocket = reboot_web.websockets.create(url);
@@ -3900,8 +3905,37 @@ class GreeterInstance {
     }
 }
 GreeterInstance.instances = {};
-export const useGreeter = ({ id }) => {
-    const stateRef = reboot_api.stateIdToRef("tests.reboot.Greeter", id);
+export function useGreeter({ id: providedId } = {}) {
+    var _a;
+    // Resolve `id` from the surface-agnostic state-ID map. A `null` map
+    // means that resolution is still in flight; an empty map means it
+    // resolved with no default ID for us.
+    const defaultIds = useDefaultStateIds();
+    const isLoading = defaultIds === null;
+    // Resolve ID: explicit > URL param (dev) > default-ID map.
+    const devId = useMemo(() => {
+        // React Native defines `window` but not `window.location`, so both
+        // must be checked.
+        if (typeof window !== "undefined" &&
+            typeof window.location !== "undefined") {
+            return new URLSearchParams(window.location.search).get("tests.reboot.Greeter.id");
+        }
+        return null;
+    }, []);
+    const toolInputId = typeof (defaultIds === null || defaultIds === void 0 ? void 0 : defaultIds["tests.reboot.Greeter"]) === "string"
+        ? defaultIds["tests.reboot.Greeter"]
+        : null;
+    const resolvedId = (_a = providedId !== null && providedId !== void 0 ? providedId : devId) !== null && _a !== void 0 ? _a : toolInputId;
+    // Without a resolved ID we still run every hook below (rules of
+    // hooks), binding to the inert empty-ID instance that opens no
+    // socket.
+    const id = resolvedId !== null && resolvedId !== void 0 ? resolvedId : "";
+    // The unresolved no-id case carries an empty `stateRef` rather than
+    // computing one. Keyed on the id being unresolved — an explicitly
+    // passed empty id still reaches `stateIdToRef`, which rejects it.
+    const stateRef = resolvedId == null
+        ? ""
+        : reboot_api.stateIdToRef("tests.reboot.Greeter", id);
     const rebootClient = reboot_react.useRebootClient();
     const url = rebootClient.url;
     const bearerToken = rebootClient.bearerToken;
@@ -3934,7 +3968,7 @@ export const useGreeter = ({ id }) => {
             return () => {
                 instance.unuseCreate(id);
             };
-        }, []);
+        }, [instance]);
         const rebootClient = reboot_react.useRebootClient();
         const bearerToken = rebootClient.bearerToken;
         const create = useMemo(() => {
@@ -4251,7 +4285,7 @@ export const useGreeter = ({ id }) => {
             return () => {
                 instance.unuseSetAdjective(id);
             };
-        }, []);
+        }, [instance]);
         const rebootClient = reboot_react.useRebootClient();
         const bearerToken = rebootClient.bearerToken;
         const setAdjective = useMemo(() => {
@@ -4284,7 +4318,7 @@ export const useGreeter = ({ id }) => {
             return () => {
                 instance.unuseTransactionSetAdjective(id);
             };
-        }, []);
+        }, [instance]);
         const rebootClient = reboot_react.useRebootClient();
         const bearerToken = rebootClient.bearerToken;
         const transactionSetAdjective = useMemo(() => {
@@ -5169,7 +5203,7 @@ export const useGreeter = ({ id }) => {
             return () => {
                 instance.unuseTestLongRunningWriter(id);
             };
-        }, []);
+        }, [instance]);
         const rebootClient = reboot_react.useRebootClient();
         const bearerToken = rebootClient.bearerToken;
         const testLongRunningWriter = useMemo(() => {
@@ -6054,7 +6088,7 @@ export const useGreeter = ({ id }) => {
             return () => {
                 instance.unuseDangerousFields(id);
             };
-        }, []);
+        }, [instance]);
         const rebootClient = reboot_react.useRebootClient();
         const bearerToken = rebootClient.bearerToken;
         const dangerousFields = useMemo(() => {
@@ -6087,7 +6121,7 @@ export const useGreeter = ({ id }) => {
             return () => {
                 instance.unuseStoreRecursiveMessage(id);
             };
-        }, []);
+        }, [instance]);
         const rebootClient = reboot_react.useRebootClient();
         const bearerToken = rebootClient.bearerToken;
         const storeRecursiveMessage = useMemo(() => {
@@ -6404,7 +6438,7 @@ export const useGreeter = ({ id }) => {
             return () => {
                 instance.unuseConstructAndStoreRecursiveMessage(id);
             };
-        }, []);
+        }, [instance]);
         const rebootClient = reboot_react.useRebootClient();
         const bearerToken = rebootClient.bearerToken;
         const constructAndStoreRecursiveMessage = useMemo(() => {
@@ -6430,7 +6464,7 @@ export const useGreeter = ({ id }) => {
     }
     const constructAndStoreRecursiveMessage = useConstructAndStoreRecursiveMessage();
     // Don't re-render if `id` hasn't changed.
-    return useMemo(() => ({
+    const api = useMemo(() => ({
         state_id: id,
         mutators: {
             create,
@@ -6476,7 +6510,19 @@ export const useGreeter = ({ id }) => {
         useReadRecursiveMessage,
         constructAndStoreRecursiveMessage,
     }), [id, instance, bearerToken]);
-};
+    // An explicit `id` caller gets the handle directly; a no-id caller
+    // gets the `{ greeter, isLoading }`
+    // shape, where the handle is `undefined` until a default ID
+    // resolves.
+    if (providedId !== undefined) {
+        return api;
+    }
+    return {
+        greeter: resolvedId ? api : undefined,
+        isLoading,
+    };
+}
+;
 export class Greeter {
 }
 Greeter.State = GreeterProto;

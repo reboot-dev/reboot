@@ -1,9 +1,34 @@
 import { type FC } from "react";
-import { useTranscript } from "@api/agent_wiki/v1/wiki_rbt_react";
+import {
+  type UseTranscriptApi,
+  useTranscript,
+} from "@api/agent_wiki/v1/wiki_rbt_react";
 import css from "./App.module.css";
 
 export const TranscriptView: FC = () => {
-  const transcript = useTranscript();
+  const { transcript, isLoading } = useTranscript();
+
+  if (isLoading) {
+    return (
+      <div className={css.container}>
+        <div className={css.loading}>loading...</div>
+      </div>
+    );
+  }
+
+  if (transcript === undefined) {
+    console.error("No default Transcript id was available; cannot render.");
+    return (
+      <div className={css.container}>
+        <div className={css.loading}>An error occurred, sorry about that!</div>
+      </div>
+    );
+  }
+
+  return <Transcript transcript={transcript} />;
+};
+
+const Transcript: FC<{ transcript: UseTranscriptApi }> = ({ transcript }) => {
   const { response, isLoading } = transcript.useGet();
 
   if (isLoading && response === undefined) {

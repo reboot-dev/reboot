@@ -1,10 +1,35 @@
 import { useState, type FC } from "react";
-import { useFoodOrder } from "@api/ai_chat_food/v1/food_rbt_react";
+import {
+  type UseFoodOrderApi,
+  useFoodOrder,
+} from "@api/ai_chat_food/v1/food_rbt_react";
 import css from "./App.module.css";
 
 export const MenuApp: FC = () => {
+  const { foodOrder, isLoading } = useFoodOrder();
+
+  if (isLoading) {
+    return (
+      <div className={css.container}>
+        <div className={css.loading}>loading menu...</div>
+      </div>
+    );
+  }
+
+  if (foodOrder === undefined) {
+    console.error("No default FoodOrder id was available; cannot render.");
+    return (
+      <div className={css.container}>
+        <div className={css.loading}>An error occurred, sorry about that!</div>
+      </div>
+    );
+  }
+
+  return <Menu order={foodOrder} />;
+};
+
+const Menu: FC<{ order: UseFoodOrderApi }> = ({ order }) => {
   const [pendingIndex, setPendingIndex] = useState<number | null>(null);
-  const order = useFoodOrder();
   const { response: menuRes, isLoading: menuLoading } = order.useGetMenu();
   const { response: cartRes } = order.useGetCart();
 

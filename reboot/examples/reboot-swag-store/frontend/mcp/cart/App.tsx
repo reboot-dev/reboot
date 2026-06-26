@@ -1,5 +1,6 @@
 import { useMemo, useState, type FC } from "react";
 import {
+  type UseCartApi,
   useCart,
   useCouponBook,
 } from "@api/reboot_swag_store/v1/store_rbt_react";
@@ -119,8 +120,30 @@ function validateAddress(a: Address): Partial<Record<AddressField, string>> {
 }
 
 export const CartApp: FC = () => {
+  const { cart, isLoading } = useCart();
+
+  if (isLoading) {
+    return (
+      <div className={css.container}>
+        <div className={css.loading}>Loading cart...</div>
+      </div>
+    );
+  }
+
+  if (cart === undefined) {
+    console.error("No default Cart id was available; cannot render.");
+    return (
+      <div className={css.container}>
+        <div className={css.loading}>An error occurred, sorry about that!</div>
+      </div>
+    );
+  }
+
+  return <Cart cart={cart} />;
+};
+
+const Cart: FC<{ cart: UseCartApi }> = ({ cart }) => {
   const app = useMcpApp();
-  const cart = useCart();
   const couponBook = useCouponBook({
     id: COUPON_BOOK_ID,
   });
