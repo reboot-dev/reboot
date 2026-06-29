@@ -35,6 +35,8 @@ from reboot.run_environments import on_cloud
 from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_EFFECT_VALIDATION,
+    ENVVAR_RBT_FRONTEND_DIST_PATH,
+    ENVVAR_RBT_FRONTEND_ROOT_PATH,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
     ENVVAR_RBT_SERVE,
@@ -210,6 +212,30 @@ def register_serve(parser: ArgumentParser):
         help="path to TLS key to use when setting '--tls=own-certificate'",
     )
 
+    parser.subcommand('serve run').add_argument(
+        '--frontend-dist-path',
+        type=str,
+        help=(
+            'project-relative directory holding the built '
+            'frontend assets (e.g., `frontend/dist`) served on '
+            'disk under `/__/frontend/` (the production '
+            "counterpart to `dev run`'s `--frontend-dist-path`). "
+            'Requires `--frontend-root-path`.'
+        ),
+    )
+
+    parser.subcommand('serve run').add_argument(
+        '--frontend-root-path',
+        type=str,
+        help=(
+            'project-relative directory that is the frontend '
+            'root (e.g., `frontend`), stripped off each '
+            '`UI(path=...)` to form its served URL under '
+            '`/__/frontend/`. Required with, and only valid '
+            'alongside, `--frontend-dist-path`.'
+        ),
+    )
+
 
 def servers_from_cores() -> int:
     num_cores = detect_cores(flag_name='--servers')
@@ -258,6 +284,19 @@ async def serve_run(
 
         if args.state_directory is not None:
             env[ENVVAR_RBT_STATE_DIRECTORY] = args.state_directory
+
+        if args.frontend_dist_path is not None:
+            if args.frontend_root_path is None:
+                terminal.fail(
+                    "`--frontend-dist-path` requires `--frontend-root-path`."
+                )
+            env[ENVVAR_RBT_FRONTEND_DIST_PATH] = args.frontend_dist_path
+            env[ENVVAR_RBT_FRONTEND_ROOT_PATH] = args.frontend_root_path
+        elif args.frontend_root_path is not None:
+            terminal.fail(
+                "`--frontend-root-path` is only valid alongside "
+                "`--frontend-dist-path`."
+            )
 
         # Pick the mode we'll run Envoy in (either as a stand-alone
         # program or inside a Docker container) and check that the

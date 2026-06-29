@@ -63,7 +63,9 @@ from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_EFFECT_VALIDATION,
+    ENVVAR_RBT_FRONTEND_DIST_PATH,
     ENVVAR_RBT_FRONTEND_HOST,
+    ENVVAR_RBT_FRONTEND_ROOT_PATH,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
     ENVVAR_RBT_SERVERS,
@@ -202,12 +204,36 @@ def _register_dev_run(parser: ArgumentParser):
         '--frontend-host',
         type=str,
         help=(
-            'URL of the MCP frontend dev server '
+            'URL of the frontend dev server '
             '(e.g., http://localhost:4444). When set, '
-            'Envoy routes `/__/web/**` paths to this '
-            'host for Hot Module Replacement. Pass an '
-            'empty string to explicitly disable and '
-            'serve pre-built artifacts from disk.'
+            'Envoy routes `/__/frontend/**` paths to this '
+            'host for Hot Module Replacement. Requires '
+            '`--frontend-root-path`; mutually exclusive '
+            'with `--frontend-dist-path`.'
+        ),
+    )
+
+    parser.subcommand('dev run').add_argument(
+        '--frontend-root-path',
+        type=str,
+        help=(
+            'project-relative directory that is the frontend '
+            'root (e.g., `frontend`), stripped off each '
+            '`UI(path=...)` to form its served URL under '
+            '`/__/frontend/`. Required with, and only valid '
+            'alongside, `--frontend-host` or '
+            '`--frontend-dist-path`.'
+        ),
+    )
+
+    parser.subcommand('dev run').add_argument(
+        '--frontend-dist-path',
+        type=str,
+        help=(
+            'project-relative directory holding the built '
+            'frontend assets (e.g., `frontend/dist`), served '
+            'from disk. Requires `--frontend-root-path`; '
+            'mutually exclusive with `--frontend-host`.'
         ),
     )
 
@@ -1317,8 +1343,32 @@ async def __dev_run(
             dot_rbt_dev_directory(args, parser) / args.application_name
         )
 
+    # The frontend is served one of two mutually-exclusive ways: a live
+    # dev server (`--frontend-host`, for HMR) or built assets on disk
+    # (`--frontend-dist-path`). `--frontend-root-path` names the frontend
+    # root and is required alongside whichever of the two is chosen.
+    if args.frontend_host and args.frontend_dist_path:
+        terminal.fail(
+            "`--frontend-host` and `--frontend-dist-path` are mutually "
+            "exclusive; pass one or the other."
+        )
     if args.frontend_host:
+        if not args.frontend_root_path:
+            terminal.fail("`--frontend-host` requires `--frontend-root-path`.")
         env[ENVVAR_RBT_FRONTEND_HOST] = args.frontend_host
+        env[ENVVAR_RBT_FRONTEND_ROOT_PATH] = args.frontend_root_path
+    elif args.frontend_dist_path:
+        if not args.frontend_root_path:
+            terminal.fail(
+                "`--frontend-dist-path` requires `--frontend-root-path`."
+            )
+        env[ENVVAR_RBT_FRONTEND_DIST_PATH] = args.frontend_dist_path
+        env[ENVVAR_RBT_FRONTEND_ROOT_PATH] = args.frontend_root_path
+    elif args.frontend_root_path:
+        terminal.fail(
+            "`--frontend-root-path` is only valid alongside "
+            "`--frontend-host` or `--frontend-dist-path`."
+        )
 
     health_check_task: Optional[asyncio.Task] = None
 

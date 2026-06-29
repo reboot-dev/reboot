@@ -60,8 +60,12 @@ from reboot.mcp.iframe import (
     host_needs_cache_busting_iframe,
     host_supports_iframe,
 )
-from reboot.settings import ENVVAR_RBT_FRONTEND_HOST
-from typing import Any
+from reboot.settings import (
+    ENVVAR_RBT_FRONTEND_DIST_PATH,
+    ENVVAR_RBT_FRONTEND_HOST,
+    ENVVAR_RBT_FRONTEND_ROOT_PATH,
+)
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -144,104 +148,84 @@ def _find_project_root() -> Path:
     return find_project_root_from(caller_file)
 
 
-# The Vite config filename we generate (from
-# `create-ui/templates/vite.config.ts.tmpl`); this is how we recognize a
-# UI's Vite root.
-_VITE_CONFIG_NAME = "vite.config.ts"
+# The fixed URL prefix under which the frontend — its dev server or its
+# built assets — is served, hardcoded identically in the Envoy route,
+# that route's Lua tagging filter, the iframe loader, and the generated
+# Vite `base`. It's a stable mount point, independent of which directory
+# the frontend happens to live in on disk.
+_FRONTEND_URL_PREFIX = "/__/frontend"
 
 
-# Cached because the Vite root is a *structural* property of the project
-# layout (where `vite.config.ts` lives) and is stable for the life of
-# the process. The file *contents* HMR and cache-busting care about flow
-# through `compute_ui_cache_bust` and the dev server, never through this
-# lookup, so caching the location introduces no staleness for the dev
-# loop. The trade-off — adding, moving, or removing a `vite.config.ts`
-# mid-session isn't picked up until restart — matches the also-cached
-# `find_project_root_from`. One entry per (project_root, UI); apps have
-# only a handful.
-@functools.lru_cache(maxsize=_MAX_UI_CACHE_ENTRIES)
-def _resolve_vite_root(project_root: Path, ui_path: str) -> Path:
+def _frontend_root_path() -> str:
+    """The project-relative directory that is the frontend root: the
+    prefix to strip off a project-relative `UI(path=...)` to get the
+    UI's address within the frontend. Always named explicitly via
+    `--frontend-root-path`, which is required alongside both
+    `--frontend-host` (dev/HMR) and `--frontend-dist-path` (dist).
+    Empty when unset. Surrounding slashes are stripped, so a flag
+    value like `frontend/` still matches project-relative
+    `UI(path=...)` values.
     """
-    Find the Vite project root for a UI: the nearest ancestor of the UI
-    directory that holds a `_VITE_CONFIG_NAME` file.
+    return (os.environ.get(ENVVAR_RBT_FRONTEND_ROOT_PATH) or "").strip("/")
 
-    The Vite root is the directory Vite serves files from and builds
-    into, so both the production `dist/` location and UI's URL paths
-    derive from it. We must NOT assume it is always "web", UIs living
-    under differently-named folders must work too.
 
-    Falls back to the first component of `ui_path` when no Vite config
-    is found on disk — e.g. Bazel-built examples like `ping`, which have
-    no Vite config but still follow the `<root>/dist/...` build-output
-    convention.
+def _ui_address(ui_path: str) -> str:
+    """A UI's address within the frontend: its project-relative
+    `UI(path=...)` with the frontend-root prefix stripped off the front.
+    This is the segment that follows the `/__/frontend/` URL prefix and
+    sits under the dist directory.
     """
-    # The provided `project_root` is assumed to have already dealt with
-    # symlinks (see `find_project_root_from`), so we can simply do a
-    # lexographical walk up the tree.
-    current = project_root / ui_path
-    while True:
-        if (current / _VITE_CONFIG_NAME).is_file():
-            return current
-        if current == project_root or current.parent == current:
-            break
-        current = current.parent
-    return project_root / ui_path.split("/", 1)[0]
+    root = _frontend_root_path()
+    if root and (ui_path == root or ui_path.startswith(root + "/")):
+        return ui_path[len(root):].lstrip("/")
+    return ui_path
 
 
-def _resolve_dev_ui_paths(project_root: Path, ui_path: str) -> tuple[str, str]:
+def _resolve_dev_ui_paths(ui_path: str) -> tuple[str, str]:
     """Compute the dev-server URL prefix and the UI's served URL path.
 
     Returns `(vite_base, ui_url_path)`:
 
-    * `vite_base` is the URL prefix Vite prepends to its own asset
-      URLs (`@vite/client`, dep chunks, ...), assumed to be
-      `/__/<vite-root relative to project root>`.
+    * `vite_base` is the fixed `/__/frontend` URL prefix the dev server
+      prepends to its own asset URLs (`@vite/client`, dep chunks, ...);
+      Envoy routes that same prefix to the dev server and the generated
+      Vite `base` matches it.
     * `ui_url_path` is the path (rooted at the Reboot origin) at which
-      Vite serves this UI's `index.html` directory, i.e.
-      `<vite_base>/<ui-path-within-vite-root>`.
-
-    We derive both from the Vite root location (via
-    `_resolve_vite_root`) rather than hardcoding `web`, so a UI whose
-    Vite root is named something else still gets correct URLs.
-
-    ASSUMPTION (not currently enforced — ideally we'd parse it out of
-    the Vite config): the Vite `base` is `/__/<vite-root relative to
-    project root>/` and Envoy routes that same prefix to the dev
-    server. Today the Vite root is `<project>/web` and `base` is
-    `/__/web/`, so this holds. A project that changes its Vite root or
-    `base` must keep the two in sync.
-
-    Not separately cached: the only filesystem work is inside
-    `_resolve_vite_root` (which is cached); the rest here is pure
-    string math over its result.
+      the dev server serves this UI's `index.html` directory:
+      `<vite_base>/<ui-address>`.
     """
-    vite_root = _resolve_vite_root(project_root, ui_path)
-    vite_base = f"/__/{vite_root.relative_to(project_root).as_posix()}"
-    ui_relative_to_root = (project_root / ui_path).relative_to(vite_root)
-    return vite_base, f"{vite_base}/{ui_relative_to_root.as_posix()}"
+    return (
+        _FRONTEND_URL_PREFIX,
+        f"{_FRONTEND_URL_PREFIX}/{_ui_address(ui_path)}",
+    )
 
 
 def _resolve_dist_path(
     project_root: Path,
     ui_path: str,
     artifact_path: str | None,
-) -> Path:
+) -> Optional[Path]:
     """Resolve the production-build `index.html` path for a UI.
 
-    The build output lives in a `dist/` directory at the Vite
-    root, under the UI's path relative to that root. E.g. with
-    Vite root `<project>/web` and `ui_path` "web/ui/clicker", the
-    build is at "web/dist/ui/clicker/index.html".
+    The built assets live under `--frontend-dist-path` at the UI's
+    address within the frontend — i.e. `ui_path` with the explicit
+    `--frontend-root-path` prefix stripped. For example, with
+    `--frontend-dist-path` "frontend/dist", `--frontend-root-path`
+    "frontend", and `ui_path` "frontend/mcp/clicker", the build is at
+    "frontend/dist/mcp/clicker/index.html". `artifact_path`, when
+    given, overrides this with an explicit project-relative directory.
 
-    Not separately cached: the only filesystem work is inside
-    `_resolve_vite_root` (which is cached); the rest here is pure
-    string math over its result.
+    Returns `None` when neither `artifact_path` nor
+    `--frontend-dist-path` names a directory to serve builds from: the
+    only path that could be resolved then is the UI's unbuilt source
+    `index.html` under the project root.
     """
     if artifact_path is not None:
         return project_root / artifact_path / "index.html"
-    vite_root = _resolve_vite_root(project_root, ui_path)
-    ui_relative_to_root = (project_root / ui_path).relative_to(vite_root)
-    return vite_root / "dist" / ui_relative_to_root / "index.html"
+    dist = os.environ.get(ENVVAR_RBT_FRONTEND_DIST_PATH)
+    if not dist:
+        return None
+    return project_root / dist / _ui_address(ui_path) / "index.html"
 
 
 def compute_ui_cache_bust(
@@ -296,13 +280,25 @@ def compute_ui_cache_bust(
     if isinstance(project_root, str):
         project_root = Path(project_root)
     dist_path = _resolve_dist_path(project_root, ui_path, artifact_path)
-    if not dist_path.exists():
-        logger.warning(
-            "Web artifact '%s' for MCP app is missing; we'll "
-            "serve a 'build not found' placeholder. Run "
-            "`cd web && npm run build` and restart.",
-            dist_path,
-        )
+    if dist_path is None or not dist_path.exists():
+        if dist_path is None:
+            logger.warning(
+                "`--frontend-dist-path` is not set, so there is no "
+                "directory to serve the '%s' UI's build from; we'll "
+                "serve a 'build not found' placeholder.",
+                ui_name,
+            )
+        else:
+            root_path = (
+                os.environ.get(ENVVAR_RBT_FRONTEND_ROOT_PATH) or "frontend"
+            )
+            logger.warning(
+                "Web artifact '%s' for MCP app is missing; we'll "
+                "serve a 'build not found' placeholder. Run "
+                "`cd %s && npm run build` and restart.",
+                dist_path,
+                root_path,
+            )
         # Hash the placeholder we will actually serve. Same call
         # `ui_html` makes in this branch, so the cache-bust
         # token is derived from the bytes the host will see.
@@ -450,6 +446,7 @@ def _inject_globals(
 
 def _build_not_found_html(title: str, ui_name: str) -> str:
     """Generate fallback HTML when a build artifact is not found."""
+    root_path = os.environ.get(ENVVAR_RBT_FRONTEND_ROOT_PATH) or "frontend"
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -481,7 +478,7 @@ def _build_not_found_html(title: str, ui_name: str) -> str:
     <div class="container">
         <h1>{title}</h1>
         <p>The React app needs to be built first.</p>
-        <p>Run: <code>cd web && npm install && npm run build</code></p>
+        <p>Run: <code>cd {root_path} && npm install && npm run build</code></p>
     </div>
 </body>
 </html>'''
@@ -578,7 +575,7 @@ def dev_inline_html(
     # `ui_url_path` is where Vite serves this UI's `index.html`
     # directory. See `_resolve_dev_ui_paths` (incl. its `base`
     # assumption).
-    vite_base, ui_url_path = _resolve_dev_ui_paths(project_root, ui_path)
+    vite_base, ui_url_path = _resolve_dev_ui_paths(ui_path)
 
     # This fetch goes straight to the Vite dev server, bypassing Envoy —
     # there's no point routing the server-side request through our own
@@ -645,11 +642,10 @@ def ui_html(
             auto-discovers by walking up from caller's file
             looking for `.rbtrc`.
         artifact_path: Override for the build artifact path,
-            relative to project root. Defaults to a `dist/`
-            directory at the Vite root, under the UI's path
-            relative to that root (e.g., Vite root "web" and
-            "web/ui/clicker" -> "web/dist/ui/clicker"); see
-            `_resolve_dist_path`.
+            relative to project root. Defaults to
+            `<--frontend-dist-path>/<ui-address>` (e.g. dist
+            path "web/dist" and "web/ui/clicker" ->
+            "web/dist/ui/clicker"); see `_resolve_dist_path`.
         cache_bust: Content-hash token from the incoming URI's
             trailing segment (the value `list_tools` computed
             via `compute_ui_cache_bust`). Used as an extra
@@ -711,10 +707,11 @@ def ui_html(
         }
     )
 
-    # Resolve the project root up front: both dev mode (to locate the
-    # Vite root) and production mode (to locate the dist) need it.
-    # `_find_project_root` walks up from the caller's file, so it must
-    # be called directly from `ui_html`.
+    # Resolve the project root up front: production serving joins it
+    # with `--frontend-dist-path` to locate the built `index.html`, and
+    # the dev-inline path reads from it too. `_find_project_root` walks
+    # up from the caller's file, so it must be called directly from
+    # `ui_html`.
     if project_root is None:
         project_root = _find_project_root()
     elif isinstance(project_root, str):
@@ -738,7 +735,7 @@ def ui_html(
         #   interstitial instead of the real bytes, so the page fails to
         #   load. See `dev_inline_html` for the full explanation.
         if host_supports_iframe():
-            _, ui_url_path = _resolve_dev_ui_paths(project_root, ui_path)
+            _, ui_url_path = _resolve_dev_ui_paths(ui_path)
             return dev_iframe_html(ui_url_path, reboot_url, ui_name)
         return dev_inline_html(
             ui_path,
@@ -755,7 +752,7 @@ def ui_html(
     # If the dist isn't present we serve the "build not found"
     # placeholder inline regardless of host.
     dist_path = _resolve_dist_path(project_root, ui_path, artifact_path)
-    if not dist_path.exists():
+    if dist_path is None or not dist_path.exists():
         # No build found — show instructions.
         return _build_not_found_html(f"{ui_name.title()} UI", ui_name)
 

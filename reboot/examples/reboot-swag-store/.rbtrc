@@ -35,7 +35,9 @@ dev run --default-config=hmr
 
 # Run Vite in a separate terminal: cd web && npm run dev
 
-# Envoy routes "/\_\_/web/\*\*" to Vite for HMR support.
+# Envoy routes "/__/frontend/**" to Vite for HMR support.
+dev run --frontend-root-path=web
+
 
 dev run:hmr --frontend-host=http://localhost:4444
 
@@ -45,7 +47,7 @@ dev run:hmr --frontend-host=http://localhost:4444
 
 # Requires: cd web && npm run build
 
-dev run:dist --frontend-host=""
+dev run:dist --frontend-dist-path=web/dist
 
 # When expunging, expunge that state we've saved.
 
@@ -56,6 +58,7 @@ dev expunge --application-name=reboot-swag-store
 # Tell `rbt serve` that this is a Python application.
 
 serve run --python
+serve run --frontend-dist-path=web/dist --frontend-root-path=web
 
 # Leave TLS termination to the external load balancer; expose a
 

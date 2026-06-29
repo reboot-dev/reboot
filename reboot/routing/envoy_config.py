@@ -491,10 +491,10 @@ def _routes_for_server(
 
 
 def _frontend_routes() -> list[route_components_pb2.Route]:
-    """Routes for web dev server assets ("/__/web/**").
+    """Routes for web dev server assets ("/__/frontend/**").
 
     MCP Apps use a double iframe: the outer `srcdoc` contains an inner
-    `<iframe src="/__/web/ui/...">`. This route proxies those requests
+    `<iframe src="/__/frontend/ui/...">`. This route proxies those requests
     to the web dev server. Envoy handles WebSocket upgrades (for Hot Module Replacement)
     transparently.
 
@@ -504,11 +504,11 @@ def _frontend_routes() -> list[route_components_pb2.Route]:
     if config is None:
         return []
 
-    # Route for web dev server assets: "/__/web/**".
-    # Dev server is configured with `base: "/__/web/"` so paths match directly.
+    # Route for web dev server assets: "/__/frontend/**".
+    # Dev server is configured with `base: "/__/frontend/"` so paths match directly.
     web_route = route_components_pb2.Route(
         match=route_components_pb2.RouteMatch(
-            prefix="/__/web/",
+            prefix="/__/frontend/",
         ),
         route=route_components_pb2.RouteAction(
             cluster=FRONTEND_CLUSTER_NAME,
@@ -577,7 +577,7 @@ def _frontend_cluster(
 
 def _frontend_error_filters() -> list[http_connection_manager_pb2.HttpFilter]:
     """Lua filter that replaces envoy's raw 503 for the
-    `/__/web/` dev-server route with a friendly HTML page.
+    `/__/frontend/` dev-server route with a friendly HTML page.
 
     Returns an empty list if the frontend is not configured.
     """
@@ -621,14 +621,14 @@ def _frontend_error_filters() -> list[http_connection_manager_pb2.HttpFilter]:
         '</body></html>'
     ).replace('__FRONTEND_URL__', config.original_url)
 
-    # Lua filter: tag `/__/web/` requests in `envoy_on_request`
+    # Lua filter: tag `/__/frontend/` requests in `envoy_on_request`
     # via dynamic metadata, then intercept 503 responses and
     # replace the body.
     lua_source = (
         'function envoy_on_request(request_handle)\n'
         '  local p = request_handle:headers():get(":path")'
         ' or ""\n'
-        '  if string.sub(p, 1, 8) == "/__/web/" then\n'
+        '  if string.sub(p, 1, 13) == "/__/frontend/" then\n'
         '    request_handle:streamInfo():dynamicMetadata()'
         ':set("reboot", "frontend_request", "1")\n'
         '  end\n'

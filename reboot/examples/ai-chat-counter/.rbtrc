@@ -27,12 +27,14 @@ dev run --default-config=hmr
 
 # Hot Module Replacement (HMR): Vite dev server proxied through Envoy.
 # Run Vite in a separate terminal: `cd web && npm run dev`
+dev run --frontend-root-path=web
+
 dev run:hmr --frontend-host=http://localhost:4444
 
 # Dist mode: serve pre-built artifacts from "web/dist/" (no Vite HMR).
 # Usage: `uv run rbt dev run --config=dist`
 # Requires: `cd web && npm run build`
-dev run:dist --frontend-host=""
+dev run:dist --frontend-dist-path=web/dist
 
 # When expunging, expunge that state we've saved.
 dev expunge --application-name=ai-chat-counter
@@ -41,6 +43,7 @@ dev expunge --application-name=ai-chat-counter
 # entrypoint lives. The Dockerfile's `CMD ["rbt", "serve", "run"]` picks
 # these up.
 serve run --python
+serve run --frontend-dist-path=web/dist --frontend-root-path=web
 serve run --application=backend/src/main.py
 
 # Reboot Cloud terminates TLS at the external load balancer, so the app

@@ -60,13 +60,15 @@ dev run --default-config=hmr
 
 # HMR: Vite dev server proxied through Envoy.
 # Run Vite in a separate terminal: cd web && npm run dev
-# Envoy routes "/__/web/**" to Vite for HMR support.
+# Envoy routes "/__/frontend/**" to Vite for HMR support.
+dev run --frontend-root-path=web
+
 dev run:hmr --frontend-host=http://localhost:4444
 
 # Dist mode: serve pre-built artifacts from "web/dist/" (no Vite HMR).
 # Usage: uv run rbt dev run --config=dist
 # Requires: cd web && npm run build
-dev run:dist --frontend-host=""
+dev run:dist --frontend-dist-path=web/dist
 
 # When expunging, expunge that state we've saved.
 dev expunge --application-name=<project-name>

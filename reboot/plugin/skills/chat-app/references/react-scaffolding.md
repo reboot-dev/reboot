@@ -105,9 +105,9 @@ export default defineConfig(({ command, mode }) => {
   // UIs use a double iframe architecture:
   //   MCP Host -> srcdoc (origin=null) -> iframe (origin=localhost:9991)
   //
-  // The inner iframe loads from Envoy ("/__/web/**"), which proxies to
+  // The inner iframe loads from Envoy ("/__/frontend/**"), which proxies to
   // Vite. Because the inner iframe has a real origin, Vite's URLs work
-  // normally. `base: "/__/web/"` ensures all paths route through Envoy.
+  // normally. `base: "/__/frontend/"` ensures all paths route through Envoy.
   //
   // Hot Module Replacement works automatically: Vite's client connects
   // to the page's origin, and Envoy proxies WebSocket upgrades to Vite.
@@ -120,7 +120,7 @@ export default defineConfig(({ command, mode }) => {
       plugins: [react()],
       root: ".",
       resolve,
-      base: "/__/web/",
+      base: "/__/frontend/",
       server: {
         port,
         strictPort: true,

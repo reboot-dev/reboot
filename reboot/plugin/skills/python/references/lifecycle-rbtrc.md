@@ -143,10 +143,12 @@ the command line:
 ```sh
 # Default config (HMR / Vite).
 dev run --default-config=hmr
+dev run --frontend-root-path=web
+
 dev run:hmr --frontend-host=http://localhost:4444
 
 # Dist mode (no Vite).
-dev run:dist --frontend-host=""
+dev run:dist --frontend-dist-path=web/dist
 ```
 
 Run with `rbt dev run` (uses `--default-config=hmr`) or

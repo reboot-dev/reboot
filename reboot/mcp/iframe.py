@@ -148,7 +148,7 @@ def dev_iframe_html(
     Nested-iframe wrapper for dev/HMR.
 
     The inner iframe loads the page the Vite dev server is serving
-    (through Envoy, which proxies `/__/web/**`) rather than a built
+    (through Envoy, which proxies `/__/frontend/**`) rather than a built
     artifact. Because the inner iframe has a real origin (the Reboot
     server), Vite HMR and the page's own relative/absolute asset URLs
     resolve on the same origin — making this path "just work", including
@@ -157,7 +157,7 @@ def dev_iframe_html(
     Args:
         ui_url_path: The dev server URL path (rooted at the Reboot
             origin) at which Vite serves this UI's `index.html`
-            directory, e.g. "/__/web/ui/clicker".
+            directory, e.g. "/__/frontend/ui/clicker".
         reboot_url: Reboot server URL (extracted from request
             headers). The inner iframe is loaded from this origin.
         ui_name: Display name from the API definition (e.g.,

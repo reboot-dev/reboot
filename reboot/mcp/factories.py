@@ -209,6 +209,9 @@ async def _serve_ui_asset(
     dist_index = _resolve_dist_path(
         project_root, info["ui_path"], info.get("artifact_path")
     )
+    if dist_index is None:
+        await reject("frontend dist path not configured")
+        return
     dist_dir = dist_index.parent
     # Defend against path traversal: the resolved file must
     # live under `dist_dir`.

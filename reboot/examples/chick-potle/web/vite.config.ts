@@ -28,7 +28,7 @@ export default defineConfig(({ command, mode }) => {
       plugins: [react()],
       root: ".",
       resolve,
-      base: "/__/web/",
+      base: "/__/frontend/",
       server: { port, strictPort: true, host: true, allowedHosts: true },
     };
   }
