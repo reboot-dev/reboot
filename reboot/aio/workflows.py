@@ -286,9 +286,10 @@ async def at_least_once(
     type: Type | _Unset = _UNSET,
     effect_validation: EffectValidation | None = None,
 ) -> T:
-    """Attempts to run and memoize the result of calling `callable` while
-    supporting retrying as many times as necessary until `callable`
-    succeeds.
+    """Attempts to run and memoize the result of calling `callable`. At
+    present `at_least_once` DOES NOT retry `callable` automatically,
+    but when the workflow is retried if `callable` has not succeeded
+    and the result has not been memoized then it will be retried.
 
     `type=` is optional: when omitted, `callable`'s return
     annotation is used. Falls back to `type(None)` if there's
