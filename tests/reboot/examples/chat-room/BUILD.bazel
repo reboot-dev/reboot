@@ -169,3 +169,30 @@ sh_test_in_working_directory(
     tags = ["exclusive"],
     working_directory = "reboot/examples/chat-room/",
 )
+
+# Native end-to-end test: runs the real app on a headless Android
+# emulator (KVM-accelerated) and drives it with Maestro against a real
+# Reboot backend. See `mobile/.tests/maestro_test.sh`. This is NOT
+# hermetic: it needs the host's `/dev/kvm`, a single emulator, and a
+# long-running Metro/Expo + backend. Hence `manual`, `local`/`no-sandbox`/`no-remote` (needs the device + KVM,
+# can't run on remote executors), and `exclusive` (single emulator +
+# port 9991). It only runs on x86_64 Linux with `/dev/kvm`, so
+# `macos_not_supported` excludes the macOS jobs and `requires-linux-x86`
+# excludes the arm64 jobs. The Android SDK + emulator + Maestro come
+# from the devcontainer image (see `public/Dockerfile`).
+sh_test_in_working_directory(
+    name = "maestro_test",
+    size = "large",
+    data = mobile_test_packages + [
+        "//reboot/examples/chat-room:everything",
+    ],
+    env = mobile_env,
+    script = "mobile/.tests/maestro_test.sh",
+    tags = [
+        "exclusive",
+        "local",
+        "manual",
+        "requires-linux-x86",
+    ],
+    working_directory = "reboot/examples/chat-room/",
+)

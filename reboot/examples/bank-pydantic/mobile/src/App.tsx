@@ -34,11 +34,19 @@ const ChipPicker = ({
   selected,
   onSelect,
   emptyText,
+  testIDPrefix,
 }: {
-  options: { value: string; label: string }[];
+  // Each option may carry a `testID` suffix; it defaults to `value`,
+  // but pickers whose `value` is a server-generated id (e.g. an account
+  // id) can supply a stable, human-known suffix instead.
+  options: { value: string; label: string; testID?: string }[];
   selected: string;
   onSelect: (value: string) => void;
   emptyText: string;
+  // Prefix for each chip's `testID` so the same chip in different
+  // pickers (e.g. the transfer "from" and "to" rows) stays uniquely
+  // addressable in end-to-end tests.
+  testIDPrefix: string;
 }) => {
   if (options.length === 0) {
     return <Text style={styles.informationText}>{emptyText}</Text>;
@@ -49,11 +57,13 @@ const ChipPicker = ({
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.chipRow}
     >
-      {options.map(({ value, label }) => {
+      {options.map((option) => {
+        const { value, label } = option;
         const isSelected = value === selected;
         return (
           <Pressable
             key={value}
+            testID={`${testIDPrefix}-${option.testID ?? value}`}
             style={[styles.chip, isSelected && styles.chipSelected]}
             onPress={() => onSelect(value)}
           >
@@ -92,12 +102,15 @@ const Button = ({
   text,
   onPress,
   disabled,
+  testID,
 }: {
   text: string;
   onPress: () => void;
   disabled?: boolean;
+  testID?: string;
 }) => (
   <Pressable
+    testID={testID}
     style={[
       styles.button,
       disabled ? styles.buttonDisabled : styles.buttonEnabled,
@@ -127,6 +140,7 @@ const CreateCustomer = ({ bank }: { bank: UseBankApi }) => {
     <Section title="Create New Customer">
       <Label text="Customer ID" />
       <TextInput
+        testID="customer-id-input"
         style={styles.textInput}
         value={newCustomerId}
         onChangeText={setNewCustomerId}
@@ -136,6 +150,7 @@ const CreateCustomer = ({ bank }: { bank: UseBankApi }) => {
         autoCorrect={false}
       />
       <Button
+        testID="create-customer-button"
         text="Create Customer"
         onPress={handleCreateCustomer}
         disabled={newCustomerId === ""}
@@ -177,9 +192,11 @@ const OpenAccount = ({
         selected={customerId}
         onSelect={setCustomerId}
         emptyText="No customers yet."
+        testIDPrefix="open-account-customer"
       />
       <Label text="Initial Deposit ($)" />
       <TextInput
+        testID="initial-deposit-input"
         style={styles.textInput}
         value={initialDeposit}
         onChangeText={setInitialDeposit}
@@ -187,6 +204,7 @@ const OpenAccount = ({
         keyboardType="numeric"
       />
       <Button
+        testID="add-account-button"
         text="Add Account"
         onPress={handleAddAccount}
         disabled={customerId === ""}
@@ -208,6 +226,10 @@ const Transfer = ({ bank }: { bank: UseBankApi }) => {
     customer.accounts.map((account) => ({
       value: account.accountId,
       label: `${customer.customerId} / ${account.accountId}`,
+      // The account id is server-generated, so address the chip by its
+      // owning customer in end-to-end test, which create one account
+      // per customer.
+      testID: customer.customerId,
     }))
   );
 
@@ -238,6 +260,7 @@ const Transfer = ({ bank }: { bank: UseBankApi }) => {
         selected={fromAccountId}
         onSelect={setFromAccountId}
         emptyText="No accounts yet."
+        testIDPrefix="transfer-from"
       />
       <Label text="To Account" />
       <ChipPicker
@@ -245,9 +268,11 @@ const Transfer = ({ bank }: { bank: UseBankApi }) => {
         selected={toAccountId}
         onSelect={setToAccountId}
         emptyText="No accounts yet."
+        testIDPrefix="transfer-to"
       />
       <Label text="Amount ($)" />
       <TextInput
+        testID="transfer-amount-input"
         style={styles.textInput}
         value={amount}
         onChangeText={setAmount}
@@ -255,6 +280,7 @@ const Transfer = ({ bank }: { bank: UseBankApi }) => {
         keyboardType="numeric"
       />
       <Button
+        testID="transfer-button"
         text="Transfer Funds"
         onPress={handleTransfer}
         disabled={!ready}
@@ -274,7 +300,10 @@ const AccountRow = ({
 }) => (
   <View style={styles.accountRow}>
     <Text style={styles.accountId}>{accountId}</Text>
-    <Text style={[styles.balance, pending && styles.balancePending]}>
+    <Text
+      testID="account-balance"
+      style={[styles.balance, pending && styles.balancePending]}
+    >
       ${balance}
     </Text>
   </View>

@@ -28,7 +28,9 @@ const REBOOT_URL =
 const Message = ({ text }: { text: string }) => {
   return (
     <View style={styles.message}>
-      <Text style={styles.messageText}>{text}</Text>
+      <Text testID="message-text" style={styles.messageText}>
+        {text}
+      </Text>
     </View>
   );
 };
@@ -82,6 +84,7 @@ const ChatRoom = () => {
     <View style={styles.container}>
       <View style={styles.inputRow}>
         <TextInput
+          testID="message-input"
           style={styles.textInput}
           onChangeText={setMessage}
           onSubmitEditing={handleSend}
@@ -90,6 +93,7 @@ const ChatRoom = () => {
           returnKeyType="send"
         />
         <Pressable
+          testID="send-button"
           style={[
             styles.button,
             message === "" ? styles.buttonDisabled : styles.buttonEnabled,

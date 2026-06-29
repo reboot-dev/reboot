@@ -319,11 +319,11 @@ RUN set -e; \
 # Install `ngrok`, useful in testing MCP servers from non-local clients
 # like `claude.ai` - or to intercept traffic for inspection.
 RUN curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
-  | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null \
-  && echo "deb https://ngrok-agent.s3.amazonaws.com bookworm main" \
-  | sudo tee /etc/apt/sources.list.d/ngrok.list \
-  && sudo apt update \
-  && sudo apt install ngrok
+    | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null \
+    && echo "deb https://ngrok-agent.s3.amazonaws.com bookworm main" \
+    | sudo tee /etc/apt/sources.list.d/ngrok.list \
+    && sudo apt update \
+    && sudo apt install ngrok
 
 # Ensure presence of relevant system groups.
 RUN groupadd -f --system docker
@@ -562,8 +562,8 @@ ARG KREW_VERSION=v0.4.4
 ENV KREW_ROOT=/opt/krew
 RUN set -e; \
     case "${TARGETARCH}" in \
-        amd64|arm64) ;; \
-        *) echo "Unsupported arch for krew: ${TARGETARCH}" >&2; exit 1 ;; \
+    amd64|arm64) ;; \
+    *) echo "Unsupported arch for krew: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
     TMPDIR="$(mktemp -d)" \
     && cd "${TMPDIR}" \
@@ -588,6 +588,47 @@ RUN npm install -g @openai/codex
 USER $UNAME
 RUN codex mcp add chrome-devtools \
     -- npx --yes chrome-devtools-mcp@latest --headless=true
+USER root
+
+# Android SDK + emulator + Maestro, for the React Native (Expo) example
+# end-to-end tests. Those tests boot a headless, KVM-accelerated Android
+# emulator and drive the app with Maestro. The emulator needs
+# `/dev/kvm`; we add `vscode` to the `kvm` group (gid 109, the device's
+# group at runtime) so it can use it without sudo. The AVD itself is
+# created by the test script (cheap, and keeps the AVD/home paths out of
+# the image). The emulator and its system image are x86_64-only and the
+# test is tagged `requires-linux-x86`, so we install this only on amd64.
+ENV ANDROID_HOME=/opt/android-sdk
+ENV PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/emulator:/home/${UNAME}/.maestro/bin:${PATH}"
+ARG ANDROID_CMDLINE_TOOLS_VERSION=11076708
+ARG ANDROID_API=34
+RUN if [ "${TARGETARCH}" = "amd64" ]; then \
+    set -e; \
+    apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-17-jdk-headless unzip libpulse0 libnss3 libxcursor1 \
+    libxcomposite1 libasound2 libgl1 \
+    && rm -rf /var/lib/apt/lists/*; \
+    mkdir -p "${ANDROID_HOME}/cmdline-tools"; \
+    curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_CMDLINE_TOOLS_VERSION}_latest.zip" -o /tmp/cmdline-tools.zip; \
+    unzip -q /tmp/cmdline-tools.zip -d "${ANDROID_HOME}/cmdline-tools"; \
+    mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${ANDROID_HOME}/cmdline-tools/latest"; \
+    rm /tmp/cmdline-tools.zip; \
+    yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null; \
+    "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+    "platform-tools" "emulator" \
+    "platforms;android-${ANDROID_API}" \
+    "system-images;android-${ANDROID_API};google_apis;x86_64" >/dev/null; \
+    chown -R ${UNAME}: "${ANDROID_HOME}"; \
+    groupadd -g 109 kvm 2>/dev/null || true; \
+    usermod -aG kvm ${UNAME}; \
+    fi
+
+# Maestro CLI (installs into the target user's home; needs the JDK
+# above). Only on amd64, matching the SDK install above.
+USER $UNAME
+RUN if [ "${TARGETARCH}" = "amd64" ]; then \
+    curl -fsSL "https://get.maestro.mobile.dev" | bash; \
+    fi
 USER root
 
 ###############################################################################

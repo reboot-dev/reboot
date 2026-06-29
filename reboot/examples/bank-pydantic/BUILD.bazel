@@ -12,6 +12,7 @@ filegroup(
             # as manually following the steps of the `README.md` file, but which
             # are not part of the "source code" of this repository.
             ".venv/**/*",
+            ".rbt/**/*",
             "backend/api/**/*",
             "web/node_modules/**/*",
             "web/dist/**/*",

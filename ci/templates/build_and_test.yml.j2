@@ -128,6 +128,35 @@ jobs:
           //tests/...
 <% endif %>
 
+  test-react-native-maestro:
+    name: Test React Native mobile app (Maestro)
+    uses: ./.github/workflows/devcontainer.yml
+    permissions:
+      packages: write
+    secrets: inherit
+    with:
+      cancel-workflow-on-failure: false
+      # The Maestro end-to-end test boots a hardware-accelerated
+      # Android emulator, which requires `/dev/kvm`. Our Depot runners
+      # don't expose KVM, so this one job runs on a GitHub-hosted runner
+      # (which does); the rest of CI stays on Depot. The devcontainer
+      # already maps `/dev/kvm` into the container (see the `runArgs` in
+      # `.devcontainer/devcontainer.json`). We use the larger runner
+      # because building the workstation image plus running the emulator
+      # exhausts the disk on a standard GitHub-hosted runner.
+      runs-on: 16_core_GitHub_hosted
+      run: |
+        # Fail if any part of this workflow fails.
+        set -eux
+<% if is_mono %>
+        cd public
+<% endif %>
+        # The targets are tagged `manual`, so name them explicitly
+        # rather than relying on a wildcard expansion to pick them up.
+        bazel test --test_output=streamed \
+          //tests/reboot/examples/chat-room:maestro_test \
+          //tests/reboot/examples/bank-pydantic:maestro_test
+
   build-reboot-linux-arm64:
     name: Build public repo for Linux arm64
     uses: ./.github/workflows/devcontainer.yml
@@ -278,6 +307,7 @@ jobs:
         QUERY="$QUERY \
         except attr(\"tags\",\"requires-docker\",//tests/...) \
         except attr(\"tags\",\"macos_not_supported\",//tests/...) \
+        except attr(\"tags\",\"requires-linux-x86\",//tests/...) \
         except attr(\"tags\",\"manual\",//tests/...)"
 
         # 3) If this is a PR labelled "reboot-release", also drop flaky
