@@ -63,7 +63,7 @@ from reboot.settings import (
     ENVVAR_LOCAL_ENVOY_USE_TLS,
     ENVVAR_RBT_DEV,
     ENVVAR_RBT_EFFECT_VALIDATION,
-    ENVVAR_RBT_MCP_FRONTEND_HOST,
+    ENVVAR_RBT_FRONTEND_HOST,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_NODEJS,
     ENVVAR_RBT_SERVERS,
@@ -199,7 +199,7 @@ def _register_dev_run(parser: ArgumentParser):
     )
 
     parser.subcommand('dev run').add_argument(
-        '--mcp-frontend-host',
+        '--frontend-host',
         type=str,
         help=(
             'URL of the MCP frontend dev server '
@@ -1317,8 +1317,8 @@ async def __dev_run(
             dot_rbt_dev_directory(args, parser) / args.application_name
         )
 
-    if args.mcp_frontend_host:
-        env[ENVVAR_RBT_MCP_FRONTEND_HOST] = args.mcp_frontend_host
+    if args.frontend_host:
+        env[ENVVAR_RBT_FRONTEND_HOST] = args.frontend_host
 
     health_check_task: Optional[asyncio.Task] = None
 

@@ -60,7 +60,7 @@ from reboot.mcp.iframe import (
     host_needs_cache_busting_iframe,
     host_supports_iframe,
 )
-from reboot.settings import ENVVAR_RBT_MCP_FRONTEND_HOST
+from reboot.settings import ENVVAR_RBT_FRONTEND_HOST
 from typing import Any
 from urllib.parse import urlparse
 
@@ -72,7 +72,7 @@ _MAX_UI_CACHE_ENTRIES = 16
 
 # Per-process random token used as the cache-bust signature in
 # HMR mode (`--config=hmr` / `--config=default`, i.e. when
-# ENVVAR_RBT_MCP_FRONTEND_HOST is set). `dev_inline_html`
+# ENVVAR_RBT_FRONTEND_HOST is set). `dev_inline_html`
 # bootstraps content live from the Vite dev server, so there
 # is nothing on disk to hash; a per-process UUID gives host-
 # side caches a fresh URI on every server restart, which
@@ -264,7 +264,7 @@ def compute_ui_cache_bust(
 
     We are in one of the following three modes:
 
-    1. **HMR mode** (`ENVVAR_RBT_MCP_FRONTEND_HOST` set). `ui_html`
+    1. **HMR mode** (`ENVVAR_RBT_FRONTEND_HOST` set). `ui_html`
        serves Vite's live HTML — via `dev_iframe_html` or
        `dev_inline_html`, depending on the host — so there's
        nothing on disk to hash. Returns `_STARTUP_CACHE_BUST_TOKEN`,
@@ -290,7 +290,7 @@ def compute_ui_cache_bust(
     Hash is not cryptographic — just enough entropy (12 hex =
     48 bits) to distinguish builds.
     """
-    if os.environ.get(ENVVAR_RBT_MCP_FRONTEND_HOST):
+    if os.environ.get(ENVVAR_RBT_FRONTEND_HOST):
         return _STARTUP_CACHE_BUST_TOKEN
 
     if isinstance(project_root, str):
@@ -522,7 +522,7 @@ def dev_inline_html(
     ui_path: str,
     reboot_url: str,
     ui_name: str,
-    mcp_frontend_host: str,
+    frontend_host: str,
     project_root: Path,
 ) -> str:
     """
@@ -583,7 +583,7 @@ def dev_inline_html(
     # This fetch goes straight to the Vite dev server, bypassing Envoy —
     # there's no point routing the server-side request through our own
     # proxy.
-    fetch_url = f"{mcp_frontend_host.rstrip('/')}{ui_url_path}/index.html"
+    fetch_url = f"{frontend_host.rstrip('/')}{ui_url_path}/index.html"
     request = urllib.request.Request(fetch_url)
     with urllib.request.urlopen(request) as response:
         html = response.read().decode("utf-8")
@@ -622,7 +622,7 @@ def ui_html(
 ) -> str:
     """Get HTML for a UI.
 
-    In dev mode (`--mcp-frontend-host`), serves Vite's live HTML
+    In dev mode (`--frontend-host`), serves Vite's live HTML
     for HMR: inline with rewritten URLs for Claude.ai (see
     `dev_inline_html`) or wrapped in a nested relay iframe for
     every other client (see `dev_iframe_html`). In production,
@@ -720,8 +720,8 @@ def ui_html(
     elif isinstance(project_root, str):
         project_root = Path(project_root)
 
-    mcp_frontend_host = os.environ.get(ENVVAR_RBT_MCP_FRONTEND_HOST)
-    if mcp_frontend_host:
+    frontend_host = os.environ.get(ENVVAR_RBT_FRONTEND_HOST)
+    if frontend_host:
         # Dev mode: deliver hot module reloading. Two strategies, picked
         # by whether the host can render iframes:
         #
@@ -744,7 +744,7 @@ def ui_html(
             ui_path,
             reboot_url,
             ui_name,
-            mcp_frontend_host,
+            frontend_host,
             project_root,
         )
 

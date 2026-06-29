@@ -37,7 +37,7 @@ dev run --default-config=hmr
 
 # Envoy routes "/\_\_/web/\*\*" to Vite for HMR support.
 
-dev run:hmr --mcp-frontend-host=http://localhost:4444
+dev run:hmr --frontend-host=http://localhost:4444
 
 # Dist mode: serve pre-built artifacts from "web/dist/" (no Vite HMR).
 
@@ -45,7 +45,7 @@ dev run:hmr --mcp-frontend-host=http://localhost:4444
 
 # Requires: cd web && npm run build
 
-dev run:dist --mcp-frontend-host=""
+dev run:dist --frontend-host=""
 
 # When expunging, expunge that state we've saved.
 

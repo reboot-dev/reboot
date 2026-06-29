@@ -134,10 +134,10 @@ ENVVAR_RBT_STATE_DIRECTORY = 'RBT_STATE_DIRECTORY'
 ENVVAR_RBT_NODEJS = 'RBT_NODEJS'
 ENVVAR_RBT_SERVERS = 'RBT_SERVERS'
 
-# URL of the MCP frontend dev server for HMR support.
+# URL of the frontend dev server (web + MCP) for HMR support.
 # Format: "http://host:port" (e.g., "http://localhost:4444").
 # When set, Envoy routes "/__/web/**" to this server.
-ENVVAR_RBT_MCP_FRONTEND_HOST = 'RBT_MCP_FRONTEND_HOST'
+ENVVAR_RBT_FRONTEND_HOST = 'RBT_FRONTEND_HOST'
 
 # Environment variable indicating that `rbt` is being invoked from
 # Node.js.

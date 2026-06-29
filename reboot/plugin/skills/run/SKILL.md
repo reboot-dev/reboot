@@ -42,7 +42,7 @@ strongest first.
 - An API file under `api/` uses `mcp=Tool()`, `mcp=None`, or `UI(`
   (the `UI()` method type).
 - `.rbtrc` has a `dev run --default-config=hmr` line together with
-  a `dev run:hmr --mcp-frontend-host=...` line.
+  a `dev run:hmr --frontend-host=...` line.
 - The frontend uses the nested `web/ui/<name>/index.html` layout.
 
 **Web App** — all of:

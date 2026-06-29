@@ -49,7 +49,7 @@ from reboot.run_environments import on_cloud
 from reboot.settings import (
     ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES,
     ENVVAR_RBT_DEV,
-    ENVVAR_RBT_MCP_FRONTEND_HOST,
+    ENVVAR_RBT_FRONTEND_HOST,
     LocalEnvoyMode,
 )
 from urllib.parse import urlparse
@@ -81,42 +81,42 @@ class ClusterKind(enum.Enum):
 ZERO_SECONDS = Duration()
 ZERO_SECONDS.FromSeconds(0)
 
-# MCP frontend routing configuration.
-MCP_FRONTEND_CLUSTER_NAME = "mcp_frontend"
+# Frontend routing configuration.
+FRONTEND_CLUSTER_NAME = "frontend"
 
 
 @dataclass
-class McpFrontendConfig:
-    """Configuration for MCP frontend host routing."""
+class FrontendConfig:
+    """Configuration for frontend host routing."""
     host: str
     port: int
     original_url: str
 
 
-def _get_mcp_frontend_config() -> McpFrontendConfig | None:
-    """Get MCP frontend host configuration from environment.
+def _get_frontend_config() -> FrontendConfig | None:
+    """Get frontend host configuration from environment.
 
-    Parses `RBT_MCP_FRONTEND_HOST` env var (e.g., "http://localhost:4444")
+    Parses `RBT_FRONTEND_HOST` env var (e.g., "http://localhost:4444")
     to extract port for Envoy routing to web dev server.
 
     Returns None if not configured or not in dev mode.
     """
     if os.environ.get(ENVVAR_RBT_DEV) != "true":
         return None
-    frontend_url = os.environ.get(ENVVAR_RBT_MCP_FRONTEND_HOST)
+    frontend_url = os.environ.get(ENVVAR_RBT_FRONTEND_HOST)
     if not frontend_url:
         return None
 
     parsed = urlparse(frontend_url)
     if not parsed.port:
         raise ValueError(
-            f"RBT_MCP_FRONTEND_HOST must include a port; got '{frontend_url}'"
+            f"RBT_FRONTEND_HOST must include a port; got '{frontend_url}'"
         )
     if not parsed.hostname:
         raise ValueError(
-            f"RBT_MCP_FRONTEND_HOST must include a hostname; got '{frontend_url}'"
+            f"RBT_FRONTEND_HOST must include a hostname; got '{frontend_url}'"
         )
-    return McpFrontendConfig(
+    return FrontendConfig(
         host=parsed.hostname,
         port=parsed.port,
         original_url=frontend_url,
@@ -490,7 +490,7 @@ def _routes_for_server(
     ]
 
 
-def _mcp_frontend_routes() -> list[route_components_pb2.Route]:
+def _frontend_routes() -> list[route_components_pb2.Route]:
     """Routes for web dev server assets ("/__/web/**").
 
     MCP Apps use a double iframe: the outer `srcdoc` contains an inner
@@ -498,9 +498,9 @@ def _mcp_frontend_routes() -> list[route_components_pb2.Route]:
     to the web dev server. Envoy handles WebSocket upgrades (for Hot Module Replacement)
     transparently.
 
-    Returns empty list if MCP frontend is not configured.
+    Returns empty list if the frontend is not configured.
     """
-    config = _get_mcp_frontend_config()
+    config = _get_frontend_config()
     if config is None:
         return []
 
@@ -511,7 +511,7 @@ def _mcp_frontend_routes() -> list[route_components_pb2.Route]:
             prefix="/__/web/",
         ),
         route=route_components_pb2.RouteAction(
-            cluster=MCP_FRONTEND_CLUSTER_NAME,
+            cluster=FRONTEND_CLUSTER_NAME,
         ),
         typed_per_filter_config={
             GRPC_JSON_TRANSCODER_HTTP_FILTER_NAME:
@@ -522,14 +522,14 @@ def _mcp_frontend_routes() -> list[route_components_pb2.Route]:
     return [web_route]
 
 
-def _mcp_frontend_cluster(
+def _frontend_cluster(
     local_envoy_mode: LocalEnvoyMode,
 ) -> cluster_pb2.Cluster | None:
-    """Cluster for MCP frontend host (web dev server).
+    """Cluster for the frontend host (Vite in HMR, static server in dist).
 
-    Returns None if MCP frontend is not configured.
+    Returns None if the frontend is not configured.
     """
-    config = _get_mcp_frontend_config()
+    config = _get_frontend_config()
     if config is None:
         return None
 
@@ -545,7 +545,7 @@ def _mcp_frontend_cluster(
             host = "localhost"
 
     return cluster_pb2.Cluster(
-        name=MCP_FRONTEND_CLUSTER_NAME,
+        name=FRONTEND_CLUSTER_NAME,
         type=cluster_pb2.Cluster.STRICT_DNS,
         lb_policy=cluster_pb2.Cluster.ROUND_ROBIN,
         common_http_protocol_options=protocol_pb2.HttpProtocolOptions(
@@ -554,7 +554,7 @@ def _mcp_frontend_cluster(
         dns_lookup_family=cluster_pb2.Cluster.V4_ONLY,
         # Frontend is HTTP/1.1 (WebSockets not compatible with HTTP/2).
         load_assignment=endpoint_pb2.ClusterLoadAssignment(
-            cluster_name=MCP_FRONTEND_CLUSTER_NAME,
+            cluster_name=FRONTEND_CLUSTER_NAME,
             endpoints=[
                 endpoint_components_pb2.LocalityLbEndpoints(
                     lb_endpoints=[
@@ -575,14 +575,13 @@ def _mcp_frontend_cluster(
     )
 
 
-def _mcp_frontend_error_filters(
-) -> list[http_connection_manager_pb2.HttpFilter]:
+def _frontend_error_filters() -> list[http_connection_manager_pb2.HttpFilter]:
     """Lua filter that replaces envoy's raw 503 for the
     `/__/web/` dev-server route with a friendly HTML page.
 
-    Returns an empty list if MCP frontend is not configured.
+    Returns an empty list if the frontend is not configured.
     """
-    config = _get_mcp_frontend_config()
+    config = _get_frontend_config()
     if config is None:
         return []
 
@@ -631,14 +630,14 @@ def _mcp_frontend_error_filters(
         ' or ""\n'
         '  if string.sub(p, 1, 8) == "/__/web/" then\n'
         '    request_handle:streamInfo():dynamicMetadata()'
-        ':set("reboot", "mcp_frontend_request", "1")\n'
+        ':set("reboot", "frontend_request", "1")\n'
         '  end\n'
         'end\n'
         '\n'
         'function envoy_on_response(response_handle)\n'
         '  local md = response_handle:streamInfo()'
         ':dynamicMetadata():get("reboot")\n'
-        '  if md and md["mcp_frontend_request"] == "1" and\n'
+        '  if md and md["frontend_request"] == "1" and\n'
         '     response_handle:headers():get(":status")'
         ' == "503" then\n'
         '    response_handle:headers():replace(\n'
@@ -651,7 +650,7 @@ def _mcp_frontend_error_filters(
 
     return [
         http_connection_manager_pb2.HttpFilter(
-            name="reboot.mcp_frontend_error_page",
+            name="reboot.frontend_error_page",
             typed_config=_lua_any(lua_source),
         )
     ]
@@ -725,9 +724,9 @@ def _filter_http_connection_manager(
                         expose_headers="grpc-status,grpc-message",
                     ),
                     routes=(
-                        # MCP frontend routes (if configured) must come
+                        # Frontend routes (if configured) must come
                         # first since they match specific prefixes.
-                        _mcp_frontend_routes() + [
+                        _frontend_routes() + [
                             route for server in servers for kind in [
                                 # Always list the route for the websocket
                                 # first, since its matching is more specific.
@@ -768,9 +767,9 @@ def _filter_http_connection_manager(
                 file_descriptor_set=file_descriptor_set,
             ),
         ] +
-        # Friendly error page when the MCP web dev server
+        # Friendly error page when the frontend dev server
         # is unreachable (only active when configured).
-        _mcp_frontend_error_filters() + [
+        _frontend_error_filters() + [
             _http_filter_router(),
         ]
     )
@@ -998,8 +997,8 @@ def clusters(
 ) -> list[cluster_pb2.Cluster]:
     result: list[cluster_pb2.Cluster] = []
 
-    # Add MCP frontend cluster if configured.
-    frontend_cluster = _mcp_frontend_cluster(local_envoy_mode)
+    # Add frontend cluster if configured.
+    frontend_cluster = _frontend_cluster(local_envoy_mode)
     if frontend_cluster is not None:
         result.append(frontend_cluster)
 

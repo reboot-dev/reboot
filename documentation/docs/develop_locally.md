@@ -221,7 +221,7 @@ generate --react=web/api
 generate --react-extensions
 
 # Proxy UIs through Vite for hot module replacement.
-dev run:hmr --mcp-frontend-host=http://localhost:4444
+dev run:hmr --frontend-host=http://localhost:4444
 
 # Default to HMR mode when --config is not specified.
 dev run --default-config=hmr
@@ -230,7 +230,7 @@ dev run --default-config=hmr
 | Flag | Description |
 | --- | --- |
 | `generate --react-extensions` | Generates extensions that enable React hooks to work in both AI chat and browser contexts. |
-| `dev run --mcp-frontend-host=<url>` | Specifies the frontend proxy host. Set to the Vite dev server URL (e.g., `http://localhost:4444`) for HMR during development, or `""` for production builds served from `web/dist/`. |
+| `dev run --frontend-host=<url>` | Specifies the frontend proxy host. Set to the Vite dev server URL (e.g., `http://localhost:4444`) for HMR during development, or `""` for production builds served from `web/dist/`. |
 | `dev run --default-config=<name>` | Sets the default configuration profile when `--config` is not specified. |
 | `dev run:hmr` / `dev run:dist` | Named configurations. Flags prefixed with `dev run:<name>` only apply when `--config=<name>` is used. |
 

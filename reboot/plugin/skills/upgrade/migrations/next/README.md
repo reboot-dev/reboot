@@ -6,7 +6,9 @@ change. If your PR changes something that existing applications must
 react to — an API rename, a changed default, a new required file, a
 `.rbtrc` change, anything a `reboot==<old>` app would have to do
 beyond bumping its pin and regenerating — add a fragment **in the
-same PR**.
+same PR**. A fragment is only warranted when an existing app must
+_do_ something; a change that asks nothing of existing apps needs
+no fragment. Migration fragments are not a changelog.
 
 One file per PR, named `<short-slug>.md` (e.g. `rename-foo-option.md`;
 separate files avoid merge conflicts between concurrent PRs). Write

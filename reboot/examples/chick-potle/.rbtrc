@@ -26,19 +26,19 @@ dev run --default-config=hmr
 # Hot Module Replacement (HMR): Vite dev server proxied through Envoy.
 # Run Vite in a separate terminal: cd web && npm run dev
 # Envoy routes "/__/web/**" to Vite for HMR support.
-dev run:hmr --mcp-frontend-host=http://localhost:4444
+dev run:hmr --frontend-host=http://localhost:4444
 
 # Dist mode: serve pre-built artifacts from "web/dist/" (no Vite HMR).
 # Usage: uv run rbt dev run --config=dist
 # Requires: cd web && npm run build
-dev run:dist --mcp-frontend-host=""
+dev run:dist --frontend-host=""
 
 # When expunging, expunge that state we've saved.
 dev expunge --application-name=chick-potle
 
 # Production (`rbt serve run`) settings, used by the Dockerfile
 # when deploying to the Reboot Cloud. In production `web/dist/`
-# is served from disk, so no `--mcp-frontend-host` is needed
+# is served from disk, so no `--frontend-host` is needed
 # (that flag is dev-only anyway).
 serve run --python
 serve run --application-name=chick-potle
