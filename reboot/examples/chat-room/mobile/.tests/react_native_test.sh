@@ -8,8 +8,7 @@
 # client. This guards that the `@reboot-dev/reboot-react`/
 # `@reboot-dev/reboot-web` client keeps building and type-checking under
 # React Native's toolchain. The runtime React Native API compatibility
-# itself is covered by the fast
-# unit suite at `tests/reboot/web/test_react_native`.
+# itself is covered by the Maestro end-to-end test, `maestro_test.sh`.
 
 set -e # Exit if a command exits with an error.
 set -u # Treat expanding an unset variable as an error.

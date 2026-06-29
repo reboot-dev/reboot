@@ -13,11 +13,15 @@
 # `testID` (see `App.tsx`), not arbitrary on-screen text.
 appId: host.exp.exponent
 ---
-# Dismiss Expo Go's first-run onboarding "developer menu" bottom sheet.
-# (See the chat-room flow for the full explanation: the sheet's scrim
-# swallows taps, none of its elements expose a testID, so we match its
-# `@gorhom/bottom-sheet` container by the "Bottom Sheet" accessibility
-# label and dismiss it with the library's downward-swipe gesture.)
+# On a fresh Expo Go install, the first project open shows Expo Go's
+# onboarding "developer menu" bottom sheet over the app, and its scrim
+# swallows taps meant for the app. None of the sheet's elements expose a
+# testID, so we match it by the "Bottom Sheet" accessibility label on
+# its container — that label is Expo Go's, from the `@gorhom/bottom-sheet`
+# React Native library it renders the dev menu with (its container
+# defaults `accessibilityLabel` to "Bottom Sheet"). We dismiss it with a
+# downward swipe (the library's built-in dismiss gesture): one motion
+# that slides the sheet and its scrim away and returns to the app.
 - runFlow:
     when:
       visible: "Bottom Sheet"

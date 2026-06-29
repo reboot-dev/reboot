@@ -132,8 +132,8 @@ rm -f "${RBT_STDIN_FIFO}"
 rbt ${RBT_FLAGS} dev run <&"${RBT_STDIN_FD}" > "${RBT_LOG}" 2>&1 &
 backend_pid=$!
 # Wait for the backend to serve traffic on the default port 9991.
-until curl -s -o /dev/null --max-time 3 http://localhost:9991/__/inspect; do
-  sleep 2
+until curl -s -o /dev/null --max-time 3 http://localhost:9991/; do
+  sleep 5
 done
 
 # Install the mobile app's JS dependencies, overlaying the locally
@@ -184,7 +184,7 @@ until grep -q "Android Bundled" "${EXPO_LOG}" 2> /dev/null; do
   sleep 4
 done
 # Give the app a moment to render and the reactive read to settle.
-sleep 12
+sleep 10
 
 # Drive the real app and assert the reactive read + send round-trips.
 maestro test .maestro/flow.yaml

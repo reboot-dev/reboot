@@ -12,7 +12,7 @@
 #   creating customers, opening accounts, and transferring funds
 #   round-trips through the backend and re-renders.
 #
-# Requirements (baked into the devcontainer image, see `public/Dockerfile`):
+# Requirements (baked into the devcontainer image's `Dockerfile`):
 # a JDK, the Android SDK + emulator + a system image, Maestro, and
 # `/dev/kvm` access (the `vscode` user is in the `kvm` group). This is
 # intentionally NOT hermetic and is tagged `manual`/`local`/`exclusive`
@@ -36,8 +36,8 @@ export HOME="${HOME:-/home/vscode}"
 # Bazel's sanitized `PATH` doesn't include the Android SDK or Maestro,
 # so locate them explicitly rather than relying on the image's `ENV`.
 # The devcontainer image installs the SDK to `/opt/android-sdk` and
-# Maestro to `~/.maestro` (see `public/Dockerfile`); fall back to a
-# `~/android-sdk` install if present.
+# Maestro to `~/.maestro`; fall back to a `~/android-sdk` install if
+# present.
 if [ -z "${ANDROID_HOME:-}" ]; then
   if [ -d /opt/android-sdk ]; then
     ANDROID_HOME=/opt/android-sdk
@@ -133,8 +133,8 @@ rm -f "${RBT_STDIN_FIFO}"
 rbt ${RBT_FLAGS} dev run <&"${RBT_STDIN_FD}" > "${RBT_LOG}" 2>&1 &
 backend_pid=$!
 # Wait for the backend to serve traffic on the default port 9991.
-until curl -s -o /dev/null --max-time 3 http://localhost:9991/__/inspect; do
-  sleep 2
+until curl -s -o /dev/null --max-time 3 http://localhost:9991/; do
+  sleep 5
 done
 
 # Install the mobile app's JS dependencies, overlaying the locally
@@ -185,7 +185,7 @@ until grep -q "Android Bundled" "${EXPO_LOG}" 2> /dev/null; do
   sleep 4
 done
 # Give the app a moment to render and the reactive read to settle.
-sleep 12
+sleep 10
 
 # Drive the real app and assert the create/open/transfer round-trips.
 maestro test .maestro/flow.yaml

@@ -437,11 +437,14 @@ async def generate_direct(
     # generation happen normally and copy its output into the mobile
     # directory once `protoc` is done; otherwise we generate the client
     # straight into the mobile directory by treating it as the React
-    # output.
+    # output. When both point at the same directory the React generation
+    # already writes into it, so there's nothing to copy (and copying a
+    # directory onto itself would error) — we just generate once.
     mobile_copy_from: Optional[str] = None
     if args.mobile is not None:
         if args.react is not None:
-            mobile_copy_from = args.react
+            if os.path.realpath(args.mobile) != os.path.realpath(args.react):
+                mobile_copy_from = args.react
         else:
             args.react = args.mobile
 

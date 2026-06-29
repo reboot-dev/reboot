@@ -68,6 +68,34 @@ class RbtGenerateTestCase(RbtGenerateBaseTestCase):
                 expected_files=[react_file],
             )
 
+    async def test_mobile_and_react_same_directory_generates_once(self):
+        # Pointing `--mobile` and `--react` at the same directory is
+        # allowed: the React client is generated into it, and the
+        # (now redundant) mobile copy is skipped rather than copying the
+        # directory onto itself. The result is a single generated client.
+        with tempfile.TemporaryDirectory() as root:
+            proto = await proto_file(
+                f'{root}/{DEFAULT_API_DIR}/{TEST_PACKAGE}',
+                TEST_PACKAGE,
+            )
+
+            await self.run_generate(
+                '--react=shared_out',
+                '--mobile=shared_out',
+                f'{DEFAULT_API_DIR}',
+                working_directory=root,
+            )
+
+            await self.expect_files(
+                directory=f'{root}/shared_out/{TEST_PACKAGE}',
+                expected_files=[
+                    os.path.basename(proto.name).replace(
+                        '.proto',
+                        '_rbt_react.ts',
+                    ),
+                ],
+            )
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

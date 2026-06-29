@@ -105,8 +105,7 @@ sh_test_in_working_directory(
 # PR), `local` (needs the host device + KVM, so neither sandboxed nor
 # run on a remote executor), `exclusive` (single emulator + port 9991),
 # and `requires-linux-x86` (the emulator/system image are x86_64-only).
-# The Android SDK + emulator + Maestro come from the devcontainer image
-# (see `public/Dockerfile`).
+# The Android SDK + emulator + Maestro come from the devcontainer image.
 sh_test_in_working_directory(
     name = "maestro_test",
     size = "large",
