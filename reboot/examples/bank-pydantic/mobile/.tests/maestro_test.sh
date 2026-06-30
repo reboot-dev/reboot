@@ -134,7 +134,7 @@ rbt ${RBT_FLAGS} dev run <&"${RBT_STDIN_FD}" > "${RBT_LOG}" 2>&1 &
 backend_pid=$!
 # Wait for the backend to serve traffic on the default port 9991.
 until curl -s -o /dev/null --max-time 3 http://localhost:9991/; do
-  sleep 5
+  sleep 1
 done
 
 # Install the mobile app's JS dependencies, overlaying the locally
@@ -169,7 +169,7 @@ setsid emulator -avd "${AVD_NAME}" -no-window -no-audio -no-snapshot \
 emulator_pid=$!
 adb wait-for-device
 until [ "$(adb shell getprop sys.boot_completed 2> /dev/null | tr -d '\r')" = "1" ]; do
-  sleep 5
+  sleep 1
 done
 
 # Load the app via Expo Go, pointed at the backend on the emulator's
@@ -182,10 +182,8 @@ setsid npx expo start --android > "${EXPO_LOG}" 2>&1 &
 expo_pid=$!
 # Wait for Metro to bundle and the app to load on the emulator.
 until grep -q "Android Bundled" "${EXPO_LOG}" 2> /dev/null; do
-  sleep 4
+  sleep 1
 done
-# Give the app a moment to render and the reactive read to settle.
-sleep 10
 
 # Drive the real app and assert the create/open/transfer round-trips.
 maestro test .maestro/flow.yaml

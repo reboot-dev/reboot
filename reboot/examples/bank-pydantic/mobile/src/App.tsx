@@ -16,8 +16,7 @@ import {
   type UseBankApi,
 } from "./api/bank/v1/pydantic/bank_rbt_react";
 
-// The web front end constructs the same state machine id, so the
-// mobile app shares its accounts and balances out of the box.
+// Identifier for the shared singleton bank state instance.
 const STATE_MACHINE_ID = "reboot-bank";
 
 // The Reboot server URL. Override with `EXPO_PUBLIC_REBOOT_URL` to
@@ -27,8 +26,12 @@ const STATE_MACHINE_ID = "reboot-bank";
 const REBOOT_URL =
   process.env.EXPO_PUBLIC_REBOOT_URL ?? "http://localhost:9991";
 
-// A horizontally scrolling row of selectable "chips". React Native has
-// no `<select>`, so we pick a customer or account by tapping a chip.
+// A wrapping row of selectable "chips". React Native has no `<select>`,
+// so we pick a customer or account by tapping a chip. The chips wrap to
+// new lines rather than scrolling horizontally, so every chip stays
+// reachable by the page's vertical scroll (a wide label like
+// `customer / account-id` would otherwise push later chips off the
+// right edge, out of reach of a vertical scroll).
 const ChipPicker = ({
   options,
   selected,
@@ -52,11 +55,7 @@ const ChipPicker = ({
     return <Text style={styles.informationText}>{emptyText}</Text>;
   }
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.chipRow}
-    >
+    <View style={styles.chipRow}>
       {options.map((option) => {
         const { value, label } = option;
         const isSelected = value === selected;
@@ -75,7 +74,7 @@ const ChipPicker = ({
           </Pressable>
         );
       })}
-    </ScrollView>
+    </View>
   );
 };
 
@@ -94,8 +93,10 @@ const Section = ({
   );
 };
 
-const Label = ({ text }: { text: string }) => (
-  <Text style={styles.label}>{text}</Text>
+const Label = ({ text, testID }: { text: string; testID?: string }) => (
+  <Text testID={testID} style={styles.label}>
+    {text}
+  </Text>
 );
 
 const Button = ({
@@ -129,16 +130,21 @@ const CreateCustomer = ({ bank }: { bank: UseBankApi }) => {
     if (newCustomerId === "") {
       return;
     }
-    const { aborted } = await bank.signUp({ customerId: newCustomerId });
+    // Clear the input synchronously, before awaiting. If we cleared it
+    // after the await instead, a rapid follow-up (e.g. creating another
+    // customer) could run while this request is in flight, and this
+    // clear would then clobber that next input.
+    const customerId = newCustomerId;
+    setNewCustomerId("");
+    const { aborted } = await bank.signUp({ customerId });
     if (aborted !== undefined) {
       console.warn(aborted.error.type, aborted.message);
     }
-    setNewCustomerId("");
   };
 
   return (
     <Section title="Create New Customer">
-      <Label text="Customer ID" />
+      <Label text="Customer ID" testID="customer-id-label" />
       <TextInput
         testID="customer-id-input"
         style={styles.textInput}
@@ -173,15 +179,23 @@ const OpenAccount = ({
     if (customerId === "") {
       return;
     }
+    // Capture and clear the form synchronously, before awaiting. If we
+    // cleared after the await instead, opening a second account quickly
+    // (as the end-to-end test does) would select the next customer while
+    // this request is in flight, and this clear would clobber that
+    // selection — so the next `add-account` would see `customerId === ""`
+    // and silently do nothing.
+    const requestedCustomerId = customerId;
+    const deposit = Number(initialDeposit);
+    setCustomerId("");
+    setInitialDeposit("");
     const { aborted } = await bank.openCustomerAccount({
-      customerId,
-      initialDeposit: Number(initialDeposit),
+      customerId: requestedCustomerId,
+      initialDeposit: deposit,
     });
     if (aborted !== undefined) {
       console.warn(aborted.error.type, aborted.message);
     }
-    setCustomerId("");
-    setInitialDeposit("");
   };
 
   return (
@@ -194,7 +208,7 @@ const OpenAccount = ({
         emptyText="No customers yet."
         testIDPrefix="open-account-customer"
       />
-      <Label text="Initial Deposit ($)" />
+      <Label text="Initial Deposit ($)" testID="initial-deposit-label" />
       <TextInput
         testID="initial-deposit-input"
         style={styles.textInput}
@@ -237,17 +251,20 @@ const Transfer = ({ bank }: { bank: UseBankApi }) => {
     if (fromAccountId === "" || toAccountId === "") {
       return;
     }
-    const { aborted } = await bank.transfer({
+    // Capture and clear the form synchronously, before awaiting, so a
+    // clear firing after the await can't clobber a follow-up selection.
+    const request = {
       fromAccountId,
       toAccountId,
       amount: Number(amount),
-    });
-    if (aborted !== undefined) {
-      console.warn(aborted.error.type, aborted.message);
-    }
+    };
     setFromAccountId("");
     setToAccountId("");
     setAmount("");
+    const { aborted } = await bank.transfer(request);
+    if (aborted !== undefined) {
+      console.warn(aborted.error.type, aborted.message);
+    }
   };
 
   const ready = fromAccountId !== "" && toAccountId !== "" && amount !== "";
@@ -270,7 +287,7 @@ const Transfer = ({ bank }: { bank: UseBankApi }) => {
         emptyText="No accounts yet."
         testIDPrefix="transfer-to"
       />
-      <Label text="Amount ($)" />
+      <Label text="Amount ($)" testID="transfer-amount-label" />
       <TextInput
         testID="transfer-amount-input"
         style={styles.textInput}
@@ -454,6 +471,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#0f0a1e",
   },
   chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
     paddingVertical: 4,
   },

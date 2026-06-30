@@ -11,7 +11,7 @@
 #   `maestro test .maestro/flow.yaml` drives it and asserts the
 #   reactive read + send round-trips render.
 #
-# Requirements (baked into the devcontainer image, see `public/Dockerfile`):
+# Requirements (baked into the devcontainer image's `Dockerfile`):
 # a JDK, the Android SDK + emulator + a system image, Maestro, and
 # `/dev/kvm` access (the `vscode` user is in the `kvm` group). This is
 # intentionally NOT hermetic and is tagged `manual`/`local`/`exclusive`
@@ -35,8 +35,8 @@ export HOME="${HOME:-/home/vscode}"
 # Bazel's sanitized `PATH` doesn't include the Android SDK or Maestro,
 # so locate them explicitly rather than relying on the image's `ENV`.
 # The devcontainer image installs the SDK to `/opt/android-sdk` and
-# Maestro to `~/.maestro` (see `public/Dockerfile`); fall back to a
-# `~/android-sdk` install if present.
+# Maestro to `~/.maestro`; fall back to a `~/android-sdk` install if
+# present.
 if [ -z "${ANDROID_HOME:-}" ]; then
   if [ -d /opt/android-sdk ]; then
     ANDROID_HOME=/opt/android-sdk
@@ -133,7 +133,7 @@ rbt ${RBT_FLAGS} dev run <&"${RBT_STDIN_FD}" > "${RBT_LOG}" 2>&1 &
 backend_pid=$!
 # Wait for the backend to serve traffic on the default port 9991.
 until curl -s -o /dev/null --max-time 3 http://localhost:9991/; do
-  sleep 5
+  sleep 1
 done
 
 # Install the mobile app's JS dependencies, overlaying the locally
@@ -168,7 +168,7 @@ setsid emulator -avd "${AVD_NAME}" -no-window -no-audio -no-snapshot \
 emulator_pid=$!
 adb wait-for-device
 until [ "$(adb shell getprop sys.boot_completed 2> /dev/null | tr -d '\r')" = "1" ]; do
-  sleep 5
+  sleep 1
 done
 
 # Load the app via Expo Go, pointed at the backend on the emulator's
@@ -181,10 +181,8 @@ setsid npx expo start --android > "${EXPO_LOG}" 2>&1 &
 expo_pid=$!
 # Wait for Metro to bundle and the app to load on the emulator.
 until grep -q "Android Bundled" "${EXPO_LOG}" 2> /dev/null; do
-  sleep 4
+  sleep 1
 done
-# Give the app a moment to render and the reactive read to settle.
-sleep 10
 
 # Drive the real app and assert the reactive read + send round-trips.
 maestro test .maestro/flow.yaml

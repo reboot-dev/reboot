@@ -14,6 +14,12 @@
 # text) so they are precise about what they match.
 appId: host.exp.exponent
 ---
+# Wait for the app to finish mounting before driving it.
+- extendedWaitUntil:
+    visible:
+      id: "message-input"
+    timeout: 30000
+
 # On a fresh Expo Go install, the first project open shows Expo Go's
 # onboarding developer-menu bottom sheet over the app, and its scrim
 # swallows taps meant for the app (so the real `Send` tap would be lost).

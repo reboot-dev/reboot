@@ -179,7 +179,7 @@ sh_test_in_working_directory(
 # port 9991). It only runs on x86_64 Linux with `/dev/kvm`, so
 # `macos_not_supported` excludes the macOS jobs and `requires-linux-x86`
 # excludes the arm64 jobs. The Android SDK + emulator + Maestro come
-# from the devcontainer image (see `public/Dockerfile`).
+# from the devcontainer image.
 sh_test_in_working_directory(
     name = "maestro_test",
     size = "large",

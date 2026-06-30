@@ -13,6 +13,12 @@
 # `testID` (see `App.tsx`), not arbitrary on-screen text.
 appId: host.exp.exponent
 ---
+# Wait for the app to finish mounting before driving it.
+- extendedWaitUntil:
+    visible:
+      id: "customer-id-input"
+    timeout: 30000
+
 # On a fresh Expo Go install, the first project open shows Expo Go's
 # onboarding "developer menu" bottom sheet over the app, and its scrim
 # swallows taps meant for the app. None of the sheet's elements expose a
@@ -35,19 +41,44 @@ appId: host.exp.exponent
 - assertVisible: "Rebank"
 
 # Create two customers. The input and button are in the first section,
-# so no scrolling is needed yet.
+# so no scrolling is needed yet. Crucially, wait for each customer to
+# register before creating the next: `signUp` clears the input
+# asynchronously, so without the wait the next `inputText` appends onto
+# the previous value (e.g. "alicebob") and the second customer is never
+# created. A customer's chip appearing in the "Add Account" picker below
+# confirms its `signUp` landed (and the input has cleared).
+#
+# To dismiss the soft keyboard after typing we tap the field's `Label`
+# (a plain, non-pressable `Text`) rather than `hideKeyboard`. On Android
+# `hideKeyboard` issues a Back press, and in Expo Go a Back press pops
+# the loaded project back to Expo Go's home screen, unloading the app.
+# The app's `ScrollView` uses React Native's default
+# `keyboardShouldPersistTaps="never"`, so a tap on a non-input child
+# dismisses the keyboard (and is swallowed); if the keyboard is already
+# down it is a harmless no-op. Dismissing first also matters because that
+# same swallow would otherwise eat the very next tap meant for a button.
 - tapOn:
     id: "customer-id-input"
 - inputText: "alice"
-- hideKeyboard
+- tapOn:
+    id: "customer-id-label"
 - tapOn:
     id: "create-customer-button"
+- extendedWaitUntil:
+    visible:
+      id: "open-account-customer-alice"
+    timeout: 30000
 - tapOn:
     id: "customer-id-input"
 - inputText: "bob"
-- hideKeyboard
+- tapOn:
+    id: "customer-id-label"
 - tapOn:
     id: "create-customer-button"
+- extendedWaitUntil:
+    visible:
+      id: "open-account-customer-bob"
+    timeout: 30000
 
 # Open an account for alice with a $1000 initial deposit. The customer
 # chips are a reactive read of `useAllCustomerIds`, so they appear once
@@ -62,7 +93,8 @@ appId: host.exp.exponent
 - tapOn:
     id: "initial-deposit-input"
 - inputText: "1000"
-- hideKeyboard
+- tapOn:
+    id: "initial-deposit-label"
 - tapOn:
     id: "add-account-button"
 
@@ -76,7 +108,8 @@ appId: host.exp.exponent
 - tapOn:
     id: "initial-deposit-input"
 - inputText: "500"
-- hideKeyboard
+- tapOn:
+    id: "initial-deposit-label"
 - tapOn:
     id: "add-account-button"
 
@@ -104,7 +137,8 @@ appId: host.exp.exponent
 - tapOn:
     id: "transfer-amount-input"
 - inputText: "100"
-- hideKeyboard
+- tapOn:
+    id: "transfer-amount-label"
 - scrollUntilVisible:
     element:
       id: "transfer-button"
