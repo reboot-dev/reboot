@@ -94,43 +94,19 @@ On success, `rbt cloud up` prints three URLs:
 
 The `__/inspect` page is the production equivalent of the inspect
 page `rbt dev run` exposes locally — it shows live state and
-recent calls.
+recent calls. For the same state from the terminal (scriptable,
+pipeable), use `rbt inspect` against this app's API URL — see the
+[inspect skill](../../inspect/SKILL.md).
 
 ## Secrets: `rbt cloud secret set/list/delete`
 
-> **Cross-reference:** `lifecycle-secrets.md` is the canonical
-> secrets doc — it covers both delivery mechanisms (`rbt dev run`
-> shell env vars vs. Cloud's `rbt cloud secret set`) and the
-> "don't" list (no secrets in `.rbtrc`, no `REBOOT_*`/`RBT_*`
-> names, etc.). This section is the Cloud-side detail.
-
-Secrets are application-scoped and surfaced to the app as
-environment variables. Names must be uppercase environment-style
-identifiers (letters, digits, underscores; not starting with a
-digit). The prefixes `REBOOT_*` and `RBT_*` are reserved by the
-platform.
-
-```sh
-# Set values, reading them out of your shell environment so
-# they don't appear in shell history or process listings (the
-# `REBOOT_CLOUD_API_KEY` env var is read automatically):
-export REBOOT_CLOUD_API_KEY=<your-key>
-export STRIPE_API_KEY=sk_live_...
-rbt cloud secret set STRIPE_API_KEY \
-  --application-name=my-app \
-  --organization=my-org
-
-# Or pass `KEY=VALUE` directly (value will appear in shell
-# history — only do this for non-sensitive values):
-rbt cloud secret set FEATURE_FLAG=on ...
-
-# Inspect / remove:
-rbt cloud secret list ...
-rbt cloud secret delete STRIPE_API_KEY ...
-```
-
-Read secrets inside the app the same way as any other
-environment variable (e.g. `os.environ["STRIPE_API_KEY"]`).
+Cloud secrets are delivered to the app as environment variables via
+`rbt cloud secret set/list/delete`. `lifecycle-secrets.md` is the
+canonical doc — it covers the full command shape (including batching
+every secret into one `set` so the backend rolls out only once, and
+why no follow-up `rbt cloud up` is needed), the reserved
+`REBOOT_*`/`RBT_*` names, and how the app reads the values
+(`os.environ["KEY"]`).
 
 ## Logs: `rbt cloud logs`
 

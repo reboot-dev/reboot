@@ -1,0 +1,124 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "dev_py",
+    srcs = ["dev.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("aiofiles"),
+        requirement("pyprctl"),
+        requirement("cryptography"),
+        requirement("python-dotenv"),
+        ":generate_py",
+        "//reboot/cli/common:directories_py",
+        "//reboot/cli/common:monkeys_py",
+        "//reboot/cli/common:subprocesses_py",
+        "//reboot/cli/common:terminal_py",
+        "//reboot/cli/common:transpile_py",
+        "//reboot/cli/common:watch_py",
+        "//reboot/controller:plan_makers_py",
+        "//reboot/server:local_envoy_factory_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
+        "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
+    ],
+)
+
+py_library(
+    name = "export_import_py",
+    srcs = ["export_import.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot/admin:export_import_client_py",
+        "//reboot/aio/auth:admin_auth_py",
+        "//reboot/cli/common:admin_credential_py",
+        "//reboot/cli/common:rc_py",
+        "//reboot/cli/common:terminal_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:export_import_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/admin:export_import_py_proto",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+    ],
+)
+
+py_library(
+    name = "generate_py",
+    srcs = ["generate.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio-tools"),
+        # The original 'os' module's functions that interact with the disk will
+        # block the event loop, so we use 'aiofiles' instead.
+        requirement("aiofiles"),
+        requirement("grpcio-health-checking"),
+        "//reboot:version_py",
+        "//reboot/cli/common:directories_py",
+        "//reboot/cli/common:rc_py",
+        "//reboot/cli/common:subprocesses_py",
+        "//reboot/cli/common:terminal_py",
+        "//reboot/cli/common:watch_py",
+        "@com_github_reboot_dev_reboot//reboot:pydantic_schema_to_proto_py",
+        "@com_github_reboot_dev_reboot//reboot:pydantic_schema_to_zod_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:tracing_py",
+    ],
+)
+
+py_library(
+    name = "inspect_py",
+    srcs = ["inspect.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio"),
+        requirement("protobuf"),
+        "//reboot/cli/common:admin_credential_py",
+        "//reboot/cli/common:rc_py",
+        "//reboot/cli/common:terminal_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/inspect:inspect_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1/inspect:inspect_py_proto",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:headers_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:types_py",
+    ],
+)
+
+py_library(
+    name = "serve_py",
+    srcs = ["serve.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("aiofiles"),
+        ":dev_py",
+        "//reboot/cli/common:detect_cores_py",
+        "//reboot/cli/common:directories_py",
+        "//reboot/cli/common:subprocesses_py",
+        "//reboot/cli/common:terminal_py",
+        "//reboot/cli/common:transpile_py",
+        "//reboot/controller:plan_makers_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
+    ],
+)
+
+py_library(
+    name = "task_py",
+    srcs = ["task.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("grpcio"),
+        requirement("tabulate"),
+        "//reboot/aio/auth:admin_auth_py",
+        "//reboot/cli/common:rc_py",
+        "//reboot/cli/common:terminal_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_grpc",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:tasks_py_proto",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:external_py",
+    ],
+)

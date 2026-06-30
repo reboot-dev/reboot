@@ -2,8 +2,8 @@ import asyncio
 import json
 import os
 from pathlib import Path
-from reboot.cli import terminal
-from reboot.cli.subprocesses import Subprocesses
+from reboot.cli.common import terminal
+from reboot.cli.common.subprocesses import Subprocesses
 from reboot.settings import ENVVAR_RBT_FROM_NODEJS
 from typing import Optional
 

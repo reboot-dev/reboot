@@ -1,6 +1,6 @@
 import asyncio
 import subprocess
-from reboot.cli import terminal
+from reboot.cli.common import terminal
 from typing import Optional
 
 

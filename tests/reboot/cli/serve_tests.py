@@ -1,7 +1,7 @@
 import os
-import reboot.cli.cli as cli
+import reboot.cli.common.cli as cli
 import unittest
-from reboot.cli.rc import ArgumentParser
+from reboot.cli.common.rc import ArgumentParser
 from reboot.controller.settings import (
     ENVVAR_PORT,
     ENVVAR_RBT_PORT,

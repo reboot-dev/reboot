@@ -10,8 +10,8 @@ import tempfile
 from collections import defaultdict
 from importlib import resources
 from pathlib import Path
-from reboot.cli import terminal
-from reboot.cli.directories import (
+from reboot.cli.common import terminal
+from reboot.cli.common.directories import (
     add_working_directory_options,
     chdir,
     compute_working_directory,
@@ -20,8 +20,8 @@ from reboot.cli.directories import (
     is_on_path,
     use_working_directory,
 )
-from reboot.cli.rc import ArgumentParser
-from reboot.cli.subprocesses import Subprocesses
+from reboot.cli.common.rc import ArgumentParser
+from reboot.cli.common.subprocesses import Subprocesses
 from reboot.pydantic_schema_to_proto import generate_proto_file_from_api
 from reboot.pydantic_schema_to_zod import (
     collect_all_error_models,

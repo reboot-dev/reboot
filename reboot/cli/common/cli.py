@@ -1,41 +1,50 @@
 import os
-import reboot.cli.terminal as terminal
+import reboot.cli.common.terminal as terminal
 import sys
 from pathlib import Path
-from reboot.cli.cloud import (
+from reboot.cli.commands.cloud import (
     cloud_subcommands,
     handle_cloud_subcommand,
     register_cloud,
 )
-from reboot.cli.dev import dev_subcommands, handle_dev_subcommand, register_dev
-from reboot.cli.export_import import (
+from reboot.cli.commands.dev import (
+    dev_subcommands,
+    handle_dev_subcommand,
+    register_dev,
+)
+from reboot.cli.commands.export_import import (
     export_and_import_subcommands,
     handle_export_and_import_subcommand,
     register_export_and_import,
 )
-from reboot.cli.generate import (
+from reboot.cli.commands.generate import (
     generate_subcommands,
     handle_generate_subcommand,
     register_generate,
 )
-from reboot.cli.init.init import (
+from reboot.cli.commands.init.init import (
     handle_init_subcommand,
     init_subcommands,
     register_init,
 )
-from reboot.cli.rc import ArgumentParser
-from reboot.cli.serve import (
+from reboot.cli.commands.inspect import (
+    handle_inspect_subcommand,
+    inspect_subcommands,
+    register_inspect,
+)
+from reboot.cli.commands.serve import (
     handle_serve_subcommand,
     register_serve,
     serve_subcommands,
 )
-from reboot.cli.subprocesses import Subprocesses
-from reboot.cli.task import (
+from reboot.cli.commands.task import (
     handle_task_subcommand,
     register_task,
     task_subcommands,
 )
-from reboot.cli.update_check import check_for_newer_version
+from reboot.cli.common.rc import ArgumentParser
+from reboot.cli.common.subprocesses import Subprocesses
+from reboot.cli.common.update_check import check_for_newer_version
 from typing import Optional
 
 
@@ -64,7 +73,8 @@ def create_parser(
         subcommands=(
             cloud_subcommands() + dev_subcommands() +
             export_and_import_subcommands() + generate_subcommands() +
-            init_subcommands() + serve_subcommands() + task_subcommands()
+            init_subcommands() + inspect_subcommands() + serve_subcommands() +
+            task_subcommands()
         ),
         rc_file=rc_file,
         argv=argv,
@@ -77,6 +87,7 @@ def create_parser(
     register_export_and_import(parser)
     register_generate(parser)
     register_init(parser)
+    register_inspect(parser)
     register_serve(parser)
     register_task(parser)
 
@@ -134,6 +145,8 @@ async def cli() -> int:
     ) is not None:
         return result
     elif (result := await handle_init_subcommand(args)) is not None:
+        return result
+    elif (result := await handle_inspect_subcommand(args)) is not None:
         return result
     elif (
         result := await handle_serve_subcommand(

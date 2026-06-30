@@ -299,7 +299,7 @@ py_library(
         ":protoc_gen_reboot_typescript_py",
         ":settings_py",
         "//reboot/aio:tracing_py",
-        "//reboot/cli:terminal_py",
+        "//reboot/cli/common:terminal_py",
     ],
 )
 
@@ -515,7 +515,7 @@ py_library(
         ":python_std",
         ":python_thirdparty",
         "//reboot/aio:python",
-        "//reboot/cli:rbt_main_py",
+        "//reboot/cli:main_py",
         "//reboot/mcp:python",
         "//reboot/nodejs:python",
         "@com_github_reboot_dev_reboot//protoc_gen_mypy_plugin:protoc-gen-mypy",
@@ -550,7 +550,7 @@ pip_package(
         "protoc-gen-reboot_python_boilerplate": "reboot.protoc_gen_reboot_python_boilerplate:main",
         "protoc-gen-reboot_react": "reboot.protoc_gen_reboot_react:main",
         "protoc-gen-reboot_web": "reboot.protoc_gen_reboot_web:main",
-        "rbt": "reboot.cli.rbt_main:main",
+        "rbt": "reboot.cli.main:main",
     },
     version = REBOOT_VERSION,
     visibility = ["//visibility:public"],

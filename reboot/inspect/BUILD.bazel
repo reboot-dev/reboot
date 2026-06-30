@@ -59,6 +59,7 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        "//rbt/v1alpha1/application:application_py_reboot",
         "//rbt/v1alpha1/inspect:inspect_py_grpc",
         "//rbt/v1alpha1/inspect:inspect_py_proto",
         "//reboot:wait_for_tasks_py",
@@ -67,6 +68,7 @@ py_library(
         "//reboot/aio:stubs_py",
         "//reboot/aio/auth:admin_auth_py",
         "//reboot/aio/internals:middleware_py",
+        "//reboot/memoize/v1:memoize_py_reboot",
         "//reboot/templates:tools_py",
     ],
 )

@@ -1,6 +1,6 @@
 import psutil
 from pathlib import Path
-from reboot.cli import terminal
+from reboot.cli.common import terminal
 
 
 def cgroups_enabled() -> bool:

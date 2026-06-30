@@ -1,0 +1,161 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "terminal_py",
+    srcs = ["terminal.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("colorama"),
+        "@com_github_reboot_dev_reboot//reboot/aio:once_py",
+    ],
+)
+
+py_library(
+    name = "run_command_py",
+    srcs = ["run_command.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("colorama"),
+        ":terminal_py",
+    ],
+)
+
+py_library(
+    name = "admin_credential_py",
+    srcs = ["admin_credential.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":rc_py",
+        ":terminal_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+    ],
+)
+
+py_library(
+    name = "detect_cores_py",
+    srcs = ["detect_cores.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("psutil"),
+        ":terminal_py",
+    ],
+)
+
+py_library(
+    name = "transpile_py",
+    srcs = ["transpile.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":subprocesses_py",
+        ":terminal_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+    ],
+)
+
+py_library(
+    name = "watch_py",
+    srcs = ["watch.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("pathspec"),
+        requirement("watchdog"),
+        ":terminal_py",
+    ],
+)
+
+py_library(
+    name = "subprocesses_py",
+    srcs = ["subprocesses.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("psutil"),
+        ":terminal_py",
+    ],
+)
+
+py_library(
+    name = "directories_py",
+    srcs = ["directories.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":rc_py",
+        ":terminal_py",
+        "@com_github_reboot_dev_reboot//reboot/aio:directories_py",
+    ],
+)
+
+py_library(
+    name = "monkeys_py",
+    srcs = ["monkeys.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "rc_py",
+    srcs = ["rc.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":terminal_py",
+    ],
+)
+
+py_library(
+    name = "update_check_py",
+    srcs = ["update_check.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("pydantic"),
+        ":terminal_py",
+        "//reboot:version_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot:versioning_py",
+    ],
+)
+
+py_library(
+    # We have to name that `cli.py` instead of `rbt.py`, because we keep protos
+    # in `rbt/` and it will be a name conflict with the `rbt` package.
+    name = "cli_py",
+    srcs = ["cli.py"],
+    data = [
+        "//reboot:protoc-gen-reboot_nodejs",
+        "//reboot:protoc-gen-reboot_nodejs_boilerplate",
+        "//reboot:protoc-gen-reboot_react",
+        "//reboot:protoc-gen-reboot_web",
+        "@com_github_reboot_dev_reboot//protoc_gen_mypy_plugin:protoc-gen-mypy",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:protos",
+        "@com_github_reboot_dev_reboot//reboot:protoc-gen-es_with_deps",
+        "@com_github_reboot_dev_reboot//reboot:protoc-gen-reboot_python",
+        "@com_github_reboot_dev_reboot//reboot:protoc-gen-reboot_python_boilerplate",
+    ],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":rc_py",
+        ":update_check_py",
+        "//reboot/cli/commands:dev_py",
+        "//reboot/cli/commands:export_import_py",
+        "//reboot/cli/commands:generate_py",
+        "//reboot/cli/commands:inspect_py",
+        "//reboot/cli/commands:serve_py",
+        "//reboot/cli/commands:task_py",
+        "//reboot/cli/commands/cloud:__init___py",
+        "//reboot/cli/commands/cloud:down_py",
+        "//reboot/cli/commands/cloud:logs_py",
+        "//reboot/cli/commands/cloud:secrets_py",
+        "//reboot/cli/commands/cloud:up_py",
+        "//reboot/cli/commands/init:init_py",
+    ],
+)

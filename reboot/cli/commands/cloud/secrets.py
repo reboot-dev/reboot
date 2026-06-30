@@ -6,12 +6,12 @@ from rbt.cloud.v1alpha1.application.application_rbt import Application
 from rbt.v1alpha1.errors_pb2 import PermissionDenied, StateNotConstructed
 from reboot.aio.aborted import Aborted
 from reboot.aio.external import ExternalContext
-from reboot.cli import terminal
-from reboot.cli.cloud.common import (
+from reboot.cli.commands.cloud.common import (
     _add_common_cloud_args,
     _parse_common_cloud_args,
 )
-from reboot.cli.rc import ArgumentParser
+from reboot.cli.common import terminal
+from reboot.cli.common.rc import ArgumentParser
 
 
 def register_cloud_secret(parser: ArgumentParser) -> None:

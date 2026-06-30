@@ -1,12 +1,12 @@
 import aiofiles
 import asyncio
 import os
-import reboot.cli.cli as cli
-import reboot.cli.dev as dev
+import reboot.cli.commands.dev as dev
+import reboot.cli.common.cli as cli
 import tempfile
 import unittest
-from reboot.cli.directories import dot_rbt_dev_directory
-from reboot.cli.rc import ArgumentParser
+from reboot.cli.common.directories import dot_rbt_dev_directory
+from reboot.cli.common.rc import ArgumentParser
 from tests.reboot.cli.mock_exit import (
     MockExitException,
     mock_raise_instead_of_exit,
@@ -61,7 +61,7 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
             "run --generate-watch', or pass '--no-generate-watch'.",
         )
 
-        with patch('reboot.cli.terminal.fail', mock_fail):
+        with patch('reboot.cli.common.terminal.fail', mock_fail):
             dev.generate_parser_if_generate_watch(
                 args, parser, lambda argv: cli.create_parser(argv=argv)
             )

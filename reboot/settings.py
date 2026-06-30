@@ -175,6 +175,10 @@ ENVVAR_REBOOT_OAUTH_SIGNING_SECRET = 'REBOOT_OAUTH_SIGNING_SECRET'
 # The shared-secret used to authenticate admin requests.
 ENVVAR_SECRET_REBOOT_ADMIN_TOKEN = 'SECRET_REBOOT_ADMIN_TOKEN'
 
+# The admin credential sent to authenticate admin requests; an
+# alternative to passing `--admin-credential` on the command line.
+ENVVAR_REBOOT_ADMIN_CREDENTIAL = 'REBOOT_ADMIN_CREDENTIAL'
+
 # The level of tracing to use. This is a Reboot-internal environment
 # variable; it is not expected to be set by developers using Reboot.
 ENVVAR_REBOOT_TRACE_LEVEL = 'REBOOT_TRACE_LEVEL'

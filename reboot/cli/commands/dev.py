@@ -26,27 +26,30 @@ from pathlib import Path
 from reboot.aio.backoff import Backoff
 from reboot.aio.contexts import EffectValidation
 from reboot.aio.exceptions import InputError
+from reboot.cli.commands.generate import generate_direct
 # We import the whole `terminal` module (as opposed to the methods it contains)
 # to allow us to mock these methods out in tests.
-from reboot.cli import terminal
-from reboot.cli.directories import (
+from reboot.cli.common import terminal
+from reboot.cli.common.directories import (
     add_working_directory_options,
     dot_rbt_dev_directory,
     use_working_directory,
 )
-from reboot.cli.generate import generate_direct
-from reboot.cli.monkeys import monkeys, no_chaos_monkeys
+from reboot.cli.common.monkeys import monkeys, no_chaos_monkeys
 # We won't mock the classes in `rc`, so it's safe to import those directly.
-from reboot.cli.rc import (
+from reboot.cli.common.rc import (
     ArgumentParser,
     ArgumentParserFactory,
     BaseTransformer,
     SubcommandParser,
     TransformerError,
 )
-from reboot.cli.subprocesses import Subprocesses
-from reboot.cli.transpile import auto_transpile, ensure_can_auto_transpile
-from reboot.cli.watch import FileWatcher, file_watcher
+from reboot.cli.common.subprocesses import Subprocesses
+from reboot.cli.common.transpile import (
+    auto_transpile,
+    ensure_can_auto_transpile,
+)
+from reboot.cli.common.watch import FileWatcher, file_watcher
 from reboot.controller.plan_makers import validate_num_servers
 from reboot.server.local_envoy_factory import LocalEnvoyFactory
 from reboot.settings import (

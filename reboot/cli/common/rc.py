@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from reboot.cli import terminal
+from reboot.cli.common import terminal
 from typing import Any, Callable, Optional
 
 # Type aliases to help better understand types.
@@ -326,6 +326,17 @@ class _Parser(ABC):
         if non_empty_string:
             transformer = NonEmptyStringTransformer(name)
 
+        # The flag name as argparse recognizes it on the command line (with
+        # hyphens). The transformer block below rewrites `name` to the
+        # namespace-attribute spelling (hyphens -> underscores); that spelling
+        # must NOT leak into the environment-variable -> flag mapping, because
+        # `_expand_environment_variables` injects `<flag>=<value>` back into
+        # argv and argparse only matches the original hyphenated flag. Without
+        # this, an env-backed flag whose name contains a hyphen and uses a
+        # transformer (e.g. `--api-key` with `non_empty_string=True`) is
+        # silently ignored and reported as a missing required argument.
+        flag_name = name
+
         if transformer is not None:
             # Later we will use the name of the argument from the parsed
             # namespace, where we store the argument using '_' instead of
@@ -342,9 +353,9 @@ class _Parser(ABC):
             if existing_arg is not None:
                 raise ValueError(
                     f"Environment variable named '{environment_variable}' is "
-                    f"registered for both '{existing_arg}' and '{name}'"
+                    f"registered for both '{existing_arg}' and '{flag_name}'"
                 )
-            self._arg_by_envvar_name[environment_variable] = name
+            self._arg_by_envvar_name[environment_variable] = flag_name
 
     def get_argument_type(self, name: str) -> Optional[type]:
         """Helper that returns the type of an argument value."""

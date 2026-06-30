@@ -17,7 +17,7 @@ check, as does the `CI` environment variable.
 import json
 import os
 import pydantic
-import reboot.cli.terminal as terminal
+import reboot.cli.common.terminal as terminal
 import time
 import urllib.request
 from pathlib import Path

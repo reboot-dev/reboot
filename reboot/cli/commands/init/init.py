@@ -4,8 +4,8 @@ import importlib
 import os
 import re
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from reboot.cli import terminal
-from reboot.cli.rc import ArgumentParser
+from reboot.cli.common import terminal
+from reboot.cli.common.rc import ArgumentParser
 from typing import Optional
 
 DEFAULT_PROTO_DIRECTORY = 'api'

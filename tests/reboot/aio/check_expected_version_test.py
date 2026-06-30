@@ -11,7 +11,7 @@ def mock_raise_instead_of_fail(message):
     raise RuntimeError(message)
 
 
-@patch('reboot.cli.terminal.fail', mock_raise_instead_of_fail)
+@patch('reboot.cli.common.terminal.fail', mock_raise_instead_of_fail)
 class CheckExpectedVersionTest(unittest.TestCase):
 
     def setUp(self) -> None:

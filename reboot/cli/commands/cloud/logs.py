@@ -10,12 +10,12 @@ from rbt.v1alpha1.errors_pb2 import (
 from reboot.aio.aborted import Aborted
 from reboot.aio.backoff import Backoff
 from reboot.aio.external import ExternalContext
-from reboot.cli import terminal
-from reboot.cli.cloud.common import (
+from reboot.cli.commands.cloud.common import (
     _add_common_cloud_args,
     _parse_common_cloud_args,
 )
-from reboot.cli.rc import ArgumentParser
+from reboot.cli.common import terminal
+from reboot.cli.common.rc import ArgumentParser
 from reboot.naming import OrganizationName, QualifiedApplicationName, UserId
 from reboot.time import DateTimeWithTimeZone
 from typing import Optional

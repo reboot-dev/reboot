@@ -41,7 +41,7 @@ py_library(
         "//reboot/aio/auth:token_verifiers_py",
         "//reboot/aio/internals:contextvars_py",
         "//reboot/application:application_py",
-        "//reboot/cli:terminal_py",
+        "//reboot/cli/common:terminal_py",
         "//reboot/controller:server_managers_py",
         "//reboot/inspect:servicer_py",
         "//reboot/mcp:factories_py",

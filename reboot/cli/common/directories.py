@@ -4,8 +4,8 @@ import shutil
 from contextlib import contextmanager
 from pathlib import Path
 from reboot.aio.directories import chdir
-from reboot.cli.rc import ArgumentParser, SubcommandParser
-from reboot.cli.terminal import fail, info
+from reboot.cli.common.rc import ArgumentParser, SubcommandParser
+from reboot.cli.common.terminal import fail, info
 from typing import Optional
 
 

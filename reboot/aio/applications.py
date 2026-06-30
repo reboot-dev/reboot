@@ -28,7 +28,7 @@ from reboot.aio.servers import ConfigServer
 from reboot.aio.servicers import Serviceable, Servicer
 from reboot.aio.tracing import function_span
 from reboot.aio.types import ServerId, StateTypeName
-from reboot.cli import terminal
+from reboot.cli.common import terminal
 from reboot.controller.server_managers import (
     run_nodejs_server_process,
     run_python_server_process,

@@ -7,7 +7,7 @@ import signal
 import subprocess
 import weakref
 from contextlib import asynccontextmanager
-from reboot.cli.terminal import fail
+from reboot.cli.common.terminal import fail
 from typing import Any, AsyncIterator, Optional
 
 _subprocesses: Optional[weakref.ReferenceType[Subprocesses]] = None

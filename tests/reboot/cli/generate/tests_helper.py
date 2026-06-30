@@ -1,11 +1,11 @@
 import aiofiles.os
 import asyncio
 import os
-import reboot.cli.cli as cli
-import reboot.cli.generate as generate
+import reboot.cli.commands.generate as generate
+import reboot.cli.common.cli as cli
 import unittest
 from reboot.aio.tests import temporary_environ
-from reboot.cli.rc import ArgumentParser
+from reboot.cli.common.rc import ArgumentParser
 from tests.reboot.cli.mock_exit import (
     MockExitException,
     mock_raise_instead_of_exit,
@@ -245,7 +245,7 @@ class RbtGenerateBaseTestCase(unittest.IsolatedAsyncioTestCase):
             raise MockExitException(2, message)
 
         with patch(
-            'reboot.cli.generate.fail',
+            'reboot.cli.commands.generate.fail',
             mock_raise_instead_fail,
         ), self.assertRaises(MockExitException) as e:
             await generate.generate(args, argv_after_dash_dash, parser=parser)

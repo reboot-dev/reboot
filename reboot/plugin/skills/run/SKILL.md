@@ -205,7 +205,9 @@ Either way the inspector binds the fixed port 6274.
 
 Confirm every process is up from its logs, then give the user:
 
-- the application's own inspect-page URL;
+- the application's own inspect-page URL (and that `rbt inspect`
+  inspects the same state from the CLI — see the
+  [inspect skill](../inspect/SKILL.md));
 - for a Chat App — the setup-wizard URL (`http://localhost:9991`,
   already opened for them, for connecting an MCP client) and a
   first prompt to try (e.g. "Create a new todo list and show it to

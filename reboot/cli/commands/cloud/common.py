@@ -14,8 +14,8 @@ from reboot.api_keys import (
     InvalidAPIKeyBearerToken,
     parse_api_key_bearer_token,
 )
-from reboot.cli import terminal
-from reboot.cli.rc import SubcommandParser
+from reboot.cli.common import terminal
+from reboot.cli.common.rc import SubcommandParser
 from reboot.naming import (
     ORGANIZATIONS_ID,
     OrganizationId,

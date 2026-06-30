@@ -1,6 +1,6 @@
 import unittest
-from reboot.cli.detect_cores import cgroups_enabled, detect_cores
-from reboot.cli.serve import servers_from_cores
+from reboot.cli.commands.serve import servers_from_cores
+from reboot.cli.common.detect_cores import cgroups_enabled, detect_cores
 from reboot.controller.plan_makers import validate_num_servers
 from unittest.mock import patch
 
@@ -10,7 +10,7 @@ def mock_raise_instead_fail(message):
     raise ValueError(message)
 
 
-@patch('reboot.cli.terminal.fail', mock_raise_instead_fail)
+@patch('reboot.cli.common.terminal.fail', mock_raise_instead_fail)
 class DetectCoresTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_basic(self) -> None:
@@ -20,7 +20,7 @@ class DetectCoresTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(bool, type(cgroups_enabled()))
 
         with patch(
-            'reboot.cli.detect_cores.cgroups_enabled',
+            'reboot.cli.common.detect_cores.cgroups_enabled',
             lambda: False,
         ):
             # Call `detect_cores()` via `servers_from_cores` so that a
@@ -28,7 +28,7 @@ class DetectCoresTestCase(unittest.IsolatedAsyncioTestCase):
             validate_num_servers(servers_from_cores(), 'servers')
 
         with patch(
-            'reboot.cli.detect_cores.cgroups_enabled',
+            'reboot.cli.common.detect_cores.cgroups_enabled',
             lambda: True,
         ):
             with self.assertRaises(ValueError) as exc:

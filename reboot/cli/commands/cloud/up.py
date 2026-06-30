@@ -20,15 +20,15 @@ from rbt.v1alpha1.errors_pb2 import (
 from reboot.aio.aborted import Aborted
 from reboot.aio.external import ExternalContext
 from reboot.aio.types import ApplicationId
-from reboot.cli import terminal
-from reboot.cli.cloud.common import (
+from reboot.cli.commands.cloud.common import (
     _add_common_cloud_args,
     _application_url,
     _parse_common_cloud_args,
 )
-from reboot.cli.cloud.logs import SourceType, _cloud_logs
-from reboot.cli.commands import run_command
-from reboot.cli.rc import ArgumentParser
+from reboot.cli.commands.cloud.logs import SourceType, _cloud_logs
+from reboot.cli.common import terminal
+from reboot.cli.common.rc import ArgumentParser
+from reboot.cli.common.run_command import run_command
 from reboot.naming import QualifiedApplicationName
 from typing import Optional
 

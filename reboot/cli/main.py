@@ -14,7 +14,7 @@ def main():
         import reboot.aio.tracing
         import signal
         import sys
-        from reboot.cli.cli import cli
+        from reboot.cli.common.cli import cli
 
         reboot.aio.tracing.start("reboot cli")
 

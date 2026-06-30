@@ -5,26 +5,26 @@ import os
 import sys
 from pathlib import Path
 from reboot.aio.exceptions import InputError
-from reboot.cli import terminal
-from reboot.cli.detect_cores import detect_cores
-from reboot.cli.dev import (
+from reboot.cli.commands.dev import (
     _check_common_args,
     _set_tls_env_or_fail,
     add_application_options,
     check_local_envoy_mode,
     try_and_become_child_subreaper_on_linux,
 )
-from reboot.cli.directories import (
+from reboot.cli.common import terminal
+from reboot.cli.common.detect_cores import detect_cores
+from reboot.cli.common.directories import (
     add_working_directory_options,
     use_working_directory,
 )
-from reboot.cli.rc import (
+from reboot.cli.common.rc import (
     ArgumentParser,
     ArgumentParserFactory,
     StoreOnceIncludingEnvvarsActionBase,
 )
-from reboot.cli.subprocesses import Subprocesses
-from reboot.cli.transpile import auto_transpile
+from reboot.cli.common.subprocesses import Subprocesses
+from reboot.cli.common.transpile import auto_transpile
 from reboot.controller.plan_makers import validate_num_servers
 from reboot.controller.settings import (
     ENVVAR_PORT,

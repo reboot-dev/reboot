@@ -16,8 +16,8 @@ py_test(
     main = "detect_cores_tests.py",
     deps = [
         ":mock_exit_py",
-        "//reboot/cli:detect_cores_py",
-        "//reboot/cli:serve_py",
+        "//reboot/cli/commands:serve_py",
+        "//reboot/cli/common:detect_cores_py",
         "//reboot/controller:plan_makers_py",
     ],
 )
@@ -29,7 +29,7 @@ py_test(
     ],
     main = "update_check_tests.py",
     deps = [
-        "//reboot/cli:update_check_py",
+        "//reboot/cli/common:update_check_py",
     ],
 )
 
@@ -41,8 +41,8 @@ py_test(
     main = "dev_tests.py",
     deps = [
         ":mock_exit_py",
-        "//reboot/cli:cli_py",
-        "//reboot/cli:rc_py",
+        "//reboot/cli/common:cli_py",
+        "//reboot/cli/common:rc_py",
     ],
 )
 
@@ -54,8 +54,8 @@ py_test(
     main = "serve_tests.py",
     deps = [
         ":mock_exit_py",
-        "//reboot/cli:cli_py",
-        "//reboot/cli:rc_py",
+        "//reboot/cli/common:cli_py",
+        "//reboot/cli/common:rc_py",
     ],
 )
 
@@ -78,7 +78,7 @@ py_test(
     ],
     main = "rc_tests.py",
     deps = [
-        "//reboot/cli:rc_py",
+        "//reboot/cli/common:rc_py",
     ],
 )
 
@@ -90,8 +90,36 @@ py_test(
     main = "rbt_tests.py",
     deps = [
         ":mock_exit_py",
-        "//reboot/cli:cli_py",
-        "//reboot/cli:rc_py",
+        "//reboot/cli/common:cli_py",
+        "//reboot/cli/common:rc_py",
+    ],
+)
+
+py_test(
+    name = "admin_credential_tests_py",
+    srcs = [
+        "admin_credential_tests.py",
+    ],
+    main = "admin_credential_tests.py",
+    deps = [
+        "//reboot:settings_py",
+        "//reboot/cli/common:admin_credential_py",
+    ],
+)
+
+py_test(
+    name = "inspect_tests_py",
+    srcs = [
+        "inspect_tests.py",
+    ],
+    main = "inspect_tests.py",
+    deps = [
+        "//rbt/v1alpha1/application:application_py_reboot",
+        "//reboot:settings_py",
+        "//reboot/aio:tests_py",
+        "//reboot/cli/commands:inspect_py",
+        "//reboot/memoize/v1:memoize_py_reboot",
+        "//tests/reboot:echo_servicers_py",
     ],
 )
 
@@ -102,7 +130,7 @@ py_test(
     ],
     main = "nested_subcommand_tests.py",
     deps = [
-        "//reboot/cli:rc_py",
+        "//reboot/cli/common:rc_py",
     ],
 )
 
@@ -113,7 +141,7 @@ py_test(
     ],
     main = "watch_tests.py",
     deps = [
-        "//reboot/cli:watch_py",
+        "//reboot/cli/common:watch_py",
     ],
 )
 
@@ -125,8 +153,8 @@ py_test(
     main = "cloud_secrets_tests.py",
     deps = [
         ":mock_exit_py",
-        "//reboot/cli:cli_py",
-        "//reboot/cli:rc_py",
-        "//reboot/cli/cloud:secrets_py",
+        "//reboot/cli/commands/cloud:secrets_py",
+        "//reboot/cli/common:cli_py",
+        "//reboot/cli/common:rc_py",
     ],
 )

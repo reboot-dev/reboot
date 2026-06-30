@@ -9,6 +9,7 @@ from google.api.httpbody_pb2 import HttpBody
 from google.protobuf.struct_pb2 import Struct
 from log.log import get_logger
 from pathlib import Path
+from rbt.v1alpha1.application import application_rbt
 from rbt.v1alpha1.inspect import inspect_pb2_grpc
 from rbt.v1alpha1.inspect.inspect_pb2 import (
     GetStateRequest,
@@ -31,10 +32,22 @@ from reboot.aio.placement import PlacementClient
 from reboot.aio.state_managers import StateManager
 from reboot.aio.types import ApplicationId, ServerId, StateTypeName
 from reboot.controller.settings import ENVVAR_REBOOT_REPLICA_INDEX
+from reboot.memoize.v1.memoize_rbt import Memoize
 from reboot.wait_for_tasks import wait_for_tasks
 from typing import AsyncIterator, Optional
 
 logger = get_logger(__name__)
+
+# State types that are internal to the Reboot framework rather than the
+# application, and so are hidden from `inspect`: they hold framework
+# bookkeeping (workflow memoization, application runtime info), not user
+# state, and every Reboot application registers them automatically.
+INTERNAL_STATE_TYPE_NAMES: frozenset[StateTypeName] = frozenset(
+    {
+        Memoize.__state_type_name__,
+        application_rbt.Application.__state_type_name__,
+    }
+)
 
 
 async def chunks_get_state(
@@ -98,10 +111,13 @@ class InspectServicer(
     ) -> AsyncIterator[GetStateTypesResponse]:
         await self.ensure_admin_auth_or_fail(grpc_context)
 
-        # Return the state types that we know about. These are the same
-        # for every server, so it doesn't matter which one answers.
+        # Return the state types that we know about, except those
+        # internal to the framework. These are the same for every
+        # server, so it doesn't matter which one answers.
         response = GetStateTypesResponse()
         for state_type_name in self._middleware_by_state_type_name:
+            if state_type_name in INTERNAL_STATE_TYPE_NAMES:
+                continue
             response.state_types.append(state_type_name)
         yield response
 

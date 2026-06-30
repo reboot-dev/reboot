@@ -82,33 +82,48 @@ stays git-ignored.
 ## In Cloud: `rbt cloud secret set KEY`
 
 `rbt cloud secret set` writes a secret into the application's
-managed secret store; it's surfaced to the running app as an
-environment variable on next deploy. The full command shape (and
-`list` / `delete`) is documented in `lifecycle-reboot-cloud.md`;
-the minimum to remember:
+managed secret store. If the app is already up, the Cloud backend
+then rolls out a new revision on its own so the value is live as an
+environment variable — the rollout happens server-side, not in the
+CLI. **The platform does the rollout for you; do not run `rbt cloud up` afterward.**
 
 ```sh
-# Read the value from your shell env (recommended — keeps the
-# secret out of shell history and process listings; the API key
-# is read from the `REBOOT_CLOUD_API_KEY` env var automatically):
+# Read the values from your shell env (recommended — keeps the
+# secrets out of shell history and process listings; the API key
+# is read from the `REBOOT_CLOUD_API_KEY` env var automatically).
+# Pass every secret in ONE command so the app rolls out just once:
 export REBOOT_CLOUD_API_KEY=<your-key>
-export STRIPE_API_KEY=sk_live_...
-rbt cloud secret set STRIPE_API_KEY \
+export AUTH0_DOMAIN=... AUTH0_CLIENT_ID=... AUTH0_CLIENT_SECRET=...
+rbt cloud secret set \
+  AUTH0_DOMAIN AUTH0_CLIENT_ID AUTH0_CLIENT_SECRET \
   --application-name=my-app \
   --organization=my-org
 
 # Or pass `KEY=VALUE` inline (value appears in shell history —
 # only do this for non-sensitive values):
 rbt cloud secret set FEATURE_FLAG=on ...
+
+# Inspect / remove (same `--application-name` / `--organization`
+# args as `set`):
+rbt cloud secret list ...
+rbt cloud secret delete AUTH0_CLIENT_SECRET ...
 ```
+
+Secrets are application-scoped. `rbt cloud secret list` prints the
+names currently set; `rbt cloud secret delete NAME ...` removes one
+or more.
+
+`rbt cloud secret set` takes any number of `KEY` / `KEY=VALUE`
+arguments. Setting them all in one invocation has the backend roll
+out a single revision; calling it once per secret makes the backend
+roll out the app once per call, so batch them. Once the command
+returns, the backend's new revision is already deploying with the
+secrets available as `os.environ["KEY"]` inside the app.
 
 Names must be uppercase environment-style identifiers (letters,
 digits, underscores; not starting with a digit). The prefixes
 `REBOOT_*` and `RBT_*` are reserved by the platform — pick a
 different name for your own secrets.
-
-After `rbt cloud secret set`, the next `rbt cloud up` deploys with
-the secret available as `os.environ["KEY"]` inside the app.
 
 ## Reading Secrets in Application Code
 
@@ -156,6 +171,13 @@ provider-swap story.
   `.env` only when `rbt dev run` is given `--env-file=.env` (in
   `.rbtrc` or on the CLI); a `.env` with no `--env-file` does
   nothing.
+- **Don't run `rbt cloud up` after `rbt cloud secret set`.** When
+  the app is up, the Cloud backend already rolls out a new revision
+  in response to the secret change; a follow-up `up` is a redundant
+  second rollout.
+- **Don't set secrets one per command.** Each call makes the
+  backend roll out the app again; pass all the keys to a single
+  `rbt cloud secret set` so it rolls out once.
 - **Don't reuse `REBOOT_*` or `RBT_*` prefixes.** They're reserved
   by the platform — `rbt cloud secret set REBOOT_X` will fail.
 - **Don't assume Cloud and dev share secrets.** Setting a value in

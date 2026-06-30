@@ -9,8 +9,8 @@ py_test(
     ],
     main = "init_tests.py",
     deps = [
-        "//reboot/cli:cli_py",
-        "//reboot/cli/init:init_py",
+        "//reboot/cli/commands/init:init_py",
+        "//reboot/cli/common:cli_py",
     ],
 )
 
@@ -51,14 +51,14 @@ nodejs_env.update({
 
 multi_env_sh_test(
     name = "init_sh_test",
-    srcs = ["//reboot/cli/init:test.sh"],
+    srcs = ["//reboot/cli/commands/init:test.sh"],
     args = [
-        "$(location //reboot/cli/init/templates_for_bazel_test:test.py)",
+        "$(location //reboot/cli/commands/init/templates_for_bazel_test:test.py)",
     ],
     data = test_packages + [
         ":expected_multi_env_output.txt",
         ":test_packages",
-        "//reboot/cli/init/templates_for_bazel_test:test.py",
+        "//reboot/cli/commands/init/templates_for_bazel_test:test.py",
     ],
     env = general_env,
     # NOTE: We test with some future Python versions to provide smoketest-level
@@ -87,7 +87,7 @@ sh_test(
     # The test installs 'Reboot' Node.js packages at least twice, it may
     # take a while, so we set the size to 'long'.
     timeout = "long",
-    srcs = ["//reboot/cli/init:nodejs_test.sh"],
+    srcs = ["//reboot/cli/commands/init:nodejs_test.sh"],
     data = test_packages + [
         ":expected_nodejs_output.txt",
         ":test_packages",

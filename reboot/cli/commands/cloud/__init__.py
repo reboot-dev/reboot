@@ -1,14 +1,14 @@
 import argparse
-from reboot.cli.cloud.down import cloud_down, register_cloud_down
-from reboot.cli.cloud.logs import cloud_logs, register_cloud_logs
-from reboot.cli.cloud.secrets import (
+from reboot.cli.commands.cloud.down import cloud_down, register_cloud_down
+from reboot.cli.commands.cloud.logs import cloud_logs, register_cloud_logs
+from reboot.cli.commands.cloud.secrets import (
     cloud_secret_delete,
     cloud_secret_list,
     cloud_secret_set,
     register_cloud_secret,
 )
-from reboot.cli.cloud.up import cloud_up, register_cloud_up
-from reboot.cli.rc import ArgumentParser
+from reboot.cli.commands.cloud.up import cloud_up, register_cloud_up
+from reboot.cli.common.rc import ArgumentParser
 from typing import Optional
 
 
