@@ -157,6 +157,9 @@ appId: host.exp.exponent
       id: "account-balance"
       text: "\\$9\\d\\d"
     direction: DOWN
-- assertVisible:
-    id: "account-balance"
-    text: "\\$6\\d\\d"
+# bob's account row is below alice's in the table, so scroll to it too.
+- scrollUntilVisible:
+    element:
+      id: "account-balance"
+      text: "\\$6\\d\\d"
+    direction: DOWN

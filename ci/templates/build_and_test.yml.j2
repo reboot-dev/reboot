@@ -145,17 +145,37 @@ jobs:
       # because building the workstation image plus running the emulator
       # exhausts the disk on a standard GitHub-hosted runner.
       runs-on: 16_core_GitHub_hosted
+      # On failure, upload Maestro's debug output (per-step screenshots +
+      # the view hierarchy, which Maestro writes to `~/.maestro/tests/`)
+      # and the backend/emulator/Expo logs, so a flaky flow can be
+      # diagnosed from the run without reproducing it locally.
+      artifact-name: maestro-debug
+      artifact-path: maestro-artifacts
       run: |
-        # Fail if any part of this workflow fails.
         set -eux
+        # Repo root inside the container; it's bind-mounted from the
+        # runner, so artifacts we drop here are visible to the upload
+        # step that runs back on the runner.
+        workspace="$(pwd)"
 <% if is_mono %>
         cd public
 <% endif %>
         # The targets are tagged `manual`, so name them explicitly
         # rather than relying on a wildcard expansion to pick them up.
+        # Capture the status so we can still collect artifacts on failure.
+        returncode=0
         bazel test --test_output=streamed \
           //tests/reboot/examples/chat-room:maestro_test \
-          //tests/reboot/examples/bank-pydantic:maestro_test
+          //tests/reboot/examples/bank-pydantic:maestro_test || returncode=$?
+        if [ "${returncode}" -ne 0 ]; then
+          destination="${workspace}/maestro-artifacts"
+          mkdir -p "${destination}"
+          cp -r "${HOME}/.maestro/tests" "${destination}/maestro-tests" \
+            2> /dev/null || true
+          cp /tmp/rbt.log /tmp/emulator.log /tmp/expo.log "${destination}/" \
+            2> /dev/null || true
+        fi
+        exit "${returncode}"
 
   build-reboot-linux-arm64:
     name: Build public repo for Linux arm64
