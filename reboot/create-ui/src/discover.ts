@@ -80,7 +80,7 @@ function globManifests(dir: string): string[] {
 
 export interface DiscoveryResult {
   projectRoot: string;
-  /** React output dir from `.rbtrc`, e.g. `"web/api"`. */
+  /** React output dir from `.rbtrc`, e.g. `"frontend/api"`. */
   reactDir: string;
   allUis: UiEntryWithPackage[];
   unimplemented: UiEntryWithPackage[];
@@ -102,7 +102,7 @@ export function discover(cwd: string): DiscoveryResult | null {
   if (reactDir) {
     searchDirs.push(path.join(projectRoot, reactDir));
   }
-  for (const d of ["web/api", "api"]) {
+  for (const d of ["frontend/api", "web/api", "api"]) {
     const full = path.join(projectRoot, d);
     if (!searchDirs.includes(full)) {
       searchDirs.push(full);
@@ -140,7 +140,7 @@ export function discover(cwd: string): DiscoveryResult | null {
 
   return {
     projectRoot,
-    reactDir: reactDir ?? "web/api",
+    reactDir: reactDir ?? "frontend/api",
     allUis,
     unimplemented,
   };

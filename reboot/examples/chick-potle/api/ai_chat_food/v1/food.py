@@ -94,14 +94,14 @@ api = API(
         methods=Methods(
             show_menu=UI(
                 request=None,
-                path="web/ui/menu",
+                path="frontend/mcp/menu",
                 title="Food Menu",
                 description="Browse the food menu and add "
                 "items to the cart.",
             ),
             show_cart=UI(
                 request=None,
-                path="web/ui/cart",
+                path="frontend/mcp/cart",
                 title="Your Cart",
                 description="View the cart with item details "
                 "and total price.",

@@ -43,13 +43,13 @@ strongest first.
   (the `UI()` method type).
 - `.rbtrc` has a `dev run --default-config=hmr` line together with
   a `dev run:hmr --frontend-host=...` line.
-- The frontend uses the nested `web/ui/<name>/index.html` layout.
+- The frontend uses the nested `frontend/mcp/<name>/index.html` layout.
 
 **Web App** — all of:
 
 - No `mcp=` / `UI(` anywhere under `api/`.
 - A single SPA entry at `web/index.html` (top of `web/`, not under
-  `web/ui/`).
+  `frontend/mcp/`).
 
 If the signals genuinely conflict, or none match, ask the user
 ("Is this an MCP Chat App or a standalone Web App?"). Do not guess —
@@ -60,8 +60,9 @@ the app type changes whether the setup wizard is opened.
 From the project root:
 
 - Backend: if `.venv/` is missing, run `uv sync`.
-- Frontend: if `web/node_modules/` is missing, run
-  `cd web && npm install`.
+- Frontend: if the frontend's `node_modules/` is missing, run
+  `npm install` in the frontend directory — `frontend/` for an MCP
+  Chat App, `web/` for a standalone Web App.
 
 ## Step 4 — Secrets: the git-ignored env file
 
@@ -136,8 +137,11 @@ confusing to a developer who cannot see the backend terminal.
 
 ### Frontend — both app types
 
+Run the Vite dev server from the frontend directory: `frontend/` for
+an MCP Chat App, `web/` for a standalone Web App.
+
 ```sh
-cd web && npm run dev
+cd frontend && npm run dev   # or `cd web` for a standalone Web App
 ```
 
 ### Setup wizard — MCP Chat Apps only

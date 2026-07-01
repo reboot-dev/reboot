@@ -136,7 +136,7 @@ they cover aren't restated inline below.
 | [`references/api-method-types.md`](references/api-method-types.md)                     | The pydantic API file. `User`-type front door, `mcp=Tool()` / `mcp=None`, `UI()` (including parameterized UI props), `factory=True` on `create`, `Workflow(...)` declaration shape. Full Counter API example.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | [`references/api-state-shapes.md`](references/api-state-shapes.md)                     | Two recurring state shapes: `list[Item]` with `default_factory=list`; single nested `Model` sub-objects as `Optional[X] = Field(tag=N, default=None)` hydrated in factory `create` (Gotcha #13). The state-inside-state regression and how to compose state actors via string ID + `ref(id)`.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | [`references/servicer-patterns.md`](references/servicer-patterns.md)                   | Servicer-side patterns: `UserServicer` calling `<X>.create(context)`, Workflow Servicer with `MyType.ref()` (no-arg) magic, inline writers via `.per_workflow("alias").write(context, fn)` / `.per_iteration("alias").write(...)` / `.always().write(...)`, scheduling a workflow from a Transaction with `.schedule()`.                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| [`references/react-scaffolding.md`](references/react-scaffolding.md)                   | The `web/` shell: `package.json` (per-UI `build:<name>` scripts, no auto-discovery wrappers), `vite.config.ts` (load-bearing — copy exactly), `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json`, `index.css` theme variables, `ui/<name>/index.html`, `ui/<name>/main.tsx`.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| [`references/react-scaffolding.md`](references/react-scaffolding.md)                   | The `frontend/` shell: `package.json` (per-UI `build:<name>` scripts, no auto-discovery wrappers), `vite.config.ts` (load-bearing — copy exactly), `tsconfig.json` / `tsconfig.app.json` / `tsconfig.node.json`, `index.css` theme variables, `mcp/<name>/index.html`, `mcp/<name>/main.tsx`.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | [`references/react-app-tsx.md`](references/react-app-tsx.md)                           | `App.tsx` — generated `use<Type>()` hook usage (reader subscriptions + mutation calls), Python-snake → TypeScript-camel field naming, Zod-validated request/response types. Full Counter `App.tsx` + `App.module.css` example.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | [`references/gotchas.md`](references/gotchas.md)                                       | The numbered MCP-Chat-App–specific trip list (1–19): `mcp=Tool()`/`mcp=None` required, `factory=True` on app-type `create`, `MyType.ref()` not `cls.ref()`/`self.ref()` in workflows, `.schedule()` from a Transaction, Optional+`default=None` for nested Models, `.read()` only on no-arg ref inside a workflow, method-name PascalCase → generated `<Type>.<Method>Request`, etc.                                                                                                                                                                                                                                                                                                                                                              |
 | [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md)             | Choosing your `Application(oauth=...)` provider via `OAuthProviderByEnvironment(dev=..., prod=...)` (the recommended `dev=Development(), prod=Google(...)` shape; a selected `None` arm fails startup), the `Google` / `GitHub` / `Auth0` / `Development` / `Anonymous` providers and where credentials come from (incl. the `/__/oauth/callback` URL), and the user-ID-namespace gotcha that makes switching providers after launch infeasible — choose deliberately **before** real users have state.                                                                                                                                                                                                                                           |
@@ -559,19 +559,26 @@ a worked set are in
 │       ├── example_prompts.py  # Wizard example prompts
 │       └── servicers/
 │           └── <name>.py    # Servicer implementation
-└── web/
+└── frontend/
     ├── package.json
+    ├── build.mjs            # Discovers + builds every UI
     ├── tsconfig.json
     ├── tsconfig.app.json
     ├── tsconfig.node.json
     ├── vite.config.ts
-    ├── index.css            # Theme variables
-    └── ui/
-        └── <ui-name>/
-            ├── index.html
-            ├── main.tsx     # RebootClientProvider entry
-            ├── App.tsx      # React component
-            └── App.module.css
+    ├── api/                 # Generated React bindings (rbt generate)
+    ├── mcp/
+    │   └── <ui-name>/
+    │       ├── index.html
+    │       ├── index.css        # Theme variables
+    │       ├── main.tsx         # RebootClientProvider entry
+    │       ├── App.tsx          # React component
+    │       └── App.module.css
+    └── web/                 # Optional standalone browser SPA
+        ├── index.html
+        └── src/
+            ├── main.tsx
+            └── App.tsx
 ```
 
 ## Step-by-Step Build Flow
@@ -600,14 +607,14 @@ application directory.**
    [`references/project-shell.md`](references/project-shell.md) and
    `python/references/lifecycle-application-entry.md`.
 7. `npm create @reboot-dev/ui`.
-8. `cd web && npm install`.
+8. `cd frontend && npm install`.
 9. `uv run rbt generate` (React bindings need `node_modules`).
 10. Customize React UIs — see
     [`references/react-scaffolding.md`](references/react-scaffolding.md)
-    for the `web/` shell and
+    for the `frontend/` shell and
     [`references/react-app-tsx.md`](references/react-app-tsx.md) for
     `App.tsx` patterns.
-11. `cd web && npm run build`.
+11. `cd frontend && npm run build`.
 12. **Write and run backend unit tests covering each user-facing
     user story before handing the app off.** Enumerate the user
     stories from the plan — every action the user should be able

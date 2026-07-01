@@ -11,18 +11,19 @@ __pycache__/
 # Generated code — regenerated inside the image by `rbt
 # generate`.
 backend/api/
-web/api/
+frontend/api/
 
-# Node sources / deps / caches — we only copy `web/dist/`
+# Node sources / deps / caches — we only copy `frontend/dist/`
 # into the image.
-web/node_modules/
-web/ui/
-web/src/
-web/package.json
-web/package-lock.json
-web/tsconfig*.json
-web/vite.config.ts
-web/index.css
+frontend/node_modules/
+frontend/mcp/
+frontend/web/
+frontend/src/
+frontend/package.json
+frontend/package-lock.json
+frontend/tsconfig*.json
+frontend/vite.config.ts
+frontend/index.css
 
 # VCS.
 .git/

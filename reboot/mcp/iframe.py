@@ -157,7 +157,7 @@ def dev_iframe_html(
     Args:
         ui_url_path: The dev server URL path (rooted at the Reboot
             origin) at which Vite serves this UI's `index.html`
-            directory, e.g. "/__/frontend/ui/clicker".
+            directory, e.g. "/__/frontend/mcp/clicker".
         reboot_url: Reboot server URL (extracted from request
             headers). The inner iframe is loaded from this origin.
         ui_name: Display name from the API definition (e.g.,

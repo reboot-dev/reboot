@@ -101,9 +101,9 @@ testing with:
   replacement.
 - **Claude** renders UIs in a sandboxed iframe that blocks HTTP
   script sources, so it can't load from a local Vite dev server.
-  Build the UIs first with `cd web && npm run build`, then run
+  Build the UIs first with `cd frontend && npm run build`, then run
   `uv run rbt dev run --config=dist` to serve the pre-built
-  artifacts from `web/dist/`.
+  artifacts from `frontend/dist/`.
 
 See your app's `.rbtrc` for the `hmr` and `dist` config
 definitions.

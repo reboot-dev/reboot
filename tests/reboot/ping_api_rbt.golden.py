@@ -14257,7 +14257,7 @@ class PingBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
         # Map UI method names to web app paths.
         _ui_app_paths: dict[str, str] = {
-            "show_pinger": "web/ui/pinger",
+            "show_pinger": "frontend/mcp/pinger",
         }
 
         # Optional artifact path overrides (only populated
@@ -17614,7 +17614,7 @@ class CounterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
         # Map UI method names to web app paths.
         _ui_app_paths: dict[str, str] = {
-            "show_clicker": "web/ui/clicker",
+            "show_clicker": "frontend/mcp/clicker",
         }
 
         # Optional artifact path overrides (only populated

@@ -1,16 +1,16 @@
 ---
 title: React Scaffolding — package.json, vite.config.ts, tsconfigs, index.css
 impact: CRITICAL
-impactDescription: The shell files for the `web/` tree. `vite.config.ts` is load-bearing — flattening the HTML output breaks MCP UI artifact discovery (the server resolves `web/dist/<ui-path>/index.html`, the **nested** Vite default). Per-UI build scripts (no auto-discovery wrappers); tsconfigs split into `app` and `node` halves.
-tags: web, react, vite, tsconfig, package-json, css, build, hmr, scaffolding, ui-name
+impactDescription: The shell files for the `frontend/` tree. `vite.config.ts` is load-bearing — flattening the HTML output breaks MCP UI artifact discovery (the server resolves `frontend/dist/mcp/<name>/index.html`, the **nested** Vite default). `npm run build` runs `build.mjs`, which auto-discovers and builds every UI; tsconfigs split into `app` and `node` halves.
+tags: web, react, vite, tsconfig, package-json, css, build, hmr, scaffolding, build-mjs
 ---
 
 ## React Scaffolding — package.json, vite.config.ts, tsconfigs, index.css
 
-Everything below is MCP-Chat-App-specific. The `web/` tree is owned
-by this skill — `python` knows nothing about it.
+Everything below is MCP-Chat-App-specific. The `frontend/` tree is
+owned by this skill — `python` knows nothing about it.
 
-## `web/package.json`
+## `frontend/package.json`
 
 **Use explicit per-UI build scripts as shown below. Do NOT create a
 `build.js` or any auto-discovery wrapper — use `npm run build:<name>`
@@ -57,62 +57,69 @@ for each UI, and update the `build` script to chain them:
 "build": "tsc --noEmit && npm run build:ui1 && npm run build:ui2"
 ```
 
-## `web/vite.config.ts`
+## `frontend/vite.config.ts`
 
-**CRITICAL: Copy this file EXACTLY.** Don't try to "flatten" the HTML
-output. The MCP server resolves the UI artifact at
-`web/dist/<ui-path>/index.html` (where `<ui-path>` matches the
-`path=` you set in `UI(...)`) — i.e. the **nested** Vite default.
-The `entryFileNames` / `assetFileNames` overrides in this config
-flatten the JS/CSS bundle names (which `viteSingleFile` then inlines
-into the HTML), but the HTML itself stays at its source-relative
-path. If you see `Web artifact 'web/dist/ui/<name>/index.html' is missing`,
-the fix is `cd web && npm run build`, **not** rewriting this file
-to emit `dist/<name>.html`.
+**CRITICAL: Copy this file EXACTLY.** One config drives two jobs,
+selected by `command`/`mode`: the `serve` dev server (HMR for every
+`mcp/<name>` UI under `/__/frontend/`) and `--mode <name>` (build one
+MCP UI). Each `--mode <name>` build roots itself at `mcp/<name>/` so
+its `index.html` lands at the **nested** `dist/mcp/<name>/index.html` —
+the path the MCP server resolves — with the JS/CSS inlined by
+`viteSingleFile`. If you see
+`Web artifact 'frontend/dist/mcp/<name>/index.html' is missing`, the
+fix is `cd frontend && npm run build`, **not** rewriting this file.
 
 ```typescript
 // Vite configuration for Reboot UIs.
+//
+// One config drives two jobs, selected by `command`/`mode`:
+//
+//   * `vite` (serve): a single dev server that delivers HMR for every
+//     `mcp/<name>` UI under `base: "/__/frontend/"`. Envoy proxies that
+//     prefix to this dev server (`run --config=hmr`).
+//   * `vite build --mode <name>`: builds one MCP UI into a single,
+//     self-contained `dist/mcp/<name>/index.html` (assets inlined via
+//     `vite-plugin-singlefile`). The framework serves it at
+//     `/__/frontend/mcp/<name>/index.html` in dist mode.
 import fs from "fs";
 import path from "path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
 
-// Auto-discover UIs from ui/ directory.
-const uiDir = path.resolve(__dirname, "ui");
-const uis: Record<string, { input: string; output: string }> =
-  Object.fromEntries(
-    fs
-      .readdirSync(uiDir)
-      .filter((d) => fs.existsSync(path.join(uiDir, d, "index.html")))
-      .map((name) => [
-        name,
-        { input: `ui/${name}/index.html`, output: `${name}.html` },
-      ])
-  );
+// Auto-discover MCP UIs: every `mcp/<name>/` with an `index.html`.
+// There may be no `mcp/` directory at all (one whose last MCP UI was
+// removed), so guard the read.
+const mcpDir = path.resolve(__dirname, "mcp");
+const mcpNames: string[] = fs.existsSync(mcpDir)
+  ? fs
+      .readdirSync(mcpDir)
+      .filter((name) => fs.existsSync(path.resolve(mcpDir, name, "index.html")))
+  : [];
+
+// Path alias for API imports (`@api/...` -> `./api/...`).
+const resolve = {
+  alias: {
+    "@api": path.resolve(__dirname, "./api"),
+  },
+  dedupe: ["react", "react-dom", "zod"],
+};
 
 export default defineConfig(({ command, mode }) => {
-  // Path alias for API imports (@api/... -> ./api/...).
-  const resolve = {
-    alias: {
-      "@api": path.resolve(__dirname, "./api"),
-    },
-    dedupe: ["react", "react-dom", "zod"],
-  };
-
-  // Dev server configuration.
+  // Dev server: serves the MCP UIs with HMR.
   //
   // UIs use a double iframe architecture:
   //   MCP Host -> srcdoc (origin=null) -> iframe (origin=localhost:9991)
   //
-  // The inner iframe loads from Envoy ("/__/frontend/**"), which proxies to
-  // Vite. Because the inner iframe has a real origin, Vite's URLs work
-  // normally. `base: "/__/frontend/"` ensures all paths route through Envoy.
+  // The inner iframe loads from Envoy ("/__/frontend/**"), which
+  // proxies to Vite. Because the inner iframe has a real origin,
+  // Vite's URLs work normally. `base: "/__/frontend/"` ensures all
+  // paths route through Envoy.
   //
   // Hot Module Replacement works automatically: Vite's client connects
-  // to the page's origin, and Envoy proxies WebSocket upgrades to Vite.
-  // This also works with tunnels (ngrok) since the tunnel points to
-  // Envoy.
+  // to the page's origin, and Envoy proxies WebSocket upgrades to
+  // Vite. This also works with tunnels (ngrok) since the tunnel
+  // points to Envoy.
   if (command === "serve") {
     const port = parseInt(process.env.RBT_VITE_PORT || "4444", 10);
 
@@ -124,34 +131,39 @@ export default defineConfig(({ command, mode }) => {
       server: {
         port,
         strictPort: true,
-        // Listen on all interfaces since requests come through Envoy
-        // (and tunnels).
+        // Listen on all interfaces since requests come through
+        // Envoy (and tunnels).
         host: true,
         allowedHosts: true,
       },
     };
   }
 
-  // Build mode: `vite build --mode <ui-name>`
-  const ui = uis[mode];
-  if (!ui) {
-    const valid = Object.keys(uis).join(", ");
-    throw new Error(`Unknown UI: ${mode}. Use --mode with: ${valid}`);
+  // Build one MCP UI: `vite build --mode <name>`. We root the build at
+  // `mcp/<name>/` so the output lands directly at
+  // `dist/mcp/<name>/index.html`, a single self-contained file (assets
+  // inlined by `vite-plugin-singlefile`). The framework serves it at
+  // `/__/frontend/mcp/<name>/index.html` in dist mode.
+  const name = mode;
+  if (!mcpNames.includes(name)) {
+    const valid = mcpNames.map((n) => `--mode ${n}`).join(", ");
+    throw new Error(
+      `Unknown MCP UI: ${mode || "(unset)"}. Use one of: ${valid}.`
+    );
   }
 
   return {
     plugins: [react(), viteSingleFile()],
+    root: path.resolve(__dirname, "mcp", name),
+    base: "/__/frontend/",
     build: {
-      outDir: "dist",
-      emptyOutDir: false,
+      outDir: path.resolve(__dirname, "dist/mcp", name),
+      emptyOutDir: true,
       assetsInlineLimit: 100000000,
       cssCodeSplit: false,
       rollupOptions: {
-        input: ui.input,
         output: {
           inlineDynamicImports: true,
-          entryFileNames: ui.output.replace(".html", ".js"),
-          assetFileNames: ui.output.replace(".html", ".[ext]"),
         },
       },
     },
@@ -160,7 +172,7 @@ export default defineConfig(({ command, mode }) => {
 });
 ```
 
-## `web/tsconfig.json`
+## `frontend/tsconfig.json`
 
 ```json
 {
@@ -172,7 +184,7 @@ export default defineConfig(({ command, mode }) => {
 }
 ```
 
-## `web/tsconfig.app.json`
+## `frontend/tsconfig.app.json`
 
 ```json
 {
@@ -198,11 +210,11 @@ export default defineConfig(({ command, mode }) => {
       "@api/*": ["./api/*"]
     }
   },
-  "include": ["ui"]
+  "include": ["mcp", "web", "src"]
 }
 ```
 
-## `web/tsconfig.node.json`
+## `frontend/tsconfig.node.json`
 
 ```json
 {
@@ -226,7 +238,7 @@ export default defineConfig(({ command, mode }) => {
 }
 ```
 
-## `web/index.css`
+## `frontend/mcp/<ui-name>/index.css`
 
 ```css
 :root {
@@ -272,7 +284,7 @@ body {
 }
 ```
 
-## `web/ui/<ui-name>/index.html`
+## `frontend/mcp/<ui-name>/index.html`
 
 ```html
 <!DOCTYPE html>
@@ -289,14 +301,14 @@ body {
 </html>
 ```
 
-## `web/ui/<ui-name>/main.tsx`
+## `frontend/mcp/<ui-name>/main.tsx`
 
 ```tsx
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RebootClientProvider } from "@reboot-dev/reboot-react";
 import { ClickerApp } from "./App";
-import "../../index.css";
+import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

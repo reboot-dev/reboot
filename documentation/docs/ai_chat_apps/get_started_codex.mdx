@@ -125,15 +125,23 @@ my-app/
 │   │       └── my_app.py     # Servicer implementation
 │   └── tests/
 │       └── my_app_test.py    # Backend behavior tests
-└── web/
+└── frontend/
     ├── package.json
-    ├── index.css             # Styling
-    └── ui/
-        └── my-ui/
-            ├── index.html
-            ├── main.tsx      # RebootClientProvider entry
-            ├── App.tsx       # React component
-            └── App.module.css
+    ├── build.mjs            # Discovers + builds every UI
+    ├── vite.config.ts
+    ├── api/                 # Generated React bindings (rbt generate)
+    ├── mcp/
+    │   └── my-ui/
+    │       ├── index.html
+    │       ├── index.css        # Styling
+    │       ├── main.tsx         # RebootClientProvider entry
+    │       ├── App.tsx          # React component
+    │       └── App.module.css
+    └── web/                 # Optional standalone browser SPA
+        ├── index.html
+        └── src/
+            ├── main.tsx
+            └── App.tsx
 ```
 
 The API definition uses the same `User` + application type pattern

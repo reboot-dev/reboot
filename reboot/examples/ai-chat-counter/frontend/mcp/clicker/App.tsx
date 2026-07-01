@@ -1,4 +1,4 @@
-// web/ui/clicker/App.tsx
+// frontend/mcp/clicker/App.tsx
 import { useCounter } from "@api/ai_chat_counter/v1/counter_rbt_react";
 import { useState, type FC } from "react";
 import css from "./App.module.css";

@@ -7,7 +7,7 @@ tags: react, app-tsx, hooks, useType, css-module, snake-camel, app-tsx-example, 
 
 ## React App.tsx — Generated Hooks and Component Patterns
 
-`web/ui/<ui-name>/App.tsx` is the React component for one UI. The
+`frontend/mcp/<ui-name>/App.tsx` is the React component for one UI. The
 generated `use<Type>()` hook returns reader subscriptions and
 mutation functions:
 
@@ -195,7 +195,7 @@ export const ClickerApp: FC = () => {
 };
 ```
 
-## `web/ui/<ui-name>/App.module.css`
+## `frontend/mcp/<ui-name>/App.module.css`
 
 ```css
 .container {

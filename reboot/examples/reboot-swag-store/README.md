@@ -62,9 +62,9 @@ reboot-swag-store/
 │   ├── printful.py           # Printful API client
 │   └── servicers/
 │       └── store.py          # Servicer implementations
-└── web/
+└── frontend/
     ├── index.css             # Shared theme
-    └── ui/
+    └── mcp/
         ├── store/            # Store browse UI
         ├── cart/             # Shopping cart UI
         └── confirmation/     # Order confirmation UI
@@ -104,7 +104,7 @@ uv sync
 ```
 
 ```sh
-cd web && npm install && cd ..
+cd frontend && npm install && cd ..
 ```
 
 ### Generate code
@@ -160,7 +160,7 @@ This starts the Reboot backend and watches for file changes. See
 **Terminal 2 — frontend (HMR):**
 
 ```sh
-cd web && npm run dev
+cd frontend && npm run dev
 ```
 
 This starts the Vite dev server with hot module replacement. The

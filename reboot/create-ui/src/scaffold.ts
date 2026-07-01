@@ -13,8 +13,8 @@ function writeIfMissing(filePath: string, content: string): boolean {
 
 /**
  * Derive the web root from the react output directory.
- * `.rbtrc` has `generate --react=web/api` — the web root
- * is the first path component (e.g. `web`).
+ * `.rbtrc` has `generate --react=frontend/api` — the web root
+ * is the first path component (e.g. `frontend`).
  */
 function webRoot(reactDir: string): string {
   return reactDir.split("/")[0];
@@ -56,8 +56,8 @@ export function scaffold(
   const createdUis: string[] = [];
 
   // Derive UI directory names for package.json build scripts.
-  // Use the last path component (e.g. "web/ui/profile" -> "profile")
-  // to match what the vite config discovers under ui/.
+  // Use the last path component (e.g. "frontend/mcp/profile" -> "profile")
+  // to match what the vite config discovers under mcp/.
   const uiNames = allUis
     .filter((ui) => ui.path.split("/")[0] === root)
     .map((ui) => path.basename(ui.path));

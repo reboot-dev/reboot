@@ -407,7 +407,7 @@ Before writing code, analyze the user's request:
 Key differences from a `chat-app` layout:
 
 - `web/index.html` lives at the top of `web/` (single SPA entry),
-  **not** under `web/ui/<name>/index.html`.
+  **not** under `frontend/mcp/<name>/index.html`.
 - `vite.config.ts` is the **stock** Vite config — no nested-output
   override, no `viteSingleFile` plugin. There's no MCP host
   resolving artifacts by path.

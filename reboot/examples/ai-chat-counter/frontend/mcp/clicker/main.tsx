@@ -1,4 +1,4 @@
-// web/ui/clicker/main.tsx
+// frontend/mcp/clicker/main.tsx
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RebootClientProvider } from "@reboot-dev/reboot-react";

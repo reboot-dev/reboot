@@ -167,7 +167,7 @@ api = API(
         methods=Methods(
             show_clicker=UI(
                 request=None,
-                path="web/ui/clicker",
+                path="frontend/mcp/clicker",
                 title="Counter Clicker",
                 description="Interactive clicker UI "
                 "for the counter.",
@@ -404,8 +404,8 @@ Create a React app for your \`show_clicker\` UI method. Each
 `}>
 
 ```sh
-mkdir -p web/ui/clicker
-cd web && npm init -y
+mkdir -p frontend/mcp/clicker
+cd frontend && npm init -y
 npm install react react-dom @reboot-dev/reboot-react @reboot-dev/reboot-api
 npm install -D @vitejs/plugin-react vite vite-plugin-singlefile typescript @types/react @types/react-dom
 cd ..
@@ -422,14 +422,14 @@ styling separate from the component logic.
 `}>
 
 ```sh
-touch web/ui/clicker/App.module.css
+touch frontend/mcp/clicker/App.module.css
 ```
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/web/ui/clicker/App.module.css&syntax=css) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/web/ui/clicker/App.module.css -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/frontend/mcp/clicker/App.module.css&syntax=css) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/frontend/mcp/clicker/App.module.css -->
 
 ```css
-/* web/ui/clicker/App.module.css */
+/* frontend/mcp/clicker/App.module.css */
 
 /*
  * The clicker renders inline inside the MCP host (e.g. Claude.ai),
@@ -519,14 +519,14 @@ the UI is opened.
 `}>
 
 ```sh
-touch web/ui/clicker/App.tsx
+touch frontend/mcp/clicker/App.tsx
 ```
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/web/ui/clicker/App.tsx&syntax=tsx) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/web/ui/clicker/App.tsx -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/frontend/mcp/clicker/App.tsx&syntax=tsx) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/frontend/mcp/clicker/App.tsx -->
 
 ```tsx
-// web/ui/clicker/App.tsx
+// frontend/mcp/clicker/App.tsx
 import { useCounter } from "@api/ai_chat_counter/v1/counter_rbt_react";
 import { useState, type FC } from "react";
 import css from "./App.module.css";
@@ -580,14 +580,14 @@ detects the environment.
 `}>
 
 ```sh
-touch web/ui/clicker/main.tsx web/ui/clicker/index.html
+touch frontend/mcp/clicker/main.tsx frontend/mcp/clicker/index.html
 ```
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/web/ui/clicker/main.tsx&syntax=tsx) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/web/ui/clicker/main.tsx -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/frontend/mcp/clicker/main.tsx&syntax=tsx) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/frontend/mcp/clicker/main.tsx -->
 
 ```tsx
-// web/ui/clicker/main.tsx
+// frontend/mcp/clicker/main.tsx
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RebootClientProvider } from "@reboot-dev/reboot-react";
@@ -604,11 +604,11 @@ createRoot(document.getElementById("root")!).render(
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/web/ui/clicker/index.html&syntax=html) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/web/ui/clicker/index.html -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/frontend/mcp/clicker/index.html&syntax=html) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/frontend/mcp/clicker/index.html -->
 
 ```html
-<!-- web/ui/clicker/index.html -->
+<!-- frontend/mcp/clicker/index.html -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -641,30 +641,30 @@ Create a \`vite.config.ts\` that auto-discovers UIs from the
 <!-- TODO(rjh): replace this whole section with an `npm create` that scaffolds this stuff -->
 
 ```sh
-touch web/vite.config.ts
+touch frontend/vite.config.ts
 ```
 
-```ts title=web/vite.config.ts
-// web/vite.config.ts
+```ts title=frontend/vite.config.ts
+// frontend/vite.config.ts
 import fs from "fs";
 import path from "path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
 
-// Auto-discover UIs from ui/ directory.
-const uiDir = path.resolve(__dirname, "ui");
+// Auto-discover UIs from mcp/ directory.
+const mcpDir = path.resolve(__dirname, "mcp");
 const uis: Record<string, { input: string; output: string }> =
   Object.fromEntries(
     fs
-      .readdirSync(uiDir)
+      .readdirSync(mcpDir)
       .filter((d) =>
-        fs.existsSync(path.join(uiDir, d, "index.html"))
+        fs.existsSync(path.join(mcpDir, d, "index.html"))
       )
       .map((name) => [
         name,
         {
-          input: `ui/${name}/index.html`,
+          input: `mcp/${name}/index.html`,
           output: `${name}.html`,
         },
       ])
@@ -722,7 +722,7 @@ for the \`rbt\` CLI. Use it to tell Reboot where your API files live,
 how to generate code, and how to run your app.
 
 The key additions for AI Chat Apps are
-\`generate --react=web/api\` (generates React hooks) and
+\`generate --react=frontend/api\` (generates React hooks) and
 \`generate --react-extensions\` (enables hooks to work in both
 AI chat and browser contexts).
 
@@ -744,12 +744,12 @@ generate api/
 generate --python=backend/api/
 
 # Generate React hooks.
-generate --react=web/api
+generate --react=frontend/api
 generate --react-extensions
 
 # Watch for source changes.
 dev run --watch=backend/**/*.py
-dev run --watch=web/dist/**/*.html
+dev run --watch=frontend/dist/**/*.html
 
 # Python application.
 dev run --python
@@ -778,7 +778,7 @@ are available.
 
 ```sh
 uv run rbt dev run &
-cd web && npx vite build --mode clicker
+cd frontend && npx vite build --mode clicker
 ```
 
 </Step>

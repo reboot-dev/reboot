@@ -40,13 +40,13 @@ drive the order programmatically.
 uv sync
 
 # Install web dependencies.
-cd web && npm install && cd ..
+cd frontend && npm install && cd ..
 
 # Generate API code (Python + React bindings).
 uv run rbt generate
 
 # Build the React UIs.
-cd web && npm run build && cd ..
+cd frontend && npm run build && cd ..
 ```
 
 Then run the app (each command in its own terminal, from the
@@ -57,7 +57,7 @@ project directory):
 uv run rbt dev run
 
 # Terminal 2: start the Vite dev server for Hot Module Replacement.
-cd web && npm run dev
+cd frontend && npm run dev
 ```
 
 Then open <http://localhost:9991> and follow the setup wizard to
@@ -109,9 +109,9 @@ chick-potle/
 │   └── src/
 │       ├── main.py               # Application entrypoint.
 │       └── servicers/food.py     # User and FoodOrder servicers.
-└── web/
+└── frontend/
     ├── api/                      # Generated React bindings.
-    └── ui/
+    └── mcp/
         ├── menu/                 # Menu grid UI.
         └── cart/                 # Cart UI.
 ```
