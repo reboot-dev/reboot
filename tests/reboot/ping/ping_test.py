@@ -1,5 +1,6 @@
 import httpx
 import json
+import os
 import time
 import unittest
 from mcp.client.session import ClientSession
@@ -441,6 +442,17 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         `resources/read` response. This tells ext-apps hosts
         which origins to allow in the sandbox iframe's CSP.
         """
+        # Point the frontend paths at the built dist the way
+        # `rbt serve` does (see `ping_py_bin`'s env) so the clicker
+        # UI resolves to the real `frontend/dist/mcp/clicker/
+        # index.html` rather than the "build not found" placeholder.
+        # Without this the UI resolves to a non-existent source path
+        # and the test would silently exercise the placeholder.
+        os.environ["RBT_FRONTEND_DIST_PATH"] = "frontend/dist"
+        os.environ["RBT_FRONTEND_ROOT_PATH"] = "frontend"
+        self.addCleanup(os.environ.pop, "RBT_FRONTEND_DIST_PATH", None)
+        self.addCleanup(os.environ.pop, "RBT_FRONTEND_ROOT_PATH", None)
+
         await self.rbt.up(
             Application(
                 servicers=[
@@ -534,6 +546,19 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
 
                     # Should be HTML.
                     self.assertIn("text/html", content.mimeType or "")
+
+                    # Must be the real built clicker UI, not the
+                    # "build not found" placeholder — otherwise a
+                    # dist-resolution regression would pass unnoticed,
+                    # since the placeholder is also `text/html` with
+                    # the same injected CSP metadata.
+                    html = getattr(content, "text", "") or ""
+                    self.assertNotIn(
+                        "needs to be built first",
+                        html,
+                        "Served the build-not-found placeholder "
+                        "instead of the real built clicker UI.",
+                    )
 
                     # Verify CSP metadata was injected.
                     self.assertIsNotNone(

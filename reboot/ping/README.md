@@ -5,19 +5,26 @@ is built using Bazel, it can be used to productively iterate on Reboot
 features:
 
 - To validate behavior of a local Reboot application (with live-reload
-  on any framework change!), by using
-  `ibazel run //reboot/ping:ping_py_bin`.
+  on any framework change!), by using `ibazel run //reboot/ping:ping_py_bin`.
+  This serves both the MCP UIs and the `web/` SPA from the esbuild-built
+  static content on disk, behind Envoy under `/__/frontend/` — the web
+  app lands at `http://localhost:9991/__/frontend/web/`.
 - To validate behavior of a local cluster
   (`bazel run //infrastructure/clusters/local:cluster up`), since it is
   installed on those by default.
 
-## Using MCPJam
+## Testing the MCP app
 
-For testing with MCPJam Inspector:
+### MCPJam
+
+[MCPJam](https://www.mcpjam.com/) is the friendlier option if you're a human poking at the app: log in and it gives you a chat interface that drives the MCP UIs (clicker, pinger) and tools the way a real MCP host would. Point it at ping's MCP server at `http://localhost:9991/mcp`.
+
+### MCP Inspector
+
+The official [MCP Inspector](https://github.com/modelcontextprotocol/inspector) needs no login and shows the raw tools / resources / UIs — handy for a quick, low-level look. Point it at the same `http://localhost:9991/mcp`:
 
 ```bash
-# In another terminal, run MCPJam:
-npx @mcpjam/inspector@2.18.1 --url http://localhost:9991/mcp --oauth
+npx @modelcontextprotocol/inspector
 ```
 
 ## On the local cluster

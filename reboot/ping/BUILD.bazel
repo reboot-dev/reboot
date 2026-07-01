@@ -33,13 +33,16 @@ py_library(
         # UI-serving code (`reboot/mcp/ui.py`) can locate the
         # project root in runfiles by walking up from the
         # generated module, plus the built UI dist so it can read
-        # real UI HTML from `frontend/dist/...`. Carried on the library
-        # (rather than only on `ping_py_bin`) so every consumer
+        # real UI HTML from `frontend/dist/...`. `web_dist` is the
+        # static build of the `web/` SPA, served from disk in
+        # `:ping_static` (dist) mode. Carried on the library
+        # (rather than only on the run binaries) so every consumer
         # gets them in runfiles -- notably `ping_test`, whose
         # `test_ui_resource_metadata` reads a UI resource.
         ".rbtrc",
         ":clicker_dist",
         ":pinger_dist",
+        ":web_dist",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -94,18 +97,23 @@ js_reboot_react_library_from_pydantic(
     visibility = [
         "//reboot/ping/frontend/mcp/clicker:__pkg__",
         "//reboot/ping/frontend/mcp/pinger:__pkg__",
+        "//reboot/ping/frontend/web:__pkg__",
     ],
 )
 
-# Inline the JS and CSS bundles into the HTML template to
-# produce a single self-contained file. The MCP framework
-# serves this file directly from
-# `frontend/dist/mcp/<name>/index.html` (see
-# `ui_html` in `reboot/mcp/ui.py`) and has
-# no static-file server for separate `.js`/`.css` assets.
-# In the normal (non-Bazel) workflow Vite handles this
-# inlining, but under Bazel we only have the esbuild
-# bundles, so we do it ourselves.
+# Inlines esbuild's JS (and optional CSS) bundle into an HTML template
+# to produce a single self-contained file. The MCP framework serves
+# such a file directly from `frontend/dist/mcp/<name>/index.html` (see
+# `ui_html` in `reboot/mcp/ui.py`) and has no static-file server for
+# separate `.js`/`.css` assets. In the normal (non-Bazel) workflow Vite
+# handles this inlining; under Bazel we only have the esbuild bundles,
+# so we do it ourselves.
+py_binary(
+    name = "inline_bundle",
+    srcs = ["frontend/inline_bundle.py"],
+    main = "frontend/inline_bundle.py",
+)
+
 genrule(
     name = "clicker_dist",
     srcs = [
@@ -114,18 +122,12 @@ genrule(
         "//reboot/ping/frontend/mcp/clicker:index.html",
     ],
     outs = ["frontend/dist/mcp/clicker/index.html"],
-    cmd = """
-        python3 -c "
-import sys
-html = open(sys.argv[1]).read()
-css = open(sys.argv[2]).read()
-js = open(sys.argv[3]).read()
-style = '<style>' + css + '</style>'
-script = '<script type=\"module\">' + js + '</script>'
-out = html.replace('<!-- BUNDLE_PLACEHOLDER -->', style + script)
-open(sys.argv[4], 'w').write(out)
-" $(location //reboot/ping/frontend/mcp/clicker:index.html) $(location //reboot/ping/frontend/mcp/clicker:clicker_bundle.css) $(location //reboot/ping/frontend/mcp/clicker:clicker_bundle.js) $@
-    """,
+    cmd = "$(location :inline_bundle) " +
+          "$(location //reboot/ping/frontend/mcp/clicker:index.html) " +
+          "$(location //reboot/ping/frontend/mcp/clicker:clicker_bundle.js) " +
+          "$@ " +
+          "--css $(location //reboot/ping/frontend/mcp/clicker:clicker_bundle.css)",
+    tools = [":inline_bundle"],
 )
 
 genrule(
@@ -136,39 +138,65 @@ genrule(
         "//reboot/ping/frontend/mcp/pinger:index.html",
     ],
     outs = ["frontend/dist/mcp/pinger/index.html"],
-    cmd = """
-        python3 -c "
-import sys
-html = open(sys.argv[1]).read()
-css = open(sys.argv[2]).read()
-js = open(sys.argv[3]).read()
-style = '<style>' + css + '</style>'
-script = '<script type=\"module\">' + js + '</script>'
-out = html.replace('<!-- BUNDLE_PLACEHOLDER -->', style + script)
-open(sys.argv[4], 'w').write(out)
-" $(location //reboot/ping/frontend/mcp/pinger:index.html) $(location //reboot/ping/frontend/mcp/pinger:pinger_bundle.css) $(location //reboot/ping/frontend/mcp/pinger:pinger_bundle.js) $@
-    """,
+    cmd = "$(location :inline_bundle) " +
+          "$(location //reboot/ping/frontend/mcp/pinger:index.html) " +
+          "$(location //reboot/ping/frontend/mcp/pinger:pinger_bundle.js) " +
+          "$@ " +
+          "--css $(location //reboot/ping/frontend/mcp/pinger:pinger_bundle.css)",
+    tools = [":inline_bundle"],
 )
 
-# The following binary target is particularly useful with
-# `ibazel` for iterative development on a live Reboot app! Run:
-#   ibazel run //reboot/ping:ping_py_bin
-# Then access the app at e.g.:
-#   http://localhost:9991/__/inspect
+# Inline esbuild's JS bundle into the `web/` SPA's HTML to produce a
+# single self-contained `frontend/dist/web/index.html`. The web app
+# carries its styling inline in TSX rather than a stylesheet, so there
+# is no CSS to inline. Its `index.html` loads the entry with a real
+# `<script src="./src/main.tsx">` tag (so Vite's dev server can serve it
+# directly), so we hand that exact tag to `inline_bundle` as the marker
+# to replace.
+genrule(
+    name = "web_dist",
+    srcs = [
+        "//reboot/ping/frontend/web:web_bundle.js",
+        "//reboot/ping/frontend/web:index.html",
+    ],
+    outs = ["frontend/dist/web/index.html"],
+    cmd = "$(location :inline_bundle) " +
+          "$(location //reboot/ping/frontend/web:index.html) " +
+          "$(location //reboot/ping/frontend/web:web_bundle.js) " +
+          "$@ " +
+          "--marker '<script type=\"module\" src=\"./src/main.tsx\"></script>'",
+    tools = [":inline_bundle"],
+)
+
+# Environment for the run binary below: pretend we're under `rbt dev`
+# with a local Envoy on port 9991.
+_PING_RUN_ENV = {
+    "RBT_DEV": "true",
+    "RBT_NAME": "ping",
+    "RBT_SERVERS": "2",
+    "RBT_STATE_DIRECTORY": "/tmp/ping",
+    "REBOOT_CRYPTO_ROOT_KEYS": "v1:ping",
+    "REBOOT_LOCAL_ENVOY": "true",
+    "REBOOT_LOCAL_ENVOY_PORT": "9991",
+    "REBOOT_LOCAL_ENVOY_USE_TLS": "False",
+}
+
+# Run target: serves both the MCP UIs and the `web/` SPA from the
+# esbuild-built static content on disk (`frontend/dist/...`).
+# `:clicker_dist`, `:pinger_dist`, and `:web_dist` (carried in
+# `ping_py`'s runfiles) supply that content; the framework serves it
+# over `/__/frontend/` via a small static-file server. Run:
+#   bazel run //reboot/ping:ping_py_bin
+# Then open the web app at e.g.:
+#   http://localhost:9991/__/frontend/web/
 py_binary(
     name = "ping_py_bin",
     srcs = ["ping.py"],
-    env = {
-        # Pretend that we're running `rbt dev`.
-        "RBT_DEV": "true",
-        "RBT_NAME": "ping",
-        "RBT_SERVERS": "2",
-        "RBT_STATE_DIRECTORY": "/tmp/ping",
-        "REBOOT_CRYPTO_ROOT_KEYS": "v1:ping",
-        "REBOOT_LOCAL_ENVOY": "true",
-        "REBOOT_LOCAL_ENVOY_PORT": "9991",
-        "REBOOT_LOCAL_ENVOY_USE_TLS": "False",
-    },
+    env = dict(
+        _PING_RUN_ENV,
+        RBT_FRONTEND_DIST_PATH = "frontend/dist",
+        RBT_FRONTEND_ROOT_PATH = "frontend",
+    ),
     main = "ping.py",
     visibility = ["//visibility:public"],
     deps = [
