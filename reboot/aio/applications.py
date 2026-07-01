@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import colorama
+import inspect
 import os
 import reboot.aio.memoize
 import reboot.aio.workflows
@@ -35,6 +36,7 @@ from reboot.controller.server_managers import (
 )
 from reboot.controller.settings import ENVVAR_REBOOT_MODE, REBOOT_MODE_CONFIG
 from reboot.mcp.factories import create_mcp_factory
+from reboot.mcp.ui import find_project_root_from
 from reboot.nodejs.python import should_print_stacktrace
 from reboot.run_environments import (
     InvalidRunEnvironment,
@@ -48,6 +50,8 @@ from reboot.run_environments import (
 from reboot.server.service_descriptor_validator import ProtoValidationError
 from reboot.settings import (
     DEFAULT_SECURE_PORT,
+    ENVVAR_RBT_FRONTEND_DIST_PATH,
+    ENVVAR_RBT_FRONTEND_HOST,
     ENVVAR_RBT_NAME,
     ENVVAR_RBT_SERVERS,
     ENVVAR_RBT_STATE_DIRECTORY,
@@ -60,6 +64,7 @@ from reboot.settings import (
 )
 from reboot.version import REBOOT_VERSION
 from reboot.versioning import version_less_than
+from starlette.staticfiles import StaticFiles
 from typing import Any, Awaitable, Callable, NoReturn, Optional
 
 logger = get_logger(__name__)
@@ -660,6 +665,73 @@ class Application:
                 per_request_hooks=per_request_hooks,
                 token_verifier=mcp_sdk_token_verifier,
             ),
+        )
+
+        # In dist mode (a built frontend, no Vite dev server) serve the
+        # `--frontend-dist-path` directory over `/__/frontend/` from this
+        # same HTTP server, alongside `/mcp`. Envoy has no frontend route
+        # in this mode, so a browser's `/__/frontend/...` request falls
+        # through to the app's HTTP cluster and lands here. Starlette
+        # strips the mount prefix, so `StaticFiles(directory=dist_dir)`
+        # resolves `/__/frontend/web/index.html` to
+        # `dist_dir/web/index.html`. We mount here (not in
+        # `_rbt_start_and_up_and_initialize`) so the mount is present in
+        # every serving server subprocess, which rebuilds its web
+        # framework by re-running `__init__` rather than `run()`. In HMR
+        # mode `ENVVAR_RBT_FRONTEND_HOST` points at the Vite dev server
+        # and Envoy routes `/__/frontend/` there instead, so skip the
+        # mount.
+        frontend_dist_path = os.environ.get(ENVVAR_RBT_FRONTEND_DIST_PATH)
+        if frontend_dist_path and not os.environ.get(ENVVAR_RBT_FRONTEND_HOST):
+            project_root = self._frontend_project_root()
+            self.http.mount(
+                "/__/frontend",
+                app=StaticFiles(
+                    directory=str(project_root / frontend_dist_path),
+                    # `html=True` so directory URLs like
+                    # `/__/frontend/web/` (the web app's pop-out target)
+                    # serve `index.html`. `check_dir=False` so a
+                    # not-yet-built dist doesn't crash startup: `ui.py`
+                    # still serves its "build not found" placeholder for
+                    # MCP UIs, and the web app 404s until it's built.
+                    # `follow_symlink=True` so a dist whose files are
+                    # symlinks pointing outside the served tree still
+                    # resolves — notably under Bazel runfiles, where the
+                    # built dist is a symlink farm into `bazel-out` and
+                    # Starlette's default `realpath` check would reject
+                    # every file as escaping the directory.
+                    html=True,
+                    check_dir=False,
+                    follow_symlink=True,
+                ),
+            )
+
+    def _frontend_project_root(self) -> Path:
+        """The project root (the directory containing `.rbtrc`) that
+        `--frontend-dist-path` is relative to.
+
+        `self.servicers` mixes the user's servicers with
+        framework-provided ones (libraries, `memoize`,
+        `ApplicationServicer`) in no guaranteed order, and the
+        framework ones live outside the project (e.g. in
+        `site-packages`), where no `.rbtrc` is found. Resolve the root
+        from the first servicer that has one.
+        """
+        for servicer in self.servicers:
+            try:
+                return find_project_root_from(inspect.getfile(servicer))
+            except (RuntimeError, TypeError):
+                # No `.rbtrc` above this servicer's file, or the
+                # servicer has no source file at all.
+                continue
+        raise InputError(
+            reason=(
+                "`--frontend-dist-path` was set, but no project root (a "
+                "directory containing `.rbtrc`) was found above any of "
+                "this application's servicers, so the built frontend "
+                "can't be located. Make sure your deployment includes "
+                "your project's `.rbtrc` alongside its code."
+            )
         )
 
     def _require_oauth_libraries(self) -> None:

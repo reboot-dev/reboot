@@ -45,10 +45,12 @@ py_library(
         "//reboot/controller:server_managers_py",
         "//reboot/inspect:servicer_py",
         "//reboot/mcp:factories_py",
+        "//reboot/mcp:ui_py",
         "//reboot/nodejs:python_py",
         "@com_github_reboot_dev_reboot//log:log_py",
         requirement("colorama"),
         requirement("aiofiles"),
+        requirement("starlette"),
     ],
 )
 
