@@ -52,6 +52,9 @@ class CounterServicer(Counter.Servicer):
     """Servicer for the Counter state machine."""
 
     def authorizer(self) -> Authorizer:
+        # TODO: Remove this allow() once web apps can do OAuth; it
+        # currently lets the unauthenticated web frontend reach
+        # Counters.
         return allow()
 
     async def create(

@@ -298,6 +298,9 @@ class CounterServicer(Counter.Servicer):
     """Servicer for the Counter state machine."""
 
     def authorizer(self) -> Authorizer:
+        # TODO: Remove this allow() once web apps can do OAuth; it
+        # currently lets the unauthenticated web frontend reach
+        # Counters.
         return allow()
 
     async def create(
@@ -630,11 +633,22 @@ createRoot(document.getElementById("root")!).render(
   title="Configure Vite"
   description={`
 
-Each \`UI\` method's React app is bundled into a single HTML file
-using [Vite](https://vite.dev/) and
-[\`vite-plugin-singlefile\`](https://www.npmjs.com/package/vite-plugin-singlefile).
-Create a \`vite.config.ts\` that auto-discovers UIs from the
-\`ui/\` directory.
+A single \`vite.config.ts\` drives three jobs. The dev server is
+\`vite\`; the two builds are selected by the \`RBT_BUILD_TARGET\` env
+var (set per UI by \`build.mjs\`):
+
+- \`vite\` (dev server) serves Hot Module Replacement for every
+  \`mcp/<name>\` UI _and_ the standalone \`web/\` SPA you'll add below.
+- \`RBT_BUILD_TARGET=mcp:<name> vite build\` bundles one \`UI\` method's
+  React app into a single, self-contained
+  \`dist/mcp/<name>/index.html\` using
+  [\`vite-plugin-singlefile\`](https://www.npmjs.com/package/vite-plugin-singlefile).
+  The Reboot server serves it at \`/__/frontend/mcp/<name>/index.html\`.
+- \`RBT_BUILD_TARGET=web vite build\` bundles the \`web/\` SPA into
+  \`dist/web/\`, served at \`/__/frontend/web/\`.
+
+The config auto-discovers MCP UIs from the \`mcp/\` directory, so
+adding a new \`mcp/<name>/index.html\` is all it takes to build it.
 
 `}>
 
@@ -644,73 +658,367 @@ Create a \`vite.config.ts\` that auto-discovers UIs from the
 touch frontend/vite.config.ts
 ```
 
-```ts title=frontend/vite.config.ts
-// frontend/vite.config.ts
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/frontend/vite.config.ts&syntax=ts) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/frontend/vite.config.ts -->
+
+```ts
+// Vite configuration for Reboot UIs.
+//
+// One config drives three jobs. The dev server is selected by
+// `command === "serve"`; the two build shapes are selected by the
+// `RBT_BUILD_TARGET` env var, set per UI by `build.mjs`. Keeping the
+// target out of Vite's `mode` leaves `mode` at its conventional
+// `development` (serve) / `production` (build), so the matching
+// `.env.<mode>` files load by Vite's normal convention:
+//
+//   * `vite` (serve): a single dev server that delivers HMR for every
+//     `mcp/<name>` UI AND the standalone `web/` SPA, all under
+//     `base: "/__/frontend/"`. Envoy proxies that prefix to this dev
+//     server (`run --config=hmr`).
+//   * `RBT_BUILD_TARGET=mcp:<name> vite build`: builds one MCP UI into
+//     a single, self-contained `dist/mcp/<name>/index.html` (assets
+//     inlined via `vite-plugin-singlefile`). The framework serves it
+//     at `/__/frontend/mcp/<name>/index.html` in dist mode.
+//   * `RBT_BUILD_TARGET=web vite build`: builds the `web/` SPA into
+//     `dist/web/` with normal (non-inlined) assets. Its `base` is
+//     `/__/frontend/web/` so asset URLs resolve when served at that
+//     prefix. In Vite's `production` mode, it reads
+//     `web/.env.production`.
 import fs from "fs";
 import path from "path";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
 
-// Auto-discover UIs from mcp/ directory.
-const mcpDir = path.resolve(__dirname, "mcp");
-const uis: Record<string, { input: string; output: string }> =
-  Object.fromEntries(
-    fs
-      .readdirSync(mcpDir)
-      .filter((d) =>
-        fs.existsSync(path.join(mcpDir, d, "index.html"))
-      )
-      .map((name) => [
-        name,
-        {
-          input: `mcp/${name}/index.html`,
-          output: `${name}.html`,
-        },
-      ])
-  );
+// A served directory under `/__/frontend/` requested without its
+// trailing slash (e.g. `/__/frontend/web`) doesn't match Vite's static
+// index.html serving, which expects `/__/frontend/web/`, so it 404s.
+// Redirect the slash-less form to the canonical trailing-slash form so
+// the `web/` SPA and each `mcp/<name>` UI load with or without the
+// trailing slash — matching how the framework's dist-mode server
+// behaves. Only a path that resolves to a real directory with an
+// `index.html` is redirected, so Vite's own internal module URLs
+// (`@vite/client`, `@react-refresh`) and source or asset files fall
+// through untouched.
+function redirectFrontendDirTrailingSlash(root: string): Plugin {
+  const prefix = "/__/frontend/";
+  return {
+    name: "reboot-frontend-dir-trailing-slash",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = req.url ?? "";
+        const queryAt = url.indexOf("?");
+        const pathname = queryAt === -1 ? url : url.slice(0, queryAt);
+        if (pathname.startsWith(prefix) && !pathname.endsWith("/")) {
+          const subpath = pathname.slice(prefix.length);
+          if (fs.existsSync(path.join(root, subpath, "index.html"))) {
+            const query = queryAt === -1 ? "" : url.slice(queryAt);
+            // 302 (not 301): a permanent redirect would be cached by the
+            // browser, which is wrong for a dev server whose routes can
+            // change between runs.
+            res.statusCode = 302;
+            res.setHeader("Location", `${pathname}/${query}`);
+            res.end();
+            return;
+          }
+        }
+        next();
+      });
+    },
+  };
+}
 
-export default defineConfig(({ mode }) => {
-  // Build mode: `vite build --mode <ui-name>`
-  const ui = uis[mode];
-  if (!ui) {
-    const valid = Object.keys(uis).join(", ");
+// Auto-discover MCP UIs: every `mcp/<name>/` with an `index.html`.
+// There may be no `mcp/` directory at all (a web-only frontend, or
+// one whose last MCP UI was removed), so guard the read.
+const mcpDir = path.resolve(__dirname, "mcp");
+const mcpNames: string[] = fs.existsSync(mcpDir)
+  ? fs
+      .readdirSync(mcpDir)
+      .filter((name) => fs.existsSync(path.resolve(mcpDir, name, "index.html")))
+  : [];
+
+// Path alias for API imports (`@api/...` -> `./api/...`).
+const resolve = {
+  alias: {
+    "@api": path.resolve(__dirname, "./api"),
+  },
+  dedupe: ["react", "react-dom", "zod"],
+};
+
+export default defineConfig(({ command }) => {
+  // Dev server: serves both the MCP UIs and the `web/` SPA.
+  //
+  // UIs use a double iframe architecture:
+  //   MCP Host -> srcdoc (origin=null) -> iframe (origin=localhost:9991)
+  //
+  // The inner iframe loads from Envoy ("/__/frontend/**"), which
+  // proxies to Vite. Because the inner iframe has a real origin,
+  // Vite's URLs work normally. `base: "/__/frontend/"` ensures all
+  // paths route through Envoy.
+  //
+  // The standalone `web/` SPA is served at `/__/frontend/web/` by this
+  // same server. It reaches the backend via `VITE_REBOOT_URL` (see
+  // `web/.env.development`) rather than its own origin, so opening it
+  // straight from this dev server exercises the real cross-origin
+  // frontend/backend path — the same shape as a production deploy.
+  //
+  // Hot Module Replacement works automatically: Vite's client connects
+  // to the page's origin, and Envoy proxies WebSocket upgrades to
+  // Vite. This also works with tunnels (ngrok) since the tunnel
+  // points to Envoy.
+  if (command === "serve") {
+    const port = parseInt(process.env.RBT_VITE_PORT || "4444", 10);
+
+    return {
+      plugins: [react(), redirectFrontendDirTrailingSlash(__dirname)],
+      root: ".",
+      // Read `.env*` from `web/` (alongside the SPA), so the `web/`
+      // SPA's `VITE_REBOOT_URL` is picked up by both this serve and the
+      // `web/` production build, which is also rooted there.
+      envDir: path.resolve(__dirname, "web"),
+      resolve,
+      base: "/__/frontend/",
+      server: {
+        port,
+        strictPort: true,
+        // Listen on all interfaces since requests come through
+        // Envoy (and tunnels).
+        host: true,
+        allowedHosts: true,
+      },
+    };
+  }
+
+  // Which UI a build targets is read from `RBT_BUILD_TARGET` (set by
+  // `build.mjs`), not Vite's `mode` — so `mode` stays `production`
+  // and the `web/` build below reads `web/.env.production`.
+  const target = process.env.RBT_BUILD_TARGET ?? "";
+
+  // Build the standalone `web/` SPA into `dist/web/`. We root the
+  // build at `web/` so `index.html` and its `assets/` land directly
+  // under `dist/web/` (rather than `dist/web/web/`). Keep assets as
+  // separate files (a normal multi-file build) and set `base` so
+  // their URLs resolve when the SPA is served at `/__/frontend/web/`.
+  if (target === "web") {
+    return {
+      plugins: [react()],
+      root: path.resolve(__dirname, "web"),
+      base: "/__/frontend/web/",
+      build: {
+        outDir: path.resolve(__dirname, "dist/web"),
+        emptyOutDir: true,
+      },
+      resolve,
+    };
+  }
+
+  // Build one MCP UI (`RBT_BUILD_TARGET=mcp:<name>`). We root the
+  // build at `mcp/<name>/` so the output lands directly at
+  // `dist/mcp/<name>/index.html`, a single self-contained file
+  // (assets inlined by `vite-plugin-singlefile`). The framework
+  // serves it at `/__/frontend/mcp/<name>/index.html` in dist mode.
+  const name = target.startsWith("mcp:") ? target.slice("mcp:".length) : "";
+  if (!mcpNames.includes(name)) {
+    const valid = mcpNames.map((n) => `mcp:${n}`).join(", ");
     throw new Error(
-      `Unknown UI: ${mode}. Use --mode with: ${valid}`
+      `Unknown build target: ${target || "(unset)"}. Set ` +
+        `RBT_BUILD_TARGET=web or one of: ${valid}.`
     );
   }
 
   return {
     plugins: [react(), viteSingleFile()],
+    root: path.resolve(__dirname, "mcp", name),
+    base: "/__/frontend/",
     build: {
-      outDir: "dist",
-      emptyOutDir: false,
+      outDir: path.resolve(__dirname, "dist/mcp", name),
+      emptyOutDir: true,
       assetsInlineLimit: 100000000,
       cssCodeSplit: false,
       rollupOptions: {
-        input: ui.input,
         output: {
           inlineDynamicImports: true,
-          entryFileNames: ui.output.replace(
-            ".html",
-            ".js"
-          ),
-          assetFileNames: ui.output.replace(
-            ".html",
-            ".[ext]"
-          ),
         },
       },
     },
-    resolve: {
-      alias: {
-        "@api": path.resolve(__dirname, "./api"),
-      },
-      dedupe: ["react", "react-dom", "zod"],
-    },
+    resolve,
   };
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+</Step>
+<Step
+  title="Add a standalone web app"
+  description={`
+
+The clicker UI's "Open in web app ↗" button deep-links to a
+standalone browser SPA at \`/__/frontend/web/?counter=<id>\` — the
+same counter, opened full-page outside the AI chat. Create that SPA
+under \`frontend/web/\`: an \`index.html\`, a \`main.tsx\` entry point,
+and an \`App.tsx\` that reads \`?counter=<id>\` and watches/increments
+the counter with the same generated \`useCounter()\` hook.
+
+`}>
+
+```sh
+mkdir -p frontend/web/src
+touch frontend/web/index.html
+touch frontend/web/src/main.tsx frontend/web/src/App.tsx
+```
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/frontend/web/index.html&syntax=html) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/frontend/web/index.html -->
+
+```html
+<!-- frontend/web/index.html — standalone browser SPA for the
+     ai-chat-counter example's Counter. Pass `?counter=<id>` (or paste
+     an ID) to watch and increment that counter. Served from its own
+     origin by the Vite dev server, cross-origin to the backend, which
+     it reaches via `VITE_REBOOT_URL` (see `src/main.tsx`). -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Counter — ai-chat-counter</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./src/main.tsx"></script>
+  </body>
+</html>
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/frontend/web/src/main.tsx&syntax=tsx) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/frontend/web/src/main.tsx -->
+
+```tsx
+// frontend/web/src/main.tsx
+import { RebootClientProvider } from "@reboot-dev/reboot-react";
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { App } from "./App";
+import "./styles.css";
+
+// Point the Reboot client at the backend via `VITE_REBOOT_URL`. A web
+// app is served from its own origin — a CDN or static host — almost
+// never same-origin with the Reboot backend, so a real deploy MUST set
+// `VITE_REBOOT_URL` to the backend's origin. `web/.env.development`
+// sets it for local dev (to the Envoy endpoint), so this SPA runs on
+// the Vite dev server cross-origin to the backend — the same shape as
+// production. If it's left unset the provider falls back to
+// auto-detecting `window.location.origin`, but for a web app that
+// resolves to the app's own origin, the wrong place to reach the API —
+// so don't rely on it here.
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <RebootClientProvider url={import.meta.env.VITE_REBOOT_URL}>
+      <App />
+    </RebootClientProvider>
+  </StrictMode>
+);
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/frontend/web/src/App.tsx&syntax=tsx) -->
+<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/frontend/web/src/App.tsx -->
+
+```tsx
+// frontend/web/src/App.tsx
+import {
+  type UseCounterApi,
+  useCounter,
+} from "@api/ai_chat_counter/v1/counter_rbt_react";
+import { useState, type FC } from "react";
+
+// Read an initial counter ID from the `?counter=<id>` query param so a
+// counter can be shared via URL; the input below can also override it.
+const initialCounterId = (): string =>
+  new URLSearchParams(window.location.search).get("counter") ?? "";
+
+export const App: FC = () => {
+  const [counterId, setCounterId] = useState(initialCounterId);
+  const [draft, setDraft] = useState(counterId);
+
+  return (
+    <main className="shell">
+      {counterId.length === 0 ? (
+        <section className="card">
+          <h2>Open a counter</h2>
+          <form
+            className="create-row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setCounterId(draft.trim());
+            }}
+          >
+            <input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="counter ID"
+            />
+            <button type="submit">Open</button>
+          </form>
+        </section>
+      ) : (
+        <CounterView key={counterId} counterId={counterId} />
+      )}
+    </main>
+  );
+};
+
+const CounterView: FC<{ counterId: string }> = ({ counterId }) => {
+  // The generated zod hook returns the `UseCounterApi` directly; reads
+  // are exposed as nested `use*` hooks and writes as plain methods.
+  const counter: UseCounterApi = useCounter({ id: counterId });
+  const { response: valueResponse, isLoading } = counter.useGet();
+  const { response: descriptionResponse } = counter.useDescription();
+  const [pending, setPending] = useState(false);
+
+  // Show a muted placeholder until the description loads rather than
+  // flashing the "(no description)" fallback first.
+  const descriptionLoading = descriptionResponse === undefined;
+
+  const handleIncrement = async () => {
+    setPending(true);
+    try {
+      await counter.increment({ amount: 1 });
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <section className="card counter-detail">
+      <p
+        className={
+          "counter-detail-description" + (descriptionLoading ? " muted" : "")
+        }
+      >
+        {descriptionLoading
+          ? "Loading…"
+          : descriptionResponse?.description || "(no description)"}
+      </p>
+      <div className="counter-detail-value">
+        {isLoading && valueResponse === undefined
+          ? "…"
+          : valueResponse?.value ?? 0}
+      </div>
+      <button onClick={handleIncrement} disabled={pending}>
+        {pending ? "Incrementing…" : "Increment"}
+      </button>
+    </section>
+  );
+};
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 </Step>
 <Step
@@ -732,7 +1040,7 @@ AI chat and browser contexts).
 touch .rbtrc
 ```
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/.rbtrc&lines=1-24&syntax=sh) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/.rbtrc&lines=1-35&syntax=sh) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/.rbtrc -->
 
 ```sh
@@ -759,6 +1067,18 @@ dev run --application-name=ai-chat-counter
 
 # Entrypoint.
 dev run --application=backend/src/main.py
+
+# Default to HMR mode when no --config is specified.
+dev run --default-config=hmr
+
+# Hot Module Replacement (HMR): Vite dev server proxied through Envoy.
+# Run Vite in a separate terminal: `cd frontend && npm run dev`
+dev run:hmr --frontend-host=http://localhost:4444 --frontend-root-path=frontend
+
+# Dist mode: serve pre-built artifacts from "frontend/dist/" (no Vite HMR).
+# Usage: `uv run rbt dev run --config=dist`
+# Requires: `cd frontend && npm run build`
+dev run:dist --frontend-dist-path=frontend/dist --frontend-root-path=frontend
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -768,9 +1088,9 @@ dev run --application=backend/src/main.py
   title="Build your frontend"
   description={`
 
-Bundle the clicker UI into a single HTML file. The Reboot
-server serves this file as an MCP resource when the AI calls
-the \`show_clicker\` tool. You need to run
+Bundle both frontends: the clicker UI (served as an MCP resource
+when the AI calls the \`show_clicker\` tool) and the standalone
+\`web/\` SPA (the pop-out target). You need to run
 \`uv run rbt dev run\` first so that the generated React hooks
 are available.
 
@@ -780,8 +1100,8 @@ are available.
 ```sh
 uv run rbt dev run &
 cd frontend
-npx vite build --mode mcp:clicker
-npx vite build --mode web
+RBT_BUILD_TARGET=mcp:clicker npx vite build
+RBT_BUILD_TARGET=web npx vite build
 ```
 
 </Step>
@@ -789,13 +1109,14 @@ npx vite build --mode web
   title="Run your app"
   description={`
 
-If you ran \`rbt dev run\` in the background above, bring it to
-the foreground. Otherwise, start it now.
+If you ran \`rbt dev run\` in the background above, stop it and restart it in dist mode
+to serve your freshly built UI. Otherwise, start it in dist mode
+now.
 
 `}>
 
 ```sh
-uv run rbt dev run
+uv run rbt dev run --config=dist
 ```
 
 </Step>
