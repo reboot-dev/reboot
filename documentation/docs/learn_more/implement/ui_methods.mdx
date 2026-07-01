@@ -232,6 +232,48 @@ function redirectFrontendDirTrailingSlash(root: string): Plugin {
   };
 }
 
+// When a `web/` SPA exists, treat it as the dev server's home: the bare
+// `/`, `/__/frontend`, and `/__/frontend/` otherwise 404 (there's no
+// index there), so silently redirect them to `/__/frontend/web/`. Also
+// print the friendlier `http://<host>/` at startup instead of the
+// `/__/frontend/` base URL Vite would otherwise show (which is a dead
+// link).
+function serveWebAppAtRoot(root: string): Plugin {
+  const webIndex = path.resolve(root, "web", "index.html");
+  const target = "/__/frontend/web/";
+  const homes = new Set(["/", "/__/frontend", "/__/frontend/"]);
+  return {
+    name: "reboot-serve-web-app-at-root",
+    configureServer(server) {
+      if (!fs.existsSync(webIndex)) return;
+      server.middlewares.use((req, res, next) => {
+        const url = req.url ?? "";
+        const queryAt = url.indexOf("?");
+        const pathname = queryAt === -1 ? url : url.slice(0, queryAt);
+        if (homes.has(pathname)) {
+          const query = queryAt === -1 ? "" : url.slice(queryAt);
+          res.statusCode = 302;
+          res.setHeader("Location", target + query);
+          res.end();
+          return;
+        }
+        next();
+      });
+      // Print `http://<host>/` instead of the `/__/frontend/` base.
+      const printUrls = server.printUrls.bind(server);
+      server.printUrls = () => {
+        const urls = server.resolvedUrls;
+        if (urls) {
+          const toRoot = (u: string) => u.replace(/\/__\/frontend\/$/, "/");
+          urls.local = urls.local.map(toRoot);
+          urls.network = urls.network.map(toRoot);
+        }
+        printUrls();
+      };
+    },
+  };
+}
+
 // Auto-discover MCP UIs: every `mcp/<name>/` with an `index.html`.
 // There may be no `mcp/` directory at all (a web-only frontend, or
 // one whose last MCP UI was removed), so guard the read.
@@ -275,7 +317,11 @@ export default defineConfig(({ command }) => {
     const port = parseInt(process.env.RBT_VITE_PORT || "4444", 10);
 
     return {
-      plugins: [react(), redirectFrontendDirTrailingSlash(__dirname)],
+      plugins: [
+        react(),
+        redirectFrontendDirTrailingSlash(__dirname),
+        serveWebAppAtRoot(__dirname),
+      ],
       root: ".",
       // Read `.env*` from `web/` (alongside the SPA), so the `web/`
       // SPA's `VITE_REBOOT_URL` is picked up by both this serve and the
