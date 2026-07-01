@@ -5,12 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build:clicker": "RBT_BUILD_TARGET=mcp:clicker vite build",
-    "build:dashboard": "RBT_BUILD_TARGET=mcp:dashboard vite build",
-    "build:watch:clicker": "RBT_BUILD_TARGET=mcp:clicker vite build --watch",
-    "build:watch:dashboard": "RBT_BUILD_TARGET=mcp:dashboard vite build --watch",
-    "build": "tsc --noEmit && npm run build:clicker && npm run build:dashboard",
-    "build:watch": "concurrently \"npm:build:watch:*\""
+    "build": "tsc --noEmit && node build.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.5.0",
@@ -25,7 +20,6 @@
     "@types/react": "^18.2.67",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.7.0",
-    "concurrently": "^9.1.2",
     "typescript": "^5.9.2",
     "vite": "^6.3.5",
     "vite-plugin-singlefile": "^2.0.3"

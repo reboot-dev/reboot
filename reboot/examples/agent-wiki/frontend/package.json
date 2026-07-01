@@ -5,14 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build:page_view": "RBT_BUILD_TARGET=mcp:page_view vite build",
-    "build:transcript_view": "RBT_BUILD_TARGET=mcp:transcript_view vite build",
-    "build:wiki_view": "RBT_BUILD_TARGET=mcp:wiki_view vite build",
-    "build:watch:page_view": "RBT_BUILD_TARGET=mcp:page_view vite build --watch",
-    "build:watch:transcript_view": "RBT_BUILD_TARGET=mcp:transcript_view vite build --watch",
-    "build:watch:wiki_view": "RBT_BUILD_TARGET=mcp:wiki_view vite build --watch",
-    "build": "tsc --noEmit && npm run build:page_view && npm run build:transcript_view && npm run build:wiki_view",
-    "build:watch": "concurrently \"npm:build:watch:*\""
+    "build": "tsc --noEmit && node build.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.5.0",
@@ -29,7 +22,6 @@
     "@types/react": "^18.2.67",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.7.0",
-    "concurrently": "^9.1.2",
     "typescript": "^5.9.2",
     "vite": "^6.3.5",
     "vite-plugin-singlefile": "^2.0.3"

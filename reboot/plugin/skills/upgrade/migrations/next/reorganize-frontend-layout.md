@@ -26,3 +26,10 @@ selection — drop any `vite build --mode <name>` invocations you carry.
 Rather than reproduce it here, copy it from the chat-app skill's
 `references/react-scaffolding.md`, where it's written out in full, with
 commentary.
+
+Add `frontend/build.mjs` too (also from
+`references/react-scaffolding.md`): it discovers and builds every UI in
+one shot, so `npm run build` keeps working as UIs come and go. Set
+`frontend/package.json`'s build script to
+`"build": "tsc --noEmit && node build.mjs"`, dropping any per-UI
+`build:<name>` scripts and the `concurrently` devDependency.

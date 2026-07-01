@@ -774,11 +774,14 @@ the \`show_clicker\` tool. You need to run
 \`uv run rbt dev run\` first so that the generated React hooks
 are available.
 
+
 `}>
 
 ```sh
 uv run rbt dev run &
-cd frontend && npx vite build --mode clicker
+cd frontend
+npx vite build --mode mcp:clicker
+npx vite build --mode web
 ```
 
 </Step>

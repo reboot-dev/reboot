@@ -5,12 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build:menu": "RBT_BUILD_TARGET=mcp:menu vite build",
-    "build:cart": "RBT_BUILD_TARGET=mcp:cart vite build",
-    "build:watch:menu": "RBT_BUILD_TARGET=mcp:menu vite build --watch",
-    "build:watch:cart": "RBT_BUILD_TARGET=mcp:cart vite build --watch",
-    "build": "tsc --noEmit && npm run build:menu && npm run build:cart",
-    "build:watch": "concurrently \"npm:build:watch:*\""
+    "build": "tsc --noEmit && node build.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.5.0",
@@ -25,7 +20,6 @@
     "@types/react": "^18.2.67",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.7.0",
-    "concurrently": "^9.1.2",
     "typescript": "^5.9.2",
     "vite": "^6.3.5",
     "vite-plugin-singlefile": "^2.0.3"

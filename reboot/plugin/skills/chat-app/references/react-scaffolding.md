@@ -12,9 +12,9 @@ owned by this skill — `python` knows nothing about it.
 
 ## `frontend/package.json`
 
-**Use explicit per-UI build scripts as shown below. Do NOT create a
-`build.js` or any auto-discovery wrapper — use `npm run build:<name>`
-scripts directly.**
+**`npm run build` type-checks and then runs `build.mjs`, which
+auto-discovers and builds every UI. Don't hand-maintain per-UI
+`build:<name>` scripts.**
 
 ```json
 {
@@ -24,10 +24,7 @@ scripts directly.**
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build:<ui-name>": "vite build --mode <ui-name>",
-    "build:watch:<ui-name>": "vite build --mode <ui-name> --watch",
-    "build": "tsc --noEmit && npm run build:<ui-name>",
-    "build:watch": "concurrently \"npm:build:watch:*\""
+    "build": "tsc --noEmit && node build.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.5.0",
@@ -42,7 +39,6 @@ scripts directly.**
     "@types/react": "^18.2.67",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.7.0",
-    "concurrently": "^9.1.2",
     "typescript": "^5.9.2",
     "vite": "^6.3.5",
     "vite-plugin-singlefile": "^2.0.3"
@@ -50,12 +46,9 @@ scripts directly.**
 }
 ```
 
-For multiple UIs, add `build:<name>` and `build:watch:<name>` entries
-for each UI, and update the `build` script to chain them:
-
-```
-"build": "tsc --noEmit && npm run build:ui1 && npm run build:ui2"
-```
+Adding or removing a UI needs no script changes: `build.mjs`
+discovers every `mcp/<name>/index.html` (and the `web/` SPA) and
+builds each one.
 
 ## `frontend/vite.config.ts`
 
@@ -219,6 +212,45 @@ export default defineConfig(({ command }) => {
     resolve,
   };
 });
+```
+
+## `frontend/build.mjs`
+
+`npm run build` runs this after `tsc`. It discovers every UI and
+builds each through the matching `vite.config.ts` mode, so adding or
+removing a UI never touches the build script.
+
+```javascript
+// Builds every Reboot UI in this frontend in one shot, so
+// `npm run build` keeps working as UIs are added or removed.
+//
+// `vite.config.ts` knows how to build a *single* MCP UI, selected by
+// the `RBT_BUILD_TARGET` env var (`mcp:<name>`). This script is the
+// discover-and-loop around it: it finds every `mcp/<name>/index.html`
+// and builds each into `dist/mcp/<name>/index.html`.
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { build } from "vite";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Auto-discover MCP UIs: every `mcp/<name>/` with an `index.html`.
+const mcpDir = path.resolve(__dirname, "mcp");
+const mcpNames = fs.existsSync(mcpDir)
+  ? fs
+      .readdirSync(mcpDir)
+      .filter((name) => fs.existsSync(path.resolve(mcpDir, name, "index.html")))
+  : [];
+
+// Build each MCP UI. `vite.config.ts` reads the target from
+// `RBT_BUILD_TARGET`; we leave Vite's `mode` at its build default
+// (`production`).
+for (const name of mcpNames) {
+  console.log(`Building mcp/${name} ...`);
+  process.env.RBT_BUILD_TARGET = `mcp:${name}`;
+  await build();
+}
 ```
 
 ## `frontend/tsconfig.json`
