@@ -55,13 +55,16 @@ appId: host.exp.exponent
 # The app's `ScrollView` uses React Native's default
 # `keyboardShouldPersistTaps="never"`, so a tap on a non-input child
 # dismisses the keyboard (and is swallowed); if the keyboard is already
-# down it is a harmless no-op. Dismissing first also matters because that
-# same swallow would otherwise eat the very next tap meant for a button.
+# down it is a harmless no-op. We then `waitForAnimationToEnd` so the
+# keyboard finishes sliding away before the next tap: that same
+# dismissal otherwise races and swallows the very next tap meant for a
+# button, flakily dropping the mutation it would have fired.
 - tapOn:
     id: "customer-id-input"
 - inputText: "alice"
 - tapOn:
     id: "customer-id-label"
+- waitForAnimationToEnd
 - tapOn:
     id: "create-customer-button"
 - extendedWaitUntil:
@@ -73,6 +76,7 @@ appId: host.exp.exponent
 - inputText: "bob"
 - tapOn:
     id: "customer-id-label"
+- waitForAnimationToEnd
 - tapOn:
     id: "create-customer-button"
 - extendedWaitUntil:
@@ -95,6 +99,7 @@ appId: host.exp.exponent
 - inputText: "1000"
 - tapOn:
     id: "initial-deposit-label"
+- waitForAnimationToEnd
 - tapOn:
     id: "add-account-button"
 
@@ -110,6 +115,7 @@ appId: host.exp.exponent
 - inputText: "500"
 - tapOn:
     id: "initial-deposit-label"
+- waitForAnimationToEnd
 - tapOn:
     id: "add-account-button"
 
@@ -139,6 +145,7 @@ appId: host.exp.exponent
 - inputText: "100"
 - tapOn:
     id: "transfer-amount-label"
+- waitForAnimationToEnd
 - scrollUntilVisible:
     element:
       id: "transfer-button"

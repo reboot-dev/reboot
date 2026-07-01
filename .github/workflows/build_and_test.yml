@@ -131,10 +131,14 @@ jobs:
         if [ "${returncode}" -ne 0 ]; then
           destination="${workspace}/maestro-artifacts"
           mkdir -p "${destination}"
-          cp -r "${HOME}/.maestro/tests" "${destination}/maestro-tests" \
-            2> /dev/null || true
+          # The backend/emulator/Expo logs upload as-is.
           cp /tmp/rbt.log /tmp/emulator.log /tmp/expo.log "${destination}/" \
             2> /dev/null || true
+          # Maestro names its per-step screenshots with a `?`, which
+          # `upload-artifact` rejects, so archive its debug output rather
+          # than copying it raw (the `?` is fine inside a tarball).
+          tar czf "${destination}/maestro-debug.tar.gz" -C "${HOME}" \
+            .maestro/tests 2> /dev/null || true
         fi
         exit "${returncode}"
 
