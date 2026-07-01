@@ -91,8 +91,45 @@ fix is `cd frontend && npm run build`, **not** rewriting this file.
 import fs from "fs";
 import path from "path";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
+
+// A served directory under `/__/frontend/` requested without its
+// trailing slash (e.g. `/__/frontend/mcp/clicker`) doesn't match Vite's
+// static index.html serving, which expects a trailing slash, so it
+// 404s. Redirect the slash-less form to the canonical trailing-slash
+// form so each `mcp/<name>` UI loads with or without the trailing slash
+// — matching how the framework's dist-mode server behaves. Only a path
+// that resolves to a real directory with an `index.html` is redirected,
+// so Vite's own internal module URLs (`@vite/client`, `@react-refresh`)
+// and source or asset files fall through untouched.
+function redirectFrontendDirTrailingSlash(root: string): Plugin {
+  const prefix = "/__/frontend/";
+  return {
+    name: "reboot-frontend-dir-trailing-slash",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = req.url ?? "";
+        const queryAt = url.indexOf("?");
+        const pathname = queryAt === -1 ? url : url.slice(0, queryAt);
+        if (pathname.startsWith(prefix) && !pathname.endsWith("/")) {
+          const subpath = pathname.slice(prefix.length);
+          if (fs.existsSync(path.join(root, subpath, "index.html"))) {
+            const query = queryAt === -1 ? "" : url.slice(queryAt);
+            // 302 (not 301): a permanent redirect would be cached by the
+            // browser, which is wrong for a dev server whose routes can
+            // change between runs.
+            res.statusCode = 302;
+            res.setHeader("Location", `${pathname}/${query}`);
+            res.end();
+            return;
+          }
+        }
+        next();
+      });
+    },
+  };
+}
 
 // Auto-discover MCP UIs: every `mcp/<name>/` with an `index.html`.
 // There may be no `mcp/` directory at all (one whose last MCP UI was
@@ -131,7 +168,7 @@ export default defineConfig(({ command }) => {
     const port = parseInt(process.env.RBT_VITE_PORT || "4444", 10);
 
     return {
-      plugins: [react()],
+      plugins: [react(), redirectFrontendDirTrailingSlash(__dirname)],
       root: ".",
       resolve,
       base: "/__/frontend/",
