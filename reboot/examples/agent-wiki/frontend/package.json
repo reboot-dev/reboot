@@ -5,12 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build:page_view": "vite build --mode page_view",
-    "build:transcript_view": "vite build --mode transcript_view",
-    "build:wiki_view": "vite build --mode wiki_view",
-    "build:watch:page_view": "vite build --mode page_view --watch",
-    "build:watch:transcript_view": "vite build --mode transcript_view --watch",
-    "build:watch:wiki_view": "vite build --mode wiki_view --watch",
+    "build:page_view": "RBT_BUILD_TARGET=mcp:page_view vite build",
+    "build:transcript_view": "RBT_BUILD_TARGET=mcp:transcript_view vite build",
+    "build:wiki_view": "RBT_BUILD_TARGET=mcp:wiki_view vite build",
+    "build:watch:page_view": "RBT_BUILD_TARGET=mcp:page_view vite build --watch",
+    "build:watch:transcript_view": "RBT_BUILD_TARGET=mcp:transcript_view vite build --watch",
+    "build:watch:wiki_view": "RBT_BUILD_TARGET=mcp:wiki_view vite build --watch",
     "build": "tsc --noEmit && npm run build:page_view && npm run build:transcript_view && npm run build:wiki_view",
     "build:watch": "concurrently \"npm:build:watch:*\""
   },

@@ -164,15 +164,21 @@ subdirectory with an `index.html`):
 ```ts title=frontend/vite.config.ts
 // Vite configuration for Reboot UIs.
 //
-// One config drives two jobs, selected by `command`/`mode`:
+// One config drives two jobs. The dev server is selected by
+// `command === "serve"`; the MCP build is selected by the
+// `RBT_BUILD_TARGET` env var. Keeping the target out of Vite's `mode`
+// leaves `mode` at its conventional `development` (serve) /
+// `production` (build), so the matching `.env.<mode>` files load by
+// Vite's normal convention. The target is namespaced (`mcp:<name>`)
+// so a second build shape can be added later without reworking it:
 //
 //   * `vite` (serve): a single dev server that delivers HMR for every
 //     `mcp/<name>` UI under `base: "/__/frontend/"`. Envoy proxies that
 //     prefix to this dev server (`run --config=hmr`).
-//   * `vite build --mode <name>`: builds one MCP UI into a single,
-//     self-contained `dist/mcp/<name>/index.html` (assets inlined via
-//     `vite-plugin-singlefile`). The framework serves it at
-//     `/__/frontend/mcp/<name>/index.html` in dist mode.
+//   * `RBT_BUILD_TARGET=mcp:<name> vite build`: builds one MCP UI into
+//     a single, self-contained `dist/mcp/<name>/index.html` (assets
+//     inlined via `vite-plugin-singlefile`). The framework serves it
+//     at `/__/frontend/mcp/<name>/index.html` in dist mode.
 import fs from "fs";
 import path from "path";
 import react from "@vitejs/plugin-react";
@@ -197,7 +203,7 @@ const resolve = {
   dedupe: ["react", "react-dom", "zod"],
 };
 
-export default defineConfig(({ command, mode }) => {
+export default defineConfig(({ command }) => {
   // Dev server: serves the MCP UIs with HMR.
   //
   // UIs use a double iframe architecture:
@@ -231,16 +237,21 @@ export default defineConfig(({ command, mode }) => {
     };
   }
 
-  // Build one MCP UI: `vite build --mode <name>`. We root the build at
-  // `mcp/<name>/` so the output lands directly at
+  // Which UI a build targets is read from `RBT_BUILD_TARGET`, not
+  // Vite's `mode` — so `mode` stays at its conventional `production`.
+  const target = process.env.RBT_BUILD_TARGET ?? "";
+
+  // Build one MCP UI (`RBT_BUILD_TARGET=mcp:<name>`). We root the
+  // build at `mcp/<name>/` so the output lands directly at
   // `dist/mcp/<name>/index.html`, a single self-contained file (assets
   // inlined by `vite-plugin-singlefile`). The framework serves it at
   // `/__/frontend/mcp/<name>/index.html` in dist mode.
-  const name = mode;
+  const name = target.startsWith("mcp:") ? target.slice("mcp:".length) : "";
   if (!mcpNames.includes(name)) {
-    const valid = mcpNames.map((n) => `--mode ${n}`).join(", ");
+    const valid = mcpNames.map((n) => `mcp:${n}`).join(", ");
     throw new Error(
-      `Unknown MCP UI: ${mode || "(unset)"}. Use one of: ${valid}.`
+      `Unknown build target: ${target || "(unset)"}. Set ` +
+        `RBT_BUILD_TARGET to one of: ${valid}.`
     );
   }
 

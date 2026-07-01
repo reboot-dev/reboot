@@ -159,7 +159,7 @@ The list below is what's specific to the MCP-Chat-App layer:
     the built MCP UI — that's where the MCP server's
     `_resolve_dist_path` looks. The `vite.config.ts` shipped with
     this skill produces it correctly out of the box: the
-    `--mode <name>` build roots itself at `mcp/<name>/`, so its
+    `RBT_BUILD_TARGET=mcp:<name>` build roots itself at `mcp/<name>/`, so its
     `index.html` lands at the nested path while `viteSingleFile`
     inlines the JS/CSS. If you see
     `Web artifact 'frontend/dist/mcp/<name>/index.html' is missing`, run

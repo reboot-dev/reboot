@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build:clicker": "vite build --mode clicker",
-    "build:dashboard": "vite build --mode dashboard",
-    "build:watch:clicker": "vite build --mode clicker --watch",
-    "build:watch:dashboard": "vite build --mode dashboard --watch",
+    "build:clicker": "RBT_BUILD_TARGET=mcp:clicker vite build",
+    "build:dashboard": "RBT_BUILD_TARGET=mcp:dashboard vite build",
+    "build:watch:clicker": "RBT_BUILD_TARGET=mcp:clicker vite build --watch",
+    "build:watch:dashboard": "RBT_BUILD_TARGET=mcp:dashboard vite build --watch",
     "build": "tsc --noEmit && npm run build:clicker && npm run build:dashboard",
     "build:watch": "concurrently \"npm:build:watch:*\""
   },

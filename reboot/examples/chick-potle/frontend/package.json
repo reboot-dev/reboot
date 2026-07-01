@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build:menu": "vite build --mode menu",
-    "build:cart": "vite build --mode cart",
-    "build:watch:menu": "vite build --mode menu --watch",
-    "build:watch:cart": "vite build --mode cart --watch",
+    "build:menu": "RBT_BUILD_TARGET=mcp:menu vite build",
+    "build:cart": "RBT_BUILD_TARGET=mcp:cart vite build",
+    "build:watch:menu": "RBT_BUILD_TARGET=mcp:menu vite build --watch",
+    "build:watch:cart": "RBT_BUILD_TARGET=mcp:cart vite build --watch",
     "build": "tsc --noEmit && npm run build:menu && npm run build:cart",
     "build:watch": "concurrently \"npm:build:watch:*\""
   },

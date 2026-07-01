@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build:clicker": "vite build --mode clicker",
-    "build:watch:clicker": "vite build --mode clicker --watch",
+    "build:clicker": "RBT_BUILD_TARGET=mcp:clicker vite build",
+    "build:watch:clicker": "RBT_BUILD_TARGET=mcp:clicker vite build --watch",
     "build": "tsc --noEmit && npm run build:clicker",
     "build:watch": "npm run build:watch:clicker"
   },

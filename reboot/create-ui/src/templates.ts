@@ -47,8 +47,8 @@ export function packageJson(
   };
 
   for (const name of uiNames) {
-    scripts[`build:${name}`] = `vite build --mode ${name}`;
-    scripts[`build:watch:${name}`] = `vite build --mode ${name} --watch`;
+    scripts[`build:${name}`] = `RBT_BUILD_TARGET=mcp:${name} vite build`;
+    scripts[`build:watch:${name}`] = `RBT_BUILD_TARGET=mcp:${name} vite build --watch`;
   }
 
   const buildChain = uiNames

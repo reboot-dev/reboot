@@ -5,12 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build:store": "vite build --mode store",
-    "build:cart": "vite build --mode cart",
-    "build:confirmation": "vite build --mode confirmation",
-    "build:watch:store": "vite build --mode store --watch",
-    "build:watch:cart": "vite build --mode cart --watch",
-    "build:watch:confirmation": "vite build --mode confirmation --watch",
+    "build:store": "RBT_BUILD_TARGET=mcp:store vite build",
+    "build:cart": "RBT_BUILD_TARGET=mcp:cart vite build",
+    "build:confirmation": "RBT_BUILD_TARGET=mcp:confirmation vite build",
+    "build:watch:store": "RBT_BUILD_TARGET=mcp:store vite build --watch",
+    "build:watch:cart": "RBT_BUILD_TARGET=mcp:cart vite build --watch",
+    "build:watch:confirmation": "RBT_BUILD_TARGET=mcp:confirmation vite build --watch",
     "build": "tsc --noEmit && npm run build:store && npm run build:cart && npm run build:confirmation",
     "build:watch": "concurrently \"npm:build:watch:*\""
   },
