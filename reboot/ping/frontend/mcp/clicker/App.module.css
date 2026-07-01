@@ -28,3 +28,14 @@
   background: transparent;
   color: inherit;
 }
+
+.popOut {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  text-decoration: underline;
+}

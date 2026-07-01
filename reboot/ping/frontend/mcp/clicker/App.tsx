@@ -1,3 +1,4 @@
+import { useMcpApp } from "@reboot-dev/reboot-react";
 import { useState, type FC } from "react";
 import {
   type ShowClickerProps,
@@ -21,6 +22,14 @@ export const ClickerApp: FC<ShowClickerProps> = ({ primaryColor }) => {
   const counter = useCounter();
   const { response, isLoading } = counter.useValue();
 
+  // Reuse the MCP-inferred id to deep-link into the standalone web
+  // SPA for the very same counter.
+  const counterId = counter.state_id;
+
+  // The MCP host's app handle, used to open the deep link (see
+  // `handlePopOut`). `null` when not running under an MCP host.
+  const mcpApp = useMcpApp();
+
   const count = response?.value ?? 0;
 
   const handleIncrement = async () => {
@@ -30,6 +39,36 @@ export const ClickerApp: FC<ShowClickerProps> = ({ primaryColor }) => {
     } finally {
       setIsPending(false);
     }
+  };
+
+  const handlePopOut = async () => {
+    // The standalone web app is served at `/__/frontend/web/` on the
+    // Reboot origin (Envoy proxies that prefix to the static-file
+    // server in dist mode, or to Vite in HMR mode). Prefer the
+    // server-injected `window.REBOOT_URL` (set for inline/remote MCP
+    // hosts, where `window.location.origin` is the sandbox or "null"),
+    // falling back to our own origin when loaded in the iframe.
+    // (ping serves its web app same-origin, so the origin is
+    // the web app's URL — no separate `VITE_WEB_APP_URL` needed.)
+    const url =
+      (window.REBOOT_URL ?? window.location.origin) +
+      "/__/frontend/web/?counter=" +
+      encodeURIComponent(counterId);
+    // The sandboxed MCP UI iframe blocks `window.open` unless the
+    // host grants `allow-popups`, so ask the host to open the link
+    // via the MCP Apps `ui/open-link` request. Fall back to
+    // `window.open` when not under an MCP host (or it declines).
+    if (mcpApp?.openLink) {
+      try {
+        const { isError } = await mcpApp.openLink({ url });
+        if (!isError) {
+          return;
+        }
+      } catch {
+        // Fall through to `window.open` below.
+      }
+    }
+    window.open(url, "_blank", "noopener");
   };
 
   if (isLoading && response === undefined) {
@@ -52,6 +91,13 @@ export const ClickerApp: FC<ShowClickerProps> = ({ primaryColor }) => {
         className={css.button}
       >
         {isPending ? "Incrementing..." : "+1"}
+      </button>
+      <button
+        onClick={handlePopOut}
+        className={css.popOut}
+        title="Open this counter in the web app"
+      >
+        Open in web app ↗
       </button>
     </div>
   );

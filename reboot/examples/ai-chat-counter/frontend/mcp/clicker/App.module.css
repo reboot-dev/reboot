@@ -50,6 +50,22 @@
   opacity: 0.5;
 }
 
+.popOut {
+  font-size: 13px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.popOut:hover {
+  opacity: 1;
+}
+
 @media (prefers-color-scheme: dark) {
   .container {
     border-color: #3a3a3a;
