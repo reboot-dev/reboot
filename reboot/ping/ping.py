@@ -235,7 +235,7 @@ async def main():
         # own MCP connection, so a short TTL made their `tools/list`
         # and `tools/call` calls fail with `invalid_token` partway
         # through a session. The in-UI flow does refresh (see
-        # `useRefreshMCPBearerToken`), so a short TTL only broke the
+        # `useRefreshBearerToken`), so a short TTL only broke the
         # inspector side of manual testing.
         # TODO: investigate why MCP inspectors don't refresh this
         # token.

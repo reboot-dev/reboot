@@ -505,6 +505,7 @@ class _Idempotently {
         request: request,
         options: options,
         bearerToken: context.bearerToken,
+        onUnauthenticated: context.onUnauthenticated,
         idempotencyKey: this.#idempotencyKey,
       });
 
@@ -579,6 +580,7 @@ export class {{ client.proto.state_name }}WeakReference {
         request: request,
         options: options,
         bearerToken: context.bearerToken,
+        onUnauthenticated: context.onUnauthenticated,
         idempotencyKey: idempotencyKey,
       });
 

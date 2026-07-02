@@ -43,6 +43,34 @@ export function useDefaultStateIds(): Record<string, string> | null {
 }
 
 // ---------------------------------------------------------------------------
+// Bearer-refresh context (surface-agnostic).
+//
+// Obtaining a fresh bearer token after the current one is rejected
+// works on every surface, but how it works is surface-specific: the
+// web provider rotates the cookie session via `/__/oauth/refresh`,
+// while the MCP connector re-invokes the UI tool through the MCP
+// host.
+// ---------------------------------------------------------------------------
+
+// Resolves to the fresh bearer token, or `undefined` when none could
+// be obtained (e.g. signed out). Implementations coalesce concurrent
+// calls.
+export type RefreshBearerToken = () => Promise<string | undefined>;
+
+export const BearerRefreshContext = createContext<RefreshBearerToken | null>(
+  null
+);
+
+/**
+ * @internal Do not import directly; use the generated hooks instead.
+ * Returns the surface's bearer-refresh function, or `null` when no
+ * surface provides one.
+ */
+export function useRefreshBearerToken(): RefreshBearerToken | null {
+  return useContext(BearerRefreshContext);
+}
+
+// ---------------------------------------------------------------------------
 // MCP-specific context.
 //
 // Everything that only makes sense when the backend is reached

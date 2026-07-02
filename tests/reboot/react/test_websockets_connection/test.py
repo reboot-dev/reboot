@@ -46,7 +46,15 @@ async def test(context: ExternalContext, uri: str):
 
             wait = WebDriverWait(driver, 10)
 
-            driver.find_element_by_id('sign-up').click()
+            # Wait for the button rather than grabbing it immediately:
+            # the provider renders behind a brief auth probe
+            # (`/__/oauth/whoami`), so the element isn't in the DOM the
+            # instant the page loads.
+            wait.until(
+                expected_conditions.element_to_be_clickable(
+                    (By.ID, 'sign-up')
+                )
+            ).click()
 
             wait.until(
                 expected_conditions.text_to_be_present_in_element(

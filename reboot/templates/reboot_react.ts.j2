@@ -40,7 +40,7 @@ import { v4 as uuidv4 } from "uuid";
 import type { App as McpApp } from "@modelcontextprotocol/ext-apps/react";
 import { useMcpApp } from "@reboot-dev/reboot-react/internal";
 {% endif %}
-import { useDefaultStateIds, useRefreshMCPBearerToken } from "@reboot-dev/reboot-react/internal";
+import { useDefaultStateIds, useRefreshBearerToken } from "@reboot-dev/reboot-react/internal";
 {% if proto.messages_and_enums|length > 0 or states|length > 0 %}
 // NOTE NOTE NOTE
 //
@@ -1495,7 +1495,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
   const url = rebootClient.url;
   const bearerToken = rebootClient.bearerToken;
-  const refreshMCPBearerToken = useRefreshMCPBearerToken();
+  const refreshBearerToken = useRefreshBearerToken();
 
   const [instance, setInstance] = useState(() => {
     return {{ client.proto.state_name | to_camel }}Instance.use(
@@ -1568,7 +1568,25 @@ export const use{{ client.proto.state_name | to_camel }} = (
           isLoading: false, // Won't start loading if we're flushing mutations.
         };
 
-        return instance.{{ method.proto.name | to_lower_camel }}(mutation);
+        const result = await instance.{{ method.proto.name | to_lower_camel }}(mutation);
+
+        // If the server rejected us due to an expired token,
+        // refresh via the surface's bearer-refresh and retry
+        // once (mirrors the unary-call path).
+        if (
+          result.aborted !== undefined &&
+          result.aborted.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+          refreshBearerToken
+        ) {
+          const newToken = await refreshBearerToken();
+          if (newToken !== undefined) {
+            return instance.{{ method.proto.name | to_lower_camel }}(
+              { ...mutation, bearerToken: newToken }
+            );
+          }
+        }
+
+        return result;
       };
 
       method.pending =
@@ -1577,7 +1595,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
       return method;
     {# `mcpApp` is in scope here by `client_needs_mcp_app` (declared
        whenever any method on this client has `mcp=Tool()`). #}
-    }, [instance, bearerToken{% if method.options.proto.mcp and method.options.proto.mcp.tool %}, mcpApp, id{% endif %}]);
+    }, [instance, bearerToken, refreshBearerToken{% if method.options.proto.mcp and method.options.proto.mcp.tool %}, mcpApp, id{% endif %}]);
 
     {{ method.proto.name | to_lower_camel }}.pending = pending;
 
@@ -1699,13 +1717,14 @@ export const use{{ client.proto.state_name | to_camel }} = (
         setIsLoading,
         (status: reboot_api.Status) => {
           // If the server rejected us due to an expired
-          // token, refresh via the MCP host. The token
+          // token, refresh via the surface's bearer-refresh
+          // (the MCP host, or the web session). The token
           // change triggers a re-render and reconnect.
           if (
             status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-            refreshMCPBearerToken
+            refreshBearerToken
           ) {
-            refreshMCPBearerToken();
+            refreshBearerToken();
           }
 
           const aborted = {{ client.proto.state_name | to_camel }}{{ method.proto.name | to_camel }}Aborted.fromStatus(status);
@@ -1727,6 +1746,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
       serializedRequest,
       requestBearerTokenHash,
       bearerToken,
+      refreshBearerToken,
       offlineCacheEnabled,
       cacheKey,
     ]);
@@ -1855,9 +1875,10 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
     if (aborted) {
       return { aborted };
-    } else if (response.status === 401 && refreshMCPBearerToken) {
-      // Token expired — refresh via MCP host and retry once.
-      const newToken = await refreshMCPBearerToken();
+    } else if (response.status === 401 && refreshBearerToken) {
+      // Token expired — refresh via the surface's bearer-refresh
+      // and retry once.
+      const newToken = await refreshBearerToken();
       if (newToken) {
         const retryHeaders = new Headers();
         retryHeaders.set("Content-Type", "application/json");
@@ -1913,12 +1934,13 @@ export const use{{ client.proto.state_name | to_camel }} = (
 
 
         // If the server rejected us due to an expired
-        // token, refresh via the MCP host and retry once.
+        // token, refresh via the surface's bearer-refresh and
+        // retry once.
         if (
           status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-          refreshMCPBearerToken
+          refreshBearerToken
         ) {
-          const newToken = await refreshMCPBearerToken();
+          const newToken = await refreshBearerToken();
           if (newToken) {
             const retryHeaders = new Headers();
             retryHeaders.set(
@@ -1948,8 +1970,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
                 };
               }
             } catch {
-              // Fall through to return the original
-              // aborted error.
+              // Fall through to return the original aborted error.
             }
           }
         }
@@ -2022,7 +2043,7 @@ export const use{{ client.proto.state_name | to_camel }} = (
       {% endif %}
       {% endfor %}
       {% endfor %}
-    }), [id, instance, bearerToken]);
+    }), [id, instance, bearerToken, refreshBearerToken{% if client_needs_mcp_app.value %}, mcpApp{% endif %}]);
 {% if client_has_default_id %}
 
   // An explicit `id` caller gets the handle directly; a no-id caller

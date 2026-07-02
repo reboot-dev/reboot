@@ -27,6 +27,7 @@ import {
 } from "react";
 import {
   McpAppContext,
+  BearerRefreshContext,
   DefaultStateIdsContext,
   type McpAppContextValue,
   type DefaultStateIdsContextValue,
@@ -305,9 +306,11 @@ export default function McpConnector({
 
   return (
     <McpAppContext.Provider value={contextValue}>
-      <DefaultStateIdsContext.Provider value={stateIdsContextValue}>
-        {child}
-      </DefaultStateIdsContext.Provider>
+      <BearerRefreshContext.Provider value={refreshMCPBearerToken}>
+        <DefaultStateIdsContext.Provider value={stateIdsContextValue}>
+          {child}
+        </DefaultStateIdsContext.Provider>
+      </BearerRefreshContext.Provider>
     </McpAppContext.Provider>
   );
 }

@@ -89,6 +89,13 @@ interface AbortedType<A extends Aborted> {
   fromStatus(status: Status): A;
 }
 
+// A hook the SPA's provider plugs into `httpCall` so a 401 from a
+// stale `rbt_session` cookie can be transparently recovered by
+// hitting `/__/oauth/refresh` and retrying once. Returning `true`
+// signals "I refreshed the session, please retry"; `false` means
+// "give up, surface the 401 to the caller".
+export type OnUnauthenticated = () => Promise<boolean>;
+
 export async function httpCall<
   RequestType extends Message<RequestType>,
   ResponseType extends Message<ResponseType>,
@@ -105,6 +112,7 @@ export async function httpCall<
   idempotencyKey,
   options,
   bearerToken,
+  onUnauthenticated,
 }: {
   url: string;
   method: string;
@@ -118,93 +126,133 @@ export async function httpCall<
     signal?: AbortSignal;
   };
   bearerToken?: () => Promise<string | undefined>;
+  onUnauthenticated?: OnUnauthenticated;
 }): Promise<ResponseType> {
   if (!(request instanceof requestType)) {
     throw new TypeError("'request' is not of type 'requestType'");
   }
 
-  const headers = new Headers();
-  headers.set("Content-Type", "application/json");
-  headers.set("x-reboot-idempotency-key", idempotencyKey);
-
-  if (bearerToken !== undefined) {
-    const token = await bearerToken();
-    if (token !== undefined) {
-      headers.set("Authorization", `Bearer ${token}`);
+  const buildHeaders = async (): Promise<Headers> => {
+    const headers = new Headers();
+    headers.set("Content-Type", "application/json");
+    headers.set("x-reboot-idempotency-key", idempotencyKey);
+    if (bearerToken !== undefined) {
+      const token = await bearerToken();
+      if (token !== undefined) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
     }
-  }
+    return headers;
+  };
 
   // Fetch with retry, using a backoff, i.e., if we get disconnected.
-  const { response, aborted } = await (async () => {
-    const backoff = new Backoff();
+  // We may run this twice: once with the original session cookie, and
+  // once more after `onUnauthenticated` rotates the cookies via
+  // `/__/oauth/refresh`. The retry happens at most once.
+  let didRefresh = false;
+  let response: Response | undefined;
+  let aborted: A | undefined;
 
-    while (true) {
-      try {
-        // Invariant here is that we use the '/package.service.method' path and
-        // HTTP 'POST' method (we need 'POST' because we send an HTTP body).
-        //
-        // See also 'reboot/helpers.py'.
-        const response = await guardedFetch(
-          `${url}/__/reboot/rpc/${stateRef}/${method}`,
-          {
-            ...options,
-            method: "POST",
-            headers,
-            // Tell browser to pass cookies, even cross-origin.
-            // TODO: Enable when the backend supports CORS.
-            // credentials: "include",
-            body: request.toJsonString(),
+  while (true) {
+    // Rebuild the headers on every attempt: if a retry follows
+    // `onUnauthenticated` rotating the session, it must carry the
+    // refreshed credentials rather than the stale ones.
+    const headers = await buildHeaders();
+    const result = await (async (): Promise<{
+      response?: Response;
+      aborted?: A;
+    }> => {
+      const backoff = new Backoff();
+
+      while (true) {
+        try {
+          // Invariant here is that we use the '/package.service.method' path and
+          // HTTP 'POST' method (we need 'POST' because we send an HTTP body).
+          //
+          // See also 'reboot/helpers.py'.
+          const response = await guardedFetch(
+            `${url}/__/reboot/rpc/${stateRef}/${method}`,
+            {
+              ...options,
+              method: "POST",
+              headers,
+              body: request.toJsonString(),
+            }
+          );
+
+          // Since it is a 'fetch', we could get a retryable error, but
+          // it won't throw an exception, so we have to check the
+          // response status code and retry it.
+          // - 502 (Bad Gateway): Proxy can't reach the backend.
+          // - 503 (Unavailable): Server is temporarily unavailable.
+          // - 499 (Cancelled): Request was cancelled, often because the
+          //   server is shutting down. This is retryable.
+          if (
+            response.status === 502 ||
+            response.status === 503 ||
+            response.status === 499
+          ) {
+            if (response.headers.get("content-type") === "application/json") {
+              const status = Status.fromJson(await response.json());
+              const aborted = abortedType.fromStatus(status);
+              // Log the error later in the 'catch' block.
+              throw aborted;
+            } else {
+              const aborted = new abortedType(new errors_pb.Unknown(), {
+                message: `Unknown error with HTTP status ${response.status}`,
+              });
+              throw aborted;
+            }
           }
-        );
-
-        // Since it is a 'fetch', we could get a retryable error, but
-        // it won't throw an exception, so we have to check the
-        // response status code and retry it.
-        // - 502 (Bad Gateway): Proxy can't reach the backend.
-        // - 503 (Unavailable): Server is temporarily unavailable.
-        // - 499 (Cancelled): Request was cancelled, often because the
-        //   server is shutting down. This is retryable.
-        if (
-          response.status === 502 ||
-          response.status === 503 ||
-          response.status === 499
-        ) {
-          if (response.headers.get("content-type") === "application/json") {
-            const status = Status.fromJson(await response.json());
-            const aborted = abortedType.fromStatus(status);
-            // Log the error later in the 'catch' block.
-            throw aborted;
-          } else {
-            const aborted = new abortedType(new errors_pb.Unknown(), {
-              message: `Unknown error with HTTP status ${response.status}`,
+          backoff.reset({ log: `[Reboot] Call to \`${method}\` succeeded` });
+          return { response };
+        } catch (e: unknown) {
+          if (options?.signal?.aborted) {
+            const aborted = new abortedType(new errors_pb.Aborted(), {
+              message:
+                e instanceof Error
+                  ? `${e}`
+                  : `Unknown error: ${JSON.stringify(e)}`,
             });
-            throw aborted;
+
+            return { aborted };
+          } else if (e instanceof Error) {
+            console.error(e);
+          } else {
+            console.error(`Unknown error: ${JSON.stringify(e)}`);
           }
         }
-        backoff.reset({ log: `[Reboot] Call to \`${method}\` succeeded` });
-        return { response };
-      } catch (e: unknown) {
-        if (options?.signal?.aborted) {
-          const aborted = new abortedType(new errors_pb.Aborted(), {
-            message:
-              e instanceof Error
-                ? `${e}`
-                : `Unknown error: ${JSON.stringify(e)}`,
-          });
 
-          return { aborted };
-        } else if (e instanceof Error) {
-          console.error(e);
-        } else {
-          console.error(`Unknown error: ${JSON.stringify(e)}`);
-        }
+        await backoff.wait({
+          log: `[Reboot] Retrying call to \`${method}\` with backoff ...`,
+        });
       }
+    })();
 
-      await backoff.wait({
-        log: `[Reboot] Retrying call to \`${method}\` with backoff ...`,
-      });
+    response = result.response;
+    aborted = result.aborted;
+
+    // 401 from a stale `rbt_session` cookie: ask the provider's
+    // refresh hook to rotate, then retry once. If refresh fails (or
+    // the SPA didn't supply a hook), fall through and the 401
+    // surfaces to the caller as a normal aborted call.
+    if (
+      response?.status === 401 &&
+      onUnauthenticated !== undefined &&
+      !didRefresh
+    ) {
+      didRefresh = true;
+      try {
+        const refreshed = await onUnauthenticated();
+        if (refreshed) {
+          continue;
+        }
+      } catch {
+        // Ignore refresh failures; surface the original 401.
+      }
     }
-  })();
+    break;
+  }
 
   if (!response) {
     if (aborted) throw aborted;
@@ -323,6 +371,13 @@ export function reactively<
 
     while (signal === undefined || !signal.aborted) {
       try {
+        // The reactive read path multiplexes many RPCs over one
+        // WebSocket and each call may carry a different bearer (a
+        // refresh between calls is valid), so auth rides in the
+        // request body, not the WS upgrade. The browser
+        // `WebSocket` API also disallows custom headers on the
+        // upgrade, ruling out `Authorization`/`Sec-WebSocket-Protocol`
+        // as transport here.
         const queryRequest = new react_pb.QueryRequest({
           method,
           request: request.toBinary(),
@@ -1112,6 +1167,13 @@ export class WebContext {
   // Use websockets when connecting over HTTPS instead of gRPC.
   readonly websockets: boolean;
   bearerToken?: () => Promise<string | undefined>;
+  // A 401-recovery hook handed to `httpCall`. When set, a unary
+  // RPC that comes back `Unauthenticated` calls this once, and
+  // retries if it resolves `true`. Wire it to whatever renews the
+  // session — e.g. a `refreshBearer(...)`-based function in a
+  // browser app, or a custom refresh flow elsewhere. Without it,
+  // unary 401s surface immediately to the caller.
+  onUnauthenticated?: OnUnauthenticated;
 
   constructor(
     args:
@@ -1120,12 +1182,14 @@ export class WebContext {
           url: string;
           websockets?: boolean;
           bearerToken?: (() => Promise<string | undefined>) | string;
+          onUnauthenticated?: OnUnauthenticated;
         }
   ) {
     if (typeof args === "string") {
       this.url = args;
       this.websockets = false;
       this.bearerToken = undefined;
+      this.onUnauthenticated = undefined;
     } else {
       this.url = args.url;
       this.websockets = args.websockets ?? false;
@@ -1135,6 +1199,7 @@ export class WebContext {
             ? async () => args.bearerToken as string
             : args.bearerToken
           : undefined;
+      this.onUnauthenticated = args.onUnauthenticated;
     }
   }
 
