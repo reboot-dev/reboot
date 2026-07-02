@@ -2004,11 +2004,15 @@ export namespace {{ client.state.proto.name }} {
   export type State = {{ client.state.proto.name }}Proto;
 }
 {% if client.state.proto.uis | length > 0 %}
-{# Re-export UI request types for use as component props.
-   Protobuf-es classes work as both types and values. #}
+{# Re-export UI request types for use as component props: plain,
+   all-optional fields. The MCP connector injects the request's
+   fields onto the mounted component as plain values (via
+   `React.cloneElement`) only once the tool call arrives, so the
+   component's first render happens without them. #}
 {% for ui in client.state.proto.uis %}
 {% if ui.request_message %}
-export type {{ ui.request_message }} = {{ pb_name }}.{{ ui.request_message }};
+export type {{ ui.request_message }} =
+  protobuf_es.PartialMessage<{{ pb_name }}.{{ ui.request_message }}>;
 {% endif %}
 {% endfor %}
 {% endif %}
