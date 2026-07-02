@@ -23,7 +23,6 @@ export const CartApp: FC = () => {
   const formatPrice = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
   const handleRemove = async (itemIndex: number) => {
-    const itemName = items[itemIndex]?.name ?? "item";
     setPendingIndex(itemIndex);
     try {
       await order.removeFromCart({ itemIndex });
