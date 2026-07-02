@@ -31,5 +31,5 @@ Add `frontend/build.mjs` too (also from
 `references/react-scaffolding.md`): it discovers and builds every UI in
 one shot, so `npm run build` keeps working as UIs come and go. Set
 `frontend/package.json`'s build script to
-`"build": "tsc --noEmit && node build.mjs"`, dropping any per-UI
+`"build": "tsc -b && node build.mjs"`, dropping any per-UI
 `build:<name>` scripts and the `concurrently` devDependency.

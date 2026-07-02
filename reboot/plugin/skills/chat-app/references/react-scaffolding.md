@@ -24,7 +24,7 @@ auto-discovers and builds every UI. Don't hand-maintain per-UI
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && node build.mjs"
+    "build": "tsc -b && node build.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.5.0",

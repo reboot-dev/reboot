@@ -1,3 +1,4 @@
+load("//reboot:versions.bzl", "REBOOT_VERSION")
 load("//tests:sh_test_in_working_directory.bzl", "sh_test_in_working_directory")
 
 test_packages = [
@@ -46,5 +47,43 @@ sh_test_in_working_directory(
     # default secure port 9991. We require 'exclusive' to not run
     # multiple tests, that use the same port, concurrently.
     tags = ["exclusive"],
+    working_directory = "reboot/examples/reboot-swag-store/",
+)
+
+# The locally built Reboot npm packages that the frontend is
+# type-checked against, instead of the published releases.
+frontend_packages = [
+    "//rbt/v1alpha1:reboot-dev-reboot-api",
+    "//reboot:reboot.dev",
+    "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+    "//reboot/web:reboot-dev-reboot-web",
+    "//reboot/react:reboot-dev-reboot-react",
+]
+
+frontend_env = {
+    "REBOOT_API_NPM_PACKAGE": "$(location //rbt/v1alpha1:reboot-dev-reboot-api)",
+    "REBOOT_NPM_PACKAGE": "$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
+    "REBOOT_REACT_NPM_PACKAGE": "$(location //reboot/react:reboot-dev-reboot-react)",
+    "REBOOT_WEB_NPM_PACKAGE": "$(location //reboot/web:reboot-dev-reboot-web)",
+    "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+}
+
+# Type-checks the frontend (the `store` MCP UI) against the locally
+# built Reboot client. See `frontend/.tests/type_check.sh`.
+sh_test_in_working_directory(
+    name = "frontend_type_check_test",
+    size = "large",
+    data = frontend_packages + [
+        # The actual test script will be given access to all of the
+        # files in the example.
+        "//reboot/examples/reboot-swag-store:everything",
+    ],
+    env = frontend_env,
+    # The following path is relative to the working directory. We use
+    # the whole example as the working directory (not just
+    # `frontend/`) so the sibling `api/` definitions that the client
+    # is generated from are copied into the test sandbox; the script
+    # `cd`s into `frontend/` itself.
+    script = "frontend/.tests/type_check.sh",
     working_directory = "reboot/examples/reboot-swag-store/",
 )

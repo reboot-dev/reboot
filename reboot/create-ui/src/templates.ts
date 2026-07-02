@@ -42,7 +42,7 @@ function appName(ui: UiEntryWithPackage): string {
 export function packageJson(projectName: string): string {
   const scripts: Record<string, string> = {
     dev: "vite",
-    build: "tsc --noEmit && node build.mjs",
+    build: "tsc -b && node build.mjs",
   };
 
   const pkg = {
