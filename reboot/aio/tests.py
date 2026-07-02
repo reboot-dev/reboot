@@ -21,6 +21,7 @@ from reboot.run_environments import in_nodejs
 from reboot.settings import (
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG,
+    ENVVAR_REBOOT_IN_TEST,
 )
 from typing import Any, Awaitable, Callable, Optional, Sequence, overload
 from unittest import mock
@@ -129,6 +130,11 @@ class Reboot(reboot.aio.reboot.Reboot):
         os.environ.setdefault(
             ENVVAR_REBOOT_CRYPTO_ROOT_KEYS, _TEST_CRYPTO_ROOT_KEYS
         )
+        # Mark this as a test run — a permissive, local-development-like
+        # environment. Set on construction so it is present in the
+        # environment before `start()`/`up()` spawn the servers (and
+        # generate the Envoy config) that inherit it.
+        os.environ[ENVVAR_REBOOT_IN_TEST] = 'true'
         # The application under test, or `None` before one is started.
         self._application: Optional[Application] = None
 

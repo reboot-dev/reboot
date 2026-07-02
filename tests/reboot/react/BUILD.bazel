@@ -31,6 +31,7 @@ py_library(
     visibility = ["//tests:__subpackages__"],
     deps = [
         requirement("urllib3"),
+        "//reboot:settings_py",
         "//reboot/aio:applications_py",
         "//reboot/aio:external_py",
         "//reboot/aio:health_check_py",

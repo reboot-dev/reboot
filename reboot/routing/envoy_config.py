@@ -44,7 +44,7 @@ from reboot.routing.filters.lua import (
     load_lua,
     render_lua_template,
 )
-from reboot.run_environments import on_cloud, running_rbt_dev
+from reboot.run_environments import is_in_test, on_cloud, running_rbt_dev
 from reboot.settings import (
     ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES,
     ENVVAR_RBT_DEV,
@@ -172,10 +172,10 @@ def _cors_origin_matchers(
     allowed_origins: list[str],
 ) -> list[string_pb2.StringMatcher]:
     """Build the CORS `allow_origin_string_match` list — every entry
-    in `allowed_origins` as an exact match, plus (only under `rbt dev
-    run`) the shared local-development origin regexes, so a normal
-    `vite`/`webpack` workflow works without the developer enumerating
-    every Vite-defaulted port (5173, 5174, …) in
+    in `allowed_origins` as an exact match, plus (under `rbt dev run`
+    or in tests) the shared local-development origin regexes, so a
+    normal `vite`/`webpack` workflow works without the developer
+    enumerating every Vite-defaulted port (5173, 5174, …) in
     `Application(allowed_origins=...)`. Production and Reboot Cloud
     apply the exact-match allow-list verbatim.
     """
@@ -201,7 +201,7 @@ def _cors_origin_matchers(
     matchers = [
         string_pb2.StringMatcher(exact=origin) for origin in allowed_origins
     ]
-    if running_rbt_dev():
+    if running_rbt_dev() or is_in_test():
         # RE2 syntax. Envoy's `SafeRegex` matches against the whole
         # origin string (a full-string match, not a substring search).
         matchers.extend(

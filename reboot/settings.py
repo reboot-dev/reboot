@@ -122,6 +122,9 @@ ENVVAR_REBOOT_EXPECTED_VERSION = 'REBOOT_EXPECTED_VERSION'
 # running in specific modes, e.g., `rbt dev` or `rbt serve`.
 ENVVAR_RBT_DEV = 'RBT_DEV'
 ENVVAR_RBT_SERVE = 'RBT_SERVE'
+# When 'true', the application is running inside a test — a
+# permissive, local-development-like environment.
+ENVVAR_REBOOT_IN_TEST = 'REBOOT_IN_TEST'
 ENVVAR_RBT_NAME = 'RBT_NAME'
 ENVVAR_RBT_EFFECT_VALIDATION = 'RBT_EFFECT_VALIDATION'
 # When set to 'true', effect validation also runs for "trusted" Reboot

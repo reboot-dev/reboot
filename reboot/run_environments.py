@@ -9,6 +9,7 @@ from reboot.settings import (
     ENVVAR_RBT_SERVE,
     ENVVAR_RBT_SERVERS,
     ENVVAR_REBOOT_CLOUD_VERSION,
+    ENVVAR_REBOOT_IN_TEST,
     ENVVAR_REBOOT_NODEJS,
 )
 from typing import Optional
@@ -91,6 +92,14 @@ def running_rbt_serve() -> bool:
         return detect_run_environment() == RunEnvironment.RBT_SERVE
     except InvalidRunEnvironment:
         return False
+
+
+def is_in_test() -> bool:
+    """Helper for checking if we are running inside a
+    `reboot.aio.tests.Reboot` test harness, which is a permissive,
+    local-development-like environment."""
+
+    return os.environ.get(ENVVAR_REBOOT_IN_TEST, 'false').lower() == 'true'
 
 
 def in_nodejs() -> bool:
