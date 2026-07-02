@@ -70,10 +70,9 @@ fix is `cd frontend && npm run build`, **not** rewriting this file.
 //
 // One config drives three jobs. The dev server is selected by
 // `command === "serve"`; the two build shapes are selected by the
-// `RBT_BUILD_TARGET` env var, set per UI by `build.mjs`. Keeping the
-// target out of Vite's `mode` leaves `mode` at its conventional
-// `development` (serve) / `production` (build), so the matching
-// `.env.<mode>` files load by Vite's normal convention:
+// `RBT_BUILD_TARGET` env var, set per UI by `build.mjs`. `mode` keeps
+// its conventional Vite values — `development` (serve) / `production`
+// (build) — so the matching `.env.<mode>` files load as usual:
 //
 //   * `vite` (serve): a single dev server that delivers HMR for every
 //     `mcp/<name>` UI AND the standalone `web/` SPA, all under

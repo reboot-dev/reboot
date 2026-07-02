@@ -284,20 +284,17 @@ def compute_ui_cache_bust(
         if dist_path is None:
             logger.warning(
                 "`--frontend-dist-path` is not set, so there is no "
-                "directory to serve the '%s' UI's build from; we'll "
-                "serve a 'build not found' placeholder.",
-                ui_name,
+                f"directory to serve the '{ui_name}' UI's build "
+                "from; we'll serve a 'build not found' placeholder."
             )
         else:
             root_path = (
                 os.environ.get(ENVVAR_RBT_FRONTEND_ROOT_PATH) or "frontend"
             )
             logger.warning(
-                "Web artifact '%s' for MCP app is missing; we'll "
-                "serve a 'build not found' placeholder. Run "
-                "`cd %s && npm run build` and restart.",
-                dist_path,
-                root_path,
+                f"Web artifact '{dist_path}' for MCP app is missing; "
+                "we'll serve a 'build not found' placeholder. Run "
+                f"`cd {root_path} && npm run build` and restart."
             )
         # Hash the placeholder we will actually serve. Same call
         # `ui_html` makes in this branch, so the cache-bust

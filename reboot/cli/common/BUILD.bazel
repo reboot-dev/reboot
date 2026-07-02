@@ -159,3 +159,13 @@ py_library(
         "//reboot/cli/commands/init:init_py",
     ],
 )
+
+py_library(
+    name = "frontend_py",
+    srcs = ["frontend.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":rc_py",
+    ],
+)

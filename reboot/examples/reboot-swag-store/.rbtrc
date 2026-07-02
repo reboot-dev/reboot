@@ -58,7 +58,8 @@ dev expunge --application-name=reboot-swag-store
 # Tell `rbt serve` that this is a Python application.
 
 serve run --python
-serve run --frontend-dist-path=frontend/dist --frontend-root-path=frontend
+serve run --frontend-dist-path=frontend/dist
+serve run --frontend-root-path=frontend
 
 # Leave TLS termination to the external load balancer; expose a
 

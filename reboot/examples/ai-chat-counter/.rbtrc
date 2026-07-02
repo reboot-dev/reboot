@@ -43,7 +43,8 @@ dev expunge --application-name=ai-chat-counter
 # entrypoint lives. The Dockerfile's `CMD ["rbt", "serve", "run"]` picks
 # these up.
 serve run --python
-serve run --frontend-dist-path=frontend/dist --frontend-root-path=frontend
+serve run --frontend-dist-path=frontend/dist
+serve run --frontend-root-path=frontend
 serve run --application=backend/src/main.py
 
 # Reboot Cloud terminates TLS at the external load balancer, so the app

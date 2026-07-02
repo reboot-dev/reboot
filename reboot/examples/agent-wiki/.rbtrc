@@ -45,7 +45,8 @@ dev expunge --application-name=agent-wiki
 # (`--frontend-dist-path`); the `--frontend-host` Vite dev server
 # is dev-only.
 serve run --python
-serve run --frontend-dist-path=frontend/dist --frontend-root-path=frontend
+serve run --frontend-dist-path=frontend/dist
+serve run --frontend-root-path=frontend
 serve run --application-name=agent-wiki
 serve run --application=backend/src/main.py
 

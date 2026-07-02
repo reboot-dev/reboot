@@ -18,6 +18,7 @@ from reboot.cli.common.directories import (
     add_working_directory_options,
     use_working_directory,
 )
+from reboot.cli.common.frontend import add_common_frontend_args
 from reboot.cli.common.rc import (
     ArgumentParser,
     ArgumentParserFactory,
@@ -212,29 +213,7 @@ def register_serve(parser: ArgumentParser):
         help="path to TLS key to use when setting '--tls=own-certificate'",
     )
 
-    parser.subcommand('serve run').add_argument(
-        '--frontend-dist-path',
-        type=str,
-        help=(
-            'project-relative directory holding the built '
-            'frontend assets (e.g., `frontend/dist`) served on '
-            'disk under `/__/frontend/` (the production '
-            "counterpart to `dev run`'s `--frontend-dist-path`). "
-            'Requires `--frontend-root-path`.'
-        ),
-    )
-
-    parser.subcommand('serve run').add_argument(
-        '--frontend-root-path',
-        type=str,
-        help=(
-            'project-relative directory that is the frontend '
-            'root (e.g., `frontend`), stripped off each '
-            '`UI(path=...)` to form its served URL under '
-            '`/__/frontend/`. Required with, and only valid '
-            'alongside, `--frontend-dist-path`.'
-        ),
-    )
+    add_common_frontend_args(parser.subcommand('serve run'))
 
 
 def servers_from_cores() -> int:

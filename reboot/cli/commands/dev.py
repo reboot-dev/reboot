@@ -35,6 +35,7 @@ from reboot.cli.common.directories import (
     dot_rbt_dev_directory,
     use_working_directory,
 )
+from reboot.cli.common.frontend import add_common_frontend_args
 from reboot.cli.common.monkeys import monkeys, no_chaos_monkeys
 # We won't mock the classes in `rc`, so it's safe to import those directly.
 from reboot.cli.common.rc import (
@@ -213,29 +214,7 @@ def _register_dev_run(parser: ArgumentParser):
         ),
     )
 
-    parser.subcommand('dev run').add_argument(
-        '--frontend-root-path',
-        type=str,
-        help=(
-            'project-relative directory that is the frontend '
-            'root (e.g., `frontend`), stripped off each '
-            '`UI(path=...)` to form its served URL under '
-            '`/__/frontend/`. Required with, and only valid '
-            'alongside, `--frontend-host` or '
-            '`--frontend-dist-path`.'
-        ),
-    )
-
-    parser.subcommand('dev run').add_argument(
-        '--frontend-dist-path',
-        type=str,
-        help=(
-            'project-relative directory holding the built '
-            'frontend assets (e.g., `frontend/dist`), served '
-            'from disk. Requires `--frontend-root-path`; '
-            'mutually exclusive with `--frontend-host`.'
-        ),
-    )
+    add_common_frontend_args(parser.subcommand('dev run'))
 
     parser.subcommand('dev run').add_argument(
         '--servers',

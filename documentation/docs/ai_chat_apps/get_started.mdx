@@ -298,9 +298,10 @@ class CounterServicer(Counter.Servicer):
     """Servicer for the Counter state machine."""
 
     def authorizer(self) -> Authorizer:
-        # TODO: Remove this allow() once web apps can do OAuth; it
-        # currently lets the unauthenticated web frontend reach
-        # Counters.
+        # TODO(reboot team): remove this `allow()` once the Reboot
+        # framework supports OAuth sign-in from web apps; until then
+        # it lets the unauthenticated web frontend reach Counters.
+        # There's nothing for your application to change here.
         return allow()
 
     async def create(
@@ -724,10 +725,9 @@ touch frontend/vite.config.ts
 //
 // One config drives three jobs. The dev server is selected by
 // `command === "serve"`; the two build shapes are selected by the
-// `RBT_BUILD_TARGET` env var, set per UI by `build.mjs`. Keeping the
-// target out of Vite's `mode` leaves `mode` at its conventional
-// `development` (serve) / `production` (build), so the matching
-// `.env.<mode>` files load by Vite's normal convention:
+// `RBT_BUILD_TARGET` env var, set per UI by `build.mjs`. `mode` keeps
+// its conventional Vite values — `development` (serve) / `production`
+// (build) — so the matching `.env.<mode>` files load as usual:
 //
 //   * `vite` (serve): a single dev server that delivers HMR for every
 //     `mcp/<name>` UI AND the standalone `web/` SPA, all under
