@@ -21,6 +21,7 @@ from reboot.aio.auth.oauth_providers import (
     Google,
     OAuthProvider,
     OAuthProviderByEnvironment,
+    Ory,
     RegisteredOAuthProvider,
     UserId,
 )
@@ -1563,6 +1564,84 @@ class Auth0DomainTest(unittest.TestCase):
         self.assertTrue(url.startswith("https://tenant.auth0.com/authorize?"))
 
 
+class OryValidateTest(unittest.TestCase):
+    """
+    Same shape as `Auth0ValidateTest`: each missing field names itself
+    and (for the credentials) the `Ory` class, so a developer reading
+    startup logs knows which env var to set.
+    """
+
+    def test_none_client_id_message_names_ory(self):
+        provider = Ory(
+            domain="slug.projects.oryapis.com",
+            client_id=None,
+            client_secret="secret",
+        )
+        with self.assertRaises(InputError) as context:
+            provider.validate()
+        self.assertIn("Ory", str(context.exception))
+        self.assertIn("`client_id`", str(context.exception))
+
+    def test_none_client_secret_message_names_ory(self):
+        provider = Ory(
+            domain="slug.projects.oryapis.com",
+            client_id="id",
+            client_secret=None,
+        )
+        with self.assertRaises(InputError) as context:
+            provider.validate()
+        self.assertIn("Ory", str(context.exception))
+        self.assertIn("`client_secret`", str(context.exception))
+
+    def test_missing_domain_rejected(self):
+        provider = Ory(
+            domain=None,
+            client_id="id",
+            client_secret="secret",
+        )
+        with self.assertRaises(InputError) as context:
+            provider.validate()
+        self.assertIn("Ory", str(context.exception))
+        self.assertIn("`domain`", str(context.exception))
+
+    def test_all_supplied_passes(self):
+        Ory(
+            domain="slug.projects.oryapis.com",
+            client_id="id",
+            client_secret="secret",
+        ).validate()
+
+
+class OryDomainTest(unittest.TestCase):
+    """The `domain` is accepted bare or as a full URL, and the
+    authorization endpoint is derived from it under the project —
+    that's what lets a developer paste either form from the Ory
+    Console."""
+
+    def test_bare_domain_builds_project_authorize_url(self):
+        url = Ory(
+            domain="slug.projects.oryapis.com",
+            client_id="id",
+            client_secret="s",
+        ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        self.assertTrue(
+            url.startswith("https://slug.projects.oryapis.com/oauth2/auth?")
+        )
+
+    def test_full_url_domain_is_normalized(self):
+        # A pasted `https://slug.projects.oryapis.com/` must resolve
+        # to the same endpoint as the bare host, not a doubled-up
+        # scheme.
+        url = Ory(
+            domain="https://slug.projects.oryapis.com/",
+            client_id="id",
+            client_secret="s",
+        ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        self.assertTrue(
+            url.startswith("https://slug.projects.oryapis.com/oauth2/auth?")
+        )
+
+
 class RequestedClaimsTest(unittest.TestCase):
     """The `claims=` a provider is constructed with decides exactly
     what `_presented_claims` lets out of a decoded ID token (or
@@ -1889,6 +1968,90 @@ class ScopeTest(unittest.TestCase):
         storing = _scope_param(
             Auth0(
                 domain="tenant.auth0.com",
+                client_id="id",
+                client_secret="s",
+                store_tokens=True,
+            ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        )
+        self.assertIn("offline_access", storing)
+
+    def test_ory_defaults_to_openid_only(self):
+        url = Ory(
+            domain="slug.projects.oryapis.com",
+            client_id="id",
+            client_secret="s",
+        ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        self.assertEqual(_scope_param(url), ["openid"])
+
+    def test_ory_derives_scopes_from_requested_claims(self):
+        # Requesting the email identity claims requests the `email`
+        # scope that makes Ory map the identity's email traits into
+        # the ID token; `name` similarly brings in `profile`.
+        url = Ory(
+            domain="slug.projects.oryapis.com",
+            client_id="id",
+            client_secret="s",
+            claims=["email", "email_verified", "name"],
+        ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        self.assertEqual(_scope_param(url), ["openid", "email", "profile"])
+
+    def test_ory_accepts_every_claim_its_built_in_mapping_emits(self):
+        # `_AVAILABLE_CLAIMS` is a hard allow-list — an application
+        # cannot request a claim missing from it — so it holds every
+        # claim Ory's built-in mapping emits, each bringing in the
+        # scope Ory needs to emit it.
+        for claim, scope in (
+            ("email", "email"),
+            ("email_verified", "email"),
+            ("name", "profile"),
+            ("given_name", "profile"),
+            ("family_name", "profile"),
+            ("username", "profile"),
+            ("website", "profile"),
+            ("updated_at", "profile"),
+        ):
+            url = Ory(
+                domain="slug.projects.oryapis.com",
+                client_id="id",
+                client_secret="s",
+                claims=[claim],
+            ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+            self.assertEqual(
+                _scope_param(url),
+                ["openid", scope],
+                msg=f"claim {claim!r}",
+            )
+
+    def test_ory_adds_extra_scopes_after_base(self):
+        url = Ory(
+            domain="slug.projects.oryapis.com",
+            client_id="id",
+            client_secret="s",
+            scopes=["profile", "email"],
+            claims=["email"],
+        ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        scopes = _scope_param(url)
+        self.assertEqual(scopes[0], "openid")
+        self.assertIn("profile", scopes)
+        # The claim-derived `email` and the explicitly requested one
+        # don't duplicate.
+        self.assertEqual(scopes.count("email"), 1)
+
+    def test_ory_store_tokens_requests_offline_access(self):
+        # Ory issues a refresh token only when `offline_access` is in
+        # the requested scopes (like Auth0); we add it only when
+        # storing tokens.
+        plain = _scope_param(
+            Ory(
+                domain="slug.projects.oryapis.com",
+                client_id="id",
+                client_secret="s",
+            ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        )
+        self.assertNotIn("offline_access", plain)
+        storing = _scope_param(
+            Ory(
+                domain="slug.projects.oryapis.com",
                 client_id="id",
                 client_secret="s",
                 store_tokens=True,

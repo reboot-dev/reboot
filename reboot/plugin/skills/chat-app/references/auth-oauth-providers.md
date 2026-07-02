@@ -36,6 +36,7 @@ The **providers** you place in the `dev` / `prod` arms ship in
 | `Google(...)`   | `Google(client_id=..., client_secret=...)`            | Google account's OIDC `sub` claim                        | Production apps where users sign in with Google.                                                                                                               |
 | `GitHub(...)`   | `GitHub(client_id=..., client_secret=...)`            | GitHub user's numeric ID (as `str`)                      | Production apps where users sign in with GitHub.                                                                                                               |
 | `Auth0(...)`    | `Auth0(domain=..., client_id=..., client_secret=...)` | Auth0 OIDC `sub` (e.g. `google-oauth2\|108…`)            | Production apps that broker sign-in through Auth0 (Google, GitHub, password, SSO) behind one provider, or that need **user management** beyond a bare user id. |
+| `Ory(...)`      | `Ory(domain=..., client_id=..., client_secret=...)`   | Ory OIDC `sub` (the Kratos identity id)                  | Production apps whose users live in an Ory Network project or self-hosted Ory (Kratos + Hydra) deployment.                                                     |
 
 `Auth0` takes a `domain=` (your tenant, e.g. `your-tenant.us.auth0.com`)
 on top of the client credentials — all its endpoints live under that
@@ -47,6 +48,14 @@ upstream in Auth0, not in your code. Because the `sub` it issues encodes
 the upstream connection (`google-oauth2|…`, `auth0|…`, `github|…`), the
 namespace-permanence rule below still applies: changing which Auth0
 connections you offer can change users' `sub`s.
+
+`Ory` similarly takes a `domain=` (your project, e.g.
+`your-slug.projects.oryapis.com`) on top of the client credentials.
+Pass `claims=` (e.g. `claims=["email"]`) to have the identity
+delivered as verified identity claims on every sign-in; the scopes
+those claims need (`email` for the email claims, `profile` for the
+rest) are requested automatically, so allow them on the OAuth2
+client in the Ory Console.
 
 **Identity claims.** Signing in identifies the user; pass `claims=`
 at provider construction to also learn _about_ them: e.g.
@@ -256,6 +265,13 @@ we won't try to mirror here:
   `client_secret=`. Enable the upstream connections you want users to
   sign in through (Google, GitHub, username/password, SSO) under the
   application's Connections tab.
+- **Ory**: in the [Ory Console](https://www.ory.sh/docs/oauth2-oidc/authorization-code-flow),
+  create an **OAuth2 client** with the authorization-code grant and
+  the `openid` scope allowed (plus `email` / `profile` for any
+  `claims=` you request, and `offline_access` if you use it). The
+  project domain (e.g. `your-slug.projects.oryapis.com`), Client ID,
+  and Client Secret are what you pass as `domain=`, `client_id=`,
+  and `client_secret=`.
 
 For every provider, register the callback URL Reboot serves —
 `<your-app-base-url>/__/oauth/callback` (note the `/__/` prefix) — when
@@ -297,6 +313,9 @@ the provider, and providers don't share an ID space:
 - `GitHub` issues a numeric account ID.
 - `Auth0` issues its OIDC `sub`, which encodes the upstream connection
   (`google-oauth2|…`, `auth0|…`).
+- `Ory` issues its OIDC `sub` — the Kratos identity id of the user in
+  your Ory project (with the default, non-pairwise subject
+  configuration).
 - `Anonymous()` issues a fresh `anon-{ULID}` per flow.
 - `Development()` issues a `dev-{hash}` per fake identity.
 

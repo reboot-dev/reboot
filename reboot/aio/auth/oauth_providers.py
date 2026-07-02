@@ -76,6 +76,39 @@ def _scopes_from_response(granted: Any, requested: list[str]) -> list[str]:
     return requested
 
 
+def _normalize_domain(domain: Optional[str]) -> str:
+    """Strip a leading scheme and any trailing slash from a
+    provider's `domain` so both `tenant.example.com` and the full
+    `https://tenant.example.com/` form work; returns `""` for a
+    missing domain (caught later by `validate()`).
+    """
+    if not domain:
+        return ""
+    parsed = urlparse(domain)
+    # `urlparse("tenant.example.com")` puts everything in `path` (no
+    # scheme), whereas `urlparse("https://tenant.example.com")` puts
+    # it in `netloc`; take whichever is populated.
+    host = parsed.netloc or parsed.path
+    return host.strip("/")
+
+
+def _decoded_id_token(
+    id_token: Optional[str],
+) -> Optional[dict[str, Any]]:
+    """Decode an OIDC ID token's claims, or `None` if there's no
+    token.
+
+    Decodes without verifying the signature: the token was received
+    directly from the provider's token endpoint over TLS, so the
+    transport guarantees authenticity (the same reasoning `Google`
+    applies). We don't restrict `algorithms` because the signature
+    isn't checked and providers may sign with RS256 or HS256.
+    """
+    if not id_token:
+        return None
+    return jwt.decode(id_token, options={"verify_signature": False})
+
+
 def origin_from_request(request: Request) -> str:
     """
     Derive the server's origin (`scheme://host`) from request headers.
@@ -789,40 +822,7 @@ class Auth0(RegisteredOAuthProvider):
             store_tokens=store_tokens,
             claims=claims,
         )
-        self._domain = self._normalize_domain(domain)
-
-    @staticmethod
-    def _normalize_domain(domain: Optional[str]) -> str:
-        """Strip a leading scheme and any trailing slash from an Auth0
-        `domain` so both `your-tenant.auth0.com` and the full
-        `https://your-tenant.auth0.com/` form work; returns `""` for a
-        missing domain (caught later by `validate()`).
-        """
-        if not domain:
-            return ""
-        parsed = urlparse(domain)
-        # `urlparse("tenant.auth0.com")` puts everything in `path` (no
-        # scheme), whereas `urlparse("https://tenant.auth0.com")` puts it
-        # in `netloc`; take whichever is populated.
-        host = parsed.netloc or parsed.path
-        return host.strip("/")
-
-    @staticmethod
-    def _decoded_id_token(
-        id_token: Optional[str],
-    ) -> Optional[dict[str, Any]]:
-        """Decode an OIDC ID token's claims, or `None` if there's no
-        token.
-
-        Decodes without verifying the signature: we received this token
-        directly from the provider's token endpoint over TLS, so the
-        transport guarantees authenticity (the same reasoning `Google`
-        applies). We don't restrict `algorithms` because the signature
-        isn't checked and Auth0 tenants may sign with RS256 or HS256.
-        """
-        if not id_token:
-            return None
-        return jwt.decode(id_token, options={"verify_signature": False})
+        self._domain = _normalize_domain(domain)
 
     @property
     def _authorization_endpoint(self) -> str:
@@ -897,7 +897,7 @@ class Auth0(RegisteredOAuthProvider):
                 response.raise_for_status()
                 token_response = await response.json()
 
-            decoded = self._decoded_id_token(token_response.get("id_token"))
+            decoded = _decoded_id_token(token_response.get("id_token"))
             user_id = decoded.get("sub") if decoded is not None else None
             # The ID token carries the requested identity claims (we
             # requested the scopes they need); surface whichever are
@@ -945,6 +945,188 @@ class Auth0(RegisteredOAuthProvider):
         or `None` when token storage isn't enabled or no access token came
         back. Auth0 only returns a `refresh_token` when `offline_access`
         was requested (see `authorization_url`).
+        """
+        if not self._store_tokens:
+            return None
+        access_token = token_response.get("access_token")
+        if access_token is None:
+            return None
+        return OAuthTokens(
+            access_token=access_token,
+            refresh_token=token_response.get("refresh_token"),
+            expires_at=_expires_at_from_expires_in(
+                token_response.get("expires_in")
+            ),
+            scopes=_scopes_from_response(
+                token_response.get("scope"),
+                self._requested_scopes(),
+            ),
+        )
+
+
+class Ory(RegisteredOAuthProvider):
+    """
+    Ory OAuth provider (OpenID Connect).
+
+    Works against an Ory Network project or a self-hosted Ory
+    deployment serving the OAuth2 (Hydra) endpoints. All endpoints
+    live under the project's domain (e.g.
+    `your-slug.projects.oryapis.com`), so like `Auth0` this provider
+    takes a `domain`. Create an OAuth2 client in the Ory project with
+    the authorization-code grant, add Reboot's callback
+    (`<base>/__/oauth/callback`) to its redirect URIs, and pass the
+    client's ID/secret here.
+
+    Obtains the user ID from the OIDC ID token's `sub` claim — for
+    Ory that is the Kratos identity ID (assuming the default,
+    non-pairwise subject configuration). Pass `claims=` to deliver
+    the identity's details as identity claims: the scopes they need
+    (`email` for the email claims, `profile` for the rest) are
+    requested automatically — make sure the OAuth2 client is allowed
+    to request them.
+    """
+
+    # `openid` is the minimum OIDC scope; yields an ID token with the
+    # `sub` claim (the Kratos identity ID).
+    _REQUIRED_SCOPE = "openid"
+
+    # Ory's built-in mapping of an identity onto OIDC claims, each
+    # keyed to the standard scope that makes it appear: the `email`
+    # claims come from the identity's first verifiable email address,
+    # `name` / `given_name` / `family_name` / `username` / `website`
+    # from the identity's traits, and `updated_at` from its top-level
+    # field of that name. Ory emits `username` where the OIDC
+    # standard names `preferred_username`. Which of these a project
+    # populates depends on its Kratos identity schema; absent claims
+    # are simply omitted (see `_presented_claims`). See
+    # https://www.ory.com/docs/oauth2-oidc/openid-connect-claims-scope-custom.
+    _AVAILABLE_CLAIMS = {
+        "email": "email",
+        "email_verified": "email",
+        "name": "profile",
+        "given_name": "profile",
+        "family_name": "profile",
+        "username": "profile",
+        "website": "profile",
+        "updated_at": "profile",
+    }
+
+    # Ory grants a refresh token only when `offline_access` is
+    # requested (like Auth0); see `authorization_url`.
+    _OFFLINE_ACCESS_SCOPE = "offline_access"
+
+    def __init__(
+        self,
+        *,
+        # The Ory project domain, e.g.
+        # `your-slug.projects.oryapis.com`. A full `https://...` URL
+        # or a trailing slash is tolerated.
+        domain: Optional[str],
+        client_id: Optional[str],
+        client_secret: Optional[str],
+        scopes: Optional[list[str]] = None,
+        store_tokens: bool = False,
+        claims: Optional[Sequence[str] | Mapping[str, str]] = None,
+    ):
+        super().__init__(
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=scopes,
+            store_tokens=store_tokens,
+            claims=claims,
+        )
+        self._domain = _normalize_domain(domain)
+
+    @property
+    def _authorization_endpoint(self) -> str:
+        return f"https://{self._domain}/oauth2/auth"
+
+    @property
+    def _token_endpoint(self) -> str:
+        return f"https://{self._domain}/oauth2/token"
+
+    @property
+    def token_service_id(self) -> str:
+        # Ory serves one project per domain, so the project domain
+        # (e.g. "your-slug.projects.oryapis.com") names the service.
+        return self._domain
+
+    def validate(self) -> None:
+        super().validate()
+        if not self._domain:
+            raise InputError(
+                reason="Ory requires a non-empty `domain`.",
+            )
+
+    def authorization_url(
+        self,
+        state: str,
+        redirect_uri: str,
+    ) -> str:
+        scopes = self._requested_scopes()
+        # Ory asks for refresh tokens via the `offline_access` scope.
+        # Only request it when we're actually capturing tokens, to
+        # avoid asking the user for offline access we'd never use.
+        if self._store_tokens and self._OFFLINE_ACCESS_SCOPE not in scopes:
+            scopes = scopes + [self._OFFLINE_ACCESS_SCOPE]
+        params = {
+            "client_id": self._client_id,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": " ".join(scopes),
+            "state": state,
+        }
+        return f"{self._authorization_endpoint}?{urlencode(params)}"
+
+    async def exchange_code(
+        self,
+        code: str,
+        redirect_uri: str,
+    ) -> ExchangeResult:
+        """
+        Exchange the Ory auth code for a user ID (and tokens).
+        """
+        data = {
+            "grant_type": "authorization_code",
+            "client_id": self._client_id,
+            "client_secret": self._client_secret,
+            "code": code,
+            "redirect_uri": redirect_uri,
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                self._token_endpoint,
+                data=data,
+            ) as response:
+                response.raise_for_status()
+                token_response = await response.json()
+
+            decoded = _decoded_id_token(token_response.get("id_token"))
+            user_id = decoded.get("sub") if decoded is not None else None
+            # The ID token carries the requested identity claims (we
+            # requested the scopes they need); surface whichever are
+            # present, under their presented names.
+            claims = self._presented_claims(decoded or {})
+
+        if user_id is None:
+            raise ValueError(
+                "Ory did not return an ID token with a 'sub' claim; "
+                "cannot resolve the user's identity."
+            )
+        return ExchangeResult(
+            user_id=UserId(user_id),
+            tokens=self._tokens_from_response(token_response),
+            claims=claims,
+        )
+
+    def _tokens_from_response(
+        self,
+        token_response: dict,
+    ) -> Optional[OAuthTokens]:
+        """Build an `OAuthTokens` from an Ory token endpoint response,
+        or `None` when token storage isn't enabled or no access token
+        came back. Ory only returns a `refresh_token` when
+        `offline_access` was requested (see `authorization_url`).
         """
         if not self._store_tokens:
             return None
