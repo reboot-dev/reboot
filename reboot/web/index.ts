@@ -721,83 +721,93 @@ export async function* grpcWebsocketServerStream<
     websocket.send(request.toBinary());
   };
 
-  const closed = new Promise<void>((resolve, reject) => {
-    function sendHeartbeat() {
-      if (websocket.readyState === WebSocket.OPEN) {
-        // To detect dead websocket connections, we need to have outbound data in
-        // our buffer (see https://github.com/reboot-dev/mono/issues/4237).
-        //
-        // There is no need for error handling: if this data cannot be sent, then
-        // the socket will be closed automatically.
-        websocket.send(heartbeatRequest.toBinary());
-      }
+  function sendHeartbeat() {
+    if (websocket.readyState === WebSocket.OPEN) {
+      // To detect dead websocket connections, we need to have outbound data in
+      // our buffer (see https://github.com/reboot-dev/mono/issues/4237).
+      //
+      // There is no need for error handling: if this data cannot be sent, then
+      // the socket will be closed automatically.
+      websocket.send(heartbeatRequest.toBinary());
     }
-    // This interval matches the setting for non-browser clients in
-    // `reboot/settings.py`.
-    const heartbeatId = setInterval(sendHeartbeat, 5000);
+  }
+  // This interval matches the setting for non-browser clients in
+  // `reboot/settings.py`.
+  const heartbeatId = setInterval(sendHeartbeat, 5000);
 
-    websocket.addEventListener("close", () => {
-      // Closing the websocket happens both immediately after errors, and when
-      // a request is simply done. We can't assume that the connection is
-      // healthy or unhealthy; leave any warnings as they are.
-      clearInterval(heartbeatId);
-      resolve();
-    });
+  // The websocket dispatches each `message` event exactly once, to
+  // whatever listeners are attached at that instant, so a frame that
+  // arrives while this generator is suspended at a `yield` (i.e.,
+  // while our consumer is still processing an earlier frame) must be
+  // buffered here or it would be dropped.
+  const messages: ArrayBuffer[] = [];
+  let closed = false;
+  let error: Error | undefined = undefined;
 
-    websocket.addEventListener("error", (event) => {
-      // We weren't able to reach the server. Show a helpful error message to
-      // developers if this persists.
-      maybeScheduleLocalhostWarning({
-        url: url.href,
-      });
-      clearInterval(heartbeatId);
-      reject(
-        new Error(`Unexpected error on websocket: ${JSON.stringify(event)}`)
-      );
+  // Resolver of the promise the loop below awaits once it has
+  // drained `messages`; invoked to wake that loop back up.
+  let wake: (() => void) | undefined = undefined;
+
+  websocket.addEventListener("message", (event) => {
+    // Receiving a message demonstrates that the websocket is
+    // connected; if we had a connection warning displayed we can
+    // remove it.
+    removeLocalhostWarning();
+    messages.push((event as any).data);
+    if (wake !== undefined) {
+      wake();
+    }
+  });
+
+  websocket.addEventListener("close", () => {
+    // Closing the websocket happens both immediately after errors, and when
+    // a request is simply done. We can't assume that the connection is
+    // healthy or unhealthy; leave any warnings as they are.
+    clearInterval(heartbeatId);
+    closed = true;
+    if (wake !== undefined) {
+      wake();
+    }
+  });
+
+  websocket.addEventListener("error", (event) => {
+    // We weren't able to reach the server. Show a helpful error message to
+    // developers if this persists.
+    maybeScheduleLocalhostWarning({
+      url: url.href,
     });
+    clearInterval(heartbeatId);
+    error = new Error(
+      `Unexpected error on websocket: ${JSON.stringify(event)}`
+    );
+    if (wake !== undefined) {
+      wake();
+    }
   });
 
   try {
-    do {
-      // Wait for either `closed` to resolve or reject. If the latter,
-      // it'll propagate the exception, if the former, we'll drop out of
-      // the loop and return to the caller.
-      const event = await Promise.race([
-        closed,
-        new Promise((resolve) => {
-          websocket.addEventListener(
-            "message",
-            (event) => {
-              resolve(event);
-            },
-            // Only get one message at a time!
-            { once: true }
-          );
-        }),
-      ]);
-
-      if (
-        // `MessageEvent` is not defined in all JavaScript runtimes
-        // (notably React Native), so guard the reference before using
-        // `instanceof`.
-        (typeof MessageEvent !== "undefined" &&
-          event instanceof MessageEvent) ||
-        // When we use 'WebSocket' class in the backend it is not the
-        // same one as the frontend has, so the event type differs as
-        // well. When `closed` wins the race `event` is `undefined`.
-        (event !== undefined && (event as any).data instanceof ArrayBuffer)
-      ) {
-        // Receiving a message demonstrates that the websocket is
-        // connected; if we had a connection warning displayed we can
-        // remove it.
-        removeLocalhostWarning();
-        yield responseType.fromBinary(new Uint8Array((event as any).data));
+    while (true) {
+      // Yield all buffered frames (more may arrive while we are
+      // suspended at `yield`; the loop re-checks after each one).
+      let data: ArrayBuffer | undefined = undefined;
+      while ((data = messages.shift()) !== undefined) {
+        yield responseType.fromBinary(new Uint8Array(data));
       }
 
-      // If not `event instanceof Event` then `closed` must have
-      // resolved in which case we'll fall out of this loop and return
-      // to the caller.
-    } while (websocket.readyState === WebSocket.OPEN);
+      if (error !== undefined) {
+        throw error;
+      }
+
+      if (closed) {
+        return;
+      }
+
+      // Wait for a new frame, a close, or an error.
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+      });
+      wake = undefined;
+    }
   } finally {
     // Handle the case where the async generator is is not exhausted
     // and we want to make sure we close the websocket.
