@@ -19,7 +19,7 @@ from reboot.crypto import root_keys
 from reboot.run_environments import running_rbt_dev
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
-from typing import Any, NewType, Optional
+from typing import Any, Mapping, NewType, Optional, Sequence
 from ulid import ULID
 from urllib.parse import urlencode, urlparse, urlunparse
 
@@ -41,6 +41,18 @@ class ExchangeResult:
     # constructed with `store_tokens=True`; `None` otherwise, so apps
     # that don't opt in never carry these secrets around.
     tokens: Optional[OAuthTokens]
+    # The user's verified identity claims — the claims the provider
+    # was constructed to deliver (`claims=`), keyed by their presented
+    # names, as JSON-serializable values. Only claims from a verified
+    # source belong here: an ID token received directly from the
+    # provider's token endpoint over TLS, or the provider's userinfo
+    # endpoint over TLS. A mapping — even an empty one — is the
+    # complete, current verified claim set and is delivered as a full
+    # replacement, so an empty mapping clears previously delivered
+    # claims. `None` means claim delivery is off — the provider was
+    # constructed without `claims=` or has no verified claims source —
+    # and delivers nothing.
+    claims: Optional[Mapping[str, Any]] = None
 
 
 def _expires_at_from_expires_in(expires_in: Any) -> Optional[int]:
@@ -87,14 +99,130 @@ class OAuthProvider(ABC):
     Base class for identity providers.
     """
 
+    # The identity claims this provider can deliver: each available
+    # claim name, mapped to the OAuth scope that makes the identity
+    # provider include it (`None` when no scope is needed). Subclasses
+    # with a verified claims source override this.
+    _AVAILABLE_CLAIMS: Mapping[str, Optional[str]] = {}
+
     def __init__(
         self,
         *,
         access_token_ttl_seconds: int = _DEFAULT_ACCESS_TOKEN_TTL_SECONDS,
+        # The identity claims to deliver to the application on every
+        # sign-in: a sequence of claim names from this provider's
+        # available claims, or a mapping when a claim should be
+        # presented to the application under a different name (e.g.
+        # `{"email": "verified-email"}` delivers the provider's
+        # `email` claim as `verified-email`). `None` — the default —
+        # turns claim delivery off entirely. Requesting a claim this
+        # provider cannot deliver raises immediately, naming the
+        # available claims.
+        claims: Optional[Sequence[str] | Mapping[str, str]] = None,
     ):
         # How long minted access tokens are valid, in
         # seconds.
         self.access_token_ttl_seconds = access_token_ttl_seconds
+        # The requested identity claims, normalized to a mapping of
+        # source claim name to presented claim name; `None` when no
+        # claims were requested.
+        self._claims = self._normalized_claims(claims)
+
+    def _normalized_claims(
+        self,
+        claims: Optional[Sequence[str] | Mapping[str, str]],
+    ) -> Optional[dict[str, str]]:
+        """Validate a `claims=` argument against this provider's
+        available claims and normalize it to a mapping of source claim
+        name to presented claim name; `None` (also for an empty
+        `claims=`) means no claims were requested.
+        """
+        if claims is None:
+            return None
+        if isinstance(claims, str):
+            raise InputError(
+                reason=(
+                    f"`{type(self).__name__}` got `claims={claims!r}`: "
+                    "pass a sequence of claim names (e.g. "
+                    f"`claims=[{claims!r}]`) or a mapping of source "
+                    "claim name to presented claim name."
+                ),
+            )
+        if isinstance(claims, Mapping):
+            entries = list(claims.items())
+        else:
+            entries = [(name, name) for name in claims]
+        for name, presented in entries:
+            if not isinstance(name, str) or not isinstance(presented, str):
+                raise InputError(
+                    reason=(
+                        f"`{type(self).__name__}` got `claims=` "
+                        "containing a non-string entry "
+                        f"({name!r}: {presented!r}); claim names and "
+                        "presented names are strings."
+                    ),
+                )
+        normalized = dict(entries)
+        if not normalized:
+            return None
+        unknown = [
+            name for name in normalized if name not in self._AVAILABLE_CLAIMS
+        ]
+        if unknown:
+            unknown_list = ", ".join(f"'{name}'" for name in unknown)
+            if not self._AVAILABLE_CLAIMS:
+                raise InputError(
+                    reason=(
+                        f"`{type(self).__name__}` does not deliver "
+                        "identity claims; remove `claims=` "
+                        f"({unknown_list} requested)."
+                    ),
+                )
+            available_list = ", ".join(
+                f"'{name}'" for name in self._AVAILABLE_CLAIMS
+            )
+            raise InputError(
+                reason=(
+                    f"`{type(self).__name__}` cannot deliver the "
+                    f"identity claim(s) {unknown_list}; available "
+                    f"claims: {available_list}."
+                ),
+            )
+        presented_names = list(normalized.values())
+        if len(set(presented_names)) != len(presented_names):
+            duplicates = ", ".join(
+                f"'{name}'" for name in sorted(
+                    {
+                        name for name in presented_names
+                        if presented_names.count(name) > 1
+                    }
+                )
+            )
+            raise InputError(
+                reason=(
+                    f"`{type(self).__name__}` got `claims=` presenting "
+                    f"multiple claims under the same name: {duplicates}."
+                ),
+            )
+        return normalized
+
+    def _presented_claims(
+        self,
+        source: Mapping[str, Any],
+    ) -> Optional[dict[str, Any]]:
+        """The requested identity claims present in `source` (a
+        decoded OIDC ID token, a userinfo response, ...), keyed by
+        their presented names; claims absent from `source` (or
+        `None`-valued there) are omitted. `None` when this provider
+        was constructed without `claims=`.
+        """
+        if self._claims is None:
+            return None
+        return {
+            presented: source[name]
+            for name, presented in self._claims.items()
+            if source.get(name) is not None
+        }
 
     @abstractmethod
     def authorization_url(
@@ -199,9 +327,13 @@ class RegisteredOAuthProvider(OAuthProvider):
         # default — opting in requires the `ciphertext` library and
         # `REBOOT_CRYPTO_ROOT_KEYS`.
         store_tokens: bool = False,
+        # The identity claims to deliver on every sign-in; see
+        # `OAuthProvider.__init__`. The scopes these claims need are
+        # requested automatically (see `_requested_scopes`).
+        claims: Optional[Sequence[str] | Mapping[str, str]] = None,
     ):
 
-        super().__init__()
+        super().__init__(claims=claims)
         self._client_id = client_id
         self._client_secret = client_secret
         self._extra_scopes = scopes or []
@@ -212,10 +344,15 @@ class RegisteredOAuthProvider(OAuthProvider):
         return self._store_tokens
 
     def _requested_scopes(self) -> list[str]:
-        """The full scope list: the required base scope plus the
-        developer's extras (deduplicated, base scope first).
+        """The full scope list: the required base scope, the scopes
+        the requested identity claims need (see `_AVAILABLE_CLAIMS`),
+        plus the developer's extras (deduplicated, base scope first).
         """
         scopes = [self._REQUIRED_SCOPE]
+        for name in (self._claims or {}):
+            scope = self._AVAILABLE_CLAIMS[name]
+            if scope is not None and scope not in scopes:
+                scopes.append(scope)
         for scope in self._extra_scopes:
             if scope not in scopes:
                 scopes.append(scope)
@@ -242,7 +379,9 @@ class Google(RegisteredOAuthProvider):
     """
     Google OAuth provider (OpenID Connect).
 
-    Obtains the user ID from the OIDC ID token's `sub` claim.
+    Obtains the user ID from the OIDC ID token's `sub` claim. Pass
+    `claims=` to deliver the user's identity claims; the scopes they
+    need (`email`, `profile`) are requested automatically.
     """
 
     _AUTHORIZATION_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -251,6 +390,24 @@ class Google(RegisteredOAuthProvider):
     # `openid` is the minimum OIDC scope; gives us an ID token with the
     # `sub` claim (the user's ID).
     _REQUIRED_SCOPE = "openid"
+
+    # The standard OIDC identity claims Google can put in its ID
+    # token, each mapped to the scope that makes it appear: `email`
+    # claims need the `email` scope, the rest the `profile` scope.
+    # Absent claims are simply omitted (see `_presented_claims`), so
+    # the full menu is safe to list even when not all are returned.
+    # See
+    # https://developers.google.com/identity/openid-connect/openid-connect.
+    _AVAILABLE_CLAIMS = {
+        "email": "email",
+        "email_verified": "email",
+        "name": "profile",
+        "given_name": "profile",
+        "family_name": "profile",
+        "picture": "profile",
+        "locale": "profile",
+        "profile": "profile",
+    }
 
     @property
     def token_service_id(self) -> str:
@@ -333,6 +490,10 @@ class Google(RegisteredOAuthProvider):
         return ExchangeResult(
             user_id=UserId(user_id),
             tokens=self._tokens_from_response(token_response),
+            # The ID token carries the requested identity claims (we
+            # requested the scopes they need); surface whichever are
+            # present, under their presented names.
+            claims=self._presented_claims(decoded),
         )
 
     def _tokens_from_response(
@@ -365,6 +526,14 @@ class GitHub(RegisteredOAuthProvider):
     """
     GitHub OAuth provider (plain OAuth 2.0).
 
+    Pass `claims=` to deliver the user's verified email (`email` /
+    `email_verified`); the `user:email` scope it needs is requested
+    automatically. GitHub issues no OIDC ID token, so the claims come
+    from `GET /user/emails`: the user's primary address, only when
+    GitHub has verified it (no email claims otherwise) — never the
+    `GET /user` `email` field, which is the user-chosen *public
+    profile* email and may be unverified.
+
     Note on refresh tokens (relevant only with `store_tokens=True`):
     whether GitHub issues a `refresh_token` is entirely a property of how
     the credentials were created, not anything we can request:
@@ -386,10 +555,23 @@ class GitHub(RegisteredOAuthProvider):
     _AUTHORIZATION_ENDPOINT = "https://github.com/login/oauth/authorize"
     _TOKEN_ENDPOINT = "https://github.com/login/oauth/access_token"
     _USER_API = "https://api.github.com/user"
+    _USER_EMAILS_API = "https://api.github.com/user/emails"
 
     # `read:user`: minimum scope needed to call `GET /user` and obtain
     # the numeric user ID.
     _REQUIRED_SCOPE = "read:user"
+
+    # The identity claims GitHub can deliver, each mapped to the
+    # scope that authorizes reading them. GitHub is not an OIDC
+    # provider, so these come from its REST API (see
+    # `_email_claims_source`), not an ID token. The menu stays
+    # limited to the verified email claims until we have a good way
+    # to test the GitHub integration end to end. See
+    # https://docs.github.com/en/rest/users/emails.
+    _AVAILABLE_CLAIMS = {
+        "email": "user:email",
+        "email_verified": "user:email",
+    }
 
     @property
     def token_service_id(self) -> str:
@@ -456,13 +638,58 @@ class GitHub(RegisteredOAuthProvider):
                 response.raise_for_status()
                 user_info = await response.json()
 
+            # Resolve the requested identity claims; when none were
+            # requested this extra API round trip is skipped
+            # entirely.
+            claims: Optional[dict[str, Any]] = None
+            if self._claims is not None:
+                claims = self._presented_claims(
+                    await self._email_claims_source(session, access_token)
+                )
+
         user_id = user_info.get("id")
         if user_id is None:
             raise ValueError("GitHub user API did not return an 'id' field.")
         return ExchangeResult(
             user_id=UserId(str(user_id)),
             tokens=self._tokens_from_response(token_response),
+            claims=claims,
         )
+
+    async def _email_claims_source(
+        self,
+        session: aiohttp.ClientSession,
+        access_token: str,
+    ) -> dict[str, Any]:
+        """The source claims for the email identity claims: the
+        user's primary email address from `GET /user/emails` (which
+        the `user:email` scope derived from the requested claims
+        allows), only when GitHub has verified it. A user whose
+        primary address is unverified gets no email claims at all —
+        an unverified address must not become a verified identity
+        claim.
+        """
+        async with session.get(
+            self._USER_EMAILS_API,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json",
+            },
+        ) as response:
+            response.raise_for_status()
+            email_response = await response.json()
+        for entry in (
+            email_response if isinstance(email_response, list) else []
+        ):
+            if not isinstance(entry, dict) or not entry.get("primary"):
+                continue
+            if entry.get("verified"):
+                return {
+                    "email": entry.get("email"),
+                    "email_verified": True,
+                }
+            break
+        return {}
 
     def _tokens_from_response(
         self,
@@ -510,13 +737,33 @@ class Auth0(RegisteredOAuthProvider):
 
     Obtains the user ID from the OIDC ID token's `sub` claim (shaped
     like `<connection>|<id>`, e.g. `google-oauth2|108…`), falling back
-    to the `/userinfo` endpoint if no ID token is returned.
+    to the `/userinfo` endpoint if no ID token is returned. Pass
+    `claims=` to deliver the user's identity claims; the scopes they
+    need (`email`, `profile`) are requested automatically.
     """
 
     # `openid` is the minimum OIDC scope; yields an ID token with the
-    # `sub` claim (the user's Auth0 ID). Add `profile`/`email` via
-    # `scopes=` if the app needs them.
+    # `sub` claim (the user's Auth0 ID).
     _REQUIRED_SCOPE = "openid"
+
+    # The standard OIDC identity claims Auth0 can put in its ID
+    # token, each mapped to the scope that makes it appear: `email`
+    # claims need the `email` scope, the rest the `profile` scope.
+    # Which are populated depends on the upstream connection, so
+    # absent claims are simply omitted (see `_presented_claims`).
+    # See
+    # https://auth0.com/docs/get-started/apis/scopes/openid-connect-scopes.
+    _AVAILABLE_CLAIMS = {
+        "email": "email",
+        "email_verified": "email",
+        "name": "profile",
+        "given_name": "profile",
+        "family_name": "profile",
+        "middle_name": "profile",
+        "nickname": "profile",
+        "picture": "profile",
+        "updated_at": "profile",
+    }
 
     # Auth0 grants a refresh token only when `offline_access` is
     # requested (the analogue of Google's `access_type=offline`); see
@@ -533,12 +780,14 @@ class Auth0(RegisteredOAuthProvider):
         client_secret: Optional[str],
         scopes: Optional[list[str]] = None,
         store_tokens: bool = False,
+        claims: Optional[Sequence[str] | Mapping[str, str]] = None,
     ):
         super().__init__(
             client_id=client_id,
             client_secret=client_secret,
             scopes=scopes,
             store_tokens=store_tokens,
+            claims=claims,
         )
         self._domain = self._normalize_domain(domain)
 
@@ -559,9 +808,11 @@ class Auth0(RegisteredOAuthProvider):
         return host.strip("/")
 
     @staticmethod
-    def _sub_from_id_token(id_token: Optional[str]) -> Optional[str]:
-        """Decode an OIDC ID token and return its `sub` claim, or `None`
-        if there's no token or no `sub`.
+    def _decoded_id_token(
+        id_token: Optional[str],
+    ) -> Optional[dict[str, Any]]:
+        """Decode an OIDC ID token's claims, or `None` if there's no
+        token.
 
         Decodes without verifying the signature: we received this token
         directly from the provider's token endpoint over TLS, so the
@@ -571,8 +822,7 @@ class Auth0(RegisteredOAuthProvider):
         """
         if not id_token:
             return None
-        decoded = jwt.decode(id_token, options={"verify_signature": False})
-        return decoded.get("sub")
+        return jwt.decode(id_token, options={"verify_signature": False})
 
     @property
     def _authorization_endpoint(self) -> str:
@@ -647,7 +897,12 @@ class Auth0(RegisteredOAuthProvider):
                 response.raise_for_status()
                 token_response = await response.json()
 
-            user_id = self._sub_from_id_token(token_response.get("id_token"))
+            decoded = self._decoded_id_token(token_response.get("id_token"))
+            user_id = decoded.get("sub") if decoded is not None else None
+            # The ID token carries the requested identity claims (we
+            # requested the scopes they need); surface whichever are
+            # present, under their presented names.
+            claims = self._presented_claims(decoded or {})
             if user_id is None:
                 # No ID token (shouldn't happen with the `openid`
                 # scope, but be defensive): fall back to `/userinfo`,
@@ -666,6 +921,10 @@ class Auth0(RegisteredOAuthProvider):
                     response.raise_for_status()
                     user_info = await response.json()
                 user_id = user_info.get("sub")
+                # `/userinfo` responses use the same standard claim
+                # names as the ID token, and the TLS round-trip to
+                # Auth0 makes them a verified source too.
+                claims = self._presented_claims(user_info)
 
         if user_id is None:
             raise ValueError(
@@ -675,6 +934,7 @@ class Auth0(RegisteredOAuthProvider):
         return ExchangeResult(
             user_id=UserId(user_id),
             tokens=self._tokens_from_response(token_response),
+            claims=claims,
         )
 
     def _tokens_from_response(
@@ -752,7 +1012,8 @@ class Anonymous(OAuthProvider):
         # ULID rather than UUIDv7: same entropy, but the Crockford
         # base32 encoding is shorter and easier on the human eye —
         # relevant here because anonymous user IDs are likely to be seen
-        # by humans.
+        # by humans. No identity claims: an anonymous user has no
+        # verified identity to draw them from.
         return ExchangeResult(user_id=UserId(f"anon-{ULID()}"), tokens=None)
 
 
@@ -807,12 +1068,26 @@ class Development(OAuthProvider):
     For local development only; do not use in production.
     """
 
+    # The identity claims `Development` fabricates for its fake
+    # identities, so claims-consuming application code can be
+    # exercised locally. No scopes: there is no identity provider to
+    # request anything from.
+    _AVAILABLE_CLAIMS = {
+        "email": None,
+        "email_verified": None,
+        "name": None,
+    }
+
     def __init__(
         self,
         *,
         access_token_ttl_seconds: int = _DEFAULT_ACCESS_TOKEN_TTL_SECONDS,
+        claims: Optional[Sequence[str] | Mapping[str, str]] = None,
     ):
-        super().__init__(access_token_ttl_seconds=access_token_ttl_seconds)
+        super().__init__(
+            access_token_ttl_seconds=access_token_ttl_seconds,
+            claims=claims,
+        )
         self._login_page_template: Optional[Template] = None
 
     def mount_routes(self, http: PythonWebFramework.HTTP) -> None:
@@ -949,6 +1224,17 @@ class Development(OAuthProvider):
         return ExchangeResult(
             user_id=UserId(f"dev-{digest[:16]}"),
             tokens=None,
+            # Fabricate the source claims a real provider would
+            # deliver, matching the identity shown on the login page,
+            # and present the requested ones, so that claims-consuming
+            # application code can be exercised in local development.
+            claims=self._presented_claims(
+                {
+                    "email": f"{code.lower()}@example.com",
+                    "email_verified": True,
+                    "name": code,
+                }
+            ),
         )
 
 

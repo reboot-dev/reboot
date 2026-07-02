@@ -21,6 +21,7 @@ from reboot.aio.auth.oauth_providers import (
     Google,
     OAuthProvider,
     OAuthProviderByEnvironment,
+    RegisteredOAuthProvider,
     UserId,
 )
 from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
@@ -34,7 +35,7 @@ from reboot.std.collections.ordered_map.v1.ordered_map import (
     ordered_map_library,
 )
 from reboot.std.oauth.v1.oauth import oauth_library
-from typing import Optional
+from typing import Any, Mapping, Optional
 from unittest import mock
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -867,6 +868,58 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertNotIn("Alice", response.text)
 
+    async def test_development_exchange_fabricates_identity_claims(self):
+        """
+        `Development(claims=...)` fabricates the requested identity
+        claims a real provider would deliver — matching the identity
+        shown on its login page — so claims-consuming application code
+        can be exercised locally. Without `claims=` it delivers none,
+        and a mapping presents a claim under a different name.
+        """
+        # Bring up a cluster so the Reboot-managed crypto root keys the
+        # dev user-id derivation uses are in place.
+        await self.rbt.up(
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Development()),
+            ),
+        )
+        result = await Development(
+            claims=["email", "email_verified", "name"],
+        ).exchange_code(
+            code="Alice",
+            redirect_uri="http://localhost/cb",
+        )
+        self.assertEqual(
+            result.claims,
+            {
+                "email": "alice@example.com",
+                "email_verified": True,
+                "name": "Alice",
+            },
+        )
+
+        # Without `claims=`, claim delivery is off entirely.
+        result = await Development().exchange_code(
+            code="Alice",
+            redirect_uri="http://localhost/cb",
+        )
+        self.assertIsNone(result.claims)
+
+        # A mapping presents a claim under a different name.
+        result = await Development(
+            claims={
+                "email": "verified-email"
+            },
+        ).exchange_code(
+            code="Alice",
+            redirect_uri="http://localhost/cb",
+        )
+        self.assertEqual(
+            result.claims,
+            {"verified-email": "alice@example.com"},
+        )
+
 
 class _NoOpTokenVerifier(TokenVerifier):
     """A `token_verifier=` that has no opinion on any token. Enough to
@@ -1271,6 +1324,162 @@ class GitHubValidateTest(unittest.TestCase):
         self.assertIn("`client_secret`", str(context.exception))
 
 
+class _FakeAiohttpResponse:
+    """A canned JSON response, shaped like an `aiohttp` request
+    context manager."""
+
+    def __init__(self, payload: Any) -> None:
+        self._payload = payload
+
+    async def __aenter__(self) -> "_FakeAiohttpResponse":
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        return None
+
+    def raise_for_status(self) -> None:
+        pass
+
+    async def json(self) -> Any:
+        return self._payload
+
+
+class _FakeAiohttpSession:
+    """Just enough of `aiohttp.ClientSession` for a GitHub code
+    exchange: canned JSON responses keyed by URL, recording the URLs
+    requested."""
+
+    def __init__(self, responses: Mapping[str, Any]) -> None:
+        self._responses = responses
+        self.requested_urls: list[str] = []
+
+    async def __aenter__(self) -> "_FakeAiohttpSession":
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        return None
+
+    def post(self, url: str, **kwargs: Any) -> _FakeAiohttpResponse:
+        self.requested_urls.append(url)
+        return _FakeAiohttpResponse(self._responses[url])
+
+    def get(self, url: str, **kwargs: Any) -> _FakeAiohttpResponse:
+        self.requested_urls.append(url)
+        return _FakeAiohttpResponse(self._responses[url])
+
+
+class GitHubEmailClaimsTest(unittest.IsolatedAsyncioTestCase):
+    """`GitHub(claims=...)` resolves the email claims via
+    `GET /user/emails` — never the `GET /user` `email` field, which
+    is the user-chosen public profile email and may be unverified —
+    delivering the user's primary address only when GitHub has
+    verified it."""
+
+    _TOKEN_URL = "https://github.com/login/oauth/access_token"
+    _USER_URL = "https://api.github.com/user"
+    _EMAILS_URL = "https://api.github.com/user/emails"
+
+    async def _exchange(
+        self,
+        provider: GitHub,
+        emails: Any,
+    ) -> tuple[ExchangeResult, _FakeAiohttpSession]:
+        session = _FakeAiohttpSession(
+            {
+                self._TOKEN_URL: {
+                    "access_token": "gh-token"
+                },
+                self._USER_URL:
+                    {
+                        "id": 12345,
+                        # The public profile email: possibly unverified,
+                        # so it must never become a claim.
+                        "email": "public-profile@example.com",
+                    },
+                self._EMAILS_URL: emails,
+            }
+        )
+        with mock.patch("aiohttp.ClientSession", return_value=session):
+            result = await provider.exchange_code(
+                code="c",
+                redirect_uri="http://localhost/cb",
+            )
+        return result, session
+
+    def _github(self, **kwargs: Any) -> GitHub:
+        return GitHub(client_id="id", client_secret="s", **kwargs)
+
+    async def test_verified_primary_email_delivered(self):
+        result, _ = await self._exchange(
+            self._github(claims=["email", "email_verified"]),
+            [
+                {
+                    "email": "secondary@example.com",
+                    "primary": False,
+                    "verified": True,
+                },
+                {
+                    "email": "jane@example.com",
+                    "primary": True,
+                    "verified": True,
+                },
+            ],
+        )
+        self.assertEqual(
+            result.claims,
+            {
+                "email": "jane@example.com",
+                "email_verified": True,
+            },
+        )
+
+    async def test_unverified_primary_email_delivers_no_email_claims(self):
+        # The primary address is the user's canonical one; when it is
+        # unverified there is no verified email to assert — even if
+        # some secondary address is verified — so the claim set is
+        # empty (a full replace that clears any previously delivered
+        # email).
+        result, _ = await self._exchange(
+            self._github(claims=["email", "email_verified"]),
+            [
+                {
+                    "email": "secondary@example.com",
+                    "primary": False,
+                    "verified": True,
+                },
+                {
+                    "email": "jane@example.com",
+                    "primary": True,
+                    "verified": False,
+                },
+            ],
+        )
+        self.assertEqual(result.claims, {})
+
+    async def test_email_claim_presented_under_mapped_name(self):
+        result, _ = await self._exchange(
+            self._github(claims={"email": "verified-email"}),
+            [
+                {
+                    "email": "jane@example.com",
+                    "primary": True,
+                    "verified": True,
+                },
+            ],
+        )
+        self.assertEqual(
+            result.claims,
+            {"verified-email": "jane@example.com"},
+        )
+
+    async def test_no_claims_requested_skips_email_lookup(self):
+        result, session = await self._exchange(self._github(), [])
+        self.assertIsNone(result.claims)
+        # No claims were requested, so the extra API round trip never
+        # happens.
+        self.assertNotIn(self._EMAILS_URL, session.requested_urls)
+
+
 class Auth0ValidateTest(unittest.TestCase):
     """
     Same shape as `GoogleValidateTest`/`GitHubValidateTest`, plus the
@@ -1348,6 +1557,194 @@ class Auth0DomainTest(unittest.TestCase):
         self.assertTrue(url.startswith("https://tenant.auth0.com/authorize?"))
 
 
+class RequestedClaimsTest(unittest.TestCase):
+    """The `claims=` a provider is constructed with decides exactly
+    what `_presented_claims` lets out of a decoded ID token (or
+    userinfo response): only the requested claims, under their
+    presented names — so ephemeral protocol claims (`exp`, `nonce`,
+    ...) never leak into `ExchangeResult.claims`, where they would
+    make every sign-in look like a claims change. Requests a provider
+    cannot serve fail at construction."""
+
+    def _google(self, **kwargs: Any) -> Google:
+        return Google(client_id="id", client_secret="s", **kwargs)
+
+    def test_filters_to_requested_claims(self):
+        self.assertEqual(
+            self._google(
+                claims=["email", "email_verified", "name"],
+            )._presented_claims(
+                {
+                    "iss": "https://idp.example",
+                    "sub": "user-123",
+                    "aud": "client-id",
+                    "exp": 1999999999,
+                    "iat": 1999990000,
+                    "nonce": "abc",
+                    "email": "jane@example.com",
+                    "email_verified": True,
+                    "name": "Jane Doe",
+                }
+            ),
+            {
+                "email": "jane@example.com",
+                "email_verified": True,
+                "name": "Jane Doe",
+            },
+        )
+
+    def test_unrequested_claims_stay_inside_the_provider(self):
+        self.assertEqual(
+            self._google(claims=["email"])._presented_claims(
+                {
+                    "email": "jane@example.com",
+                    "name": "Jane Doe",
+                }
+            ),
+            {"email": "jane@example.com"},
+        )
+
+    def test_mapping_presents_claims_under_new_names(self):
+        self.assertEqual(
+            self._google(
+                claims={
+                    "email": "verified-email",
+                    "name": "name",
+                },
+            )._presented_claims(
+                {
+                    "email": "jane@example.com",
+                    "name": "Jane Doe",
+                }
+            ),
+            {
+                "verified-email": "jane@example.com",
+                "name": "Jane Doe",
+            },
+        )
+
+    def test_no_claims_requested_presents_none(self):
+        # `None`, not `{}`: claim delivery is off, as opposed to
+        # asserting a verified-empty claim set.
+        self.assertIsNone(
+            self._google()._presented_claims({"email": "jane@example.com"}),
+        )
+
+    def test_omits_absent_and_none_claims(self):
+        self.assertEqual(
+            self._google(
+                claims=["email", "name"],
+            )._presented_claims({
+                "email": "jane@example.com",
+                "name": None,
+            }),
+            {"email": "jane@example.com"},
+        )
+
+    def test_false_valued_claims_are_kept(self):
+        # `email_verified: false` is a meaningful claim value, distinct
+        # from the claim being absent.
+        self.assertEqual(
+            self._google(
+                claims=["email_verified"],
+            )._presented_claims({"email_verified": False}),
+            {"email_verified": False},
+        )
+
+    def test_unavailable_claim_rejected_naming_available_ones(self):
+        with self.assertRaises(InputError) as context:
+            self._google(claims=["email", "phone_number"])
+        message = str(context.exception)
+        self.assertIn("Google", message)
+        self.assertIn("'phone_number'", message)
+        # The message names the claims that ARE available.
+        self.assertIn("'email'", message)
+        self.assertIn("'email_verified'", message)
+        self.assertIn("'name'", message)
+
+    def test_claimless_provider_rejects_any_claims(self):
+        # A provider with no claims vocabulary at all rejects every
+        # `claims=` request.
+        class Claimless(RegisteredOAuthProvider):
+            _REQUIRED_SCOPE = "basic"
+
+            def authorization_url(
+                self,
+                state: str,
+                redirect_uri: str,
+            ) -> str:
+                raise NotImplementedError()
+
+            async def exchange_code(
+                self,
+                code: str,
+                redirect_uri: str,
+            ) -> ExchangeResult:
+                raise NotImplementedError()
+
+        with self.assertRaises(InputError) as context:
+            Claimless(client_id="id", client_secret="s", claims=["email"])
+        self.assertIn("Claimless", str(context.exception))
+        self.assertIn("does not deliver", str(context.exception))
+
+    def test_github_rejects_claims_it_cannot_deliver(self):
+        # GitHub's menu is intentionally limited to the verified
+        # email claims until the integration is easier to test, so
+        # `name` is not on it (see `GitHub._AVAILABLE_CLAIMS`).
+        with self.assertRaises(InputError) as context:
+            GitHub(client_id="id", client_secret="s", claims=["name"])
+        message = str(context.exception)
+        self.assertIn("GitHub", message)
+        self.assertIn("'name'", message)
+        self.assertIn("'email'", message)
+
+    def test_bare_string_rejected(self):
+        # A bare string is a `Sequence[str]` of characters; catch the
+        # mistake instead of requesting claims 'e', 'm', 'a', ...
+        with self.assertRaises(InputError) as context:
+            self._google(claims="email")
+        self.assertIn("'email'", str(context.exception))
+
+    def test_non_string_claim_entries_rejected(self):
+        # Malformed `claims=` values fail with the same
+        # construction-time diagnostics as unknown claims, not a raw
+        # `TypeError` from further down.
+        with self.assertRaises(InputError) as context:
+            self._google(claims=[["email"]])
+        self.assertIn("non-string", str(context.exception))
+        with self.assertRaises(InputError) as context:
+            self._google(claims={"email": ["alias"]})
+        self.assertIn("non-string", str(context.exception))
+
+    def test_duplicate_presented_names_rejected(self):
+        with self.assertRaises(InputError) as context:
+            self._google(
+                claims={
+                    "email": "contact",
+                    "name": "contact",
+                },
+            )
+        self.assertIn("'contact'", str(context.exception))
+
+    def test_empty_claims_means_none(self):
+        self.assertIsNone(
+            self._google(claims=[])._presented_claims({"email": "x"}),
+        )
+
+
+class AnonymousClaimsTest(unittest.IsolatedAsyncioTestCase):
+
+    async def test_anonymous_exchange_has_no_claims(self):
+        # An anonymous user has no verified identity to draw claims
+        # from: the provider has no claims source at all (`None`), as
+        # opposed to asserting a verified-empty claim set (`{}`).
+        result = await Anonymous().exchange_code(
+            code="anonymous",
+            redirect_uri="http://localhost/cb",
+        )
+        self.assertIsNone(result.claims)
+
+
 def _scope_param(authorization_url: str) -> list[str]:
     """Extract the space-delimited `scope` query parameter from an
     authorization URL as a list."""
@@ -1356,10 +1753,11 @@ def _scope_param(authorization_url: str) -> list[str]:
 
 
 class ScopeTest(unittest.TestCase):
-    """`Google`/`GitHub` always request their required base scope and add
-    any developer-supplied `scopes` on top — so an app can ask for extra
-    access (Calendar, `repo`, …) without losing the scope identity
-    resolution depends on."""
+    """`Google`/`GitHub` always request their required base scope and
+    add the scopes any requested `claims=` need plus any
+    developer-supplied `scopes` on top — so an app can ask for
+    identity claims and extra access (Calendar, `repo`, …) without
+    losing the scope identity resolution depends on."""
 
     def test_google_defaults_to_openid_only(self):
         url = Google(client_id="id", client_secret="s").authorization_url(
@@ -1377,6 +1775,28 @@ class ScopeTest(unittest.TestCase):
         scopes = _scope_param(url)
         self.assertEqual(scopes[0], "openid")
         self.assertIn(calendar, scopes)
+
+    def test_google_derives_scopes_from_requested_claims(self):
+        # Requesting claims requests the scopes that make the identity
+        # provider deliver them, without the developer having to know
+        # the claim-to-scope mapping.
+        url = Google(
+            client_id="id",
+            client_secret="s",
+            claims=["email", "email_verified", "name"],
+        ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        self.assertEqual(_scope_param(url), ["openid", "email", "profile"])
+
+    def test_claim_derived_scopes_are_deduplicated(self):
+        # A claim-derived scope the developer also asked for via
+        # `scopes=` appears once.
+        url = Google(
+            client_id="id",
+            client_secret="s",
+            scopes=["email"],
+            claims=["email"],
+        ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        self.assertEqual(_scope_param(url), ["openid", "email"])
 
     def test_google_store_tokens_requests_offline_access(self):
         url = Google(
@@ -1407,6 +1827,16 @@ class ScopeTest(unittest.TestCase):
         scopes = _scope_param(url)
         self.assertEqual(scopes[0], "read:user")
         self.assertIn("repo", scopes)
+
+    def test_github_derives_user_email_scope_from_email_claim(self):
+        # The email claims come from `GET /user/emails`, which needs
+        # the `user:email` scope.
+        url = GitHub(
+            client_id="id",
+            client_secret="s",
+            claims=["email", "email_verified"],
+        ).authorization_url(state="x", redirect_uri="http://localhost/cb")
+        self.assertEqual(_scope_param(url), ["read:user", "user:email"])
 
     def test_extra_scopes_are_deduplicated(self):
         # Asking for the base scope again doesn't duplicate it.
