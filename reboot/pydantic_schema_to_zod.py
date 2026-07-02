@@ -331,7 +331,16 @@ def pydantic_to_zod(
                                 field_origin is Union or
                                 field_origin is types.UnionType
                             )
-                            zod_object_field += '.default(undefined)'
+                            # An `Optional[...]` field's schema is
+                            # already `.optional()`, which parses an
+                            # absent field to `undefined`; zod's
+                            # `.default(...)` accepts only values of
+                            # the unwrapped type, so a `None` default
+                            # needs no `.default(...)` at all.
+                            assert field_info.default is None, (
+                                "Unsupported non-`None` default for "
+                                f"optional field at {path!r}."
+                            )
 
                 # Add the `tag` metadata after setting defaults, since
                 # the converters expect it on the outermost schema.
