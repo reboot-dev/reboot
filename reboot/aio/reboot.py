@@ -491,6 +491,7 @@ class Reboot:
             config = self._config_extractor.config_from_serviceables(
                 serviceables,
                 servers=servers,
+                allowed_origins=allowed_origins,
             )
             await self._application_metadata.validate_schema_backwards_compatibility(
                 config

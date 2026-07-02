@@ -1205,6 +1205,7 @@ class Application:
                     self._validate_configuration()
                     server = ConfigServer(
                         serviceables=self._get_serviceables(),
+                        allowed_origins=self._allowed_origins,
                     )
                     server_run_task = asyncio.create_task(
                         server.run(),

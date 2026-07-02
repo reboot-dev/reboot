@@ -65,8 +65,16 @@ def application_config_spec_from_routables(
     routables: Sequence[Routable],
     replicas: Optional[int],
     servers: Optional[int],
+    allowed_origins: Optional[Sequence[str]],
 ) -> application_config_pb2.ApplicationConfig.Spec:
-    """Create an ApplicationConfig spec from routables."""
+    """Create an ApplicationConfig spec from routables.
+
+    `allowed_origins` follows `Application(allowed_origins=...)`
+    semantics: `None` means the application expressed no opinion
+    (permissive CORS applies), while a list (possibly empty) is the
+    exact-match allow-list for credentialed cross-origin browser
+    requests.
+    """
     file_descriptor_set = generate_proto_descriptor_set(
         routables=list(routables)
     )
@@ -100,4 +108,9 @@ def application_config_spec_from_routables(
         replicas=replicas,
         servers=servers,
         reboot_version=REBOOT_VERSION,
+        allowed_origins=(
+            application_config_pb2.ApplicationConfig.Spec.AllowedOrigins(
+                origins=allowed_origins
+            ) if allowed_origins is not None else None
+        ),
     )

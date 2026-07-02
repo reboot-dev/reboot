@@ -258,6 +258,13 @@ async def main():
             # clusters; that's still a development environment.
             prod=dev_oauth,
         ),
+        # An example trusted browser origin, permitted to make
+        # credentialed cross-origin calls (carrying the `rbt_session`
+        # cookie) to this backend. It's here to support
+        # `//tests/infrastructure/clusters/local:cluster_tests_py`,
+        # which asserts that a Kubernetes deploy of this app turns it
+        # into an exact-match Envoy CORS policy.
+        allowed_origins=["https://app.example.com"],
     )
     await application.run()
 
