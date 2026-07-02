@@ -1,39 +1,131 @@
-import { type UseCounterApi, useCounter } from "@api/ping_api_zod_rbt_react";
+import {
+  type UseCounterApi,
+  type UseUserApi,
+  useCounter,
+} from "@api/ping_api_zod_rbt_react";
 import { useState, type FC } from "react";
 
+interface AppProps {
+  user: UseUserApi;
+  onSignOut: () => void;
+}
+
 // Read an initial counter ID from the `?counter=<id>` query param so a
-// counter can be shared via URL; the input below can also override it.
+// counter can be shared via URL — the MCP clicker's "Open in web app"
+// button deep-links here; picking a counter from the list below also
+// opens it.
 const initialCounterId = (): string =>
   new URLSearchParams(window.location.search).get("counter") ?? "";
 
-export const App: FC = () => {
+export const App: FC<AppProps> = ({ user, onSignOut }) => {
   const [counterId, setCounterId] = useState(initialCounterId);
-  const [draft, setDraft] = useState(counterId);
+  const { response: whoami } = user.useWhoami();
 
   return (
     <main className="shell">
+      <header className="header">
+        <h1>Ping</h1>
+        <div className="identity">
+          <code>{whoami?.userId ?? user.state_id}</code>
+          <button className="ghost" onClick={onSignOut}>
+            Sign out
+          </button>
+        </div>
+      </header>
+
       {counterId.length === 0 ? (
-        <section className="card">
-          <h2>Open a counter</h2>
-          <form
-            className="create-row"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setCounterId(draft.trim());
+        <CounterList user={user} onOpen={setCounterId} />
+      ) : (
+        <>
+          <button
+            className="ghost back"
+            onClick={() => {
+              // Drop any `?counter=<id>` from the URL so a reload
+              // stays on the list.
+              window.history.replaceState(null, "", window.location.pathname);
+              setCounterId("");
             }}
           >
-            <input
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              placeholder="counter ID"
-            />
-            <button type="submit">Open</button>
-          </form>
-        </section>
-      ) : (
-        <CounterView key={counterId} counterId={counterId} />
+            ← All counters
+          </button>
+          <CounterView key={counterId} counterId={counterId} />
+        </>
       )}
     </main>
+  );
+};
+
+// Landing view: create a counter, and open one of the signed-in
+// user's own counters (read reactively via `User.list_counters`).
+const CounterList: FC<{ user: UseUserApi; onOpen: (id: string) => void }> = ({
+  user,
+  onOpen,
+}) => {
+  const { response: listResponse, isLoading } = user.useListCounters();
+  const [description, setDescription] = useState("");
+  const [pending, setPending] = useState(false);
+
+  const handleCreate = async () => {
+    if (description.trim().length === 0) return;
+    setPending(true);
+    try {
+      await user.createCounter({ description });
+      setDescription("");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const counters = listResponse?.counters ?? [];
+  const showLoading = isLoading && listResponse === undefined;
+
+  return (
+    <>
+      <section className="card">
+        <h2>Create counter</h2>
+        <form
+          className="create-row"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleCreate();
+          }}
+        >
+          <input
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="What does this counter count?"
+          />
+          <button type="submit" disabled={pending}>
+            Create
+          </button>
+        </form>
+      </section>
+
+      <section className="card">
+        <h2>Your counters</h2>
+        {showLoading ? (
+          <p className="empty">Loading…</p>
+        ) : counters.length === 0 ? (
+          <p className="empty">No counters yet — create one above.</p>
+        ) : (
+          <ul className="counters">
+            {counters.map((counter) => (
+              <li key={counter.counterId} className="counter">
+                <button
+                  className="counter-open"
+                  onClick={() => onOpen(counter.counterId)}
+                >
+                  <span className="counter-description">
+                    {counter.description}
+                  </span>
+                  <code className="counter-id">{counter.counterId}</code>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </>
   );
 };
 
