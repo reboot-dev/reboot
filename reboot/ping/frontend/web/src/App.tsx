@@ -1,4 +1,4 @@
-import { UseCounterApi, useCounter } from "@api/ping_api_zod_rbt_react";
+import { type UseCounterApi, useCounter } from "@api/ping_api_zod_rbt_react";
 import { useState, type FC } from "react";
 
 // Read an initial counter ID from the `?counter=<id>` query param so a
