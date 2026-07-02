@@ -34,6 +34,13 @@ class UserState(Model):
     counter_ids: list[str] = Field(tag=1, default_factory=list)
 
 
+class InitializeCounterRequest(Model):
+    description: str = Field(tag=1)
+    # The `user_id` of the Counter's owner, recorded so that only the
+    # owner may call the Counter later.
+    owner_id: str = Field(tag=2)
+
+
 class DescriptionResponse(Model):
     description: str = Field(tag=1)
 
@@ -41,6 +48,7 @@ class DescriptionResponse(Model):
 class CounterState(Model):
     value: int = Field(tag=1, default=0)
     description: str = Field(tag=2, default="")
+    owner_id: str = Field(tag=3, default="")
 
 
 class GetResponse(Model):
@@ -89,7 +97,7 @@ api = API(
                 "for the counter.",
             ),
             create=Writer(
-                request=CreateCounterRequest,
+                request=InitializeCounterRequest,
                 response=None,
                 factory=True,
                 mcp=None,

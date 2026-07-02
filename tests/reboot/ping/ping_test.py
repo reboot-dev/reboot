@@ -31,7 +31,13 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
             Application(servicers=[PingServicer, PongServicer]),
         )
 
-        context = self.rbt.create_external_context(name=f"test-{self.id()}")
+        # The servicers admit signed-in users and trusted app code;
+        # this test is about the periodic-ping mechanics, so call as
+        # the latter.
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
 
         ping = Ping.ref("my-ping")
 
@@ -54,9 +60,17 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
     async def test_counter(self):
         await self.rbt.up(Application(servicers=[CounterServicer]))
 
-        context = self.rbt.create_external_context(name=f"test-{self.id()}")
+        # Counter methods admit the recorded owner or trusted app code;
+        # this test is about the counter mechanics, so call as the
+        # latter (recording an arbitrary owner ID on `create`).
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
 
-        counter, _ = await Counter.create(context, description="test counter")
+        counter, _ = await Counter.create(
+            context, description="test counter", owner_id="test-owner"
+        )
 
         response = await counter.increment(context)
         self.assertEqual(response.value, 1)

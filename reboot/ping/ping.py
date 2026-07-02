@@ -4,8 +4,9 @@ import asyncio
 import logging
 import os
 from datetime import timedelta
+from rbt.v1alpha1.errors_pb2 import Ok, PermissionDenied, Unauthenticated
 from reboot.aio.applications import Application
-from reboot.aio.auth.authorizers import allow
+from reboot.aio.auth.authorizers import allow, allow_if, is_app_internal
 from reboot.aio.auth.oauth_providers import (
     Development,
     OAuthProviderByEnvironment,
@@ -29,6 +30,7 @@ from reboot.ping.ping_api import (
     DoPingResponse,
     DoPongResponse,
     IncrementResponse,
+    InitializeCounterRequest,
     ListCountersResponse,
     NumPingsResponse,
     NumPongsResponse,
@@ -36,8 +38,25 @@ from reboot.ping.ping_api import (
     WhoAmIResponse,
 )
 from reboot.ping.ping_api_rbt import Counter, Ping, Pong, User
+from typing import Optional
 
 logging.basicConfig(level=logging.INFO)
+
+
+def _caller_is_owner(
+    *,
+    context: ReaderContext,
+    state: Optional[Counter.State],
+    **kwargs,
+):
+    """Allow when the caller's `user_id` matches the Counter's recorded
+    `owner_id`. A not-yet-constructed Counter (`state is None`) falls
+    through to deny."""
+    if context.auth is None or not context.auth.user_id:
+        return Unauthenticated()
+    if state is not None and context.auth.user_id == state.owner_id:
+        return Ok()
+    return PermissionDenied()
 
 
 def example_ping_ref(index: int) -> Ping.WeakReference:
@@ -47,6 +66,9 @@ def example_ping_ref(index: int) -> Ping.WeakReference:
 class PingServicer(Ping.Servicer):
 
     def authorizer(self):
+        # `Ping`/`Pong` keep a blanket `allow()`: this app is exercised
+        # by `cluster_tests.py` against a full Kubernetes cluster, where
+        # the callers are neither signed in nor markable as app-internal.
         return allow()
 
     async def do_ping(
@@ -105,6 +127,7 @@ class PingServicer(Ping.Servicer):
 class PongServicer(Pong.Servicer):
 
     def authorizer(self):
+        # Ditto `Ping`: a blanket `allow()` for the cluster tests.
         return allow()
 
     async def do_pong(
@@ -133,7 +156,9 @@ class UserServicer(User.Servicer):
         request: CreateCounterRequest,
     ) -> CreateCounterResponse:
         counter, _ = await Counter.create(
-            context, description=request.description
+            context,
+            description=request.description,
+            owner_id=context.state_id,
         )
         self.state.counter_ids.append(counter.state_id)
         return CreateCounterResponse(
@@ -163,14 +188,23 @@ class UserServicer(User.Servicer):
 class CounterServicer(Counter.Servicer):
 
     def authorizer(self):
-        return allow()
+        return Counter.Authorizer(
+            # `create` is restricted to trusted app code and records
+            # the counter's owner; every other method is restricted to
+            # that owner (or, again, to trusted app code).
+            create=allow_if(all=[is_app_internal]),
+            increment=allow_if(any=[_caller_is_owner, is_app_internal]),
+            value=allow_if(any=[_caller_is_owner, is_app_internal]),
+            description=allow_if(any=[_caller_is_owner, is_app_internal]),
+        )
 
     async def create(
         self,
         context: WriterContext,
-        request: CreateCounterRequest,
+        request: InitializeCounterRequest,
     ) -> None:
         self.state.description = request.description
+        self.state.owner_id = request.owner_id
 
     async def description(
         self,

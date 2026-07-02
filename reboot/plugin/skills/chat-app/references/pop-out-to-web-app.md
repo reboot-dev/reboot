@@ -66,7 +66,11 @@ export const ClickerApp = () => {
 
 The web app reads the query param on load and shows just that
 entity — e.g. `?counter=<id>` selects a single-counter view via
-`useCounter({ id })`.
+`useCounter({ id })`. Because both surfaces share the
+`oauth=...`-driven session (the `rbt_session` cookie), a user
+signed in to the MCP host is already signed in when the tab opens.
+The entity's authorizer still applies, so the deep-linked entity
+must be one the signed-in user is allowed to read.
 
 ### Notes
 

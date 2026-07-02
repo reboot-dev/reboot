@@ -78,7 +78,10 @@ all authenticated by the backend's OAuth.
 ## On the local cluster
 
 To test that `ping` on the local cluster is working as it should, here
-are some helpful operations:
+are some helpful operations. Note that the servicers only accept
+signed-in callers, so the unauthenticated requests below are expected
+to come back `PermissionDenied` — for a smoke test that is still
+proof that routing and the authorizer both work:
 
 ### `grpcurl` to test gRPC traffic
 

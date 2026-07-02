@@ -83,6 +83,13 @@ class UserState(Model):
 # -- Counter models (simple counter). --
 
 
+class InitializeCounterRequest(Model):
+    description: str = Field(tag=1)
+    # The `user_id` of the Counter's owner, recorded so that only the
+    # owner may call the Counter later.
+    owner_id: str = Field(tag=2)
+
+
 class DescriptionResponse(Model):
     description: str = Field(tag=1)
 
@@ -98,6 +105,7 @@ class ValueResponse(Model):
 class CounterState(Model):
     value: int = Field(tag=1, default=0)
     description: str = Field(tag=2, default="")
+    owner_id: str = Field(tag=3, default="")
 
 
 class ShowClickerProps(Model):
@@ -198,7 +206,7 @@ api = API(
                 description=("Interactive clicker for the Counter."),
             ),
             create=Writer(
-                request=CreateCounterRequest,
+                request=InitializeCounterRequest,
                 response=None,
                 factory=True,
                 mcp=None,
