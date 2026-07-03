@@ -387,7 +387,7 @@ if (fs.existsSync(path.resolve(__dirname, "web", "index.html"))) {
       "@api/*": ["./api/*"]
     }
   },
-  "include": ["mcp", "web", "src"]
+  "include": ["mcp", "web", "vite-env.d.ts"]
 }
 ```
 
@@ -413,6 +413,17 @@ if (fs.existsSync(path.resolve(__dirname, "web", "index.html"))) {
   },
   "include": ["vite.config.ts"]
 }
+```
+
+## `frontend/vite-env.d.ts`
+
+Vite's ambient client type declarations, which type `*.module.css`
+imports and `import.meta.env`. It lives at the `frontend/` root, a
+sibling of `mcp/` and `web/`, and `tsconfig.app.json`'s `include` lists
+it by name so `tsc -b` type-checks against it.
+
+```ts
+/// <reference types="vite/client" />
 ```
 
 ## `frontend/mcp/<ui-name>/index.css`

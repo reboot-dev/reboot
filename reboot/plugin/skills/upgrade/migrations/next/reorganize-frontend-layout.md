@@ -16,6 +16,14 @@ Then update everything that named the old paths: `.rbtrc`
 `--frontend-dist-path=frontend/dist`, watch globs), the Dockerfile, and
 any `UI(path=...)` values or imports.
 
+Move your `vite-env.d.ts` — the `/// <reference types="vite/client" />`
+shim that types `*.module.css` imports and `import.meta.env` — to the
+`frontend/` root (a sibling of `mcp/`, `web/`, and `api/`), not under
+`frontend/web/src/`, and list it in each `tsconfig.app.json`'s
+`include` alongside your UI directories
+(`["mcp", "web", "vite-env.d.ts"]`). Otherwise the shim falls off the
+type-check path and MCP UIs fail `tsc` with `TS2307: Cannot find module './App.module.css'`.
+
 Adopt the new `frontend/vite.config.ts`: it auto-discovers your MCP UIs
 under `mcp/` and builds each into the single-file
 `dist/mcp/<name>/index.html` the framework serves under `/__/frontend/`.
