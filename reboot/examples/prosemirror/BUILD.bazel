@@ -14,7 +14,6 @@ filegroup(
             "frontend/web/.next/**/*",
             "api/**/*.ts",
             "node_modules/**/*",
-            "frontend/web/lib/api/**/*.ts",
         ],
     ),
     visibility = ["//visibility:public"],

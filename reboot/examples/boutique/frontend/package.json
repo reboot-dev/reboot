@@ -1,5 +1,5 @@
 {
-  "name": "web",
+  "name": "frontend",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -25,9 +25,9 @@
     "vitest": "^3.2.4"
   },
   "scripts": {
-    "lint": "eslint ./src",
-    "start": "vite --port 3000 --host",
-    "build": "npm run lint && tsc --noEmit && vite build",
-    "test": "vitest src"
+    "lint": "cd web && eslint ./src",
+    "start": "cd web && vite --port 3000 --host",
+    "build": "npm run lint && cd web && tsc --noEmit && vite build",
+    "test": "cd web && vitest src"
   }
 }

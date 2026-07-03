@@ -1,6 +1,6 @@
 import { Separator } from "@/components/ui/separator";
 import { FC, useState } from "react";
-import { useUser } from "./api/chat/v1/user_rbt_react";
+import { useUser } from "../../api/chat/v1/user_rbt_react";
 
 const PAGE_SIZE = 40;
 

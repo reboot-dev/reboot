@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { useUser } from "./api/chat/v1/user_rbt_react";
-import { Chatbot, useChatbot } from "./api/chatbot/v1/chatbot_rbt_react";
+import { useUser } from "../../api/chat/v1/user_rbt_react";
+import { Chatbot, useChatbot } from "../../api/chatbot/v1/chatbot_rbt_react";
 interface ChatbotFormProps {
   onCreateChatbot: (chatbot: Omit<Chatbot, "id">) => void;
 }

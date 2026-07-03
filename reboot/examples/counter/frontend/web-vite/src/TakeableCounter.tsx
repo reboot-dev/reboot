@@ -1,5 +1,5 @@
 import { FC } from "react";
-import { useCounter } from "../../../api/counter/v1/counter_rbt_react.js";
+import { useCounter } from "../../api/counter/v1/counter_rbt_react.js";
 import { COUNTER_IDS } from "../../../constants.js";
 
 const TakeableCounter: FC<{ id: string }> = ({ id }) => {

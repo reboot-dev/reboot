@@ -1,5 +1,5 @@
 import { WebContext } from "@reboot-dev/reboot-web";
-import { ChatRoom } from "../../web/src/api/chat_room/v1/chat_room_rbt_web";
+import { ChatRoom } from "../../api/chat_room/v1/chat_room_rbt_web";
 
 const root = document.getElementById("messages");
 const button = document.getElementById("button");

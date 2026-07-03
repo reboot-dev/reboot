@@ -42,7 +42,7 @@ Create a folder for your React frontend and \`cd\` into it.
 `}>
 
 ```sh
-mkdir web && cd web
+mkdir -p frontend/web && cd frontend/web
 ```
 
 </Step>
@@ -106,18 +106,30 @@ const url = "http://localhost:9991";
   title="Generate React API files"
   description={`
 
-Add React code generation to the \`.rbtrc\` file so that the React hooks are generated directly into your frontend project.
+Add React code generation to the \`.rbtrc\` file so that the React hooks are generated into \`frontend/api/\`, where every frontend of your application can share them.
 
 `}>
 
 Add the following line to your existing `.rbtrc` file:
 
 ```sh
-generate --react=web/src/api
+generate --react=frontend/api
 ```
 
 In the terminal running `rbt dev run` you'll see that the change is
 detected and the React code is generated.
+
+The generated code lives outside the app's root directory, so tell
+Vite it is allowed to serve it by adding the following to
+`vite.config.ts`:
+
+```typescript
+  server: {
+    fs: {
+      allow: [".."],
+    },
+  },
+```
 
 </Step>
 
@@ -132,7 +144,7 @@ Implement a simple React app that displays messages and allows sending new ones 
 ```typescript title=src/App.tsx
 // ./src/App.tsx
 import { useState } from "react";
-import { useChatRoom } from "./api/chat_room/v1/chat_room_rbt_react";
+import { useChatRoom } from "../../api/chat_room/v1/chat_room_rbt_react";
 // TODO: import "./App.css";
 
 const App = () => {

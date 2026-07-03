@@ -1,4 +1,5 @@
 /.rbt/
 /.next/
 api/**/*.ts
+frontend/api/
 node_modules/

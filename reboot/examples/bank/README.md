@@ -96,7 +96,7 @@ arguments that get expanded when running `rbt dev run`.
 
 Similar to the backend, the front end has dependencies that need to be installed before running it. Open a separate terminal/shell and do:
 ```shell
-cd frontend/web/
+cd frontend/
 npm install
 npm start
 ```

@@ -6,8 +6,8 @@ import {
   OrdersResponse,
   PlaceOrderRequest,
   Product,
-} from "./gen/boutique/v1/demo_pb";
-import { ProductCatalogGetProductAborted } from "./gen/boutique/v1/demo_rbt_react";
+} from "../../api/boutique/v1/demo_pb";
+import { ProductCatalogGetProductAborted } from "../../api/boutique/v1/demo_rbt_react";
 import {
   ProductItem,
   multiplyMoney,

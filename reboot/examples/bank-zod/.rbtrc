@@ -4,15 +4,11 @@ generate api/
 # Generate code for a TypeScript/nodejs backend and React frontend.
 generate --nodejs=api
 
-generate --react=api
+generate --react=frontend/api
 
 # The Node.js client needs `.js` import extensions to run under `node`
-# (ESM) in tests. The React and Node.js clients share the `api/`
-# output directory, and Reboot requires every target writing to the
-# same directory to agree on extensions, so the React client opts in
-# too (it would otherwise not need them — see `--react-extensions`).
+# (ESM) in tests.
 generate --nodejs-extensions
-generate --react-extensions
 
 dev run --watch=backend/src/**/*.ts
 

@@ -85,7 +85,7 @@ arguments that get expanded when running `rbt dev run`.
 
 Similar to the backend, the front end has dependencies that need to be installed before running it. Open a separate terminal/shell and do:
 ```shell
-cd frontend/web/
+cd frontend/
 npm install
 npm start
 ```
@@ -156,7 +156,7 @@ Tell the front end to talk to it by updating the `VITE_REBOOT_URL` value in
 VITE_REBOOT_URL=YOUR_URL
 ```
 
-Then, in the `frontend/web/` directory, run `npm run build`.
+Then, in the `frontend/` directory, run `npm run build`.
 
 Once built, this front end can be deployed to any static hosting provider like
 S3, Vercel, Cloudflare or Firebase hosting.

@@ -1,6 +1,6 @@
 import { FC, useState } from "react";
 import css from "./App.module.css";
-import { useChatRoom } from "./api/chat_room/v1/chat_room_rbt_react";
+import { useChatRoom } from "../../api/chat_room/v1/chat_room_rbt_react";
 // We can choose any id we want because the state will be constructed when we
 // make the first .writer call.
 const STATE_MACHINE_ID = "reboot-chat-room";

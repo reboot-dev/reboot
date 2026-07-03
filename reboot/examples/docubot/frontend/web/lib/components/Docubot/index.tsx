@@ -1,4 +1,7 @@
-import { Query, useThread } from "@/api/docubot/thread/v1/thread_rbt_react.js";
+import {
+  Query,
+  useThread,
+} from "../../../../api/docubot/thread/v1/thread_rbt_react.js";
 import { StateNotConstructed } from "@reboot-dev/reboot-api/errors_pb";
 import { RebootClientProvider } from "@reboot-dev/reboot-react";
 import { FC, useEffect } from "react";

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import { Cart } from "./Cart";
 import { Header } from "./Header";
-import { useCart } from "./gen/boutique/v1/demo_rbt_react";
+import { useCart } from "../../api/boutique/v1/demo_rbt_react";
 import "./static/styles/cart.css";
 import "./static/styles/order.css";
 import "./static/styles/styles.css";

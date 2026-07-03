@@ -3,7 +3,7 @@ generate api/
 
 # Tell `rbt generate` where to put generated files.
 generate --python=backend/api
-generate --react=frontend/web/src/api
+generate --react=frontend/api
 
 # Watch if any generated or source files are modified.
 dev run --watch=backend/**/*.py

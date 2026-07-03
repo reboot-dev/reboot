@@ -1,4 +1,4 @@
-import { useProductCatalog } from "./gen/boutique/v1/demo_rbt_react";
+import { useProductCatalog } from "../../api/boutique/v1/demo_rbt_react";
 import { Link } from "react-router-dom";
 import {
   CATALOG_SINGLETON_ID,

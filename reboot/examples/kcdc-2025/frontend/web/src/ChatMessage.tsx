@@ -11,7 +11,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useMessage } from "./api/chat/v1/message_rbt_react";
+import { useMessage } from "../../api/chat/v1/message_rbt_react";
 
 import {
   Popover,

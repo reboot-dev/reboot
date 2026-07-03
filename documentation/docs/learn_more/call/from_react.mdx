@@ -156,15 +156,18 @@ To have the `rbt` command line utility generate React code when running
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/.rbtrc -->
 
 ```
-generate --react=frontend/web/src/api
+generate --react=frontend/api
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
-This flag specifies where to put the generated React code. It often
-makes sense to have these files written inside the root directory of
-your React app, as shown above, [because many React frameworks prevent
-referencing files outside the root directory](https://stackoverflow.com/questions/44114436/the-create-react-app-imports-restriction-outside-of-src-directory).
+This flag specifies where to put the generated React code. The
+examples generate into `frontend/api/`, a sibling of the app in
+`frontend/web/`, so that every frontend of an application (web,
+mobile, MCP UIs) shares one generated client. Some React frameworks
+[prevent referencing files outside the app's root directory](https://stackoverflow.com/questions/44114436/the-create-react-app-imports-restriction-outside-of-src-directory)
+by default; for Vite, allow it with `server.fs.allow: [".."]` in
+`vite.config.ts`.
 
 ## Setup
 

@@ -1,4 +1,7 @@
-import { useCart, useProductCatalog } from "./gen/boutique/v1/demo_rbt_react";
+import {
+  useCart,
+  useProductCatalog,
+} from "../../api/boutique/v1/demo_rbt_react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {

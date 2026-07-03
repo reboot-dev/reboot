@@ -10,9 +10,9 @@ import ChatbotsWindow from "./ChatbotsWindow";
 import Login from "./Login";
 import MessagesWindow from "./MessagesWindow";
 import ReactionsWindow from "./ReactionWindow";
-import { useChannel } from "./api/chat/v1/channel_rbt_react";
-import { useUser, useUsers } from "./api/chat/v1/user_rbt_react";
-import { useChatbot } from "./api/chatbot/v1/chatbot_rbt_react";
+import { useChannel } from "../../api/chat/v1/channel_rbt_react";
+import { useUser, useUsers } from "../../api/chat/v1/user_rbt_react";
+import { useChatbot } from "../../api/chatbot/v1/chatbot_rbt_react";
 import { Button } from "./components/ui/button";
 
 const UsersPane: FC<{ users: string[] }> = ({ users }) => {

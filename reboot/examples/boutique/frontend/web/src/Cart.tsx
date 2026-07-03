@@ -4,13 +4,13 @@ import {
   CreditCardInfo,
   Money,
   ShippingQuote,
-} from "./gen/boutique/v1/demo_pb";
+} from "../../api/boutique/v1/demo_pb";
 import {
   useCart,
   useCheckout,
   useProductCatalog,
   useShipping,
-} from "./gen/boutique/v1/demo_rbt_react";
+} from "../../api/boutique/v1/demo_rbt_react";
 import {
   CATALOG_SINGLETON_ID,
   ProductItem,

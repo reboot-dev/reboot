@@ -5,7 +5,7 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { FC, useState } from "react";
-import { useMessage } from "./api/chat/v1/message_rbt_react";
+import { useMessage } from "../../api/chat/v1/message_rbt_react";
 
 interface ReactionProps {
   reaction: [string, number];

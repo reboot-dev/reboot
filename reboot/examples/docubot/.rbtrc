@@ -25,7 +25,7 @@
 generate api/
 
 # Generate code for a React frontend and TypeScript/nodejs backend.
-generate --react=frontend/web/lib/api
+generate --react=frontend/api
 generate --nodejs=api
 
 # This project requires the use of the 'customConditions' tsconfig option.

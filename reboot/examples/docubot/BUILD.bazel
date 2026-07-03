@@ -15,6 +15,7 @@ filegroup(
             "dist/**/*",
             "api/**/*.js",
             "api/**/*.ts",
+            "frontend/api/**/*",
             "api/dist/**/*",
             "docubot/dist/**/*",
         ],
