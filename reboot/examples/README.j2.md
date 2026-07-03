@@ -12,8 +12,8 @@ For the impatient:
 The [Reboot '.proto' definitions](https://docs.reboot.dev/learn_more/define/overview#code-generation)
 can be found in the `api/` directory, grouped into
 subdirectories by proto package, while backend specific code can be
-found in {{ backend_locations }}{% if has_frontend %} and front end specific code in `web/`{% endif %}{% if has_mobile %} and a React Native (Expo) mobile front end in `mobile/`{% endif %}
-{% if has_non_react_frontend %} and non-React front end in `reboot-non-react-web/`{% endif %}.
+found in {{ backend_locations }}{% if has_frontend %} and front end specific code in `frontend/web/`{% endif %}{% if has_mobile %} and a React Native (Expo) mobile front end in `frontend/mobile/`{% endif %}
+{% if has_non_react_frontend %} and non-React front end in `frontend/reboot-non-react-web/`{% endif %}.
 
 _For more information on all of the Reboot examples, please [see the docs](https://docs.reboot.dev/full_stack_apps/examples)._
 
@@ -112,7 +112,7 @@ arguments that get expanded when running `rbt dev run`.
 {% if backend_language == "python" %}
 Similar to the backend, the front end has dependencies that need to be installed before running it. Open a separate terminal/shell and do:
 ```shell
-cd web/
+cd frontend/web/
 npm install
 npm start
 ```
@@ -135,7 +135,7 @@ The non-React front end can be run in a similar way to the React front end,
 but it uses a different directory and port:
 
 ```shell
-cd reboot-non-react-web/
+cd frontend/reboot-non-react-web/
 npm install
 npm run dev
 ```
@@ -190,13 +190,13 @@ in the output of `rbt cloud up`:
 
 {% if has_frontend %}
 Tell the front end to talk to it by updating the `VITE_REBOOT_URL` value in
-`web/.env`:
+`frontend/web/.env`:
 
 ```tsx
 VITE_REBOOT_URL=YOUR_URL
 ```
 
-Then, in the `web/` directory, run `npm run build`.
+Then, in the `frontend/web/` directory, run `npm run build`.
 
 Once built, this front end can be deployed to any static hosting provider like
 S3, Vercel, Cloudflare or Firebase hosting.

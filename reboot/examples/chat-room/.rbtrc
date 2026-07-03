@@ -30,10 +30,10 @@ generate --boilerplate=boilerplate/
 # Tell `rbt` where to output its generated files.
 # The paths are different for backend and frontend code.
 generate --python=backend/api/
-generate --react=web/src/api
-generate --web=web/src/api
+generate --react=frontend/web/src/api
+generate --web=frontend/web/src/api
 # The mobile (React Native) client.
-generate --mobile=mobile/src/api
+generate --mobile=frontend/mobile/src/api
 
 # Watch if any generated or source files are modified.
 dev run --watch=backend/api/**/*.py

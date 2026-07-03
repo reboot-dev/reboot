@@ -2,14 +2,14 @@
 
 This is a [React Native](https://reactnative.dev/) front end for the
 `chat-room` example, built with [Expo](https://expo.dev/). It talks to
-the same Reboot backend as the `web/` front end and demonstrates that
+the same Reboot backend as the `frontend/web/` front end and demonstrates that
 the Reboot React client (`@reboot-dev/reboot-react`) runs in React
 Native — on iOS, Android, and the web — in addition to the browser.
 
 The UI is the browser example ported to React Native primitives
 (`View`, `Text`, `TextInput`, `Pressable`, `FlatList`); the Reboot
 integration (`RebootClientProvider`, the generated `useChatRoom` hook,
-reactive `useMessages`, and optimistic `send`) is identical to `web/`.
+reactive `useMessages`, and optimistic `send`) is identical to `frontend/web/`.
 
 ## React Native compatibility
 
@@ -35,8 +35,8 @@ apps don't need to patch the client.
 
 ### 1. Start the backend
 
-From the `chat-room` directory, exactly as for the `web/` front end
-(see the top-level [`README.md`](../README.md)):
+From the `chat-room` directory, exactly as for the `frontend/web/` front end
+(see the top-level [`README.md`](../../README.md)):
 
 ```sh
 rbt dev run
@@ -57,7 +57,7 @@ npm install
 
 Step 1's `rbt dev run` already generates the typed Reboot client into
 `src/api/` (the example's top-level `.rbtrc` configures this via
-`generate --mobile=mobile/src/api`), so `npm install` is all you need
+`generate --mobile=frontend/mobile/src/api`), so `npm install` is all you need
 here. To regenerate the clients on their own, run `rbt generate` from
 the `chat-room` directory.
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Native end-to-end test for the chat-room mobile app. Unlike
+# Native end-to-end test for the bank-pydantic mobile app. Unlike
 # `react_native_test.sh` (which only generates + type-checks), this
 # runs the REAL app on a real Android runtime (Hermes) and drives a
 # real user flow against a real Reboot backend, using Maestro:
@@ -8,8 +8,9 @@
 #   backend (rbt dev run, :9991) ──┐
 #   headless Android emulator ─────┼──> Expo Go loads the app
 #   `npx expo start --android`  ───┘     (EXPO_PUBLIC_REBOOT_URL=10.0.2.2:9991)
-#   `maestro test .maestro/flow.yaml` drives it and asserts the
-#   reactive read + send round-trips render.
+#   `maestro test .maestro/flow.yaml` drives it and asserts that
+#   creating customers, opening accounts, and transferring funds
+#   round-trips through the backend and re-renders.
 #
 # Requirements (baked into the devcontainer image's `Dockerfile`):
 # a JDK, the Android SDK + emulator + a system image, Maestro, and
@@ -23,7 +24,7 @@ set -u # Treat expanding an unset variable as an error.
 set -x # Echo executed commands to help debug failures.
 
 EXAMPLE_ROOT="$(pwd)"
-AVD_NAME="rbt_e2e_chat_room"
+AVD_NAME="rbt_e2e_bank_pydantic"
 SYSTEM_IMAGE="system-images;android-34;google_apis;x86_64"
 
 # Bazel runs tests with a sanitized environment, so `HOME` may be
@@ -111,7 +112,7 @@ trap 'exit 130' INT
 
 # Set up the Python backend exactly like the sibling example tests: a
 # fresh venv with the locally built wheel (in Bazel), then `rbt dev
-# run`, which also generates the mobile client into `mobile/src/api/`.
+# run`, which also generates the mobile client into `frontend/mobile/src/api/`.
 if [[ -n "${REBOOT_WHL_FILE:-}" ]]; then
   uv add --no-sync "${SANDBOX_ROOT}${REBOOT_WHL_FILE}"
 fi
@@ -138,7 +139,7 @@ done
 
 # Install the mobile app's JS dependencies, overlaying the locally
 # built Reboot npm packages in Bazel (same as `react_native_test.sh`).
-cd mobile
+cd frontend/mobile
 if [[ -n "${REBOOT_NPM_PACKAGE:-}" ]]; then
   npm install --no-save \
     "${SANDBOX_ROOT}${REBOOT_NPM_PACKAGE}" \
@@ -174,7 +175,7 @@ done
 # Load the app via Expo Go, pointed at the backend on the emulator's
 # host alias (`10.0.2.2`). `expo start --android` installs Expo Go and
 # opens the project.
-cd mobile
+cd frontend/mobile
 export EXPO_PUBLIC_REBOOT_URL="http://10.0.2.2:9991"
 export EXPO_NO_TELEMETRY=1
 setsid npx expo start --android > "${EXPO_LOG}" 2>&1 &
@@ -184,5 +185,5 @@ until grep -q "Android Bundled" "${EXPO_LOG}" 2> /dev/null; do
   sleep 1
 done
 
-# Drive the real app and assert the reactive read + send round-trips.
+# Drive the real app and assert the create/open/transfer round-trips.
 maestro test .maestro/flow.yaml

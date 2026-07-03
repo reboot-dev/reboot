@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev:web": "cd web && vite --port 3000 --mode production",
+    "dev:web": "cd frontend/web && vite --port 3000 --mode production",
     "dev:backend": "npx rbt dev run"
   },
   "dependencies": {

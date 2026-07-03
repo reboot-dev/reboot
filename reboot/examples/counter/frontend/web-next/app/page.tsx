@@ -1,6 +1,6 @@
 import { ExternalContext } from "@reboot-dev/reboot";
-import { Counter } from "../../api/counter/v1/counter_rbt";
-import { COUNTER_IDS } from "../../constants";
+import { Counter } from "../../../api/counter/v1/counter_rbt";
+import { COUNTER_IDS } from "../../../constants";
 import TakeableCounter from "./TakeableCounter";
 
 export default async function Home() {

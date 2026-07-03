@@ -156,7 +156,7 @@ To have the `rbt` command line utility generate React code when running
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/.rbtrc -->
 
 ```
-generate --react=web/src/api
+generate --react=frontend/web/src/api
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -174,8 +174,8 @@ context is provided by a `RebootClientProvider`. It takes a
 generated React code will use to connect to the Reboot backend.
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/counter/web-vite/src/main.tsx&&lines=8-10) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/counter/web-vite/src/main.tsx -->
+(CODE:src=../../../../reboot/examples/counter/frontend/web-vite/src/main.tsx&&lines=8-10) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/counter/frontend/web-vite/src/main.tsx -->
 
 ```tsx
 <RebootClientProvider url={"http://localhost:9991"}>
@@ -198,8 +198,8 @@ In practice, it is best to use an environment variable for your API endpoint.
 For example:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/chat-room/web/src/index.tsx&&lines=11-12) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/web/src/index.tsx -->
+(CODE:src=../../../../reboot/examples/chat-room/frontend/web/src/index.tsx&&lines=11-12) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/frontend/web/src/index.tsx -->
 
 ```tsx
 (import.meta.env.VITE_REBOOT_URL as string) || "http://localhost:9991";
@@ -263,8 +263,8 @@ export const DashboardApp: FC<DashboardConfig> = ({
 You can call a `reader` _reactively_ very simply:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/chat-room/web/src/App.tsx&&lines=33-34) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/web/src/App.tsx -->
+(CODE:src=../../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=33-34) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
 
 ```tsx
 const { useMessages, send } = useChatRoom({ id: STATE_MACHINE_ID });
@@ -292,8 +292,8 @@ and [`transaction`](/learn_more/define/methods#kinds) methods
 are both callable from React.
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/chat-room/web/src/App.tsx&&lines=33-33) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/web/src/App.tsx -->
+(CODE:src=../../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=33-33) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
 
 ```tsx
 const { useMessages, send } = useChatRoom({ id: STATE_MACHINE_ID });
@@ -309,8 +309,8 @@ This line calls the
 in the `.proto` as `Send`, using the lower camel case name `send`:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/chat-room/web/src/App.tsx&&lines=37-37) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/web/src/App.tsx -->
+(CODE:src=../../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=37-37) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
 
 ```tsx
 const { aborted } = await send({ message: message });
@@ -330,8 +330,8 @@ Reboot attaches all in-flight mutations to a `.pending` property of every mutato
 facilitate this, for example:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/chat-room/web/src/App.tsx&&lines=81-83) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/web/src/App.tsx -->
+(CODE:src=../../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=81-83) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
 
 ```tsx
 {send.pending.map(({ request: { message }, isLoading }) => (
@@ -362,8 +362,8 @@ Every call to a mutator returns both a `response` and an `aborted`; successful c
 [Learn more about Reboot errors and error types.](/learn_more/errors)
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/chat-room/web/src/App.tsx&&lines=37-41) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/web/src/App.tsx -->
+(CODE:src=../../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=37-41) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
 
 ```tsx
 const { aborted } = await send({ message: message });
@@ -455,8 +455,8 @@ Importantly, we also need to construct an
 this call safely.
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/counter/web-next/app/page.tsx&&lines=6-19) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/counter/web-next/app/page.tsx -->
+(CODE:src=../../../../reboot/examples/counter/frontend/web-next/app/page.tsx&&lines=6-19) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/counter/frontend/web-next/app/page.tsx -->
 
 ```tsx
 export default async function Home() {
@@ -484,8 +484,8 @@ The client-side call is completed as normal, but the data can be rendered immedi
 because it is passed into the component as a prop.
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/counter/web-next/app/TakeableCounter.tsx&&lines=6-11) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/counter/web-next/app/TakeableCounter.tsx -->
+(CODE:src=../../../../reboot/examples/counter/frontend/web-next/app/TakeableCounter.tsx&&lines=6-11) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/counter/frontend/web-next/app/TakeableCounter.tsx -->
 
 ```tsx
 const TakeableCounter: FC<{ id: string; initialCount: number }> = ({
@@ -502,8 +502,8 @@ Now it is easy to render either the `initialCount` that was passed in initially 
 current reactive value of the `response.count` object.
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/counter/web-next/app/TakeableCounter.tsx&&lines=15-15) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/counter/web-next/app/TakeableCounter.tsx -->
+(CODE:src=../../../../reboot/examples/counter/frontend/web-next/app/TakeableCounter.tsx&&lines=15-15) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/counter/frontend/web-next/app/TakeableCounter.tsx -->
 
 ```tsx
 count={response ? response.count : initialCount}

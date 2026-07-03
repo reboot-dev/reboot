@@ -9,7 +9,7 @@ __pycache__/
 .pytest_cache/
 
 # Generated .ts files.
-/web/src/gen/*
+/frontend/web/src/gen/*
 
 # Generated Python files.
 #

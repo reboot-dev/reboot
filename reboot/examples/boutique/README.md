@@ -17,7 +17,7 @@ and demonstrates how Reboot makes it simple to write correct microservice applic
 The [Reboot '.proto' definitions](https://docs.reboot.dev/learn_more/define/overview#code-generation)
 can be found in the `api/` directory, grouped into
 subdirectories by proto package, while backend specific code can be
-found in `backend/` and front end specific code in `web/`.
+found in `backend/` and front end specific code in `frontend/web/`.
 
 _For more information on all of the Reboot examples, please [see the docs](https://docs.reboot.dev/full_stack_apps/examples)._
 
@@ -100,7 +100,7 @@ arguments that get expanded when running `rbt dev run`.
 
 Similar to the backend, the front end has dependencies that need to be installed before running it. Open a separate terminal/shell and do:
 ```shell
-cd web/
+cd frontend/web/
 npm install
 npm start
 ```
@@ -152,13 +152,13 @@ in the output of `rbt cloud up`:
 ```
 
 Tell the front end to talk to it by updating the `VITE_REBOOT_URL` value in
-`web/.env`:
+`frontend/web/.env`:
 
 ```tsx
 VITE_REBOOT_URL=YOUR_URL
 ```
 
-Then, in the `web/` directory, run `npm run build`.
+Then, in the `frontend/web/` directory, run `npm run build`.
 
 Once built, this front end can be deployed to any static hosting provider like
 S3, Vercel, Cloudflare or Firebase hosting.

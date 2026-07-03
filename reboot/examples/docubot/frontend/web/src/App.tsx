@@ -1,4 +1,4 @@
-import { DOCUBOT_ASSISTANT_ID } from "../../constants";
+import { DOCUBOT_ASSISTANT_ID } from "../../../constants";
 import { Docubot } from "../lib/main";
 
 const App = () => {

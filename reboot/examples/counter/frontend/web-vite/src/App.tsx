@@ -1,4 +1,4 @@
-import { COUNTER_IDS } from "../../constants.js";
+import { COUNTER_IDS } from "../../../constants.js";
 import TakeableCounter from "./TakeableCounter.js";
 
 function App() {

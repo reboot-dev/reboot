@@ -2,5 +2,5 @@
 /node_modules/
 /api/**/*.ts
 /api/dist/
-/web/lib/api/
+/frontend/web/lib/api/
 /dist/

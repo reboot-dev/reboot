@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev:web": "echo 'choose between \"npm run dev:web-vite\" and \"npm run dev:web-next\"'",
-    "dev:web-vite": "cd web-vite && vite --port 3000",
-    "dev:web-next": "next dev ./web-next",
+    "dev:web-vite": "cd frontend/web-vite && vite --port 3000",
+    "dev:web-next": "next dev ./frontend/web-next",
     "dev:backend": "rbt dev run"
   },
   "dependencies": {

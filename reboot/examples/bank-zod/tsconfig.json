@@ -10,6 +10,6 @@
     "incremental": true
   },
   "include": ["backend/**/*"],
-  // Exclude the `web` folder for `npx tsc`.
-  "exclude": ["web"]
+  // Exclude the `frontend` folder for `npx tsc`.
+  "exclude": ["frontend"]
 }

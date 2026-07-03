@@ -5,7 +5,7 @@ set -x # Echo executed commands to help debug failures.
 
 # Check that this script has been invoked with the right working directory, by
 # checking that the expected subdirectories exist.
-ls -l api/ backend/src/ web/ Dockerfile 2> /dev/null > /dev/null || {
+ls -l api/ backend/src/ frontend/web/ Dockerfile 2> /dev/null > /dev/null || {
   echo "ERROR: this script must be invoked from the root of the 'reboot-hello' repository."
   echo "Current working directory is '$(pwd)'."
   exit 1

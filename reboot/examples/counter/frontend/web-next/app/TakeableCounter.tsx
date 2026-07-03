@@ -1,14 +1,18 @@
+"use client";
 import { FC } from "react";
-import { useCounter } from "../../api/counter/v1/counter_rbt_react.js";
-import { COUNTER_IDS } from "../../constants.js";
+import { useCounter } from "../../../api/counter/v1/counter_rbt_react";
+import { COUNTER_IDS } from "../../../constants";
 
-const TakeableCounter: FC<{ id: string }> = ({ id }) => {
+const TakeableCounter: FC<{ id: string; initialCount: number }> = ({
+  id,
+  initialCount,
+}) => {
   const { useCount, increment, take } = useCounter({ id });
   const { response } = useCount();
 
   return (
     <TakeableCounterView
-      count={response ? response.count : 0}
+      count={response ? response.count : initialCount}
       onIncrement={() => increment()}
       onTake={() =>
         take({

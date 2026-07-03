@@ -147,7 +147,7 @@ osx_mobile_env.update({
 })
 
 # Builds and type-checks the React Native (Expo) front end against the
-# locally built Reboot client. See `mobile/.tests/react_native_test.sh`.
+# locally built Reboot client. See `frontend/mobile/.tests/react_native_test.sh`.
 sh_test_in_working_directory(
     name = "mobile_test",
     size = "large",
@@ -161,18 +161,18 @@ sh_test_in_working_directory(
         "@platforms//os:osx": osx_mobile_env,
     }),
     # The following path is relative to the working directory. We use
-    # the whole example as the working directory (not just `mobile/`)
+    # the whole example as the working directory (not just `frontend/mobile/`)
     # so the sibling `api/` protos that the mobile client is generated
     # from are copied into the test sandbox; the script `cd`s into
-    # `mobile/` itself.
-    script = "mobile/.tests/react_native_test.sh",
+    # `frontend/mobile/` itself.
+    script = "frontend/mobile/.tests/react_native_test.sh",
     tags = ["exclusive"],
     working_directory = "reboot/examples/chat-room/",
 )
 
 # Native end-to-end test: runs the real app on a headless Android
 # emulator (KVM-accelerated) and drives it with Maestro against a real
-# Reboot backend. See `mobile/.tests/maestro_test.sh`. This is NOT
+# Reboot backend. See `frontend/mobile/.tests/maestro_test.sh`. This is NOT
 # hermetic: it needs the host's `/dev/kvm`, a single emulator, and a
 # long-running Metro/Expo + backend. Hence `manual`, `local`/`no-sandbox`/`no-remote` (needs the device + KVM,
 # can't run on remote executors), and `exclusive` (single emulator +
@@ -187,7 +187,7 @@ sh_test_in_working_directory(
         "//reboot/examples/chat-room:everything",
     ],
     env = mobile_env,
-    script = "mobile/.tests/maestro_test.sh",
+    script = "frontend/mobile/.tests/maestro_test.sh",
     tags = [
         "exclusive",
         "local",

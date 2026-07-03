@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Builds the React Native (Expo) front end of the `chat-room` example
-# end-to-end: it generates the typed Reboot clients from the example's
-# own top-level `.rbtrc` using the `rbt` CLI, installs the mobile app's
-# JavaScript dependencies overlaid with the locally built Reboot npm
-# packages, and type-checks the app against the generated mobile
-# client. This guards that the `@reboot-dev/reboot-react`/
+# Builds the React Native (Expo) front end of the `bank-pydantic`
+# example end-to-end: it generates the typed Reboot clients from the
+# example's own top-level `.rbtrc` using the `rbt` CLI, installs the
+# mobile app's JavaScript dependencies overlaid with the locally built
+# Reboot npm packages, and type-checks the app against the generated
+# mobile client. This guards that the `@reboot-dev/reboot-react`/
 # `@reboot-dev/reboot-web` client keeps building and type-checking under
 # React Native's toolchain. The runtime React Native API compatibility
 # itself is covered by the Maestro end-to-end test, `maestro_test.sh`.
@@ -14,24 +14,23 @@ set -e # Exit if a command exits with an error.
 set -u # Treat expanding an unset variable as an error.
 set -x # Echo executed commands to help debug failures.
 
-# The harness copies the whole `chat-room` example into a sandbox and
-# runs us from its root, where the top-level `.rbtrc`, `api/`, and
-# `pyproject.toml` live. We generate from here and only `cd mobile`
+# The harness copies the whole `bank-pydantic` example into a sandbox
+# and runs us from its root, where the top-level `.rbtrc`, `api/`, and
+# `pyproject.toml` live. We generate from here and only `cd frontend/mobile`
 # later, for the type check.
-ls -l .rbtrc pyproject.toml mobile/src/App.tsx 2> /dev/null > /dev/null || {
-  echo "ERROR: could not find the 'chat-room' example files. Invoke this"
-  echo "from the 'chat-room' example root. Current working directory is"
-  echo "'$(pwd)'."
+ls -l .rbtrc pyproject.toml frontend/mobile/src/App.tsx 2> /dev/null > /dev/null || {
+  echo "ERROR: could not find the 'bank-pydantic' example files. Invoke"
+  echo "this from the 'bank-pydantic' example root. Current working"
+  echo "directory is '$(pwd)'."
   exit 1
 }
 
-# Set up the Python environment. chat-room is a Python project, so we
-# generate with the Python `rbt`: it carries every `rbt generate`
+# Set up the Python environment. bank-pydantic is a Python project, so
+# we generate with the Python `rbt`: it carries every `rbt generate`
 # plugin and reads the example's own top-level `.rbtrc` directly,
-# emitting the Python, React, web, and React Native (mobile) clients in
-# one pass — the mobile one into `mobile/src/api/` per `--mobile=...`.
-# In a Bazel test we install the locally built wheel over the pinned
-# version.
+# emitting the Python, React, and React Native (mobile) clients in one
+# pass — the mobile one into `frontend/mobile/src/api/` per `--mobile=...`. In a
+# Bazel test we install the locally built wheel over the pinned version.
 if [[ -n "${REBOOT_WHL_FILE:-}" ]]; then
   uv add --no-sync "${SANDBOX_ROOT}${REBOOT_WHL_FILE}"
 fi
@@ -51,8 +50,8 @@ source .venv/bin/activate
 RBT_FLAGS="--state-directory=$(mktemp -d)"
 
 # Generate every client from the top-level `.rbtrc`. `App.tsx` imports
-# the generated `chat_room_rbt_react` module under `mobile/src/api/`,
-# so this must run before the type check.
+# the generated `bank_rbt_react` module under `frontend/mobile/src/api/`, so this
+# must run before the type check.
 rbt $RBT_FLAGS generate
 
 # Install the mobile app's JavaScript dependencies (Expo, React Native,
@@ -61,7 +60,7 @@ rbt $RBT_FLAGS generate
 # `--no-save` so the test exercises the in-repo client rather than a
 # published release; `npm install` still resolves the rest (Expo, React
 # Native, ...) from `package.json`.
-cd mobile
+cd frontend/mobile
 if [[ -n "${REBOOT_NPM_PACKAGE:-}" ]]; then
   npm install --no-save \
     "${SANDBOX_ROOT}${REBOOT_NPM_PACKAGE}" \

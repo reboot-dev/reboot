@@ -8,12 +8,12 @@
 __pycache__/
 .pytest_cache/
 
-/web/node_modules/
-/web/dist/
+/frontend/web/node_modules/
+/frontend/web/dist/
 
 # Generated code.
 /backend/api/
-/web/src/api/
+/frontend/web/src/api/
 /boilerplate/
 
 # Binary artifacts produced only during Reboot library development.
