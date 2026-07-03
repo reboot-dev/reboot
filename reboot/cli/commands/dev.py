@@ -1407,42 +1407,35 @@ async def __dev_run(
         EffectValidation,
     ).name
 
-    if ENVVAR_REBOOT_CRYPTO_ROOT_KEYS not in env:
-        if args.application_name is not None:
-            # Reboot's managed cryptographic root keys, from which
-            # libraries derive their own keys (the MCP OAuth signing key,
-            # the `reboot.std.ciphertext` key-encryption key, ...). Persist
-            # a random value in the application's state directory so it is
-            # stable across restarts but wiped by `rbt dev expunge` (which
-            # also deletes signed-in users' state, so derived OAuth tokens
-            # should become invalid and push clients back through the OAuth
-            # flow). The `v1:` prefix carries the version inline so the
-            # value can later grow to a comma-separated, newest-first list
-            # during rotation.
-            root_keys_path = (
-                dot_rbt_dev_directory(args, parser) / args.application_name /
-                "crypto-root-keys"
-            )
-            if root_keys_path.exists():
-                root_keys = root_keys_path.read_text()
-            else:
-                root_keys = f"v1:{secrets.token_urlsafe(32)}"
-                root_keys_path.parent.mkdir(parents=True, exist_ok=True)
-                root_keys_path.write_text(root_keys)
-            env[ENVVAR_REBOOT_CRYPTO_ROOT_KEYS] = root_keys
-        else:
-            # No application name means no per-app state directory to
-            # persist into; fall back to a fixed value.
-            env[ENVVAR_REBOOT_CRYPTO_ROOT_KEYS] = "v1:reboot-dev"
+    def crypto_root_keys() -> str:
+        """Reboot's managed cryptographic root keys for one application
+        (re)start, from which libraries derive their own keys (the MCP
+        OAuth signing key, the `reboot.std.ciphertext` key-encryption
+        key, ...). The `v1:` prefix carries the version inline so the
+        value can later grow to a comma-separated, newest-first list
+        during rotation.
 
-    # Backwards compatibility: old application images do an unconditional
-    # fail-fast check for the legacy OAuth signing secret on startup. Keep
-    # setting it (to the same value as the root keys) so those apps still
-    # boot; current code reads `ENVVAR_REBOOT_CRYPTO_ROOT_KEYS` instead.
-    env.setdefault(
-        ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
-        env[ENVVAR_REBOOT_CRYPTO_ROOT_KEYS],
-    )
+        The keys live exactly as long as the application state they
+        protect, so that a JWT signed with them dies with the state it
+        refers to (pushing clients back through the OAuth flow, whose
+        fresh mint re-constructs per-user state): a named application
+        persists a random value in its state directory — stable across
+        restarts, deleted by `rbt dev expunge` and by the in-run `x`
+        expunge — while an anonymous application, whose state doesn't
+        survive a restart, gets fresh random keys on every (re)start.
+        """
+        if args.application_name is None:
+            return f"v1:{secrets.token_urlsafe(32)}"
+        root_keys_path = (
+            dot_rbt_dev_directory(args, parser) / args.application_name /
+            "crypto-root-keys"
+        )
+        if root_keys_path.exists():
+            return root_keys_path.read_text()
+        root_keys = f"v1:{secrets.token_urlsafe(32)}"
+        root_keys_path.parent.mkdir(parents=True, exist_ok=True)
+        root_keys_path.write_text(root_keys)
+        return root_keys
 
     if tracing == Tracing.JAEGER:
         # TODO: dynamic port. See comment in `_run_jaeger()`.
@@ -1475,6 +1468,25 @@ async def __dev_run(
             for proto_directory in generate_proto_directories or []:
                 pythonpath = pythonpath + os.pathsep + proto_directory
             composed['PYTHONPATH'] = pythonpath
+
+        # Cryptographic root keys, computed here — once per application
+        # (re)start — so that both an in-run `x` expunge (which deletes
+        # a named application's persisted keys) and an anonymous
+        # restart (which drops all state) pick up fresh keys. Explicit
+        # values (the caller's environment, `--env-file=`, `--env=`)
+        # take precedence.
+        if ENVVAR_REBOOT_CRYPTO_ROOT_KEYS not in composed:
+            composed[ENVVAR_REBOOT_CRYPTO_ROOT_KEYS] = crypto_root_keys()
+
+        # Backwards compatibility: old application images do an
+        # unconditional fail-fast check for the legacy OAuth signing
+        # secret on startup. Keep setting it (to the same value as the
+        # root keys) so those apps still boot; current code reads
+        # `ENVVAR_REBOOT_CRYPTO_ROOT_KEYS` instead.
+        composed.setdefault(
+            ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
+            composed[ENVVAR_REBOOT_CRYPTO_ROOT_KEYS],
+        )
 
         return composed
 
