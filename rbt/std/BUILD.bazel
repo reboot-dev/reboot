@@ -50,6 +50,7 @@ ts_project(
         "//rbt/std/blob/v1:blob_js_proto",
         "//rbt/std/blob/v1:blob_js_reboot",
         "//rbt/std/blob/v1:blob_js_reboot_react",
+        "//rbt/std/blob/v1:blob_js_reboot_web",
         "//rbt/std/ciphertext/v1:ciphertext_js_proto",
         "//rbt/std/ciphertext/v1:ciphertext_js_reboot",
         "//rbt/std/collections/ordered_map/v1:ordered_map_js_proto",
