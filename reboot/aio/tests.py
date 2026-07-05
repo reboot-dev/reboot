@@ -414,6 +414,14 @@ class Reboot(reboot.aio.reboot.Reboot):
         # Should only have `application`, `local_envoy`,
         # `local_envoy_port`, `servers`, `effect_validation`.
 
+        # Do any pre-run library set up, just like `Application.run()`
+        # does; e.g. a library may register HTTP routes. Libraries must
+        # tolerate being `pre_run` more than once, since a test may
+        # `up` the same `Application` after a `down`.
+        if not in_nodejs():
+            for library in application.libraries:
+                await library.pre_run(application)
+
         # Check if application.http has methods or mounts (note this
         # isn't relevant for TypeScript, which doesn't have that
         # property). If yes, we need a local_envoy to be present to
