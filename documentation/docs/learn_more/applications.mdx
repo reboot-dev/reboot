@@ -13,19 +13,19 @@ Your entrypoint will construct an `Application` and then `run` it:
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/backend/src/main.py&lines=25-33) -->
+(CODE:src=../../../reboot/examples/chat-room/backend/src/main.py&lines=26-34) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/backend/src/main.py -->
 
 ```py
 async def main():
     await Application(
         servicers=[ChatRoomServicer],
+        # Message attachments are stored as blobs; `rbt dev run` and
+        # `rbt serve run` provide a local filesystem data plane (see
+        # `REBOOT_BLOB_DATA_PLANE_URL` for using a custom one).
+        libraries=[blobs_library()],
         initialize=initialize,
     ).run()
-
-
-if __name__ == '__main__':
-    asyncio.run(main())
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -59,7 +59,7 @@ instances used by your application are created.
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/backend/src/main.py&lines=13-20) -->
+(CODE:src=../../../reboot/examples/chat-room/backend/src/main.py&lines=14-21) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/backend/src/main.py -->
 
 ```py

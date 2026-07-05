@@ -90,14 +90,33 @@ api = API(
   </TabItem>
   <TabItem value="proto" label="Proto">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto&&lines=9-41&syntax=protobuf) -->
+(CODE:src=../../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto&&lines=9-51&syntax=protobuf) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto -->
 
 ```protobuf
+// Raised when a requested attachment exceeds the chat room's
+// per-attachment size limit.
+message AttachmentTooLarge {
+  // The maximum allowed attachment size, in bytes, so the client can
+  // show a helpful message.
+  uint64 max_size_bytes = 1;
+}
+
+message Message {
+  string text = 1;
+
+  // Ids of `rbt.std.blobs.v1.Blob`s holding this message's
+  // attachments. Attachments are visible to all participants from the
+  // moment the message is sent, while their bytes may still be
+  // uploading; render their progress reactively via `Blob.Info`.
+  repeated string attachment_blob_ids = 2;
+}
+
 message ChatRoom {
   option (rbt.v1alpha1.state) = {
   };
-  repeated string messages = 1;
+  reserved 1;
+  repeated Message messages = 2;
 }
 
 service ChatRoomMethods {
@@ -107,24 +126,17 @@ service ChatRoomMethods {
     };
   }
 
-  // Adds a new message to the list of recorded messages.
+  // Adds a new message to the list of recorded messages, creating a
+  // `Blob` for each requested attachment. The message is published
+  // immediately; the caller then uploads the attachment bytes into
+  // the returned blob ids.
   rpc Send(SendRequest) returns (SendResponse) {
-    option (rbt.v1alpha1.method).writer = {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+      errors: [ "AttachmentTooLarge" ],
     };
   }
 }
-
-message MessagesRequest {}
-
-message MessagesResponse {
-  repeated string messages = 1;
-}
-
-message SendRequest {
-  string message = 1;  // E.g. "Hello, World".
-}
-
-message SendResponse {}
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -266,7 +278,7 @@ export const DashboardApp: FC<DashboardConfig> = ({
 You can call a `reader` _reactively_ very simply:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=33-34) -->
+(CODE:src=../../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=156-157) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
 
 ```tsx
@@ -295,7 +307,7 @@ and [`transaction`](/learn_more/define/methods#kinds) methods
 are both callable from React.
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=33-33) -->
+(CODE:src=../../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=156-156) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
 
 ```tsx
@@ -312,11 +324,17 @@ This line calls the
 in the `.proto` as `Send`, using the lower camel case name `send`:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=37-37) -->
+(CODE:src=../../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=177-183) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
 
 ```tsx
-const { aborted } = await send({ message: message });
+const { response, aborted } = await send({
+  message: message,
+  attachments:
+    file !== null
+      ? [{ contentType: file.type, sizeBytes: BigInt(file.size) }]
+      : [],
+});
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -333,12 +351,17 @@ Reboot attaches all in-flight mutations to a `.pending` property of every mutato
 facilitate this, for example:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=81-83) -->
+(CODE:src=../../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=302-309) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
 
 ```tsx
-{send.pending.map(({ request: { message }, isLoading }) => (
-  <PendingMessage text={message} isLoading={isLoading} key={message} />
+{send.pending.map(({ request, isLoading }, index) => (
+  <PendingMessage
+    text={request.message ?? ""}
+    attachmentCount={request.attachments?.length ?? 0}
+    isLoading={isLoading}
+    key={index}
+  />
 ))}
 ```
 
@@ -365,15 +388,30 @@ Every call to a mutator returns both a `response` and an `aborted`; successful c
 [Learn more about Reboot errors and error types.](/learn_more/errors)
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=37-41) -->
+(CODE:src=../../../../reboot/examples/chat-room/frontend/web/src/App.tsx&&lines=177-196) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/frontend/web/src/App.tsx -->
 
 ```tsx
-const { aborted } = await send({ message: message });
+const { response, aborted } = await send({
+  message: message,
+  attachments:
+    file !== null
+      ? [{ contentType: file.type, sizeBytes: BigInt(file.size) }]
+      : [],
+});
 if (aborted !== undefined) {
-  console.warn(aborted.error.getType());
-  console.warn(aborted.message);
-}
+  // Surface the failure to the user. The backend's
+  // `AttachmentTooLarge` error carries the limit, so we can say
+  // exactly what it is.
+  if (aborted.error instanceof AttachmentTooLarge) {
+    const maxMebibytes = Number(aborted.error.maxSizeBytes) / (1024 * 1024);
+    setError(
+      `That attachment is too large. The maximum is ${maxMebibytes} MiB.`
+    );
+  } else {
+    setError(`Couldn't send your message: ${aborted.message}`);
+  }
+  return;
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
