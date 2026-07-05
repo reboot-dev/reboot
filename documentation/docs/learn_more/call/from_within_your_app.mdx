@@ -84,18 +84,16 @@ via `write()` — see
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/chat-room/backend/src/chat_room_servicer.py&lines=24-32) -->
+(CODE:src=../../../../reboot/examples/chat-room/backend/src/chat_room_servicer.py&lines=23-28) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/backend/src/chat_room_servicer.py -->
 
 ```py
-async def send(
+async def messages(
     self,
-    context: WriterContext,
-    request: SendRequest,
-) -> SendResponse:
-    message = request.message
-    self.state.messages.extend([message])
-    return SendResponse()
+    context: ReaderContext,
+    request: MessagesRequest,
+) -> MessagesResponse:
+    return MessagesResponse(messages=self.state.messages)
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
