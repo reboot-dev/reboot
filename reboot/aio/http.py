@@ -149,6 +149,14 @@ class PythonWebFramework(WebFramework):
             assert "methods" not in kwargs
             return self._api_route(path, methods=["POST"], **kwargs)
 
+        def put(self, path: str, **kwargs):
+            # Rather than list out all of the possible keyword args
+            # that `FastAPI` expects we'll just pass along any that
+            # are passed to us, but we don't expect `methods` as we
+            # override that below.
+            assert "methods" not in kwargs
+            return self._api_route(path, methods=["PUT"], **kwargs)
+
         def options(self, path: str, **kwargs):
             # Used for CORS preflight handlers.
             assert "methods" not in kwargs
