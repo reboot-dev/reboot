@@ -4,6 +4,7 @@ from chat_room.v1.chat_room_rbt import ChatRoom
 from chat_room_servicer import ChatRoomServicer
 from reboot.aio.applications import Application
 from reboot.aio.external import InitializeContext
+from reboot.std.blobs.v1.blobs import blobs_library
 
 logging.basicConfig(level=logging.INFO)
 
@@ -25,6 +26,10 @@ async def initialize(context: InitializeContext):
 async def main():
     await Application(
         servicers=[ChatRoomServicer],
+        # Message attachments are stored as blobs; `rbt dev run` and
+        # `rbt serve run` provide a local filesystem data plane (see
+        # `REBOOT_BLOB_DATA_PLANE_URL` for using a custom one).
+        libraries=[blobs_library()],
         initialize=initialize,
     ).run()
 

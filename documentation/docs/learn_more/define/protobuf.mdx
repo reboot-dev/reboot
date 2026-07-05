@@ -10,14 +10,15 @@ To declare a data type called `ChatRoom`, put the following in a `.proto`
 file:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto&lines=9-13&syntax=protobuf) -->
+(CODE:src=../../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto&lines=27-32&syntax=protobuf) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto -->
 
 ```protobuf
 message ChatRoom {
   option (rbt.v1alpha1.state) = {
   };
-  repeated string messages = 1;
+  reserved 1;
+  repeated Message messages = 2;
 }
 ```
 
@@ -32,7 +33,7 @@ In addition to defining the data type, you'll also need to define
 operations for that type, for example:
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto&lines=14-27&syntax=protobuf) -->
+(CODE:src=../../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto&lines=34-51&syntax=protobuf) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/api/chat_room/v1/chat_room.proto -->
 
 ```protobuf
@@ -43,9 +44,14 @@ service ChatRoomMethods {
     };
   }
 
-  // Adds a new message to the list of recorded messages.
+  // Adds a new message to the list of recorded messages, creating a
+  // `Blob` for each requested attachment. The message is published
+  // immediately; the caller then uploads the attachment bytes into
+  // the returned blob ids.
   rpc Send(SendRequest) returns (SendResponse) {
-    option (rbt.v1alpha1.method).writer = {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+      errors: [ "AttachmentTooLarge" ],
     };
   }
 }
