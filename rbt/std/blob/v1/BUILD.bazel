@@ -3,6 +3,7 @@ load(
     "js_proto_library",
     "js_reboot_library",
     "js_reboot_react_library",
+    "js_reboot_web_library",
     "py_reboot_library",
 )
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
@@ -68,6 +69,25 @@ js_reboot_library(
         ":blob_proto",
     ],
     proto = "blob.proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":blob_js_proto",
+    ],
+)
+
+# The browser client: the same API as the React client, but callable
+# from anywhere rather than only from inside a component.
+js_reboot_web_library(
+    name = "blob_js_reboot_web",
+    proto = "blob.proto",
+    proto_deps = [
+        ":blob_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         ":blob_js_proto",
