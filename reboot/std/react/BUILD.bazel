@@ -48,6 +48,7 @@ ts_project(
     },
     visibility = ["//visibility:public"],
     deps = [
+        "//reboot/std/react/blobs:blobs_ts",
         "//reboot/std/react/presence:presence_ts",
     ],
 )
