@@ -37,13 +37,16 @@ async def test_chat_room(self) -> None:
     await chat_room.send(context, message="Hello, World")
 
     response: ChatRoom.MessagesResponse = await chat_room.messages(context)
-    self.assertEqual(response.messages, ["Hello, World"])
+    self.assertEqual(
+        [message.text for message in response.messages],
+        ["Hello, World"],
+    )
 
     await chat_room.send(context, message="Hello, Reboot!")
     await chat_room.send(context, message="Hello, Peace of Mind!")
     response = await chat_room.messages(context)
     self.assertEqual(
-        response.messages,
+        [message.text for message in response.messages],
         [
             "Hello, World",
             "Hello, Reboot!",
