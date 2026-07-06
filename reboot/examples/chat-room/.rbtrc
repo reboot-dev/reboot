@@ -32,8 +32,6 @@ generate --boilerplate=boilerplate/
 generate --python=backend/api/
 generate --react=frontend/api
 generate --web=frontend/api
-# The mobile (React Native) client.
-generate --mobile=frontend/mobile/src/api
 
 # Watch if any generated or source files are modified.
 dev run --watch=backend/api/**/*.py

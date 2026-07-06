@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev:web": "cd frontend/web && vite --port 3000 --mode production",
-    "dev:backend": "npx rbt dev run"
+    "dev:backend": "npx rbt dev run",
+    "build:web": "cd frontend/web && tsc -b && vite build"
   },
   "dependencies": {
     "@bufbuild/protobuf": "1.10.1",

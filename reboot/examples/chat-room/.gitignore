@@ -8,7 +8,7 @@
 __pycache__/
 .pytest_cache/
 
-frontend/node_modules/
+node_modules/
 frontend/web/dist/
 
 # Generated code.

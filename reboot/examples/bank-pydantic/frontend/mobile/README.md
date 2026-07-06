@@ -59,9 +59,10 @@ npm install
 ```
 
 Step 1's `rbt dev run` already generates the typed Reboot client into
-`src/api/` (the example's top-level `.rbtrc` configures this via
-`generate --mobile=frontend/mobile/src/api`), so `npm install` is all you need
-here. To regenerate the clients on their own, run `rbt generate` from
+`frontend/api/`, shared with the web app (the example's top-level
+`.rbtrc` configures this via `generate --react=frontend/api`), so
+`npm install` is all you need here. To regenerate the clients on
+their own, run `rbt generate` from
 the `bank-pydantic` directory.
 
 ### 3. Run it

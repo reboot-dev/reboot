@@ -19,9 +19,7 @@ const dateFromUUIDv7 = (uuid: string): Date => {
   return new Date(timestampInMilliseconds);
 };
 
-const ReactionsWindow: FC<{}> = () => {
-  const username = localStorage.getItem("username");
-
+const ReactionsWindow: FC<{ username: string }> = ({ username }) => {
   const [limit, setLimit] = useState(40);
   const { useMessagesReactions } = useUser({ id: username });
 

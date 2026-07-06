@@ -228,7 +228,7 @@ const LoggedInChatApp: FC<{ username: string; handleLogout: () => void }> = ({
               </div>
             </div>
           )}
-          {window === "reactions" && <ReactionsWindow />}
+          {window === "reactions" && <ReactionsWindow username={username} />}
           {window === "chatbots" && <ChatbotsWindow user={username} />}
           <PendingChatbotMessages chatbotIds={chatbotsResponse?.chatbotIds} />
         </div>

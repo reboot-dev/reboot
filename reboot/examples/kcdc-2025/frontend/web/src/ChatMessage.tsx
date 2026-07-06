@@ -43,7 +43,7 @@ const Spinner = () => (
 );
 
 const ChatMessage: FC<{
-  timestamp: string;
+  timestamp?: string;
   id: string;
   username: string;
   message: string;
@@ -87,7 +87,7 @@ const ChatMessage: FC<{
             .sort((left, right) => {
               return left[0].localeCompare(right[0]);
             })
-            .map(([reaction, { users }]) => (
+            .map(([reaction, { users }]: [string, any]) => (
               <Reaction
                 reaction={[reaction, Object.keys(users).length]}
                 messageId={id}

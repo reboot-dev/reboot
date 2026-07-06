@@ -29,7 +29,7 @@ ls -l .rbtrc pyproject.toml frontend/mobile/src/App.tsx 2> /dev/null > /dev/null
 # generate with the Python `rbt`: it carries every `rbt generate`
 # plugin and reads the example's own top-level `.rbtrc` directly,
 # emitting the Python, React, web, and React Native (mobile) clients in
-# one pass — the mobile one into `frontend/mobile/src/api/` per `--mobile=...`.
+# one pass — the shared client into `frontend/api/` per `--react=...`.
 # In a Bazel test we install the locally built wheel over the pinned
 # version.
 if [[ -n "${REBOOT_WHL_FILE:-}" ]]; then
@@ -51,7 +51,7 @@ source .venv/bin/activate
 RBT_FLAGS="--state-directory=$(mktemp -d)"
 
 # Generate every client from the top-level `.rbtrc`. `App.tsx` imports
-# the generated `chat_room_rbt_react` module under `frontend/mobile/src/api/`,
+# the generated `chat_room_rbt_react` module under `frontend/api/`,
 # so this must run before the type check.
 rbt $RBT_FLAGS generate
 

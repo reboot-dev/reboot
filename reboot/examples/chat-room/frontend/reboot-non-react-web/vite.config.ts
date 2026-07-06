@@ -1,11 +1,9 @@
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  server: {
-    fs: {
-      // The generated `frontend/api/` bindings live outside this
-      // app's root, so allow serving files from `frontend/`.
-      allow: [".."],
-    },
+  build: {
+    // The bundle contains top-level `await`, which the default
+    // `es2020` build target rejects.
+    target: "es2022",
   },
 });

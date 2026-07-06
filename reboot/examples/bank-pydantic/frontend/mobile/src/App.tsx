@@ -14,7 +14,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import {
   useBank,
   type UseBankApi,
-} from "./api/bank/v1/pydantic/bank_rbt_react";
+} from "../../api/bank/v1/pydantic/bank_rbt_react";
 
 // Identifier for the shared singleton bank state instance.
 const STATE_MACHINE_ID = "reboot-bank";

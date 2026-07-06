@@ -111,7 +111,7 @@ trap 'exit 130' INT
 
 # Set up the Python backend exactly like the sibling example tests: a
 # fresh venv with the locally built wheel (in Bazel), then `rbt dev
-# run`, which also generates the mobile client into `frontend/mobile/src/api/`.
+# run`, which also generates the shared client into `frontend/api/`.
 if [[ -n "${REBOOT_WHL_FILE:-}" ]]; then
   uv add --no-sync "${SANDBOX_ROOT}${REBOOT_WHL_FILE}"
 fi

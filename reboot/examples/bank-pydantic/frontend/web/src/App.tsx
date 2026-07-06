@@ -18,10 +18,10 @@ const Transfer: FC<{ bank: UseBankApi }> = ({ bank }) => {
 
   // Group accounts by customerId.
   const customerAccounts: Record<string, { accountId: string }[]> = {};
-  (response.balances || []).forEach((balance: any) => {
+  (response.balances || []).forEach((balance) => {
     if (!customerAccounts[balance.customerId])
       customerAccounts[balance.customerId] = [];
-    (balance.accounts || []).forEach((account: any) => {
+    (balance.accounts || []).forEach((account) => {
       customerAccounts[balance.customerId].push({
         accountId: account.accountId,
       });
@@ -192,7 +192,7 @@ const CustomersAndAccounts: FC<{
 
   const { response: allCustomerIdsResponse } = bank.useAllCustomerIds();
   const customerIds: string[] = (allCustomerIdsResponse?.customerIds || []).map(
-    (c: any) => c
+    (c) => c
   );
 
   const handleCreateCustomer = () => {

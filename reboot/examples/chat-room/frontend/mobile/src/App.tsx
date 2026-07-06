@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { useChatRoom } from "./api/chat_room/v1/chat_room_rbt_react";
+import { useChatRoom } from "../../api/chat_room/v1/chat_room_rbt_react";
 
 // We can choose any id we want because the state will be constructed
 // when we make the first `.send()` call.

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CartItem, Money, Product } from "./gen/boutique/v1/demo_pb";
+import { CartItem, Money, Product } from "../../api/boutique/v1/demo_pb";
 
 export const SHIPPING_SINGLETON_ID = "shipping";
 export const CHECKOUT_SINGLETON_ID = "checkout";

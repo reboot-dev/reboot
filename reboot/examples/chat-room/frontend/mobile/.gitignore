@@ -8,8 +8,6 @@
 /web-build
 expo-env.d.ts
 
-# Generated Reboot client code (produced by `rbt generate`).
-/src/api/
 
 # Native build outputs.
 /ios
