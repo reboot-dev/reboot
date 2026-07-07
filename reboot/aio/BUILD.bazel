@@ -514,6 +514,7 @@ py_library(
         ":servicers_py",
         "//reboot/aio/auth:oauth_providers_py",
         "//reboot/aio/auth:oauth_server_py",
+        "//reboot/std/blobs/v1:blobs_py",
     ],
 )
 
