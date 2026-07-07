@@ -35,10 +35,11 @@ Codex issue that breaks Python asyncio cross-thread wakeups inside the
 sandbox. Reboot's main commands (`rbt generate`, `rbt dev run`, and
 related commands) rely on that asyncio behavior.
 
-If you accept the prompt, the installer writes the setting inside a
-managed Reboot block so it is easy to remove later. If you decline, the
-Codex install is skipped because the plugin's main commands will not
-work reliably under the current sandbox behavior.
+If you accept the prompt, the installer tags the setting with a
+`# reboot-plugin (managed)` comment so it is easy to find and remove
+later. If you decline, the Codex install is skipped because the
+plugin's main commands will not work reliably under the current
+sandbox behavior.
 :::
 
 Restart Codex after installation so the new plugin, skills, hooks, and
@@ -71,14 +72,24 @@ printf 'shell_environment_policy.set.PATH = "%s/bin:%s"\n' \
 printf 'sandbox_mode = "danger-full-access"\n'
 ```
 
-Copy the output into `~/.codex/config.toml`. It should look like this,
-with your actual plugin path:
+Copy the output into `~/.codex/config.toml`, at the **top** of the
+file (dotted keys pasted below a `[table]` header would become part of
+that table). It should look like this, with your actual plugin path:
 
 ```toml
 features.hooks = true
 shell_environment_policy.set.PATH = "/path/from/codex/plugin/list/bin:/your/existing/path"
 sandbox_mode = "danger-full-access"
 ```
+
+:::warning Merge with your existing config
+TOML forbids defining the same key or table twice, and Codex refuses
+to start on such a config ("duplicate key"). If your config already
+has a `[features]` or `[shell_environment_policy]` table, or already
+sets `sandbox_mode`, set the values inside your existing tables
+instead of pasting the dotted keys above — e.g. add `hooks = true`
+under your `[features]` table.
+:::
 
 Restart Codex after changing the config.
 
