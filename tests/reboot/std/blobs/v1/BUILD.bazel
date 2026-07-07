@@ -1,0 +1,16 @@
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "blobs_tests_py",
+    size = "medium",
+    srcs = [":blobs_tests.py"],
+    main = "blobs_tests.py",
+    deps = [
+        "//reboot/aio:applications_py",
+        "//reboot/aio:tests_py",
+        "//reboot/std/blobs/v1:blobs_py",
+        "@com_github_reboot_dev_reboot//rbt/std/blobs/v1:blobs_py_reboot",
+        requirement("aiohttp"),
+    ],
+)

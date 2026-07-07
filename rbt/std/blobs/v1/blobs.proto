@@ -1,0 +1,414 @@
+syntax = "proto3";
+
+package rbt.std.blobs.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+// Errors.
+
+// Raised when an upload-side call arrives after the blob has already
+// been committed (or is in the process of being deleted).
+message AlreadyCommitted {}
+
+// Raised when `DownloadUrl` is called before the blob has been
+// committed.
+message NotCommitted {}
+
+// Raised when the uploaded parts violate the blob's declared `size`
+// or `max_size`.
+message SizeMismatch {
+  // The total size of all parts reported uploaded so far.
+  uint64 bytes_uploaded = 1;
+}
+
+// Raised when `Commit` is called with no parts uploaded, or with a
+// set of part numbers that is not contiguous starting at 1.
+message IncompleteParts {}
+
+////////////////////////////////////////////////////////////////////////
+
+// The set of users allowed to download a blob. Wrapping the list in a
+// message lets the download allow-list be *omitted* (anyone who knows
+// the blob's id may download) distinctly from *present but empty* (no
+// one but app-internal callers may download).
+message Downloaders {
+  repeated string user_ids = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+// Blob: the control plane for one immutable-once-committed binary
+// object. This state holds only *metadata*; the bytes live in a
+// `BlobDataPlane` (see `data_plane.proto` — e.g. the local filesystem
+// server, or an S3-backed service) and travel directly between the
+// client and that data plane via URLs minted by `UploadInstructions`
+// and `DownloadUrl`. The upload protocol follows S3 multipart
+// semantics: numbered parts PUT to per-part URLs, each returning an
+// ETag, then a completion step that validates those ETags.
+
+message BlobPart {
+  // 1-based part number, following S3 multipart numbering.
+  uint32 number = 1;
+
+  // The ETag the data plane returned when this part was uploaded.
+  string etag = 2;
+
+  // Size of this part in bytes.
+  uint64 size = 3;
+}
+
+message Blob {
+  option (rbt.v1alpha1.state) = {
+    trusted_effects: true,
+  };
+
+  enum Status {
+    // Parts may be uploaded. The initial status.
+    UPLOADING = 0;
+
+    // `Commit` was called; the `CompleteUpload` workflow is
+    // finalizing the object in the storage backend.
+    COMMITTING = 1;
+
+    // The blob's bytes are immutable and downloadable.
+    COMMITTED = 2;
+
+    // `Remove` was called (or the upload expired); the
+    // `PerformRemove` workflow is removing the bytes from the
+    // storage backend.
+    DELETING = 3;
+
+    // The bytes are gone; only this metadata tombstone remains.
+    DELETED = 4;
+  }
+
+  Status status = 1;
+
+  // MIME type served on download, e.g. `image/png`.
+  string content_type = 2;
+
+  // Expected total size in bytes, when known at `Create` time;
+  // enables definite progress tracking and is enforced at `Commit`.
+  optional uint64 size = 3;
+
+  // Upper bound on the total size in bytes, enforced as parts are
+  // reported and at `Commit`.
+  optional uint64 max_size = 4;
+
+  // The user that may upload into this blob. Empty means anyone who
+  // knows this blob's id may upload; see the authorizer note in
+  // `reboot.std.blobs.v1.blobs`.
+  string uploader_id = 5;
+
+  // Who may download this blob. When unset (omitted at `Create`),
+  // anyone who knows the blob's id may download. When set, only the
+  // listed users may (an empty list means no one but app-internal
+  // callers). The uploader is NOT implicitly a downloader. See the
+  // authorizer note in `reboot.std.blobs.v1.blobs`.
+  optional Downloaders downloader_ids = 10;
+
+  // Storage-backend upload session id, set by the `BeginUpload`
+  // workflow. `UploadInstructions` reports `ready: false` until this
+  // is set.
+  optional string upload_id = 6;
+
+  // The parts reported uploaded so far, ordered by part number.
+  repeated BlobPart parts = 7;
+
+  // Composite ETag of the committed object.
+  optional string etag = 8;
+
+  // Why the most recent `CompleteUpload` attempt failed. Cleared on
+  // success; while set, `status` has reverted to `UPLOADING` so the
+  // client can re-upload parts and `Commit` again. The message
+  // describes the failure; it does not identify which parts, if any,
+  // were at fault.
+  optional string commit_error = 9;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message CreateRequest {
+  // MIME type served on download, e.g. `image/png`.
+  string content_type = 1;
+
+  // Expected exact total size in bytes, if known. Enables definite
+  // progress bars, and is enforced at `Commit`: the committed bytes
+  // must total exactly `size`. Optional and independent of
+  // `max_size`; see `max_size` for how the two interact.
+  optional uint64 size = 2;
+
+  // Upper bound on the total size in bytes. Enforced as parts are
+  // reported (via `PartUploaded`) and again at `Commit`: the running
+  // total must never exceed `max_size`. `size` and `max_size` are
+  // each optional and may be set together or independently. When
+  // both are set both constraints apply, so a sensible caller keeps
+  // `size <= max_size`.
+  optional uint64 max_size = 3;
+
+  // The user that may upload into this blob. Leave empty to allow
+  // anyone who knows this blob's id to upload.
+  string uploader_id = 4;
+
+  // Who may download this blob. Omit the field entirely to let anyone
+  // who knows the blob's id download it; set it (even to an empty
+  // list) to restrict downloads to the listed users. The uploader is
+  // NOT implicitly a downloader — omit them from the list if they
+  // shouldn't be able to download (e.g. a drop-box). Can be changed
+  // later with `SetDownloaders`.
+  optional Downloaders downloader_ids = 5;
+}
+
+message CreateResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message SetDownloadersRequest {
+  // The new download allow-list. Omit the field entirely to remove
+  // any restriction (anyone who knows the blob's id may download);
+  // set it (even to an empty list) to restrict downloads to the
+  // listed users.
+  optional Downloaders downloader_ids = 1;
+}
+
+message SetDownloadersResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message BeginUploadRequest {}
+
+message BeginUploadResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message UploadInstructionsRequest {
+  // The 1-based part numbers to mint upload URLs for.
+  repeated uint32 part_numbers = 1;
+}
+
+message PartUploadInstruction {
+  uint32 part_number = 1;
+
+  // URL to `PUT` this part's bytes to. May be relative (resolve it
+  // against the application's URL) or absolute (e.g. a presigned S3
+  // URL). The response's `ETag` header must be reported back via
+  // `PartUploaded`.
+  string url = 2;
+}
+
+message UploadInstructionsResponse {
+  // False until the `BeginUpload` workflow has provisioned the
+  // storage-backend upload session; call this method reactively (or
+  // poll) until true.
+  bool ready = 1;
+
+  // The part size uploads should use: every part except the last
+  // must be exactly this many bytes.
+  uint64 part_size = 2;
+
+  repeated PartUploadInstruction instructions = 3;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message PartUploadedRequest {
+  uint32 part_number = 1;
+
+  // The ETag returned by the data plane for this part. Validated by
+  // the storage backend at `Commit` time.
+  string etag = 2;
+
+  // Size of this part in bytes.
+  uint64 size = 3;
+}
+
+message PartUploadedResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message CommitRequest {}
+
+message CommitResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message CompleteUploadRequest {}
+
+message CompleteUploadResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message InfoRequest {}
+
+message InfoResponse {
+  Blob.Status status = 1;
+  string content_type = 2;
+  optional uint64 size = 3;
+  optional uint64 max_size = 4;
+  string uploader_id = 5;
+
+  // Total bytes across the parts reported uploaded so far. Together
+  // with `size` this gives upload progress, observable reactively by
+  // any client authorized to call `Info`.
+  uint64 bytes_uploaded = 6;
+
+  repeated BlobPart parts = 7;
+  optional string etag = 8;
+  optional string commit_error = 9;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message DownloadUrlRequest {
+  // How long the minted URL should remain valid. The storage
+  // backend's default (and maximum) applies when unset.
+  optional uint32 ttl_seconds = 1;
+}
+
+message DownloadUrlResponse {
+  // URL to `GET` the blob's bytes from. May be relative (resolve it
+  // against the application's URL) or absolute (e.g. a presigned S3
+  // URL).
+  string url = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+message RemoveRequest {}
+
+message RemoveResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message PerformRemoveRequest {}
+
+message PerformRemoveResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+message ExpireIfNotCommittedRequest {}
+
+message ExpireIfNotCommittedResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+service BlobMethods {
+  // Creates the blob's metadata and schedules the `BeginUpload`
+  // workflow that provisions an upload session in the storage
+  // backend. Only application code may call this; it is the
+  // application's chance to enforce quota and size policy (directly,
+  // or by setting `max_size`), to record which user may upload
+  // (`uploader_id`), and to restrict who may download (`downloader_ids`).
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: { constructor: {} },
+    };
+  }
+
+  // Replaces the blob's download allow-list. Application-mediated
+  // (app-internal only), like `Create`. Omit `downloader_ids` in the
+  // request to remove any restriction (anyone who knows the id may
+  // download again); set it to restrict downloads to the listed
+  // users.
+  rpc SetDownloaders(SetDownloadersRequest) returns (SetDownloadersResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  // Provisions the storage-backend upload session and records its
+  // `upload_id`. Scheduled by `Create`; not for direct use.
+  rpc BeginUpload(BeginUploadRequest) returns (BeginUploadResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  // Mints `PUT` URLs for the requested part numbers. Reports
+  // `ready: false` until `BeginUpload` has completed.
+  rpc UploadInstructions(UploadInstructionsRequest)
+      returns (UploadInstructionsResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [ "AlreadyCommitted" ],
+    };
+  }
+
+  // Records that a part was uploaded to the data plane, updating the
+  // progress observable via `Info`. Safe to call multiple times for the
+  // same part number; a re-uploaded part overwrites its previous
+  // record.
+  rpc PartUploaded(PartUploadedRequest) returns (PartUploadedResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      errors: [ "AlreadyCommitted", "SizeMismatch", "IncompleteParts" ],
+    };
+  }
+
+  // Validates the reported parts and schedules the `CompleteUpload`
+  // workflow that finalizes the object in the storage backend.
+  // Observe the outcome reactively via `Info`: `status` becomes
+  // `COMMITTED`, or reverts to `UPLOADING` with `commit_error` set.
+  rpc Commit(CommitRequest) returns (CommitResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+      errors: [ "AlreadyCommitted", "SizeMismatch", "IncompleteParts" ],
+    };
+  }
+
+  // Finalizes the object in the storage backend (which validates the
+  // reported part ETags). Scheduled by `Commit`; not for direct use.
+  rpc CompleteUpload(CompleteUploadRequest) returns (CompleteUploadResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  // Metadata and upload progress. Reactive: watch it to render a
+  // progress bar. Visible to anyone who may upload or download the
+  // blob: the `uploader_id` and any listed `downloader_ids`, plus anyone
+  // who knows the id whenever either side is left open.
+  rpc Info(InfoRequest) returns (InfoResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+    };
+  }
+
+  // Mints a time-limited URL from which the committed blob's bytes can
+  // be downloaded.
+  rpc DownloadUrl(DownloadUrlRequest) returns (DownloadUrlResponse) {
+    option (rbt.v1alpha1.method) = {
+      reader: {},
+      errors: [ "NotCommitted" ],
+    };
+  }
+
+  // Marks the blob for deletion and schedules the `PerformRemove`
+  // workflow that removes its bytes from the storage backend.
+  // (Named `Remove` because `Delete` is a reserved Reboot method
+  // name.)
+  rpc Remove(RemoveRequest) returns (RemoveResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+
+  // Removes the blob's bytes from the storage backend. Scheduled by
+  // `Remove` and `ExpireIfNotCommitted`; not for direct use.
+  rpc PerformRemove(PerformRemoveRequest) returns (PerformRemoveResponse) {
+    option (rbt.v1alpha1.method) = {
+      workflow: {},
+    };
+  }
+
+  // Expunges the blob if its upload was abandoned: scheduled by
+  // `Create` to run after the upload expiration period, it deletes
+  // the blob unless it has been committed by then. Not for direct
+  // use.
+  rpc ExpireIfNotCommitted(ExpireIfNotCommittedRequest)
+      returns (ExpireIfNotCommittedResponse) {
+    option (rbt.v1alpha1.method) = {
+      writer: {},
+    };
+  }
+}
