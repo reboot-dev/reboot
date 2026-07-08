@@ -13,10 +13,7 @@ from log.log import get_logger
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
 from rbt.v1alpha1.application.application_pb2 import ExamplePrompt
-from reboot.aio.auth.oauth_providers import (
-    OAuthProviderByEnvironment,
-    OAuthProviderSelector,
-)
+from reboot.aio.auth.oauth_providers import OAuthProviderSelector
 from reboot.aio.auth.oauth_server import OAuthServer
 from reboot.aio.auth.token_verifiers import (
     CompoundTokenVerifier,
@@ -290,10 +287,9 @@ class Application:
             and browser SPAs. It is resolved (and a `TokenVerifier`
             created automatically) when the application has a
             `User`-typed auto-construct servicer, or when it is set
-            alongside a `token_verifier` (the two compose). `None`
-            is equivalent to `OAuthProviderByEnvironment(dev=None,
-            prod=None)`. May be combined with `token_verifier`; see
-            there for the ordering semantics.
+            alongside a `token_verifier` (the two compose). May be
+            combined with `token_verifier`; see there for the ordering
+            semantics.
         :param title: a human-readable name for the application.
             Defaults to `application_name()` if unset.
         :param description: a human-readable description of the
@@ -309,10 +305,10 @@ class Application:
         # in `_mount_oauth_and_mcp` when the app needs a provider to
         # identify users (it has a `User`-typed auto-construct servicer
         # and no `token_verifier`) or when `oauth=` is set alongside a
-        # `token_verifier`, so the two compose. `oauth=None` is treated
-        # as `OAuthProviderByEnvironment(dev=None, prod=None)` there, so
-        # an app that needs OAuth but never configured one fails to
-        # start.
+        # `token_verifier`, so the two compose. An app with a
+        # `User`-typed auto-construct servicer but no `oauth=` fails to
+        # start: a `token_verifier=` authenticates requests but never
+        # auto-constructs those users.
 
         # Get all libraries including required dependent libraries.
         if libraries is not None:
@@ -534,6 +530,47 @@ class Application:
     def has_http_routes_or_mounts(self) -> bool:
         return len(self.http._api_routes) > 0 or len(self.http._mounts) > 0
 
+    def _auto_construct_state_type_full_names(self) -> list[StateTypeName]:
+        """The state type names of this application's auto-construct
+        servicers — those whose state is constructed on demand for an
+        authenticated user — in servicer order.
+        """
+        return [
+            servicer_cls.__state_type_name__
+            for servicer_cls in (self._servicers or [])
+            if servicer_cls._is_auto_construct
+        ]
+
+    def _require_oauth_for_auto_construct(self) -> None:
+        """Fail fast if the application has `User`-typed auto-construct
+        servicers but no `Application(oauth=...)`.
+
+        Auto-construction brings a user's state into being the first
+        time that user is seen, and a user is only ever identified by
+        signing in through the OAuth flow — so an OAuth provider is what
+        makes those states constructable. A `token_verifier=`
+        authenticates incoming requests but never triggers
+        auto-construction, so it can't take the place of `oauth=`.
+        """
+        if self._oauth is not None:
+            return
+        if not self._auto_construct_state_type_full_names():
+            return
+        raise InputError(
+            reason=(
+                "This application has `User`-typed auto-construct "
+                "servicers but no `Application(oauth=...)`. Their states "
+                "are constructed for a user the first time that user "
+                "signs in through the OAuth flow, so an OAuth provider "
+                "is what identifies the users to construct. A "
+                "`token_verifier=` authenticates requests but never "
+                "auto-constructs, so it can't take the place of `oauth=` "
+                "here. Configure `oauth=...`, e.g. "
+                "`Application(oauth=OAuthProviderByEnvironment(dev=..., "
+                "prod=...))`."
+            )
+        )
+
     def _mount_oauth_and_mcp(self) -> None:
         """Bring up the OAuth server (if the app needs one to identify
         users) and the MCP factory. Auto-registers MCP from servicers
@@ -550,8 +587,16 @@ class Application:
         # routes appended, then a later step raises) must not be retried
         # into duplicate routes on the same `Application`.
         self._mounted = True
+
+        # Auto-construction only ever happens through the OAuth sign-in
+        # flow, so an application with auto-construct servicers must
+        # configure `oauth=`; fail fast here if it hasn't.
+        self._require_oauth_for_auto_construct()
+
         servicers = self._servicers or []
-        auto_construct_state_type_full_names: list[StateTypeName] = []
+        auto_construct_state_type_full_names = (
+            self._auto_construct_state_type_full_names()
+        )
         new_session_hooks: list[Callable[
             [ExternalContext, Optional[str]],
             Awaitable[None],
@@ -564,9 +609,6 @@ class Application:
         # Wire up auto-construction of states for every authenticated user.
         for servicer_cls in servicers:
             if servicer_cls._is_auto_construct:
-                auto_construct_state_type_full_names.append(
-                    servicer_cls.__state_type_name__
-                )
 
                 async def maybe_auto_construct_based_on_user_id(
                     context: ExternalContext,
@@ -639,18 +681,15 @@ class Application:
         # users — it has a `User`-typed auto-construct servicer without a
         # `token_verifier` — or when `oauth=` is set alongside a
         # `token_verifier`, so the OAuth server's verifier composes ahead
-        # of the user's. The selector's `get()` raises if no provider is
-        # configured for the current environment (`oauth=None` is treated
-        # as a selector with no provider for any environment).
+        # of the user's.
         if (
             auto_construct_state_type_full_names and
             (self._token_verifier is None or self._oauth is not None)
         ):
-            selector = self._oauth or OAuthProviderByEnvironment(
-                dev=None,
-                prod=None,
-            )
-            provider = selector.get()
+            # `_require_oauth_for_auto_construct` (already called
+            # above) makes a missing `oauth=` impossible here.
+            assert self._oauth is not None
+            provider = self._oauth.get()
             # A provider that stores the identity provider's tokens
             # (`store_tokens=True`) persists them via the `oauth` library
             # (which encrypts them via `ciphertext`); require the developer
@@ -952,6 +991,12 @@ class Application:
             # rather than as a serving server.
             if os.environ.get(ENVVAR_REBOOT_MODE) == REBOOT_MODE_CONFIG:
                 try:
+                    # A config pod validates configuration and never
+                    # mounts the OAuth server, so enforce the
+                    # auto-construct-needs-`oauth=` requirement here too,
+                    # failing the config pod fast rather than letting a
+                    # misconfigured app roll out to serving pods.
+                    self._require_oauth_for_auto_construct()
                     server = ConfigServer(
                         serviceables=self._get_serviceables(),
                     )

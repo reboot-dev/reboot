@@ -22,10 +22,11 @@ from reboot.aio.auth.oauth_providers import (
     OAuthProviderByEnvironment,
     UserId,
 )
+from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
+from reboot.aio.contexts import ReaderContext
 from reboot.aio.exceptions import InputError
 from reboot.aio.tests import OAuthProviderForTest, Reboot
 from reboot.ping.ping import CounterServicer, UserServicer
-from reboot.settings import ENVVAR_RBT_SERVE
 from reboot.std.ciphertext.v1.ciphertext import ciphertext_library
 from reboot.std.collections.ordered_map.v1.ordered_map import (
     ordered_map_library,
@@ -276,34 +277,53 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertNotIn("Alice", response.text)
 
-    async def test_user_without_oauth_raises_in_prod(self):
-        """
-        In a real production deployment (`rbt serve` / Reboot Cloud), an
-        `Application` whose `oauth` selector has no provider for that
-        environment (here, the `oauth=None` default ≡ `dev=None,
-        prod=None`) fails to start when it has a `User` servicer — its
-        `OAuthProviderByEnvironment.get()` raises when the OAuth
-        server mounts at serve time. So an app can't silently ship
-        without choosing a real OAuth provider. (Under `rbt dev` and
-        in tests the `dev` arm is used instead.)
 
-        Uses the real `reboot.aio.applications.Application` (the test
-        `Application` always resolves to a concrete provider).
+class _NoOpTokenVerifier(TokenVerifier):
+    """A `token_verifier=` that has no opinion on any token. Enough to
+    show that supplying a verifier does not lift the `oauth=`
+    requirement for auto-construct state types."""
+
+    async def verify_token(
+        self,
+        context: ReaderContext,
+        token: Optional[str],
+    ) -> VerifyTokenResult:
+        return None
+
+
+class UserWithoutOAuthTest(unittest.IsolatedAsyncioTestCase):
+
+    async def test_user_without_oauth_raises(self):
         """
-        with mock.patch.dict(
-            os.environ,
-            {ENVVAR_RBT_SERVE: "true"},
-            clear=False,
-        ):
-            application = Application(
-                servicers=[UserServicer, CounterServicer],
-            )
-            with self.assertRaises(InputError) as context:
-                application._mount_oauth_and_mcp()
-        self.assertIn(
-            "No OAuth provider is configured",
-            str(context.exception),
+        An `Application` with a `User`-typed auto-construct servicer but
+        no `Application(oauth=...)` fails to start, because
+        auto-constructed users are only ever identified through the
+        OAuth sign-in flow. This holds even when a `token_verifier=` is
+        configured: a custom verifier authenticates requests but never
+        auto-constructs, so it can't stand in for `oauth=`.
+
+        The check runs at serve time, when the OAuth server and MCP
+        factory mount (in production via `Application.run()`), so the
+        app fails to start rather than at construction. This drives the
+        mount directly to observe that invariant.
+
+        Uses the real `reboot.aio.applications.Application`.
+        """
+        # Neither `oauth=` nor `token_verifier=`.
+        application = Application(servicers=[UserServicer, CounterServicer])
+        with self.assertRaises(InputError) as context:
+            application._mount_oauth_and_mcp()
+        self.assertIn("never auto-constructs", str(context.exception))
+
+        # A `token_verifier=` but still no `oauth=`: authenticating
+        # requests is not the same as identifying users to construct.
+        application = Application(
+            servicers=[UserServicer, CounterServicer],
+            token_verifier=_NoOpTokenVerifier(),
         )
+        with self.assertRaises(InputError) as context:
+            application._mount_oauth_and_mcp()
+        self.assertIn("never auto-constructs", str(context.exception))
 
 
 class ConsentScreenTest(unittest.IsolatedAsyncioTestCase):
