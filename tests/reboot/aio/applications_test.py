@@ -32,8 +32,8 @@ class _BearerIsUserIdForTest(TokenVerifier):
         return Auth(user_id=token)
 
 
-# Minimal `Servicer` stubs for testing `_mount_mcp` behavior.
-# Only the attributes accessed by `_mount_mcp` need real values.
+# Minimal `Servicer` stubs for exercising MCP auto-registration during
+# mounting. Only the attributes the mount path reads need real values.
 class _StubUserA(Servicer):
     __service_names__ = [ServiceName("test.v1.ServiceC")]
     __state_type_name__ = StateTypeName("test.v1.UserA")

@@ -48,7 +48,7 @@ class OAuthProviderForTest(OAuthProviderSelector):
 # flow.
 _FAKE_ONLY_NO_FLOWS_MESSAGE = (
     "`FakeOnly` supports no OAuth flows; in unit tests impersonate a "
-    "user with `Reboot.create_external_context_as(...)` instead."
+    "user with `await rbt.create_external_context_as(...)` instead."
 )
 
 
@@ -56,7 +56,7 @@ class FakeOnly(OAuthProvider):
     """OAuth provider that exists only so the test harness can stand up
     an `OAuthServer` to mint and verify test JWTs. Raises on every flow
     entry point; a unit test signs in as a user by impersonating them
-    with `Reboot.create_external_context_as(...)`.
+    with `await rbt.create_external_context_as(...)`.
     """
 
     def authorization_url(self, state: str, redirect_uri: str) -> str:

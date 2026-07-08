@@ -538,8 +538,8 @@ class Application:
         ]
 
     def _require_oauth_for_auto_construct(self) -> None:
-        """Fail fast if the application has `User`-typed auto-construct
-        servicers but no `Application(oauth=...)`.
+        """Fail fast if the application has auto-construct servicers but
+        no `Application(oauth=...)`.
 
         Auto-construction brings a user's state into being the first
         time that user is seen, and a user is only ever identified by
@@ -554,13 +554,12 @@ class Application:
             return
         raise InputError(
             reason=(
-                "This application has `User`-typed auto-construct "
-                "servicers but no `Application(oauth=...)`. Their states "
-                "are constructed for a user the first time that user "
-                "signs in through the OAuth flow, so an OAuth provider "
-                "is what identifies the users to construct. A "
-                "`token_verifier=` authenticates requests but never "
-                "auto-constructs, so it can't take the place of `oauth=` "
+                "This application has auto-construct servicers but no "
+                "`Application(oauth=...)`. Their states are constructed for a "
+                "user the first time that user signs in through the OAuth "
+                "flow, so an OAuth provider is what identifies the users to "
+                "construct. A `token_verifier=` authenticates requests but "
+                "never auto-constructs, so it can't take the place of `oauth=` "
                 "here. Configure `oauth=...`, e.g. "
                 "`Application(oauth=OAuthProviderByEnvironment(dev=..., "
                 "prod=...))`."
