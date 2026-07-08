@@ -12,7 +12,7 @@ For the impatient:
 The [Reboot '.proto' definitions](https://docs.reboot.dev/learn_more/define/overview#code-generation)
 can be found in the `api/` directory, grouped into
 subdirectories by proto package, while backend specific code can be
-found in {{ backend_locations }}{% if has_frontend %} and front end specific code in `frontend/web/`{% endif %}{% if has_mobile %} and a React Native (Expo) mobile front end in `frontend/mobile/`{% endif %}
+found in {{ backend_locations }}{% if has_frontend %} and front end specific code in `frontend/web/`{% endif %}{% if has_mcp %} and MCP (AI chat) UIs in `frontend/mcp/`{% endif %}{% if has_mobile %} and a React Native (Expo) mobile front end in `frontend/mobile/`{% endif %}
 {% if has_non_react_frontend %} and non-React front end in `frontend/reboot-non-react-web/`{% endif %}.
 
 _For more information on all of the Reboot examples, please [see the docs](https://docs.reboot.dev/full_stack_apps/examples)._
@@ -109,7 +109,27 @@ arguments that get expanded when running `rbt dev run`.
 {% if has_frontend %}
 ### Front end
 
-{% if backend_language == "python" %}
+{% if has_mcp %}
+Similar to the backend, the front end has dependencies that need to be installed before running it. Open a separate terminal/shell and do:
+```shell
+cd frontend/
+npm install
+npm run dev
+```
+
+That starts a single Vite dev server that serves both the web app and
+the MCP UIs; the backend proxies `/__/frontend/` to it. With
+`rbt dev run` still running, visit
+[http://localhost:9991](http://localhost:9991).
+
+#### MCP
+
+The application is also an MCP server. Connect an MCP client (for
+example, an AI chat) to
+[http://localhost:9991/mcp](http://localhost:9991/mcp) to let it call
+the application's tools and render its UIs (the `frontend/mcp/`
+directories) right in the chat.
+{% elif backend_language == "python" %}
 Similar to the backend, the front end has dependencies that need to be installed before running it. Open a separate terminal/shell and do:
 ```shell
 cd frontend/
@@ -122,9 +142,11 @@ To run the front end, open a separate terminal/shell and do:
 npm run dev:web
 ```
 {% endif %}
+{% if not has_mcp %}
 
 If using VSCode, the page will load automatically.
 If not using VSCode, visit [http://127.0.0.1:3000](http://127.0.0.1:3000).
+{% endif %}
 {% endif %}
 {% if has_tests %}
 

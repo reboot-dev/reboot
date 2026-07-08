@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.10",
+    "babel-preset-expo": "^57.0.2",
     "typescript": "~5.9.2"
   },
   "overrides": {

@@ -9,6 +9,7 @@ backend_locations: "top-level directories by application name"
 backend_language: python
 has_frontend: false
 has_non_react_frontend: false
+has_mcp: false
 has_mobile: false
 has_tests: true
 has_cloud: false

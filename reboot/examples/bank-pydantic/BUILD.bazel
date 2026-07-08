@@ -15,7 +15,7 @@ filegroup(
             ".rbt/**/*",
             "backend/api/**/*",
             "frontend/**/node_modules/**/*",
-            "frontend/web/dist/**/*",
+            "frontend/dist/**/*",
             "frontend/api/**/*",
             "frontend/package-lock.json",
             "frontend/mobile/package-lock.json",

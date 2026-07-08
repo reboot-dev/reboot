@@ -1,4 +1,14 @@
-from reboot.api import API, Field, Methods, Model, Reader, Transaction, Type
+from reboot.api import (
+    API,
+    UI,
+    Field,
+    Methods,
+    Model,
+    Reader,
+    Tool,
+    Transaction,
+    Type,
+)
 
 
 class BankState(Model):
@@ -48,27 +58,46 @@ BankMethods = Methods(
     sign_up=Transaction(
         request=SignUpRequest,
         response=None,
-        mcp=None,
+        description="Sign up a new customer with the given "
+        "`customer_id` (e.g. an email address). This example "
+        "runs a single bank whose `bank_id` is `reboot-bank`.",
+        mcp=Tool(),
     ),
     all_customer_ids=Reader(
         request=None,
         response=AllCustomerIdsResponse,
-        mcp=None,
+        description="List the `customer_id` of every customer "
+        "that has signed up with the bank.",
+        mcp=Tool(),
     ),
     transfer=Transaction(
         request=TransferRequest,
         response=None,
-        mcp=None,
+        description="Transfer an amount between two accounts. "
+        "Get `from_account_id` and `to_account_id` from "
+        "`bank_account_balances`.",
+        mcp=Tool(),
     ),
     open_customer_account=Transaction(
         request=OpenCustomerAccountRequest,
         response=None,
-        mcp=None,
+        description="Open a new account for an existing "
+        "customer with an initial deposit.",
+        mcp=Tool(),
     ),
     account_balances=Reader(
         request=None,
         response=AccountBalancesResponse,
-        mcp=None,
+        description="List every customer of the bank along "
+        "with their accounts (`account_id`) and balances.",
+        mcp=Tool(),
+    ),
+    show_accounts=UI(
+        request=None,
+        path="frontend/mcp/accounts",
+        title="Bank Accounts",
+        description="Show a live table of every customer's "
+        "accounts and balances.",
     ),
 )
 

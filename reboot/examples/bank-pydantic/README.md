@@ -14,7 +14,7 @@ Reboot, with its API defined using Pydantic models.
 The [Reboot '.proto' definitions](https://docs.reboot.dev/learn_more/define/overview#code-generation)
 can be found in the `api/` directory, grouped into
 subdirectories by proto package, while backend specific code can be
-found in `backend/` and front end specific code in `frontend/web/` and a React Native (Expo) mobile front end in `frontend/mobile/`.
+found in `backend/` and front end specific code in `frontend/web/` and MCP (AI chat) UIs in `frontend/mcp/` and a React Native (Expo) mobile front end in `frontend/mobile/`.
 
 _For more information on all of the Reboot examples, please [see the docs](https://docs.reboot.dev/full_stack_apps/examples)._
 
@@ -88,11 +88,21 @@ Similar to the backend, the front end has dependencies that need to be installed
 ```shell
 cd frontend/
 npm install
-npm start
+npm run dev
 ```
 
-If using VSCode, the page will load automatically.
-If not using VSCode, visit [http://127.0.0.1:3000](http://127.0.0.1:3000).
+That starts a single Vite dev server that serves both the web app and
+the MCP UIs; the backend proxies `/__/frontend/` to it. With
+`rbt dev run` still running, visit
+[http://localhost:9991](http://localhost:9991).
+
+#### MCP
+
+The application is also an MCP server. Connect an MCP client (for
+example, an AI chat) to
+[http://localhost:9991/mcp](http://localhost:9991/mcp) to let it call
+the application's tools and render its UIs (the `frontend/mcp/`
+directories) right in the chat.
 
 ### Tests
 

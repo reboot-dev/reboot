@@ -1,9 +1,6 @@
 import { ArrowRightLeft, DollarSign, UserPlus, Wallet } from "lucide-react";
 import { useState, type FC } from "react";
-import {
-  useBank,
-  type UseBankApi,
-} from "../../api/bank/v1/pydantic/bank_rbt_react";
+import { useBank, type UseBankApi } from "@api/bank/v1/pydantic/bank_rbt_react";
 import "./App.css";
 
 const Transfer: FC<{ bank: UseBankApi }> = ({ bank }) => {

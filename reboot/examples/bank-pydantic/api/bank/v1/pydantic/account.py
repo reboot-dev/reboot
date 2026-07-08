@@ -1,4 +1,4 @@
-from reboot.api import API, Field, Methods, Model, Reader, Type, Writer
+from reboot.api import API, Field, Methods, Model, Reader, Tool, Type, Writer
 
 
 class AccountState(Model):
@@ -25,18 +25,26 @@ AccountMethods = Methods(
     balance=Reader(
         request=None,
         response=BalanceResponse,
-        mcp=None,
+        description="Get the balance of an account. Get the "
+        "`account_id` from `bank_account_balances`.",
+        mcp=Tool(),
     ),
     deposit=Writer(
         request=DepositRequest,
         response=None,
-        mcp=None,
+        description="Deposit an amount into an account. Get "
+        "the `account_id` from `bank_account_balances`.",
+        mcp=Tool(),
     ),
     withdraw=Writer(
         request=WithdrawRequest,
         response=None,
         errors=[OverdraftError],
-        mcp=None,
+        description="Withdraw an amount from an account; "
+        "fails with an overdraft error if the balance is "
+        "insufficient. Get the `account_id` from "
+        "`bank_account_balances`.",
+        mcp=Tool(),
     ),
     # Must use this method to create an instance of Account.
     open=Writer(

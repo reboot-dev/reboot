@@ -7,6 +7,7 @@ backend_locations: "`backend/`"
 backend_language: python
 has_frontend: true
 has_non_react_frontend: false
+has_mcp: true
 has_mobile: true
 has_tests: true
 has_cloud: false
