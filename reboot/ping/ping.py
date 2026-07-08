@@ -150,6 +150,17 @@ class PongServicer(Pong.Servicer):
 
 class UserServicer(User.Servicer):
 
+    async def set_claims(
+        self,
+        context: TransactionContext,
+        request: User.SetClaimsRequest,
+    ) -> None:
+        """Transcribe the delivered identity claims into state. A full
+        replace: the request carries the complete, current claims on
+        every sign-in, so re-deriving `email` each time keeps it
+        fresh (and converges when it changes)."""
+        self.state.email = request.claims.get("email", "")
+
     async def create_counter(
         self,
         context: TransactionContext,
@@ -182,7 +193,7 @@ class UserServicer(User.Servicer):
 
     async def whoami(self, context: ReaderContext) -> WhoAmIResponse:
         user_id = context.auth.user_id if context.auth else "unauthenticated"
-        return WhoAmIResponse(user_id=user_id)
+        return WhoAmIResponse(user_id=user_id, email=self.state.email)
 
 
 class CounterServicer(Counter.Servicer):
@@ -274,6 +285,9 @@ async def main():
         # TODO: investigate why MCP inspectors don't refresh this
         # token.
         access_token_ttl_seconds=3600,
+        # The `email` identity claim, which `UserServicer.set_claims`
+        # transcribes into `User` state.
+        claims=["email"],
     )
 
     application = Application(

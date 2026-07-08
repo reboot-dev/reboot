@@ -220,6 +220,52 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
                     # `make_bearer_token`.
                     self.assertEqual(data["user_id"], "test-user")
 
+    async def test_claims_transcribed_into_user_state(self):
+        """
+        Sign-in claims reach the `User` servicer: ping's `set_claims`
+        transcribes the `email` identity claim into state, `whoami`
+        surfaces it, and a later sign-in with a changed email keeps it
+        fresh — every sign-in delivers, so an A -> B -> A email change
+        ends at A.
+        """
+        await self.rbt.up(
+            Application(
+                servicers=[UserServicer, CounterServicer],
+            ),
+        )
+
+        user_id = "claims-user"
+        token = await self.rbt.make_valid_oauth_access_token(
+            user_id=user_id,
+            claims={"email": "first@example.com"},
+        )
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            bearer_token=token,
+        )
+        response = await User.ref(user_id).whoami(context)
+        self.assertEqual(response.email, "first@example.com")
+
+        # Sign in again with a changed email; the delivery reaches
+        # `set_claims` again rather than being deduplicated away.
+        await self.rbt.make_valid_oauth_access_token(
+            user_id=user_id,
+            claims={"email": "second@example.com"},
+        )
+        response = await User.ref(user_id).whoami(context)
+        self.assertEqual(response.email, "second@example.com")
+
+        # A third sign-in going back to the first email converges on
+        # it: every sign-in delivers, so an A -> B -> A email change
+        # ends at A rather than being mistaken for a replay of the
+        # first delivery.
+        await self.rbt.make_valid_oauth_access_token(
+            user_id=user_id,
+            claims={"email": "first@example.com"},
+        )
+        response = await User.ref(user_id).whoami(context)
+        self.assertEqual(response.email, "first@example.com")
+
     async def test_ui_tool_ids_mapping(self):
         await self.rbt.up(
             Application(
