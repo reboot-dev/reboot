@@ -178,10 +178,6 @@ test-friendly arm:
   `oauth=OAuthProviderForTest(Anonymous())` (both from
   `reboot.aio.tests` / `reboot.aio.auth.oauth_providers`) to the
   test's `Application(...)`, as in the template above.
-- **Web app** (production uses `token_verifier=<your IdP verifier>`): pass `token_verifier=TokenVerifierForTest()` (from
-  `reboot.aio.tests`) instead. Minted tokens won't — and don't need
-  to — pass your production verifier; the verifier seam is the
-  supported swap point, and the authorizers still run for real.
 - **No identity wiring** (app has no `User` type and no rules that
   need identity): a plain `create_external_context(name=...)`
   without a bearer token is fine.

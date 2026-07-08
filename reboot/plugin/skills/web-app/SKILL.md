@@ -86,11 +86,7 @@ Recommended sequence:
    externally reachable. See
    `python/references/servicer-authorizer.md`,
    `python/references/auth-allow-if.md`, and
-   `python/references/auth-built-in-predicates.md`. In unit tests,
-   substitute `TokenVerifierForTest()` (from `reboot.aio.tests`)
-   for your IdP verifier and impersonate users with
-   `bearer_token=rbt.make_valid_oauth_access_token(user_id=...)`
-   — the authorizer rules still run for real.
+   `python/references/auth-built-in-predicates.md`.
 3. **Public, unauthenticated endpoints** (health checks, public
    sign-up, public catalog reads): mark these explicitly with
    `allow()`. That's the one legitimate use.
@@ -478,12 +474,8 @@ application directory.**
     `Service.ref(id).method(context, ...)` for all calls —
     never instantiate Servicers directly. Register the **real**
     servicers — never subclass a servicer in tests to weaken its
-    `authorizer()`. Impersonate users instead:
-    `Application(..., token_verifier=TokenVerifierForTest())`
-    (from `reboot.aio.tests`; it swaps only the identity layer,
-    standing in for your production IdP verifier) plus
-    `bearer_token=rbt.make_valid_oauth_access_token(user_id=...)`
-    — see the impersonation pattern in `testing-harness.md`. Run
+    `authorizer()`; see the impersonation pattern in
+    `testing-harness.md`. Run
     `cd backend && uv run pytest` and fix anything that fails.
     Then type-check: run `uv run mypy backend/` from the project
     root and fix every error (config and rationale in
