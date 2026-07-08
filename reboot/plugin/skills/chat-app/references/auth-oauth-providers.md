@@ -55,7 +55,16 @@ Pass `claims=` (e.g. `claims=["email"]`) to have the identity
 delivered as verified identity claims on every sign-in; the scopes
 those claims need (`email` for the email claims, `profile` for the
 rest) are requested automatically, so allow them on the OAuth2
-client in the Ory Console.
+client in the Ory Console. Optionally pass a
+`webhook_secret=` (it requires `claims=` — delivering claims is all
+the webhook does) and configure an Ory Action calling
+`POST /__/oauth/ory/webhook` after the settings flow (the `Ory`
+class docstring shows the exact configuration): a user's email
+change then propagates to the application immediately instead of at
+their next sign-in — for users who have already signed in here (the
+webhook never materializes a `User` for an identity that hasn't).
+Identity edits made through Ory's _admin_ API don't run flow-scoped
+actions, so those still propagate at the next sign-in.
 
 **Identity claims.** Signing in identifies the user; pass `claims=`
 at provider construction to also learn _about_ them: e.g.

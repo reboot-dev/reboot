@@ -17376,6 +17376,43 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
                 context, claims=claims
             )
 
+    @staticmethod
+    async def _set_claims_if_exists(
+        context: IMPORT_reboot_aio_external.ExternalContext,
+        state_id: str,
+        claims: IMPORT_typing.Mapping[str, IMPORT_typing.Any],
+    ) -> None:
+        """Deliver a user's verified identity claims to their
+        `User` — but ONLY if it already exists;
+        never construct it. This is for identity changes that arrive
+        outside a sign-in (e.g. an identity provider webhook, which
+        fires for every identity in the provider, most of which may
+        never have signed into this application): materializing a
+        `User` for an identity that never signed in
+        would be wrong.
+
+        Racing a user's very first sign-in is safe: if the sign-in
+        constructs the state first, this delivery lands; if it has
+        not yet, this skips and the sign-in's own claims delivery
+        carries the current claims.
+        """
+        try:
+            await User.ref(state_id).always().set_claims(
+                context, claims=claims
+            )
+        except User.SetClaimsAborted as aborted:
+            # A `set_claims` on a state that was never
+            # constructed aborts with `StateNotConstructed` (and logs
+            # one `WARNING`); that is exactly the "identity never
+            # signed in here" case, so swallow it. Any other abort is
+            # a real error and propagates.
+            if isinstance(
+                aborted.error,
+                IMPORT_rbt_v1alpha1.errors_pb2.StateNotConstructed,
+            ):
+                return
+            raise
+
     def ref(
         self,
         *,

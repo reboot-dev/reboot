@@ -778,6 +778,7 @@ class Application:
                     auto_construct_state_type_full_names
                 ),
                 authenticated=self._authenticated,
+                claims_changed=self._set_claims_if_exists,
                 allowed_origins=self._allowed_origins,
             )
             self._oauth_server = oauth_server
@@ -827,6 +828,36 @@ class Application:
             *(
                 servicer_cls.
                 _authenticated(context, state_id=user_id, claims=claims)
+                for servicer_cls in (self._servicers or [])
+                if servicer_cls._is_auto_construct
+            )
+        )
+
+    async def _set_claims_if_exists(
+        self,
+        context: ExternalContext,
+        user_id: str,
+        claims: Mapping[str, Any],
+    ) -> None:
+        """Deliver a user's verified identity claims to every
+        auto-construct state type that already exists for them, never
+        constructing one.
+
+        This is the entrypoint for identity changes that arrive
+        outside a sign-in — an identity provider webhook, which fires
+        instance-wide for every identity in the provider — so it must
+        not materialize state for an identity that never signed into
+        this application. A user whose state does not exist yet is
+        skipped; their next sign-in delivers current claims itself.
+
+        `context` is app-internal: claims ride the delivery, so only
+        trusted app code may assert them.
+        """
+        await asyncio.gather(
+            *(
+                servicer_cls._set_claims_if_exists(
+                    context, state_id=user_id, claims=claims
+                )
                 for servicer_cls in (self._servicers or [])
                 if servicer_cls._is_auto_construct
             )

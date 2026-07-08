@@ -11,6 +11,7 @@ import unittest
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager, OAuthTokens
+from reboot.aio.aborted import Aborted
 from reboot.aio.applications import Application
 from reboot.aio.auth.oauth_providers import (
     Anonymous,
@@ -1640,6 +1641,389 @@ class OryDomainTest(unittest.TestCase):
         self.assertTrue(
             url.startswith("https://slug.projects.oryapis.com/oauth2/auth?")
         )
+
+
+def _ory(**kwargs: Any) -> Ory:
+    """An `Ory` with throwaway credentials, for tests that only
+    exercise claims handling."""
+    return Ory(
+        domain="slug.projects.oryapis.com",
+        client_id="id",
+        client_secret="secret",
+        **kwargs,
+    )
+
+
+class OryClaimsFromIdentityTest(unittest.TestCase):
+    """`Ory._claims_from_identity` maps a webhook's identity payload
+    onto the same claims shape the sign-in code exchange produces —
+    the requested claims, under their presented names — so both paths
+    deliver consistently."""
+
+    _ALL_CLAIMS = [
+        "email",
+        "email_verified",
+        "name",
+        "given_name",
+        "family_name",
+        "username",
+        "website",
+        "updated_at",
+    ]
+
+    def test_maps_email_and_derives_email_verified(self):
+        self.assertEqual(
+            _ory(claims=self._ALL_CLAIMS)._claims_from_identity(
+                {
+                    "id":
+                        "identity-1",
+                    "traits": {
+                        "email": "jane@example.com"
+                    },
+                    "verifiable_addresses":
+                        [
+                            {
+                                "via": "email",
+                                "value": "other@example.com",
+                                "verified": True,
+                            },
+                            {
+                                "via": "email",
+                                "value": "jane@example.com",
+                                "verified": False,
+                            },
+                        ],
+                }
+            ),
+            {
+                "email": "jane@example.com",
+                "email_verified": False
+            },
+        )
+
+    def test_without_verifiable_addresses_no_email_verified(self):
+        self.assertEqual(
+            _ory(claims=self._ALL_CLAIMS)._claims_from_identity(
+                {
+                    "id": "identity-1",
+                    "traits": {
+                        "email": "jane@example.com"
+                    },
+                }
+            ),
+            {"email": "jane@example.com"},
+        )
+
+    def test_structured_name_trait_yields_given_and_family_name(self):
+        # Kratos identity schemas may model `name` as a structured
+        # trait; Ory maps such a `name` to `given_name` /
+        # `family_name`, and the OIDC `name` claim is a string, so the
+        # webhook must derive the same two rather than deliver the
+        # object.
+        claims = _ory(claims=self._ALL_CLAIMS)._claims_from_identity(
+            {
+                "id": "identity-1",
+                "traits":
+                    {
+                        "email": "jane@example.com",
+                        "name": {
+                            "first": "Jane",
+                            "last": "Doe",
+                        },
+                    },
+            }
+        )
+        self.assertEqual(
+            claims,
+            {
+                "email": "jane@example.com",
+                "given_name": "Jane",
+                "family_name": "Doe",
+            },
+        )
+        assert claims is not None  # Narrow for the type checker.
+        self.assertNotIn("name", claims)
+
+    def test_string_name_trait_is_kept(self):
+        self.assertEqual(
+            _ory(claims=self._ALL_CLAIMS)._claims_from_identity(
+                {
+                    "id": "identity-1",
+                    "traits": {
+                        "name": "Jane Doe"
+                    },
+                }
+            ),
+            {"name": "Jane Doe"},
+        )
+
+    def test_updated_at_comes_from_the_top_level_identity_field(self):
+        # Ory sources the `updated_at` claim from the identity's own
+        # `updated_at`, which sits alongside `traits` rather than
+        # inside it.
+        self.assertEqual(
+            _ory(claims=self._ALL_CLAIMS)._claims_from_identity(
+                {
+                    "id": "identity-1",
+                    "updated_at": "2026-07-21T12:00:00.000000Z",
+                    "traits": {
+                        "name": "Jane Doe"
+                    },
+                }
+            ),
+            {
+                "name": "Jane Doe",
+                "updated_at": "2026-07-21T12:00:00.000000Z",
+            },
+        )
+
+    def test_username_and_website_traits_pass_through(self):
+        # Ory sources these two straight from the identity's traits,
+        # so the webhook delivers them as they come.
+        self.assertEqual(
+            _ory(claims=self._ALL_CLAIMS)._claims_from_identity(
+                {
+                    "id": "identity-1",
+                    "traits":
+                        {
+                            "username": "jane",
+                            "website": "https://jane.example",
+                        },
+                }
+            ),
+            {
+                "username": "jane",
+                "website": "https://jane.example",
+            },
+        )
+
+    def test_only_requested_claims_under_presented_names(self):
+        # The webhook honors the same `claims=` request the sign-in
+        # exchange honors: unrequested traits stay inside the
+        # provider, and a mapped claim is delivered under its
+        # presented name.
+        self.assertEqual(
+            _ory(
+                claims={
+                    "email": "verified-email"
+                },
+            )._claims_from_identity(
+                {
+                    "id": "identity-1",
+                    "traits":
+                        {
+                            "email": "jane@example.com",
+                            "name": "Jane Doe",
+                        },
+                }
+            ),
+            {"verified-email": "jane@example.com"},
+        )
+
+
+_ORY_WEBHOOK_PATH = "/__/oauth/ory/webhook"
+
+_ORY_WEBHOOK_KEY_HEADER = "x-ory-webhook-key"
+
+_ORY_WEBHOOK_SECRET = "webhook-s3cret"
+
+
+class OryWebhookSecretRequiresClaimsTest(unittest.TestCase):
+
+    def test_webhook_secret_without_claims_rejected(self):
+        # Delivering identity claims is all the webhook does, so a
+        # `webhook_secret=` with no `claims=` to deliver is a
+        # configuration contradiction, rejected at construction.
+        with self.assertRaises(InputError) as context:
+            _ory(webhook_secret=_ORY_WEBHOOK_SECRET)
+        self.assertIn("`claims=`", str(context.exception))
+
+    def test_webhook_secret_with_claims_accepted(self):
+        _ory(
+            claims=["email"],
+            webhook_secret=_ORY_WEBHOOK_SECRET,
+        )
+
+    def test_empty_webhook_secret_rejected(self):
+        # An empty secret reads as "configured" while authenticating
+        # nobody, so `validate()` calls it out rather than letting the
+        # webhook quietly stay unexposed.
+        provider = _ory(claims=["email"], webhook_secret="")
+        with self.assertRaises(InputError) as context:
+            provider.validate()
+        self.assertIn("Ory", str(context.exception))
+        self.assertIn("`webhook_secret`", str(context.exception))
+
+
+class OryWebhookTest(unittest.IsolatedAsyncioTestCase):
+    """The Ory settings-flow webhook propagates identity changes
+    between sign-ins — but only for users who have already signed into
+    this application. An authenticated call for an existing `User`
+    reaches `set_claims`, so a changed email refreshes immediately
+    rather than at the user's next sign-in; a call for an identity
+    that never signed in here is a NOOP, never materializing a
+    `User`."""
+
+    async def asyncSetUp(self):
+        self.rbt = Reboot()
+        await self.rbt.start()
+
+    async def asyncTearDown(self):
+        await self.rbt.stop()
+
+    async def _up(self, webhook_secret: Optional[str]) -> None:
+        await self.rbt.up(
+            Application(
+                servicers=[
+                    AutoConstructUserServicer,
+                    AutoConstructProfileServicer,
+                ],
+                oauth=OAuthProviderForTest(
+                    Ory(
+                        domain="slug.projects.oryapis.com",
+                        client_id="id",
+                        client_secret="secret",
+                        claims=["email", "email_verified"],
+                        webhook_secret=webhook_secret,
+                    )
+                ),
+            )
+        )
+        self.webhook_url = self.rbt.http_localhost_url(_ORY_WEBHOOK_PATH)
+        # An app-internal context for reading back the delivered
+        # state.
+        self.context = self.rbt.create_external_context(
+            name=f"internal-{self.id()}",
+            app_internal=True,
+        )
+
+    async def _sign_in(self, user_id: str, email: str) -> None:
+        """Sign `user_id` in with the given email, constructing their
+        `User` and delivering the initial claims the way a real
+        sign-in does."""
+        await self.rbt.make_valid_oauth_access_token(
+            user_id=user_id,
+            claims={"email": email},
+        )
+
+    def _payload(self, identity_id: str, email: str) -> dict:
+        """A webhook body of the shape the documented Ory Action
+        configuration (`{ identity: ctx.identity }`) produces."""
+        return {
+            "identity":
+                {
+                    "id":
+                        identity_id,
+                    "traits": {
+                        "email": email,
+                    },
+                    "verifiable_addresses":
+                        [{
+                            "via": "email",
+                            "value": email,
+                            "verified": True,
+                        },],
+                },
+        }
+
+    async def _post(
+        self,
+        payload: dict,
+        secret: Optional[str] = _ORY_WEBHOOK_SECRET,
+    ) -> httpx.Response:
+        headers = {}
+        if secret is not None:
+            headers[_ORY_WEBHOOK_KEY_HEADER] = secret
+        async with httpx.AsyncClient(
+            timeout=_HTTP_TIMEOUT_SECONDS,
+        ) as client:
+            return await client.post(
+                self.webhook_url,
+                json=payload,
+                headers=headers,
+            )
+
+    async def test_unauthenticated_webhook_is_rejected(self):
+        await self._up(webhook_secret=_ORY_WEBHOOK_SECRET)
+        await self._sign_in("identity-1", "jane@example.com")
+
+        missing = await self._post(
+            self._payload("identity-1", "changed@example.com"),
+            secret=None,
+        )
+        self.assertEqual(missing.status_code, 401)
+
+        wrong = await self._post(
+            self._payload("identity-1", "changed@example.com"),
+            secret="not-the-secret",
+        )
+        self.assertEqual(wrong.status_code, 401)
+
+        # Neither call delivered anything: the email is unchanged.
+        user = await AutoConstructUser.ref("identity-1").get(self.context)
+        self.assertEqual(user.email, "jane@example.com")
+
+    async def test_webhook_without_secret_is_not_mounted(self):
+        # Without a shared secret there is no way to authenticate
+        # Ory's calls, so the route must not exist at all.
+        await self._up(webhook_secret=None)
+
+        response = await self._post(
+            self._payload("identity-1", "jane@example.com"),
+        )
+        self.assertEqual(response.status_code, 404)
+
+    async def test_malformed_body_is_a_bad_request(self):
+        # An authenticated call whose body we cannot parse is the
+        # caller's problem: it must read as a 400, including for a
+        # body that is not even valid UTF-8.
+        await self._up(webhook_secret=_ORY_WEBHOOK_SECRET)
+
+        async with httpx.AsyncClient(
+            timeout=_HTTP_TIMEOUT_SECONDS,
+        ) as client:
+            for body in (b"not json at all", b'{"identity": "\xff"}'):
+                response = await client.post(
+                    self.webhook_url,
+                    content=body,
+                    headers={
+                        _ORY_WEBHOOK_KEY_HEADER: _ORY_WEBHOOK_SECRET,
+                    },
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json()["error"], "invalid_json")
+
+    async def test_webhook_for_unknown_identity_is_a_noop(self):
+        # Ory webhooks fire for every identity in the project; one for
+        # an identity that never signed into this application must not
+        # materialize a `User` for them.
+        await self._up(webhook_secret=_ORY_WEBHOOK_SECRET)
+
+        response = await self._post(
+            self._payload("never-signed-in", "stranger@example.com"),
+        )
+        self.assertEqual(response.status_code, 204)
+
+        with self.assertRaises(Aborted):
+            await AutoConstructUser.ref("never-signed-in").get(self.context)
+
+    async def test_webhook_refreshes_existing_user(self):
+        await self._up(webhook_secret=_ORY_WEBHOOK_SECRET)
+        await self._sign_in("identity-1", "jane@example.com")
+
+        # The user changes their email in a settings flow; the webhook
+        # reaches `set_claims` and refreshes it immediately, without
+        # waiting for the next sign-in.
+        response = await self._post(
+            self._payload("identity-1", "jane@new.example"),
+        )
+        self.assertEqual(response.status_code, 204)
+
+        user = await AutoConstructUser.ref("identity-1").get(self.context)
+        self.assertEqual(user.email, "jane@new.example")
+        # The `User` still exists from the sign-in; the webhook
+        # updated it rather than constructing a new one.
+        self.assertEqual(user.profile_id, "profile-identity-1")
 
 
 class RequestedClaimsTest(unittest.TestCase):

@@ -26,6 +26,7 @@ from reboot.aio.auth import (
 )
 from reboot.aio.auth.allowed_origins import is_allowed_origin
 from reboot.aio.auth.oauth_providers import (
+    ClaimsChanged,
     OAuthProvider,
     OAuthTokens,
     UserId,
@@ -322,6 +323,7 @@ class OAuthServer:
         authenticated: Optional[
             Callable[[ExternalContext, str, Optional[Mapping[str, Any]]],
                      Awaitable[None]]] = None,
+        claims_changed: Optional[ClaimsChanged] = None,
         allowed_origins: Optional[Sequence[str]] = None,
     ):
         """`authenticated`, if given, runs right after each fresh
@@ -333,6 +335,13 @@ class OAuthServer:
         `claims=`; `None` on refreshes and other mints that don't
         consult the provider). It must be idempotent and inexpensive —
         it can run on every mint for the same user.
+
+        `claims_changed`, if given, is wired into the provider
+        (via `use_claims_changed`) so that provider-mounted
+        routes firing outside a sign-in — e.g. an identity provider
+        webhook — can deliver claims to a user whose state already
+        exists, without ever materializing state for an identity that
+        never signed in.
 
         `allowed_origins` is `Application(allowed_origins=...)`'s
         explicit allow-list (with `None` meaning it, like `oauth=`,
@@ -347,6 +356,7 @@ class OAuthServer:
             auto_construct_state_type_full_names or []
         )
         self._authenticated = authenticated
+        self._claims_changed = claims_changed
         self._access_token_ttl_seconds = provider.access_token_ttl_seconds
         # Derived from the Reboot-managed cryptographic root keys; raises
         # if `REBOOT_CRYPTO_ROOT_KEYS` is unset/malformed (fail fast at
@@ -424,7 +434,12 @@ class OAuthServer:
         http.post(_SIGNOUT_PATH)(self.signout)
         http.get(_WHOAMI_PATH)(self.whoami)
 
-        # Let the provider register any additional routes it needs.
+        # Let the provider register any additional routes it needs,
+        # wiring in the set-claims-if-exists entrypoint first so those
+        # routes (e.g. an identity provider webhook) can deliver claims
+        # to existing users outside a sign-in.
+        if self._claims_changed is not None:
+            self._provider.use_claims_changed(self._claims_changed)
         self._provider.mount_routes(http)
 
     # ---- Helpers ----
