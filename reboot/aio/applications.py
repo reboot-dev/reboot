@@ -18,7 +18,10 @@ from reboot.aio.auth.oauth_providers import (
     OAuthProviderSelector,
 )
 from reboot.aio.auth.oauth_server import OAuthServer
-from reboot.aio.auth.token_verifiers import TokenVerifier
+from reboot.aio.auth.token_verifiers import (
+    CompoundTokenVerifier,
+    TokenVerifier,
+)
 from reboot.aio.exceptions import InputError
 from reboot.aio.external import ExternalContext, InitializeContext
 from reboot.aio.http import NodeWebFramework, PythonWebFramework, WebFramework
@@ -271,15 +274,26 @@ class Application:
             privileges instead.
         :param token_verifier: a TokenVerifier that will be used to
             verify authorization bearer tokens passed to the
-            application.
+            application. May be combined with `oauth`: the OAuth
+            server's verifier runs first, and any token it has no
+            opinion on (i.e. anything that is not a Reboot-minted
+            access JWT) falls through to this verifier. A
+            Reboot-minted access JWT that fails verification (e.g.
+            one that has expired) is rejected outright, without
+            falling through. The MCP endpoint (`/mcp`) accepts only
+            Reboot-minted access JWTs; tokens verified by this
+            verifier authenticate Reboot RPCs, not `/mcp`.
         :param oauth: an `OAuthProviderSelector` (e.g.
             `OAuthProviderByEnvironment(dev=Development(),
             prod=Google(...))`) that chooses the OAuth provider for
-            authenticating MCP clients. It is resolved (and a
-            `TokenVerifier` created automatically) only when the
-            application has a `User`-typed auto-construct servicer. `None`
+            authenticating users. Works for both MCP chat clients
+            and browser SPAs. It is resolved (and a `TokenVerifier`
+            created automatically) when the application has a
+            `User`-typed auto-construct servicer, or when it is set
+            alongside a `token_verifier` (the two compose). `None`
             is equivalent to `OAuthProviderByEnvironment(dev=None,
-            prod=None)`. Mutually exclusive with `token_verifier`.
+            prod=None)`. May be combined with `token_verifier`; see
+            there for the ordering semantics.
         :param title: a human-readable name for the application.
             Defaults to `application_name()` if unset.
         :param description: a human-readable description of the
@@ -291,21 +305,14 @@ class Application:
         transaction and ensure that the transaction has finished before
         serving any other calls on the servicers.
         """
-        if oauth is not None and token_verifier is not None:
-            # TODO(rjh): support _adding_ a token verifier, rather than
-            #            demanding this is the only one.
-            raise ValueError(
-                "`oauth` and `token_verifier` are mutually "
-                "exclusive. When `oauth` is set, a "
-                "`TokenVerifier` is created automatically."
-            )
-
         # NOTE: `oauth` is an `OAuthProviderSelector`, resolved lazily
-        # in `_mount_oauth_and_mcp` only when the app needs a provider
-        # to identify users (it has a `User`-typed auto-construct
-        # servicer and no `token_verifier`). `oauth=None` is treated as
-        # `OAuthProviderByEnvironment(dev=None, prod=None)` there, so an
-        # app that needs OAuth but never configured one fails to start.
+        # in `_mount_oauth_and_mcp` when the app needs a provider to
+        # identify users (it has a `User`-typed auto-construct servicer
+        # and no `token_verifier`) or when `oauth=` is set alongside a
+        # `token_verifier`, so the two compose. `oauth=None` is treated
+        # as `OAuthProviderByEnvironment(dev=None, prod=None)` there, so
+        # an app that needs OAuth but never configured one fails to
+        # start.
 
         # Get all libraries including required dependent libraries.
         if libraries is not None:
@@ -628,15 +635,16 @@ class Application:
         # produce the 401 error code needed to trigger a token refresh.
         mcp_sdk_token_verifier = None
         oauth_server = None
-        # Resolve an OAuth provider only when the app needs one to
-        # identify users — it has a `User`-typed auto-construct servicer
-        # and isn't already authenticating via a `token_verifier`. The
-        # selector's `get()` raises if no provider is configured for the
-        # current environment (`oauth=None` is treated as a selector with
-        # no provider for any environment).
+        # Resolve an OAuth provider when the app needs one to identify
+        # users — it has a `User`-typed auto-construct servicer without a
+        # `token_verifier` — or when `oauth=` is set alongside a
+        # `token_verifier`, so the OAuth server's verifier composes ahead
+        # of the user's. The selector's `get()` raises if no provider is
+        # configured for the current environment (`oauth=None` is treated
+        # as a selector with no provider for any environment).
         if (
             auto_construct_state_type_full_names and
-            self._token_verifier is None
+            (self._token_verifier is None or self._oauth is not None)
         ):
             selector = self._oauth or OAuthProviderByEnvironment(
                 dev=None,
@@ -654,7 +662,17 @@ class Application:
                 protected_resources=[_MCP_PATH],
                 application_title=self._title,
             )
-            self._token_verifier = oauth_server.token_verifier
+            if self._token_verifier is not None:
+                # Compose with the user's own verifier: the OAuth
+                # server's verifier runs first, definitively rejecting
+                # invalid Reboot-minted access JWTs (e.g. expired ones),
+                # while tokens of any other shape fall through to the
+                # user's verifier.
+                self._token_verifier = CompoundTokenVerifier(
+                    [oauth_server.token_verifier, self._token_verifier]
+                )
+            else:
+                self._token_verifier = oauth_server.token_verifier
             mcp_sdk_token_verifier = oauth_server.mcp_sdk_token_verifier
             oauth_server.mount_routes(self.http)
 

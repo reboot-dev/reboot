@@ -1,14 +1,35 @@
 import unittest
 from log.log import get_logger
 from reboot.aio.applications import Application
+from reboot.aio.auth import Auth
+from reboot.aio.auth.oauth_providers import Development
+from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
+from reboot.aio.contexts import ReaderContext
 from reboot.aio.external import InitializeContext
 from reboot.aio.servicers import Servicer
-from reboot.aio.tests import Reboot
+from reboot.aio.tests import OAuthProviderForTest, Reboot
 from reboot.aio.types import ServiceName, StateTypeName
+from reboot.ping.ping import CounterServicer, UserServicer
+from reboot.ping.ping_api_rbt import User
 from reboot.std.collections.v1.sorted_map import SortedMap, sorted_map_library
 from tests.reboot.greeter_servicers import MyClockServicer, MyGreeterServicer
+from typing import Optional
 
 logger = get_logger(__name__)
+
+
+class _BearerIsUserIdForTest(TokenVerifier):
+    """A `TokenVerifier` that takes the bearer token verbatim as the
+    user ID."""
+
+    async def verify_token(
+        self,
+        context: ReaderContext,
+        token: Optional[str],
+    ) -> VerifyTokenResult:
+        if token is None:
+            return None
+        return Auth(user_id=token)
 
 
 # Minimal `Servicer` stubs for testing `_mount_mcp` behavior.
@@ -118,6 +139,57 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         """
         # Should not raise.
         Application(servicers=[_StubUserA, _StubUserB])
+
+    async def test_oauth_composes_with_token_verifier(self) -> None:
+        """
+        `oauth=` and `token_verifier=` may both be passed: the OAuth
+        server's verifier runs first and any token it has no opinion
+        on falls through to the user's verifier.
+
+        This exercises both branches against a live application: a
+        Reboot-minted access JWT authenticates via the OAuth server's
+        verifier, and an arbitrary non-JWT bearer — which the OAuth
+        verifier has no opinion on — falls through to
+        `_BearerIsUserIdForTest`, which takes the bearer verbatim as the
+        authenticated user ID.
+        """
+        await self.rbt.up(
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Development()),
+                token_verifier=_BearerIsUserIdForTest(),
+            ),
+        )
+
+        # OAuth path: a Reboot-minted access JWT authenticates via the
+        # OAuth server's verifier, which is authoritative for
+        # Reboot-minted access JWTs. Construct the `User` explicitly,
+        # since in this era minting has no auto-construct side effect.
+        oauth_context = self.rbt.create_external_context(
+            name=f"oauth-{self.id()}",
+            bearer_token=self.rbt.make_valid_oauth_access_token(
+                user_id="alice",
+            ),
+        )
+        await UserServicer._auto_construct(oauth_context, state_id="alice")
+        oauth_response = await User.ref("alice").whoami(oauth_context)
+        self.assertEqual(oauth_response.user_id, "alice")
+
+        # Fallthrough path: "carol" is not a JWT, so the OAuth server's
+        # verifier has no opinion and the bearer falls through to
+        # `_BearerIsUserIdForTest`, which authenticates the caller as the
+        # literal token string. Construct the `User` explicitly before
+        # calling.
+        custom_context = self.rbt.create_external_context(
+            name=f"fallthrough-{self.id()}",
+            bearer_token="carol",
+        )
+        await UserServicer._auto_construct(
+            custom_context,
+            state_id="carol",
+        )
+        custom_response = await User.ref("carol").whoami(custom_context)
+        self.assertEqual(custom_response.user_id, "carol")
 
     async def test_duplicate_mcp_tool_names_raises(self) -> None:
         """

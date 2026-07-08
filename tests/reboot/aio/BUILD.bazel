@@ -23,6 +23,12 @@ py_test(
         "//reboot/aio:servicers_py",
         "//reboot/aio:tests_py",
         "//reboot/aio:types_py",
+        # The `ping` application is originally defined in
+        # `public/reboot/ping` and is symlinked in the `mono`.
+        # We use the "local" Bazel targets to refer here to avoid
+        # dealing with cross-repository paths in Bazel during
+        # `Pydantic-to-proto` generation.
+        "//reboot/ping:ping_py",
         "//reboot/std/collections/v1:sorted_map_py",
         "//tests/reboot:greeter_servicers_py",
     ],
