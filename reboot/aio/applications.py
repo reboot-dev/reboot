@@ -284,12 +284,10 @@ class Application:
             `OAuthProviderByEnvironment(dev=Development(),
             prod=Google(...))`) that chooses the OAuth provider for
             authenticating users. Works for both MCP chat clients
-            and browser SPAs. It is resolved (and a `TokenVerifier`
-            created automatically) when the application has a
-            `User`-typed auto-construct servicer, or when it is set
-            alongside a `token_verifier` (the two compose). May be
-            combined with `token_verifier`; see there for the ordering
-            semantics.
+            and browser SPAs. Resolved (and a `TokenVerifier` created
+            automatically) whenever it is set, even for an app with
+            nothing to auto-construct. May be combined with
+            `token_verifier`; see there for the ordering semantics.
         :param title: a human-readable name for the application.
             Defaults to `application_name()` if unset.
         :param description: a human-readable description of the
@@ -302,13 +300,11 @@ class Application:
         serving any other calls on the servicers.
         """
         # NOTE: `oauth` is an `OAuthProviderSelector`, resolved lazily
-        # in `_mount_oauth_and_mcp` when the app needs a provider to
-        # identify users (it has a `User`-typed auto-construct servicer
-        # and no `token_verifier`) or when `oauth=` is set alongside a
-        # `token_verifier`, so the two compose. An app with a
-        # `User`-typed auto-construct servicer but no `oauth=` fails to
-        # start: a `token_verifier=` authenticates requests but never
-        # auto-constructs those users.
+        # in `_mount_oauth_and_mcp` whenever it is configured, mounting
+        # the OAuth server even for an app with nothing to
+        # auto-construct. An app with a `User`-typed auto-construct
+        # servicer but no `oauth=` fails to start: a `token_verifier=`
+        # authenticates requests but never auto-constructs those users.
 
         # Get all libraries including required dependent libraries.
         if libraries is not None:
@@ -677,18 +673,13 @@ class Application:
         # produce the 401 error code needed to trigger a token refresh.
         mcp_sdk_token_verifier = None
         oauth_server = None
-        # Resolve an OAuth provider when the app needs one to identify
-        # users — it has a `User`-typed auto-construct servicer without a
-        # `token_verifier` — or when `oauth=` is set alongside a
-        # `token_verifier`, so the OAuth server's verifier composes ahead
-        # of the user's.
-        if (
-            auto_construct_state_type_full_names and
-            (self._token_verifier is None or self._oauth is not None)
-        ):
-            # `_require_oauth_for_auto_construct` (already called
-            # above) makes a missing `oauth=` impossible here.
-            assert self._oauth is not None
+        # Resolve an OAuth provider whenever `Application(oauth=...)` is
+        # configured, regardless of whether anything auto-constructs —
+        # an app adopting Reboot auth for its web surface shouldn't have
+        # to introduce a `User` type just to get a login flow. The
+        # selector's `get()` still raises if the configured provider has
+        # nothing for the current environment.
+        if self._oauth is not None:
             provider = self._oauth.get()
             # A provider that stores the identity provider's tokens
             # (`store_tokens=True`) persists them via the `oauth` library
