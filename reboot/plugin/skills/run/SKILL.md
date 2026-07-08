@@ -191,7 +191,7 @@ the app's `/mcp` endpoint with OAuth — for the user to run from
 their own terminal:
 
 ```sh
-npx @mcpjam/inspector@2.18.1 --url http://localhost:9991/mcp --oauth
+npx @mcpjam/inspector@2.23.3 --url http://localhost:9991/mcp --oauth
 ```
 
 Leave the launch to the wizard. Only run it yourself if the user
