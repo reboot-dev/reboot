@@ -6,8 +6,7 @@ import unittest
 from ai_chat_food.v1.food_rbt import FoodOrder, User
 from reboot.aio.aborted import Aborted
 from reboot.aio.applications import Application
-from reboot.aio.auth.oauth_providers import Anonymous
-from reboot.aio.tests import OAuthProviderForTest, Reboot
+from reboot.aio.tests import Reboot
 from servicers.food import FoodOrderServicer, UserServicer
 
 # The tests register the real servicers, with their real authorizers,
@@ -30,7 +29,6 @@ class ServicerTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=APPLICATION_SERVICERS,
-                oauth=OAuthProviderForTest(Anonymous()),
             ),
         )
         self.user_id = "alice"

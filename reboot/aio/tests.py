@@ -3,8 +3,9 @@ import os
 import reboot.aio.reboot
 import time
 import unittest
-from reboot.aio.applications import Application
+from reboot.aio.applications import Application, NodeApplication
 from reboot.aio.auth.oauth_providers import (
+    ExchangeResult,
     OAuthProvider,
     OAuthProviderSelector,
 )
@@ -40,6 +41,33 @@ class OAuthProviderForTest(OAuthProviderSelector):
 
     def _select(self) -> OAuthProvider:
         return self._provider
+
+
+# Error message shared by `FakeOnly`'s flow entry points: a pointer to
+# the impersonation helper a unit test uses in place of a real OAuth
+# flow.
+_FAKE_ONLY_NO_FLOWS_MESSAGE = (
+    "`FakeOnly` supports no OAuth flows; in unit tests impersonate a "
+    "user with `Reboot.create_external_context_as(...)` instead."
+)
+
+
+class FakeOnly(OAuthProvider):
+    """OAuth provider that exists only so the test harness can stand up
+    an `OAuthServer` to mint and verify test JWTs. Raises on every flow
+    entry point; a unit test signs in as a user by impersonating them
+    with `Reboot.create_external_context_as(...)`.
+    """
+
+    def authorization_url(self, state: str, redirect_uri: str) -> str:
+        raise NotImplementedError(_FAKE_ONLY_NO_FLOWS_MESSAGE)
+
+    async def exchange_code(
+        self,
+        code: str,
+        redirect_uri: str,
+    ) -> ExchangeResult:
+        raise NotImplementedError(_FAKE_ONLY_NO_FLOWS_MESSAGE)
 
 
 def assert_called_twice_with(
@@ -266,6 +294,24 @@ class Reboot(reboot.aio.reboot.Reboot):
 
         if application is None:
             raise ValueError("Must pass one of 'application' or 'revision'")
+
+        # Guarantee every app under test has an OAuth server, so a token
+        # minted by `make_valid_oauth_access_token` (and
+        # `create_external_context_as` on top of it) verifies uniformly.
+        # An app that configured its own `oauth=` keeps it; one without
+        # gets a `FakeOnly` provider, whose verifier composes ahead of
+        # any `token_verifier=` (Reboot-minted access JWTs verify first,
+        # everything else falls through), so a custom verifier still
+        # authenticates its own tokens.
+        # Node.js applications can't serve the OAuth server's
+        # endpoints from their process, so they get no injected
+        # provider (and `create_external_context_as` stays
+        # Python-app-only for now).
+        if (
+            application._oauth is None and
+            not isinstance(application, NodeApplication)
+        ):
+            application._oauth = OAuthProviderForTest(FakeOnly())
 
         # Mount the OAuth server and MCP factory now, at serve time —
         # the production serve path does this in `Application.run()`,

@@ -19,8 +19,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from reboot.aio.applications import Application
-from reboot.aio.auth.oauth_providers import Anonymous
-from reboot.aio.tests import OAuthProviderForTest, Reboot
+from reboot.aio.tests import Reboot
 from servicers import wiki as wiki_module
 from servicers.wiki import (
     PageServicer,
@@ -89,7 +88,6 @@ class _WikiTestBase(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=APPLICATION_SERVICERS,
-                oauth=OAuthProviderForTest(Anonymous()),
             ),
         )
         self.user_id = "alice"

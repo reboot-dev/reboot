@@ -441,9 +441,9 @@ environment (`rbt serve`, Reboot Cloud, or anything unrecognized) gets
 the real provider. Both arms are required; either may be `None`, and a
 selected `None` arm makes the app **fail to start** with a clear
 message, so you can't silently ship without sensible auth.
-Servicer-side code doesn't change between providers. (In unit tests you
-use `Application(oauth=OAuthProviderForTest(Anonymous()))`, with
-`OAuthProviderForTest` from `reboot.aio.tests`.)
+Servicer-side code doesn't change between providers. (In unit tests,
+omit `oauth=` entirely — the test harness supplies a test OAuth
+provider.)
 
 > **Choose your production provider deliberately.** See
 > [`references/auth-oauth-providers.md`](references/auth-oauth-providers.md).
@@ -631,10 +631,9 @@ application directory.**
     `Service.ref(id).method(context, ...)` for all calls —
     never instantiate Servicers directly. Register the **real**
     servicers — never subclass a servicer in tests to weaken its
-    `authorizer()`. Impersonate users instead:
-    `Application(..., oauth=OAuthProviderForTest(Anonymous()))`
-    plus `await rbt.create_external_context_as(name, user_id)` —
-    see the impersonation pattern in `testing-harness.md`. Run
+    `authorizer()`. Impersonate users instead with
+    `await rbt.create_external_context_as(name, user_id)` — see
+    the impersonation pattern in `testing-harness.md`. Run
     `cd backend && uv run pytest` and fix anything that fails.
     Then type-check: run `uv run mypy backend/` from the project
     root and fix every error (config and rationale in

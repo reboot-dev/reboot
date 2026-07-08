@@ -123,16 +123,16 @@ test that only passes with authorization disabled proves nothing
 about the application the user actually runs; the agent's
 `authorizer()` code would ship untested.
 
-The rule of thumb: tests may substitute the **identity layer** (the
-OAuth provider or `TokenVerifier`) — **never the authorizers**.
+The rule of thumb: identity in tests comes from the harness —
+`up()` always backs the application under test with a test OAuth
+provider — and tests **never** touch the authorizers.
 
 `await rbt.create_external_context_as(name, user_id)` builds a
 context carrying a real, verified identity for `user_id`,
 exercising the production authorizer end-to-end:
 
 ```python
-from reboot.aio.auth.oauth_providers import Anonymous
-from reboot.aio.tests import OAuthProviderForTest, Reboot
+from reboot.aio.tests import Reboot
 from servicers.food import APPLICATION_SERVICERS, UserServicer
 
 
@@ -145,7 +145,6 @@ class TestFoodOrder(unittest.IsolatedAsyncioTestCase):
             Application(
                 # The REAL servicers, with their REAL authorizers.
                 servicers=APPLICATION_SERVICERS,
-                oauth=OAuthProviderForTest(Anonymous()),
             ),
         )
         self.user_id = "test-user"
@@ -169,19 +168,28 @@ Negative auth tests use a **second** context with a different
 [testing-external-context.md](testing-external-context.md) for
 asserting on aborts.
 
-## Identity Wiring per App Type
+## Identity Wiring in Tests
 
-Tests mirror the production identity wiring, substituting only the
-test-friendly arm:
+Omit `oauth=` in a test's `Application(...)`, whatever the app type:
+`up()` always backs the application under test with a test OAuth
+provider, so `await rbt.create_external_context_as(name, user_id)`
+works with no identity wiring at all. That provider rejects the
+browser sign-in flow itself — tests impersonate instead of signing
+in.
 
-- **Chat app** (production uses
-  `oauth=OAuthProviderByEnvironment(...)`): pass
-  `oauth=OAuthProviderForTest(Anonymous())` (both from
-  `reboot.aio.tests` / `reboot.aio.auth.oauth_providers`) to the
-  test's `Application(...)`, as in the template above.
-- **No identity wiring** (app has no `User` type and no rules that
+- **App with a production `token_verifier=`** (e.g. a web app
+  verifying an external IdP's tokens): keep the `token_verifier=`
+  exactly as in production. The test harness's OAuth server verifies
+  the impersonation tokens `create_external_context_as` mints,
+  regardless of the app's own `token_verifier=`; a custom bearer a
+  test constructs by hand still flows through the app's verifier.
+- **No identity needed** (app has no `User` type and no rules that
   need identity): a plain `create_external_context(name=...)`
   without a bearer token is fine.
+- **Tests of an OAuth sign-in flow itself** (e.g. of a custom
+  `OAuthProvider`): the one exception — pass that provider
+  explicitly, via `oauth=OAuthProviderForTest(<provider>)` from
+  `reboot.aio.tests`.
 
 ## App-Internal-Only Methods
 
