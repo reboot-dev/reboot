@@ -15,7 +15,9 @@ Reach here **last**. The order of preference for
 2. **`Auth0`** when you need several login methods behind one provider,
    or user management beyond a bare user id (profiles, password resets,
    MFA, …) — Auth0 brokers most IdPs, including enterprise SSO.
-3. **A custom provider** only when neither works: a self-hosted
+   **`Ory`** when the users live in an Ory Network project or
+   self-hosted Ory deployment.
+3. **A custom provider** only when none of those work: a self-hosted
    Keycloak, an internal SSO you can't put Auth0 in front of, an OAuth
    service Auth0 can't broker.
 
@@ -46,6 +48,22 @@ minting the app's own access tokens, populating
   a plain-OAuth IdP by calling its user-info API with the access token
   (that's what `GitHub` does). Raising any exception here is safe — the
   server logs it and turns it into a graceful `access_denied` redirect.
+  Also fill `ExchangeResult.claims` with the user's verified identity
+  claims if your IdP can supply any: declare the claims it can
+  deliver — and the OAuth scope each one needs — in the class-level
+  `_AVAILABLE_CLAIMS` mapping, accept `claims=` at construction
+  (pass it through to `super().__init__`, which rejects unavailable
+  claims and derives the needed scopes), and pass the decoded ID
+  token (or userinfo response) through
+  `self._presented_claims(...)`, which keeps only the claims the
+  developer requested — under their presented names — so ephemeral
+  protocol claims (`exp`, `nonce`, …) and IdP-specific claim names
+  never leak out of the provider. Claims must come from a verified
+  source only: an ID token straight from the token endpoint over
+  TLS, or the userinfo endpoint over TLS. They are delivered to the
+  auto-constructed `User` type's `set_claims` method on every
+  sign-in; when the developer requested no claims,
+  `_presented_claims` returns `None` and nothing is ever delivered.
 
 > **The user id must be stable.** Whatever `exchange_code` returns
 > becomes `context.auth.user_id` and the key of all user-keyed state —
@@ -62,10 +80,24 @@ Optional hooks:
   for the current environment, so a misconfigured `prod=` arm fails at
   startup, not mid-sign-in. `RegisteredOAuthProvider` already checks
   `client_id` / `client_secret`; override to check your extras (call
-  `super().validate()` first — see `Auth0._normalize_domain` /
-  `Auth0.validate` for the shape).
+  `super().validate()` first — see `Auth0.validate` for the shape).
 - **`mount_routes(http)`** — register provider-specific HTTP routes,
-  rarely needed (`Development` uses it for its login page).
+  rarely needed (`Development` uses it for its login page; `Ory` uses
+  it for a settings-flow webhook). A route that delivers identity
+  changes from the IdP between sign-ins can call
+  `self._set_claims_if_exists(...)` — the application's
+  set-claims-if-exists entrypoint, wired in by the OAuth server via
+  `use_set_claims_if_exists` before `mount_routes` runs — but must
+  authenticate its caller first (a shared secret, a signature):
+  claims assert a user's identity, so the route is a
+  who-can-impersonate-users boundary. It delivers only to a `User`
+  that already exists, never materializing one for an identity that
+  never signed in (webhooks fire instance-wide). Deliveries may run
+  repeatedly (`set_claims` is a full replace, idempotent by
+  contract), so re-delivering the same change is harmless — but
+  ordering is last-write-wins: a delayed retry can transiently
+  overwrite a newer change until the next delivery or sign-in
+  converges the state again. See `Ory._webhook` for the model.
 - **`token_service_id`** — see "Supporting `store_tokens=True`" below.
 
 ## Model your provider on the shipped ones

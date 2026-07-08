@@ -69,6 +69,7 @@ py_library(
     deps = [
         "//reboot:run_environments_py",
         "//reboot/aio:exceptions_py",
+        "//reboot/aio:external_py",
         "//reboot/aio:http_py",
         "//reboot/crypto:root_keys_py",
         "@com_github_reboot_dev_reboot//log:log_py",

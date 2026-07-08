@@ -81,6 +81,25 @@ class Servicer(ABC):
         """
         pass
 
+    # Naming: has a leading underscore to ensure it doesn't collide with
+    # customer-API-defined methods; those can't use leading underscores.
+    @staticmethod
+    async def _set_claims_if_exists(
+        context: ExternalContext,
+        state_id: str,
+        claims: Mapping[str, Any],
+    ) -> None:
+        """
+        Deliver a user's verified identity claims to their state —
+        but only if it already exists; never construct it. For
+        identity changes that arrive outside a sign-in (e.g. an
+        identity provider webhook), where materializing state for an
+        identity that never signed in would be wrong.
+
+        Overridden by generated code for auto-constructable state types.
+        """
+        pass
+
 
 class ConfigServicer(config_mode_pb2_grpc.ConfigServicer):
 

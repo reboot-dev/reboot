@@ -5,6 +5,7 @@ from __future__ import annotations
 import aiohttp
 import hashlib
 import hmac
+import json
 import jwt
 import os
 from abc import ABC, abstractmethod
@@ -14,18 +15,40 @@ from jinja2 import Template
 from log.log import get_logger, log_at_most_once_per
 from rbt.std.oauth.v1.oauth_rbt import OAuthTokens
 from reboot.aio.exceptions import InputError
-from reboot.aio.http import PythonWebFramework
+from reboot.aio.external import ExternalContext
+from reboot.aio.http import PythonWebFramework, external_context
 from reboot.crypto import root_keys
 from reboot.run_environments import running_rbt_dev
 from starlette.requests import Request
-from starlette.responses import HTMLResponse
-from typing import Any, Mapping, NewType, Optional, Sequence
+from starlette.responses import HTMLResponse, JSONResponse, Response
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Mapping,
+    NewType,
+    Optional,
+    Sequence,
+)
 from ulid import ULID
 from urllib.parse import urlencode, urlparse, urlunparse
 
 logger = get_logger(__name__)
 
 UserId = NewType("UserId", str)
+
+# Delivers a user's verified identity claims to their state if it
+# already exists, never constructing it (see a servicer's
+# `_set_claims_if_exists`). Providers that mount routes firing
+# outside a sign-in — e.g. an identity provider webhook, which fires
+# for every identity in the provider — deliver through this, so a
+# fired-for identity that never signed into this application is never
+# materialized. Receives an app-internal `ExternalContext`, the id of
+# the user whose claims these are, and the verified claims.
+ClaimsChanged = Callable[
+    [ExternalContext, str, Mapping[str, Any]],
+    Awaitable[None],
+]
 
 _DEFAULT_ACCESS_TOKEN_TTL_SECONDS = 24 * 60 * 60  # 24 hours.
 
@@ -160,6 +183,9 @@ class OAuthProvider(ABC):
         # source claim name to presented claim name; `None` when no
         # claims were requested.
         self._claims = self._normalized_claims(claims)
+        # The application's set-claims-if-exists entrypoint; see
+        # `use_claims_changed`.
+        self._claims_changed: Optional[ClaimsChanged] = None
 
     def _normalized_claims(
         self,
@@ -256,6 +282,18 @@ class OAuthProvider(ABC):
             for name, presented in self._claims.items()
             if source.get(name) is not None
         }
+
+    def use_claims_changed(
+        self,
+        claims_changed: ClaimsChanged,
+    ) -> None:
+        """Wire the application's set-claims-if-exists entrypoint into
+        this provider, so provider-mounted routes (e.g. a webhook) can
+        deliver a user's verified identity claims outside a sign-in —
+        to a user whose state already exists, never materializing one.
+        Called by the OAuth server before `mount_routes`.
+        """
+        self._claims_changed = claims_changed
 
     @abstractmethod
     def authorization_url(
@@ -964,6 +1002,16 @@ class Auth0(RegisteredOAuthProvider):
         )
 
 
+# Path of the `Ory` settings-flow webhook route. Prefixed with
+# `__/oauth/` to match the other OAuth endpoints and to avoid
+# colliding with developer-specified routes.
+_ORY_WEBHOOK_PATH = "/__/oauth/ory/webhook"
+
+# Header carrying the webhook's shared secret, matching the `auth`
+# configuration of the Ory Action (see `Ory`'s docstring).
+_ORY_WEBHOOK_KEY_HEADER = "x-ory-webhook-key"
+
+
 class Ory(RegisteredOAuthProvider):
     """
     Ory OAuth provider (OpenID Connect).
@@ -984,6 +1032,43 @@ class Ory(RegisteredOAuthProvider):
     (`email` for the email claims, `profile` for the rest) are
     requested automatically — make sure the OAuth2 client is allowed
     to request them.
+
+    Sign-ins deliver claims; a webhook keeps them fresh in between.
+    A user who changes their email in an Ory settings flow would
+    otherwise only propagate that change to the application at their
+    next sign-in. Pass a `webhook_secret` (with `claims=`, since
+    delivering claims is all the webhook does) and this provider
+    exposes `POST /__/oauth/ory/webhook`; configure an Ory Action to
+    call it after the settings flow and identity changes propagate
+    immediately — but only for users who have already signed into
+    this application (the webhook never materializes a `User` for an
+    identity that has not). Ory documents how to configure such an
+    Action; see
+    https://www.ory.com/docs/guides/integrate-with-ory-cloud-through-webhooks.
+    In the Ory project config, under `selfservice.flows.settings.after`:
+
+    ```yaml
+    hooks:
+      - hook: web_hook
+        config:
+          url: https://<your-app-base-url>/__/oauth/ory/webhook
+          method: POST
+          # Jsonnet: function(ctx) { identity: ctx.identity }
+          body: base64://ZnVuY3Rpb24oY3R4KSB7IGlkZW50aXR5OiBjdHguaWRlbnRpdHkgfQ==
+          auth:
+            type: api_key
+            config:
+              name: x-ory-webhook-key
+              value: <webhook_secret>
+              in: header
+    ```
+
+    The webhook expects a JSON body shaped like
+    `{"identity": {"id": ..., "traits": {...}, ...}}` (which the
+    Jsonnet above produces) and maps the identity onto the same
+    claims shape sign-in delivers. Identity edits made through Ory's
+    *admin* API do not run flow-scoped actions, so those still only
+    propagate at the user's next sign-in.
     """
 
     # `openid` is the minimum OIDC scope; yields an ID token with the
@@ -1027,6 +1112,12 @@ class Ory(RegisteredOAuthProvider):
         scopes: Optional[list[str]] = None,
         store_tokens: bool = False,
         claims: Optional[Sequence[str] | Mapping[str, str]] = None,
+        # Shared secret authenticating calls to the settings-flow
+        # webhook (see the class docstring); the webhook route is
+        # only mounted when one is set. Inject it the same way as
+        # `client_secret` — from a secret store / environment secret,
+        # never a hard-coded literal.
+        webhook_secret: Optional[str] = None,
     ):
         super().__init__(
             client_id=client_id,
@@ -1035,7 +1126,22 @@ class Ory(RegisteredOAuthProvider):
             store_tokens=store_tokens,
             claims=claims,
         )
+        if webhook_secret is not None and self._claims is None:
+            # Delivering identity claims is all the webhook does, so
+            # a webhook configured without any claims to deliver is a
+            # contradiction; fail fast rather than mounting a route
+            # that could never deliver anything.
+            raise InputError(
+                reason=(
+                    "`Ory` got a `webhook_secret=` but no `claims=`: "
+                    "the settings-flow webhook exists to deliver "
+                    "identity claims, so pass `claims=` (e.g. "
+                    "`claims=['email']`) or remove the "
+                    "`webhook_secret=`."
+                ),
+            )
         self._domain = _normalize_domain(domain)
+        self._webhook_secret = webhook_secret
 
     @property
     def _authorization_endpoint(self) -> str:
@@ -1057,6 +1163,153 @@ class Ory(RegisteredOAuthProvider):
             raise InputError(
                 reason="Ory requires a non-empty `domain`.",
             )
+        if self._webhook_secret is not None and not self._webhook_secret:
+            # An empty `webhook_secret` authenticates nobody, so it is
+            # a misconfiguration; the default `webhook_secret=None` is
+            # what leaves the settings-flow webhook unexposed.
+            raise InputError(
+                reason=(
+                    "Ory got an empty `webhook_secret`; pass the "
+                    "shared secret the Ory Action sends, or drop the "
+                    "`webhook_secret=` to not expose the "
+                    "settings-flow webhook at all."
+                ),
+            )
+
+    def mount_routes(self, http: PythonWebFramework.HTTP) -> None:
+        # The webhook route only exists when a shared secret was
+        # configured; without one there would be no way to
+        # authenticate Ory's calls.
+        if self._webhook_secret:
+            # The handler delivers claims through the app-internal-only
+            # set-claims-if-exists entrypoint, so it opts in to an
+            # app-internal context with `app_internal=True`. That's
+            # safe here because the handler authenticates the caller
+            # against the shared webhook secret before doing any
+            # app-internal work.
+            http.post(_ORY_WEBHOOK_PATH, app_internal=True)(self._webhook)
+
+    def _claims_from_identity(
+        self,
+        identity: Mapping[str, Any],
+    ) -> Optional[dict[str, Any]]:
+        """Map an Ory identity (as a webhook delivers it: `id`,
+        `traits`, `updated_at`, `verifiable_addresses`, ...) onto the
+        same claims shape the sign-in code exchange produces: the
+        requested claims, under their presented names; `None` when
+        this provider was constructed without `claims=`. Applies the
+        same identity-to-claims rules Ory's built-in mapping does (see
+        `_AVAILABLE_CLAIMS`), so both paths deliver the same claims
+        for the same identity."""
+        source = dict(identity.get("traits") or {})
+        # Kratos identity schemas may model `name` as a string trait
+        # or as a structured one; Ory maps a string to the `name`
+        # claim and an object to `given_name` / `family_name` off its
+        # `first` / `last` members.
+        name = source.pop("name", None)
+        if isinstance(name, str):
+            source["name"] = name
+        elif isinstance(name, Mapping):
+            for member, claim in (
+                ("first", "given_name"),
+                ("last", "family_name"),
+            ):
+                if name.get(member) is not None:
+                    source[claim] = name[member]
+        # `updated_at` is a top-level field of the identity rather
+        # than one of its traits.
+        if identity.get("updated_at") is not None:
+            source["updated_at"] = identity["updated_at"]
+        email = source.get("email")
+        if email is not None:
+            # Derive `email_verified` from the identity's verifiable
+            # addresses, like Ory's own OIDC claims mapping does.
+            for address in identity.get("verifiable_addresses") or []:
+                if (
+                    address.get("via") == "email" and
+                    address.get("value") == email
+                ):
+                    source["email_verified"] = bool(address.get("verified"))
+                    break
+        return self._presented_claims(source)
+
+    async def _webhook(self, request: Request) -> Response:
+        """POST /__/oauth/ory/webhook
+
+        Called by an Ory Action after a settings flow (see the class
+        docstring for the configuration), delivering the changed
+        identity's claims so they propagate without waiting for the
+        user's next sign-in.
+
+        Deliveries are last-write-wins with no event ordering: a
+        delayed Ory retry can transiently overwrite a newer change
+        until the next delivery or sign-in converges the state again.
+        """
+        # Invariant: the route is only mounted when a secret is
+        #            configured.
+        assert self._webhook_secret is not None
+        provided = request.headers.get(_ORY_WEBHOOK_KEY_HEADER, "")
+        if not hmac.compare_digest(
+            provided.encode(),
+            self._webhook_secret.encode(),
+        ):
+            return JSONResponse(
+                {"error": "unauthorized"},
+                status_code=401,
+            )
+
+        body = await request.body()
+        try:
+            payload = json.loads(body)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            # A body that isn't valid UTF-8 raises `UnicodeDecodeError`
+            # rather than `JSONDecodeError`; both are malformed input,
+            # which is the caller's problem rather than ours.
+            return JSONResponse(
+                {"error": "invalid_json"},
+                status_code=400,
+            )
+        identity = (
+            payload.get("identity") if isinstance(payload, dict) else None
+        )
+        if not isinstance(identity, dict):
+            return JSONResponse(
+                {"error": "missing_identity"},
+                status_code=400,
+            )
+        identity_id = identity.get("id")
+        if not isinstance(identity_id, str) or not identity_id:
+            return JSONResponse(
+                {"error": "missing_identity_id"},
+                status_code=400,
+            )
+
+        if self._claims_changed is None:
+            # No claims consumer is wired up (e.g. the application
+            # has no auto-construct state types); acknowledge and
+            # drop.
+            return Response(status_code=204)
+
+        # Invariant: the constructor requires `claims=` whenever a
+        #            `webhook_secret=` is configured.
+        claims = self._claims_from_identity(identity)
+        assert claims is not None
+
+        # The route is `app_internal=True`, making this a trusted
+        # app-internal call — required, since claims ride the
+        # delivery. This delivers only to a `User` that already
+        # exists: an identity that never signed into this application
+        # is skipped (Ory webhooks fire for every identity in the
+        # project), and it converges on the delivered claims for one
+        # that has. Retries and replays are safe — `set_claims` is a
+        # full replace, idempotent by contract.
+        await self._claims_changed(
+            external_context(request),
+            UserId(identity_id),
+            claims,
+        )
+
+        return Response(status_code=204)
 
     def authorization_url(
         self,
