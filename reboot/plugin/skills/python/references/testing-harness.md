@@ -222,6 +222,17 @@ await UserServicer._authenticated(
 Symptom if you forget: the first call into `User.ref(self.user_id)`
 aborts because the state was never constructed.
 
+To exercise a servicer's `set_claims`, deliver identity claims the
+way a real sign-in does — pass `claims=` to
+`make_valid_oauth_access_token` (or to `_authenticated` directly):
+
+```python
+token = await self.rbt.make_valid_oauth_access_token(
+    user_id=self.user_id,
+    claims={"email": "alice@example.com"},
+)
+```
+
 ## Last Resort: Permissive Authorizers
 
 It is possible to subclass a servicer and override `authorizer()` to

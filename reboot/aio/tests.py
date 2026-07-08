@@ -25,7 +25,15 @@ from reboot.settings import (
     ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG,
     ENVVAR_REBOOT_IN_TEST,
 )
-from typing import Any, Awaitable, Callable, Optional, Sequence, overload
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Mapping,
+    Optional,
+    Sequence,
+    overload,
+)
 from unittest import mock
 
 
@@ -157,6 +165,7 @@ class Reboot(reboot.aio.reboot.Reboot):
     async def make_valid_oauth_access_token(
         self,
         user_id: str = "test-user",
+        claims: Optional[Mapping[str, Any]] = None,
     ) -> str:
         """
         Mint a valid JWT OAuth access token for use in tests.
@@ -170,7 +179,9 @@ class Reboot(reboot.aio.reboot.Reboot):
         just does `await rbt.make_valid_oauth_access_token(...)`
         and immediately opens an MCP session finds the `User`
         actor already materialized, matching the behaviour MCP-via-
-        OAuth flows get for free.
+        OAuth flows get for free. Pass `claims` to also deliver a
+        user's verified identity claims, exactly as a real sign-in
+        code exchange does — exercising a servicer's `set_claims`.
 
         The identity is just whatever the developer specified — no
         actual authentication takes place.
@@ -204,14 +215,17 @@ class Reboot(reboot.aio.reboot.Reboot):
             # token has a recognisable shape if dumped in a debug
             # log.
             base="http://reboot-test",
-            # Production mints from `app_internal=True` routes, so
-            # `_post_authenticate`'s auto-construct Writer runs as
-            # trusted app code; tests have no request, so build an
-            # app-internal context off the test `Reboot` directly.
+            # Production mints from `app_internal=True` routes, so the
+            # `authenticated` hook's auto-construct/`set_claims` calls
+            # run as trusted app code; tests have no request, so build
+            # an app-internal context off the test `Reboot` directly.
             context=self.create_external_context(
                 name="reboot.tests.make_valid_oauth_access_token",
                 app_internal=True,
             ),
+            # Delivered the way a real sign-in code exchange delivers
+            # them, folded into the mint chokepoint.
+            claims=claims,
         )
         return tokens["access_token"]
 

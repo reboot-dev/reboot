@@ -48,6 +48,35 @@ the upstream connection (`google-oauth2|…`, `auth0|…`, `github|…`), the
 namespace-permanence rule below still applies: changing which Auth0
 connections you offer can change users' `sub`s.
 
+**Identity claims.** Signing in identifies the user; pass `claims=`
+at provider construction to also learn _about_ them: e.g.
+`Google(claims=["email"])` delivers the user's verified email to
+your `User` type's `set_claims` method on every sign-in. Each
+provider rejects — at construction, naming the claims it has
+available — any claim it cannot deliver, and automatically requests
+whatever OAuth scopes the requested claims need. A claim can be
+presented to the application under a different name via a mapping
+(`claims={"email": "verified-email"}`). Without `claims=` no claims
+are delivered and `set_claims` is never called. To act on the
+delivered claims, override `set_claims` in the `User.Servicer`
+(the generated default is a no-op):
+
+```python
+class UserServicer(User.Servicer):
+    async def set_claims(
+        self,
+        context: TransactionContext,
+        request: User.SetClaimsRequest,
+    ) -> None:
+        self.state.email = request.claims.get("email", "")
+```
+
+`request.claims` is the complete, current set of verified claims
+(a `dict[str, Any]`), so treat `set_claims` as a full replace:
+it runs on every sign-in, and re-delivering the same claims must be
+harmless — and a claim absent from the request is one the provider
+no longer asserts, so overwrite rather than merge.
+
 **Need user management, not just a user id?** `Google` / `GitHub` give
 you exactly one thing: a stable `context.auth.user_id`. If the app needs
 more — user profiles, email/password accounts, password resets, email

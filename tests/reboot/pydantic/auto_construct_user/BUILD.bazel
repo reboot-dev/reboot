@@ -20,6 +20,7 @@ py_reboot_library_from_pydantic(
 py_library(
     name = "servicer_py",
     srcs = ["servicer.py"],
+    visibility = ["//tests/reboot:__subpackages__"],
     deps = [
         ":servicer_api_py",
         ":servicer_py_reboot",

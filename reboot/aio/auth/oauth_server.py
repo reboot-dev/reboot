@@ -43,7 +43,7 @@ from starlette.responses import (
     RedirectResponse,
     Response,
 )
-from typing import Any, Awaitable, Callable, Optional, Sequence
+from typing import Any, Awaitable, Callable, Mapping, Optional, Sequence
 from urllib.parse import urlencode, urlparse
 
 logger = logging.getLogger(__name__)
@@ -319,15 +319,20 @@ class OAuthServer:
         # The application's human-readable title, e.g. "Hipster Chat".
         application_title: str,
         auto_construct_state_type_full_names: Optional[Sequence[str]] = None,
-        authenticated: Optional[Callable[[ExternalContext, str],
-                                         Awaitable[None]]] = None,
+        authenticated: Optional[
+            Callable[[ExternalContext, str, Optional[Mapping[str, Any]]],
+                     Awaitable[None]]] = None,
         allowed_origins: Optional[Sequence[str]] = None,
     ):
         """`authenticated`, if given, runs right after each fresh
         access token is minted for a user, receiving an app-internal
-        `ExternalContext` and the `user_id` the token was minted for.
-        It must be idempotent and inexpensive — it can run on every
-        mint for the same user.
+        `ExternalContext`, the `user_id` the token was minted for, and
+        the user's verified identity claims when they are freshly
+        available (only at an identity provider code exchange, and
+        only when the provider was constructed to deliver claims via
+        `claims=`; `None` on refreshes and other mints that don't
+        consult the provider). It must be idempotent and inexpensive —
+        it can run on every mint for the same user.
 
         `allowed_origins` is `Application(allowed_origins=...)`'s
         explicit allow-list (with `None` meaning it, like `oauth=`,
@@ -431,6 +436,7 @@ class OAuthServer:
         client_id: str,
         base: str,
         context: ExternalContext,
+        claims: Optional[Mapping[str, Any]] = None,
     ) -> dict[str, Any]:
         """Mint a fresh access/refresh token pair for `user_id` and
         return the standard OAuth token response body (`access_token`,
@@ -439,9 +445,17 @@ class OAuthServer:
         Every JWT this server hands out is minted here: using a Reboot
         app always requires the user to authenticate, and this is the
         one place that mints the token proving it. After minting,
-        `authenticated` (if set) is fired with `context`; given the
-        idempotent `authenticated` its contract requires, this
-        method is in turn safe to call repeatedly for the same user.
+        `authenticated` (if set) is fired with `context` and `claims`;
+        given the idempotent `authenticated` its contract requires,
+        this method is in turn safe to call repeatedly for the same
+        user.
+
+        `claims` are the user's verified identity claims, passed only
+        by the identity provider code exchange (the one moment they
+        are freshly available), and only when the provider was
+        constructed to deliver claims (`claims=`); every other mint
+        leaves them `None`, which delivers no claims but still
+        ensures the user's state exists.
 
         `context` is an app-internal `ExternalContext`: the routes that
         mint are `app_internal=True`, so the auto-construct Writer that
@@ -471,7 +485,7 @@ class OAuthServer:
         # authenticated side effects never ran. If the hook raises
         # we propagate it.
         if self._authenticated is not None:
-            await self._authenticated(context, user_id)
+            await self._authenticated(context, user_id, claims)
         return {
             "access_token": access_token,
             "token_type": "bearer",
@@ -1291,11 +1305,22 @@ class OAuthServer:
         # flows that don't go through a browser these cookies are
         # set but ignored (the MCP client doesn't process
         # `Set-Cookie`).
+        #
+        # The identity provider code exchange just above is the one
+        # moment the user's verified claims are fresh, so this is the
+        # mint that delivers them; refresh grants and session-cookie
+        # SSO never reach here and so deliver no claims. `None` means
+        # claim delivery is off — the provider was constructed
+        # without `claims=` or has no verified claims source (e.g.
+        # `Anonymous`) — and delivers nothing; an empty mapping is
+        # the provider's complete, current claim set, and clears any
+        # previously delivered claims.
         tokens = await self._mint_tokens_for_user(
             user_id=user_id,
             client_id=str(pending["client_id"]),
             base=origin_from_request(request),
             context=external_context(request),
+            claims=result.claims,
         )
         self._set_session_cookies(
             response,

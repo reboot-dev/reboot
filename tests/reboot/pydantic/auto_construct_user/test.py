@@ -106,6 +106,70 @@ class AutoConstructUserTest(unittest.IsolatedAsyncioTestCase):
             )
         self.assertIsInstance(aborted.exception.error, PermissionDenied)
 
+    async def test_authenticated_delivers_claims(self) -> None:
+        # `_authenticated` with claims constructs the state (if
+        # needed) and delivers the claims through `set_claims`.
+        await UserServicer._authenticated(
+            self.internal,
+            state_id=_USER_ID,
+            claims={
+                "email": "jane@example.com",
+                "email_verified": True
+            },
+        )
+
+        user_response = await User.ref(_USER_ID).get(self.context)
+        self.assertEqual(
+            user_response.profile_id,
+            f"profile-{_USER_ID}",
+        )
+        self.assertEqual(user_response.email, "jane@example.com")
+
+    async def test_authenticated_without_claims_skips_set_claims(
+        self,
+    ) -> None:
+        # `_authenticated()` with no claims (e.g. a token refresh)
+        # ensures the state exists but delivers nothing, so it never
+        # clears previously delivered claims.
+        await UserServicer._authenticated(
+            self.internal,
+            state_id=_USER_ID,
+            claims={"email": "jane@example.com"},
+        )
+        await UserServicer._authenticated(self.internal, state_id=_USER_ID)
+
+        user_response = await User.ref(_USER_ID).get(self.context)
+        self.assertEqual(user_response.email, "jane@example.com")
+        self.assertEqual(user_response.update_count, 1)
+
+    async def test_repeated_delivery_converges_after_a_b_a(self) -> None:
+        # Every sign-in delivers, so a user whose email changes from A
+        # to B and back to A ends up with A: state converges on the
+        # most recently delivered claims rather than deduplicating a
+        # "seen" value.
+        for email in ("a@example.com", "b@example.com", "a@example.com"):
+            await UserServicer._authenticated(
+                self.internal,
+                state_id=_USER_ID,
+                claims={"email": email},
+            )
+
+        user_response = await User.ref(_USER_ID).get(self.context)
+        self.assertEqual(user_response.email, "a@example.com")
+        self.assertEqual(user_response.update_count, 3)
+
+    async def test_mint_with_claims_delivers(self) -> None:
+        # The test harness mirrors production: minting a token with
+        # claims delivers them through the same chokepoint, so a
+        # freshly minted user has their claims transcribed.
+        await self.rbt.make_valid_oauth_access_token(
+            user_id="minted-user",
+            claims={"email": "minted@example.com"},
+        )
+
+        user_response = await User.ref("minted-user").get(self.internal)
+        self.assertEqual(user_response.email, "minted@example.com")
+
 
 if __name__ == "__main__":
     unittest.main()

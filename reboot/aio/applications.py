@@ -9,7 +9,6 @@ import reboot.aio.workflows
 import reboot.application
 import sys
 import traceback
-from collections import OrderedDict
 from log.log import get_logger
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
@@ -66,17 +65,12 @@ from reboot.settings import (
 from reboot.version import REBOOT_VERSION
 from reboot.versioning import version_less_than
 from starlette.staticfiles import StaticFiles
-from typing import Any, Awaitable, Callable, NoReturn, Optional
+from typing import Any, Awaitable, Callable, Mapping, NoReturn, Optional
 from urllib.parse import urlparse
 
 logger = get_logger(__name__)
 
 _MCP_PATH = "/mcp"
-
-# Cap on the per-instance cache of user ids that `_authenticated`
-# has already handled. Eviction is harmless: the next JWT mint for an
-# evicted user re-runs the idempotent auto-construct calls.
-_AUTHENTICATED_USER_IDS_LIMIT = 16_384
 
 
 def _handle_unknown_exception(
@@ -438,12 +432,6 @@ class Application:
         self._initialize_bearer_token = initialize_bearer_token
         self._oauth = oauth
         self._oauth_server: Optional[OAuthServer] = None
-        # Bounded LRU (keys only; values are a placeholder `None`) of
-        # users for whom `_authenticated` has already run. Kept
-        # per-instance rather than on the class so a fresh `Reboot()` +
-        # state store per test method doesn't inherit a stale "already
-        # authenticated" flag from a sibling test.
-        self._authenticated_user_ids: OrderedDict[str, None] = (OrderedDict())
         # `allowed_origins=None` (the default) is meaningfully
         # distinct from `allowed_origins=[]` (an explicit choice).
         # The default tells us the developer hasn't thought about
@@ -811,46 +799,38 @@ class Application:
         self,
         context: ExternalContext,
         user_id: str,
+        claims: Optional[Mapping[str, Any]] = None,
     ) -> None:
-        """Materialize per-user auto-construct state the first time a
-        user authenticates. Safe and cheap to call again for the same
-        user.
+        """Record that a user authenticated: materialize their
+        per-user auto-construct state if it does not exist yet, then,
+        when `claims` is given, deliver their verified identity
+        claims. Safe and cheap to call again for the same user.
 
-        `context` is app-internal: materializing the state is a Writer
-        call (`User.Create(...)`) that the authorizer permits from
-        trusted app code (auto-construct `User` types allow
-        app-internal callers).
+        Runs on every mint, so it re-delivers `claims` on every
+        sign-in rather than deduplicating: `claims=None` (a refresh,
+        which has no fresh claims) still ensures the state exists,
+        while a code exchange re-delivers so state converges on the
+        most recently delivered claims (an A -> B -> A email change
+        ends at A). Both the construct (keyed on the state id) and
+        `set_claims` (a full replace) are idempotent, so repeating
+        them is cheap and correct.
+
+        `context` is app-internal: materializing and updating the
+        state are Writer/Transaction calls that the framework permits
+        only from trusted app code, since claims ride the delivery.
         """
-        # Idempotent across both calls and processes: an instance-
-        # level cache makes repeat hits free within one `Application`
-        # lifetime, and Reboot's storage-layer idempotency makes the
-        # construct durable across processes. The cache is
-        # deliberately a per-instance attribute, not a class
-        # attribute, so a fresh `Reboot()` + state store per test
-        # method doesn't inherit a stale "already authenticated" flag
-        # from a sibling test.
-        if user_id in self._authenticated_user_ids:
-            self._authenticated_user_ids.move_to_end(user_id)
-            return
         # Fan out across all auto-construct servicers in parallel —
         # every JWT mint blocks on this, so a serial loop would add N
-        # RPC RTTs to first-time sign-in for an app with N auto-
-        # construct state types.
+        # RPC RTTs to sign-in for an app with N auto-construct state
+        # types.
         await asyncio.gather(
             *(
-                servicer_cls._authenticated(context, state_id=user_id)
+                servicer_cls.
+                _authenticated(context, state_id=user_id, claims=claims)
                 for servicer_cls in (self._servicers or [])
                 if servicer_cls._is_auto_construct
             )
         )
-        self._authenticated_user_ids[user_id] = None
-        # Evict least-recently-authenticated entries beyond the cap; an
-        # evicted user's next mint just redoes the (idempotent, cheap)
-        # auto-construct calls.
-        while (
-            len(self._authenticated_user_ids) > _AUTHENTICATED_USER_IDS_LIMIT
-        ):
-            self._authenticated_user_ids.popitem(last=False)
 
     def _mount_mcp(
         self,

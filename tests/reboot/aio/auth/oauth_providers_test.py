@@ -35,6 +35,12 @@ from reboot.std.collections.ordered_map.v1.ordered_map import (
     ordered_map_library,
 )
 from reboot.std.oauth.v1.oauth import oauth_library
+from tests.reboot.pydantic.auto_construct_user.servicer import \
+    ProfileServicer as AutoConstructProfileServicer
+from tests.reboot.pydantic.auto_construct_user.servicer import \
+    UserServicer as AutoConstructUserServicer
+from tests.reboot.pydantic.auto_construct_user.servicer_api_rbt import \
+    User as AutoConstructUser
 from typing import Any, Mapping, Optional
 from unittest import mock
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -2308,6 +2314,116 @@ class OAuthProviderForTestSelectorTest(unittest.TestCase):
         with self.assertRaises(InputError) as context:
             selector.get()
         self.assertIn("Google", str(context.exception))
+
+
+class _FakeClaimsProvider(OAuthProvider):
+    """A provider that redirects straight back to the callback and
+    reports a fixed user with whatever claims a test assigns, so
+    claims delivery can be exercised across successive sign-ins."""
+
+    USER_ID = UserId("claims-user")
+
+    def __init__(self) -> None:
+        super().__init__()
+        # The claims the next `exchange_code` reports; `None` means
+        # the provider has no verified claims source.
+        self.claims: Optional[Mapping[str, Any]] = None
+
+    def authorization_url(self, state: str, redirect_uri: str) -> str:
+        return f"{redirect_uri}?{urlencode({'code': 'fake', 'state': state})}"
+
+    async def exchange_code(
+        self, code: str, redirect_uri: str
+    ) -> ExchangeResult:
+        return ExchangeResult(
+            user_id=self.USER_ID,
+            tokens=None,
+            claims=self.claims,
+        )
+
+
+class ClaimsDeliveryTest(unittest.IsolatedAsyncioTestCase):
+    """Drives browser sign-ins with a fake provider and checks how the
+    exchange's claims reach `User` state: a mapping is delivered as a
+    full replacement (so an empty mapping clears previously delivered
+    claims), while `None` delivers nothing and clears nothing."""
+
+    async def asyncSetUp(self) -> None:
+        self.rbt = Reboot()
+        await self.rbt.start()
+        self.provider = _FakeClaimsProvider()
+        await self.rbt.up(
+            Application(
+                servicers=[
+                    AutoConstructUserServicer,
+                    AutoConstructProfileServicer,
+                ],
+                oauth=OAuthProviderForTest(self.provider),
+            ),
+        )
+
+    async def asyncTearDown(self) -> None:
+        await self.rbt.stop()
+
+    async def _login(self) -> None:
+        """Drive one full browser sign-in (start → authorize →
+        callback → finish) with a fresh cookie jar, so every login
+        performs a real identity-provider code exchange instead of
+        being short-circuited by session-cookie SSO."""
+        base = self.rbt.http_localhost_url("")
+        async with httpx.AsyncClient(
+            follow_redirects=False,
+            cookies=httpx.Cookies(),
+        ) as client:
+
+            def strip_secure_flag_from_cookies() -> None:
+                # The OAuth server marks all browser-flow cookies
+                # `Secure`, which browsers exempt for `localhost` but
+                # httpx's cookie jar does not.
+                for cookie in client.cookies.jar:
+                    cookie.secure = False
+
+            response = await client.get(
+                base + "/__/oauth/start",
+                params={"return_to": "/"},
+            )
+            # start → authorize → (the fake provider redirects
+            # straight back to) callback → finish → `return_to`.
+            for _ in range(4):
+                strip_secure_flag_from_cookies()
+                self.assertEqual(response.status_code, 302, response.text)
+                location = response.headers["location"]
+                if location == "/":
+                    return
+                response = await client.get(location)
+            self.assertEqual(response.headers["location"], "/")
+
+    async def test_claims_full_replace_and_none_delivers_nothing(self) -> None:
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+        user = AutoConstructUser.ref(_FakeClaimsProvider.USER_ID)
+
+        # A mapping is delivered as the complete current claim set.
+        self.provider.claims = {"email": "first@example.com"}
+        await self._login()
+        response = await user.get(context)
+        self.assertEqual(response.email, "first@example.com")
+
+        # `None`: the provider has no verified claims source, so
+        # nothing is delivered and nothing is cleared.
+        self.provider.claims = None
+        await self._login()
+        response = await user.get(context)
+        self.assertEqual(response.email, "first@example.com")
+
+        # An empty mapping is still the complete current claim set:
+        # the full replacement clears previously delivered claims.
+        self.provider.claims = {}
+        await self._login()
+        response = await user.get(context)
+        self.assertEqual(response.email, "")
 
 
 if __name__ == "__main__":
