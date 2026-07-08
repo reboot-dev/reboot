@@ -11,9 +11,7 @@ from reboot.api import (
 
 
 class UserState(Model):
-    # The bank `customer_id` this user is enrolled as; empty until
-    # `enroll` has run.
-    customer_id: str = Field(tag=1, default="")
+    pass
 
 
 class OpenAccountRequest(Model):
@@ -35,28 +33,19 @@ class BalancesResponse(Model):
 
 # A `Type` named `User` is auto-constructed per authenticated user:
 # every signed-in caller gets their own `User` state, and its methods
-# are exposed as MCP tools without an id parameter — the id comes
-# from the session.
+# are exposed as MCP tools. Auto-construction signs the user up as a bank
+# customer (see `UserServicer.create`), with the user id doubling as
+# their `customer_id`.
 api = API(
     User=Type(
         state=UserState,
         methods=Methods(
-            enroll=Transaction(
-                request=None,
-                response=None,
-                description="Enroll the signed-in user as a customer "
-                "of the bank. Idempotent: enrolling twice is a no-op. "
-                "Other tools that need a customer enroll "
-                "automatically, so calling this first is optional.",
-                mcp=Tool(),
-            ),
             open_account=Transaction(
                 request=OpenAccountRequest,
                 response=OpenAccountResponse,
                 description="Open a new account for the signed-in "
-                "user with an initial deposit, enrolling them as a "
-                "customer of the bank first if needed. Returns the "
-                "new `account_id`.",
+                "user with an initial deposit. Returns the new "
+                "`account_id`.",
                 mcp=Tool(),
             ),
             balances=Reader(
