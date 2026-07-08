@@ -11,7 +11,7 @@ from reboot.aio.auth.oauth_providers import (
 from reboot.aio.auth.oauth_server import signing_secret
 from reboot.aio.auth.token_verifiers import TokenVerifier
 from reboot.aio.contexts import EffectValidation
-from reboot.aio.external import InitializeContext
+from reboot.aio.external import ExternalContext, InitializeContext
 from reboot.aio.http import WebFramework
 from reboot.aio.libraries import AbstractLibrary
 from reboot.aio.reboot import ApplicationRevision
@@ -123,6 +123,26 @@ class Reboot(reboot.aio.reboot.Reboot):
             # Valid for 1000 hours; much longer than any test should
             # ever run.
             exp=int(time.time()) + 60 * 60 * 1000,
+        )
+
+    async def create_external_context_as(
+        self,
+        name: str,
+        user_id: str = "test-user",
+    ) -> ExternalContext:
+        """
+        Create an `ExternalContext` authenticated as `user_id`.
+
+        The standard way a test impersonates a signed-in user: mint a
+        valid OAuth access token for `user_id` (see
+        `make_valid_oauth_access_token`) and hand it to
+        `create_external_context` as the bearer token.
+        """
+        return self.create_external_context(
+            name=name,
+            bearer_token=self.make_valid_oauth_access_token(
+                user_id=user_id,
+            ),
         )
 
     def make_jwt(self, **claims: Any) -> str:

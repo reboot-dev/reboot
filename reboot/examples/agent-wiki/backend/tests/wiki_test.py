@@ -93,11 +93,9 @@ class _WikiTestBase(unittest.IsolatedAsyncioTestCase):
             ),
         )
         self.user_id = "alice"
-        self.context = self.rbt.create_external_context(
+        self.context = await self.rbt.create_external_context_as(
             name=f"test-{self.id()}",
-            bearer_token=self.rbt.make_valid_oauth_access_token(
-                user_id=self.user_id,
-            ),
+            user_id=self.user_id,
         )
         # `User` is an auto-constructed state type: in
         # production the MCP session's "new session" hook

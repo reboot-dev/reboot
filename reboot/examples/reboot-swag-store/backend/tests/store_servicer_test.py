@@ -99,11 +99,9 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
         # bypass the MCP session hook that auto-constructs
         # the matching `User` state, so we trigger it here.
         self.user_id = "test-user"
-        self.context = self.rbt.create_external_context(
+        self.context = await self.rbt.create_external_context_as(
             name=f"test-{self.id()}",
-            bearer_token=self.rbt.make_valid_oauth_access_token(
-                user_id=self.user_id,
-            ),
+            user_id=self.user_id,
         )
         await UserServicer._auto_construct(
             self.context,
@@ -192,11 +190,9 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
         # A second authenticated guest session. A fresh
         # `Cart.ref` is required because each weak reference
         # binds to a single context.
-        other_context = self.rbt.create_external_context(
+        other_context = await self.rbt.create_external_context_as(
             name=f"other-{self.id()}",
-            bearer_token=self.rbt.make_valid_oauth_access_token(
-                user_id="other-user",
-            ),
+            user_id="other-user",
         )
         other_cart = Cart.ref(cart.state_id)
 

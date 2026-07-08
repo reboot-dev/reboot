@@ -633,9 +633,8 @@ application directory.**
     servicers — never subclass a servicer in tests to weaken its
     `authorizer()`. Impersonate users instead:
     `Application(..., oauth=OAuthProviderForTest(Anonymous()))`
-    plus
-    `bearer_token=rbt.make_valid_oauth_access_token(user_id=...)`
-    — see the impersonation pattern in `testing-harness.md`. Run
+    plus `await rbt.create_external_context_as(name, user_id)` —
+    see the impersonation pattern in `testing-harness.md`. Run
     `cd backend && uv run pytest` and fix anything that fails.
     Then type-check: run `uv run mypy backend/` from the project
     root and fix every error (config and rationale in

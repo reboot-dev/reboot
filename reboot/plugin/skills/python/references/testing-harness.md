@@ -126,10 +126,9 @@ about the application the user actually runs; the agent's
 The rule of thumb: tests may substitute the **identity layer** (the
 OAuth provider or `TokenVerifier`) — **never the authorizers**.
 
-`rbt.make_valid_oauth_access_token(user_id=...)` mints a token the
-runtime treats as a real, verified identity. Pair it with
-`create_external_context(..., bearer_token=...)` to impersonate that
-user and exercise the production authorizer end-to-end:
+`await rbt.create_external_context_as(name, user_id)` builds a
+context carrying a real, verified identity for `user_id`,
+exercising the production authorizer end-to-end:
 
 ```python
 from reboot.aio.auth.oauth_providers import Anonymous
@@ -150,13 +149,15 @@ class TestFoodOrder(unittest.IsolatedAsyncioTestCase):
             ),
         )
         self.user_id = "test-user"
-        self.context = self.rbt.create_external_context(
+        self.context = await self.rbt.create_external_context_as(
             name=f"test-{self.id()}",
-            bearer_token=self.rbt.make_valid_oauth_access_token(
-                user_id=self.user_id,
-            ),
+            user_id=self.user_id,
         )
 ```
+
+When a test needs the raw token itself (e.g. to set an
+`Authorization:` header),
+`rbt.make_valid_oauth_access_token(user_id=...)` mints one.
 
 If a call is denied under the real authorizer, either the context is
 missing the right identity (fix the test, see below), or the
