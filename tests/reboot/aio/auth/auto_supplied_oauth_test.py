@@ -62,14 +62,14 @@ class AutoSuppliedOAuthWithCustomVerifierTest(
         self
     ) -> None:
         # `create_external_context_as` mints a token through the
-        # auto-supplied OAuth server, which authenticates alice.
-        # Construct her `User` explicitly, since in this era minting has
-        # no auto-construct side effect (that arrives in a later PR).
+        # auto-supplied OAuth server's production chokepoint, whose
+        # post-authenticate hook auto-constructs alice's `User` as a
+        # side effect — so `whoami` finds her actor without any
+        # explicit `_auto_construct` call here.
         context = await self.rbt.create_external_context_as(
             name="alice",
             user_id="alice",
         )
-        await UserServicer._auto_construct(context, state_id="alice")
         response = await User.ref("alice").whoami(context)
         self.assertEqual(response.user_id, "alice")
 
@@ -107,9 +107,6 @@ class AutoSuppliedOAuthWithoutVerifierTest(unittest.IsolatedAsyncioTestCase):
             name="alice",
             user_id="alice",
         )
-        # Construct alice's `User` explicitly, since in this era minting
-        # has no auto-construct side effect (that arrives in a later PR).
-        await UserServicer._auto_construct(context, state_id="alice")
         response = await User.ref("alice").whoami(context)
         self.assertEqual(response.user_id, "alice")
 

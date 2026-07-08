@@ -13,7 +13,10 @@ exactly as it is in production.
 To impersonate a user, use
 `await rbt.create_external_context_as(name, user_id)` (or, when a
 raw token string is needed — e.g. for an `Authorization:` header —
-`rbt.make_valid_oauth_access_token(user_id=...)`).
+`await rbt.make_valid_oauth_access_token(user_id=...)`). The
+impersonated user's `User` state is auto-constructed as a side
+effect of minting the token, so an explicit `_auto_construct` call
+for that user can be dropped too.
 
 Before:
 
@@ -56,6 +59,30 @@ and its now-unused imports — entirely. Keep an explicit `oauth=` only
 in a test that exercises an OAuth sign-in flow itself (e.g. of a
 custom `OAuthProvider`).
 
+## `Reboot.make_valid_oauth_access_token()` is now `async`
+
+If any test still calls `make_valid_oauth_access_token(` on a `Reboot`
+instance, `await` the call (and make the surrounding test method
+`async` if it isn't already). The method now mints the token through
+the application's OAuth server, so it returns a coroutine.
+
+Before:
+
+```python
+bearer_token=self.rbt.make_valid_oauth_access_token(user_id="alice")
+```
+
+After:
+
+```python
+bearer_token=await self.rbt.make_valid_oauth_access_token(user_id="alice")
+```
+
+A call site left un-awaited silently passes a coroutine where a `str`
+is expected — typically surfacing later as an opaque "token is not a
+string" or JWT-decode error rather than an obvious async/sync
+mismatch.
+
 ## Prefer `create_external_context_as` for impersonation
 
 The common case — building an `ExternalContext` authenticated as a
@@ -71,7 +98,7 @@ Before:
 ```python
 self.context = self.rbt.create_external_context(
     name=f"test-{self.id()}",
-    bearer_token=self.rbt.make_valid_oauth_access_token(
+    bearer_token=await self.rbt.make_valid_oauth_access_token(
         user_id="alice",
     ),
 )

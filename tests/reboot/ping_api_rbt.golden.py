@@ -16410,8 +16410,8 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         ):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
             id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
-            # State is auto-constructed on session init;
-            # see `_auto_construct`.
+            # State is auto-constructed when the user's
+            # JWT is minted; see `_auto_construct`.
             ref = User.ref(id)
             return await ref.create_counter(reboot_context, request)
 
@@ -16427,8 +16427,8 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         ):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
             id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
-            # State is auto-constructed on session init;
-            # see `_auto_construct`.
+            # State is auto-constructed when the user's
+            # JWT is minted; see `_auto_construct`.
             ref = User.ref(id)
             return await ref.list_counters(reboot_context)
 
@@ -16444,8 +16444,8 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         ):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
             id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
-            # State is auto-constructed on session init;
-            # see `_auto_construct`.
+            # State is auto-constructed when the user's
+            # JWT is minted; see `_auto_construct`.
             ref = User.ref(id)
             return await ref.whoami(reboot_context)
 

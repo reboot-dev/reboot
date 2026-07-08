@@ -75,7 +75,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         )
 
         mcp_url = self.rbt.http_localhost_url("/mcp")
-        access_token = self.rbt.make_valid_oauth_access_token()
+        access_token = await self.rbt.make_valid_oauth_access_token()
 
         async with httpx.AsyncClient(
             headers={
@@ -181,7 +181,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
 
         # With a valid bearer token, whoami should return
         # the user_id from the JWT.
-        access_token = self.rbt.make_valid_oauth_access_token()
+        access_token = await self.rbt.make_valid_oauth_access_token()
 
         async with httpx.AsyncClient(
             headers={
@@ -216,7 +216,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         )
 
         mcp_url = self.rbt.http_localhost_url("/mcp")
-        access_token = self.rbt.make_valid_oauth_access_token()
+        access_token = await self.rbt.make_valid_oauth_access_token()
 
         async with httpx.AsyncClient(
             headers={
@@ -321,7 +321,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         )
 
         mcp_url = self.rbt.http_localhost_url("/mcp")
-        access_token = self.rbt.make_valid_oauth_access_token()
+        access_token = await self.rbt.make_valid_oauth_access_token()
 
         async with httpx.AsyncClient(
             headers={"Authorization": f"Bearer {access_token}"},
@@ -460,7 +460,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         )
 
         mcp_url = self.rbt.http_localhost_url("/mcp")
-        access_token = self.rbt.make_valid_oauth_access_token()
+        access_token = await self.rbt.make_valid_oauth_access_token()
 
         async with httpx.AsyncClient(
             headers={
@@ -606,7 +606,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         )
 
         mcp_url = self.rbt.http_localhost_url("/mcp")
-        valid_token = self.rbt.make_valid_oauth_access_token()
+        valid_token = await self.rbt.make_valid_oauth_access_token()
 
         mcp_init_body = {
             "jsonrpc": "2.0",
@@ -629,7 +629,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         }
 
         # A valid (non-expired) token should be accepted.
-        valid_token = self.rbt.make_valid_oauth_access_token()
+        valid_token = await self.rbt.make_valid_oauth_access_token()
 
         async with httpx.AsyncClient(
             follow_redirects=True,
@@ -681,7 +681,9 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
 
         mcp_url = self.rbt.http_localhost_url("/mcp")
         user_id = "test-user-for-auto-construct"
-        access_token = self.rbt.make_valid_oauth_access_token(user_id=user_id)
+        access_token = await self.rbt.make_valid_oauth_access_token(
+            user_id=user_id
+        )
 
         # Connect twice with the same user ID (different MCP sessions).
         # The first session should auto-construct `User`. The second
@@ -846,31 +848,21 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         owner_id = "owner-user"
         other_id = "other-user"
 
-        owner_token = self.rbt.make_valid_oauth_access_token(user_id=owner_id)
-        other_token = self.rbt.make_valid_oauth_access_token(user_id=other_id)
-
-        # App-internal context can call User methods (no
-        # bearer token needed for app-internal).
-        internal_context = self.rbt.create_external_context(
-            name=f"test-{self.id()}-internal",
-            app_internal=True,
-        )
-
-        # Create the User state (app-internal call).
-        await User.create(internal_context, owner_id)
+        # Once we have valid OAuth tokens, Reboot guarantees that the
+        # corresponding `User` states have been created.
 
         # Owner can call their own User's methods.
-        owner_context = self.rbt.create_external_context(
+        owner_context = await self.rbt.create_external_context_as(
             name=f"test-{self.id()}-owner",
-            bearer_token=owner_token,
+            user_id=owner_id,
         )
         response = await User.ref(owner_id).whoami(owner_context)
         self.assertEqual(response.user_id, owner_id)
 
         # A different user gets PermissionDenied.
-        other_context = self.rbt.create_external_context(
+        other_context = await self.rbt.create_external_context_as(
             name=f"test-{self.id()}-other",
-            bearer_token=other_token,
+            user_id=other_id,
         )
         with self.assertRaises(User.WhoamiAborted) as aborted:
             await User.ref(owner_id).whoami(other_context)
@@ -917,28 +909,21 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
         owner_id = "gen-auth-owner"
         other_id = "gen-auth-other"
 
-        owner_token = self.rbt.make_valid_oauth_access_token(user_id=owner_id)
-        other_token = self.rbt.make_valid_oauth_access_token(user_id=other_id)
-
-        # Create User via app-internal context.
-        internal_context = self.rbt.create_external_context(
-            name=f"test-{self.id()}-internal",
-            app_internal=True,
-        )
-        await User.create(internal_context, owner_id)
+        # Once we have valid OAuth tokens, Reboot guarantees that both
+        # `User` states have been created.
 
         # Owner can call their own User.
-        owner_context = self.rbt.create_external_context(
+        owner_context = await self.rbt.create_external_context_as(
             name=f"test-{self.id()}-owner",
-            bearer_token=owner_token,
+            user_id=owner_id,
         )
         response = await User.ref(owner_id).whoami(owner_context)
         self.assertEqual(response.user_id, owner_id)
 
         # Different user gets PermissionDenied.
-        other_context = self.rbt.create_external_context(
+        other_context = await self.rbt.create_external_context_as(
             name=f"test-{self.id()}-other",
-            bearer_token=other_token,
+            user_id=other_id,
         )
         with self.assertRaises(User.WhoamiAborted) as aborted:
             await User.ref(owner_id).whoami(other_context)

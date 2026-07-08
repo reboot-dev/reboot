@@ -16,7 +16,7 @@ from reboot.aio.external import ExternalContext
 from reboot.mcp.context import (
     _REBOOT_CONTEXT_KEY,
     _get_user_id,
-    _init_session_state,
+    _session_id_for_request,
     _set_user_id,
 )
 from reboot.mcp.request_state import _UI_ASSETS_PREFIX, _request_user_agent
@@ -240,10 +240,6 @@ async def _serve_ui_asset(
 def create_mcp_factory(
     *,
     server: FastMCP,
-    new_session_hooks: Sequence[Callable[
-        [ExternalContext, Optional[str]],
-        Awaitable[None],
-    ]],
     per_request_hooks: Sequence[Callable[
         [ExternalContext, Optional[str], Request],
         Awaitable[None],
@@ -258,9 +254,6 @@ def create_mcp_factory(
     Args:
         server: A pre-configured `FastMCP` server with
             tools/resources already registered.
-        new_session_hooks: Async callables to invoke when a new
-            MCP session starts (e.g. to auto-construct state). Arguments
-           passed: (external_context, user_id_or_none).
         per_request_hooks: Async callables to invoke on *every*
             inbound MCP request, regardless of session boundary.
             Arguments passed: (external_context, user_id_or_none,
@@ -387,12 +380,11 @@ def create_mcp_factory(
                     credentials[1].username or None
                 )
 
-            # We replicate the MCP SDK's `StreamableHTTPSessionManager`
-            # logic here so that we can detect when a new session starts
-            # (first request without an `Mcp-Session-Id` header) and run
-            # auto-construction hooks before any tools execute. The
-            # SDK's manager provides no callback or hook for this.
-            session_id, is_new_session = (_init_session_state(request))
+            # Reuse the client's `Mcp-Session-Id` when present, else
+            # mint one. We compute it ourselves (rather than let the
+            # SDK's `StreamableHTTPSessionManager` own it) so the same
+            # value reaches the transport below.
+            session_id = _session_id_for_request(request)
 
             # Store the authenticated user ID (if any) on
             # `request.state` so MCP tools can access it via
@@ -408,16 +400,6 @@ def create_mcp_factory(
                 _REBOOT_CONTEXT_KEY,
                 external_context,
             )
-
-            # On new sessions, auto-construct `User` state if we have an
-            # authenticated user. We do this only when a new session
-            # starts; that's an optimization - it would be safe to e.g.
-            # do it for every tool call, but that would ~double the
-            # number of operations for every tool call.
-            if is_new_session:
-                user_id = _get_user_id(request)
-                for hook in new_session_hooks:
-                    await hook(external_context, user_id)
 
             # Per-request hooks fire on every inbound MCP
             # call. Failures are logged and swallowed — these hooks

@@ -9,6 +9,7 @@ import reboot.aio.workflows
 import reboot.application
 import sys
 import traceback
+from collections import OrderedDict
 from log.log import get_logger
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
@@ -70,6 +71,11 @@ from typing import Any, Awaitable, Callable, NoReturn, Optional
 logger = get_logger(__name__)
 
 _MCP_PATH = "/mcp"
+
+# Cap on the per-instance cache of user ids that `_post_authenticate`
+# has already handled. Eviction is harmless: the next JWT mint for an
+# evicted user re-runs the idempotent auto-construct calls.
+_POST_AUTHENTICATED_USER_IDS_LIMIT = 16_384
 
 
 def _handle_unknown_exception(
@@ -300,11 +306,11 @@ class Application:
         serving any other calls on the servicers.
         """
         # NOTE: `oauth` is an `OAuthProviderSelector`, resolved lazily
-        # in `_mount_oauth_and_mcp` whenever it is configured, mounting
-        # the OAuth server even for an app with nothing to
-        # auto-construct. An app with a `User`-typed auto-construct
-        # servicer but no `oauth=` fails to start: a `token_verifier=`
-        # authenticates requests but never auto-constructs those users.
+        # in `_mount_oauth` whenever it is configured, mounting the
+        # OAuth server even for an app with nothing to auto-construct.
+        # An app with a `User`-typed auto-construct servicer but no
+        # `oauth=` fails to start: a `token_verifier=` authenticates
+        # requests but never auto-constructs those users.
 
         # Get all libraries including required dependent libraries.
         if libraries is not None:
@@ -397,6 +403,14 @@ class Application:
         self._token_verifier = token_verifier
         self._initialize_bearer_token = initialize_bearer_token
         self._oauth = oauth
+        self._oauth_server: Optional[OAuthServer] = None
+        # Bounded LRU (keys only; values are a placeholder `None`) of
+        # users for whom `_post_authenticate` has already run. Kept
+        # per-instance rather than on the class so a fresh `Reboot()` +
+        # state store per test method doesn't inherit a stale "already
+        # authenticated" flag from a sibling test.
+        self._post_authenticated_user_ids: OrderedDict[str,
+                                                       None] = (OrderedDict())
         self._title = title or application_name()
         self._description = description
         self._example_prompts = example_prompts or []
@@ -583,19 +597,18 @@ class Application:
 
     def _mount_oauth_and_mcp(self) -> None:
         """Bring up the OAuth server (if the app needs one to identify
-        users) and the MCP factory. Auto-registers MCP from servicers
-        that have MCP tools defined. Always mounts `/mcp` even if no
-        servicers have tools — the server will accept connections and
-        explain what's missing.
+        users) and then the MCP factory. Order matters: OAuth first,
+        so `_mount_mcp` can read `self._oauth_server`.
 
         Idempotent: calling this multiple times will still only mount
         once.
         """
         if self._mounted:
             return
-        # Mark as mounted before doing the work: a partial mount (some
-        # routes appended, then a later step raises) must not be retried
-        # into duplicate routes on the same `Application`.
+        # Mark as mounted before doing the work: a partial mount (e.g.
+        # `_mount_oauth` succeeds and wraps `_token_verifier`, then
+        # `_mount_mcp` raises) must not be retried into a second OAuth
+        # server or duplicate routes on the same `Application`.
         self._mounted = True
 
         # Auto-construction only ever happens through the OAuth sign-in
@@ -603,36 +616,136 @@ class Application:
         # configure `oauth=`; fail fast here if it hasn't.
         self._require_oauth_for_auto_construct()
 
-        servicers = self._servicers or []
+        auto_construct_state_type_full_names = self._mount_oauth(
+            self._servicers or []
+        )
+        self._mount_mcp(
+            self._servicers or [],
+            auto_construct_state_type_full_names,
+        )
+
+    def _mount_oauth(
+        self,
+        servicers: list[type[Servicer]],
+    ) -> list[StateTypeName]:
+        """Mount the OAuth Authorization Server when the app has an
+        `Application(oauth=...)` provider configured, regardless of
+        whether anything auto-constructs.
+
+        Kept separate from `_mount_mcp` so that browser-only apps (a
+        standalone SPA with no MCP servicers) get the OAuth server
+        too; the access JWTs it issues authenticate both the MCP and
+        the web surface.
+
+        Returns the state type names that auto-construct per user.
+        """
         auto_construct_state_type_full_names = (
             self._auto_construct_state_type_full_names()
         )
-        new_session_hooks: list[Callable[
-            [ExternalContext, Optional[str]],
-            Awaitable[None],
-        ]] = []
+        # Resolve an OAuth provider whenever `Application(oauth=...)` is
+        # configured, regardless of whether anything auto-constructs —
+        # an app adopting Reboot auth for its web surface shouldn't have
+        # to introduce a `User` type just to get a login flow. The
+        # selector's `get()` still raises if the configured provider has
+        # nothing for the current environment (e.g. a prod arm left
+        # unset).
+        if self._oauth is not None:
+            provider = self._oauth.get()
+            # A provider that stores the identity provider's tokens
+            # (`store_tokens=True`) persists them via the `oauth`
+            # library (which encrypts them via `ciphertext`); require
+            # the developer to have mounted them.
+            if provider.stores_tokens:
+                self._require_oauth_libraries()
+            oauth_server = OAuthServer(
+                provider=provider,
+                protected_resources=[_MCP_PATH],
+                application_title=self._title,
+                auto_construct_state_type_full_names=(
+                    auto_construct_state_type_full_names
+                ),
+                post_authenticate=self._post_authenticate,
+            )
+            self._oauth_server = oauth_server
+            if self._token_verifier is not None:
+                # Compose with the user's own verifier: the OAuth
+                # server's verifier runs first, definitively rejecting
+                # invalid Reboot-minted access JWTs (e.g. expired ones),
+                # while tokens of any other shape fall through to the
+                # user's verifier.
+                self._token_verifier = CompoundTokenVerifier(
+                    [oauth_server.token_verifier, self._token_verifier]
+                )
+            else:
+                self._token_verifier = oauth_server.token_verifier
+            oauth_server.mount_routes(self.http)
+        return auto_construct_state_type_full_names
+
+    async def _post_authenticate(
+        self,
+        context: ExternalContext,
+        user_id: str,
+    ) -> None:
+        """Materialize per-user auto-construct state the first time a
+        user authenticates. Safe and cheap to call again for the same
+        user.
+
+        `context` is app-internal: materializing the state is a Writer
+        call (`User.Create(...)`) that the authorizer permits from
+        trusted app code (auto-construct `User` types allow
+        app-internal callers).
+        """
+        # Idempotent across both calls and processes: an instance-
+        # level cache makes repeat hits free within one `Application`
+        # lifetime, and Reboot's storage-layer idempotency makes the
+        # construct durable across processes. The cache is
+        # deliberately a per-instance attribute, not a class
+        # attribute, so a fresh `Reboot()` + state store per test
+        # method doesn't inherit a stale "already authenticated" flag
+        # from a sibling test.
+        if user_id in self._post_authenticated_user_ids:
+            self._post_authenticated_user_ids.move_to_end(user_id)
+            return
+        # Fan out across all auto-construct servicers in parallel —
+        # every JWT mint blocks on this, so a serial loop would add N
+        # RPC RTTs to first-time sign-in for an app with N auto-
+        # construct state types.
+        await asyncio.gather(
+            *(
+                servicer_cls._auto_construct(context, state_id=user_id)
+                for servicer_cls in (self._servicers or [])
+                if servicer_cls._is_auto_construct
+            )
+        )
+        self._post_authenticated_user_ids[user_id] = None
+        # Evict least-recently-authenticated entries beyond the cap; an
+        # evicted user's next mint just redoes the (idempotent, cheap)
+        # auto-construct calls.
+        while (
+            len(self._post_authenticated_user_ids)
+            > _POST_AUTHENTICATED_USER_IDS_LIMIT
+        ):
+            self._post_authenticated_user_ids.popitem(last=False)
+
+    def _mount_mcp(
+        self,
+        servicers: list[type[Servicer]],
+        auto_construct_state_type_full_names: list[StateTypeName],
+    ) -> None:
+        """Mount the `/mcp` endpoint, registering MCP tools and
+        resources from any servicers that declare them. `/mcp` is
+        always mounted, even when no servicer has tools — the server
+        accepts connections and explains what's missing.
+
+        Reads `self._oauth_server` (set up by `_mount_oauth`) for the
+        MCP-SDK token verifier, so the OAuth server must already be in
+        place.
+        """
+
         per_request_hooks: list[Callable[
             [ExternalContext, Optional[str], Any],
             Awaitable[None],
         ]] = []
-
-        # Wire up auto-construction of states for every authenticated user.
-        for servicer_cls in servicers:
-            if servicer_cls._is_auto_construct:
-
-                async def maybe_auto_construct_based_on_user_id(
-                    context: ExternalContext,
-                    user_id: Optional[str],
-                    # Capture by value to avoid the closure-in-a-loop
-                    # pitfall.
-                    _cls=servicer_cls,
-                ):
-                    if user_id is None:
-                        # We can't auto-construct if there's no user ID.
-                        return
-                    await _cls._auto_construct(context, state_id=user_id)
-
-                new_session_hooks.append(maybe_auto_construct_based_on_user_id)
 
         # Record MCP connections made into this application — but only
         # in dev mode.
@@ -667,11 +780,10 @@ class Application:
                     user_agent=user_agent,
                 )
 
-            # NOTE: even though we have session hooks we want to check
-            # for connections per-request because (a) MCP is dropping
-            # sessions and (b) after an expunge we will still want to
-            # track which clients have connected and the only way to
-            # do that is by looking at each request.
+            # Check for connections on every request rather than once
+            # per session: (a) MCP is dropping sessions, and (b) after
+            # an expunge we still want to track which clients have
+            # connected, which we can only observe per-request.
             per_request_hooks.append(record_connection)
 
         # Create MCP server and register all servicers' tools/resources.
@@ -679,46 +791,15 @@ class Application:
         for servicer_cls in servicers:
             servicer_cls._add_mcp(server, auto_construct_state_type_full_names)
 
-        # Create the OAuth server (if configured) before mounting the
-        # MCP factory so we can pass it the `MCPSDKOAuthTokenVerifier` -
-        # if we didn't have that in place, expired tokens wouldn't be
-        # caught until our `OAuthTokenVerifier`, and those errors are
-        # (to the MCP SDK) merely internal server errors - they wouldn't
-        # produce the 401 error code needed to trigger a token refresh.
-        mcp_sdk_token_verifier = None
-        oauth_server = None
-        # Resolve an OAuth provider whenever `Application(oauth=...)` is
-        # configured, regardless of whether anything auto-constructs —
-        # an app adopting Reboot auth for its web surface shouldn't have
-        # to introduce a `User` type just to get a login flow. The
-        # selector's `get()` still raises if the configured provider has
-        # nothing for the current environment.
-        if self._oauth is not None:
-            provider = self._oauth.get()
-            # A provider that stores the identity provider's tokens
-            # (`store_tokens=True`) persists them via the `oauth` library
-            # (which encrypts them via `ciphertext`); require the developer
-            # to have mounted them.
-            if provider.stores_tokens:
-                self._require_oauth_libraries()
-            oauth_server = OAuthServer(
-                provider=provider,
-                protected_resources=[_MCP_PATH],
-                application_title=self._title,
-            )
-            if self._token_verifier is not None:
-                # Compose with the user's own verifier: the OAuth
-                # server's verifier runs first, definitively rejecting
-                # invalid Reboot-minted access JWTs (e.g. expired ones),
-                # while tokens of any other shape fall through to the
-                # user's verifier.
-                self._token_verifier = CompoundTokenVerifier(
-                    [oauth_server.token_verifier, self._token_verifier]
-                )
-            else:
-                self._token_verifier = oauth_server.token_verifier
-            mcp_sdk_token_verifier = oauth_server.mcp_sdk_token_verifier
-            oauth_server.mount_routes(self.http)
+        # The OAuth server (if any) was mounted earlier by
+        # `_mount_oauth`; reach into it for the MCP-SDK token
+        # verifier so expired tokens produce a clean 401 with
+        # `WWW-Authenticate` from the SDK rather than an opaque
+        # internal-server-error from our own verifier.
+        mcp_sdk_token_verifier = (
+            self._oauth_server.mcp_sdk_token_verifier
+            if self._oauth_server is not None else None
+        )
 
         # The `type: ignore` is needed because `create_mcp_factory`
         # returns a closure, and mypy can't verify Protocol conformance
@@ -728,7 +809,6 @@ class Application:
             _MCP_PATH,
             factory=create_mcp_factory(  # type: ignore[arg-type]
                 server=server,
-                new_session_hooks=new_session_hooks,
                 per_request_hooks=per_request_hooks,
                 token_verifier=mcp_sdk_token_verifier,
             ),
@@ -741,13 +821,11 @@ class Application:
         # through to the app's HTTP cluster and lands here. Starlette
         # strips the mount prefix, so `StaticFiles(directory=dist_dir)`
         # resolves `/__/frontend/web/index.html` to
-        # `dist_dir/web/index.html`. We mount here (not in
-        # `_rbt_start_and_up_and_initialize`) so the mount is present in
-        # every serving server subprocess, which rebuilds its web
-        # framework by re-running `__init__` rather than `run()`. In HMR
-        # mode `ENVVAR_RBT_FRONTEND_HOST` points at the Vite dev server
-        # and Envoy routes `/__/frontend/` there instead, so skip the
-        # mount.
+        # `dist_dir/web/index.html`. The mount must be present in every
+        # serving server subprocess, so it is established here at serve
+        # time. In HMR mode `ENVVAR_RBT_FRONTEND_HOST` points at the
+        # Vite dev server and Envoy routes `/__/frontend/` there
+        # instead, so skip the mount.
         frontend_dist_path = os.environ.get(ENVVAR_RBT_FRONTEND_DIST_PATH)
         if frontend_dist_path and not os.environ.get(ENVVAR_RBT_FRONTEND_HOST):
             project_root = self._frontend_project_root()
@@ -1097,7 +1175,28 @@ class NodeApplication(Application):
             stop=web_framework_stop,
         )
 
-    def _mount_oauth_and_mcp(self) -> None:
+    def _mount_oauth(
+        self,
+        servicers: list[type[Servicer]],
+    ) -> list[StateTypeName]:
+        # The OAuth Authorization Server is implemented on top of the
+        # Python web framework. Node.js apps can't serve its
+        # endpoints from the same process, so the unified `oauth=`
+        # flow is Python-only this phase.
+        if self._oauth is not None:
+            raise ValueError(
+                "`oauth=...` is not yet supported for Node.js "
+                "applications. Use `token_verifier=...` with your "
+                "own IdP integration, or switch to a Python-based "
+                "Reboot application."
+            )
+        return []
+
+    def _mount_mcp(
+        self,
+        servicers: list[type[Servicer]],
+        auto_construct_state_type_full_names: list[StateTypeName],
+    ) -> None:
         # MCP is not supported for Node.js applications.
         pass
 

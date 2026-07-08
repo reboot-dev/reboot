@@ -2691,8 +2691,8 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             {{ mcp_name_prefix }}id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
 {% endif %}
 {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
-            # State is auto-constructed on session init;
-            # see `_auto_construct`.
+            # State is auto-constructed when the user's
+            # JWT is minted; see `_auto_construct`.
 {% endif %}
 {% if method.options.proto.constructor %}
 {% if method.input_type_fields %}
@@ -2747,8 +2747,8 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             {{ mcp_name_prefix }}id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
 {% endif %}
 {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
-            # State is auto-constructed on session init;
-            # see `_auto_construct`.
+            # State is auto-constructed when the user's
+            # JWT is minted; see `_auto_construct`.
 {% endif %}
             # Construct request from URI params, coercing types
             # as needed.
@@ -2794,8 +2794,8 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             {{ mcp_name_prefix }}id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
 {% endif %}
 {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
-            # State is auto-constructed on session init;
-            # see `_auto_construct`.
+            # State is auto-constructed when the user's
+            # JWT is minted; see `_auto_construct`.
 {% endif %}
 {% if method.options.proto.constructor %}
             _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, {{ mcp_name_prefix }}id)

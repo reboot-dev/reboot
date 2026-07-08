@@ -55,14 +55,13 @@ class CompoundTokenVerifierTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_reboot_minted_token_authenticates(self) -> None:
-        # A Reboot-minted access JWT authenticates via the OAuth
-        # server's verifier. Construct the `User` explicitly, since in
-        # this era minting has no auto-construct side effect.
+        # A token minted through the production chokepoint
+        # authenticates via the OAuth server's verifier (and
+        # auto-constructed the `User` as a mint side effect).
         context = self._context_as(
             "alice",
-            self.rbt.make_valid_oauth_access_token(user_id="alice"),
+            await self.rbt.make_valid_oauth_access_token(user_id="alice"),
         )
-        await UserServicer._auto_construct(context, state_id="alice")
         response = await User.ref("alice").whoami(context)
         self.assertEqual(response.user_id, "alice")
 
@@ -84,7 +83,7 @@ class CompoundTokenVerifierTest(unittest.IsolatedAsyncioTestCase):
         # authenticated the caller as the literal token string and
         # this request would have aborted with `PermissionDenied`
         # instead.
-        self.rbt.make_valid_oauth_access_token(user_id="alice")
+        await self.rbt.make_valid_oauth_access_token(user_id="alice")
         expired_token = self.rbt.make_jwt(
             type="access",
             sub="alice",

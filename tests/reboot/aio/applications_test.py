@@ -161,25 +161,25 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-        # OAuth path: a Reboot-minted access JWT authenticates via the
-        # OAuth server's verifier, which is authoritative for
-        # Reboot-minted access JWTs. Construct the `User` explicitly,
-        # since in this era minting has no auto-construct side effect.
+        # OAuth path: a token minted through the production chokepoint
+        # authenticates via the OAuth server's verifier, which is
+        # authoritative for Reboot-minted access JWTs (and
+        # auto-constructed the `User` as a mint side effect).
         oauth_context = self.rbt.create_external_context(
             name=f"oauth-{self.id()}",
-            bearer_token=self.rbt.make_valid_oauth_access_token(
+            bearer_token=await self.rbt.make_valid_oauth_access_token(
                 user_id="alice",
             ),
         )
-        await UserServicer._auto_construct(oauth_context, state_id="alice")
         oauth_response = await User.ref("alice").whoami(oauth_context)
         self.assertEqual(oauth_response.user_id, "alice")
 
         # Fallthrough path: "carol" is not a JWT, so the OAuth server's
         # verifier has no opinion and the bearer falls through to
         # `_BearerIsUserIdForTest`, which authenticates the caller as the
-        # literal token string. Construct the `User` explicitly before
-        # calling.
+        # literal token string. Nothing minted a token for "carol", so
+        # the `User` is auto-constructed here rather than as a mint side
+        # effect.
         custom_context = self.rbt.create_external_context(
             name=f"fallthrough-{self.id()}",
             bearer_token="carol",

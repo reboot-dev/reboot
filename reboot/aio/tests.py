@@ -1,13 +1,13 @@
 import jwt
 import os
 import reboot.aio.reboot
-import time
 import unittest
 from reboot.aio.applications import Application, NodeApplication
 from reboot.aio.auth.oauth_providers import (
     ExchangeResult,
     OAuthProvider,
     OAuthProviderSelector,
+    UserId,
 )
 from reboot.aio.auth.oauth_server import signing_secret
 from reboot.aio.auth.token_verifiers import TokenVerifier
@@ -124,34 +124,69 @@ class Reboot(reboot.aio.reboot.Reboot):
         os.environ.setdefault(
             ENVVAR_REBOOT_CRYPTO_ROOT_KEYS, _TEST_CRYPTO_ROOT_KEYS
         )
+        # The application under test, or `None` before one is started.
+        self._application: Optional[Application] = None
 
-    def make_valid_oauth_access_token(
+    async def make_valid_oauth_access_token(
         self,
         user_id: str = "test-user",
     ) -> str:
         """
         Mint a valid JWT OAuth access token for use in tests.
-        
-        The resulting token will be accepted by Reboot applications in
-        unit tests, as if the caller had gone through the full OAuth
-        flow and was authenticated with the given user ID.
-        
-        It doesn't matter which OAuth provider is used by the
-        application; the OAuth flow doesn't in fact execute. A token is
-        directly minted using the application's signing secret,
-        emulating what happens in the final step of a successful OAuth
-        flow. The resulting token is valid, but the identity it presents
-        is just whatever the developer specified - no actual
-        authentication takes place.
+
+        Routes through the running application's
+        `OAuthServer._mint_tokens_for_user`, which is the single
+        production code path every JWT this server hands out goes
+        through. That keeps the test token byte-for-byte equivalent
+        to one minted by a real `/token` exchange, and it fires
+        per-user auto-construct as a side effect — so a test that
+        just does `await rbt.make_valid_oauth_access_token(...)`
+        and immediately opens an MCP session finds the `User`
+        actor already materialized, matching the behaviour MCP-via-
+        OAuth flows get for free.
+
+        The identity is just whatever the developer specified — no
+        actual authentication takes place.
+
+        Works for any application: `up()` guarantees an OAuth server
+        exists, auto-supplying a `FakeOnly` test provider when the app
+        has no `oauth=` of its own. Call `up()` before this.
         """
-        return self.make_jwt(
-            type="access",
-            sub=user_id,
-            aud="reboot-mcp",
-            # Valid for 1000 hours; much longer than any test should
-            # ever run.
-            exp=int(time.time()) + 60 * 60 * 1000,
+        assert (
+            self._application is not None and
+            self._application._oauth_server is not None
+        ), (
+            "make_valid_oauth_access_token() needs a running "
+            "application with an OAuth server; call `up()` first. "
+            "`up()` guarantees one for every test application "
+            "(auto-supplying a `FakeOnly` test provider when the app "
+            "has no `oauth=`), so this only trips when it is called "
+            "before `up()`."
         )
+        oauth_server = self._application._oauth_server
+
+        tokens = await oauth_server._mint_tokens_for_user(
+            user_id=UserId(user_id),
+            # Tests don't model a real OAuth client; use a stable
+            # synthetic id so refresh tokens minted in the same
+            # process round-trip cleanly.
+            client_id="reboot-test-client",
+            # `iss` claim on the access token. The verifier ignores
+            # `iss` (it only checks signature + `aud` + `exp`), so
+            # this value is cosmetic; pick a stable string so the
+            # token has a recognisable shape if dumped in a debug
+            # log.
+            base="http://reboot-test",
+            # Production mints from `app_internal=True` routes, so
+            # `_post_authenticate`'s auto-construct Writer runs as
+            # trusted app code; tests have no request, so build an
+            # app-internal context off the test `Reboot` directly.
+            context=self.create_external_context(
+                name="reboot.tests.make_valid_oauth_access_token",
+                app_internal=True,
+            ),
+        )
+        return tokens["access_token"]
 
     async def create_external_context_as(
         self,
@@ -164,11 +199,13 @@ class Reboot(reboot.aio.reboot.Reboot):
         The standard way a test impersonates a signed-in user: mint a
         valid OAuth access token for `user_id` (see
         `make_valid_oauth_access_token`) and hand it to
-        `create_external_context` as the bearer token.
+        `create_external_context` as the bearer token. Works for any
+        application — `up()` guarantees an OAuth server to mint
+        through, so call `up()` first.
         """
         return self.create_external_context(
             name=name,
-            bearer_token=self.make_valid_oauth_access_token(
+            bearer_token=await self.make_valid_oauth_access_token(
                 user_id=user_id,
             ),
         )
@@ -295,14 +332,16 @@ class Reboot(reboot.aio.reboot.Reboot):
         if application is None:
             raise ValueError("Must pass one of 'application' or 'revision'")
 
-        # Guarantee every app under test has an OAuth server, so a token
-        # minted by `make_valid_oauth_access_token` (and
-        # `create_external_context_as` on top of it) verifies uniformly.
+        self._application = application
+
+        # Guarantee every app under test has an OAuth server, so the
+        # minting chokepoint `make_valid_oauth_access_token` (and
+        # `create_external_context_as` on top of it) works uniformly.
         # An app that configured its own `oauth=` keeps it; one without
         # gets a `FakeOnly` provider, whose verifier composes ahead of
-        # any `token_verifier=` (Reboot-minted access JWTs verify first,
-        # everything else falls through), so a custom verifier still
-        # authenticates its own tokens.
+        # any `token_verifier=` (Reboot-minted access JWTs verify
+        # first, everything else falls through), so a custom verifier
+        # still authenticates its own tokens.
         # Node.js applications can't serve the OAuth server's
         # endpoints from their process, so they get no injected
         # provider (and `create_external_context_as` stays

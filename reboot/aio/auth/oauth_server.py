@@ -27,11 +27,12 @@ from reboot.aio.auth.oauth_providers import (
 )
 from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
 from reboot.aio.contexts import ReaderContext
+from reboot.aio.external import ExternalContext
 from reboot.aio.http import PythonWebFramework, external_context
 from reboot.crypto import root_keys
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional, Sequence
 from urllib.parse import urlencode, urlparse
 
 logger = logging.getLogger(__name__)
@@ -41,9 +42,8 @@ _AUTH_CODE_TTL_SECONDS = 300  # 5 minutes.
 _REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60  # 30 days.
 # How long a user has to complete the identity provider sign-in
 # flow (from the authorize redirect to the callback). 10 minutes
-# is generous for an
-# interactive login but short enough to limit the window for state-token
-# replay.
+# is generous for an interactive login but short enough to limit
+# the window for state-token replay.
 _PENDING_STATE_TTL_SECONDS = 600  # 10 minutes.
 
 # JWT algorithm.
@@ -284,10 +284,23 @@ class OAuthServer:
         protected_resources: list[str],
         # The application's human-readable title, e.g. "Hipster Chat".
         application_title: str,
+        auto_construct_state_type_full_names: Optional[Sequence[str]] = None,
+        post_authenticate: Optional[Callable[[ExternalContext, str],
+                                             Awaitable[None]]] = None,
     ):
+        """`post_authenticate`, if given, runs right after each fresh
+        access token is minted for a user, receiving an app-internal
+        `ExternalContext` and the `user_id` the token was minted for.
+        It must be idempotent and inexpensive — it can run on every
+        mint for the same user.
+        """
         self._provider = provider
         self._protected_resources = protected_resources
         self._application_title = application_title
+        self._auto_construct_state_type_full_names: list[str] = list(
+            auto_construct_state_type_full_names or []
+        )
+        self._post_authenticate = post_authenticate
         self._access_token_ttl_seconds = provider.access_token_ttl_seconds
         # Derived from the Reboot-managed cryptographic root keys; raises
         # if `REBOOT_CRYPTO_ROOT_KEYS` is unset/malformed (fail fast at
@@ -350,13 +363,75 @@ class OAuthServer:
         # authorization code that we exchange and validate before doing any
         # app-internal work.
         http.get(_CALLBACK_PATH, app_internal=True)(self.callback)
-        http.post(_TOKEN_PATH)(self.token)
+        http.post(_TOKEN_PATH, app_internal=True)(self.token)
         http.options(_TOKEN_PATH)(self.cors_preflight)
 
         # Let the provider register any additional routes it needs.
         self._provider.mount_routes(http)
 
     # ---- Helpers ----
+
+    async def _mint_tokens_for_user(
+        self,
+        *,
+        user_id: UserId,
+        client_id: str,
+        base: str,
+        context: ExternalContext,
+    ) -> dict[str, Any]:
+        """Mint a fresh access/refresh token pair for `user_id` and
+        return the standard OAuth token response body (`access_token`,
+        `token_type`, `expires_in`, `refresh_token`).
+
+        Every JWT this server hands out is minted here: using a Reboot
+        app always requires the user to authenticate, and this is the
+        one place that mints the token proving it. After minting,
+        `post_authenticate` (if set) is fired with `context`; given the
+        idempotent `post_authenticate` its contract requires, this
+        method is in turn safe to call repeatedly for the same user.
+
+        `context` is an app-internal `ExternalContext`: the routes that
+        mint are `app_internal=True`, so the auto-construct Writer that
+        `post_authenticate` runs is trusted app code rather than a call
+        made as the (not-yet-existent) user.
+        """
+        access_token = self._make_jwt(
+            {
+                "type": "access",
+                "sub": user_id,
+                "iss": base,
+                "aud": _AUDIENCE,
+            },
+            ttl_seconds=self._access_token_ttl_seconds,
+        )
+        refresh_token = self._make_jwt(
+            {
+                "type": "refresh",
+                "sub": user_id,
+                "client_id": client_id,
+            },
+            ttl_seconds=_REFRESH_TOKEN_TTL_SECONDS,
+        )
+        # Fire the post-authenticate hook before returning the tokens,
+        # so a failure surfaces as a 500 with no token body /
+        # `Set-Cookie`, as if we'd minted nothing. It may auto-construct
+        # the user's `User` actor via a Writer
+        # (`User.idempotently(...).Create(...)`); that call is permitted
+        # because `context` is app-internal — auto-construct `User`
+        # types allow app-internal callers. The hook is idempotent —
+        # repeat calls for the same user no-op via the Application's
+        # in-process cache, and Reboot's `uuid5`-keyed storage
+        # idempotency makes the construct durable across processes, so a
+        # token minted by one server and replayed against another still
+        # finds the actor. If the hook raises we propagate it.
+        if self._post_authenticate is not None:
+            await self._post_authenticate(context, user_id)
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "expires_in": self._access_token_ttl_seconds,
+            "refresh_token": refresh_token,
+        }
 
     def _make_jwt(self, payload: dict[str, Any], ttl_seconds: int) -> str:
         """Sign a payload as a JWT with the given TTL."""
@@ -1087,36 +1162,13 @@ class OAuthServer:
         user_id: UserId = UserId(code_data["sub"])
         base = origin_from_request(request)
 
-        # Mint access token.
-        access_token = self._make_jwt(
-            {
-                "type": "access",
-                "sub": user_id,
-                "iss": base,
-                "aud": _AUDIENCE,
-            },
-            ttl_seconds=self._access_token_ttl_seconds,
+        tokens = await self._mint_tokens_for_user(
+            user_id=user_id,
+            client_id=str(client_id),
+            base=base,
+            context=external_context(request),
         )
-
-        # Mint refresh token.
-        refresh_token = self._make_jwt(
-            {
-                "type": "refresh",
-                "sub": user_id,
-                "client_id": str(client_id),
-            },
-            ttl_seconds=_REFRESH_TOKEN_TTL_SECONDS,
-        )
-
-        return JSONResponse(
-            {
-                "access_token": access_token,
-                "token_type": "bearer",
-                "expires_in": self._access_token_ttl_seconds,
-                "refresh_token": refresh_token,
-            },
-            headers=_CORS_HEADERS,
-        )
+        return JSONResponse(tokens, headers=_CORS_HEADERS)
 
     async def _token_refresh(
         self,
@@ -1161,33 +1213,12 @@ class OAuthServer:
         user_id: UserId = UserId(refresh_data["sub"])
         base = origin_from_request(request)
 
-        # Mint new access token.
-        access_token = self._make_jwt(
-            {
-                "type": "access",
-                "sub": user_id,
-                "iss": base,
-                "aud": _AUDIENCE,
-            },
-            ttl_seconds=self._access_token_ttl_seconds,
-        )
-
-        # Mint new refresh token (rotation).
-        new_refresh_token = self._make_jwt(
-            {
-                "type": "refresh",
-                "sub": user_id,
-                "client_id": str(client_id),
-            },
-            ttl_seconds=_REFRESH_TOKEN_TTL_SECONDS,
-        )
-
         return JSONResponse(
-            {
-                "access_token": access_token,
-                "token_type": "bearer",
-                "expires_in": self._access_token_ttl_seconds,
-                "refresh_token": new_refresh_token,
-            },
+            await self._mint_tokens_for_user(
+                user_id=user_id,
+                client_id=str(client_id),
+                base=base,
+                context=external_context(request),
+            ),
             headers=_CORS_HEADERS,
         )
