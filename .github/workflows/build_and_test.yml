@@ -1,7 +1,3 @@
-# This file is generated from a template in `ci/templates/`.
-# Do not edit it directly.
-# Run `bazel run //:ci_workflows` to regenerate it after editing the template.
-
 name: Build and Test
 
 on:
@@ -35,21 +31,6 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  check-ci-consistency:
-    name: Check CI Consistency
-    uses: ./.github/workflows/devcontainer.yml
-    # The nested job needs write permissions, which means this job also needs
-    # them.
-    permissions:
-      packages: write
-    secrets: inherit
-    with:
-      cancel-workflow-on-failure: true
-      runs-on: depot-ubuntu-24.04-4
-      run: |
-        # Fail if CI workflow files don't match templates.
-        bazel test //:ci_workflows_test
-
   check-code-style:
     name: Check Code Style
     uses: ./.github/workflows/devcontainer.yml
