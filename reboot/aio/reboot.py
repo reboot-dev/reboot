@@ -507,7 +507,12 @@ class Reboot:
             # we restart the application it can be restarted on the same
             # port.
             self._local_envoy_picked_port = self.envoy_port()
-            trusted_address = f"localhost:{self.envoy_trusted_port()}"
+            # Dial the IPv4 loopback Envoy actually binds: `localhost`
+            # may resolve to `[::1]` first, where an unrelated process
+            # (e.g. the Bazel server JVM) can hold the same numeric
+            # port, silently answering our RPCs. See
+            # https://github.com/reboot-dev/reboot/issues/83.
+            trusted_address = f"127.0.0.1:{self.envoy_trusted_port()}"
         else:
             # The only way we support multi-server applications is to
             # have a local Envoy proxy in front of them. There is no

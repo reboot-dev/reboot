@@ -592,7 +592,12 @@ class LocalServerManager(ServerManager):
         if self._local_envoy is None:
             return None
 
-        return f'localhost:{self._local_envoy.trusted_port}'
+        # Dial the IPv4 loopback Envoy actually binds: `localhost`
+        # may resolve to `[::1]` first, where an unrelated process
+        # (e.g. the Bazel server JVM) can hold the same numeric port,
+        # silently answering our RPCs. See
+        # https://github.com/reboot-dev/reboot/issues/83.
+        return f'127.0.0.1:{self._local_envoy.trusted_port}'
 
     def register_placement_planner_address(
         self, placement_planner_address: RoutableAddress
