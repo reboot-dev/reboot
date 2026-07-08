@@ -86,12 +86,15 @@ class Reboot(reboot.aio.reboot.Reboot):
         # must be set before `start()` which is where
         # `monitor_event_loop()` reads the env var.
         os.environ[ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG] = 'true'
-        # Set cryptographic root keys so that `OAuthServer` (and any other
-        # key-deriving library) can be used in tests without manual env
-        # patching. Mirrors what `rbt dev` does for local development.
+        # Set the test cryptographic root keys on test-harness
+        # construction, not at import, so an accidental `import
+        # reboot.aio.tests` in production injects nothing. Key-deriving
+        # libraries (the `OAuthServer`'s JWT signing key, ...) need them
+        # only at serve time, which for tests is `up()` — always after
+        # this constructor. `setdefault` leaves an explicit value (e.g.
+        # from `rbt`) untouched, mirroring `rbt dev`.
         os.environ.setdefault(
-            ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
-            _TEST_CRYPTO_ROOT_KEYS,
+            ENVVAR_REBOOT_CRYPTO_ROOT_KEYS, _TEST_CRYPTO_ROOT_KEYS
         )
 
     def make_valid_oauth_access_token(
@@ -244,6 +247,12 @@ class Reboot(reboot.aio.reboot.Reboot):
         if application is None:
             raise ValueError("Must pass one of 'application' or 'revision'")
 
+        # Mount the OAuth server and MCP factory now, at serve time —
+        # the production serve path does this in `Application.run()`,
+        # which tests don't call.
+        if not application._config_mode:
+            application._mount_oauth_and_mcp()
+
         # Should only have `application`, `local_envoy`,
         # `local_envoy_port`, `servers`, `effect_validation`.
 
@@ -254,12 +263,6 @@ class Reboot(reboot.aio.reboot.Reboot):
         if local_envoy is None and not in_nodejs():
             if application.has_http_routes_or_mounts():
                 local_envoy = True
-
-        # Mount MCP now that we know we have a real cluster coming up.
-        # This is deliberately deferred from `Application.__init__`,
-        # where the run environment was `InvalidRunEnvironment` (i.e.
-        # no `rbt dev` / `rbt serve` process detected).
-        application._mount_mcp(application._servicers or [])
 
         revision = await super().up(
             servicers=application.servicers,

@@ -282,9 +282,10 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         `Application` whose `oauth` selector has no provider for that
         environment (here, the `oauth=None` default ≡ `dev=None,
         prod=None`) fails to start when it has a `User` servicer — its
-        `OAuthProviderByEnvironment.get()` raises. So an app can't
-        silently ship without choosing a real OAuth provider. (Under
-        `rbt dev` and in tests the `dev` arm is used instead.)
+        `OAuthProviderByEnvironment.get()` raises when the OAuth
+        server mounts at serve time. So an app can't silently ship
+        without choosing a real OAuth provider. (Under `rbt dev` and
+        in tests the `dev` arm is used instead.)
 
         Uses the real `reboot.aio.applications.Application` (the test
         `Application` always resolves to a concrete provider).
@@ -294,10 +295,11 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
             {ENVVAR_RBT_SERVE: "true"},
             clear=False,
         ):
+            application = Application(
+                servicers=[UserServicer, CounterServicer],
+            )
             with self.assertRaises(InputError) as context:
-                Application(
-                    servicers=[UserServicer, CounterServicer],
-                )
+                application._mount_oauth_and_mcp()
         self.assertIn(
             "No OAuth provider is configured",
             str(context.exception),

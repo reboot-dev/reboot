@@ -300,10 +300,10 @@ class Application:
                 "`TokenVerifier` is created automatically."
             )
 
-        # NOTE: `oauth` is an `OAuthProviderSelector`, resolved lazily in
-        # `_mount_mcp` only when the app needs a provider to identify
-        # users (it has a `User`-typed auto-construct servicer and no
-        # `token_verifier`). `oauth=None` is treated as
+        # NOTE: `oauth` is an `OAuthProviderSelector`, resolved lazily
+        # in `_mount_oauth_and_mcp` only when the app needs a provider
+        # to identify users (it has a `User`-typed auto-construct
+        # servicer and no `token_verifier`). `oauth=None` is treated as
         # `OAuthProviderByEnvironment(dev=None, prod=None)` there, so an
         # app that needs OAuth but never configured one fails to start.
 
@@ -426,32 +426,32 @@ class Application:
 
         self._run_environment: Optional[RunEnvironment] = None
 
+        config_mode = False
         try:
             self._run_environment = detect_run_environment()
+            config_mode = (
+                self._run_environment == RunEnvironment.RBT_CLOUD and
+                os.environ.get(ENVVAR_REBOOT_MODE) == REBOOT_MODE_CONFIG
+            )
         except InvalidRunEnvironment:
-            # Bail out.
-            #
-            # We might be running tests, in which case the test will
-            # manually call `Reboot.up` to create a cluster.
-            #
-            # If this is being run without `rbt dev` or `rbt serve`
-            # the user will be given a helpful error message at
-            # run-time and the application will exit with a non-0 exit
-            # code without a distracting stack trace.
-            return
+            # Not serving: either a unit test (which will call
+            # `Reboot.up` to bring up a cluster) or an app run without
+            # `rbt dev` / `rbt serve` (which gets a helpful run-time
+            # error and exits). The serving setup below is deferred.
+            self._run_environment = None
 
-        if (
-            self._run_environment == RunEnvironment.RBT_CLOUD and
-            os.environ.get(ENVVAR_REBOOT_MODE) == REBOOT_MODE_CONFIG
-        ):
-            # This application is running on Reboot Cloud in "config
-            # mode" rather than as a serving server. Don't initialize
-            # the Reboot instance or mount the MCP server; the config
-            # server that we'll start later doesn't need them.
-            return
+        # A Reboot Cloud config server validates configuration and never
+        # serves, so it mounts neither the OAuth server nor the MCP
+        # factory. Remember the mode so the serve-time mount (in `run()`
+        # and, for tests, `Reboot.up`) can skip it.
+        self._config_mode = config_mode
+        # Guards `_mount_oauth_and_mcp` so the serve paths (entry
+        # process, server subprocess `run()`, and the test harness's
+        # repeatable `up()`) mount at most once per `Application`.
+        self._mounted = False
 
-        # We'll be serving. Mount MCP's HTTP endpoints.
-        self._mount_mcp(self._servicers or [])
+        if self._run_environment is None or config_mode:
+            return
 
         if within_nodejs_server() or within_python_server():
             # We don't need to bring up a Reboot cluster when running a
@@ -527,18 +527,23 @@ class Application:
     def has_http_routes_or_mounts(self) -> bool:
         return len(self.http._api_routes) > 0 or len(self.http._mounts) > 0
 
-    def _mount_mcp(
-        self,
-        servicers: list[type[Servicer]],
-    ) -> None:
-        """Mount MCP from servicers.
+    def _mount_oauth_and_mcp(self) -> None:
+        """Bring up the OAuth server (if the app needs one to identify
+        users) and the MCP factory. Auto-registers MCP from servicers
+        that have MCP tools defined. Always mounts `/mcp` even if no
+        servicers have tools — the server will accept connections and
+        explain what's missing.
 
-        Called from `__init__` after the web framework is
-        created. Auto-registers MCP from servicers that have
-        MCP tools defined. Always mounts `/mcp` even if no
-        servicers have tools — the server will accept
-        connections and explain what's missing.
+        Idempotent: calling this multiple times will still only mount
+        once.
         """
+        if self._mounted:
+            return
+        # Mark as mounted before doing the work: a partial mount (some
+        # routes appended, then a later step raises) must not be retried
+        # into duplicate routes on the same `Application`.
+        self._mounted = True
+        servicers = self._servicers or []
         auto_construct_state_type_full_names: list[StateTypeName] = []
         new_session_hooks: list[Callable[
             [ExternalContext, Optional[str]],
@@ -805,6 +810,15 @@ class Application:
             if self._initialize is not None:
                 await self._initialize(context)
 
+        # The entry process serves this application's web framework and
+        # token verifier (and stores them on the revision that in-process
+        # servers launch from), so — like the server subprocesses' `run()`
+        # and the test harness's `up()` — it mounts the OAuth server and
+        # MCP factory here, at its serve point, where the crypto root keys
+        # are guaranteed present.
+        if not self._config_mode:
+            self._mount_oauth_and_mcp()
+
         await self._rbt.up(
             servicers=self.servicers,
             libraries=self.libraries,
@@ -875,6 +889,14 @@ class Application:
             # We're running as a Python server subprocess — a serving
             # path, so it requires the OAuth signing secret.
             self._require_crypto_root_keys()
+            # Mount the OAuth server and MCP factory here, at serve
+            # time: the crypto root keys the OAuth server derives its
+            # signing key from are guaranteed present now (just
+            # required above), and this is the point where
+            # `self._token_verifier` and the web framework's routes are
+            # consumed by the server process below.
+            if not self._config_mode:
+                self._mount_oauth_and_mcp()
             try:
                 await run_python_server_process(
                     serviceables=self._get_serviceables(),
@@ -1012,10 +1034,7 @@ class NodeApplication(Application):
             stop=web_framework_stop,
         )
 
-    def _mount_mcp(
-        self,
-        servicers: list[type[Servicer]],
-    ) -> None:
+    def _mount_oauth_and_mcp(self) -> None:
         # MCP is not supported for Node.js applications.
         pass
 
@@ -1035,6 +1054,16 @@ class NodeApplication(Application):
             for library in self.libraries:
                 if not isinstance(library, NodeAdaptorLibrary):
                     await library.pre_run(self)
+
+            # Mount the OAuth server and MCP factory here, at serve
+            # time, mirroring the Python server path: this Node server
+            # subprocess is the serving path that consumes
+            # `self._token_verifier` below. A Node mount derives no
+            # crypto signing key (Node apps can't serve the Python
+            # OAuth endpoints), so unlike the Python path there is no
+            # key requirement to sequence after.
+            if not self._config_mode:
+                self._mount_oauth_and_mcp()
 
         colorama.init()
 
