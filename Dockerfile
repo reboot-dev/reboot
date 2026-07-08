@@ -601,7 +601,11 @@ USER root
 ENV ANDROID_HOME=/opt/android-sdk
 ENV PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/emulator:/home/${UNAME}/.maestro/bin:${PATH}"
 ARG ANDROID_CMDLINE_TOOLS_VERSION=11076708
+ARG ANDROID_CMDLINE_TOOLS_SHA256=2d2d50857e4eb553af5a6dc3ad507a17adf43d115264b1afc116f95c92e5e258
 ARG ANDROID_API=34
+# `dl.google.com` occasionally serves a truncated archive, so verify
+# the command-line tools zip against its pinned checksum and give
+# every download a few attempts before failing the build.
 RUN if [ "${TARGETARCH}" = "amd64" ]; then \
     set -e; \
     apt-get update && apt-get install -y --no-install-recommends \
@@ -609,15 +613,36 @@ RUN if [ "${TARGETARCH}" = "amd64" ]; then \
     libxcomposite1 libasound2 libgl1 \
     && rm -rf /var/lib/apt/lists/*; \
     mkdir -p "${ANDROID_HOME}/cmdline-tools"; \
-    curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_CMDLINE_TOOLS_VERSION}_latest.zip" -o /tmp/cmdline-tools.zip; \
+    downloaded=""; \
+    for attempt in 1 2 3; do \
+    if curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_CMDLINE_TOOLS_VERSION}_latest.zip" -o /tmp/cmdline-tools.zip \
+    && echo "${ANDROID_CMDLINE_TOOLS_SHA256}  /tmp/cmdline-tools.zip" | sha256sum -c -; \
+    then downloaded=1; break; fi; \
+    rm -f /tmp/cmdline-tools.zip; \
+    sleep 10; \
+    done; \
+    [ -n "${downloaded}" ]; \
     unzip -q /tmp/cmdline-tools.zip -d "${ANDROID_HOME}/cmdline-tools"; \
     mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${ANDROID_HOME}/cmdline-tools/latest"; \
     rm /tmp/cmdline-tools.zip; \
     yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null; \
-    "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+    installed=""; \
+    for attempt in 1 2 3; do \
+    if "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
     "platform-tools" "emulator" \
     "platforms;android-${ANDROID_API}" \
-    "system-images;android-${ANDROID_API};google_apis;x86_64" >/dev/null; \
+    "system-images;android-${ANDROID_API};google_apis;x86_64" >/dev/null \
+    && test -d "${ANDROID_HOME}/platform-tools" \
+    && test -d "${ANDROID_HOME}/emulator" \
+    && test -d "${ANDROID_HOME}/platforms/android-${ANDROID_API}" \
+    && test -d "${ANDROID_HOME}/system-images/android-${ANDROID_API}/google_apis/x86_64"; \
+    then installed=1; break; fi; \
+    rm -rf "${ANDROID_HOME}/.temp" "${ANDROID_HOME}/platform-tools" \
+    "${ANDROID_HOME}/emulator" "${ANDROID_HOME}/platforms" \
+    "${ANDROID_HOME}/system-images"; \
+    sleep 10; \
+    done; \
+    [ -n "${installed}" ]; \
     chown -R ${UNAME}: "${ANDROID_HOME}"; \
     groupadd -g 109 kvm 2>/dev/null || true; \
     usermod -aG kvm ${UNAME}; \
