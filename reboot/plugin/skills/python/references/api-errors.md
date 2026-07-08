@@ -28,7 +28,7 @@ async def withdraw(self, context: WriterContext, request: WithdrawRequest):
 
 **Correct (matches the [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) example):**
 
-`api/bank/v1/pydantic/account.py`:
+`api/bank/v1/account.py`:
 
 ```python
 from reboot.api import API, Field, Methods, Model, Type, Writer
@@ -56,8 +56,8 @@ AccountMethods = Methods(
 `backend/src/account_servicer.py`:
 
 ```python
-from bank.v1.pydantic.account import OverdraftError
-from bank.v1.pydantic.account_rbt import Account
+from bank.v1.account import OverdraftError
+from bank.v1.account_rbt import Account
 from reboot.aio.contexts import WriterContext
 
 

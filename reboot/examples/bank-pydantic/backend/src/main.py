@@ -1,6 +1,6 @@
 import asyncio
 from account_servicer import AccountServicer
-from bank.v1.pydantic.bank_rbt import Bank
+from bank.v1.bank_rbt import Bank
 from bank_servicer import BankServicer
 from constants import SINGLETON_BANK_ID
 from customer_servicer import CustomerServicer

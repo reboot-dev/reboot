@@ -31,7 +31,7 @@ async def transfer(
 
 **Correct (matches the [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) example's `BankServicer`):**
 
-`api/bank/v1/pydantic/bank.py`:
+`api/bank/v1/bank.py`:
 
 ```python
 transfer=Transaction(
@@ -45,8 +45,8 @@ transfer=Transaction(
 
 ```python
 import asyncio
-from bank.v1.pydantic.account_rbt import Account
-from bank.v1.pydantic.bank_rbt import Bank
+from bank.v1.account_rbt import Account
+from bank.v1.bank_rbt import Bank
 from reboot.aio.contexts import TransactionContext
 
 

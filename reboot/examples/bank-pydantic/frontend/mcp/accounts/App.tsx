@@ -1,5 +1,5 @@
 // frontend/mcp/accounts/App.tsx
-import { useBank } from "@api/bank/v1/pydantic/bank_rbt_react";
+import { useBank } from "@api/bank/v1/bank_rbt_react";
 import { type FC } from "react";
 import css from "./App.module.css";
 

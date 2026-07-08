@@ -35,7 +35,7 @@ class AccountServicer(Account.Servicer):
 
 **Correct (set initial state in the constructor method):**
 
-`api/bank/v1/pydantic/account.py`:
+`api/bank/v1/account.py`:
 
 ```python
 open=Writer(

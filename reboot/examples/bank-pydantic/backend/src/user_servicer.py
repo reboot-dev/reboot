@@ -1,7 +1,7 @@
-from bank.v1.proto.customer_rbt import Customer
-from bank.v1.pydantic.bank_rbt import Bank
-from bank.v1.pydantic.user import AccountBalance
-from bank.v1.pydantic.user_rbt import User
+from bank.v1.bank_rbt import Bank
+from bank.v1.customer_rbt import Customer
+from bank.v1.user import AccountBalance
+from bank.v1.user_rbt import User
 from constants import SINGLETON_BANK_ID
 from reboot.aio.contexts import ReaderContext, TransactionContext
 
