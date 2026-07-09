@@ -985,9 +985,11 @@ export default defineConfig(({ command }) => {
 The clicker UI's "Open in web app ↗" button deep-links to a
 standalone browser SPA at \`/__/frontend/web/?counter=<id>\` — the
 same counter, opened full-page outside the AI chat. Create that SPA
-under \`frontend/web/\`: an \`index.html\`, a \`main.tsx\` entry point,
-and an \`App.tsx\` that reads \`?counter=<id>\` and watches/increments
-the counter with the same generated \`useCounter()\` hook.
+under \`frontend/web/\`: an \`index.html\`, a \`main.tsx\` entry point
+that requires sign-in via \`useUser()\`, and an \`App.tsx\` that lists
+the signed-in user's counters, reads \`?counter=<id>\`, and
+watches/increments a counter with the same generated
+\`useCounter()\` hook.
 
 `}>
 
@@ -1002,16 +1004,21 @@ touch frontend/web/src/main.tsx frontend/web/src/App.tsx
 
 ```html
 <!-- frontend/web/index.html — standalone browser SPA for the
-     ai-chat-counter example's Counter. Pass `?counter=<id>` (or paste
-     an ID) to watch and increment that counter. Served from its own
-     origin by the Vite dev server, cross-origin to the backend, which
-     it reaches via `VITE_REBOOT_URL` (see `src/main.tsx`). -->
+     ai-chat-counter example. Sign in to create and browse your
+     counters; pass `?counter=<id>` to deep-link a single counter (the
+     MCP clicker's "Open in web app" button lands here). Served from
+     its own origin by the Vite dev server, cross-origin to the
+     backend, which it reaches via `VITE_REBOOT_URL` (see
+     `src/main.tsx`). The same
+     backend also exposes MCP tools, so a user signed in here is
+     automatically signed in on the MCP surface (and vice versa) via
+     shared `rbt_session` cookies. -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Counter — ai-chat-counter</title>
+    <title>Chat Counter</title>
   </head>
   <body>
     <div id="root"></div>
@@ -1027,11 +1034,38 @@ touch frontend/web/src/main.tsx frontend/web/src/App.tsx
 
 ```tsx
 // frontend/web/src/main.tsx
-import { RebootClientProvider } from "@reboot-dev/reboot-react";
+import { useUser } from "@api/ai_chat_counter/v1/counter_rbt_react";
+import {
+  RebootClientProvider,
+  useSignIn,
+  useSignOut,
+} from "@reboot-dev/reboot-react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./styles.css";
+
+const Root = () => {
+  const { user, isLoading } = useUser();
+  const signIn = useSignIn();
+  const signOut = useSignOut();
+  // The provider renders us immediately and resolves the signed-in
+  // user in the background, so we see `isLoading` until `/whoami`
+  // lands.
+  if (isLoading) {
+    return <main className="loading">Checking session…</main>;
+  }
+  if (user === undefined) {
+    return (
+      <main className="signin-prompt">
+        <h1>Chat Counter</h1>
+        <p>Sign in to create and browse your counters.</p>
+        <button onClick={() => signIn()}>Sign in</button>
+      </main>
+    );
+  }
+  return <App user={user} onSignOut={() => void signOut()} />;
+};
 
 // Point the Reboot client at the backend via `VITE_REBOOT_URL`. A web
 // app is served from its own origin — a CDN or static host — almost
@@ -1043,7 +1077,7 @@ import "./styles.css";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RebootClientProvider url={import.meta.env.VITE_REBOOT_URL}>
-      <App />
+      <Root />
     </RebootClientProvider>
   </StrictMode>
 );
@@ -1058,43 +1092,131 @@ createRoot(document.getElementById("root")!).render(
 // frontend/web/src/App.tsx
 import {
   type UseCounterApi,
+  type UseUserApi,
   useCounter,
 } from "@api/ai_chat_counter/v1/counter_rbt_react";
 import { useState, type FC } from "react";
 
+interface AppProps {
+  user: UseUserApi;
+  onSignOut: () => void;
+}
+
 // Read an initial counter ID from the `?counter=<id>` query param so a
-// counter can be shared via URL; the input below can also override it.
+// counter can be shared via URL — the MCP clicker's "Open in web app"
+// button deep-links here; picking a counter from the list below also
+// opens it.
 const initialCounterId = (): string =>
   new URLSearchParams(window.location.search).get("counter") ?? "";
 
-export const App: FC = () => {
+export const App: FC<AppProps> = ({ user, onSignOut }) => {
   const [counterId, setCounterId] = useState(initialCounterId);
-  const [draft, setDraft] = useState(counterId);
 
   return (
     <main className="shell">
+      <header className="header">
+        <h1>Chat Counter</h1>
+        <div className="identity">
+          <code>{user.state_id}</code>
+          <button className="ghost" onClick={onSignOut}>
+            Sign out
+          </button>
+        </div>
+      </header>
+
       {counterId.length === 0 ? (
-        <section className="card">
-          <h2>Open a counter</h2>
-          <form
-            className="create-row"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setCounterId(draft.trim());
+        <CounterList user={user} onOpen={setCounterId} />
+      ) : (
+        <>
+          <button
+            className="ghost back"
+            onClick={() => {
+              // Drop any `?counter=<id>` from the URL so a reload
+              // stays on the list.
+              window.history.replaceState(null, "", window.location.pathname);
+              setCounterId("");
             }}
           >
-            <input
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              placeholder="counter ID"
-            />
-            <button type="submit">Open</button>
-          </form>
-        </section>
-      ) : (
-        <CounterView key={counterId} counterId={counterId} />
+            ← All counters
+          </button>
+          <CounterView key={counterId} counterId={counterId} />
+        </>
       )}
     </main>
+  );
+};
+
+// Landing view: create a counter, and open one of the signed-in
+// user's own counters (read reactively via `User.list_counters`).
+const CounterList: FC<{ user: UseUserApi; onOpen: (id: string) => void }> = ({
+  user,
+  onOpen,
+}) => {
+  const { response: listResponse, isLoading } = user.useListCounters();
+  const [description, setDescription] = useState("");
+  const [pending, setPending] = useState(false);
+
+  const handleCreate = async () => {
+    if (description.trim().length === 0) return;
+    setPending(true);
+    try {
+      await user.createCounter({ description });
+      setDescription("");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const counters = listResponse?.counters ?? [];
+  const showLoading = isLoading && listResponse === undefined;
+
+  return (
+    <>
+      <section className="card">
+        <h2>Create counter</h2>
+        <form
+          className="create-row"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleCreate();
+          }}
+        >
+          <input
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="What does this counter count?"
+          />
+          <button type="submit" disabled={pending}>
+            Create
+          </button>
+        </form>
+      </section>
+
+      <section className="card">
+        <h2>Your counters</h2>
+        {showLoading ? (
+          <p className="empty">Loading…</p>
+        ) : counters.length === 0 ? (
+          <p className="empty">No counters yet — create one above.</p>
+        ) : (
+          <ul className="counters">
+            {counters.map((counter) => (
+              <li key={counter.counterId} className="counter">
+                <button
+                  className="counter-open"
+                  onClick={() => onOpen(counter.counterId)}
+                >
+                  <span className="counter-description">
+                    {counter.description}
+                  </span>
+                  <code className="counter-id">{counter.counterId}</code>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </>
   );
 };
 

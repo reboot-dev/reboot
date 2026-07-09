@@ -1,7 +1,11 @@
 # AI Chat Counter
 
-A minimal AI Chat App built with Reboot. Includes React UIs
-that run inside AI chat interfaces via MCP.
+A minimal Reboot app exposed both as an MCP chat app *and* as a
+standalone browser SPA. Both surfaces share one
+`Application(oauth=...)` configuration, one `User` actor per
+upstream identity, and one set of servicers. A user signed in on
+one surface is automatically signed in on the other via shared
+`rbt_session` cookies (cross-surface SSO).
 
 ## Quick Start
 
@@ -21,6 +25,28 @@ cd frontend && npm run dev
 # Terminal 2: Start Reboot backend.
 uv run rbt dev run
 ```
+
+## Using as a standalone web app
+
+The same backend also serves a standalone browser SPA at
+[`frontend/web/`](frontend/web/). It uses Reboot's unified
+`oauth=...` flow: an HttpOnly `rbt_session` cookie carries the
+same access JWT MCP clients send as `Authorization: Bearer`.
+
+```bash
+# Terminal 1: Reboot backend (same as for MCP).
+uv run rbt dev run
+
+# Terminal 2: Vite dev server — serves the MCP UIs and the SPA.
+cd frontend && npm run dev
+```
+
+Open <http://localhost:4444/__/frontend/web/>. Click sign-in, pick a `Development`
+identity, land back on the SPA, and create counters. If you also
+launch MCPJam against the same backend, MCPJam's authorize step
+short-circuits (no second IdP picker) because the browser already
+holds a session cookie — same `User` actor, same counter list on
+both surfaces.
 
 ## Testing with MCPJam Inspector
 

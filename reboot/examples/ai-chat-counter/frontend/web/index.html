@@ -1,14 +1,19 @@
 <!-- frontend/web/index.html — standalone browser SPA for the
-     ai-chat-counter example's Counter. Pass `?counter=<id>` (or paste
-     an ID) to watch and increment that counter. Served from its own
-     origin by the Vite dev server, cross-origin to the backend, which
-     it reaches via `VITE_REBOOT_URL` (see `src/main.tsx`). -->
+     ai-chat-counter example. Sign in to create and browse your
+     counters; pass `?counter=<id>` to deep-link a single counter (the
+     MCP clicker's "Open in web app" button lands here). Served from
+     its own origin by the Vite dev server, cross-origin to the
+     backend, which it reaches via `VITE_REBOOT_URL` (see
+     `src/main.tsx`). The same
+     backend also exposes MCP tools, so a user signed in here is
+     automatically signed in on the MCP surface (and vice versa) via
+     shared `rbt_session` cookies. -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Counter — ai-chat-counter</title>
+    <title>Chat Counter</title>
   </head>
   <body>
     <div id="root"></div>

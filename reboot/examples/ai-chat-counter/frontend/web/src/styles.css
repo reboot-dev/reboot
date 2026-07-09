@@ -57,9 +57,69 @@ body {
 }
 
 .shell {
-  max-width: 480px;
+  max-width: 720px;
   margin: 0 auto;
   padding: 3rem 1.5rem 4rem;
+}
+
+.signin-prompt {
+  max-width: 360px;
+  margin: 6rem auto;
+  padding: 0 1.5rem;
+  text-align: center;
+}
+
+.signin-prompt h1 {
+  margin: 0 0 0.5rem;
+  font-size: 2.25rem;
+  letter-spacing: -0.02em;
+}
+
+.signin-prompt p {
+  color: var(--text-muted);
+  margin: 0 0 1.5rem;
+}
+
+.loading {
+  max-width: 720px;
+  margin: 6rem auto;
+  padding: 0 1.5rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2.5rem;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  letter-spacing: -0.02em;
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.identity code {
+  padding: 0.25rem 0.625rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  font-size: 0.85em;
+  color: var(--text-muted);
 }
 
 .card {
@@ -125,6 +185,85 @@ button:active:not(:disabled) {
 button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+button.ghost:hover:not(:disabled) {
+  background: var(--button-bg-hover);
+  color: var(--text);
+}
+
+.counters {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.counter {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.counter-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: inherit;
+  text-align: left;
+}
+
+.counter-open:hover:not(:disabled) {
+  background: transparent;
+}
+
+.counter-open:hover .counter-description {
+  text-decoration: underline;
+}
+
+.counter-open:active:not(:disabled) {
+  transform: none;
+}
+
+.counter-description {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.counter-id {
+  font-size: 0.75rem;
+}
+
+.empty {
+  margin: 0;
+  padding: 1.5rem 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.back {
+  margin-bottom: 1rem;
 }
 
 .counter-detail {
