@@ -47,14 +47,14 @@ under `rbt dev run` (and on Reboot Cloud), so local dev needs no setup.
 
 ## Capturing tokens
 
-### Path A — the built-in easy path (chat apps only)
+### Path A — the built-in easy path
 
 If the API belongs to the **identity provider you already sign in with**
 via `Application(oauth=...)` (`Google` / `GitHub` / `Auth0`), the OAuth
 server can capture its tokens for you: add the extra `scopes=[...]` your
 calls need and `store_tokens=True` on the provider — no endpoints to
-write. This path is **chat-app-only**, because web apps don't use
-`Application(oauth=...)`. It captures the identity provider's **own**
+write. This works on every surface that signs in through `oauth=` —
+MCP chat apps and web apps alike. It captures the identity provider's **own**
 tokens only: with `Auth0` you get an Auth0 token, not the upstream
 Google/GitHub token a brokered sign-in went through — to call the
 upstream API, ask Auth0 for the federated IdP token or use Path B. The
@@ -62,10 +62,10 @@ provider-config details (per-provider scopes, `Development()` issues no
 tokens, the Auth0-broker caveat, etc.) are in the chat-app skill's
 `auth-store-tokens.md`.
 
-### Path B — your own OAuth flow (chat apps and web apps)
+### Path B — your own OAuth flow (any other service)
 
 For **any other external service** (you sign in with Google but want the
-user's Slack or Notion), or for **any token in a web app**, the `oauth=`
+user's Slack or Notion), the `oauth=`
 slot can't grant it — you run that service's OAuth flow yourself with
 your own HTTP endpoints and your own `store` call. This is the
 host-agnostic path; the rest of this section is it.
@@ -311,9 +311,9 @@ await KeyManager.ref(_key_manager_id(GOOGLE)).shred(context, scope=user_id)
 ## Checklist
 
 - [ ] `libraries=[oauth_library(), ciphertext_library(), ordered_map_library()]` on the `Application` (Path C needs only the latter two).
-- [ ] **Capture** — Path A (chat apps, identity provider's own API):
+- [ ] **Capture** — Path A (identity provider's own API):
       `scopes=[...]` (least privilege) + `store_tokens=True`. Path B
-      (any other service; the only path in web apps): your own authorize + callback routes, callback registered `app_internal=True`, the
+      (any other service): your own authorize + callback routes, callback registered `app_internal=True`, the
       OAuth `state` HMAC-signed and verified, `OAuthTokenManager.store`
       called with the app-internal `external_context(request)`. Path C
       (the user provides an API key, not OAuth): `Ciphertext.encrypt`,
