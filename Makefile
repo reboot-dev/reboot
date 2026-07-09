@@ -1,7 +1,4 @@
-# Makefile for maintenance tasks that live entirely within this
-# repository (code generation, golden files, docs snippets, generated
-# CI, and dependency lockfiles). Each target runs Bazel from this
-# repository root.
+# Makefile for building code and running tests.
 
 ########################################################################
 # Regenerates the documentation code snippets.

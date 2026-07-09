@@ -1,5 +1,6 @@
-# Automatically bump the `submodules/dev-tools` submodule to its latest main,
-# opening a pull request when the update passes this repository's tests.
+# Keep this repo's git submodules up to date. The reusable workflow lives
+# in the `dev-tools` submodule and bumps every submodule to its latest
+# `main`, opening a pull request when the update passes the tests.
 # See docs:
 # https://docs.github.com/en/actions/using-workflows/reusing-workflows
 name: Submodules Sync
