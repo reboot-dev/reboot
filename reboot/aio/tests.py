@@ -1,6 +1,7 @@
 import jwt
 import os
 import reboot.aio.reboot
+import secrets
 import unittest
 from reboot.aio.applications import Application, NodeApplication
 from reboot.aio.auth.oauth_providers import (
@@ -12,12 +13,13 @@ from reboot.aio.auth.oauth_providers import (
 from reboot.aio.auth.oauth_server import signing_secret
 from reboot.aio.auth.token_verifiers import TokenVerifier
 from reboot.aio.contexts import EffectValidation
+from reboot.aio.exceptions import InputError
 from reboot.aio.external import ExternalContext, InitializeContext
 from reboot.aio.http import WebFramework
 from reboot.aio.libraries import AbstractLibrary
 from reboot.aio.reboot import ApplicationRevision
 from reboot.aio.servicers import Servicer
-from reboot.run_environments import in_nodejs
+from reboot.run_environments import in_nodejs, on_cloud, running_rbt_serve
 from reboot.settings import (
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG,
@@ -25,11 +27,6 @@ from reboot.settings import (
 )
 from typing import Any, Awaitable, Callable, Optional, Sequence, overload
 from unittest import mock
-
-# Hardcoded cryptographic root keys for unit tests. Not real secrets —
-# only used in-process (libraries derive their keys from these, e.g.,
-# the OAuth signing key for test JWT minting).
-_TEST_CRYPTO_ROOT_KEYS = "v1:reboot-test-root-key"
 
 
 class OAuthProviderForTest(OAuthProviderSelector):
@@ -114,21 +111,40 @@ class Reboot(reboot.aio.reboot.Reboot):
     instead of explicit keyword args."""
 
     def __init__(self) -> None:
+        # Refuse to construct the test harness in a production-shaped
+        # process — doing so would inject test-only cryptographic root
+        # keys and a permissive, in-test environment marker into a real
+        # deployment.
+        if on_cloud() or running_rbt_serve():
+            raise InputError(
+                reason=(
+                    "The test harness (`reboot.aio.tests.Reboot`) must "
+                    "never be constructed in a production-shaped "
+                    "environment (Reboot Cloud or `rbt serve`): doing so "
+                    "would inject test-only cryptographic root keys and "
+                    "a permissive, in-test environment marker into the "
+                    "process."
+                )
+            )
         super().__init__(in_process=True)
         # Enable the event loop blocked watchdog for tests
         # so that blocking calls are detected early. This
         # must be set before `start()` which is where
         # `monitor_event_loop()` reads the env var.
         os.environ[ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG] = 'true'
-        # Set the test cryptographic root keys on test-harness
+        # Set random cryptographic root keys on test-harness
         # construction, not at import, so an accidental `import
         # reboot.aio.tests` in production injects nothing. Key-deriving
         # libraries (the `OAuthServer`'s JWT signing key, ...) need them
         # only at serve time, which for tests is `up()` — always after
         # this constructor. `setdefault` leaves an explicit value (e.g.
-        # from `rbt`) untouched, mirroring `rbt dev`.
+        # from `rbt`) untouched, mirroring `rbt dev`. The key is random
+        # per construction (`v1:<64 hex chars>`, matching
+        # `ENVVAR_REBOOT_CRYPTO_ROOT_KEYS`'s `vN:key` format) rather
+        # than a fixed value, so it dies with the process instead of
+        # being guessable from having read this file.
         os.environ.setdefault(
-            ENVVAR_REBOOT_CRYPTO_ROOT_KEYS, _TEST_CRYPTO_ROOT_KEYS
+            ENVVAR_REBOOT_CRYPTO_ROOT_KEYS, f"v1:{secrets.token_hex(32)}"
         )
         # Mark this as a test run — a permissive, local-development-like
         # environment. Set on construction so it is present in the

@@ -1,27 +1,44 @@
 import os
+import re
 import string
 import sys
 import unittest
 from rbt.v1alpha1 import errors_pb2, tasks_pb2, tasks_pb2_grpc
 from reboot.aio.applications import Application
+from reboot.aio.exceptions import InputError
 from reboot.aio.external import ExternalContext
 from reboot.aio.headers import AUTHORIZATION_HEADER
 from reboot.aio.tests import Reboot
 from reboot.aio.types import ApplicationId, StateRef, StateTypeName
 from reboot.controller.application_config import LocalApplicationConfig
 from reboot.server.service_descriptor_validator import ProtoValidationError
-from reboot.settings import ENVVAR_SECRET_REBOOT_ADMIN_TOKEN
+from reboot.settings import (
+    ENVVAR_RBT_SERVE,
+    ENVVAR_REBOOT_CLOUD_VERSION,
+    ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
+    ENVVAR_SECRET_REBOOT_ADMIN_TOKEN,
+)
 from tests.reboot import echo_rbt
 from tests.reboot.bank import BankServicer
 from tests.reboot.echo_rbt import Echo, EchoWriterStub
 from tests.reboot.echo_servicers import MyEchoServicer
 from tests.reboot.greeter_rbt import Greeter
 from tests.reboot.greeter_servicers import MyGreeterServicer
+from unittest import mock
 
 _ECHO_ID = 'test-5678'
 _ECHO_REF = StateRef.from_id(Echo.__state_type_name__, _ECHO_ID)
 
 TEST_SECRET_REBOOT_ADMIN_TOKEN = 'test-admin-secret'
+
+# A fixed, well-known key value: the harness's per-construction random
+# key must never equal this literal string, or every test process would
+# share one guessable, forgeable root key.
+_WELL_KNOWN_TEST_CRYPTO_ROOT_KEYS = "v1:reboot-test-root-key"
+
+# Matches the harness's random key: `v1:` followed by the 64 hex
+# characters of a 32-byte `secrets.token_hex(32)` value.
+_RANDOM_TEST_CRYPTO_ROOT_KEYS_PATTERN = re.compile(r"^v1:[0-9a-f]{64}$")
 
 
 class RebootTestCase(unittest.IsolatedAsyncioTestCase):
@@ -456,6 +473,47 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
             "https://protobuf.dev/programming-guides/proto-limits/",
             str(aborted.exception),
         )
+
+    # The following tests cover `reboot.aio.tests.Reboot`, the test
+    # harness itself — as opposed to the tests above, which merely use
+    # it.
+
+    async def test_crypto_root_keys_are_random_per_construction(self) -> None:
+        with mock.patch.dict(os.environ):
+            os.environ.pop(ENVVAR_REBOOT_CRYPTO_ROOT_KEYS, None)
+            first_harness = Reboot()
+            await first_harness.start()
+            try:
+                first_key = os.environ[ENVVAR_REBOOT_CRYPTO_ROOT_KEYS]
+            finally:
+                await first_harness.stop()
+
+            os.environ.pop(ENVVAR_REBOOT_CRYPTO_ROOT_KEYS, None)
+            second_harness = Reboot()
+            await second_harness.start()
+            try:
+                second_key = os.environ[ENVVAR_REBOOT_CRYPTO_ROOT_KEYS]
+            finally:
+                await second_harness.stop()
+
+        for key in (first_key, second_key):
+            self.assertRegex(key, _RANDOM_TEST_CRYPTO_ROOT_KEYS_PATTERN)
+            self.assertNotEqual(key, _WELL_KNOWN_TEST_CRYPTO_ROOT_KEYS)
+        self.assertNotEqual(first_key, second_key)
+
+    async def test_refuses_construction_on_cloud(self) -> None:
+        with mock.patch.dict(
+            os.environ, {ENVVAR_REBOOT_CLOUD_VERSION: "1.2.3"}
+        ):
+            with self.assertRaises(InputError) as context:
+                Reboot()
+        self.assertIn("production-shaped", str(context.exception))
+
+    async def test_refuses_construction_under_rbt_serve(self) -> None:
+        with mock.patch.dict(os.environ, {ENVVAR_RBT_SERVE: "true"}):
+            with self.assertRaises(InputError) as context:
+                Reboot()
+        self.assertIn("production-shaped", str(context.exception))
 
 
 if __name__ == '__main__':
