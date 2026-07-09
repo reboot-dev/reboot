@@ -14,6 +14,8 @@ from google.protobuf.descriptor import (
     ServiceDescriptor,
 )
 from google.protobuf.descriptor_pb2 import FileDescriptorProto
+from jinja2_strcase.jinja2_strcase import \
+    to_lower_camel as _strcase_to_lower_camel
 # TODO: Dependency not recognized in git-submodule for some reason.
 from pyprotoc_plugin.helpers import (  # type: ignore[import]
     add_template_path,
@@ -37,6 +39,51 @@ from typing import Any, Literal, Optional, Sequence
 # NOTE: we need to add the template path so we can test
 # `RebootProtocPlugin` even when we're not '__main__'.
 add_template_path(os.path.join(__file__, '../templates/'))
+
+
+def to_lower_camel(string: str) -> str:
+    """`to_lower_camel` Jinja filter that lowercases a leading acronym
+    as a unit.
+
+    This filter names identifiers in the CUSTOMER'S generated code:
+    for a state named `APIKey`, it decides the property an application
+    developer types in their own React app, e.g.
+    `const { apiKey } = useAPIKey()`. The upstream
+    `jinja2_strcase.to_lower_camel` only lowercases the first
+    character, which would make that customer-facing name `aPIKey`
+    (`URLMap` -> `uRLMap`) — permanent, because renaming it later
+    breaks customer code. We
+    instead lowercase the whole leading run of uppercase letters,
+    leaving its last letter as the start of the next word when it is
+    followed by a lowercase letter: `APIKey` -> `apiKey`, `URLMap` ->
+    `urlMap`, `HTTPServer` -> `httpServer`. Ordinary names keep their
+    existing casing: `User` -> `user`, `ChatRoom` -> `chatRoom`,
+    `counter` -> `counter`.
+    """
+    # The upstream filter lowercases only the first letter, which
+    # would put `aPIKey`-style names into customers' generated React
+    # API; a leading acronym must lowercase as a unit instead, so
+    # measure the run of uppercase letters first.
+    leading = 0
+    while leading < len(string) and 'A' <= string[leading] <= 'Z':
+        leading += 1
+
+    if leading >= 2:
+        if leading < len(string) and 'a' <= string[leading] <= 'z':
+            # A leading acronym is followed by a lowercase letter, so
+            # its last uppercase letter starts the next word and stays
+            # uppercase while the rest of the run lowercases.
+            string = string[:leading - 1].lower() + string[leading - 1:]
+        else:
+            # The whole leading run is an acronym (no lowercase letter
+            # follows it), so lowercase all of it.
+            string = string[:leading].lower() + string[leading:]
+
+    # Delegate the rest of the camel-casing (a single leading capital,
+    # separators, digit boundaries) to the upstream filter; it leaves
+    # the already-lowercased leading run untouched.
+    return _strcase_to_lower_camel(string)
+
 
 Feature = Literal[
     'reader',
@@ -1203,6 +1250,11 @@ class RebootProtocPlugin(ProtocPlugin):
             keep_trailing_newline=True,
             extensions=['jinja2_strcase.StrcaseExtension'],
         )
+
+        # Override the upstream `to_lower_camel` filter with our own so
+        # that leading acronyms lowercase as a unit (e.g. `APIKey` ->
+        # `apiKey` rather than `aPIKey`).
+        template.environment.filters['to_lower_camel'] = to_lower_camel
 
         try:
             return template.render(
