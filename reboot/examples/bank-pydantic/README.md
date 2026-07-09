@@ -95,6 +95,15 @@ That starts a single Vite dev server that serves both the web app and
 the MCP UIs. Visit [http://localhost:4444](http://localhost:4444) — it
 redirects to the web app.
 
+The web app requires signing in. In development, click "Sign in" and
+pick (or make up) a `Development` identity. Signing in auto-constructs
+your `User`, which signs you up as a customer of the bank (see
+`backend/src/user_servicer.py`), so the web app shows only your own
+accounts. The web app and the MCP surface share sign-on: signing in on
+one signs you in on the other. The mobile app does not sign in: the
+browser-redirect OAuth flow (and its cookie-backed session) is not
+available on native React Native.
+
 #### MCP
 
 The application is also an MCP server: an AI chat client can call

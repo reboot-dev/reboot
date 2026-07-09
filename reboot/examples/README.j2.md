@@ -121,6 +121,9 @@ That starts a single Vite dev server that serves both the web app and
 the MCP UIs. Visit [http://localhost:4444](http://localhost:4444) — it
 redirects to the web app.
 
+{% if web_sign_in_notes %}
+{{ web_sign_in_notes }}
+{% endif %}
 #### MCP
 
 The application is also an MCP server: an AI chat client can call

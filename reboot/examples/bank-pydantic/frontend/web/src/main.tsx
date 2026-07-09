@@ -1,7 +1,7 @@
 import { RebootClientProvider } from "@reboot-dev/reboot-react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App.tsx";
+import { Root } from "./Root.tsx";
 import "./index.css";
 
 // Point the Reboot client at the backend via `VITE_REBOOT_URL`. A web
@@ -14,7 +14,7 @@ import "./index.css";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RebootClientProvider url={import.meta.env.VITE_REBOOT_URL}>
-      <App />
+      <Root />
     </RebootClientProvider>
   </StrictMode>
 );

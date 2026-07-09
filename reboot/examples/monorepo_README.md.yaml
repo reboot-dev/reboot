@@ -13,6 +13,7 @@ has_mcp: false
 has_mobile: false
 has_tests: true
 has_cloud: false
+web_sign_in_notes: null
 extra_setup: |
   #### Pick your application directory
 

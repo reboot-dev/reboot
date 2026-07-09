@@ -10,6 +10,7 @@ has_mcp: false
 has_mobile: false
 has_tests: false
 has_cloud: false
+web_sign_in_notes: null
 extra_setup: |
   #### (optional) Setup secrets
 

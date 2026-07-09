@@ -11,3 +11,4 @@ has_mobile: false
 has_tests: false
 has_cloud: false
 extra_setup: null
+web_sign_in_notes: null
