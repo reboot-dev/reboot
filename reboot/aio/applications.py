@@ -537,6 +537,21 @@ class Application:
             if servicer_cls._is_auto_construct
         ]
 
+    def _validate_configuration(self) -> None:
+        """The serve-time OAuth validation a config pod runs: a config
+        pod never mounts the OAuth server, so enforce here what
+        mounting would have enforced, failing the config pod fast
+        rather than letting a misconfigured app roll out to serving
+        pods.
+        """
+        self._require_oauth_for_auto_construct()
+        if self._oauth is not None:
+            # Mounting resolves the selector for the current
+            # environment, so resolve it here too: a selector with no
+            # provider for this environment (e.g. `prod=None`) fails
+            # the config pod with the selector's actionable message.
+            self._oauth.get()
+
     def _require_oauth_for_auto_construct(self) -> None:
         """Fail fast if the application has auto-construct servicers but
         no `Application(oauth=...)`.
@@ -981,12 +996,7 @@ class Application:
             # rather than as a serving server.
             if os.environ.get(ENVVAR_REBOOT_MODE) == REBOOT_MODE_CONFIG:
                 try:
-                    # A config pod validates configuration and never
-                    # mounts the OAuth server, so enforce the
-                    # auto-construct-needs-`oauth=` requirement here too,
-                    # failing the config pod fast rather than letting a
-                    # misconfigured app roll out to serving pods.
-                    self._require_oauth_for_auto_construct()
+                    self._validate_configuration()
                     server = ConfigServer(
                         serviceables=self._get_serviceables(),
                     )

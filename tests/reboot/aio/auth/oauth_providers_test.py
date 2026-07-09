@@ -325,6 +325,34 @@ class UserWithoutOAuthTest(unittest.IsolatedAsyncioTestCase):
             application._mount_oauth_and_mcp()
         self.assertIn("never auto-constructs", str(context.exception))
 
+    async def test_config_pod_resolves_selector(self):
+        """
+        A config pod runs the same OAuth validation serving pods hit
+        at mount: a selector with no provider for the current
+        environment fails the config pod fast, instead of passing
+        config validation and then failing every serving pod.
+        """
+        application = Application(
+            servicers=[UserServicer, CounterServicer],
+            oauth=OAuthProviderByEnvironment(
+                dev=Development(),
+                prod=None,
+            ),
+        )
+        with mock.patch(
+            "reboot.aio.auth.oauth_providers.running_rbt_dev",
+            return_value=False,
+        ):
+            with self.assertRaises(InputError):
+                application._validate_configuration()
+        # The same selector under `rbt dev run` resolves its dev arm,
+        # so config validation passes.
+        with mock.patch(
+            "reboot.aio.auth.oauth_providers.running_rbt_dev",
+            return_value=True,
+        ):
+            application._validate_configuration()
+
 
 class ConsentScreenTest(unittest.IsolatedAsyncioTestCase):
     """The `/authorize` consent screen is what stands between a

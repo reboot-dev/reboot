@@ -161,8 +161,13 @@ class OAuthTokenVerifier(TokenVerifier):
                 message="Access token has expired."
             )
         except jwt.exceptions.PyJWTError:
-            # Perhaps this wasn't a JWT at all; there may be a different
-            # token verifier that knows what this is.
+            # Only a token whose signature verifies as ours can be
+            # rejected authoritatively (PyJWT raises
+            # `ExpiredSignatureError` only after the signature checks
+            # out). Anything else — perhaps not a JWT at all — is
+            # indistinguishable from another identity provider's
+            # token, which must fall through to a composed
+            # `token_verifier=`.
             return None
 
 
