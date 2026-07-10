@@ -25,9 +25,28 @@ appId: host.exp.exponent
 # testID, so we match it by the "Bottom Sheet" accessibility label on
 # its container — that label is Expo Go's, from the `@gorhom/bottom-sheet`
 # React Native library it renders the dev menu with (its container
-# defaults `accessibilityLabel` to "Bottom Sheet"). We dismiss it with a
-# downward swipe (the library's built-in dismiss gesture): one motion
-# that slides the sheet and its scrim away and returns to the app.
+# defaults `accessibilityLabel` to "Bottom Sheet").
+#
+# The sheet auto-opens at an unpredictable delay after the project
+# loads: Expo Go loads its dev menu from a separate JS bundle, and on a
+# slow CI emulator the sheet can trail the app's own interactivity by
+# 15+ seconds — long enough to outlast a one-shot conditional check
+# (Maestro polls a `runFlow`/`when` condition for at most 7 seconds,
+# its `optionalLookupTimeoutMs`) and then swallow a later tap. So
+# deterministically wait for the sheet before driving the app,
+# tolerating its absence (`optional` keeps the timeout from failing the
+# flow), because an already-onboarded Expo Go install never shows it
+# again.
+- extendedWaitUntil:
+    visible: "Bottom Sheet"
+    timeout: 30000
+    optional: true
+
+# Dismiss the sheet (when it did open) with a downward swipe (the
+# library's built-in dismiss gesture): one motion that slides the sheet
+# and its scrim away and returns to the app. Then confirm the dismissal
+# landed, so a failed swipe surfaces here as a named step instead of as
+# a swallowed tap further down the flow.
 - runFlow:
     when:
       visible: "Bottom Sheet"
@@ -35,6 +54,9 @@ appId: host.exp.exponent
       - swipe:
           start: "50%, 65%"
           end: "50%, 95%"
+      - extendedWaitUntil:
+          notVisible: "Bottom Sheet"
+          timeout: 10000
 - waitForAnimationToEnd
 
 # The app loads with an empty bank.
