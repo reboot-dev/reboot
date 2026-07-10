@@ -158,6 +158,27 @@ class AutoConstructUserTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(user_response.email, "a@example.com")
         self.assertEqual(user_response.update_count, 3)
 
+    async def test_authenticated_tolerates_preexisting_state(self) -> None:
+        # A `User` may predate auto-construction: one constructed
+        # through some explicit flow (here: a direct `create` under a
+        # different idempotency key, standing in for however the
+        # application materialized users before it adopted
+        # auto-construction). `_authenticated` must treat it as
+        # already-constructed — and still deliver claims — rather
+        # than aborting with `StateAlreadyConstructed`.
+        user_id = "preexisting-user"
+        await User.idempotently("explicit-construction"
+                               ).create(self.internal, user_id)
+
+        await UserServicer._authenticated(
+            self.internal,
+            state_id=user_id,
+            claims={"email": "jane@example.com"},
+        )
+
+        user_response = await User.ref(user_id).get(self.internal)
+        self.assertEqual(user_response.email, "jane@example.com")
+
     async def test_mint_with_claims_delivers(self) -> None:
         # The test harness mirrors production: minting a token with
         # claims delivers them through the same chokepoint, so a
