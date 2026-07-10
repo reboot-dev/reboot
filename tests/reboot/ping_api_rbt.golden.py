@@ -17353,16 +17353,29 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         # e.g. a per-user state on every sign-in. We derive a
         # deterministic idempotency key from the state ID so that the
         # construct is a NOOP once the state exists (even across
-        # different contexts). We prefer this over catching the
-        # `StateAlreadyConstructed` error that would otherwise result,
-        # since that logs an `ERROR` to user-visible logs.
+        # different contexts), without the `ERROR` that catching
+        # `StateAlreadyConstructed` alone would log on every sign-in.
         idempotency_key = IMPORT_uuid.uuid5(
             IMPORT_uuid.NAMESPACE_URL,
             f"urn:dev.reboot:auto-construct:User:{state_id}",
         )
-        await User.idempotently(
-            key=idempotency_key,
-        ).create(context, state_id)
+        try:
+            await User.idempotently(
+                key=idempotency_key,
+            ).create(context, state_id)
+        except User.CreateAborted as aborted:
+            # The state may predate auto-construction: one constructed
+            # through some explicit flow before the application adopted
+            # `auto_construct` (or before this user first signed in
+            # through OAuth) aborts with `StateAlreadyConstructed`,
+            # since the idempotency key only dedupes *this* call site.
+            # The state exists, which is all this call is for, so
+            # swallow it; anything else is a real error and propagates.
+            if not isinstance(
+                aborted.error,
+                IMPORT_rbt_v1alpha1.errors_pb2.StateAlreadyConstructed,
+            ):
+                raise
         # The two calls are deliberately sequential rather than wrapped
         # in one transaction: an idempotent construct followed by a
         # full-replace `set_claims` compose convergently.
