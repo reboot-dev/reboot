@@ -1,0 +1,91 @@
+# Maestro end-to-end flow for the chat-room mobile app.
+#
+# Drives the real app on a real Android runtime (Hermes), through Expo
+# Go, against a running Reboot backend. The orchestration script loads
+# the app fresh (`expo start --android`), so this flow does not
+# `launchApp` (that would reopen Expo Go's home); it drives the
+# foreground app. `appId` is Expo Go's package because the app runs
+# inside it.
+#
+# What it proves: a reactive read renders the backend's seeded message,
+# and optimistic `send`s round-trip through the backend and render —
+# i.e. the Reboot client's native networking actually works. Assertions
+# target the `message-text` element by id (not arbitrary on-screen
+# text) so they are precise about what they match.
+appId: host.exp.exponent
+---
+# Wait for the app to finish mounting before driving it.
+- extendedWaitUntil:
+    visible:
+      id: "message-input"
+    timeout: 30000
+
+# On a fresh Expo Go install, the first project open shows Expo Go's
+# onboarding developer-menu bottom sheet over the app, and its scrim
+# swallows taps meant for the app (so the real `Send` tap would be lost).
+# None of the sheet's elements expose a testID/resource-id, so we match
+# it by the "Bottom Sheet" accessibility label on its container. That
+# label is NOT ours and NOT Expo's onboarding copy: Expo Go renders the
+# dev menu with the `@gorhom/bottom-sheet` React Native library, which
+# defaults its container's `accessibilityLabel` to "Bottom Sheet" with
+# `accessibilityRole="adjustable"` — and React Native maps "adjustable"
+# to an Android `SeekBar`, which is the node we match. It lives in the
+# Expo Go app bundle, so it is independent of this app's dependencies.
+#
+# The sheet auto-opens at an unpredictable delay after the project
+# loads: Expo Go loads its dev menu from a separate JS bundle, and on a
+# slow CI emulator the sheet can trail the app's own interactivity by
+# 15+ seconds — long enough to outlast a one-shot conditional check
+# (Maestro polls a `runFlow`/`when` condition for at most 7 seconds,
+# its `optionalLookupTimeoutMs`) and then swallow a later tap. So
+# deterministically wait for the sheet before driving the app,
+# tolerating its absence (`optional` keeps the timeout from failing the
+# flow), because an already-onboarded Expo Go install never shows it
+# again.
+- extendedWaitUntil:
+    visible: "Bottom Sheet"
+    timeout: 30000
+    optional: true
+
+# Dismiss the sheet (when it did open) with a downward swipe (its
+# library's built-in dismiss gesture): one motion that slides the sheet
+# and its scrim away and returns to the app, with no dependency on a
+# button label or a hard-coded scrim tap point. Then confirm the
+# dismissal landed, so a failed swipe surfaces here as a named step
+# instead of as a swallowed tap further down the flow.
+- runFlow:
+    when:
+      visible: "Bottom Sheet"
+    commands:
+      - swipe:
+          start: "50%, 65%"
+          end: "50%, 95%"
+      - extendedWaitUntil:
+          notVisible: "Bottom Sheet"
+          timeout: 10000
+- waitForAnimationToEnd
+
+# Reactive read: the backend seeds a "Hello, World!" message.
+- assertVisible:
+    id: "message-text"
+    text: "Hello, World!"
+
+# Send 1: the input is pre-filled "Hello, Reboot!" on a fresh launch,
+# so just tap Send. Tapping Send also clears the input.
+- tapOn:
+    id: "send-button"
+    retryTapIfNoChange: true
+- assertVisible:
+    id: "message-text"
+    text: "Hello, Reboot!"
+
+# Send 2: type a Maestro-specific message into the (now empty) input
+# and send it; it must round-trip through the backend and render.
+- tapOn:
+    id: "message-input"
+- inputText: "MaestroE2EOK"
+- tapOn:
+    id: "send-button"
+- assertVisible:
+    id: "message-text"
+    text: "MaestroE2EOK"

@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "chat-room-mobile",
+    "slug": "chat-room-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "dev.reboot.chatroommobile"
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

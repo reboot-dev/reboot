@@ -163,8 +163,9 @@ at construction) and forwards reads/writes through the map.
 > `OrderedMap.ref(f"{context.state_id}-people")` inside a workflow).
 > Even though this "works", it hides the parent → map relationship
 > from the state schema: nothing on `UserState` says this user owns
-> a People index, so `rbt inspect` and the cloud console see only
-> scalar fields and the relationship lives as a string-formatting
+> a People index, so [`rbt inspect`](../../inspect/SKILL.md), the
+> `/__/inspect` page, and the cloud console see only scalar fields
+> and the relationship lives as a string-formatting
 > convention inside the servicer. It also repeats the magic string
 > at every callsite — every reader, writer, and workflow that
 > touches the map — so renaming the suffix, sharding the index, or
@@ -258,7 +259,8 @@ Invoice actor) and to every stdlib state type (`OrderedMap`,
 ```python
 class UserState(Model):
     # The reference is a first-class field. Allocated once in `create`;
-    # persisted forever; visible in `rbt inspect` and the cloud console.
+    # persisted forever; visible to `rbt inspect`, the `/__/inspect`
+    # page, and the cloud console.
     profile_id: str = Field(tag=1, default="")
     drafts_index_id: str = Field(tag=2, default="")
     inbox_queue_id: str = Field(tag=3, default="")
@@ -300,9 +302,9 @@ form runs:
 
 1. **The state schema documents the actor graph.** Reading
    `UserState` should be enough to see which other actors this user
-   owns or points at. `rbt inspect` and the cloud console show the
-   state, not the servicer source — without a persisted ID, the
-   relationship is invisible at runtime.
+   owns or points at. `rbt inspect`, the `/__/inspect` page, and the
+   cloud console show the state, not the servicer source — without a
+   persisted ID, the relationship is invisible at runtime.
 2. **One place to change, not N.** The persisted ID centralizes
    the parent → child edge in a single field. Renaming, sharding,
    or moving the index to a per-concern owner (see

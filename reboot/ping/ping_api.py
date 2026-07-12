@@ -83,6 +83,13 @@ class UserState(Model):
 # -- Counter models (simple counter). --
 
 
+class InitializeCounterRequest(Model):
+    description: str = Field(tag=1)
+    # The `user_id` of the Counter's owner, recorded so that only the
+    # owner may call the Counter later.
+    owner_id: str = Field(tag=2)
+
+
 class DescriptionResponse(Model):
     description: str = Field(tag=1)
 
@@ -98,6 +105,7 @@ class ValueResponse(Model):
 class CounterState(Model):
     value: int = Field(tag=1, default=0)
     description: str = Field(tag=2, default="")
+    owner_id: str = Field(tag=3, default="")
 
 
 class ShowClickerProps(Model):
@@ -116,7 +124,7 @@ api = API(
         methods=Methods(
             show_pinger=UI(
                 request=None,
-                path="web/ui/pinger",
+                path="frontend/mcp/pinger",
                 title="Ping Counter",
                 description="Interactive UI for the Ping's counter.",
             ),
@@ -193,12 +201,12 @@ api = API(
         methods=Methods(
             show_clicker=UI(
                 request=ShowClickerProps,
-                path="web/ui/clicker",
+                path="frontend/mcp/clicker",
                 title="Counter Clicker",
                 description=("Interactive clicker for the Counter."),
             ),
             create=Writer(
-                request=CreateCounterRequest,
+                request=InitializeCounterRequest,
                 response=None,
                 factory=True,
                 mcp=None,

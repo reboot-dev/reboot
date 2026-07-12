@@ -37,21 +37,14 @@ def get_reboot_context(context: Context) -> ExternalContext:
     return external_context
 
 
-def _init_session_state(request: Request) -> tuple[str, bool]:
+def _session_id_for_request(request: Request) -> str:
     """
     Determine session identity from the request.
 
     Reuses the client's `Mcp-Session-Id` header when present; otherwise
     generates a fresh UUIDv7.
-
-    Returns:
-        A `(session_id, is_new)` tuple.  `is_new` is `True` when
-        the client did not send a session ID header (i.e. this is the
-        first request in a new session).
     """
-    incoming = request.headers.get(MCP_SESSION_ID_HEADER)
-    session_id = incoming or uuid7().hex
-    return session_id, incoming is None
+    return request.headers.get(MCP_SESSION_ID_HEADER) or uuid7().hex
 
 
 def _set_user_id(request: Request, user_id: str) -> None:

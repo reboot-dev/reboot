@@ -18,14 +18,15 @@ The full, host-agnostic recipe — capturing tokens via your own OAuth
 endpoints, the read-back, the in-`Workflow` call, refresh tokens, and
 token erasure — lives in the python skill:
 [`python/references/auth-external-api-calls.md`](../../python/references/auth-external-api-calls.md).
-**Read that for everything except the one chat-app-only shortcut below.**
+**Read that for everything except the one shortcut below.**
 
 ## The chat-app shortcut: `store_tokens=True`
 
 When the API you want belongs to the **identity provider** in
 `Application(oauth=...)` (`Google` / `GitHub` / `Auth0`), the OAuth
-server captures its tokens for you — no endpoints to write. This shortcut
-is chat-app-only, because web apps don't use `Application(oauth=...)`.
+server captures its tokens for you — no endpoints to write. The same
+shortcut works for web apps: every surface that signs in through
+`oauth=` captures tokens at the same `/__/oauth/callback` exchange.
 
 `scopes=` is the **extra** OAuth scopes to request on top of the base
 identity scope the provider always asks for — list only the additional

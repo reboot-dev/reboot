@@ -64,6 +64,7 @@ class LocalEnvoy(ABC):
         file_descriptor_set: FileDescriptorSet,
         use_tls: bool,
         observed_dir: Path,
+        allowed_origins: Optional[list[str]],
     ):
         self._admin_listen_host = admin_listen_host
         self._admin_port = admin_port
@@ -85,6 +86,12 @@ class LocalEnvoy(ABC):
         self._file_descriptor_set = file_descriptor_set
         self._use_tls = use_tls
         self._observed_dir = observed_dir
+        # The CORS allow-list. `None` means the application has no
+        # credentialed browser traffic to protect and any origin may
+        # call; an empty list means *no* cross-origin credentialed
+        # traffic at all, so a malicious site can't exfiltrate the
+        # access JWT from `/__/oauth/whoami`.
+        self._allowed_origins = allowed_origins
 
         self._grpc_server = grpc.aio.server()
         self._register_xds_port()
@@ -213,6 +220,7 @@ class LocalEnvoy(ABC):
             use_tls=self._use_tls,
             certificate_path=self._observed_dir / CERTIFICATE_FILENAME,
             key_path=self._observed_dir / KEY_FILENAME,
+            allowed_origins=self._allowed_origins,
         )
 
     def _generate_envoy_yaml(self) -> str:

@@ -1,33 +1,32 @@
 import jwt
 import os
 import reboot.aio.reboot
-import time
+import secrets
 import unittest
-from reboot.aio.applications import Application
+from reboot.aio.applications import Application, NodeApplication
 from reboot.aio.auth.oauth_providers import (
+    ExchangeResult,
     OAuthProvider,
     OAuthProviderSelector,
+    UserId,
 )
-from reboot.aio.auth.oauth_server import OAuthTokenVerifier, signing_secret
-from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
-from reboot.aio.contexts import EffectValidation, ReaderContext
-from reboot.aio.external import InitializeContext
+from reboot.aio.auth.oauth_server import signing_secret
+from reboot.aio.auth.token_verifiers import TokenVerifier
+from reboot.aio.contexts import EffectValidation
+from reboot.aio.exceptions import InputError
+from reboot.aio.external import ExternalContext, InitializeContext
 from reboot.aio.http import WebFramework
 from reboot.aio.libraries import AbstractLibrary
 from reboot.aio.reboot import ApplicationRevision
 from reboot.aio.servicers import Servicer
-from reboot.run_environments import in_nodejs
+from reboot.run_environments import in_nodejs, on_cloud, running_rbt_serve
 from reboot.settings import (
     ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
     ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG,
+    ENVVAR_REBOOT_IN_TEST,
 )
 from typing import Any, Awaitable, Callable, Optional, Sequence, overload
 from unittest import mock
-
-# Hardcoded cryptographic root keys for unit tests. Not real secrets —
-# only used in-process (libraries derive their keys from these, e.g.,
-# the OAuth signing key for test JWT minting).
-_TEST_CRYPTO_ROOT_KEYS = "v1:reboot-test-root-key"
 
 
 class OAuthProviderForTest(OAuthProviderSelector):
@@ -41,31 +40,37 @@ class OAuthProviderForTest(OAuthProviderSelector):
     def _select(self) -> OAuthProvider:
         return self._provider
 
+    def requires_allowed_origins_in_production(self) -> bool:
+        # Unit tests aren't a production deployment; they pick their
+        # `allowed_origins` per test via `Application(allowed_origins=...)`.
+        return False
 
-class TokenVerifierForTest(TokenVerifier):
-    """A `TokenVerifier` that accepts the tokens minted by
-    `Reboot.make_valid_oauth_access_token(...)` (and `make_jwt(...)`).
 
-    For testing applications that wire identity via
-    `Application(token_verifier=...)` (e.g. web apps integrating an external
-    identity provider in production): tests pass
-    `Application(..., token_verifier=TokenVerifierForTest())` and create
-    contexts with
-    `bearer_token=rbt.make_valid_oauth_access_token(user_id=...)`.
+# Error message shared by `FakeOnly`'s flow entry points: a pointer to
+# the impersonation helper a unit test uses in place of a real OAuth
+# flow.
+_FAKE_ONLY_NO_FLOWS_MESSAGE = (
+    "`FakeOnly` supports no OAuth flows; in unit tests impersonate a "
+    "user with `await rbt.create_external_context_as(...)` instead."
+)
 
-    This substitutes only the identity layer; authorizers still run for
-    real.
+
+class FakeOnly(OAuthProvider):
+    """OAuth provider that exists only so the test harness can stand up
+    an `OAuthServer` to mint and verify test JWTs. Raises on every flow
+    entry point; a unit test signs in as a user by impersonating them
+    with `await rbt.create_external_context_as(...)`.
     """
 
-    async def verify_token(
+    def authorization_url(self, state: str, redirect_uri: str) -> str:
+        raise NotImplementedError(_FAKE_ONLY_NO_FLOWS_MESSAGE)
+
+    async def exchange_code(
         self,
-        context: ReaderContext,
-        token: Optional[str],
-    ) -> VerifyTokenResult:
-        # Constructed lazily: `signing_secret()` derives from the test
-        # cryptographic root keys that `Reboot.__init__` sets.
-        verifier = OAuthTokenVerifier(signing_secret())
-        return await verifier.verify_token(context, token)
+        code: str,
+        redirect_uri: str,
+    ) -> ExchangeResult:
+        raise NotImplementedError(_FAKE_ONLY_NO_FLOWS_MESSAGE)
 
 
 def assert_called_twice_with(
@@ -106,46 +111,130 @@ class Reboot(reboot.aio.reboot.Reboot):
     instead of explicit keyword args."""
 
     def __init__(self) -> None:
+        # Refuse to construct the test harness in a production-shaped
+        # process — doing so would inject test-only cryptographic root
+        # keys and a permissive, in-test environment marker into a real
+        # deployment.
+        if on_cloud() or running_rbt_serve():
+            raise InputError(
+                reason=(
+                    "The test harness (`reboot.aio.tests.Reboot`) must "
+                    "never be constructed in a production-shaped "
+                    "environment (Reboot Cloud or `rbt serve`): doing so "
+                    "would inject test-only cryptographic root keys and "
+                    "a permissive, in-test environment marker into the "
+                    "process."
+                )
+            )
         super().__init__(in_process=True)
         # Enable the event loop blocked watchdog for tests
         # so that blocking calls are detected early. This
         # must be set before `start()` which is where
         # `monitor_event_loop()` reads the env var.
         os.environ[ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG] = 'true'
-        # Set cryptographic root keys so that `OAuthServer` (and any other
-        # key-deriving library) can be used in tests without manual env
-        # patching. Mirrors what `rbt dev` does for local development.
+        # Set random cryptographic root keys on test-harness
+        # construction, not at import, so an accidental `import
+        # reboot.aio.tests` in production injects nothing. Key-deriving
+        # libraries (the `OAuthServer`'s JWT signing key, ...) need them
+        # only at serve time, which for tests is `up()` — always after
+        # this constructor. `setdefault` leaves an explicit value (e.g.
+        # from `rbt`) untouched, mirroring `rbt dev`. The key is random
+        # per construction (`v1:<64 hex chars>`, matching
+        # `ENVVAR_REBOOT_CRYPTO_ROOT_KEYS`'s `vN:key` format) rather
+        # than a fixed value, so it dies with the process instead of
+        # being guessable from having read this file.
         os.environ.setdefault(
-            ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
-            _TEST_CRYPTO_ROOT_KEYS,
+            ENVVAR_REBOOT_CRYPTO_ROOT_KEYS, f"v1:{secrets.token_hex(32)}"
         )
+        # Mark this as a test run — a permissive, local-development-like
+        # environment. Set on construction so it is present in the
+        # environment before `start()`/`up()` spawn the servers (and
+        # generate the Envoy config) that inherit it.
+        os.environ[ENVVAR_REBOOT_IN_TEST] = 'true'
+        # The application under test, or `None` before one is started.
+        self._application: Optional[Application] = None
 
-    def make_valid_oauth_access_token(
+    async def make_valid_oauth_access_token(
         self,
         user_id: str = "test-user",
     ) -> str:
         """
         Mint a valid JWT OAuth access token for use in tests.
-        
-        The resulting token will be accepted by Reboot applications in
-        unit tests, as if the caller had gone through the full OAuth
-        flow and was authenticated with the given user ID.
-        
-        It doesn't matter which OAuth provider is used by the
-        application; the OAuth flow doesn't in fact execute. A token is
-        directly minted using the application's signing secret,
-        emulating what happens in the final step of a successful OAuth
-        flow. The resulting token is valid, but the identity it presents
-        is just whatever the developer specified - no actual
-        authentication takes place.
+
+        Routes through the running application's
+        `OAuthServer._mint_tokens_for_user`, which is the single
+        production code path every JWT this server hands out goes
+        through. That keeps the test token byte-for-byte equivalent
+        to one minted by a real `/token` exchange, and it fires
+        per-user auto-construct as a side effect — so a test that
+        just does `await rbt.make_valid_oauth_access_token(...)`
+        and immediately opens an MCP session finds the `User`
+        actor already materialized, matching the behaviour MCP-via-
+        OAuth flows get for free.
+
+        The identity is just whatever the developer specified — no
+        actual authentication takes place.
+
+        Works for any application: `up()` guarantees an OAuth server
+        exists, auto-supplying a `FakeOnly` test provider when the app
+        has no `oauth=` of its own. Call `up()` before this.
         """
-        return self.make_jwt(
-            type="access",
-            sub=user_id,
-            aud="reboot-mcp",
-            # Valid for 1000 hours; much longer than any test should
-            # ever run.
-            exp=int(time.time()) + 60 * 60 * 1000,
+        assert (
+            self._application is not None and
+            self._application._oauth_server is not None
+        ), (
+            "make_valid_oauth_access_token() needs a running "
+            "application with an OAuth server; call `up()` first. "
+            "`up()` guarantees one for every test application "
+            "(auto-supplying a `FakeOnly` test provider when the app "
+            "has no `oauth=`), so this only trips when it is called "
+            "before `up()`."
+        )
+        oauth_server = self._application._oauth_server
+
+        tokens = await oauth_server._mint_tokens_for_user(
+            user_id=UserId(user_id),
+            # Tests don't model a real OAuth client; use a stable
+            # synthetic id so refresh tokens minted in the same
+            # process round-trip cleanly.
+            client_id="reboot-test-client",
+            # `iss` claim on the access token. The verifier ignores
+            # `iss` (it only checks signature + `aud` + `exp`), so
+            # this value is cosmetic; pick a stable string so the
+            # token has a recognisable shape if dumped in a debug
+            # log.
+            base="http://reboot-test",
+            # Production mints from `app_internal=True` routes, so
+            # `_post_authenticate`'s auto-construct Writer runs as
+            # trusted app code; tests have no request, so build an
+            # app-internal context off the test `Reboot` directly.
+            context=self.create_external_context(
+                name="reboot.tests.make_valid_oauth_access_token",
+                app_internal=True,
+            ),
+        )
+        return tokens["access_token"]
+
+    async def create_external_context_as(
+        self,
+        name: str,
+        user_id: str = "test-user",
+    ) -> ExternalContext:
+        """
+        Create an `ExternalContext` authenticated as `user_id`.
+
+        The standard way a test impersonates a signed-in user: mint a
+        valid OAuth access token for `user_id` (see
+        `make_valid_oauth_access_token`) and hand it to
+        `create_external_context` as the bearer token. Works for any
+        application — `up()` guarantees an OAuth server to mint
+        through, so call `up()` first.
+        """
+        return self.create_external_context(
+            name=name,
+            bearer_token=await self.make_valid_oauth_access_token(
+                user_id=user_id,
+            ),
         )
 
     def make_jwt(self, **claims: Any) -> str:
@@ -201,6 +290,7 @@ class Reboot(reboot.aio.reboot.Reboot):
         local_envoy: Optional[bool] = None,
         local_envoy_port: int = 0,
         local_envoy_tls: Optional[bool] = None,
+        allowed_origins: Optional[list[str]] = None,
         servers: Optional[int] = None,
         effect_validation: Optional[EffectValidation] = None,
         revision: Optional[ApplicationRevision] = None,
@@ -225,6 +315,7 @@ class Reboot(reboot.aio.reboot.Reboot):
         local_envoy: Optional[bool] = None,
         local_envoy_port: int = 0,
         local_envoy_tls: Optional[bool] = None,
+        allowed_origins: Optional[list[str]] = None,
         servers: Optional[int] = None,
         effect_validation: Optional[EffectValidation] = None,
         revision: Optional[ApplicationRevision] = None,
@@ -256,6 +347,12 @@ class Reboot(reboot.aio.reboot.Reboot):
         if initialize_bearer_token is not None:
             raise ValueError("Not expecting 'initialize_bearer_token'")
 
+        if allowed_origins is not None:
+            raise ValueError(
+                "Not expecting 'allowed_origins'; set it via "
+                "`Application(allowed_origins=...)`"
+            )
+
         if revision is not None:
             if servers is not None:
                 raise ValueError("Not expecting 'servers'")
@@ -270,6 +367,36 @@ class Reboot(reboot.aio.reboot.Reboot):
         if application is None:
             raise ValueError("Must pass one of 'application' or 'revision'")
 
+        self._application = application
+
+        # Guarantee every app under test has an OAuth server, so the
+        # minting chokepoint `make_valid_oauth_access_token` (and
+        # `create_external_context_as` on top of it) works uniformly.
+        # An app that configured its own `oauth=` keeps it; one without
+        # gets a `FakeOnly` provider, whose verifier composes ahead of
+        # any `token_verifier=` (Reboot-minted access JWTs verify
+        # first, everything else falls through), so a custom verifier
+        # still authenticates its own tokens. Leave
+        # `application._allowed_origins` untouched: the injected server
+        # tolerates its `None` as an empty redirect allow-list (which
+        # governs only browser-flow redirect validation), and Envoy
+        # keeps its permissive-CORS default.
+        # Node.js applications can't serve the OAuth server's
+        # endpoints from their process, so they get no injected
+        # provider (and `create_external_context_as` stays
+        # Python-app-only for now).
+        if (
+            application._oauth is None and
+            not isinstance(application, NodeApplication)
+        ):
+            application._oauth = OAuthProviderForTest(FakeOnly())
+
+        # Mount the OAuth server and MCP factory now, at serve time —
+        # the production serve path does this in `Application.run()`,
+        # which tests don't call.
+        if not application._config_mode:
+            application._mount_oauth_and_mcp()
+
         # Should only have `application`, `local_envoy`,
         # `local_envoy_port`, `servers`, `effect_validation`.
 
@@ -280,12 +407,6 @@ class Reboot(reboot.aio.reboot.Reboot):
         if local_envoy is None and not in_nodejs():
             if application.has_http_routes_or_mounts():
                 local_envoy = True
-
-        # Mount MCP now that we know we have a real cluster coming up.
-        # This is deliberately deferred from `Application.__init__`,
-        # where the run environment was `InvalidRunEnvironment` (i.e.
-        # no `rbt dev` / `rbt serve` process detected).
-        application._mount_mcp(application._servicers or [])
 
         revision = await super().up(
             servicers=application.servicers,
@@ -298,6 +419,9 @@ class Reboot(reboot.aio.reboot.Reboot):
             local_envoy=local_envoy,
             local_envoy_port=local_envoy_port,
             local_envoy_tls=local_envoy_tls,
+            # `allowed_origins` comes only from `Application(...)`; Envoy
+            # and the OAuth server share this one list.
+            allowed_origins=application._allowed_origins,
             servers=servers,
             effect_validation=effect_validation,
         )

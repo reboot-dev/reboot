@@ -6,10 +6,9 @@ generate api/
 
 generate --python=backend/api/
 
-# Generate React bindings for web apps (into "web/api/").
+# Generate React bindings for web apps (into "frontend/api/").
 
-generate --react=web/api
-generate --react-extensions
+generate --react=frontend/api
 
 # Watch if any source files are modified.
 
@@ -33,19 +32,21 @@ dev run --default-config=hmr
 
 # Hot Module Replacement (HMR): Vite dev server proxied through Envoy.
 
-# Run Vite in a separate terminal: cd web && npm run dev
+# Run Vite in a separate terminal: cd frontend && npm run dev
 
-# Envoy routes "/\_\_/web/\*\*" to Vite for HMR support.
+# Envoy routes "/__/frontend/**" to Vite for HMR support.
+dev run --frontend-root-path=frontend
 
-dev run:hmr --mcp-frontend-host=http://localhost:4444
 
-# Dist mode: serve pre-built artifacts from "web/dist/" (no Vite HMR).
+dev run:hmr --frontend-host=http://localhost:4444
+
+# Dist mode: serve pre-built artifacts from "frontend/dist/" (no Vite HMR).
 
 # Usage: uv run rbt dev run --config=dist
 
-# Requires: cd web && npm run build
+# Requires: cd frontend && npm run build
 
-dev run:dist --mcp-frontend-host=""
+dev run:dist --frontend-dist-path=frontend/dist
 
 # When expunging, expunge that state we've saved.
 
@@ -56,6 +57,8 @@ dev expunge --application-name=reboot-swag-store
 # Tell `rbt serve` that this is a Python application.
 
 serve run --python
+serve run --frontend-dist-path=frontend/dist
+serve run --frontend-root-path=frontend
 
 # Leave TLS termination to the external load balancer; expose a
 

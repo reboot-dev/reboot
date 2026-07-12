@@ -1,6 +1,6 @@
 generate api/
 generate --nodejs=api
-generate --react=api
+generate --react=frontend/api
 
 # Set the name of our application.
 dev run --application-name=counter

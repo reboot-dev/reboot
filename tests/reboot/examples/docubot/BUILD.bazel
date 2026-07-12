@@ -48,3 +48,17 @@ sh_test_in_working_directory(
     ],
     working_directory = "reboot/examples/docubot/",
 )
+
+sh_test_in_working_directory(
+    name = "frontend_type_check_test",
+    size = "large",
+    data = test_packages + [
+        "//reboot/examples/docubot:everything",
+    ],
+    env = general_env,
+    script = "frontend/.tests/type_check.sh",
+    tags = [
+        "macos_not_supported",
+    ],
+    working_directory = "reboot/examples/docubot/",
+)

@@ -11,13 +11,13 @@ interfaces via MCP.
 uv sync
 
 # Install web dependencies.
-cd web && npm install && cd ..
+cd frontend && npm install && cd ..
 
 # Generate API code.
 uv run rbt generate
 
 # Terminal 1: Start Vite dev server (for Hot Module Replacement).
-cd web && npm run dev
+cd frontend && npm run dev
 
 # Terminal 2: Start Reboot backend.
 uv run rbt dev run
@@ -29,7 +29,7 @@ For testing with MCPJam Inspector:
 
 ```bash
 # In another terminal, run MCPJam:
-npx @mcpjam/inspector@2.18.1 --url http://localhost:9991/mcp --oauth
+npx @mcpjam/inspector@2.23.3 --url http://localhost:9991/mcp --oauth
 ```
 
 This opens a browser-based inspector where you can test tools.

@@ -76,7 +76,7 @@ api = API(
         methods=Methods(
             show_clicker=UI(
                 request=None,
-                path="web/ui/clicker",
+                path="frontend/mcp/clicker",
                 title="Counter Clicker",
                 description="Interactive clicker UI.",
             ),

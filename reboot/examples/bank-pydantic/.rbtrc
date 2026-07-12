@@ -4,12 +4,15 @@ generate api/
 # Tell `rbt generate` where to put generated files.
 generate --python=backend/api
 
-generate --react=web/api
-
-generate --react-extensions
+# Metro (React Native's bundler) resolves imports without file
+# extensions, so we do not enable `--react-extensions`; the generated
+# client's relative imports stay extensionless and resolve under both
+# Vite (web) and Metro (mobile).
+generate --react=frontend/api
 
 # Watch if any generated or source files are modified.
 dev run --watch=backend/**/*.py
+dev run --watch=frontend/dist/**/*.html
 
 # Tell `rbt` that this is a Python application.
 dev run --python
@@ -19,6 +22,20 @@ dev run --application-name=bank
 
 # Run the application!
 dev run --application=backend/src/main.py
+
+# Default to HMR mode when no --config is specified.
+dev run --default-config=hmr
+
+# Hot Module Replacement (HMR): Vite dev server proxied through Envoy.
+# Run Vite in a separate terminal: `cd frontend && npm run dev`
+dev run --frontend-root-path=frontend
+
+dev run:hmr --frontend-host=http://localhost:4444
+
+# Dist mode: serve pre-built artifacts from "frontend/dist/" (no Vite
+# HMR). Usage: `rbt dev run --config=dist`
+# Requires: `cd frontend && npm run build`
+dev run:dist --frontend-dist-path=frontend/dist
 
 # When expunging, expunge that state we've saved.
 dev expunge --application-name=bank

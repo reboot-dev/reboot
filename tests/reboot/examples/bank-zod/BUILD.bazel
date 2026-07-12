@@ -61,3 +61,14 @@ sh_test_in_working_directory(
     ],
     working_directory = "reboot/examples/bank-zod/",
 )
+
+sh_test_in_working_directory(
+    name = "frontend_type_check_test",
+    size = "large",
+    data = test_packages + [
+        "//reboot/examples/bank-zod:everything",
+    ],
+    env = general_env,
+    script = "frontend/.tests/type_check.sh",
+    working_directory = "reboot/examples/bank-zod/",
+)

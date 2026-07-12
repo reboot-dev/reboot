@@ -1,6 +1,6 @@
 ---
 name: app
-description: Build a Reboot application from a user description. Routes to the chat-app skill (MCP Chat Apps for ChatGPT, Claude, VSCode, Goose) or the web-app skill (standalone web apps with a browser frontend). Commits to a route only when the prompt verbatim names the front-door (MCP/Claude/ChatGPT for chat-app; a URL/SPA/"website" for web-app); otherwise asks the user. Does NOT infer the front-door from the app's domain (CRM, todo, dashboard, blog, …) — those describe what the app does, not where it lives.
+description: Build a Reboot application from a user description. Routes to the chat-app skill (MCP Chat Apps for ChatGPT, Claude, VSCode, Goose), the web-app skill (standalone web apps with a browser frontend), or BOTH (dual-surface apps sharing one backend and one User per identity via `oauth=...`). Commits to a route only when the prompt verbatim names the front-door (MCP/Claude/ChatGPT for chat-app; a URL/SPA/"website" for web-app; explicit conjunction for both); otherwise asks the user. Does NOT infer the front-door from the app's domain (CRM, todo, dashboard, blog, …) — those describe what the app does, not where it lives.
 argument-hint: [<app-description>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
@@ -56,10 +56,12 @@ they probably mean…":
 - A standard browser-auth phrase: "log in via email", "OAuth login",
   "cookie session", "sign up form".
 
-**Commit to neither (say "Both, not supported") only if the prompt
-contains an explicit conjunction:** e.g. "and also a website",
-"MCP server **plus** a dashboard", "expose it to Claude **and** host
-it on the web".
+**Commit to BOTH (load chat-app + web-app together) only if the
+prompt contains an explicit conjunction:** e.g. "and also a
+website", "MCP server **plus** a dashboard", "expose it to Claude
+**and** host it on the web". Dual-surface apps share one backend,
+one `oauth=...`, and one `User` actor per upstream identity;
+cross-surface SSO is automatic.
 
 ### Do NOT infer commitment from any of these
 
@@ -92,18 +94,14 @@ chat-y", **ask**.
    ("Building this as a Reboot Web App."), then load the
    [`web-app` skill](../web-app/SKILL.md) and follow it from the
    top, with the user's description as input.
-3. **Both triggers present, or explicit "I want both"** → respond
-   with **exactly** this message and stop:
-
-   > Combined MCP Chat App + standalone Web App is not supported yet —
-   > please stay tuned! For now, pick one to start:
-   >
-   > - **MCP Chat App** — for ChatGPT, Claude, VSCode, Goose, etc.
-   >   (the chat-app skill).
-   > - **Standalone Web App** — a browser web app (the web-app skill).
-   >
-   > If you want both, build the MCP Chat App first; the web frontend
-   > scaffolding overlaps and we'll have a combined path soon.
+3. **Both triggers present, or explicit "I want both"** → say one
+   sentence ("Building this as a dual-surface Reboot app — both
+   MCP and standalone web."), then load the
+   [`chat-app` skill](../chat-app/SKILL.md) _and_ the
+   [`web-app` skill](../web-app/SKILL.md), and follow them
+   together. The backend `Application(oauth=...)` is configured
+   once and serves both surfaces; a single `User` actor per
+   upstream identity is shared.
 
 4. **Otherwise (default)** → **ask the user** the question below
    (present the options and wait for their answer). This is
@@ -117,11 +115,15 @@ chat-y", **ask**.
        VSCode, Goose, …) via MCP tools; optional embedded UI.
      - "Web App"  — a standalone website / SPA users open in a
        normal browser.
-     - "Both"     — not supported yet, but I can tell you what's
-       coming.
+     - "Both"     — a single app exposed through both an MCP host
+       and a standalone browser SPA, sharing one `User` actor per
+       upstream identity (cross-surface SSO).
    ```
 
-   Then route on the answer per steps 1–3.
+   Then route on the answer per steps 1–3. **"Both" loads both
+   skills**: `chat-app` for the MCP-specific additions and
+   `web-app` for the standalone browser frontend, layered on the
+   shared `oauth=...` configured in the backend.
 
    > **Critical — this step is non-skippable, including in "auto" /
    > "autonomous" / "don't ask" modes.** A user-level preference to
@@ -164,18 +166,20 @@ chat-y", **ask**.
 
 ### Worked examples
 
-| Prompt fragment                                                          | Decision                 | Why                                                          |
-| ------------------------------------------------------------------------ | ------------------------ | ------------------------------------------------------------ |
-| "a CRM for my personal relationships, with notes and a timeline"         | **ASK**                  | CRM is a domain word, not a front-door. No verbatim trigger. |
-| "a todo list app"                                                        | **ASK**                  | "app" alone is not a trigger.                                |
-| "a dashboard for our team's metrics, served at metrics.example.com"      | `web-app`                | Explicit URL.                                                |
-| "a tool I can use from Claude to track my reading list"                  | `chat-app`               | "from Claude" names the runtime; "tool" + LLM context.       |
-| "a website where users can sign up and create journals"                  | `web-app`                | "website" is a verbatim trigger.                             |
-| "a kanban board with login"                                              | **ASK**                  | "login" alone is not enough — chat-apps also have auth.      |
-| "expose a CRM as an MCP server, and also a dashboard at crm.example.com" | Both — say not supported | Explicit conjunction.                                        |
+| Prompt fragment                                                          | Decision                | Why                                                          |
+| ------------------------------------------------------------------------ | ----------------------- | ------------------------------------------------------------ |
+| "a CRM for my personal relationships, with notes and a timeline"         | **ASK**                 | CRM is a domain word, not a front-door. No verbatim trigger. |
+| "a todo list app"                                                        | **ASK**                 | "app" alone is not a trigger.                                |
+| "a dashboard for our team's metrics, served at metrics.example.com"      | `web-app`               | Explicit URL.                                                |
+| "a tool I can use from Claude to track my reading list"                  | `chat-app`              | "from Claude" names the runtime; "tool" + LLM context.       |
+| "a website where users can sign up and create journals"                  | `web-app`               | "website" is a verbatim trigger.                             |
+| "a kanban board with login"                                              | **ASK**                 | "login" alone is not enough — chat-apps also have auth.      |
+| "expose a CRM as an MCP server, and also a dashboard at crm.example.com" | Both — load both skills | Explicit conjunction; dual-surface app.                      |
 
 ## Note
 
 Both `chat-app` and `web-app` layer on top of the [`python`
 skill](../python/SKILL.md) for Reboot backend mechanics. You don't need
-to load `python` here — those skills load it themselves.
+to load `python` here — those skills load it themselves. A
+dual-surface app loads both, but they share a single `python`
+layer underneath, so reference files aren't double-loaded.

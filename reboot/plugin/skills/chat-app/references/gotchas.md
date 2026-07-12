@@ -38,7 +38,7 @@ The list below is what's specific to the MCP-Chat-App layer:
 
 7. **Use `--default-config=hmr`** in `.rbtrc` (not `--default=hmr`).
 
-8. **`UI(path="web/ui/<name>")`** — path is relative to project
+8. **`UI(path="frontend/mcp/<name>")`** — path is relative to project
    root.
 
 9. **`UI(request=<ConfigType>)`** passes config as React component
@@ -155,15 +155,15 @@ The list below is what's specific to the MCP-Chat-App layer:
     Always use `async def fn(state): ...`. (See
     `python/references/servicer-workflow.md`.)
 
-19. **`web/dist/ui/<name>/index.html` is the right location** for
+19. **`frontend/dist/mcp/<name>/index.html` is the right location** for
     the built MCP UI — that's where the MCP server's
     `_resolve_dist_path` looks. The `vite.config.ts` shipped with
-    this skill produces it correctly out of the box (Vite emits HTML
-    at its source-relative path; the `entryFileNames`/
-    `assetFileNames` overrides only affect the JS/CSS bundle names,
-    which `viteSingleFile` then inlines). If you see
-    `Web artifact 'web/dist/ui/<name>/index.html' is missing`, run
-    `cd web && npm run build` — do **not** rewrite the Vite config
+    this skill produces it correctly out of the box: the
+    `RBT_BUILD_TARGET=mcp:<name>` build roots itself at `mcp/<name>/`,
+    so its `index.html` lands at the nested path while
+    `viteSingleFile` inlines the JS/CSS. If you see
+    `Web artifact 'frontend/dist/mcp/<name>/index.html' is missing`, run
+    `cd frontend && npm run build` — do **not** rewrite the Vite config
     to emit a flat `dist/<name>.html`; that breaks discovery.
 
 20. **LLM / model API calls go in a `Workflow`, never a
@@ -183,3 +183,18 @@ The list below is what's specific to the MCP-Chat-App layer:
     Effects: Transaction or Workflow?),
     `python/references/servicer-workflow.md`, and
     `python/references/agent-pydantic-ai.md`.
+
+21. **Don't add `generate --react-extensions` to `.rbtrc`.** This is
+    a Python-backend app that generates the React client on its own
+    into `web/api/`. Vite — plus `tsc` under the
+    `moduleResolution: "bundler"` the scaffolded tsconfigs use —
+    resolves the generated client's relative imports without explicit
+    `.js` extensions, so the flag buys nothing here. The two cases
+    where a project _does_ need it both require something this skill
+    never produces: a webpack/`ts-loader` bundler (this skill uses
+    Vite), or a `--nodejs`/`--web` target sharing the React output
+    directory and forcing matching extensions (a Python backend has
+    no Node.js client). Adding the flag anyway also breaks a future
+    `--mobile` (React Native) client — `rbt generate` rejects
+    `--react-extensions` with `--mobile`, because Metro can't resolve
+    the `.js`-suffixed imports back to their `.ts` sources.

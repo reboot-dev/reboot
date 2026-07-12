@@ -57,7 +57,10 @@ py_test(
 
 py_test(
     name = "executable_local_envoy_test_py",
-    timeout = "short",
+    # Envoy startup makes this too slow for a "short" (60s) budget on
+    # slower CI runners, where it times out (observed at 61.3s on a
+    # runner at full load; ~12s on an idle machine).
+    timeout = "moderate",
     srcs = ["executable_local_envoy_runner.py"],
     main = "executable_local_envoy_runner.py",
     deps = [

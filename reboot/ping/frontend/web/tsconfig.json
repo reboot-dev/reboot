@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "es2018",
+    "module": "esnext",
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    // Enforce type-only imports for type-only exports, as the
+    // frontend's `tsconfig.app.json`, editors, and Vite do. Without
+    // it this `ts_project` silently elides such an import, so a value
+    // import of a type passes `bazel build` here yet breaks un-bundled
+    // dev serving in the browser.
+    "verbatimModuleSyntax": true,
+    "baseUrl": ".",
+    "paths": {
+      "@api/*": ["../../*"]
+    }
+  }
+}

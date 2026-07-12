@@ -586,6 +586,7 @@ def CounterCreateRequestFromProto(
 
 def CounterCreateRequestFromInputFields(
     description: str | Unset,
+    owner_id: str | Unset,
 ):
     assert Counter.CreateRequest is not None
 
@@ -594,6 +595,8 @@ def CounterCreateRequestFromInputFields(
 
     if not isinstance(description, Unset):
         __args__['description'] = description
+    if not isinstance(owner_id, Unset):
+        __args__['owner_id'] = owner_id
 
     return Counter.CreateRequest(
         **__args__,
@@ -14257,7 +14260,7 @@ class PingBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
         # Map UI method names to web app paths.
         _ui_app_paths: dict[str, str] = {
-            "show_pinger": "web/ui/pinger",
+            "show_pinger": "frontend/mcp/pinger",
         }
 
         # Optional artifact path overrides (only populated
@@ -16410,8 +16413,8 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         ):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
             id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
-            # State is auto-constructed on session init;
-            # see `_auto_construct`.
+            # State is auto-constructed when the user's
+            # JWT is minted; see `_auto_construct`.
             ref = User.ref(id)
             return await ref.create_counter(reboot_context, request)
 
@@ -16427,8 +16430,8 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         ):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
             id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
-            # State is auto-constructed on session init;
-            # see `_auto_construct`.
+            # State is auto-constructed when the user's
+            # JWT is minted; see `_auto_construct`.
             ref = User.ref(id)
             return await ref.list_counters(reboot_context)
 
@@ -16444,8 +16447,8 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         ):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
             id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
-            # State is auto-constructed on session init;
-            # see `_auto_construct`.
+            # State is auto-constructed when the user's
+            # JWT is minted; see `_auto_construct`.
             ref = User.ref(id)
             return await ref.whoami(reboot_context)
 
@@ -17614,7 +17617,7 @@ class CounterBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
         # Map UI method names to web app paths.
         _ui_app_paths: dict[str, str] = {
-            "show_clicker": "web/ui/clicker",
+            "show_clicker": "frontend/mcp/clicker",
         }
 
         # Optional artifact path overrides (only populated
@@ -30081,6 +30084,7 @@ class Counter:
         __options_or_idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         *,
         description: str | Unset = UNSET,
+        owner_id: str | Unset = UNSET,
     ) -> tuple[Counter.WeakReference, None]:
         ...
 
@@ -30094,6 +30098,7 @@ class Counter:
         __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
         *,
         description: str | Unset = UNSET,
+        owner_id: str | Unset = UNSET,
     ) -> tuple[Counter.WeakReference, None]:
         # Within a `workflow`, all "bare" calls are
         # `per_workflow()` calls, unless we're within a control
@@ -30116,6 +30121,7 @@ class Counter:
                 assert __idempotency__ is None or isinstance(__idempotency__, IMPORT_reboot_aio_idempotency.Idempotency)
 
                 assert description is UNSET
+                assert owner_id is UNSET
             else:
                 assert __request_or_options_or_idempotency__ is None or isinstance(__request_or_options_or_idempotency__, IMPORT_reboot_aio_call.Options)
                 __options__ = __request_or_options_or_idempotency__
@@ -30124,6 +30130,7 @@ class Counter:
 
                 __request__ = CounterCreateRequestFromInputFields(
                     description=description,
+                    owner_id=owner_id,
                 )
         elif isinstance(__state_id_or_request_or_options__, Counter.CreateRequest):
             __request__ = __state_id_or_request_or_options__
@@ -30144,6 +30151,7 @@ class Counter:
 
             __request__ = CounterCreateRequestFromInputFields(
                 description=description,
+                owner_id=owner_id,
             )
 
         if __idempotency__ is None:
@@ -30287,6 +30295,7 @@ class Counter:
             __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
             description: str | Unset = UNSET,
+            owner_id: str | Unset = UNSET,
         ) -> tuple[Counter.WeakReference, None]:
             ...
 
@@ -30298,6 +30307,7 @@ class Counter:
             __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
             *,
             description: str | Unset = UNSET,
+            owner_id: str | Unset = UNSET,
         ) -> tuple[Counter.WeakReference, None]:
             # UX improvement: check that neither positional argument was accidentally
             # given a gRPC request type.
@@ -30315,6 +30325,7 @@ class Counter:
                         raise TypeError(f"Expecting fourth positional argument to be of type 'reboot.aio.call.Options', got '{type(__request_or_options__).__name__}'")
 
                     assert description is UNSET
+                    assert owner_id is UNSET
                 else:
                     if __request_or_options__ is not None and not isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options):
                         raise TypeError(f"Expecting third positional argument to be of type 'reboot.aio.call.Options', got '{type(__request_or_options__).__name__}'")
@@ -30323,6 +30334,7 @@ class Counter:
 
                     __request__ = CounterCreateRequestFromInputFields(
                         description=description,
+                        owner_id=owner_id,
                     )
             elif isinstance(__state_id_or_request_or_options__, Counter.CreateRequest):
                 __request__ = __state_id_or_request_or_options__
@@ -30338,6 +30350,7 @@ class Counter:
 
                 __request__ = CounterCreateRequestFromInputFields(
                     description=description,
+                    owner_id=owner_id,
                 )
             __args__: tuple[IMPORT_typing.Any, ...]
 

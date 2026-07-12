@@ -11,7 +11,7 @@ filegroup(
             # are not part of the "source code" of this repository.
             "backend/.rbt/**/*",
             ".yarn/**/*",
-            "web/.next/**/*",
+            "frontend/web/.next/**/*",
             "api/**/*_pb*.ts",
             "api/**/*_rbt*.ts",
             "node_modules/**/*",

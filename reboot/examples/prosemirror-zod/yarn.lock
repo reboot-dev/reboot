@@ -830,9 +830,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@monorepo/web@workspace:web":
+"@monorepo/web@workspace:frontend/web":
   version: 0.0.0-use.local
-  resolution: "@monorepo/web@workspace:web"
+  resolution: "@monorepo/web@workspace:frontend/web"
   dependencies:
     "@bufbuild/protobuf": "npm:1.10.1"
     "@monorepo/api": "workspace:*"

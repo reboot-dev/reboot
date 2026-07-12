@@ -89,6 +89,13 @@ interface AbortedType<A extends Aborted> {
   fromStatus(status: Status): A;
 }
 
+// A hook the SPA's provider plugs into `httpCall` so a 401 from a
+// stale `rbt_session` cookie can be transparently recovered by
+// hitting `/__/oauth/refresh` and retrying once. Returning `true`
+// signals "I refreshed the session, please retry"; `false` means
+// "give up, surface the 401 to the caller".
+export type OnUnauthenticated = () => Promise<boolean>;
+
 export async function httpCall<
   RequestType extends Message<RequestType>,
   ResponseType extends Message<ResponseType>,
@@ -105,6 +112,7 @@ export async function httpCall<
   idempotencyKey,
   options,
   bearerToken,
+  onUnauthenticated,
 }: {
   url: string;
   method: string;
@@ -118,92 +126,133 @@ export async function httpCall<
     signal?: AbortSignal;
   };
   bearerToken?: () => Promise<string | undefined>;
+  onUnauthenticated?: OnUnauthenticated;
 }): Promise<ResponseType> {
   if (!(request instanceof requestType)) {
     throw new TypeError("'request' is not of type 'requestType'");
   }
 
-  const headers = new Headers();
-  headers.set("Content-Type", "application/json");
-  headers.set("x-reboot-idempotency-key", idempotencyKey);
-
-  if (bearerToken !== undefined) {
-    const token = await bearerToken();
-    if (token !== undefined) {
-      headers.set("Authorization", `Bearer ${token}`);
+  const buildHeaders = async (): Promise<Headers> => {
+    const headers = new Headers();
+    headers.set("Content-Type", "application/json");
+    headers.set("x-reboot-idempotency-key", idempotencyKey);
+    if (bearerToken !== undefined) {
+      const token = await bearerToken();
+      if (token !== undefined) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
     }
-  }
+    return headers;
+  };
 
   // Fetch with retry, using a backoff, i.e., if we get disconnected.
-  const { response, aborted } = await (async () => {
-    const backoff = new Backoff();
+  // We may run this twice: once with the original session cookie, and
+  // once more after `onUnauthenticated` rotates the cookies via
+  // `/__/oauth/refresh`. The retry happens at most once.
+  let didRefresh = false;
+  let response: Response | undefined;
+  let aborted: A | undefined;
 
-    while (true) {
-      try {
-        // Invariant here is that we use the '/package.service.method' path and
-        // HTTP 'POST' method (we need 'POST' because we send an HTTP body).
-        //
-        // See also 'reboot/helpers.py'.
-        const response = await guardedFetch(
-          new Request(`${url}/__/reboot/rpc/${stateRef}/${method}`, {
-            method: "POST",
-            headers,
-            // Tell browser to pass cookies, even cross-origin.
-            // TODO: Enable when the backend supports CORS.
-            // credentials: "include",
-            body: request.toJsonString(),
-          }),
-          options
-        );
+  while (true) {
+    // Rebuild the headers on every attempt: if a retry follows
+    // `onUnauthenticated` rotating the session, it must carry the
+    // refreshed credentials rather than the stale ones.
+    const headers = await buildHeaders();
+    const result = await (async (): Promise<{
+      response?: Response;
+      aborted?: A;
+    }> => {
+      const backoff = new Backoff();
 
-        // Since it is a 'fetch', we could get a retryable error, but
-        // it won't throw an exception, so we have to check the
-        // response status code and retry it.
-        // - 502 (Bad Gateway): Proxy can't reach the backend.
-        // - 503 (Unavailable): Server is temporarily unavailable.
-        // - 499 (Cancelled): Request was cancelled, often because the
-        //   server is shutting down. This is retryable.
-        if (
-          response.status === 502 ||
-          response.status === 503 ||
-          response.status === 499
-        ) {
-          if (response.headers.get("content-type") === "application/json") {
-            const status = Status.fromJson(await response.json());
-            const aborted = abortedType.fromStatus(status);
-            // Log the error later in the 'catch' block.
-            throw aborted;
-          } else {
-            const aborted = new abortedType(new errors_pb.Unknown(), {
-              message: `Unknown error with HTTP status ${response.status}`,
+      while (true) {
+        try {
+          // Invariant here is that we use the '/package.service.method' path and
+          // HTTP 'POST' method (we need 'POST' because we send an HTTP body).
+          //
+          // See also 'reboot/helpers.py'.
+          const response = await guardedFetch(
+            `${url}/__/reboot/rpc/${stateRef}/${method}`,
+            {
+              ...options,
+              method: "POST",
+              headers,
+              body: request.toJsonString(),
+            }
+          );
+
+          // Since it is a 'fetch', we could get a retryable error, but
+          // it won't throw an exception, so we have to check the
+          // response status code and retry it.
+          // - 502 (Bad Gateway): Proxy can't reach the backend.
+          // - 503 (Unavailable): Server is temporarily unavailable.
+          // - 499 (Cancelled): Request was cancelled, often because the
+          //   server is shutting down. This is retryable.
+          if (
+            response.status === 502 ||
+            response.status === 503 ||
+            response.status === 499
+          ) {
+            if (response.headers.get("content-type") === "application/json") {
+              const status = Status.fromJson(await response.json());
+              const aborted = abortedType.fromStatus(status);
+              // Log the error later in the 'catch' block.
+              throw aborted;
+            } else {
+              const aborted = new abortedType(new errors_pb.Unknown(), {
+                message: `Unknown error with HTTP status ${response.status}`,
+              });
+              throw aborted;
+            }
+          }
+          backoff.reset({ log: `[Reboot] Call to \`${method}\` succeeded` });
+          return { response };
+        } catch (e: unknown) {
+          if (options?.signal?.aborted) {
+            const aborted = new abortedType(new errors_pb.Aborted(), {
+              message:
+                e instanceof Error
+                  ? `${e}`
+                  : `Unknown error: ${JSON.stringify(e)}`,
             });
-            throw aborted;
+
+            return { aborted };
+          } else if (e instanceof Error) {
+            console.error(e);
+          } else {
+            console.error(`Unknown error: ${JSON.stringify(e)}`);
           }
         }
-        backoff.reset({ log: `[Reboot] Call to \`${method}\` succeeded` });
-        return { response };
-      } catch (e: unknown) {
-        if (options?.signal?.aborted) {
-          const aborted = new abortedType(new errors_pb.Aborted(), {
-            message:
-              e instanceof Error
-                ? `${e}`
-                : `Unknown error: ${JSON.stringify(e)}`,
-          });
 
-          return { aborted };
-        } else if (e instanceof Error) {
-          console.error(e);
-        } else {
-          console.error(`Unknown error: ${JSON.stringify(e)}`);
-        }
+        await backoff.wait({
+          log: `[Reboot] Retrying call to \`${method}\` with backoff ...`,
+        });
       }
+    })();
 
-      await backoff.wait({
-        log: `[Reboot] Retrying call to \`${method}\` with backoff ...`,
-      });
+    response = result.response;
+    aborted = result.aborted;
+
+    // 401 from a stale `rbt_session` cookie: ask the provider's
+    // refresh hook to rotate, then retry once. If refresh fails (or
+    // the SPA didn't supply a hook), fall through and the 401
+    // surfaces to the caller as a normal aborted call.
+    if (
+      response?.status === 401 &&
+      onUnauthenticated !== undefined &&
+      !didRefresh
+    ) {
+      didRefresh = true;
+      try {
+        const refreshed = await onUnauthenticated();
+        if (refreshed) {
+          continue;
+        }
+      } catch {
+        // Ignore refresh failures; surface the original 401.
+      }
     }
-  })();
+    break;
+  }
 
   if (!response) {
     if (aborted) throw aborted;
@@ -322,6 +371,13 @@ export function reactively<
 
     while (signal === undefined || !signal.aborted) {
       try {
+        // The reactive read path multiplexes many RPCs over one
+        // WebSocket and each call may carry a different bearer (a
+        // refresh between calls is valid), so auth rides in the
+        // request body, not the WS upgrade. The browser
+        // `WebSocket` API also disallows custom headers on the
+        // upgrade, ruling out `Authorization`/`Sec-WebSocket-Protocol`
+        // as transport here.
         const queryRequest = new react_pb.QueryRequest({
           method,
           request: request.toBinary(),
@@ -421,7 +477,7 @@ const WEBSOCKET_LIMIT =
   // TODO: figure out a better way to detect that this is Chrome.
   // @ts-ignore: `window.navigator.vendor` is deprecated.
   // Check that window is defined. We might be on the server if in e.g. Next.js.
-  typeof window !== "undefined" && window.navigator.vendor === "Google Inc."
+  typeof window !== "undefined" && window.navigator?.vendor === "Google Inc."
     ? 255
     : 200;
 
@@ -464,15 +520,13 @@ export class WebSockets {
       // ever remove the warning because the fetch to
       // `WebSocketsConnection` waits indefinitely.
       await fetch(
-        new Request(
-          `${endpoint}/__/reboot/rpc/${stateRef}/rbt.v1alpha1.React/WebSocketsConnection`,
-          {
-            method: "POST",
-            headers,
-            body: new react_pb.WebSocketsConnectionRequest().toJsonString(),
-          }
-        ),
-        { signal: abortController.signal }
+        `${endpoint}/__/reboot/rpc/${stateRef}/rbt.v1alpha1.React/WebSocketsConnection`,
+        {
+          method: "POST",
+          headers,
+          body: new react_pb.WebSocketsConnectionRequest().toJsonString(),
+          signal: abortController.signal,
+        }
       ).catch((error: unknown) => {
         // Retry forever unless we were aborted.
         if (!abortController.signal.aborted) {
@@ -498,10 +552,10 @@ export class WebSockets {
     // the existing HTTP/2 connection set up by calling
     // `rbt.v1alpha1.React/WebSocketsConnection` in `connect()`.
     if (url.protocol === "wss:") {
-      return new WebSocket(url);
+      return new WebSocket(url.toString());
     }
 
-    const websocket = new WebSocket(url);
+    const websocket = new WebSocket(url.toString());
 
     this.count += 1;
 
@@ -559,14 +613,12 @@ export async function* grpcServerStream<
   // Keep the connection alive as long as server is sending data.
   headers.append("Connection", "keep-alive");
 
-  const response = await guardedFetch(
-    new Request(endpoint, {
-      method,
-      headers,
-      body: request.toJsonString(),
-    }),
-    { signal }
-  );
+  const response = await guardedFetch(endpoint, {
+    method,
+    headers,
+    body: request.toJsonString(),
+    signal,
+  });
 
   if (!response.ok) {
     if (response.headers.get("content-type") === "application/json") {
@@ -724,79 +776,93 @@ export async function* grpcWebsocketServerStream<
     websocket.send(request.toBinary());
   };
 
-  const closed = new Promise<void>((resolve, reject) => {
-    function sendHeartbeat() {
-      if (websocket.readyState === WebSocket.OPEN) {
-        // To detect dead websocket connections, we need to have outbound data in
-        // our buffer (see https://github.com/reboot-dev/mono/issues/4237).
-        //
-        // There is no need for error handling: if this data cannot be sent, then
-        // the socket will be closed automatically.
-        websocket.send(heartbeatRequest.toBinary());
-      }
+  function sendHeartbeat() {
+    if (websocket.readyState === WebSocket.OPEN) {
+      // To detect dead websocket connections, we need to have outbound data in
+      // our buffer (see https://github.com/reboot-dev/mono/issues/4237).
+      //
+      // There is no need for error handling: if this data cannot be sent, then
+      // the socket will be closed automatically.
+      websocket.send(heartbeatRequest.toBinary());
     }
-    // This interval matches the setting for non-browser clients in
-    // `reboot/settings.py`.
-    const heartbeatId = setInterval(sendHeartbeat, 5000);
+  }
+  // This interval matches the setting for non-browser clients in
+  // `reboot/settings.py`.
+  const heartbeatId = setInterval(sendHeartbeat, 5000);
 
-    websocket.addEventListener("close", () => {
-      // Closing the websocket happens both immediately after errors, and when
-      // a request is simply done. We can't assume that the connection is
-      // healthy or unhealthy; leave any warnings as they are.
-      clearInterval(heartbeatId);
-      resolve();
-    });
+  // The websocket dispatches each `message` event exactly once, to
+  // whatever listeners are attached at that instant, so a frame that
+  // arrives while this generator is suspended at a `yield` (i.e.,
+  // while our consumer is still processing an earlier frame) must be
+  // buffered here or it would be dropped.
+  const messages: ArrayBuffer[] = [];
+  let closed = false;
+  let error: Error | undefined = undefined;
 
-    websocket.addEventListener("error", (event) => {
-      // We weren't able to reach the server. Show a helpful error message to
-      // developers if this persists.
-      maybeScheduleLocalhostWarning({
-        url: url.href,
-      });
-      clearInterval(heartbeatId);
-      reject(
-        new Error(`Unexpected error on websocket: ${JSON.stringify(event)}`)
-      );
+  // Resolver of the promise the loop below awaits once it has
+  // drained `messages`; invoked to wake that loop back up.
+  let wake: (() => void) | undefined = undefined;
+
+  websocket.addEventListener("message", (event) => {
+    // Receiving a message demonstrates that the websocket is
+    // connected; if we had a connection warning displayed we can
+    // remove it.
+    removeLocalhostWarning();
+    messages.push((event as any).data);
+    if (wake !== undefined) {
+      wake();
+    }
+  });
+
+  websocket.addEventListener("close", () => {
+    // Closing the websocket happens both immediately after errors, and when
+    // a request is simply done. We can't assume that the connection is
+    // healthy or unhealthy; leave any warnings as they are.
+    clearInterval(heartbeatId);
+    closed = true;
+    if (wake !== undefined) {
+      wake();
+    }
+  });
+
+  websocket.addEventListener("error", (event) => {
+    // We weren't able to reach the server. Show a helpful error message to
+    // developers if this persists.
+    maybeScheduleLocalhostWarning({
+      url: url.href,
     });
+    clearInterval(heartbeatId);
+    error = new Error(
+      `Unexpected error on websocket: ${JSON.stringify(event)}`
+    );
+    if (wake !== undefined) {
+      wake();
+    }
   });
 
   try {
-    do {
-      // Wait for either `closed` to resolve or reject. If the latter,
-      // it'll propagate the exception, if the former, we'll drop out of
-      // the loop and return to the caller.
-      const event = await Promise.race([
-        closed,
-        new Promise((resolve) => {
-          websocket.addEventListener(
-            "message",
-            (event) => {
-              resolve(event);
-            },
-            // Only get one message at a time!
-            { once: true }
-          );
-        }),
-      ]);
-
-      if (
-        event instanceof MessageEvent ||
-        // When we use 'WebSocket' class in the backend it is not the
-        // same one as the frontend has, so the event type differs as
-        // well. When `closed` wins the race `event` is `undefined`.
-        (event !== undefined && (event as any).data instanceof ArrayBuffer)
-      ) {
-        // Receiving a message demonstrates that the websocket is
-        // connected; if we had a connection warning displayed we can
-        // remove it.
-        removeLocalhostWarning();
-        yield responseType.fromBinary(new Uint8Array((event as any).data));
+    while (true) {
+      // Yield all buffered frames (more may arrive while we are
+      // suspended at `yield`; the loop re-checks after each one).
+      let data: ArrayBuffer | undefined = undefined;
+      while ((data = messages.shift()) !== undefined) {
+        yield responseType.fromBinary(new Uint8Array(data));
       }
 
-      // If not `event instanceof Event` then `closed` must have
-      // resolved in which case we'll fall out of this loop and return
-      // to the caller.
-    } while (websocket.readyState === WebSocket.OPEN);
+      if (error !== undefined) {
+        throw error;
+      }
+
+      if (closed) {
+        return;
+      }
+
+      // Wait for a new frame, a close, or an error.
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+      });
+      wake = undefined;
+    }
   } finally {
     // Handle the case where the async generator is is not exhausted
     // and we want to make sure we close the websocket.
@@ -911,6 +977,14 @@ const ignoredWarningIds: Set<string> = new Set();
 const pendingWarningIds: { [key: string]: ReturnType<typeof setTimeout> } = {};
 
 function renderWarnings() {
+  // Warnings are rendered as banners in the DOM, which only exists in a
+  // browser. On other runtimes (e.g. React Native) `document` is
+  // undefined; `addWarning` still surfaces the message via
+  // `console.warn`, so here we skip the visual banner.
+  if (typeof document === "undefined") {
+    return;
+  }
+
   const html = document.documentElement;
 
   // Remove previously rendered warnings so that we compute the proper
@@ -1044,16 +1118,28 @@ function maybeScheduleLocalhostWarning({ url }: { url: string }) {
   });
 }
 
-export async function guardedFetch(request: Request, options?: RequestInit) {
+export async function guardedFetch(
+  input: RequestInfo | URL,
+  options?: RequestInit
+) {
   // If not in development mode, just fetch.
   if (process.env.NODE_ENV !== "development") {
-    return fetch(request, options);
+    return fetch(input, options);
   }
 
-  const { completeFetch } = trackFetch(new URL(request.url));
+  // Mirror the `fetch()` signature: `input` may be a URL string, a
+  // `URL`, or a `Request`. Extract the URL string for diagnostics.
+  const url =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+      ? input.href
+      : input.url;
+
+  const { completeFetch } = trackFetch(new URL(url));
 
   try {
-    const response = await fetch(request, options);
+    const response = await fetch(input, options);
 
     // If no exception was thrown while doing a fetch, then we must be able to
     // reach the server, so if we previously had displayed a warning stop
@@ -1068,7 +1154,7 @@ export async function guardedFetch(request: Request, options?: RequestInit) {
     if (!options?.signal?.aborted) {
       // The fetch failed due to some network error. Tell the developer, if this
       // situation persists.
-      maybeScheduleLocalhostWarning({ url: request.url });
+      maybeScheduleLocalhostWarning({ url });
     }
     throw error;
   } finally {
@@ -1081,6 +1167,13 @@ export class WebContext {
   // Use websockets when connecting over HTTPS instead of gRPC.
   readonly websockets: boolean;
   bearerToken?: () => Promise<string | undefined>;
+  // A 401-recovery hook handed to `httpCall`. When set, a unary
+  // RPC that comes back `Unauthenticated` calls this once, and
+  // retries if it resolves `true`. Wire it to whatever renews the
+  // session — e.g. a `refreshBearer(...)`-based function in a
+  // browser app, or a custom refresh flow elsewhere. Without it,
+  // unary 401s surface immediately to the caller.
+  onUnauthenticated?: OnUnauthenticated;
 
   constructor(
     args:
@@ -1089,12 +1182,14 @@ export class WebContext {
           url: string;
           websockets?: boolean;
           bearerToken?: (() => Promise<string | undefined>) | string;
+          onUnauthenticated?: OnUnauthenticated;
         }
   ) {
     if (typeof args === "string") {
       this.url = args;
       this.websockets = false;
       this.bearerToken = undefined;
+      this.onUnauthenticated = undefined;
     } else {
       this.url = args.url;
       this.websockets = args.websockets ?? false;
@@ -1104,6 +1199,7 @@ export class WebContext {
             ? async () => args.bearerToken as string
             : args.bearerToken
           : undefined;
+      this.onUnauthenticated = args.onUnauthenticated;
     }
   }
 

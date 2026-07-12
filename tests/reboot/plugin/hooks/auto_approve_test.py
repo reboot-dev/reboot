@@ -662,7 +662,7 @@ REBOOT_DEV_CASES: list[tuple[str, str, Where, Decision]] = [
     ),
     (
         "dev: npx @mcpjam/inspector",
-        "npx @mcpjam/inspector@2.18.1 --url http://localhost:9991/mcp "
+        "npx @mcpjam/inspector@2.23.3 --url http://localhost:9991/mcp "
         "--oauth",
         Where.PROJECT,
         Decision.APPROVE,

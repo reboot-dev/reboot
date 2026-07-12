@@ -1,7 +1,6 @@
 import unittest
 from reboot.aio.applications import Application
-from reboot.aio.auth.oauth_providers import Anonymous
-from reboot.aio.tests import OAuthProviderForTest, Reboot
+from reboot.aio.tests import Reboot
 from tests.reboot.pydantic.auto_construct_user.servicer import (
     ProfileServicer,
     UserServicer,
@@ -25,17 +24,14 @@ class AutoConstructUserTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=[UserServicer, ProfileServicer],
-                oauth=OAuthProviderForTest(Anonymous()),
             )
         )
         # An authenticated context whose user-id matches the `User`
         # state-id, which is what the framework requires to reach an
         # auto-constructed `User`.
-        self.context = self.rbt.create_external_context(
+        self.context = await self.rbt.create_external_context_as(
             name=f"test-{self.id()}",
-            bearer_token=self.rbt.make_valid_oauth_access_token(
-                user_id=_USER_ID,
-            ),
+            user_id=_USER_ID,
         )
 
     async def asyncTearDown(self) -> None:

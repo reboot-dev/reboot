@@ -8,6 +8,7 @@ from reboot.protoc_gen_reboot_generic import (
     BaseFile,
     ProtocPlugin,
     UserProtoError,
+    to_lower_camel,
 )
 from reboot.protoc_gen_reboot_python import (
     PythonFile,
@@ -171,6 +172,38 @@ class GeneratorTest(unittest.TestCase):
         )
         map_field_type = fields['metadata']
         self.assertEqual(map_field_type, "dict[str, str]")
+
+
+class ToLowerCamelTest(unittest.TestCase):
+    """Test the `to_lower_camel` Jinja filter override.
+    """
+
+    def test_leading_acronym_lowercases_as_a_unit(self) -> None:
+        # A leading acronym followed by a lowercase letter keeps its
+        # last uppercase letter as the start of the next word.
+        self.assertEqual(to_lower_camel('APIKey'), 'apiKey')
+        self.assertEqual(to_lower_camel('URLMap'), 'urlMap')
+        self.assertEqual(to_lower_camel('HTTPServer'), 'httpServer')
+
+    def test_whole_string_acronym_lowercases(self) -> None:
+        # An acronym with nothing lowercase after it lowercases fully.
+        self.assertEqual(to_lower_camel('API'), 'api')
+        self.assertEqual(to_lower_camel('URL'), 'url')
+
+    def test_ordinary_names_unchanged(self) -> None:
+        # Names that are not led by an acronym keep their prior casing.
+        self.assertEqual(to_lower_camel('User'), 'user')
+        self.assertEqual(to_lower_camel('ChatRoom'), 'chatRoom')
+        self.assertEqual(to_lower_camel('Counter'), 'counter')
+        self.assertEqual(to_lower_camel('counter'), 'counter')
+        self.assertEqual(to_lower_camel('Write'), 'write')
+
+    def test_non_leading_acronym_unchanged(self) -> None:
+        # An acronym that is not at the start is left as it was.
+        self.assertEqual(to_lower_camel('GetURL'), 'getURL')
+
+    def test_empty_string(self) -> None:
+        self.assertEqual(to_lower_camel(''), '')
 
 
 if __name__ == '__main__':

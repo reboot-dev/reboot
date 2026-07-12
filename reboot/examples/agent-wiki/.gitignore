@@ -8,7 +8,7 @@ __pycache__/
 
 # Generated API code (from `rbt generate`).
 backend/api/
-web/api/
+frontend/api/
 
 # Reboot runtime state.
 .rbt/
@@ -21,8 +21,8 @@ web/api/
 .pytest_cache/
 
 # Node / web build artifacts.
-web/node_modules/
-web/dist/
+frontend/node_modules/
+frontend/dist/
 
 # IDE / editor.
 .idea/

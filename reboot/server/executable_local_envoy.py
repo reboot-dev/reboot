@@ -27,6 +27,7 @@ class ExecutableLocalEnvoy(LocalEnvoy):
         certificate: Optional[Path],
         key: Optional[Path],
         debug_mode: bool,
+        allowed_origins: Optional[list[str]],
     ):
         self._requested_public_port = public_port
         self._public_port = 0
@@ -67,6 +68,7 @@ class ExecutableLocalEnvoy(LocalEnvoy):
             file_descriptor_set=file_descriptor_set,
             use_tls=use_tls,
             observed_dir=Path(self._tmp_envoy_dir.name),
+            allowed_origins=allowed_origins,
         )
 
         self._envoy_config_path = self._write_envoy_dir(

@@ -1,7 +1,7 @@
 ---
 title: Authorizers — When to Write Them, When to Skip
 impact: HIGH
-impactDescription: Whether to write `authorizer()` from day one or defer it depends on how identity is wired (`oauth=` vs. `token_verifier=`)
+impactDescription: Whether to write `authorizer()` from day one or defer it depends on how identity is wired (`oauth=` works for both MCP and web; `token_verifier=` is the custom-IdP escape hatch)
 tags: servicer, authorizer, allow, allow_if, auth, authorizers, production, oauth, anonymous, token-verifier
 ---
 
@@ -55,13 +55,17 @@ identity available).
   Servicer up front**, using `allow_if(...)` with predicates like
   `has_verified_token` and `state_id_is_user_id`. The rules execute
   identically in dev and prod; no second pass before shipping. This
-  is the typical pattern for MCP / chat apps.
+  is the typical and recommended pattern for **both** MCP chat apps
+  and standalone web apps — the same OAuth server serves both
+  surfaces, browsers via a `rbt_session` cookie and MCP clients via
+  `Authorization: Bearer`.
 - **`Application(token_verifier=...)` before the verifier is wired** —
-  fine to **omit `authorizer()` during early development**. The dev-mode
-  warning serves as the TODO list for what still needs rules. Wire the
+  the escape hatch for custom IdPs the built-in `oauth=` providers
+  don't cover. Fine to **omit `authorizer()` during early
+  development** while standing up the verifier; the dev-mode warning
+  serves as the TODO list for what still needs rules. Wire the
   verifier and add real `allow_if(...)` rules before `rbt serve` /
-  cloud. This is the typical pattern for standalone web apps that
-  integrate with an external IdP.
+  cloud.
 - **`User`-type Servicers** — usually don't need a custom
   `authorizer()` at all. The framework's default
   (`state_id_is_user_id` + `is_app_internal`) is production-worthy.

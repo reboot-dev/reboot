@@ -76,6 +76,10 @@ async def main(path: str):
         file_descriptor_set=file_descriptor_set,
         use_tls=True,
         observed_dir=Path(os.path.join("my", "envoy", "dir")),
+        # The goldens fixture models an application with no
+        # credentialed browser traffic (neither `oauth=` nor
+        # `allowed_origins`), which keeps permissive CORS.
+        allowed_origins=None,
     )._generate_envoy_yaml()
 
     await _write_sorted_yaml(yaml_content, path)

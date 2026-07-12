@@ -11,6 +11,7 @@ dist/
 # Generated code.
 api/**/*.js
 api/**/*.ts
+frontend/api/
 
 # Zod schemas.
 !api/bank/v1/bank.ts

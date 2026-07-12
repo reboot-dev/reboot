@@ -6,6 +6,7 @@ import json
 import os
 import rbt.v1alpha1.errors_pb2
 import re
+import time
 import unittest
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
@@ -22,10 +23,12 @@ from reboot.aio.auth.oauth_providers import (
     OAuthProviderByEnvironment,
     UserId,
 )
+from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
+from reboot.aio.contexts import ReaderContext
 from reboot.aio.exceptions import InputError
 from reboot.aio.tests import OAuthProviderForTest, Reboot
 from reboot.ping.ping import CounterServicer, UserServicer
-from reboot.settings import ENVVAR_RBT_SERVE
+from reboot.settings import ENVVAR_RBT_DEV
 from reboot.std.ciphertext.v1.ciphertext import ciphertext_library
 from reboot.std.collections.ordered_map.v1.ordered_map import (
     ordered_map_library,
@@ -230,6 +233,594 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(alice_id, ben_id)
         self.assertNotIn("alice", alice_id.lower())
 
+    async def test_browser_flow_whoami_and_refresh_expose_expires_at(self):
+        """
+        Drive the browser-flow OAuth dance end to end against the
+        `/__/oauth/start` / `/__/oauth/finish` endpoints, then
+        verify that both `/__/oauth/whoami` and `/__/oauth/refresh`
+        return `expires_at` in their JSON bodies — that field is
+        the foundation the React provider's proactive-refresh
+        timer relies on to schedule renewal *before* the access
+        JWT expires (the WebSocket-multiplex mutation path has no
+        401-retry hook, so the SPA can't react after the fact).
+        """
+        await self.rbt.up(
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Development()),
+            ),
+        )
+
+        base = self.rbt.http_localhost_url("")
+        # Browser flows are same-origin from the backend's
+        # perspective; the start endpoint round-trips relative
+        # paths only.
+        return_to = "/"
+
+        async with httpx.AsyncClient(
+            follow_redirects=False,
+            # `httpx.Cookies()` would suffice; passing an empty
+            # `cookies=` makes the SetCookie persistence explicit
+            # for readers.
+            cookies=httpx.Cookies(),
+        ) as client:
+
+            def strip_secure_flag_from_cookies() -> None:
+                # The OAuth server marks all browser-flow cookies
+                # `Secure`, which browsers exempt for `localhost`.
+                # httpx's cookie jar does not — it would refuse to
+                # ship them on the test's http: URL — so we strip
+                # the flag after each redirect.
+                for cookie in client.cookies.jar:
+                    cookie.secure = False
+
+            # 1. /__/oauth/start → 302 to /__/oauth/authorize.
+            #    Sets `rbt_oauth_pending` carrying the PKCE
+            #    verifier.
+            response = await client.get(
+                base + "/__/oauth/start",
+                params={"return_to": return_to},
+            )
+            strip_secure_flag_from_cookies()
+            self.assertEqual(response.status_code, 302, response.text)
+            authorize_url = response.headers["location"]
+            self.assertIn("/__/oauth/authorize", authorize_url)
+
+            # 2. /__/oauth/authorize → 302 to /__/oauth/dev-login.
+            response = await client.get(authorize_url)
+            strip_secure_flag_from_cookies()
+            self.assertEqual(response.status_code, 302, response.text)
+            login_url = response.headers["location"]
+            self.assertIn("/__/oauth/dev-login", login_url)
+
+            # 3. /__/oauth/dev-login → HTML; scrape Alice's link.
+            response = await client.get(login_url)
+            strip_secure_flag_from_cookies()
+            self.assertEqual(response.status_code, 200, response.text)
+            match = re.search(
+                r'href="([^"]*?code=Alice[^"]*?)"', response.text
+            )
+            self.assertIsNotNone(match)
+            assert match is not None
+            callback_url = html.unescape(match.group(1))
+
+            # 4. /__/oauth/callback → 302 to /__/oauth/finish.
+            response = await client.get(callback_url)
+            strip_secure_flag_from_cookies()
+            self.assertEqual(response.status_code, 302, response.text)
+            finish_url = response.headers["location"]
+            self.assertIn("/__/oauth/finish", finish_url)
+
+            # 5. /__/oauth/finish → 302 to `return_to`. Sets
+            #    `rbt_session` and `rbt_refresh`.
+            response = await client.get(finish_url)
+            strip_secure_flag_from_cookies()
+            self.assertEqual(response.status_code, 302, response.text)
+            self.assertEqual(response.headers["location"], return_to)
+            self.assertIn("rbt_session", client.cookies)
+            self.assertIn("rbt_refresh", client.cookies)
+
+            # Stamp now() before each token-issuing call so we can
+            # assert each `expires_at` is roughly the access TTL
+            # ahead of wall clock.
+            ttl = Development().access_token_ttl_seconds
+
+            # 6. /__/oauth/whoami → 200 JSON, must include
+            #    `expires_at` consistent with the access TTL.
+            now_before_whoami = int(time.time())
+            response = await client.get(base + "/__/oauth/whoami")
+            self.assertEqual(response.status_code, 200, response.text)
+            body = response.json()
+            self.assertTrue(body["authenticated"])
+            self.assertIn("access_token", body)
+            self.assertIn(
+                "expires_at",
+                body,
+                "/__/oauth/whoami must surface `expires_at` so "
+                "the SPA's proactive-refresh scheduler can re-arm "
+                "before the JWT expires.",
+            )
+            self.assertIsInstance(body["expires_at"], int)
+            # Tolerate ±2 s of clock-and-RPC slop.
+            self.assertGreaterEqual(
+                body["expires_at"], now_before_whoami + ttl - 2
+            )
+            self.assertLessEqual(
+                body["expires_at"], now_before_whoami + ttl + 2
+            )
+            original_expires_at = body["expires_at"]
+
+            # 7. /__/oauth/refresh → 200 JSON, must include a
+            #    *fresh* `expires_at` >= the one we just saw, and
+            #    return a new access_token (the rotation we
+            #    promised the proactive-refresh timer).
+            now_before_refresh = int(time.time())
+            # Send the backend's own origin, as a browser would on a
+            # same-origin `fetch` POST; the CSRF check must let it
+            # through.
+            response = await client.post(
+                base + "/__/oauth/refresh",
+                headers={"Origin": base},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            body = response.json()
+            self.assertIn("access_token", body)
+            self.assertIn(
+                "expires_at",
+                body,
+                "/__/oauth/refresh must surface `expires_at` so "
+                "the SPA can re-arm its proactive-refresh timer "
+                "without a second `/whoami` round-trip.",
+            )
+            self.assertIsInstance(body["expires_at"], int)
+            self.assertGreaterEqual(
+                body["expires_at"], now_before_refresh + ttl - 2
+            )
+            self.assertGreaterEqual(body["expires_at"], original_expires_at)
+
+    async def test_start_rejects_unsafe_return_to(self):
+        """
+        `/__/oauth/start` reflects `return_to` into the 302 it
+        eventually fires from `/__/oauth/finish`, so a malicious
+        `return_to` would let an attacker bounce a signed-in user
+        through their own backend onto an attacker-controlled page
+        ("phishing aid": no tokens leak, but trust transfers).
+        Same-origin relative paths are accepted unconditionally;
+        absolute URLs are accepted only when their origin is trusted
+        (listed in `Application(allowed_origins=...)`, the backend's
+        own origin, or localhost under `rbt dev run`); everything
+        else is 400.
+        """
+        await self.rbt.up(
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Development()),
+                allowed_origins=["https://spa.example"],
+            ),
+        )
+        start_url = self.rbt.http_localhost_url("/__/oauth/start")
+
+        bad_cases = [
+            ("empty", ""),
+            ("protocol_relative", "//evil.example/"),
+            ("javascript_scheme", "javascript:alert(1)"),
+            ("data_scheme", "data:text/html,<script>alert(1)</script>"),
+            # `urlparse` accepts these but the implementation
+            # requires a known scheme + non-empty netloc.
+            ("missing_scheme_with_host", "evil.example/path"),
+            # Absolute URL whose origin is NOT in `allowed_origins`
+            # — the phishing-aid case.
+            ("absolute_not_in_allowed_origins", "https://evil.example/"),
+        ]
+        async with httpx.AsyncClient(follow_redirects=False) as client:
+            for label, bad in bad_cases:
+                response = await client.get(
+                    start_url,
+                    params={"return_to": bad},
+                )
+                self.assertEqual(
+                    response.status_code,
+                    400,
+                    msg=f"{label}: return_to={bad!r} should be 400, got "
+                    f"{response.status_code}: {response.text}",
+                )
+
+            # Sanity: a same-origin relative path is fine.
+            response = await client.get(
+                start_url,
+                params={"return_to": "/some/path"},
+            )
+            self.assertEqual(response.status_code, 302, response.text)
+
+            # An absolute URL whose origin IS in `allowed_origins`
+            # is accepted — that's how a cross-origin SPA hosted at
+            # `https://spa.example` signs the user in and gets sent
+            # back to its own page.
+            response = await client.get(
+                start_url,
+                params={"return_to": "https://spa.example/home"},
+            )
+            self.assertEqual(response.status_code, 302, response.text)
+
+            # The backend's own origin is always an acceptable
+            # absolute `return_to`, without appearing in
+            # `allowed_origins` — a same-origin web app needs no
+            # allow-listing.
+            own_origin = self.rbt.http_localhost_url()
+            response = await client.get(
+                start_url,
+                params={"return_to": f"{own_origin}/after-sign-in"},
+            )
+            self.assertEqual(response.status_code, 302, response.text)
+
+            # Under `rbt dev run`, localhost origins are trusted
+            # automatically — mirroring Envoy's dev CORS widening —
+            # so a local frontend dev server's `return_to` works
+            # without configuration...
+            with mock.patch.dict(os.environ, {ENVVAR_RBT_DEV: "true"}):
+                response = await client.get(
+                    start_url,
+                    params={"return_to": "http://localhost:5173/"},
+                )
+            self.assertEqual(response.status_code, 302, response.text)
+
+            # ...while outside dev that same localhost origin (which
+            # is neither allow-listed nor the backend's own origin —
+            # the port differs) stays rejected.
+            response = await client.get(
+                start_url,
+                params={"return_to": "http://localhost:5173/"},
+            )
+            self.assertEqual(response.status_code, 400, response.text)
+
+    async def test_signout_rejects_cross_site_origin(self):
+        """
+        `/__/oauth/signout` is cookie-authorized and state-changing,
+        so without an `Origin` check any web page the user visits
+        could sign them out at will (CSRF). Browsers attach `Origin`
+        to cross-origin POSTs; only trusted origins pass. Requests
+        without an `Origin` header (non-browser clients) pass too —
+        they attach cookies deliberately, not ambiently.
+        """
+        await self.rbt.up(
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Development()),
+                allowed_origins=["https://spa.example"],
+            ),
+        )
+        signout_url = self.rbt.http_localhost_url("/__/oauth/signout")
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            response = await client.post(
+                signout_url,
+                headers={"Origin": "https://evil.example"},
+            )
+            self.assertEqual(response.status_code, 403, response.text)
+
+            response = await client.post(
+                signout_url,
+                headers={"Origin": "https://spa.example"},
+            )
+            self.assertEqual(response.status_code, 204, response.text)
+
+            response = await client.post(signout_url)
+            self.assertEqual(response.status_code, 204, response.text)
+
+    async def test_refresh_rejects_cross_site_origin(self):
+        """
+        `/__/oauth/refresh` is cookie-authorized and state-changing
+        (it re-mints the session cookies, re-arming the refresh
+        window), so it carries the same `Origin` CSRF check as
+        `/__/oauth/signout`: cross-site origins are rejected before
+        the refresh cookie is even consulted, while trusted origins
+        and non-browser requests (no `Origin` header) proceed to the
+        normal cookie check.
+        """
+        await self.rbt.up(
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Development()),
+                allowed_origins=["https://spa.example"],
+            ),
+        )
+        refresh_url = self.rbt.http_localhost_url("/__/oauth/refresh")
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
+            response = await client.post(
+                refresh_url,
+                headers={"Origin": "https://evil.example"},
+            )
+            self.assertEqual(response.status_code, 403, response.text)
+
+            # A trusted origin passes the origin check; without a
+            # refresh cookie the request then fails the normal cookie
+            # check.
+            response = await client.post(
+                refresh_url,
+                headers={"Origin": "https://spa.example"},
+            )
+            self.assertEqual(response.status_code, 401, response.text)
+            self.assertEqual(response.json()["error"], "not_signed_in")
+
+            # So does a request without an `Origin` header (a
+            # non-browser client).
+            response = await client.post(refresh_url)
+            self.assertEqual(response.status_code, 401, response.text)
+            self.assertEqual(response.json()["error"], "not_signed_in")
+
+    async def test_finish_requires_matching_pending_cookie(self):
+        """
+        `/__/oauth/finish` redeems an OAuth `code` against the PKCE
+        verifier that `/__/oauth/start` stashed in the
+        `rbt_oauth_pending` cookie. Without that cookie, an
+        attacker controlling the redirect dance could swap in a
+        forged `code`, so the endpoint must 400 — not silently
+        roll forward.
+        """
+        await self.rbt.up(
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Development()),
+            ),
+        )
+        finish_url = self.rbt.http_localhost_url("/__/oauth/finish")
+
+        async with httpx.AsyncClient(follow_redirects=False) as client:
+            # No `code` parameter at all.
+            response = await client.get(finish_url)
+            self.assertEqual(response.status_code, 400, response.text)
+            self.assertIn(
+                "code",
+                response.json()["error_description"].lower(),
+            )
+
+            # `code` present, but no `rbt_oauth_pending` cookie —
+            # the call can't proceed without the PKCE verifier.
+            response = await client.get(
+                finish_url,
+                params={
+                    "code": "fake-code",
+                    "state": "fake-state"
+                },
+            )
+            self.assertEqual(response.status_code, 400, response.text)
+            self.assertIn(
+                "pending",
+                response.json()["error_description"].lower(),
+                msg="Expected an error mentioning the pending-flow "
+                "cookie",
+            )
+
+    async def test_authorize_short_circuits_with_valid_session(self):
+        """
+        Web→MCP SSO: if the user already has a valid `rbt_session`
+        cookie (set by a previous browser sign-in), an MCP client
+        going through `/__/oauth/authorize` still sees the consent
+        screen, but approving it short-circuits *without* a trip
+        through the IdP — `/consent` mints an auth code directly and
+        302s back to the MCP client's `redirect_uri`. That's what
+        lets an MCP client launched from an already-signed-in browser
+        skip re-entering credentials.
+        """
+        await self.rbt.up(
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Development()),
+            ),
+        )
+
+        base = self.rbt.http_localhost_url("")
+        return_to = "/"
+
+        async with httpx.AsyncClient(
+            follow_redirects=False,
+            cookies=httpx.Cookies(),
+        ) as client:
+
+            def strip_secure_flag_from_cookies() -> None:
+                for cookie in client.cookies.jar:
+                    cookie.secure = False
+
+            # 1. Drive the browser sign-in once so the test client
+            #    holds an `rbt_session` cookie. Helper steps; the
+            #    flow itself is exercised by
+            #    `test_browser_flow_whoami_and_refresh_expose_expires_at`.
+            response = await client.get(
+                base + "/__/oauth/start",
+                params={"return_to": return_to},
+            )
+            strip_secure_flag_from_cookies()
+            self.assertEqual(response.status_code, 302)
+            authorize_url = response.headers["location"]
+
+            response = await client.get(authorize_url)
+            strip_secure_flag_from_cookies()
+            self.assertEqual(response.status_code, 302)
+            login_url = response.headers["location"]
+
+            response = await client.get(login_url)
+            strip_secure_flag_from_cookies()
+            self.assertEqual(response.status_code, 200)
+            match = re.search(
+                r'href="([^"]*?code=Alice[^"]*?)"', response.text
+            )
+            assert match is not None
+            callback_url = html.unescape(match.group(1))
+
+            response = await client.get(callback_url)
+            strip_secure_flag_from_cookies()
+            self.assertEqual(response.status_code, 302)
+            finish_url = response.headers["location"]
+
+            response = await client.get(finish_url)
+            strip_secure_flag_from_cookies()
+            self.assertEqual(response.status_code, 302, response.text)
+            self.assertIn("rbt_session", client.cookies)
+
+            # 2. Now register a synthetic MCP client and drive
+            #    `/__/oauth/authorize` with that client's params.
+            #    The session cookie carries over; approving the
+            #    consent screen should short-circuit straight to the
+            #    MCP client's redirect_uri *without* bouncing through
+            #    `/__/oauth/dev-login`.
+            mcp_redirect_uri = "http://localhost/mcp-callback"
+            metadata_response = await client.get(
+                base + "/.well-known/oauth-authorization-server",
+            )
+            metadata = metadata_response.json()
+            register_response = await client.post(
+                metadata["registration_endpoint"],
+                json={"redirect_uris": [mcp_redirect_uri]},
+            )
+            self.assertEqual(register_response.status_code, 201)
+            client_id = register_response.json()["client_id"]
+
+            # Synthetic PKCE pair.
+            code_verifier = base64.urlsafe_b64encode(os.urandom(32)
+                                                    ).rstrip(b"=").decode()
+            code_challenge = base64.urlsafe_b64encode(
+                hashlib.sha256(code_verifier.encode()).digest()
+            ).rstrip(b"=").decode()
+
+            response = await client.get(
+                metadata["authorization_endpoint"],
+                params={
+                    "response_type": "code",
+                    "client_id": client_id,
+                    "redirect_uri": mcp_redirect_uri,
+                    "code_challenge": code_challenge,
+                    "code_challenge_method": "S256",
+                    "state": "synthetic-mcp-state",
+                },
+            )
+            strip_secure_flag_from_cookies()
+            # A DCR (MCP) client still gets the consent screen — only
+            # the first-party browser client skips it.
+            self.assertEqual(response.status_code, 200, response.text)
+
+            # Approving consent short-circuits straight to the MCP
+            # client's redirect_uri *without* bouncing through
+            # `/__/oauth/dev-login`: the `rbt_session` cookie from the
+            # browser sign-in above carries the user's identity, so
+            # `/consent` mints the auth code directly.
+            consent_url = self.rbt.http_localhost_url(_CONSENT_PATH)
+            response = await _approve_consent(
+                client, consent_url, response.text
+            )
+            strip_secure_flag_from_cookies()
+            self.assertEqual(response.status_code, 302, response.text)
+            location = response.headers["location"]
+            # The whole point: we land on the MCP client's
+            # redirect URI directly, *not* on `/__/oauth/dev-login`.
+            self.assertTrue(
+                location.startswith(mcp_redirect_uri),
+                msg="Expected short-circuit redirect to "
+                f"{mcp_redirect_uri!r}, got {location!r}. If this is "
+                "a dev-login URL, the session cookie wasn't honoured.",
+            )
+            parsed = httpx.URL(location)
+            self.assertIn("code", parsed.params)
+            self.assertEqual(
+                parsed.params["state"],
+                "synthetic-mcp-state",
+            )
+
+    async def test_callback_sets_session_cookies_via_mcp_redirect(self):
+        """
+        MCP→web SSO: when an MCP client kicks off a browser sign-
+        in, the user's browser ends up at `/__/oauth/callback`,
+        which 302s back to the MCP client's `redirect_uri`. The
+        `Set-Cookie` headers on that 302 response are what land
+        `rbt_session` / `rbt_refresh` in the first-party jar on
+        the Reboot backend's origin, so the standalone SPA on
+        that same origin is signed in next time it opens — even
+        though the user never went through `/__/oauth/start`.
+        """
+        await self.rbt.up(
+            Application(
+                servicers=[UserServicer, CounterServicer],
+                oauth=OAuthProviderForTest(Development()),
+            ),
+        )
+
+        base = self.rbt.http_localhost_url("")
+
+        async with httpx.AsyncClient(follow_redirects=False) as client:
+            metadata_response = await client.get(
+                base + "/.well-known/oauth-authorization-server",
+            )
+            metadata = metadata_response.json()
+
+            # Register an MCP-style client (DCR).
+            mcp_redirect_uri = "http://localhost/mcp-callback"
+            register_response = await client.post(
+                metadata["registration_endpoint"],
+                json={"redirect_uris": [mcp_redirect_uri]},
+            )
+            self.assertEqual(register_response.status_code, 201)
+            client_id = register_response.json()["client_id"]
+
+            code_verifier = base64.urlsafe_b64encode(os.urandom(32)
+                                                    ).rstrip(b"=").decode()
+            code_challenge = base64.urlsafe_b64encode(
+                hashlib.sha256(code_verifier.encode()).digest()
+            ).rstrip(b"=").decode()
+
+            # /authorize (no existing session) → 200 consent screen;
+            # approving it → 302 to /dev-login.
+            response = await client.get(
+                metadata["authorization_endpoint"],
+                params={
+                    "response_type": "code",
+                    "client_id": client_id,
+                    "redirect_uri": mcp_redirect_uri,
+                    "code_challenge": code_challenge,
+                    "code_challenge_method": "S256",
+                    "state": "mcp-state-cookie-test",
+                },
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            consent_url = self.rbt.http_localhost_url(_CONSENT_PATH)
+            response = await _approve_consent(
+                client, consent_url, response.text
+            )
+            self.assertEqual(response.status_code, 302)
+            login_url = response.headers["location"]
+
+            # Scrape Alice's link and follow into /__/oauth/callback.
+            response = await client.get(login_url)
+            self.assertEqual(response.status_code, 200)
+            match = re.search(
+                r'href="([^"]*?code=Alice[^"]*?)"', response.text
+            )
+            assert match is not None
+            callback_url = html.unescape(match.group(1))
+
+            response = await client.get(callback_url)
+            self.assertEqual(response.status_code, 302)
+            # Redirects back to the MCP client's redirect_uri with
+            # an `?code=...` — same as the existing MCP flow.
+            self.assertTrue(
+                response.headers["location"].startswith(mcp_redirect_uri),
+            )
+
+            # The whole point: even though the redirect target is
+            # the MCP client (not `/__/oauth/finish`), the response
+            # carries `Set-Cookie` for the three browser-session
+            # cookies, so the standalone SPA on the Reboot origin
+            # finds them next time the user opens it.
+            set_cookie_headers = response.headers.get_list("set-cookie")
+            cookie_names = {
+                line.split("=", 1)[0].strip() for line in set_cookie_headers
+            }
+            self.assertIn(
+                "rbt_session",
+                cookie_names,
+                msg="MCP /callback must Set-Cookie rbt_session to "
+                "drive MCP→web SSO. Cookies seen: "
+                f"{sorted(cookie_names)}",
+            )
+            self.assertIn("rbt_refresh", cookie_names)
+
     async def test_dev_login_rejects_untrusted_redirect_uri(self):
         """
         The `dev-login` page reflects its `redirect_uri` query param into
@@ -276,32 +867,85 @@ class DevelopmentOAuthProviderTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertNotIn("Alice", response.text)
 
-    async def test_user_without_oauth_raises_in_prod(self):
-        """
-        In a real production deployment (`rbt serve` / Reboot Cloud), an
-        `Application` whose `oauth` selector has no provider for that
-        environment (here, the `oauth=None` default ≡ `dev=None,
-        prod=None`) fails to start when it has a `User` servicer — its
-        `OAuthProviderByEnvironment.get()` raises. So an app can't
-        silently ship without choosing a real OAuth provider. (Under
-        `rbt dev` and in tests the `dev` arm is used instead.)
 
-        Uses the real `reboot.aio.applications.Application` (the test
-        `Application` always resolves to a concrete provider).
+class _NoOpTokenVerifier(TokenVerifier):
+    """A `token_verifier=` that has no opinion on any token. Enough to
+    show that supplying a verifier does not lift the `oauth=`
+    requirement for auto-construct state types."""
+
+    async def verify_token(
+        self,
+        context: ReaderContext,
+        token: Optional[str],
+    ) -> VerifyTokenResult:
+        return None
+
+
+class UserWithoutOAuthTest(unittest.IsolatedAsyncioTestCase):
+
+    async def test_user_without_oauth_raises(self):
         """
-        with mock.patch.dict(
-            os.environ,
-            {ENVVAR_RBT_SERVE: "true"},
-            clear=False,
-        ):
-            with self.assertRaises(InputError) as context:
-                Application(
-                    servicers=[UserServicer, CounterServicer],
-                )
-        self.assertIn(
-            "No OAuth provider is configured",
-            str(context.exception),
+        An `Application` with a `User`-typed auto-construct servicer but
+        no `Application(oauth=...)` fails to start, because
+        auto-constructed users are only ever identified through the
+        OAuth sign-in flow. This holds even when a `token_verifier=` is
+        configured: a custom verifier authenticates requests but never
+        auto-constructs, so it can't stand in for `oauth=`.
+
+        The check runs at serve time, when the OAuth server and MCP
+        factory mount (in production via `Application.run()`), so the
+        app fails to start rather than at construction. This drives the
+        mount directly to observe that invariant.
+
+        Uses the real `reboot.aio.applications.Application`.
+        """
+        # Neither `oauth=` nor `token_verifier=`.
+        application = Application(servicers=[UserServicer, CounterServicer])
+        with self.assertRaises(InputError) as context:
+            application._mount_oauth_and_mcp()
+        self.assertIn("never auto-constructs", str(context.exception))
+
+        # A `token_verifier=` but still no `oauth=`: authenticating
+        # requests is not the same as identifying users to construct.
+        application = Application(
+            servicers=[UserServicer, CounterServicer],
+            token_verifier=_NoOpTokenVerifier(),
         )
+        with self.assertRaises(InputError) as context:
+            application._mount_oauth_and_mcp()
+        self.assertIn("never auto-constructs", str(context.exception))
+
+    async def test_config_pod_resolves_selector(self):
+        """
+        A config pod runs the same OAuth validation serving pods hit
+        at mount: a selector with no provider for the current
+        environment fails the config pod fast, instead of passing
+        config validation and then failing every serving pod.
+        """
+        application = Application(
+            servicers=[UserServicer, CounterServicer],
+            oauth=OAuthProviderByEnvironment(
+                dev=Development(),
+                prod=None,
+            ),
+            # Same-origin-only browser auth: this test exercises
+            # selector resolution, and `oauth=` requires an explicit
+            # `allowed_origins` choice outside `rbt dev run`.
+            allowed_origins=[],
+        )
+        with mock.patch(
+            "reboot.aio.auth.oauth_providers.running_rbt_dev",
+            return_value=False,
+        ):
+            with self.assertRaises(InputError):
+                application._validate_configuration()
+        # The same selector under `rbt dev run` resolves its dev arm,
+        # so config validation passes.
+        with mock.patch(
+            "reboot.aio.auth.oauth_providers.running_rbt_dev",
+            return_value=True,
+        ):
+            application._validate_configuration()
 
 
 class ConsentScreenTest(unittest.IsolatedAsyncioTestCase):

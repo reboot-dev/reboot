@@ -1,0 +1,14 @@
+load("@rbt_test_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "merge_codex_config_test",
+    size = "small",
+    srcs = ["merge_codex_config_test.py"],
+    data = ["//reboot/plugin:install_sh"],
+    env = {
+        "INSTALL_SH": "$(location //reboot/plugin:install_sh)",
+    },
+    main = "merge_codex_config_test.py",
+    deps = [requirement("tomlkit")],
+)

@@ -33,7 +33,7 @@ asyncio.create_task(self._fire_later())  # disappears on restart
 
 **Correct (matches the [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) example, `backend/src/main.py`):**
 
-`api/bank/v1/pydantic/account.py`:
+`api/bank/v1/account.py`:
 
 ```python
 open=Writer(

@@ -1,8 +1,8 @@
 # Dockerfile for deploying chick-potle to Reboot Cloud.
 #
-# Prerequisite: run `cd web && npm install && npm run build`
-# locally before `docker build` so that `web/dist/` contains the
-# bundled UIs. This image copies that prebuilt bundle rather
+# Prerequisite: run `cd frontend && npm install && npm run build`
+# locally before `docker build` so that `frontend/dist/` contains
+# the bundled UIs. This image copies that prebuilt bundle rather
 # than installing Node and rebuilding it here.
 FROM ghcr.io/reboot-dev/reboot-base:1.2.1
 
@@ -32,7 +32,7 @@ RUN rbt generate
 COPY backend/src/ backend/src/
 
 # Copy the prebuilt web bundle.
-COPY web/dist/ web/dist/
+COPY frontend/dist/ frontend/dist/
 
 # Make the Pydantic API definitions in `api/` and the generated
 # Reboot bindings in `backend/api/` both importable. They share

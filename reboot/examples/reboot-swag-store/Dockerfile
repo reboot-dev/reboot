@@ -5,8 +5,9 @@
 #
 # Produces two useful artifacts for later stages:
 #   - `/app/.venv` — virtualenv with `rbt` and runtime deps.
-#   - `/app/backend/api/` and `/app/web/api/` — generated Python and
-#      TypeScript bindings from `api/reboot_swag_store/v1/store.py`.
+#   - `/app/backend/api/` and `/app/frontend/api/` — generated Python
+#      and TypeScript bindings from
+#      `api/reboot_swag_store/v1/store.py`.
 # ---------------------------------------------------------------------------
 FROM ghcr.io/reboot-dev/reboot-base:1.2.1 AS backend
 
@@ -34,23 +35,24 @@ RUN rbt generate
 # ---------------------------------------------------------------------------
 # Stage 2: build the web UIs.
 #
-# `rbt serve` serves MCP UI resources from `web/dist/ui/<name>/index.html`
-# (see `reboot.mcp.ui.ui_html`), so we need pre-built artifacts in the
-# final image. The web UIs import the generated TS bindings at
-# `web/api/`, which we pull from the backend stage above.
+# `rbt serve` serves MCP UI resources from
+# `frontend/dist/mcp/<name>/index.html` (see `reboot.mcp.ui.ui_html`),
+# so we need pre-built artifacts in the final image. The web UIs
+# import the generated TS bindings at `frontend/api/`, which we pull
+# from the backend stage above.
 # ---------------------------------------------------------------------------
 FROM node:20-alpine AS web-build
 
-WORKDIR /app/web
+WORKDIR /app/frontend
 
-COPY web/package.json web/package-lock.json ./
+COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
-COPY web/ ./
+COPY frontend/ ./
 # Overlay the freshly-generated TS bindings (ignored by `.gitignore`
-# and `.dockerignore`, so the `COPY web/ ./` above doesn't include
-# them).
-COPY --from=backend /app/web/api ./api
+# and `.dockerignore`, so the `COPY frontend/ ./` above doesn't
+# include them).
+COPY --from=backend /app/frontend/api ./api
 
 RUN npm run build
 
@@ -61,6 +63,6 @@ RUN npm run build
 FROM backend AS runtime
 
 COPY backend/src/ backend/src/
-COPY --from=web-build /app/web/dist/ web/dist/
+COPY --from=web-build /app/frontend/dist/ frontend/dist/
 
 CMD ["rbt", "serve", "run"]

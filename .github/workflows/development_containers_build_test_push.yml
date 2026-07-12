@@ -1,7 +1,3 @@
-# This file is generated from a template in `ci/templates/`.
-# Do not edit it directly.
-# Run `bazel run //:ci_workflows` to regenerate it after editing the template.
-
 name: Development Containers - Build, Test, and Push
 on:
   # This file is a reusable workflow (only). It runs when called.

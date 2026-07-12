@@ -1,0 +1,55 @@
+.container {
+  font-family: system-ui, sans-serif;
+  background: rgb(70, 8, 131);
+  color: #fff;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+
+.loading,
+.empty {
+  font-family: system-ui, sans-serif;
+  color: #ddd0f0;
+  padding: 16px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th {
+  text-align: left;
+  color: #c9b3e8;
+  font-weight: 600;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.customer td {
+  font-weight: 700;
+  color: #e6d9fa;
+  padding-top: 12px;
+}
+
+.account {
+  padding-left: 24px;
+}
+
+.amount {
+  text-align: right;
+  color: #7ee8a2;
+  font-weight: 600;
+}

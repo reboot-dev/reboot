@@ -11,9 +11,8 @@ import unittest
 from constants import COUPON_BOOK_ID
 from reboot.aio.aborted import Aborted
 from reboot.aio.applications import Application
-from reboot.aio.auth.oauth_providers import Anonymous
 from reboot.aio.contexts import WorkflowContext
-from reboot.aio.tests import OAuthProviderForTest, Reboot
+from reboot.aio.tests import Reboot
 from reboot_swag_store.v1.store import (
     CartEmpty,
     InvalidCoupon,
@@ -89,7 +88,6 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
                     NoFulfillOrderServicer,
                 ],
                 initialize=_initialize,
-                oauth=OAuthProviderForTest(Anonymous()),
             )
         )
         # Authenticated context for a "guest" user. With
@@ -99,11 +97,9 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
         # bypass the MCP session hook that auto-constructs
         # the matching `User` state, so we trigger it here.
         self.user_id = "test-user"
-        self.context = self.rbt.create_external_context(
+        self.context = await self.rbt.create_external_context_as(
             name=f"test-{self.id()}",
-            bearer_token=self.rbt.make_valid_oauth_access_token(
-                user_id=self.user_id,
-            ),
+            user_id=self.user_id,
         )
         await UserServicer._auto_construct(
             self.context,
@@ -192,11 +188,9 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
         # A second authenticated guest session. A fresh
         # `Cart.ref` is required because each weak reference
         # binds to a single context.
-        other_context = self.rbt.create_external_context(
+        other_context = await self.rbt.create_external_context_as(
             name=f"other-{self.id()}",
-            bearer_token=self.rbt.make_valid_oauth_access_token(
-                user_id="other-user",
-            ),
+            user_id="other-user",
         )
         other_cart = Cart.ref(cart.state_id)
 

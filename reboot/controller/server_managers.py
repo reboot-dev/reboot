@@ -415,6 +415,10 @@ class RegisteredRevision:
     local_envoy: bool
     local_envoy_port: int
     local_envoy_use_tls: bool
+    # Browser origins permitted to send credentialed requests. The CORS
+    # allow-list is the only thing standing between a third-party site
+    # and the access JWT surfaced by `/__/oauth/whoami`.
+    allowed_origins: Optional[list[str]]
     token_verifier: Optional[TokenVerifier]
     effect_validation: Optional[EffectValidation]
 
@@ -592,7 +596,12 @@ class LocalServerManager(ServerManager):
         if self._local_envoy is None:
             return None
 
-        return f'localhost:{self._local_envoy.trusted_port}'
+        # Dial the IPv4 loopback Envoy actually binds: `localhost`
+        # may resolve to `[::1]` first, where an unrelated process
+        # (e.g. the Bazel server JVM) can hold the same numeric port,
+        # silently answering our RPCs. See
+        # https://github.com/reboot-dev/reboot/issues/83.
+        return f'127.0.0.1:{self._local_envoy.trusted_port}'
 
     def register_placement_planner_address(
         self, placement_planner_address: RoutableAddress
@@ -619,6 +628,7 @@ class LocalServerManager(ServerManager):
         local_envoy: bool,
         local_envoy_port: int,
         local_envoy_use_tls: bool,
+        allowed_origins: Optional[list[str]],
         effect_validation: Optional[EffectValidation],
     ):
         """Save the given serviceable definitions so that we can bring up
@@ -630,6 +640,7 @@ class LocalServerManager(ServerManager):
             local_envoy=local_envoy,
             local_envoy_port=local_envoy_port,
             local_envoy_use_tls=local_envoy_use_tls,
+            allowed_origins=allowed_origins,
             token_verifier=token_verifier,
             effect_validation=effect_validation,
         )
@@ -1216,6 +1227,7 @@ class LocalServerManager(ServerManager):
             # of the `Routable`s that the `ServiceServer` declares
             # (i.e., system services).
             routables=user_serviceables + ServiceServer.ROUTABLES,
+            allowed_origins=self._revision.allowed_origins,
         )
 
         await self._local_envoy.start()

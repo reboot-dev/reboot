@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "bank-pydantic-mobile",
+    "slug": "bank-pydantic-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "dev.reboot.bankpydanticmobile"
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

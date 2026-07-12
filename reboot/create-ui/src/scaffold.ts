@@ -13,8 +13,8 @@ function writeIfMissing(filePath: string, content: string): boolean {
 
 /**
  * Derive the web root from the react output directory.
- * `.rbtrc` has `generate --react=web/api` — the web root
- * is the first path component (e.g. `web`).
+ * `.rbtrc` has `generate --react=frontend/api` — the web root
+ * is the first path component (e.g. `frontend`).
  */
 function webRoot(reactDir: string): string {
   return reactDir.split("/")[0];
@@ -55,16 +55,10 @@ export function scaffold(
   const createdShared: string[] = [];
   const createdUis: string[] = [];
 
-  // Derive UI directory names for package.json build scripts.
-  // Use the last path component (e.g. "web/ui/profile" -> "profile")
-  // to match what the vite config discovers under ui/.
-  const uiNames = allUis
-    .filter((ui) => ui.path.split("/")[0] === root)
-    .map((ui) => path.basename(ui.path));
-
   // Shared files (written once, never updated).
   const sharedFiles: Array<[string, string]> = [
-    ["package.json", templates.packageJson(name, uiNames)],
+    ["package.json", templates.packageJson(name)],
+    ["build.mjs", templates.buildMjs()],
     ["vite.config.ts", templates.viteConfig()],
     ["tsconfig.json", templates.tsconfigJson()],
     ["tsconfig.app.json", templates.tsconfigAppJson()],

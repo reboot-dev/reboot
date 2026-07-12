@@ -41,7 +41,7 @@ class BankServicer(Bank.Servicer):
 ```python
 from reboot.aio.applications import Application
 from reboot.aio.external import InitializeContext
-from bank.v1.pydantic.bank_rbt import Bank
+from bank.v1.bank_rbt import Bank
 
 SINGLETON_BANK_ID = 'SVB'
 

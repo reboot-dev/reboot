@@ -1,7 +1,3 @@
-# This file is generated from a template in `ci/templates/`.
-# Do not edit it directly.
-# Run `bazel run //:ci_workflows` to regenerate it after editing the template.
-
 name: Reusable Workflow for Devcontainer
 
 # example:
@@ -192,7 +188,11 @@ jobs:
             ${{ inputs.run }}
 
       - name: Upload artifacts (if any)
-        if: ${{ inputs.artifact-name != '' && inputs.artifact-path != '' }}
+        # Use `always()` so artifacts upload even when the `run` step
+        # failed; without a status function, GitHub implicitly wraps the
+        # `if` in `success()`, which skips this step on failure — exactly
+        # when the artifacts (debug output collected on failure) matter.
+        if: ${{ always() && inputs.artifact-name != '' && inputs.artifact-path != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.artifact-name }}

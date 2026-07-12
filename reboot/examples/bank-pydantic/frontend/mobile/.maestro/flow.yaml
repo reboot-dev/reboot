@@ -1,0 +1,194 @@
+# Maestro end-to-end flow for the bank-pydantic mobile app.
+#
+# Drives the real app on a real Android runtime (Hermes), through Expo
+# Go, against a running Reboot backend that starts with an empty bank.
+# The orchestration script loads the app fresh (`expo start --android`),
+# so this flow does not `launchApp`; it drives the foreground app.
+# `appId` is Expo Go's package because the app runs inside it.
+#
+# What it proves: two customers are created, an account is opened for
+# each, and a transfer between them round-trips through the backend so
+# the reactive balances re-render — i.e. the Reboot client's native
+# reads and mutations actually work. Assertions target elements by
+# `testID` (see `App.tsx`), not arbitrary on-screen text.
+appId: host.exp.exponent
+---
+# Wait for the app to finish mounting before driving it.
+- extendedWaitUntil:
+    visible:
+      id: "customer-id-input"
+    timeout: 30000
+
+# On a fresh Expo Go install, the first project open shows Expo Go's
+# onboarding "developer menu" bottom sheet over the app, and its scrim
+# swallows taps meant for the app. None of the sheet's elements expose a
+# testID, so we match it by the "Bottom Sheet" accessibility label on
+# its container — that label is Expo Go's, from the `@gorhom/bottom-sheet`
+# React Native library it renders the dev menu with (its container
+# defaults `accessibilityLabel` to "Bottom Sheet").
+#
+# The sheet auto-opens at an unpredictable delay after the project
+# loads: Expo Go loads its dev menu from a separate JS bundle, and on a
+# slow CI emulator the sheet can trail the app's own interactivity by
+# 15+ seconds — long enough to outlast a one-shot conditional check
+# (Maestro polls a `runFlow`/`when` condition for at most 7 seconds,
+# its `optionalLookupTimeoutMs`) and then swallow a later tap. So
+# deterministically wait for the sheet before driving the app,
+# tolerating its absence (`optional` keeps the timeout from failing the
+# flow), because an already-onboarded Expo Go install never shows it
+# again.
+- extendedWaitUntil:
+    visible: "Bottom Sheet"
+    timeout: 30000
+    optional: true
+
+# Dismiss the sheet (when it did open) with a downward swipe (the
+# library's built-in dismiss gesture): one motion that slides the sheet
+# and its scrim away and returns to the app. Then confirm the dismissal
+# landed, so a failed swipe surfaces here as a named step instead of as
+# a swallowed tap further down the flow.
+- runFlow:
+    when:
+      visible: "Bottom Sheet"
+    commands:
+      - swipe:
+          start: "50%, 65%"
+          end: "50%, 95%"
+      - extendedWaitUntil:
+          notVisible: "Bottom Sheet"
+          timeout: 10000
+- waitForAnimationToEnd
+
+# The app loads with an empty bank.
+- assertVisible: "Rebank"
+
+# Create two customers. The input and button are in the first section,
+# so no scrolling is needed yet. Crucially, wait for each customer to
+# register before creating the next: `signUp` clears the input
+# asynchronously, so without the wait the next `inputText` appends onto
+# the previous value (e.g. "alicebob") and the second customer is never
+# created. A customer's chip appearing in the "Add Account" picker below
+# confirms its `signUp` landed (and the input has cleared).
+#
+# To dismiss the soft keyboard after typing we tap the field's `Label`
+# (a plain, non-pressable `Text`) rather than `hideKeyboard`. On Android
+# `hideKeyboard` issues a Back press, and in Expo Go a Back press pops
+# the loaded project back to Expo Go's home screen, unloading the app.
+# The app's `ScrollView` uses React Native's default
+# `keyboardShouldPersistTaps="never"`, so a tap on a non-input child
+# dismisses the keyboard (and is swallowed); if the keyboard is already
+# down it is a harmless no-op. We then `waitForAnimationToEnd` so the
+# keyboard finishes sliding away before the next tap: that same
+# dismissal otherwise races and swallows the very next tap meant for a
+# button, flakily dropping the mutation it would have fired.
+- tapOn:
+    id: "customer-id-input"
+- inputText: "alice"
+- tapOn:
+    id: "customer-id-label"
+- waitForAnimationToEnd
+- tapOn:
+    id: "create-customer-button"
+- extendedWaitUntil:
+    visible:
+      id: "open-account-customer-alice"
+    timeout: 30000
+- tapOn:
+    id: "customer-id-input"
+- inputText: "bob"
+- tapOn:
+    id: "customer-id-label"
+- waitForAnimationToEnd
+- tapOn:
+    id: "create-customer-button"
+- extendedWaitUntil:
+    visible:
+      id: "open-account-customer-bob"
+    timeout: 30000
+
+# Open an account for alice with a $1000 initial deposit. The customer
+# chips are a reactive read of `useAllCustomerIds`, so they appear once
+# `signUp` lands; `scrollUntilVisible` doubles as "wait for + scroll to"
+# the chip.
+- scrollUntilVisible:
+    element:
+      id: "open-account-customer-alice"
+    direction: DOWN
+- tapOn:
+    id: "open-account-customer-alice"
+- tapOn:
+    id: "initial-deposit-input"
+- inputText: "1000"
+- tapOn:
+    id: "initial-deposit-label"
+- waitForAnimationToEnd
+- tapOn:
+    id: "add-account-button"
+
+# Open an account for bob with a $500 initial deposit.
+- scrollUntilVisible:
+    element:
+      id: "open-account-customer-bob"
+    direction: DOWN
+- tapOn:
+    id: "open-account-customer-bob"
+- tapOn:
+    id: "initial-deposit-input"
+- inputText: "500"
+- tapOn:
+    id: "initial-deposit-label"
+- waitForAnimationToEnd
+- tapOn:
+    id: "add-account-button"
+
+# Transfer $100 from alice's account to bob's. Each test customer has a
+# single account, so the chips are addressable by owning customer
+# (`transfer-from-<customer>` / `transfer-to-<customer>`), with no
+# dependence on chip order. `scrollUntilVisible` brings each control
+# into view before tapping it; the form is taller than the viewport.
+- scrollUntilVisible:
+    element:
+      id: "transfer-from-alice"
+    direction: DOWN
+- tapOn:
+    id: "transfer-from-alice"
+- scrollUntilVisible:
+    element:
+      id: "transfer-to-bob"
+    direction: DOWN
+- tapOn:
+    id: "transfer-to-bob"
+- scrollUntilVisible:
+    element:
+      id: "transfer-amount-input"
+    direction: DOWN
+- tapOn:
+    id: "transfer-amount-input"
+- inputText: "100"
+- tapOn:
+    id: "transfer-amount-label"
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: "transfer-button"
+    direction: DOWN
+- tapOn:
+    id: "transfer-button"
+
+# The reactive balances re-render. Accounts also accrue $1 of interest
+# every few seconds (see `account_servicer.py`), so the exact amount
+# drifts upward — assert the hundreds range, not an exact value. After
+# the transfer alice is in the $900s ($1000 - $100) and bob in the
+# $600s ($500 + $100); neither was in those ranges beforehand, so this
+# also confirms the transfer landed.
+- scrollUntilVisible:
+    element:
+      id: "account-balance"
+      text: "\\$9\\d\\d"
+    direction: DOWN
+# bob's account row is below alice's in the table, so scroll to it too.
+- scrollUntilVisible:
+    element:
+      id: "account-balance"
+      text: "\\$6\\d\\d"
+    direction: DOWN

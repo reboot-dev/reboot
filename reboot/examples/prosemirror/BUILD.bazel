@@ -11,10 +11,9 @@ filegroup(
             # are not part of the "source code" of this repository.
             "backend/.rbt/**/*",
             ".yarn/**/*",
-            "web/.next/**/*",
+            "frontend/web/.next/**/*",
             "api/**/*.ts",
             "node_modules/**/*",
-            "web/lib/api/**/*.ts",
         ],
     ),
     visibility = ["//visibility:public"],

@@ -55,7 +55,7 @@ function main() {
       console.log(`  ${ui.path} (${ui.name})`);
     }
     console.log(
-      `  UIs must use path="${root}/ui/<name>" ` +
+      `  UIs must use path="${root}/mcp/<name>" ` +
         `to share the vite dev server.`
     );
   }

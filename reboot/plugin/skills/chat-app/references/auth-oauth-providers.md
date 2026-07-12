@@ -74,12 +74,14 @@ are **required** (so the choice for each environment is deliberate), but
 either may be `None`: if the selected arm is `None`, the application
 **fails to start** with a clear message — so an app that never chose a
 provider for the current environment can't silently ship without
-sensible auth. (The selector is resolved only when the app has a
-`User`-typed auto-construct servicer that actually needs identity.)
-`oauth=None` is equivalent to
-`OAuthProviderByEnvironment(dev=None, prod=None)` — no provider in any
-environment. In unit tests you use the `OAuthProviderForTest(provider)`
-selector, with `Anonymous` a reasonable default provider to go with.
+sensible auth. (The selector is resolved at startup whenever `oauth=`
+is configured, even for an app with nothing to auto-construct.)
+Omitting `oauth=` altogether is different: no OAuth server at all — and
+an app with a `User`-typed auto-construct servicer then fails to start,
+since only `oauth=` auto-constructs those users. In unit tests, omit
+`oauth=` — the test harness supplies a test OAuth provider, and
+`await rbt.create_external_context_as(name, user_id)` impersonates a
+signed-in user without any sign-in flow.
 
 Servicers and authorizer rules are **provider-agnostic** — the same
 `allow_if(all=[state_id_is_user_id])` works under every provider.

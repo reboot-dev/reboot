@@ -6,8 +6,7 @@ import unittest
 from ai_chat_food.v1.food_rbt import FoodOrder, User
 from reboot.aio.aborted import Aborted
 from reboot.aio.applications import Application
-from reboot.aio.auth.oauth_providers import Anonymous
-from reboot.aio.tests import OAuthProviderForTest, Reboot
+from reboot.aio.tests import Reboot
 from servicers.food import FoodOrderServicer, UserServicer
 
 # The tests register the real servicers, with their real authorizers,
@@ -30,15 +29,12 @@ class ServicerTest(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=APPLICATION_SERVICERS,
-                oauth=OAuthProviderForTest(Anonymous()),
             ),
         )
         self.user_id = "alice"
-        self.context = self.rbt.create_external_context(
+        self.context = await self.rbt.create_external_context_as(
             name=f"test-{self.id()}",
-            bearer_token=self.rbt.make_valid_oauth_access_token(
-                user_id=self.user_id,
-            ),
+            user_id=self.user_id,
         )
         # `User` is an auto-constructed state type: in
         # production the MCP session's "new session" hook
@@ -148,11 +144,9 @@ class ServicerTest(unittest.IsolatedAsyncioTestCase):
         start_response = await user.start_order(self.context)
         order = FoodOrder.ref(start_response.order_id)
 
-        other_context = self.rbt.create_external_context(
+        other_context = await self.rbt.create_external_context_as(
             name=f"other-{self.id()}",
-            bearer_token=self.rbt.make_valid_oauth_access_token(
-                user_id="bob",
-            ),
+            user_id="bob",
         )
         with self.assertRaises(Aborted):
             await order.get_cart(other_context)

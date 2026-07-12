@@ -116,6 +116,20 @@ message ApplicationConfig {
     // by the controller to determine what features are supported by the
     // application.
     string reboot_version = 11;
+
+    // The exact-match list of HTTP origins allowed to make credentialed
+    // cross-origin browser requests to this application.
+    message AllowedOrigins {
+      repeated string origins = 1;
+    }
+
+    // When unset, the application expressed no opinion about browser
+    // origins and permissive CORS (any origin, no credentials) applies.
+    // When set, cross-origin requests are restricted to the exact-match
+    // allow-list, paired with `Access-Control-Allow-Credentials`; set
+    // but empty means only same-origin browser traffic may carry
+    // credentials.
+    AllowedOrigins allowed_origins = 13;
   }
 
   Spec spec = 2;
