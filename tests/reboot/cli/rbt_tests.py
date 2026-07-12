@@ -1,4 +1,4 @@
-import reboot.cli.cli as cli
+import reboot.cli.common.cli as cli
 import unittest
 from tests.reboot.cli.mock_exit import (
     MockExitException,

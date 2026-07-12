@@ -51,7 +51,7 @@ async def deposit(
 **Correct (matches the [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) example's `AccountServicer`):**
 
 ```python
-from bank.v1.pydantic.account_rbt import Account
+from bank.v1.account_rbt import Account
 from reboot.aio.contexts import WriterContext
 
 

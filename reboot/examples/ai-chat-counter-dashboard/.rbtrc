@@ -5,11 +5,11 @@ generate api/
 generate --python=backend/api/
 
 # Generate React hooks.
-generate --react=web/api
-generate --react-extensions
+generate --react=frontend/api
 
 # Watch for source changes.
-dev run --watch=backend/\*_/_.py
+dev run --watch=backend/**/*.py
+dev run --watch=frontend/dist/**/*.html
 
 # Python application.
 dev run --python
@@ -24,13 +24,15 @@ dev run --application=backend/src/main.py
 dev run --default-config=hmr
 
 # Hot Module Replacement (HMR): Vite dev server proxied through Envoy.
-# Run Vite in a separate terminal: `cd web && npm run dev`
-dev run:hmr --mcp-frontend-host=http://localhost:4444
+# Run Vite in a separate terminal: `cd frontend && npm run dev`
+dev run --frontend-root-path=frontend
 
-# Dist mode: serve pre-built artifacts from "web/dist/" (no Vite HMR).
+dev run:hmr --frontend-host=http://localhost:4444
+
+# Dist mode: serve pre-built artifacts from "frontend/dist/" (no Vite HMR).
 # Usage: `uv run rbt dev run --config=dist`
-# Requires: `cd web && npm run build`
-dev run:dist --mcp-frontend-host=""
+# Requires: `cd frontend && npm run build`
+dev run:dist --frontend-dist-path=frontend/dist
 
 # When expunging, expunge that state we've saved.
 dev expunge --application-name=ai-chat-counter-dashboard

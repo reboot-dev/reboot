@@ -52,13 +52,20 @@
       ]
     }
   },
-  // Use 'forwardPorts' to make a list of ports inside the container available locally.
-  "forwardPorts": [
-    // The HTTP port exposed by default in examples.
-    3000,
-    // The gRPC backend port exposed by default in examples.
-    9991
-  ],
+  // We don't port-forward unconditionally, since it removes the
+  // developer's ability to decide when they have multiple machines
+  // which should forward frequently-used ports like 9991.
+  "forwardPorts": [],
+  // Expose the host's KVM device to the container so hardware-
+  // accelerated emulators (such as the Android emulator used for
+  // React Native mobile development) can run. This requires the host
+  // VM to have nested virtualization enabled, which on GCP needs an
+  // Intel machine type created with `--enable-nested-virtualization`.
+  // The `vscode` user must be able to read and write `/dev/kvm`; the
+  // container's `kvm` group GID does not always line up with the host's
+  // ownership of the mapped-in device, so `on_create.sh` relaxes the
+  // device's permissions once the container exists.
+  "runArgs": ["--device=/dev/kvm"],
   // Comment out to connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
   "remoteUser": "vscode",
   "features": {

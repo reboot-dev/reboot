@@ -1,9 +1,9 @@
 import asyncio
 import uuid
-from bank.v1.proto.customer_rbt import Customer
-from bank.v1.pydantic.account_rbt import Account
-from bank.v1.pydantic.bank import CustomerAccount, CustomerAccounts
-from bank.v1.pydantic.bank_rbt import Bank
+from bank.v1.account_rbt import Account
+from bank.v1.bank import CustomerAccount, CustomerAccounts
+from bank.v1.bank_rbt import Bank
+from bank.v1.customer_rbt import Customer
 from google.protobuf.message import Message
 from rbt.std.collections.v1.sorted_map_rbt import SortedMap
 from reboot.aio.auth.authorizers import allow
@@ -85,13 +85,9 @@ class BankServicer(Bank.Servicer):
         assert isinstance(customer_ids, Message)
 
         async def customer_accounts(customer_id: str):
-            # We get a Protobuf message back, so we need to convert it
-            # to a proper Pydantic type.
             customer_balance = await Customer.ref(
                 customer_id,
             ).balances(context)
-
-            assert isinstance(customer_balance, Message)
 
             return CustomerAccounts(
                 customer_id=customer_id,

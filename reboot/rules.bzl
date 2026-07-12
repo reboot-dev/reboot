@@ -90,7 +90,11 @@ def py_reboot_library(
         # We had an issue about using two versions of the 'cygrpc.so' which
         # are coming from 'grpcio' and the 'com_github_grpc_grpc' repo.
         # See https://github.com/reboot-dev/mono/issues/2347
-        # TODO: Make this match the imports in reboot.py.j2.
+        # Keep these `deps` in sync with the `reboot.*`, `rbt.*`, and
+        # `log.*` modules that the generated code (`reboot.py.j2`)
+        # imports. The `reboot` and `rbt.v1alpha1` package roots are
+        # PEP 420 namespace packages (no `__init__.py`), so they have
+        # no library target and resolve implicitly.
         deps = [
             requirement("grpcio"),
             requirement("grpcio-status"),
@@ -118,6 +122,18 @@ def py_reboot_library(
             "@com_github_reboot_dev_reboot//reboot/aio:tracing_py",
             "@com_github_reboot_dev_reboot//reboot/aio:workflows_py",
             "@com_github_reboot_dev_reboot//reboot/nodejs:python_py",
+            "@com_github_reboot_dev_reboot//reboot:api_py",
+            "@com_github_reboot_dev_reboot//reboot:settings_py",
+            "@com_github_reboot_dev_reboot//reboot:time_py",
+            "@com_github_reboot_dev_reboot//reboot/aio:aborted_py",
+            "@com_github_reboot_dev_reboot//reboot/aio/auth:__init___py",
+            "@com_github_reboot_dev_reboot//reboot/aio/auth:authorizers_py",
+            "@com_github_reboot_dev_reboot//reboot/aio/auth:token_verifiers_py",
+            "@com_github_reboot_dev_reboot//reboot/aio/internals:channel_manager_py",
+            "@com_github_reboot_dev_reboot//reboot/aio/internals:middleware_py",
+            "@com_github_reboot_dev_reboot//reboot/aio/internals:tasks_cache_py",
+            "@com_github_reboot_dev_reboot//reboot/aio/internals:tasks_dispatcher_py",
+            "@com_github_reboot_dev_reboot//rbt/v1alpha1:nodejs_py_proto",
             ":" + name + "_library",
         ] + py_deps,
     )

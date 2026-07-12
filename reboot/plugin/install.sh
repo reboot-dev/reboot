@@ -175,66 +175,152 @@ codex_plugin_path() {
             }'
 }
 
-# Merge a marked region into ~/.codex/config.toml that:
+# Merge the plugin's settings into ~/.codex/config.toml:
 #   - enables hooks (off by default in Codex),
 #   - prepends the plugin's bin/ to PATH for every subprocess, and
 #   - (optionally, controlled by $3) disables Codex's
 #     seccomp+landlock sandbox to work around
-#     https://github.com/openai/codex/issues/24933. See the inline
-#     comment in this function for details. The caller must have
-#     gathered the user's consent before passing "true" here, since
-#     the sandbox is a global Codex setting.
+#     https://github.com/openai/codex/issues/24933. Inside the
+#     sandbox, Python `asyncio.call_soon_threadsafe` -- and
+#     everything built on it (`run_in_executor`, `aiofiles`, even
+#     `asyncio.run`'s own shutdown) -- silently stalls because
+#     Codex's seccomp filter denies SYS_sendto on the AF_UNIX
+#     socketpair asyncio uses for cross-thread loop wakeups. That
+#     breaks `rbt dev run` and `rbt generate` (which are heavily
+#     asyncio-based). Until the Codex bug is fixed, the only way to
+#     make the plugin usable under Codex is to opt out of the
+#     sandbox entirely. The caller must have gathered the user's
+#     consent before passing "true" here, since the sandbox is a
+#     global Codex setting.
 #
 # Codex's `shell_environment_policy.set` replaces PATH wholesale, so the
 # install-time PATH is baked in after the plugin's bin/ — re-running the
-# installer refreshes it. The region holds only top-level dotted keys,
-# so it can be prepended ahead of any tables in the user's config, and
-# re-running replaces it in place.
+# installer refreshes it.
+#
+# The merge runs as inline Python using `tomlkit` (a style-preserving
+# TOML editor) through the plugin's bundled `uv` shim.
+#
+# Every key the installer sets carries a
+# `# reboot-plugin (managed)` comment. As a backstop, the merged
+# config is parsed by Codex itself before being kept; if that parse
+# fails the original config is restored and the install fails with
+# manual instructions.
 merge_codex_config() {
     local config="$1"
     local root="$2"
     local disable_sandbox="${3:-false}"
-    local begin="# >>> reboot-plugin (managed) >>>"
-    local end="# <<< reboot-plugin (managed) <<<"
 
     mkdir -p "$(dirname "$config")"
     touch "$config"
 
-    # Drop any existing managed region.
-    local stripped
-    stripped="$(awk -v b="$begin" -v e="$end" '
-        $0==b {skip=1; next}
-        skip && $0==e {skip=0; next}
-        !skip {print}
-    ' "$config")"
+    local merge_py
+    merge_py="$(cat <<'PYEOF'
+import os
+import shutil
+import sys
 
-    {
-        printf '%s\n' "$begin"
-        printf 'features.hooks = true\n'
-        printf 'shell_environment_policy.set.PATH = "%s/bin:%s"\n' \
-            "$root" "$PATH"
-        if [ "$disable_sandbox" = "true" ]; then
-            # Disable Codex's seccomp+landlock sandbox. Inside the
-            # sandbox, Python `asyncio.call_soon_threadsafe` -- and
-            # everything built on it (`run_in_executor`, `aiofiles`,
-            # even `asyncio.run`'s own shutdown) -- silently stalls
-            # because Codex's seccomp filter denies SYS_sendto on the
-            # AF_UNIX socketpair asyncio uses for cross-thread loop
-            # wakeups. That breaks `rbt dev run` and `rbt generate`
-            # (which are heavily asyncio-based). Until the Codex bug
-            # is fixed, the only way to make the plugin usable under
-            # Codex is to opt out of the sandbox entirely. See
-            # https://github.com/openai/codex/issues/24933.
-            printf '# Disabled because Codex sandbox breaks Python asyncio cross-thread\n'
-            printf '# wakeup; see https://github.com/openai/codex/issues/24933.\n'
-            printf 'sandbox_mode = "danger-full-access"\n'
-        fi
-        printf '%s\n' "$end"
-        if [ -n "$stripped" ]; then
-            printf '\n%s\n' "$stripped"
-        fi
-    } >"$config.reboot.tmp"
-    mv "$config.reboot.tmp" "$config"
+import tomlkit
+
+config_path, path_value, disable_sandbox = sys.argv[1:4]
+
+# Drop the marked region that earlier installer versions prepended;
+# its settings are re-added below.
+BEGIN = "# >>> reboot-plugin (managed) >>>"
+END = "# <<< reboot-plugin (managed) <<<"
+kept = []
+skip = False
+with open(config_path) as config:
+    for line in config:
+        stripped = line.rstrip("\n")
+        if stripped == BEGIN:
+            skip = True
+        elif skip and stripped == END:
+            skip = False
+        elif not skip:
+            kept.append(line)
+
+document = tomlkit.parse("".join(kept))
+
+
+def set_key(table, key, value, note="reboot-plugin (managed)"):
+    item = tomlkit.item(value)
+    item.comment(note)
+    table[key] = item
+
+
+if "features" not in document:
+    document["features"] = tomlkit.table()
+set_key(document["features"], "hooks", True)
+
+if "shell_environment_policy" not in document:
+    document["shell_environment_policy"] = tomlkit.table()
+policy = document["shell_environment_policy"]
+if "set" not in policy:
+    policy["set"] = tomlkit.table()
+set_key(policy["set"], "PATH", path_value)
+
+if disable_sandbox == "true":
+    set_key(
+        document,
+        "sandbox_mode",
+        "danger-full-access",
+        "reboot-plugin (managed); see "
+        "https://github.com/openai/codex/issues/24933",
+    )
+
+temporary = config_path + ".reboot.tmp"
+with open(temporary, "w") as config:
+    config.write(tomlkit.dumps(document))
+shutil.copymode(config_path, temporary)
+os.replace(temporary, config_path)
+PYEOF
+)"
+
+    # `codex plugin list` doubles as a parser of config.toml.
+    # Remember whether it worked before the merge, so that a
+    # pre-existing failure is not blamed on the merged config below.
+    local validator_ok=false
+    codex plugin list >/dev/null 2>&1 && validator_ok=true
+
+    local backup="$config.reboot.bak"
+    cp "$config" "$backup"
+
+    # The Python above writes the config atomically at its very end,
+    # so a failure anywhere in it leaves the original config behind.
+    if ! "$root/bin/uv" run --quiet --no-project \
+        --with "tomlkit==0.15.0" python -c "$merge_py" \
+        "$config" "$root/bin:$PATH" "$disable_sandbox"; then
+        rm -f "$backup" "$config.reboot.tmp"
+        merge_codex_config_manual_help "$config" "$root" "$disable_sandbox"
+        return 1
+    fi
+
+    # Backstop: have Codex parse the merged config, so that even a
+    # merge tomlkit and Codex's own TOML parser disagree about can
+    # never leave Codex unable to start.
+    if [ "$validator_ok" = "true" ] \
+        && ! codex plugin list >/dev/null 2>&1; then
+        mv "$backup" "$config"
+        merge_codex_config_manual_help "$config" "$root" "$disable_sandbox"
+        return 1
+    fi
+    rm -f "$backup"
+}
+
+# Manual-fallback instructions for merge_codex_config's failure
+# paths; the original config is intact when this is printed.
+merge_codex_config_manual_help() {
+    local config="$1"
+    local root="$2"
+    local disable_sandbox="$3"
+    error "Could not update $config with the plugin's settings;"
+    error "  your original config is unchanged. Please add the"
+    error "  following settings to it manually:"
+    error "    features.hooks = true"
+    error "    shell_environment_policy.set.PATH = \"$root/bin:<your PATH>\""
+    if [ "$disable_sandbox" = "true" ]; then
+        error "    sandbox_mode = \"danger-full-access\""
+    fi
 }
 
 install_codex() {
@@ -274,8 +360,8 @@ install_codex() {
         printf >&2 "  Doing so writes ${BOLD}sandbox_mode = \"danger-full-access\"${RESET} into\n"
         printf >&2 "  ~/.codex/config.toml. That setting is ${BOLD}global${RESET}: it affects every\n"
         printf >&2 "  Codex session on this machine, not just sessions that touch the\n"
-        printf >&2 "  Reboot plugin. You can undo it later by removing the managed\n"
-        printf >&2 "  region from ~/.codex/config.toml.\n"
+        printf >&2 "  Reboot plugin. You can undo it later by removing the sandbox_mode\n"
+        printf >&2 "  line (tagged '# reboot-plugin') from ~/.codex/config.toml.\n"
         printf >&2 "\n"
         printf >&2 "  If you decline, the Codex install will be skipped entirely (a Codex\n"
         printf >&2 "  install without the sandbox opt-out cannot run the plugin's main\n"
@@ -311,8 +397,8 @@ install_codex() {
     # are auto-configured by Codex from the bundled
     # `.codex-plugin/plugin.json` and `.agents/plugins/marketplace.json`.
     # Codex prints its own errors to stderr; the explicit guards make
-    # sure we don't write a half-broken managed region into config.toml
-    # when either step fails.
+    # sure we don't write the plugin's settings into config.toml when
+    # either step fails.
     codex plugin marketplace add "$source" \
         || { error "codex plugin marketplace add failed."; return 1; }
     codex plugin add "$PLUGIN_NAME@$MARKETPLACE_NAME" \
@@ -335,11 +421,13 @@ install_codex() {
     # Enable hooks, put the plugin's bin/ on PATH, and disable the
     # Codex sandbox (user already consented above).
     merge_codex_config \
-        "${CODEX_HOME:-$HOME/.codex}/config.toml" "$root" "true"
+        "${CODEX_HOME:-$HOME/.codex}/config.toml" "$root" "true" \
+        || return 1
 
     log "Set sandbox_mode = \"danger-full-access\" in ~/.codex/config.toml"
     log "  to work around https://github.com/openai/codex/issues/24933."
-    log "  Remove the managed region from ~/.codex/config.toml to undo."
+    log "  Remove the sandbox_mode line (tagged '# reboot-plugin') from"
+    log "  ~/.codex/config.toml to undo."
 
     log "Pre-installing dependencies for Codex..."
     prewarm "$root/bin"
@@ -349,26 +437,34 @@ install_codex() {
 
 # --- Main ----------------------------------------------------------------
 
-have_claude=false
-have_codex=false
-command -v claude >/dev/null 2>&1 && have_claude=true
-command -v codex  >/dev/null 2>&1 && have_codex=true
+main() {
+    local have_claude=false
+    local have_codex=false
+    command -v claude >/dev/null 2>&1 && have_claude=true
+    command -v codex  >/dev/null 2>&1 && have_codex=true
 
-if ! $have_claude && ! $have_codex; then
-    error "Neither Claude Code nor Codex was found."
-    printf >&2 "Install one of them and try again:\n"
-    printf >&2 "  Claude Code: https://docs.anthropic.com/en/docs/claude-code/setup\n"
-    printf >&2 "  Codex:       https://developers.openai.com/codex/cli\n"
-    exit 1
+    if ! $have_claude && ! $have_codex; then
+        error "Neither Claude Code nor Codex was found."
+        printf >&2 "Install one of them and try again:\n"
+        printf >&2 "  Claude Code: https://docs.anthropic.com/en/docs/claude-code/setup\n"
+        printf >&2 "  Codex:       https://developers.openai.com/codex/cli\n"
+        exit 1
+    fi
+
+    $have_claude && install_claude
+    $have_codex  && install_codex
+
+    if [ "${#INSTALLED_FOR[@]}" -eq 0 ]; then
+        ok "Installed for: (none — Codex install skipped)."
+    else
+        ok "Installed for: $(IFS=', '; echo "${INSTALLED_FOR[*]}")."
+    fi
+    printf >&2 "\nStart a new agent session, then ask to build a Reboot app"
+    printf >&2 " — e.g. ${BOLD}build a todo chat app${RESET}.\n"
+}
+
+# Run the install when this file is executed, directly or via
+# `curl | bash`; a `source` of the file only defines its functions.
+if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
+    main "$@"
 fi
-
-$have_claude && install_claude
-$have_codex  && install_codex
-
-if [ "${#INSTALLED_FOR[@]}" -eq 0 ]; then
-    ok "Installed for: (none — Codex install skipped)."
-else
-    ok "Installed for: $(IFS=', '; echo "${INSTALLED_FOR[*]}")."
-fi
-printf >&2 "\nStart a new agent session, then ask to build a Reboot app"
-printf >&2 " — e.g. ${BOLD}build a todo chat app${RESET}.\n"

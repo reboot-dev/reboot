@@ -5,6 +5,7 @@ import type { UiEntryWithPackage } from "./discover.js";
 // `{{variable}}` placeholders filled by `render()`.
 import appModuleCssTmpl from "../templates/App.module.css.tmpl";
 import appTsxTmpl from "../templates/App.tsx.tmpl";
+import buildMjsTmpl from "../templates/build.mjs.tmpl";
 import indexCssTmpl from "../templates/index.css.tmpl";
 import indexHtmlTmpl from "../templates/index.html.tmpl";
 import mainTsxTmpl from "../templates/main.tsx.tmpl";
@@ -34,28 +35,15 @@ function appName(ui: UiEntryWithPackage): string {
 // ── Shared files (web root) ────────────────────────────
 
 /**
- * Generate web/package.json with per-UI build scripts.
- * Each UI gets a `build:<name>` and `build:watch:<name>`
- * script, and the top-level `build` chains them all.
+ * Generate web/package.json. `build` typechecks then runs
+ * `build.mjs`, which discovers and builds every UI (each
+ * `mcp/<name>` plus the `web/` SPA).
  */
-export function packageJson(
-  projectName: string,
-  uiNames: string[] = []
-): string {
+export function packageJson(projectName: string): string {
   const scripts: Record<string, string> = {
     dev: "vite",
+    build: "tsc -b && node build.mjs",
   };
-
-  for (const name of uiNames) {
-    scripts[`build:${name}`] = `vite build --mode ${name}`;
-    scripts[`build:watch:${name}`] = `vite build --mode ${name} --watch`;
-  }
-
-  const buildChain = uiNames
-    .map((name) => `npm run build:${name}`)
-    .join(" && ");
-  scripts.build = buildChain ? `tsc --noEmit && ${buildChain}` : "tsc --noEmit";
-  scripts["build:watch"] = 'concurrently "npm:build:watch:*"';
 
   const pkg = {
     name: `${projectName}-web`,
@@ -77,10 +65,10 @@ export function packageJson(
       zod: "^4.0.0",
     },
     devDependencies: {
+      "@types/node": "^20.11.5",
       "@types/react": "^18.2.67",
       "@types/react-dom": "^18.2.22",
       "@vitejs/plugin-react": "^4.7.0",
-      concurrently: "^9.1.2",
       typescript: "^5.9.2",
       vite: "^6.3.5",
       "vite-plugin-singlefile": "^2.0.3",
@@ -92,6 +80,10 @@ export function packageJson(
 
 export function viteConfig(): string {
   return viteConfigTmpl;
+}
+
+export function buildMjs(): string {
+  return buildMjsTmpl;
 }
 
 export function tsconfigJson(): string {

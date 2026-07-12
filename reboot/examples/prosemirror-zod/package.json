@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev:web": "cd web && yarn dev",
+    "dev:web": "cd frontend/web && yarn dev",
     "prepare:backend": "cd backend && yarn prepare",
     "dev:backend": "cd backend && yarn dev",
     "build:web": "cd backend && yarn build"
@@ -12,7 +12,7 @@
     "api",
     "common",
     "backend",
-    "web"
+    "frontend/web"
   ],
   "packageManager": "yarn@4.5.1"
 }

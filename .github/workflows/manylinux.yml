@@ -1,7 +1,3 @@
-# This file is generated from a template in `ci/templates/`.
-# Do not edit it directly.
-# Run `bazel run //:ci_workflows` to regenerate it after editing the template.
-
 name: Reusable Workflow for Manylinux
 
 # This workflow runs commands inside a manylinux container, which has an

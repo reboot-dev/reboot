@@ -20,7 +20,7 @@ import * as reboot_web from "@reboot-dev/reboot-web";
 import * as reboot_api from "@reboot-dev/reboot-api";
 import React, { useEffect, useMemo, useRef, useState, } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { useRefreshMCPBearerToken } from "@reboot-dev/reboot-react/internal";
+import { useDefaultStateIds, useRefreshBearerToken } from "@reboot-dev/reboot-react/internal";
 // NOTE NOTE NOTE
 //
 // If you are reading this comment because you are trying to debug
@@ -1669,39 +1669,92 @@ class GreeterInstance {
         this.useCreateMutations = [];
         this.useCreateSetPendings = {};
         this.useGreetReaders = {};
-        this.greetFinalizationRegistry = new FinalizationRegistry((finalize) => finalize());
+        // `FinalizationRegistry` lets us abort a reader once React has
+        // garbage-collected its promise (i.e. abandoned it). It is absent on
+        // some runtimes (e.g. React Native's Hermes engine), where we simply
+        // skip this cleanup and rely on the `unuse...` timeout path instead.
+        this.greetFinalizationRegistry = typeof FinalizationRegistry !== "undefined"
+            ? new FinalizationRegistry((finalize) => finalize())
+            : undefined;
         this.useSetAdjectiveMutations = [];
         this.useSetAdjectiveSetPendings = {};
         this.useTransactionSetAdjectiveMutations = [];
         this.useTransactionSetAdjectiveSetPendings = {};
         this.useTryToConstructContextReaders = {};
-        this.tryToConstructContextFinalizationRegistry = new FinalizationRegistry((finalize) => finalize());
+        // `FinalizationRegistry` lets us abort a reader once React has
+        // garbage-collected its promise (i.e. abandoned it). It is absent on
+        // some runtimes (e.g. React Native's Hermes engine), where we simply
+        // skip this cleanup and rely on the `unuse...` timeout path instead.
+        this.tryToConstructContextFinalizationRegistry = typeof FinalizationRegistry !== "undefined"
+            ? new FinalizationRegistry((finalize) => finalize())
+            : undefined;
         this.useTryToConstructExternalContextReaders = {};
-        this.tryToConstructExternalContextFinalizationRegistry = new FinalizationRegistry((finalize) => finalize());
+        // `FinalizationRegistry` lets us abort a reader once React has
+        // garbage-collected its promise (i.e. abandoned it). It is absent on
+        // some runtimes (e.g. React Native's Hermes engine), where we simply
+        // skip this cleanup and rely on the `unuse...` timeout path instead.
+        this.tryToConstructExternalContextFinalizationRegistry = typeof FinalizationRegistry !== "undefined"
+            ? new FinalizationRegistry((finalize) => finalize())
+            : undefined;
         this.useTestLongRunningFetchReaders = {};
-        this.testLongRunningFetchFinalizationRegistry = new FinalizationRegistry((finalize) => finalize());
+        // `FinalizationRegistry` lets us abort a reader once React has
+        // garbage-collected its promise (i.e. abandoned it). It is absent on
+        // some runtimes (e.g. React Native's Hermes engine), where we simply
+        // skip this cleanup and rely on the `unuse...` timeout path instead.
+        this.testLongRunningFetchFinalizationRegistry = typeof FinalizationRegistry !== "undefined"
+            ? new FinalizationRegistry((finalize) => finalize())
+            : undefined;
         this.useTestLongRunningWriterMutations = [];
         this.useTestLongRunningWriterSetPendings = {};
         this.useGetWholeStateReaders = {};
-        this.getWholeStateFinalizationRegistry = new FinalizationRegistry((finalize) => finalize());
+        // `FinalizationRegistry` lets us abort a reader once React has
+        // garbage-collected its promise (i.e. abandoned it). It is absent on
+        // some runtimes (e.g. React Native's Hermes engine), where we simply
+        // skip this cleanup and rely on the `unuse...` timeout path instead.
+        this.getWholeStateFinalizationRegistry = typeof FinalizationRegistry !== "undefined"
+            ? new FinalizationRegistry((finalize) => finalize())
+            : undefined;
         this.useFailWithExceptionReaders = {};
-        this.failWithExceptionFinalizationRegistry = new FinalizationRegistry((finalize) => finalize());
+        // `FinalizationRegistry` lets us abort a reader once React has
+        // garbage-collected its promise (i.e. abandoned it). It is absent on
+        // some runtimes (e.g. React Native's Hermes engine), where we simply
+        // skip this cleanup and rely on the `unuse...` timeout path instead.
+        this.failWithExceptionFinalizationRegistry = typeof FinalizationRegistry !== "undefined"
+            ? new FinalizationRegistry((finalize) => finalize())
+            : undefined;
         this.useFailWithAbortedReaders = {};
-        this.failWithAbortedFinalizationRegistry = new FinalizationRegistry((finalize) => finalize());
+        // `FinalizationRegistry` lets us abort a reader once React has
+        // garbage-collected its promise (i.e. abandoned it). It is absent on
+        // some runtimes (e.g. React Native's Hermes engine), where we simply
+        // skip this cleanup and rely on the `unuse...` timeout path instead.
+        this.failWithAbortedFinalizationRegistry = typeof FinalizationRegistry !== "undefined"
+            ? new FinalizationRegistry((finalize) => finalize())
+            : undefined;
         this.useDangerousFieldsMutations = [];
         this.useDangerousFieldsSetPendings = {};
         this.useStoreRecursiveMessageMutations = [];
         this.useStoreRecursiveMessageSetPendings = {};
         this.useReadRecursiveMessageReaders = {};
-        this.readRecursiveMessageFinalizationRegistry = new FinalizationRegistry((finalize) => finalize());
+        // `FinalizationRegistry` lets us abort a reader once React has
+        // garbage-collected its promise (i.e. abandoned it). It is absent on
+        // some runtimes (e.g. React Native's Hermes engine), where we simply
+        // skip this cleanup and rely on the `unuse...` timeout path instead.
+        this.readRecursiveMessageFinalizationRegistry = typeof FinalizationRegistry !== "undefined"
+            ? new FinalizationRegistry((finalize) => finalize())
+            : undefined;
         this.useConstructAndStoreRecursiveMessageMutations = [];
         this.useConstructAndStoreRecursiveMessageSetPendings = {};
         this.id = id;
         this.stateRef = stateRef;
         this.url = url;
         this.refs = 1;
-        reboot_web.websockets.connect(this.url, this.stateRef);
-        this.initializeWebSocket();
+        // An empty `id` marks the inert instance shared by every no-id
+        // caller while no default ID has resolved (e.g. signed out): it
+        // opens no socket so there's nothing to connect to.
+        if (id !== "") {
+            reboot_web.websockets.connect(this.url, this.stateRef);
+            this.initializeWebSocket();
+        }
     }
     ref() {
         this.refs += 1;
@@ -1744,7 +1797,7 @@ class GreeterInstance {
         }
     }
     initializeWebSocket() {
-        if (this.websocket === undefined && this.refs > 0) {
+        if (this.websocket === undefined && this.refs > 0 && this.id !== "") {
             const url = new URL(`${this.url}/__/reboot/rpc/${this.stateRef}`);
             url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
             this.websocket = reboot_web.websockets.create(url);
@@ -2081,6 +2134,7 @@ class GreeterInstance {
         delete this.useCreateSetPendings[id];
     }
     startGreet(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+        var _a;
         let reader = this.useGreetReaders[requestBearerTokenHash];
         if (reader === undefined) {
             const event = new reboot_api.Event();
@@ -2132,7 +2186,7 @@ class GreeterInstance {
                     }
                 },
             };
-            this.greetFinalizationRegistry.register(promise, () => {
+            (_a = this.greetFinalizationRegistry) === null || _a === void 0 ? void 0 : _a.register(promise, () => {
                 if (!reader.used) {
                     delete this.useGreetReaders[requestBearerTokenHash];
                     reader.abortController.abort();
@@ -2422,6 +2476,7 @@ class GreeterInstance {
         delete this.useTransactionSetAdjectiveSetPendings[id];
     }
     startTryToConstructContext(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+        var _a;
         let reader = this.useTryToConstructContextReaders[requestBearerTokenHash];
         if (reader === undefined) {
             const event = new reboot_api.Event();
@@ -2473,7 +2528,7 @@ class GreeterInstance {
                     }
                 },
             };
-            this.tryToConstructContextFinalizationRegistry.register(promise, () => {
+            (_a = this.tryToConstructContextFinalizationRegistry) === null || _a === void 0 ? void 0 : _a.register(promise, () => {
                 if (!reader.used) {
                     delete this.useTryToConstructContextReaders[requestBearerTokenHash];
                     reader.abortController.abort();
@@ -2567,6 +2622,7 @@ class GreeterInstance {
         }
     }
     startTryToConstructExternalContext(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+        var _a;
         let reader = this.useTryToConstructExternalContextReaders[requestBearerTokenHash];
         if (reader === undefined) {
             const event = new reboot_api.Event();
@@ -2618,7 +2674,7 @@ class GreeterInstance {
                     }
                 },
             };
-            this.tryToConstructExternalContextFinalizationRegistry.register(promise, () => {
+            (_a = this.tryToConstructExternalContextFinalizationRegistry) === null || _a === void 0 ? void 0 : _a.register(promise, () => {
                 if (!reader.used) {
                     delete this.useTryToConstructExternalContextReaders[requestBearerTokenHash];
                     reader.abortController.abort();
@@ -2712,6 +2768,7 @@ class GreeterInstance {
         }
     }
     startTestLongRunningFetch(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+        var _a;
         let reader = this.useTestLongRunningFetchReaders[requestBearerTokenHash];
         if (reader === undefined) {
             const event = new reboot_api.Event();
@@ -2763,7 +2820,7 @@ class GreeterInstance {
                     }
                 },
             };
-            this.testLongRunningFetchFinalizationRegistry.register(promise, () => {
+            (_a = this.testLongRunningFetchFinalizationRegistry) === null || _a === void 0 ? void 0 : _a.register(promise, () => {
                 if (!reader.used) {
                     delete this.useTestLongRunningFetchReaders[requestBearerTokenHash];
                     reader.abortController.abort();
@@ -2955,6 +3012,7 @@ class GreeterInstance {
         delete this.useTestLongRunningWriterSetPendings[id];
     }
     startGetWholeState(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+        var _a;
         let reader = this.useGetWholeStateReaders[requestBearerTokenHash];
         if (reader === undefined) {
             const event = new reboot_api.Event();
@@ -3006,7 +3064,7 @@ class GreeterInstance {
                     }
                 },
             };
-            this.getWholeStateFinalizationRegistry.register(promise, () => {
+            (_a = this.getWholeStateFinalizationRegistry) === null || _a === void 0 ? void 0 : _a.register(promise, () => {
                 if (!reader.used) {
                     delete this.useGetWholeStateReaders[requestBearerTokenHash];
                     reader.abortController.abort();
@@ -3100,6 +3158,7 @@ class GreeterInstance {
         }
     }
     startFailWithException(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+        var _a;
         let reader = this.useFailWithExceptionReaders[requestBearerTokenHash];
         if (reader === undefined) {
             const event = new reboot_api.Event();
@@ -3151,7 +3210,7 @@ class GreeterInstance {
                     }
                 },
             };
-            this.failWithExceptionFinalizationRegistry.register(promise, () => {
+            (_a = this.failWithExceptionFinalizationRegistry) === null || _a === void 0 ? void 0 : _a.register(promise, () => {
                 if (!reader.used) {
                     delete this.useFailWithExceptionReaders[requestBearerTokenHash];
                     reader.abortController.abort();
@@ -3245,6 +3304,7 @@ class GreeterInstance {
         }
     }
     startFailWithAborted(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+        var _a;
         let reader = this.useFailWithAbortedReaders[requestBearerTokenHash];
         if (reader === undefined) {
             const event = new reboot_api.Event();
@@ -3296,7 +3356,7 @@ class GreeterInstance {
                     }
                 },
             };
-            this.failWithAbortedFinalizationRegistry.register(promise, () => {
+            (_a = this.failWithAbortedFinalizationRegistry) === null || _a === void 0 ? void 0 : _a.register(promise, () => {
                 if (!reader.used) {
                     delete this.useFailWithAbortedReaders[requestBearerTokenHash];
                     reader.abortController.abort();
@@ -3586,6 +3646,7 @@ class GreeterInstance {
         delete this.useStoreRecursiveMessageSetPendings[id];
     }
     startReadRecursiveMessage(requestBearerTokenHash, serializedRequest, bearerToken, offlineCacheEnabled, cacheKey) {
+        var _a;
         let reader = this.useReadRecursiveMessageReaders[requestBearerTokenHash];
         if (reader === undefined) {
             const event = new reboot_api.Event();
@@ -3637,7 +3698,7 @@ class GreeterInstance {
                     }
                 },
             };
-            this.readRecursiveMessageFinalizationRegistry.register(promise, () => {
+            (_a = this.readRecursiveMessageFinalizationRegistry) === null || _a === void 0 ? void 0 : _a.register(promise, () => {
                 if (!reader.used) {
                     delete this.useReadRecursiveMessageReaders[requestBearerTokenHash];
                     reader.abortController.abort();
@@ -3844,12 +3905,41 @@ class GreeterInstance {
     }
 }
 GreeterInstance.instances = {};
-export const useGreeter = ({ id }) => {
-    const stateRef = reboot_api.stateIdToRef("tests.reboot.Greeter", id);
+export function useGreeter({ id: providedId } = {}) {
+    var _a;
+    // Resolve `id` from the surface-agnostic state-ID map. A `null` map
+    // means that resolution is still in flight; an empty map means it
+    // resolved with no default ID for us.
+    const defaultIds = useDefaultStateIds();
+    const isLoading = defaultIds === null;
+    // Resolve ID: explicit > URL param (dev) > default-ID map.
+    const devId = useMemo(() => {
+        // React Native defines `window` but not `window.location`, so both
+        // must be checked.
+        if (typeof window !== "undefined" &&
+            typeof window.location !== "undefined") {
+            return new URLSearchParams(window.location.search).get("tests.reboot.Greeter.id");
+        }
+        return null;
+    }, []);
+    const toolInputId = typeof (defaultIds === null || defaultIds === void 0 ? void 0 : defaultIds["tests.reboot.Greeter"]) === "string"
+        ? defaultIds["tests.reboot.Greeter"]
+        : null;
+    const resolvedId = (_a = providedId !== null && providedId !== void 0 ? providedId : devId) !== null && _a !== void 0 ? _a : toolInputId;
+    // Without a resolved ID we still run every hook below (rules of
+    // hooks), binding to the inert empty-ID instance that opens no
+    // socket.
+    const id = resolvedId !== null && resolvedId !== void 0 ? resolvedId : "";
+    // The unresolved no-id case carries an empty `stateRef` rather than
+    // computing one. Keyed on the id being unresolved — an explicitly
+    // passed empty id still reaches `stateIdToRef`, which rejects it.
+    const stateRef = resolvedId == null
+        ? ""
+        : reboot_api.stateIdToRef("tests.reboot.Greeter", id);
     const rebootClient = reboot_react.useRebootClient();
     const url = rebootClient.url;
     const bearerToken = rebootClient.bearerToken;
-    const refreshMCPBearerToken = useRefreshMCPBearerToken();
+    const refreshBearerToken = useRefreshBearerToken();
     const [instance, setInstance] = useState(() => {
         return GreeterInstance.use(id, stateRef, url);
     });
@@ -3878,7 +3968,7 @@ export const useGreeter = ({ id }) => {
             return () => {
                 instance.unuseCreate(id);
             };
-        }, []);
+        }, [instance]);
         const rebootClient = reboot_react.useRebootClient();
         const bearerToken = rebootClient.bearerToken;
         const create = useMemo(() => {
@@ -3893,12 +3983,24 @@ export const useGreeter = ({ id }) => {
                     metadata: options === null || options === void 0 ? void 0 : options.metadata,
                     isLoading: false, // Won't start loading if we're flushing mutations.
                 };
-                return instance.create(mutation);
+                const result = await instance.create(mutation);
+                // If the server rejected us due to an expired token,
+                // refresh via the surface's bearer-refresh and retry
+                // once (mirrors the unary-call path).
+                if (result.aborted !== undefined &&
+                    result.aborted.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshBearerToken) {
+                    const newToken = await refreshBearerToken();
+                    if (newToken !== undefined) {
+                        return instance.create({ ...mutation, bearerToken: newToken });
+                    }
+                }
+                return result;
             };
             method.pending =
                 new Array();
             return method;
-        }, [instance, bearerToken]);
+        }, [instance, bearerToken, refreshBearerToken]);
         create.pending = pending;
         return create;
     }
@@ -3966,11 +4068,12 @@ export const useGreeter = ({ id }) => {
                 setResponse(GreeterGreetResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
                 // If the server rejected us due to an expired
-                // token, refresh via the MCP host. The token
+                // token, refresh via the surface's bearer-refresh
+                // (the MCP host, or the web session). The token
                 // change triggers a re-render and reconnect.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-                    refreshMCPBearerToken) {
-                    refreshMCPBearerToken();
+                    refreshBearerToken) {
+                    refreshBearerToken();
                 }
                 const aborted = GreeterGreetAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.Greet' aborted with ${aborted.message}`);
@@ -3985,6 +4088,7 @@ export const useGreeter = ({ id }) => {
             serializedRequest,
             requestBearerTokenHash,
             bearerToken,
+            refreshBearerToken,
             offlineCacheEnabled,
             cacheKey,
         ]);
@@ -4064,11 +4168,12 @@ export const useGreeter = ({ id }) => {
                     //
                     // See also 'reboot/helpers.py'.
                     return {
-                        response: await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/Greet`, {
+                        response: await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/Greet`, {
+                            ...options,
                             method: "POST",
                             headers,
                             body: request.toJsonString()
-                        }), options)
+                        })
                     };
                 }
                 catch (e) {
@@ -4093,20 +4198,22 @@ export const useGreeter = ({ id }) => {
         if (aborted) {
             return { aborted };
         }
-        else if (response.status === 401 && refreshMCPBearerToken) {
-            // Token expired — refresh via MCP host and retry once.
-            const newToken = await refreshMCPBearerToken();
+        else if (response.status === 401 && refreshBearerToken) {
+            // Token expired — refresh via the surface's bearer-refresh
+            // and retry once.
+            const newToken = await refreshBearerToken();
             if (newToken) {
                 const retryHeaders = new Headers();
                 retryHeaders.set("Content-Type", "application/json");
                 retryHeaders.append("Connection", "keep-alive");
                 retryHeaders.append("Authorization", `Bearer ${newToken}`);
                 try {
-                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/Greet`, {
+                    const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/Greet`, {
+                        ...options,
                         method: "POST",
                         headers: retryHeaders,
                         body: request.toJsonString()
-                    }), options);
+                    });
                     if (retryResponse.ok) {
                         return {
                             response: GreeterGreetResponseFromProtobufShape((greeter_pb.GreetResponse.fromJson(await retryResponse.json())))
@@ -4140,21 +4247,23 @@ export const useGreeter = ({ id }) => {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
                 // If the server rejected us due to an expired
-                // token, refresh via the MCP host and retry once.
+                // token, refresh via the surface's bearer-refresh and
+                // retry once.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-                    refreshMCPBearerToken) {
-                    const newToken = await refreshMCPBearerToken();
+                    refreshBearerToken) {
+                    const newToken = await refreshBearerToken();
                     if (newToken) {
                         const retryHeaders = new Headers();
                         retryHeaders.set("Content-Type", "application/json");
                         retryHeaders.append("Connection", "keep-alive");
                         retryHeaders.append("Authorization", `Bearer ${newToken}`);
                         try {
-                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/Greet`, {
+                            const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/Greet`, {
+                                ...options,
                                 method: "POST",
                                 headers: retryHeaders,
                                 body: request.toJsonString()
-                            }), options);
+                            });
                             if (retryResponse.ok) {
                                 return {
                                     response: GreeterGreetResponseFromProtobufShape((greeter_pb.GreetResponse.fromJson(await retryResponse.json())))
@@ -4162,8 +4271,7 @@ export const useGreeter = ({ id }) => {
                             }
                         }
                         catch (_a) {
-                            // Fall through to return the original
-                            // aborted error.
+                            // Fall through to return the original aborted error.
                         }
                     }
                 }
@@ -4192,7 +4300,7 @@ export const useGreeter = ({ id }) => {
             return () => {
                 instance.unuseSetAdjective(id);
             };
-        }, []);
+        }, [instance]);
         const rebootClient = reboot_react.useRebootClient();
         const bearerToken = rebootClient.bearerToken;
         const setAdjective = useMemo(() => {
@@ -4207,12 +4315,24 @@ export const useGreeter = ({ id }) => {
                     metadata: options === null || options === void 0 ? void 0 : options.metadata,
                     isLoading: false, // Won't start loading if we're flushing mutations.
                 };
-                return instance.setAdjective(mutation);
+                const result = await instance.setAdjective(mutation);
+                // If the server rejected us due to an expired token,
+                // refresh via the surface's bearer-refresh and retry
+                // once (mirrors the unary-call path).
+                if (result.aborted !== undefined &&
+                    result.aborted.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshBearerToken) {
+                    const newToken = await refreshBearerToken();
+                    if (newToken !== undefined) {
+                        return instance.setAdjective({ ...mutation, bearerToken: newToken });
+                    }
+                }
+                return result;
             };
             method.pending =
                 new Array();
             return method;
-        }, [instance, bearerToken]);
+        }, [instance, bearerToken, refreshBearerToken]);
         setAdjective.pending = pending;
         return setAdjective;
     }
@@ -4225,7 +4345,7 @@ export const useGreeter = ({ id }) => {
             return () => {
                 instance.unuseTransactionSetAdjective(id);
             };
-        }, []);
+        }, [instance]);
         const rebootClient = reboot_react.useRebootClient();
         const bearerToken = rebootClient.bearerToken;
         const transactionSetAdjective = useMemo(() => {
@@ -4240,12 +4360,24 @@ export const useGreeter = ({ id }) => {
                     metadata: options === null || options === void 0 ? void 0 : options.metadata,
                     isLoading: false, // Won't start loading if we're flushing mutations.
                 };
-                return instance.transactionSetAdjective(mutation);
+                const result = await instance.transactionSetAdjective(mutation);
+                // If the server rejected us due to an expired token,
+                // refresh via the surface's bearer-refresh and retry
+                // once (mirrors the unary-call path).
+                if (result.aborted !== undefined &&
+                    result.aborted.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshBearerToken) {
+                    const newToken = await refreshBearerToken();
+                    if (newToken !== undefined) {
+                        return instance.transactionSetAdjective({ ...mutation, bearerToken: newToken });
+                    }
+                }
+                return result;
             };
             method.pending =
                 new Array();
             return method;
-        }, [instance, bearerToken]);
+        }, [instance, bearerToken, refreshBearerToken]);
         transactionSetAdjective.pending = pending;
         return transactionSetAdjective;
     }
@@ -4313,11 +4445,12 @@ export const useGreeter = ({ id }) => {
                 setResponse(GreeterTryToConstructContextResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
                 // If the server rejected us due to an expired
-                // token, refresh via the MCP host. The token
+                // token, refresh via the surface's bearer-refresh
+                // (the MCP host, or the web session). The token
                 // change triggers a re-render and reconnect.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-                    refreshMCPBearerToken) {
-                    refreshMCPBearerToken();
+                    refreshBearerToken) {
+                    refreshBearerToken();
                 }
                 const aborted = GreeterTryToConstructContextAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.TryToConstructContext' aborted with ${aborted.message}`);
@@ -4332,6 +4465,7 @@ export const useGreeter = ({ id }) => {
             serializedRequest,
             requestBearerTokenHash,
             bearerToken,
+            refreshBearerToken,
             offlineCacheEnabled,
             cacheKey,
         ]);
@@ -4411,11 +4545,12 @@ export const useGreeter = ({ id }) => {
                     //
                     // See also 'reboot/helpers.py'.
                     return {
-                        response: await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructContext`, {
+                        response: await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructContext`, {
+                            ...options,
                             method: "POST",
                             headers,
                             body: request.toJsonString()
-                        }), options)
+                        })
                     };
                 }
                 catch (e) {
@@ -4440,20 +4575,22 @@ export const useGreeter = ({ id }) => {
         if (aborted) {
             return { aborted };
         }
-        else if (response.status === 401 && refreshMCPBearerToken) {
-            // Token expired — refresh via MCP host and retry once.
-            const newToken = await refreshMCPBearerToken();
+        else if (response.status === 401 && refreshBearerToken) {
+            // Token expired — refresh via the surface's bearer-refresh
+            // and retry once.
+            const newToken = await refreshBearerToken();
             if (newToken) {
                 const retryHeaders = new Headers();
                 retryHeaders.set("Content-Type", "application/json");
                 retryHeaders.append("Connection", "keep-alive");
                 retryHeaders.append("Authorization", `Bearer ${newToken}`);
                 try {
-                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructContext`, {
+                    const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructContext`, {
+                        ...options,
                         method: "POST",
                         headers: retryHeaders,
                         body: request.toJsonString()
-                    }), options);
+                    });
                     if (retryResponse.ok) {
                         return {
                             response: GreeterTryToConstructContextResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -4487,21 +4624,23 @@ export const useGreeter = ({ id }) => {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
                 // If the server rejected us due to an expired
-                // token, refresh via the MCP host and retry once.
+                // token, refresh via the surface's bearer-refresh and
+                // retry once.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-                    refreshMCPBearerToken) {
-                    const newToken = await refreshMCPBearerToken();
+                    refreshBearerToken) {
+                    const newToken = await refreshBearerToken();
                     if (newToken) {
                         const retryHeaders = new Headers();
                         retryHeaders.set("Content-Type", "application/json");
                         retryHeaders.append("Connection", "keep-alive");
                         retryHeaders.append("Authorization", `Bearer ${newToken}`);
                         try {
-                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructContext`, {
+                            const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructContext`, {
+                                ...options,
                                 method: "POST",
                                 headers: retryHeaders,
                                 body: request.toJsonString()
-                            }), options);
+                            });
                             if (retryResponse.ok) {
                                 return {
                                     response: GreeterTryToConstructContextResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -4509,8 +4648,7 @@ export const useGreeter = ({ id }) => {
                             }
                         }
                         catch (_a) {
-                            // Fall through to return the original
-                            // aborted error.
+                            // Fall through to return the original aborted error.
                         }
                     }
                 }
@@ -4594,11 +4732,12 @@ export const useGreeter = ({ id }) => {
                 setResponse(GreeterTryToConstructExternalContextResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
                 // If the server rejected us due to an expired
-                // token, refresh via the MCP host. The token
+                // token, refresh via the surface's bearer-refresh
+                // (the MCP host, or the web session). The token
                 // change triggers a re-render and reconnect.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-                    refreshMCPBearerToken) {
-                    refreshMCPBearerToken();
+                    refreshBearerToken) {
+                    refreshBearerToken();
                 }
                 const aborted = GreeterTryToConstructExternalContextAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.TryToConstructExternalContext' aborted with ${aborted.message}`);
@@ -4613,6 +4752,7 @@ export const useGreeter = ({ id }) => {
             serializedRequest,
             requestBearerTokenHash,
             bearerToken,
+            refreshBearerToken,
             offlineCacheEnabled,
             cacheKey,
         ]);
@@ -4692,11 +4832,12 @@ export const useGreeter = ({ id }) => {
                     //
                     // See also 'reboot/helpers.py'.
                     return {
-                        response: await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructExternalContext`, {
+                        response: await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructExternalContext`, {
+                            ...options,
                             method: "POST",
                             headers,
                             body: request.toJsonString()
-                        }), options)
+                        })
                     };
                 }
                 catch (e) {
@@ -4721,20 +4862,22 @@ export const useGreeter = ({ id }) => {
         if (aborted) {
             return { aborted };
         }
-        else if (response.status === 401 && refreshMCPBearerToken) {
-            // Token expired — refresh via MCP host and retry once.
-            const newToken = await refreshMCPBearerToken();
+        else if (response.status === 401 && refreshBearerToken) {
+            // Token expired — refresh via the surface's bearer-refresh
+            // and retry once.
+            const newToken = await refreshBearerToken();
             if (newToken) {
                 const retryHeaders = new Headers();
                 retryHeaders.set("Content-Type", "application/json");
                 retryHeaders.append("Connection", "keep-alive");
                 retryHeaders.append("Authorization", `Bearer ${newToken}`);
                 try {
-                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructExternalContext`, {
+                    const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructExternalContext`, {
+                        ...options,
                         method: "POST",
                         headers: retryHeaders,
                         body: request.toJsonString()
-                    }), options);
+                    });
                     if (retryResponse.ok) {
                         return {
                             response: GreeterTryToConstructExternalContextResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -4768,21 +4911,23 @@ export const useGreeter = ({ id }) => {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
                 // If the server rejected us due to an expired
-                // token, refresh via the MCP host and retry once.
+                // token, refresh via the surface's bearer-refresh and
+                // retry once.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-                    refreshMCPBearerToken) {
-                    const newToken = await refreshMCPBearerToken();
+                    refreshBearerToken) {
+                    const newToken = await refreshBearerToken();
                     if (newToken) {
                         const retryHeaders = new Headers();
                         retryHeaders.set("Content-Type", "application/json");
                         retryHeaders.append("Connection", "keep-alive");
                         retryHeaders.append("Authorization", `Bearer ${newToken}`);
                         try {
-                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructExternalContext`, {
+                            const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TryToConstructExternalContext`, {
+                                ...options,
                                 method: "POST",
                                 headers: retryHeaders,
                                 body: request.toJsonString()
-                            }), options);
+                            });
                             if (retryResponse.ok) {
                                 return {
                                     response: GreeterTryToConstructExternalContextResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -4790,8 +4935,7 @@ export const useGreeter = ({ id }) => {
                             }
                         }
                         catch (_a) {
-                            // Fall through to return the original
-                            // aborted error.
+                            // Fall through to return the original aborted error.
                         }
                     }
                 }
@@ -4875,11 +5019,12 @@ export const useGreeter = ({ id }) => {
                 setResponse(GreeterTestLongRunningFetchResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
                 // If the server rejected us due to an expired
-                // token, refresh via the MCP host. The token
+                // token, refresh via the surface's bearer-refresh
+                // (the MCP host, or the web session). The token
                 // change triggers a re-render and reconnect.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-                    refreshMCPBearerToken) {
-                    refreshMCPBearerToken();
+                    refreshBearerToken) {
+                    refreshBearerToken();
                 }
                 const aborted = GreeterTestLongRunningFetchAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.TestLongRunningFetch' aborted with ${aborted.message}`);
@@ -4894,6 +5039,7 @@ export const useGreeter = ({ id }) => {
             serializedRequest,
             requestBearerTokenHash,
             bearerToken,
+            refreshBearerToken,
             offlineCacheEnabled,
             cacheKey,
         ]);
@@ -4973,11 +5119,12 @@ export const useGreeter = ({ id }) => {
                     //
                     // See also 'reboot/helpers.py'.
                     return {
-                        response: await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TestLongRunningFetch`, {
+                        response: await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TestLongRunningFetch`, {
+                            ...options,
                             method: "POST",
                             headers,
                             body: request.toJsonString()
-                        }), options)
+                        })
                     };
                 }
                 catch (e) {
@@ -5002,20 +5149,22 @@ export const useGreeter = ({ id }) => {
         if (aborted) {
             return { aborted };
         }
-        else if (response.status === 401 && refreshMCPBearerToken) {
-            // Token expired — refresh via MCP host and retry once.
-            const newToken = await refreshMCPBearerToken();
+        else if (response.status === 401 && refreshBearerToken) {
+            // Token expired — refresh via the surface's bearer-refresh
+            // and retry once.
+            const newToken = await refreshBearerToken();
             if (newToken) {
                 const retryHeaders = new Headers();
                 retryHeaders.set("Content-Type", "application/json");
                 retryHeaders.append("Connection", "keep-alive");
                 retryHeaders.append("Authorization", `Bearer ${newToken}`);
                 try {
-                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TestLongRunningFetch`, {
+                    const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TestLongRunningFetch`, {
+                        ...options,
                         method: "POST",
                         headers: retryHeaders,
                         body: request.toJsonString()
-                    }), options);
+                    });
                     if (retryResponse.ok) {
                         return {
                             response: GreeterTestLongRunningFetchResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -5049,21 +5198,23 @@ export const useGreeter = ({ id }) => {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
                 // If the server rejected us due to an expired
-                // token, refresh via the MCP host and retry once.
+                // token, refresh via the surface's bearer-refresh and
+                // retry once.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-                    refreshMCPBearerToken) {
-                    const newToken = await refreshMCPBearerToken();
+                    refreshBearerToken) {
+                    const newToken = await refreshBearerToken();
                     if (newToken) {
                         const retryHeaders = new Headers();
                         retryHeaders.set("Content-Type", "application/json");
                         retryHeaders.append("Connection", "keep-alive");
                         retryHeaders.append("Authorization", `Bearer ${newToken}`);
                         try {
-                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TestLongRunningFetch`, {
+                            const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/TestLongRunningFetch`, {
+                                ...options,
                                 method: "POST",
                                 headers: retryHeaders,
                                 body: request.toJsonString()
-                            }), options);
+                            });
                             if (retryResponse.ok) {
                                 return {
                                     response: GreeterTestLongRunningFetchResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -5071,8 +5222,7 @@ export const useGreeter = ({ id }) => {
                             }
                         }
                         catch (_a) {
-                            // Fall through to return the original
-                            // aborted error.
+                            // Fall through to return the original aborted error.
                         }
                     }
                 }
@@ -5101,7 +5251,7 @@ export const useGreeter = ({ id }) => {
             return () => {
                 instance.unuseTestLongRunningWriter(id);
             };
-        }, []);
+        }, [instance]);
         const rebootClient = reboot_react.useRebootClient();
         const bearerToken = rebootClient.bearerToken;
         const testLongRunningWriter = useMemo(() => {
@@ -5116,12 +5266,24 @@ export const useGreeter = ({ id }) => {
                     metadata: options === null || options === void 0 ? void 0 : options.metadata,
                     isLoading: false, // Won't start loading if we're flushing mutations.
                 };
-                return instance.testLongRunningWriter(mutation);
+                const result = await instance.testLongRunningWriter(mutation);
+                // If the server rejected us due to an expired token,
+                // refresh via the surface's bearer-refresh and retry
+                // once (mirrors the unary-call path).
+                if (result.aborted !== undefined &&
+                    result.aborted.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshBearerToken) {
+                    const newToken = await refreshBearerToken();
+                    if (newToken !== undefined) {
+                        return instance.testLongRunningWriter({ ...mutation, bearerToken: newToken });
+                    }
+                }
+                return result;
             };
             method.pending =
                 new Array();
             return method;
-        }, [instance, bearerToken]);
+        }, [instance, bearerToken, refreshBearerToken]);
         testLongRunningWriter.pending = pending;
         return testLongRunningWriter;
     }
@@ -5189,11 +5351,12 @@ export const useGreeter = ({ id }) => {
                 setResponse(GreeterGetWholeStateResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
                 // If the server rejected us due to an expired
-                // token, refresh via the MCP host. The token
+                // token, refresh via the surface's bearer-refresh
+                // (the MCP host, or the web session). The token
                 // change triggers a re-render and reconnect.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-                    refreshMCPBearerToken) {
-                    refreshMCPBearerToken();
+                    refreshBearerToken) {
+                    refreshBearerToken();
                 }
                 const aborted = GreeterGetWholeStateAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.GetWholeState' aborted with ${aborted.message}`);
@@ -5208,6 +5371,7 @@ export const useGreeter = ({ id }) => {
             serializedRequest,
             requestBearerTokenHash,
             bearerToken,
+            refreshBearerToken,
             offlineCacheEnabled,
             cacheKey,
         ]);
@@ -5287,11 +5451,12 @@ export const useGreeter = ({ id }) => {
                     //
                     // See also 'reboot/helpers.py'.
                     return {
-                        response: await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/GetWholeState`, {
+                        response: await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/GetWholeState`, {
+                            ...options,
                             method: "POST",
                             headers,
                             body: request.toJsonString()
-                        }), options)
+                        })
                     };
                 }
                 catch (e) {
@@ -5316,20 +5481,22 @@ export const useGreeter = ({ id }) => {
         if (aborted) {
             return { aborted };
         }
-        else if (response.status === 401 && refreshMCPBearerToken) {
-            // Token expired — refresh via MCP host and retry once.
-            const newToken = await refreshMCPBearerToken();
+        else if (response.status === 401 && refreshBearerToken) {
+            // Token expired — refresh via the surface's bearer-refresh
+            // and retry once.
+            const newToken = await refreshBearerToken();
             if (newToken) {
                 const retryHeaders = new Headers();
                 retryHeaders.set("Content-Type", "application/json");
                 retryHeaders.append("Connection", "keep-alive");
                 retryHeaders.append("Authorization", `Bearer ${newToken}`);
                 try {
-                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/GetWholeState`, {
+                    const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/GetWholeState`, {
+                        ...options,
                         method: "POST",
                         headers: retryHeaders,
                         body: request.toJsonString()
-                    }), options);
+                    });
                     if (retryResponse.ok) {
                         return {
                             response: GreeterGetWholeStateResponseFromProtobufShape((GreeterProto.fromJson(await retryResponse.json())))
@@ -5363,21 +5530,23 @@ export const useGreeter = ({ id }) => {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
                 // If the server rejected us due to an expired
-                // token, refresh via the MCP host and retry once.
+                // token, refresh via the surface's bearer-refresh and
+                // retry once.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-                    refreshMCPBearerToken) {
-                    const newToken = await refreshMCPBearerToken();
+                    refreshBearerToken) {
+                    const newToken = await refreshBearerToken();
                     if (newToken) {
                         const retryHeaders = new Headers();
                         retryHeaders.set("Content-Type", "application/json");
                         retryHeaders.append("Connection", "keep-alive");
                         retryHeaders.append("Authorization", `Bearer ${newToken}`);
                         try {
-                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/GetWholeState`, {
+                            const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/GetWholeState`, {
+                                ...options,
                                 method: "POST",
                                 headers: retryHeaders,
                                 body: request.toJsonString()
-                            }), options);
+                            });
                             if (retryResponse.ok) {
                                 return {
                                     response: GreeterGetWholeStateResponseFromProtobufShape((GreeterProto.fromJson(await retryResponse.json())))
@@ -5385,8 +5554,7 @@ export const useGreeter = ({ id }) => {
                             }
                         }
                         catch (_a) {
-                            // Fall through to return the original
-                            // aborted error.
+                            // Fall through to return the original aborted error.
                         }
                     }
                 }
@@ -5470,11 +5638,12 @@ export const useGreeter = ({ id }) => {
                 setResponse(GreeterFailWithExceptionResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
                 // If the server rejected us due to an expired
-                // token, refresh via the MCP host. The token
+                // token, refresh via the surface's bearer-refresh
+                // (the MCP host, or the web session). The token
                 // change triggers a re-render and reconnect.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-                    refreshMCPBearerToken) {
-                    refreshMCPBearerToken();
+                    refreshBearerToken) {
+                    refreshBearerToken();
                 }
                 const aborted = GreeterFailWithExceptionAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.FailWithException' aborted with ${aborted.message}`);
@@ -5489,6 +5658,7 @@ export const useGreeter = ({ id }) => {
             serializedRequest,
             requestBearerTokenHash,
             bearerToken,
+            refreshBearerToken,
             offlineCacheEnabled,
             cacheKey,
         ]);
@@ -5568,11 +5738,12 @@ export const useGreeter = ({ id }) => {
                     //
                     // See also 'reboot/helpers.py'.
                     return {
-                        response: await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithException`, {
+                        response: await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithException`, {
+                            ...options,
                             method: "POST",
                             headers,
                             body: request.toJsonString()
-                        }), options)
+                        })
                     };
                 }
                 catch (e) {
@@ -5597,20 +5768,22 @@ export const useGreeter = ({ id }) => {
         if (aborted) {
             return { aborted };
         }
-        else if (response.status === 401 && refreshMCPBearerToken) {
-            // Token expired — refresh via MCP host and retry once.
-            const newToken = await refreshMCPBearerToken();
+        else if (response.status === 401 && refreshBearerToken) {
+            // Token expired — refresh via the surface's bearer-refresh
+            // and retry once.
+            const newToken = await refreshBearerToken();
             if (newToken) {
                 const retryHeaders = new Headers();
                 retryHeaders.set("Content-Type", "application/json");
                 retryHeaders.append("Connection", "keep-alive");
                 retryHeaders.append("Authorization", `Bearer ${newToken}`);
                 try {
-                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithException`, {
+                    const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithException`, {
+                        ...options,
                         method: "POST",
                         headers: retryHeaders,
                         body: request.toJsonString()
-                    }), options);
+                    });
                     if (retryResponse.ok) {
                         return {
                             response: GreeterFailWithExceptionResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -5644,21 +5817,23 @@ export const useGreeter = ({ id }) => {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
                 // If the server rejected us due to an expired
-                // token, refresh via the MCP host and retry once.
+                // token, refresh via the surface's bearer-refresh and
+                // retry once.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-                    refreshMCPBearerToken) {
-                    const newToken = await refreshMCPBearerToken();
+                    refreshBearerToken) {
+                    const newToken = await refreshBearerToken();
                     if (newToken) {
                         const retryHeaders = new Headers();
                         retryHeaders.set("Content-Type", "application/json");
                         retryHeaders.append("Connection", "keep-alive");
                         retryHeaders.append("Authorization", `Bearer ${newToken}`);
                         try {
-                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithException`, {
+                            const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithException`, {
+                                ...options,
                                 method: "POST",
                                 headers: retryHeaders,
                                 body: request.toJsonString()
-                            }), options);
+                            });
                             if (retryResponse.ok) {
                                 return {
                                     response: GreeterFailWithExceptionResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -5666,8 +5841,7 @@ export const useGreeter = ({ id }) => {
                             }
                         }
                         catch (_a) {
-                            // Fall through to return the original
-                            // aborted error.
+                            // Fall through to return the original aborted error.
                         }
                     }
                 }
@@ -5751,11 +5925,12 @@ export const useGreeter = ({ id }) => {
                 setResponse(GreeterFailWithAbortedResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
                 // If the server rejected us due to an expired
-                // token, refresh via the MCP host. The token
+                // token, refresh via the surface's bearer-refresh
+                // (the MCP host, or the web session). The token
                 // change triggers a re-render and reconnect.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-                    refreshMCPBearerToken) {
-                    refreshMCPBearerToken();
+                    refreshBearerToken) {
+                    refreshBearerToken();
                 }
                 const aborted = GreeterFailWithAbortedAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.FailWithAborted' aborted with ${aborted.message}`);
@@ -5770,6 +5945,7 @@ export const useGreeter = ({ id }) => {
             serializedRequest,
             requestBearerTokenHash,
             bearerToken,
+            refreshBearerToken,
             offlineCacheEnabled,
             cacheKey,
         ]);
@@ -5849,11 +6025,12 @@ export const useGreeter = ({ id }) => {
                     //
                     // See also 'reboot/helpers.py'.
                     return {
-                        response: await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithAborted`, {
+                        response: await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithAborted`, {
+                            ...options,
                             method: "POST",
                             headers,
                             body: request.toJsonString()
-                        }), options)
+                        })
                     };
                 }
                 catch (e) {
@@ -5878,20 +6055,22 @@ export const useGreeter = ({ id }) => {
         if (aborted) {
             return { aborted };
         }
-        else if (response.status === 401 && refreshMCPBearerToken) {
-            // Token expired — refresh via MCP host and retry once.
-            const newToken = await refreshMCPBearerToken();
+        else if (response.status === 401 && refreshBearerToken) {
+            // Token expired — refresh via the surface's bearer-refresh
+            // and retry once.
+            const newToken = await refreshBearerToken();
             if (newToken) {
                 const retryHeaders = new Headers();
                 retryHeaders.set("Content-Type", "application/json");
                 retryHeaders.append("Connection", "keep-alive");
                 retryHeaders.append("Authorization", `Bearer ${newToken}`);
                 try {
-                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithAborted`, {
+                    const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithAborted`, {
+                        ...options,
                         method: "POST",
                         headers: retryHeaders,
                         body: request.toJsonString()
-                    }), options);
+                    });
                     if (retryResponse.ok) {
                         return {
                             response: GreeterFailWithAbortedResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -5925,21 +6104,23 @@ export const useGreeter = ({ id }) => {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
                 // If the server rejected us due to an expired
-                // token, refresh via the MCP host and retry once.
+                // token, refresh via the surface's bearer-refresh and
+                // retry once.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-                    refreshMCPBearerToken) {
-                    const newToken = await refreshMCPBearerToken();
+                    refreshBearerToken) {
+                    const newToken = await refreshBearerToken();
                     if (newToken) {
                         const retryHeaders = new Headers();
                         retryHeaders.set("Content-Type", "application/json");
                         retryHeaders.append("Connection", "keep-alive");
                         retryHeaders.append("Authorization", `Bearer ${newToken}`);
                         try {
-                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithAborted`, {
+                            const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/FailWithAborted`, {
+                                ...options,
                                 method: "POST",
                                 headers: retryHeaders,
                                 body: request.toJsonString()
-                            }), options);
+                            });
                             if (retryResponse.ok) {
                                 return {
                                     response: GreeterFailWithAbortedResponseFromProtobufShape((Empty.fromJson(await retryResponse.json())))
@@ -5947,8 +6128,7 @@ export const useGreeter = ({ id }) => {
                             }
                         }
                         catch (_a) {
-                            // Fall through to return the original
-                            // aborted error.
+                            // Fall through to return the original aborted error.
                         }
                     }
                 }
@@ -5977,7 +6157,7 @@ export const useGreeter = ({ id }) => {
             return () => {
                 instance.unuseDangerousFields(id);
             };
-        }, []);
+        }, [instance]);
         const rebootClient = reboot_react.useRebootClient();
         const bearerToken = rebootClient.bearerToken;
         const dangerousFields = useMemo(() => {
@@ -5992,12 +6172,24 @@ export const useGreeter = ({ id }) => {
                     metadata: options === null || options === void 0 ? void 0 : options.metadata,
                     isLoading: false, // Won't start loading if we're flushing mutations.
                 };
-                return instance.dangerousFields(mutation);
+                const result = await instance.dangerousFields(mutation);
+                // If the server rejected us due to an expired token,
+                // refresh via the surface's bearer-refresh and retry
+                // once (mirrors the unary-call path).
+                if (result.aborted !== undefined &&
+                    result.aborted.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshBearerToken) {
+                    const newToken = await refreshBearerToken();
+                    if (newToken !== undefined) {
+                        return instance.dangerousFields({ ...mutation, bearerToken: newToken });
+                    }
+                }
+                return result;
             };
             method.pending =
                 new Array();
             return method;
-        }, [instance, bearerToken]);
+        }, [instance, bearerToken, refreshBearerToken]);
         dangerousFields.pending = pending;
         return dangerousFields;
     }
@@ -6010,7 +6202,7 @@ export const useGreeter = ({ id }) => {
             return () => {
                 instance.unuseStoreRecursiveMessage(id);
             };
-        }, []);
+        }, [instance]);
         const rebootClient = reboot_react.useRebootClient();
         const bearerToken = rebootClient.bearerToken;
         const storeRecursiveMessage = useMemo(() => {
@@ -6025,12 +6217,24 @@ export const useGreeter = ({ id }) => {
                     metadata: options === null || options === void 0 ? void 0 : options.metadata,
                     isLoading: false, // Won't start loading if we're flushing mutations.
                 };
-                return instance.storeRecursiveMessage(mutation);
+                const result = await instance.storeRecursiveMessage(mutation);
+                // If the server rejected us due to an expired token,
+                // refresh via the surface's bearer-refresh and retry
+                // once (mirrors the unary-call path).
+                if (result.aborted !== undefined &&
+                    result.aborted.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshBearerToken) {
+                    const newToken = await refreshBearerToken();
+                    if (newToken !== undefined) {
+                        return instance.storeRecursiveMessage({ ...mutation, bearerToken: newToken });
+                    }
+                }
+                return result;
             };
             method.pending =
                 new Array();
             return method;
-        }, [instance, bearerToken]);
+        }, [instance, bearerToken, refreshBearerToken]);
         storeRecursiveMessage.pending = pending;
         return storeRecursiveMessage;
     }
@@ -6098,11 +6302,12 @@ export const useGreeter = ({ id }) => {
                 setResponse(GreeterReadRecursiveMessageResponseFromProtobufShape(response));
             }, setIsLoading, (status) => {
                 // If the server rejected us due to an expired
-                // token, refresh via the MCP host. The token
+                // token, refresh via the surface's bearer-refresh
+                // (the MCP host, or the web session). The token
                 // change triggers a re-render and reconnect.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-                    refreshMCPBearerToken) {
-                    refreshMCPBearerToken();
+                    refreshBearerToken) {
+                    refreshBearerToken();
                 }
                 const aborted = GreeterReadRecursiveMessageAborted.fromStatus(status);
                 console.warn(`[Reboot] 'Greeter.ReadRecursiveMessage' aborted with ${aborted.message}`);
@@ -6117,6 +6322,7 @@ export const useGreeter = ({ id }) => {
             serializedRequest,
             requestBearerTokenHash,
             bearerToken,
+            refreshBearerToken,
             offlineCacheEnabled,
             cacheKey,
         ]);
@@ -6196,11 +6402,12 @@ export const useGreeter = ({ id }) => {
                     //
                     // See also 'reboot/helpers.py'.
                     return {
-                        response: await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/ReadRecursiveMessage`, {
+                        response: await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/ReadRecursiveMessage`, {
+                            ...options,
                             method: "POST",
                             headers,
                             body: request.toJsonString()
-                        }), options)
+                        })
                     };
                 }
                 catch (e) {
@@ -6225,20 +6432,22 @@ export const useGreeter = ({ id }) => {
         if (aborted) {
             return { aborted };
         }
-        else if (response.status === 401 && refreshMCPBearerToken) {
-            // Token expired — refresh via MCP host and retry once.
-            const newToken = await refreshMCPBearerToken();
+        else if (response.status === 401 && refreshBearerToken) {
+            // Token expired — refresh via the surface's bearer-refresh
+            // and retry once.
+            const newToken = await refreshBearerToken();
             if (newToken) {
                 const retryHeaders = new Headers();
                 retryHeaders.set("Content-Type", "application/json");
                 retryHeaders.append("Connection", "keep-alive");
                 retryHeaders.append("Authorization", `Bearer ${newToken}`);
                 try {
-                    const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/ReadRecursiveMessage`, {
+                    const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/ReadRecursiveMessage`, {
+                        ...options,
                         method: "POST",
                         headers: retryHeaders,
                         body: request.toJsonString()
-                    }), options);
+                    });
                     if (retryResponse.ok) {
                         return {
                             response: GreeterReadRecursiveMessageResponseFromProtobufShape((greeter_pb.ReadRecursiveMessageResponse.fromJson(await retryResponse.json())))
@@ -6272,21 +6481,23 @@ export const useGreeter = ({ id }) => {
             if (response.headers.get("content-type") === "application/json") {
                 const status = reboot_api.Status.fromJson(await response.json());
                 // If the server rejected us due to an expired
-                // token, refresh via the MCP host and retry once.
+                // token, refresh via the surface's bearer-refresh and
+                // retry once.
                 if (status.code === reboot_api.StatusCode.UNAUTHENTICATED &&
-                    refreshMCPBearerToken) {
-                    const newToken = await refreshMCPBearerToken();
+                    refreshBearerToken) {
+                    const newToken = await refreshBearerToken();
                     if (newToken) {
                         const retryHeaders = new Headers();
                         retryHeaders.set("Content-Type", "application/json");
                         retryHeaders.append("Connection", "keep-alive");
                         retryHeaders.append("Authorization", `Bearer ${newToken}`);
                         try {
-                            const retryResponse = await reboot_web.guardedFetch(new Request(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/ReadRecursiveMessage`, {
+                            const retryResponse = await reboot_web.guardedFetch(`${rebootClient.url}/__/reboot/rpc/${stateRef}/tests.reboot.GreeterMethods/ReadRecursiveMessage`, {
+                                ...options,
                                 method: "POST",
                                 headers: retryHeaders,
                                 body: request.toJsonString()
-                            }), options);
+                            });
                             if (retryResponse.ok) {
                                 return {
                                     response: GreeterReadRecursiveMessageResponseFromProtobufShape((greeter_pb.ReadRecursiveMessageResponse.fromJson(await retryResponse.json())))
@@ -6294,8 +6505,7 @@ export const useGreeter = ({ id }) => {
                             }
                         }
                         catch (_a) {
-                            // Fall through to return the original
-                            // aborted error.
+                            // Fall through to return the original aborted error.
                         }
                     }
                 }
@@ -6324,7 +6534,7 @@ export const useGreeter = ({ id }) => {
             return () => {
                 instance.unuseConstructAndStoreRecursiveMessage(id);
             };
-        }, []);
+        }, [instance]);
         const rebootClient = reboot_react.useRebootClient();
         const bearerToken = rebootClient.bearerToken;
         const constructAndStoreRecursiveMessage = useMemo(() => {
@@ -6339,18 +6549,31 @@ export const useGreeter = ({ id }) => {
                     metadata: options === null || options === void 0 ? void 0 : options.metadata,
                     isLoading: false, // Won't start loading if we're flushing mutations.
                 };
-                return instance.constructAndStoreRecursiveMessage(mutation);
+                const result = await instance.constructAndStoreRecursiveMessage(mutation);
+                // If the server rejected us due to an expired token,
+                // refresh via the surface's bearer-refresh and retry
+                // once (mirrors the unary-call path).
+                if (result.aborted !== undefined &&
+                    result.aborted.code === reboot_api.StatusCode.UNAUTHENTICATED &&
+                    refreshBearerToken) {
+                    const newToken = await refreshBearerToken();
+                    if (newToken !== undefined) {
+                        return instance.constructAndStoreRecursiveMessage({ ...mutation, bearerToken: newToken });
+                    }
+                }
+                return result;
             };
             method.pending =
                 new Array();
             return method;
-        }, [instance, bearerToken]);
+        }, [instance, bearerToken, refreshBearerToken]);
         constructAndStoreRecursiveMessage.pending = pending;
         return constructAndStoreRecursiveMessage;
     }
     const constructAndStoreRecursiveMessage = useConstructAndStoreRecursiveMessage();
     // Don't re-render if `id` hasn't changed.
-    return useMemo(() => ({
+    const api = useMemo(() => ({
+        state_id: id,
         mutators: {
             create,
             setAdjective,
@@ -6394,8 +6617,20 @@ export const useGreeter = ({ id }) => {
         readRecursiveMessage,
         useReadRecursiveMessage,
         constructAndStoreRecursiveMessage,
-    }), [id, instance, bearerToken]);
-};
+    }), [id, instance, bearerToken, refreshBearerToken]);
+    // An explicit `id` caller gets the handle directly; a no-id caller
+    // gets the `{ greeter, isLoading }`
+    // shape, where the handle is `undefined` until a default ID
+    // resolves.
+    if (providedId !== undefined) {
+        return api;
+    }
+    return {
+        greeter: resolvedId ? api : undefined,
+        isLoading,
+    };
+}
+;
 export class Greeter {
 }
 Greeter.State = GreeterProto;

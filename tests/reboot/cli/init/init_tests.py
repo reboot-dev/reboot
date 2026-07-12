@@ -1,10 +1,10 @@
 import aiofiles.os
-import reboot.cli.cli as cli
+import reboot.cli.common.cli as cli
 import tempfile
 import unittest
 from reboot.aio.directories import chdir
-from reboot.cli.init.init import init_run, validate_name
-from reboot.cli.rc import ArgumentParser
+from reboot.cli.commands.init.init import init_run, validate_name
+from reboot.cli.common.rc import ArgumentParser
 from unittest.mock import patch
 
 
@@ -13,7 +13,7 @@ def mock_raise_instead_fail(message):
     raise ValueError(message)
 
 
-@patch('reboot.cli.terminal.fail', mock_raise_instead_fail)
+@patch('reboot.cli.common.terminal.fail', mock_raise_instead_fail)
 class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_rbt_init_run(self) -> None:

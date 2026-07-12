@@ -123,17 +123,16 @@ test that only passes with authorization disabled proves nothing
 about the application the user actually runs; the agent's
 `authorizer()` code would ship untested.
 
-The rule of thumb: tests may substitute the **identity layer** (the
-OAuth provider or `TokenVerifier`) — **never the authorizers**.
+The rule of thumb: identity in tests comes from the harness —
+`up()` always backs the application under test with a test OAuth
+provider — and tests **never** touch the authorizers.
 
-`rbt.make_valid_oauth_access_token(user_id=...)` mints a token the
-runtime treats as a real, verified identity. Pair it with
-`create_external_context(..., bearer_token=...)` to impersonate that
-user and exercise the production authorizer end-to-end:
+`await rbt.create_external_context_as(name, user_id)` builds a
+context carrying a real, verified identity for `user_id`,
+exercising the production authorizer end-to-end:
 
 ```python
-from reboot.aio.auth.oauth_providers import Anonymous
-from reboot.aio.tests import OAuthProviderForTest, Reboot
+from reboot.aio.tests import Reboot
 from servicers.food import APPLICATION_SERVICERS, UserServicer
 
 
@@ -146,17 +145,18 @@ class TestFoodOrder(unittest.IsolatedAsyncioTestCase):
             Application(
                 # The REAL servicers, with their REAL authorizers.
                 servicers=APPLICATION_SERVICERS,
-                oauth=OAuthProviderForTest(Anonymous()),
             ),
         )
         self.user_id = "test-user"
-        self.context = self.rbt.create_external_context(
+        self.context = await self.rbt.create_external_context_as(
             name=f"test-{self.id()}",
-            bearer_token=self.rbt.make_valid_oauth_access_token(
-                user_id=self.user_id,
-            ),
+            user_id=self.user_id,
         )
 ```
+
+When a test needs the raw token itself (e.g. to set an
+`Authorization:` header),
+`rbt.make_valid_oauth_access_token(user_id=...)` mints one.
 
 If a call is denied under the real authorizer, either the context is
 missing the right identity (fix the test, see below), or the
@@ -168,23 +168,28 @@ Negative auth tests use a **second** context with a different
 [testing-external-context.md](testing-external-context.md) for
 asserting on aborts.
 
-## Identity Wiring per App Type
+## Identity Wiring in Tests
 
-Tests mirror the production identity wiring, substituting only the
-test-friendly arm:
+Omit `oauth=` in a test's `Application(...)`, whatever the app type:
+`up()` always backs the application under test with a test OAuth
+provider, so `await rbt.create_external_context_as(name, user_id)`
+works with no identity wiring at all. That provider rejects the
+browser sign-in flow itself — tests impersonate instead of signing
+in.
 
-- **Chat app** (production uses
-  `oauth=OAuthProviderByEnvironment(...)`): pass
-  `oauth=OAuthProviderForTest(Anonymous())` (both from
-  `reboot.aio.tests` / `reboot.aio.auth.oauth_providers`) to the
-  test's `Application(...)`, as in the template above.
-- **Web app** (production uses `token_verifier=<your IdP verifier>`): pass `token_verifier=TokenVerifierForTest()` (from
-  `reboot.aio.tests`) instead. Minted tokens won't — and don't need
-  to — pass your production verifier; the verifier seam is the
-  supported swap point, and the authorizers still run for real.
-- **No identity wiring** (app has no `User` type and no rules that
+- **App with a production `token_verifier=`** (e.g. a web app
+  verifying an external IdP's tokens): keep the `token_verifier=`
+  exactly as in production. The test harness's OAuth server verifies
+  the impersonation tokens `create_external_context_as` mints,
+  regardless of the app's own `token_verifier=`; a custom bearer a
+  test constructs by hand still flows through the app's verifier.
+- **No identity needed** (app has no `User` type and no rules that
   need identity): a plain `create_external_context(name=...)`
   without a bearer token is fine.
+- **Tests of an OAuth sign-in flow itself** (e.g. of a custom
+  `OAuthProvider`): the one exception — pass that provider
+  explicitly, via `oauth=OAuthProviderForTest(<provider>)` from
+  `reboot.aio.tests`.
 
 ## App-Internal-Only Methods
 

@@ -1,1 +1,9 @@
 # This file exists so that Reboot can find the project root.
+
+# Generate React hooks into the web app's `api/` directory, so the
+# standalone SPA under `frontend/web/` can import the typed
+# `useCounter` hook. (The MCP UIs are built separately by esbuild
+# under Bazel and don't use this output.)
+generate .
+generate --react=frontend/api
+generate --react-extensions

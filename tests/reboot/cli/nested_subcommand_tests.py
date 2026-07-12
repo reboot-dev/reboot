@@ -1,4 +1,4 @@
-import reboot.cli.rc as rc
+import reboot.cli.common.rc as rc
 import unittest
 
 

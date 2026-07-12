@@ -1,4 +1,4 @@
-// Internal MCP context and hooks for generated code. Not
+// Internal contexts and hooks for generated code. Not
 // public API.
 //
 // The `mcpApp` field is typed as `any` here to avoid a
@@ -8,10 +8,82 @@
 // `App` from `@modelcontextprotocol/ext-apps/react`.
 import { createContext, useContext } from "react";
 
+// ---------------------------------------------------------------------------
+// State-ID context (surface-agnostic).
+//
+// No matter how we communicate with the backend (MCP, web, ...), we
+// need a "default IDs" map so that generated hooks (notably
+// `useUser()`) don't need to be passed an ID if the ID is obvious from
+// context.
+// ---------------------------------------------------------------------------
+
+export interface DefaultStateIdsContextValue {
+  // Map of fully qualified state type name → default state ID,
+  // consulted only when a hook is called without an explicit ID.
+  // `null` while the surface is still resolving it; an empty map once
+  // resolved with no default ID available (e.g. for a `User`, signed
+  // out); a populated map otherwise.
+  defaultIds: Record<string, string> | null;
+}
+
+export const DefaultStateIdsContext =
+  createContext<DefaultStateIdsContextValue | null>(null);
+
+/**
+ * @internal Returns the default-ID map: `null` while the surface is
+ * still resolving it, an empty map once resolved with no default ID
+ * available, a populated map otherwise. Outside any provider it
+ * resolves to an empty map — there are no default IDs and nothing is
+ * in flight. Do not import directly; use the generated hooks
+ * instead.
+ */
+export function useDefaultStateIds(): Record<string, string> | null {
+  const value = useContext(DefaultStateIdsContext);
+  return value === null ? {} : value.defaultIds;
+}
+
+// ---------------------------------------------------------------------------
+// Bearer-refresh context (surface-agnostic).
+//
+// Obtaining a fresh bearer token after the current one is rejected
+// works on every surface, but how it works is surface-specific: the
+// web provider rotates the cookie session via `/__/oauth/refresh`,
+// while the MCP connector re-invokes the UI tool through the MCP
+// host.
+// ---------------------------------------------------------------------------
+
+// Resolves to the fresh bearer token, or `undefined` when none could
+// be obtained (e.g. signed out). Implementations coalesce concurrent
+// calls.
+export type RefreshBearerToken = () => Promise<string | undefined>;
+
+export const BearerRefreshContext = createContext<RefreshBearerToken | null>(
+  null
+);
+
+/**
+ * @internal Do not import directly; use the generated hooks instead.
+ * Returns the surface's bearer-refresh function, or `null` when no
+ * surface provides one.
+ */
+export function useRefreshBearerToken(): RefreshBearerToken | null {
+  return useContext(BearerRefreshContext);
+}
+
+// ---------------------------------------------------------------------------
+// MCP-specific context.
+//
+// Everything that only makes sense when the backend is reached
+// through an MCP host. Kept deliberately separate from
+// `DefaultStateIdsContext` so non-MCP surfaces (e.g. a standalone
+// web SPA) can supply default IDs without depending on any MCP
+// concept.
+// ---------------------------------------------------------------------------
+
 export interface McpAppContextValue {
   mcpApp: any;
-  // Merged data from ontoolinput (arguments) and
-  // ontoolresult (parsed result content).
+  // The merged bag of `structuredContent` / `content` keys
+  // delivered by the MCP host across `ontoolinput`/`ontoolresult`.
   toolData: Record<string, unknown> | null;
   // Re-invoke the UI tool via the MCP host to obtain a
   // fresh bearer token. Concurrent calls are coalesced.
@@ -29,8 +101,16 @@ export function useMcpApp(): any | null {
 }
 
 /**
- * @internal Used by generated code. Do not import
- * directly; use the generated hooks instead.
+ * MCP-only. Returns the merged tool-input bag the MCP host
+ * delivered (typically `structuredContent` from the most recent
+ * tool result). Use this to read tool arguments the server
+ * stuffed into the UI's bootstrap payload (e.g. `product_ids`,
+ * `cart_id`). For the state-IDs map specifically, prefer the
+ * surface-neutral `useDefaultStateIds()` so the same component
+ * code works under a standalone web SPA too.
+ *
+ * Returns `null` outside MCP mode and before the first
+ * `ontoolinput` / `ontoolresult` arrives.
  */
 export function useMcpToolData(): Record<string, unknown> | null {
   return useContext(McpAppContext)?.toolData ?? null;

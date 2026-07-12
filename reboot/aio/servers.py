@@ -684,6 +684,7 @@ class ConfigServer(Server):
     def __init__(
         self,
         serviceables: list[Serviceable],
+        allowed_origins: Optional[list[str]],
     ):
         server_port = os.environ.get(ENVVAR_REBOOT_CONFIG_SERVER_PORT)
         if server_port is None:
@@ -699,7 +700,10 @@ class ConfigServer(Server):
 
         application_config = application_config_pb2.ApplicationConfig(
             spec=application_config_spec_from_routables(
-                routables, replicas=None, servers=None
+                routables,
+                replicas=None,
+                servers=None,
+                allowed_origins=allowed_origins,
             )
         )
 

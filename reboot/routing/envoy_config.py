@@ -24,19 +24,18 @@ from google.protobuf import any_pb2
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from google.protobuf.duration_pb2 import Duration
 from google.protobuf.message import Message
-from google.protobuf.wrappers_pb2 import UInt32Value
+from google.protobuf.wrappers_pb2 import BoolValue, UInt32Value
 from pathlib import Path
-from reboot.aio.headers import (
-    APPLICATION_ID_HEADER,
-    AUTHORIZATION_HEADER,
-    CALLER_ID_HEADER,
-    IDEMPOTENCY_KEY_HEADER,
-    SERVER_ID_HEADER,
-    STATE_REF_HEADER,
-    WORKFLOW_ID_HEADER,
-)
+from reboot.aio.auth.allowed_origins import DEV_ORIGIN_REGEXES
+from reboot.aio.headers import CALLER_ID_HEADER, SERVER_ID_HEADER
 from reboot.aio.types import ApplicationId, ServerId
 from reboot.helpers import get_path_prefixes_from_file_descriptor_set
+from reboot.routing.cors_settings import (
+    CORS_ALLOW_HEADERS,
+    CORS_ALLOW_METHODS,
+    CORS_EXPOSE_HEADERS,
+    CORS_MAX_AGE_SECONDS,
+)
 from reboot.routing.filters.lua import (
     ADD_HEADER_X_REBOOT_APPLICATION_ID_TEMPLATE_FILENAME,
     COMPUTE_HEADER_X_REBOOT_SERVER_ID_TEMPLATE_FILENAME,
@@ -45,13 +44,14 @@ from reboot.routing.filters.lua import (
     load_lua,
     render_lua_template,
 )
-from reboot.run_environments import on_cloud
+from reboot.run_environments import is_in_test, on_cloud, running_rbt_dev
 from reboot.settings import (
     ENVOY_PER_CONNECTION_BUFFER_LIMIT_BYTES,
     ENVVAR_RBT_DEV,
-    ENVVAR_RBT_MCP_FRONTEND_HOST,
+    ENVVAR_RBT_FRONTEND_HOST,
     LocalEnvoyMode,
 )
+from typing import Optional
 from urllib.parse import urlparse
 
 
@@ -81,42 +81,42 @@ class ClusterKind(enum.Enum):
 ZERO_SECONDS = Duration()
 ZERO_SECONDS.FromSeconds(0)
 
-# MCP frontend routing configuration.
-MCP_FRONTEND_CLUSTER_NAME = "mcp_frontend"
+# Frontend routing configuration.
+FRONTEND_CLUSTER_NAME = "frontend"
 
 
 @dataclass
-class McpFrontendConfig:
-    """Configuration for MCP frontend host routing."""
+class FrontendConfig:
+    """Configuration for frontend host routing."""
     host: str
     port: int
     original_url: str
 
 
-def _get_mcp_frontend_config() -> McpFrontendConfig | None:
-    """Get MCP frontend host configuration from environment.
+def _get_frontend_config() -> FrontendConfig | None:
+    """Get frontend host configuration from environment.
 
-    Parses `RBT_MCP_FRONTEND_HOST` env var (e.g., "http://localhost:4444")
+    Parses `RBT_FRONTEND_HOST` env var (e.g., "http://localhost:4444")
     to extract port for Envoy routing to web dev server.
 
     Returns None if not configured or not in dev mode.
     """
     if os.environ.get(ENVVAR_RBT_DEV) != "true":
         return None
-    frontend_url = os.environ.get(ENVVAR_RBT_MCP_FRONTEND_HOST)
+    frontend_url = os.environ.get(ENVVAR_RBT_FRONTEND_HOST)
     if not frontend_url:
         return None
 
     parsed = urlparse(frontend_url)
     if not parsed.port:
         raise ValueError(
-            f"RBT_MCP_FRONTEND_HOST must include a port; got '{frontend_url}'"
+            f"RBT_FRONTEND_HOST must include a port; got '{frontend_url}'"
         )
     if not parsed.hostname:
         raise ValueError(
-            f"RBT_MCP_FRONTEND_HOST must include a hostname; got '{frontend_url}'"
+            f"RBT_FRONTEND_HOST must include a hostname; got '{frontend_url}'"
         )
-    return McpFrontendConfig(
+    return FrontendConfig(
         host=parsed.hostname,
         port=parsed.port,
         original_url=frontend_url,
@@ -156,6 +156,98 @@ def _lua_any(source_code: str) -> any_pb2.Any:
                 inline_string=source_code,
             ),
         )
+    )
+
+
+# The canonical CORS policy values from `cors_settings`, formatted
+# the way Envoy's `CorsPolicy` proto wants them: comma-joined
+# strings.
+_CORS_ALLOW_METHODS = ", ".join(CORS_ALLOW_METHODS)
+_CORS_ALLOW_HEADERS = ",".join(CORS_ALLOW_HEADERS)
+_CORS_EXPOSE_HEADERS = ",".join(CORS_EXPOSE_HEADERS)
+_CORS_MAX_AGE = str(CORS_MAX_AGE_SECONDS)
+
+
+def _cors_origin_matchers(
+    allowed_origins: list[str],
+) -> list[string_pb2.StringMatcher]:
+    """Build the CORS `allow_origin_string_match` list — every entry
+    in `allowed_origins` as an exact match, plus (under `rbt dev run`
+    or in tests) the shared local-development origin regexes, so a
+    normal `vite`/`webpack` workflow works without the developer
+    enumerating every Vite-defaulted port (5173, 5174, …) in
+    `Application(allowed_origins=...)`. Production and Reboot Cloud
+    apply the exact-match allow-list verbatim.
+    """
+    # Exact-match only — never a wildcard — because this list is paired
+    # with `Access-Control-Allow-Credentials: true`. A signed-in user's
+    # browser attaches the Reboot session cookie automatically, and the
+    # SPA can read its access JWT from `/__/oauth/whoami`; so if the
+    # CORS policy advertised credentials alongside an open
+    # `Access-Control-Allow-Origin` (the natural "just make it work"
+    # default, `regex=".*"`), any third-party site the signed-in user
+    # visits could:
+    #
+    #     const r = await fetch(".../__/oauth/whoami",
+    #                           { credentials: "include" });
+    #     const { access_token } = await r.json();  // portable bearer
+    #
+    # and replay that bearer against `/__/oauth/refresh` and the unary
+    # `/__/reboot/rpc/*` path until it expires. Browsers only ship
+    # credentials cross-origin when the response echoes a specific
+    # allow-listed origin (not `*`, nor an echoed origin under a
+    # permissive policy), so restricting the echoed set to exactly
+    # `allowed_origins` is what closes the hole.
+    matchers = [
+        string_pb2.StringMatcher(exact=origin) for origin in allowed_origins
+    ]
+    if running_rbt_dev() or is_in_test():
+        # RE2 syntax. Envoy's `SafeRegex` matches against the whole
+        # origin string (a full-string match, not a substring search).
+        matchers.extend(
+            string_pb2.StringMatcher(
+                safe_regex=regex_pb2.RegexMatcher(regex=regex),
+            ) for regex in DEV_ORIGIN_REGEXES
+        )
+    return matchers
+
+
+def _cors_policy(
+    allowed_origins: Optional[list[str]],
+) -> route_components_pb2.CorsPolicy:
+    """The route's CORS policy. `None` means the application has no
+    credentialed browser traffic to protect (neither `oauth=` nor
+    `allowed_origins`), and any origin may call — MCP sandboxes, for
+    example, can show up with arbitrary origins. A list (possibly
+    empty) means credentialed cross-origin browser traffic is
+    restricted to the exact-match allow-list; `allow_credentials`
+    is paired with exact-match origins, never a wildcard.
+    """
+    if allowed_origins is None:
+        return route_components_pb2.CorsPolicy(
+            allow_origin_string_match=[
+                string_pb2.StringMatcher(
+                    safe_regex=regex_pb2.RegexMatcher(
+                        # The correct incantation for Envoy is `".*"`,
+                        # not `"*"` (which only matches a literal
+                        # star).
+                        google_re2=regex_pb2.RegexMatcher.GoogleRE2(),
+                        regex=".*",
+                    ),
+                )
+            ],
+            allow_methods=_CORS_ALLOW_METHODS,
+            allow_headers=_CORS_ALLOW_HEADERS,
+            max_age=_CORS_MAX_AGE,
+            expose_headers=_CORS_EXPOSE_HEADERS,
+        )
+    return route_components_pb2.CorsPolicy(
+        allow_credentials=BoolValue(value=True),
+        allow_origin_string_match=_cors_origin_matchers(allowed_origins),
+        allow_methods=_CORS_ALLOW_METHODS,
+        allow_headers=_CORS_ALLOW_HEADERS,
+        max_age=_CORS_MAX_AGE,
+        expose_headers=_CORS_EXPOSE_HEADERS,
     )
 
 
@@ -490,28 +582,28 @@ def _routes_for_server(
     ]
 
 
-def _mcp_frontend_routes() -> list[route_components_pb2.Route]:
-    """Routes for web dev server assets ("/__/web/**").
+def _frontend_routes() -> list[route_components_pb2.Route]:
+    """Routes for web dev server assets ("/__/frontend/**").
 
     MCP Apps use a double iframe: the outer `srcdoc` contains an inner
-    `<iframe src="/__/web/ui/...">`. This route proxies those requests
+    `<iframe src="/__/frontend/ui/...">`. This route proxies those requests
     to the web dev server. Envoy handles WebSocket upgrades (for Hot Module Replacement)
     transparently.
 
-    Returns empty list if MCP frontend is not configured.
+    Returns empty list if the frontend is not configured.
     """
-    config = _get_mcp_frontend_config()
+    config = _get_frontend_config()
     if config is None:
         return []
 
-    # Route for web dev server assets: "/__/web/**".
-    # Dev server is configured with `base: "/__/web/"` so paths match directly.
+    # Route for web dev server assets: "/__/frontend/**".
+    # Dev server is configured with `base: "/__/frontend/"` so paths match directly.
     web_route = route_components_pb2.Route(
         match=route_components_pb2.RouteMatch(
-            prefix="/__/web/",
+            prefix="/__/frontend/",
         ),
         route=route_components_pb2.RouteAction(
-            cluster=MCP_FRONTEND_CLUSTER_NAME,
+            cluster=FRONTEND_CLUSTER_NAME,
         ),
         typed_per_filter_config={
             GRPC_JSON_TRANSCODER_HTTP_FILTER_NAME:
@@ -522,14 +614,14 @@ def _mcp_frontend_routes() -> list[route_components_pb2.Route]:
     return [web_route]
 
 
-def _mcp_frontend_cluster(
+def _frontend_cluster(
     local_envoy_mode: LocalEnvoyMode,
 ) -> cluster_pb2.Cluster | None:
-    """Cluster for MCP frontend host (web dev server).
+    """Cluster for the frontend host (Vite in HMR, static server in dist).
 
-    Returns None if MCP frontend is not configured.
+    Returns None if the frontend is not configured.
     """
-    config = _get_mcp_frontend_config()
+    config = _get_frontend_config()
     if config is None:
         return None
 
@@ -545,7 +637,7 @@ def _mcp_frontend_cluster(
             host = "localhost"
 
     return cluster_pb2.Cluster(
-        name=MCP_FRONTEND_CLUSTER_NAME,
+        name=FRONTEND_CLUSTER_NAME,
         type=cluster_pb2.Cluster.STRICT_DNS,
         lb_policy=cluster_pb2.Cluster.ROUND_ROBIN,
         common_http_protocol_options=protocol_pb2.HttpProtocolOptions(
@@ -554,7 +646,7 @@ def _mcp_frontend_cluster(
         dns_lookup_family=cluster_pb2.Cluster.V4_ONLY,
         # Frontend is HTTP/1.1 (WebSockets not compatible with HTTP/2).
         load_assignment=endpoint_pb2.ClusterLoadAssignment(
-            cluster_name=MCP_FRONTEND_CLUSTER_NAME,
+            cluster_name=FRONTEND_CLUSTER_NAME,
             endpoints=[
                 endpoint_components_pb2.LocalityLbEndpoints(
                     lb_endpoints=[
@@ -575,14 +667,13 @@ def _mcp_frontend_cluster(
     )
 
 
-def _mcp_frontend_error_filters(
-) -> list[http_connection_manager_pb2.HttpFilter]:
+def _frontend_error_filters() -> list[http_connection_manager_pb2.HttpFilter]:
     """Lua filter that replaces envoy's raw 503 for the
-    `/__/web/` dev-server route with a friendly HTML page.
+    `/__/frontend/` dev-server route with a friendly HTML page.
 
-    Returns an empty list if MCP frontend is not configured.
+    Returns an empty list if the frontend is not configured.
     """
-    config = _get_mcp_frontend_config()
+    config = _get_frontend_config()
     if config is None:
         return []
 
@@ -622,23 +713,23 @@ def _mcp_frontend_error_filters(
         '</body></html>'
     ).replace('__FRONTEND_URL__', config.original_url)
 
-    # Lua filter: tag `/__/web/` requests in `envoy_on_request`
+    # Lua filter: tag `/__/frontend/` requests in `envoy_on_request`
     # via dynamic metadata, then intercept 503 responses and
     # replace the body.
     lua_source = (
         'function envoy_on_request(request_handle)\n'
         '  local p = request_handle:headers():get(":path")'
         ' or ""\n'
-        '  if string.sub(p, 1, 8) == "/__/web/" then\n'
+        '  if string.sub(p, 1, 13) == "/__/frontend/" then\n'
         '    request_handle:streamInfo():dynamicMetadata()'
-        ':set("reboot", "mcp_frontend_request", "1")\n'
+        ':set("reboot", "frontend_request", "1")\n'
         '  end\n'
         'end\n'
         '\n'
         'function envoy_on_response(response_handle)\n'
         '  local md = response_handle:streamInfo()'
         ':dynamicMetadata():get("reboot")\n'
-        '  if md and md["mcp_frontend_request"] == "1" and\n'
+        '  if md and md["frontend_request"] == "1" and\n'
         '     response_handle:headers():get(":status")'
         ' == "503" then\n'
         '    response_handle:headers():replace(\n'
@@ -651,7 +742,7 @@ def _mcp_frontend_error_filters(
 
     return [
         http_connection_manager_pb2.HttpFilter(
-            name="reboot.mcp_frontend_error_page",
+            name="reboot.frontend_error_page",
             typed_config=_lua_any(lua_source),
         )
     ]
@@ -662,6 +753,7 @@ def _filter_http_connection_manager(
     servers: list[ServerInfo],
     file_descriptor_set: FileDescriptorSet,
     trust_caller_id: bool,
+    allowed_origins: Optional[list[str]],
 ) -> listener_components_pb2.Filter:
     http_connection_manager = http_connection_manager_pb2.HttpConnectionManager(
         stat_prefix="grpc_json",
@@ -692,42 +784,11 @@ def _filter_http_connection_manager(
                     #            instead we should set it directly on the
                     #            `envoy.filters.http.cors` filter in the filter
                     #            chain.
-                    cors=route_components_pb2.CorsPolicy(
-                        allow_origin_string_match=[
-                            string_pb2.StringMatcher(
-                                safe_regex=regex_pb2.RegexMatcher(
-                                    # TODO(rjh): deprecated; can remove?
-                                    # We do not know or control where
-                                    # frontends get hosted, and neither
-                                    # do our customers: depending on the
-                                    # MCP client used, a sandbox may
-                                    # have any origin. Permit all
-                                    # origins. Note that the correct
-                                    # incantation for Envoy is `".*"`,
-                                    # not `"*"` (which only matches a
-                                    # literal star).
-                                    google_re2=regex_pb2.RegexMatcher.
-                                    GoogleRE2(),
-                                    regex=".*",
-                                ),
-                            )
-                        ],
-                        allow_methods="GET, PUT, DELETE, POST, OPTIONS",
-                        allow_headers=
-                        f"{APPLICATION_ID_HEADER},{STATE_REF_HEADER},{SERVER_ID_HEADER},{IDEMPOTENCY_KEY_HEADER},{WORKFLOW_ID_HEADER},keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,grpc-timeout,{AUTHORIZATION_HEADER}"
-                        +
-                        # `ngrok-skip-browser-warning` is needed so
-                        # HTML fetches when using ngrok tunnels will
-                        # not get the free-tier interstitial that
-                        # blocks CORS preflight.
-                        ",ngrok-skip-browser-warning",
-                        max_age="1728000",
-                        expose_headers="grpc-status,grpc-message",
-                    ),
+                    cors=_cors_policy(allowed_origins),
                     routes=(
-                        # MCP frontend routes (if configured) must come
+                        # Frontend routes (if configured) must come
                         # first since they match specific prefixes.
-                        _mcp_frontend_routes() + [
+                        _frontend_routes() + [
                             route for server in servers for kind in [
                                 # Always list the route for the websocket
                                 # first, since its matching is more specific.
@@ -768,9 +829,9 @@ def _filter_http_connection_manager(
                 file_descriptor_set=file_descriptor_set,
             ),
         ] +
-        # Friendly error page when the MCP web dev server
+        # Friendly error page when the frontend dev server
         # is unreachable (only active when configured).
-        _mcp_frontend_error_filters() + [
+        _frontend_error_filters() + [
             _http_filter_router(),
         ]
     )
@@ -821,6 +882,7 @@ def listeners(
     use_tls: bool,
     certificate_path: Path,
     key_path: Path,
+    allowed_origins: Optional[list[str]],
 ) -> list[listener_pb2.Listener]:
 
     @dataclass
@@ -872,6 +934,7 @@ def listeners(
                             servers=servers,
                             file_descriptor_set=file_descriptor_set,
                             trust_caller_id=listener.trust_caller_id,
+                            allowed_origins=allowed_origins,
                         ),
                     ],
                     transport_socket=_tls_socket(certificate_path, key_path)
@@ -998,8 +1061,8 @@ def clusters(
 ) -> list[cluster_pb2.Cluster]:
     result: list[cluster_pb2.Cluster] = []
 
-    # Add MCP frontend cluster if configured.
-    frontend_cluster = _mcp_frontend_cluster(local_envoy_mode)
+    # Add frontend cluster if configured.
+    frontend_cluster = _frontend_cluster(local_envoy_mode)
     if frontend_cluster is not None:
         result.append(frontend_cluster)
 

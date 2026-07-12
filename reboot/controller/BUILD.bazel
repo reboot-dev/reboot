@@ -63,7 +63,7 @@ py_library(
         "//reboot/aio:monitoring_py",
         "//reboot/aio:servers_py",
         "//reboot/aio/internals:application_metadata_py",
-        "//reboot/cli:terminal_py",
+        "//reboot/cli/common:terminal_py",
         "//reboot/server:local_envoy_factory_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:placement_planner_py_proto",
         "@com_github_reboot_dev_reboot//reboot:run_environments_py",

@@ -1,3 +1,4 @@
+load("//reboot:versions.bzl", "REBOOT_VERSION")
 load("//tests:sh_test_in_working_directory.bzl", "sh_test_in_working_directory")
 
 test_packages = [
@@ -44,5 +45,91 @@ sh_test_in_working_directory(
     # secure port 9991. We require 'exclusive' to not run multiple
     # tests, that use the same port, concurrently.
     tags = ["exclusive"],
+    working_directory = "reboot/examples/bank-pydantic/",
+)
+
+# The locally built Reboot npm packages that the frontends are
+# type-checked against, instead of the published releases.
+frontend_packages = [
+    "//rbt/v1alpha1:reboot-dev-reboot-api",
+    "//reboot:reboot.dev",
+    "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+    "//reboot/web:reboot-dev-reboot-web",
+    "//reboot/react:reboot-dev-reboot-react",
+]
+
+frontend_env = {
+    "REBOOT_API_NPM_PACKAGE": "$(location //rbt/v1alpha1:reboot-dev-reboot-api)",
+    "REBOOT_NPM_PACKAGE": "$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
+    "REBOOT_REACT_NPM_PACKAGE": "$(location //reboot/react:reboot-dev-reboot-react)",
+    "REBOOT_WEB_NPM_PACKAGE": "$(location //reboot/web:reboot-dev-reboot-web)",
+    "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+}
+
+osx_frontend_env = dict(frontend_env)
+
+osx_frontend_env.update({
+    # Our OSX CI machines don't have Docker.
+    "REBOOT_LOCAL_ENVOY_MODE": "executable",
+})
+
+# Builds and type-checks the React Native (Expo) front end against the
+# locally built Reboot client. See `frontend/mobile/.tests/react_native_test.sh`.
+sh_test_in_working_directory(
+    name = "mobile_test",
+    size = "large",
+    data = frontend_packages + [
+        # The actual test script will be given access to all of the
+        # files in the example.
+        "//reboot/examples/bank-pydantic:everything",
+    ],
+    env = select({
+        "@platforms//os:linux": frontend_env,
+        "@platforms//os:osx": osx_frontend_env,
+    }),
+    # The following path is relative to the working directory. We use
+    # the whole example as the working directory (not just `frontend/mobile/`)
+    # so the sibling `api/` protos that the mobile client is generated
+    # from are copied into the test sandbox; the script `cd`s into
+    # `frontend/mobile/` itself.
+    script = "frontend/mobile/.tests/react_native_test.sh",
+    tags = ["exclusive"],
+    working_directory = "reboot/examples/bank-pydantic/",
+)
+
+# Native end-to-end test: runs the real app on a headless Android
+# emulator (KVM-accelerated) and drives it with Maestro against a real
+# Reboot backend. See `frontend/mobile/.tests/maestro_test.sh`. This is NOT
+# hermetic: it needs the host's `/dev/kvm`, a single emulator, and a
+# long-running Metro/Expo + backend. Hence `manual` (opt-in, not every
+# PR), `local` (needs the host device + KVM, so neither sandboxed nor
+# run on a remote executor), `exclusive` (single emulator + port 9991),
+# and `requires-linux-x86` (the emulator/system image are x86_64-only).
+# The Android SDK + emulator + Maestro come from the devcontainer image.
+sh_test_in_working_directory(
+    name = "maestro_test",
+    size = "large",
+    data = frontend_packages + [
+        "//reboot/examples/bank-pydantic:everything",
+    ],
+    env = frontend_env,
+    script = "frontend/mobile/.tests/maestro_test.sh",
+    tags = [
+        "exclusive",
+        "local",
+        "manual",
+        "requires-linux-x86",
+    ],
+    working_directory = "reboot/examples/bank-pydantic/",
+)
+
+sh_test_in_working_directory(
+    name = "frontend_type_check_test",
+    size = "large",
+    data = frontend_packages + [
+        "//reboot/examples/bank-pydantic:everything",
+    ],
+    env = frontend_env,
+    script = "frontend/.tests/type_check.sh",
     working_directory = "reboot/examples/bank-pydantic/",
 )

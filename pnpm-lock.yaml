@@ -24,25 +24,25 @@ importers:
         specifier: 1.29.0
         version: 1.29.0(zod@3.25.76)
       '@reboot-dev/reboot':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:reboot/nodejs
       '@reboot-dev/reboot-api':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:rbt/v1alpha1
       '@reboot-dev/reboot-react':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:reboot/react
       '@reboot-dev/reboot-std':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:reboot/std
       '@reboot-dev/reboot-std-api':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:rbt/std
       '@reboot-dev/reboot-std-react':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:reboot/std/react
       '@reboot-dev/reboot-web':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:reboot/web
       '@standard-schema/spec':
         specifier: 1.0.0
@@ -187,7 +187,7 @@ importers:
         specifier: 1.10.1
         version: 1.10.1
       '@reboot-dev/reboot-api':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:../../rbt/v1alpha1
       '@scarf/scarf':
         specifier: 1.4.0
@@ -254,10 +254,10 @@ importers:
         specifier: 1.29.0
         version: 1.29.0(zod@3.25.76)
       '@reboot-dev/reboot-api':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:../../rbt/v1alpha1
       '@reboot-dev/reboot-web':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:../web
       '@scarf/scarf':
         specifier: 1.4.0
@@ -300,10 +300,10 @@ importers:
   reboot/std:
     dependencies:
       '@reboot-dev/reboot':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:../nodejs
       '@reboot-dev/reboot-std-api':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:../../rbt/std
       '@scarf/scarf':
         specifier: 1.4.0
@@ -316,16 +316,16 @@ importers:
   reboot/std/react:
     dependencies:
       '@reboot-dev/reboot-api':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:../../../rbt/v1alpha1
       '@reboot-dev/reboot-react':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:../../react
       '@reboot-dev/reboot-std-api':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:../../../rbt/std
       '@reboot-dev/reboot-web':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:../../web
       '@scarf/scarf':
         specifier: 1.4.0
@@ -341,7 +341,7 @@ importers:
         specifier: 1.10.1
         version: 1.10.1
       '@reboot-dev/reboot-api':
-        specifier: 1.1.0
+        specifier: 1.2.1
         version: link:../../rbt/v1alpha1
       '@scarf/scarf':
         specifier: 1.4.0

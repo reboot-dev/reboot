@@ -1,0 +1,14 @@
+{
+  "name": "frontend",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "web",
+    "mobile",
+    "reboot-non-react-web"
+  ],
+  "scripts": {
+    "start": "npm start --workspace web",
+    "build": "npm run build --workspace web"
+  }
+}

@@ -1,4 +1,4 @@
-import reboot.cli.rc as rc
+import reboot.cli.common.rc as rc
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,7 +10,7 @@ def mock_raise_instead_fail(message):
     raise ValueError(message)
 
 
-@patch('reboot.cli.terminal.fail', mock_raise_instead_fail)
+@patch('reboot.cli.common.terminal.fail', mock_raise_instead_fail)
 class RcTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_expand_flags_from_dot_rbtrc(self) -> None:
@@ -262,7 +262,7 @@ class RcTestCase(unittest.IsolatedAsyncioTestCase):
                 f"{file.name}:1: failed to parse '.rbtrc' file:\n'dev'",
             )
 
-    @patch('reboot.cli.terminal.warn')
+    @patch('reboot.cli.common.terminal.warn')
     async def test_renamed_flag_warns(self, mock_warn) -> None:
         """
         Using a renamed flag's old name prints a warning.
@@ -296,7 +296,7 @@ class RcTestCase(unittest.IsolatedAsyncioTestCase):
             "'--old-flag' will be removed in the future."
         )
 
-    @patch('reboot.cli.terminal.warn')
+    @patch('reboot.cli.common.terminal.warn')
     async def test_new_flag_no_warning(self, mock_warn) -> None:
         """Using the new flag name does not print a warning."""
         argv = ['rbt', 'dev', '--new-flag=renamed-flag-value']
@@ -319,7 +319,7 @@ class RcTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(args.new_flag, 'renamed-flag-value')
         mock_warn.assert_not_called()
 
-    @patch('reboot.cli.terminal.warn')
+    @patch('reboot.cli.common.terminal.warn')
     async def test_renamed_flag_in_rbtrc(self, mock_warn) -> None:
         """
         A renamed flag's old name in an `.rbtrc` file prints a warning.
@@ -354,7 +354,7 @@ class RcTestCase(unittest.IsolatedAsyncioTestCase):
                 "future."
             )
 
-    @patch('reboot.cli.terminal.warn')
+    @patch('reboot.cli.common.terminal.warn')
     async def test_renamed_flag_satisfies_required(
         self,
         mock_warn,
@@ -383,7 +383,7 @@ class RcTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(args.new_flag, 'renamed-flag-value')
 
-    @patch('reboot.cli.terminal.warn')
+    @patch('reboot.cli.common.terminal.warn')
     async def test_both_old_and_new_flag_errors(self, mock_warn) -> None:
         """Using both the old and new flag is an error."""
         argv = [
@@ -409,7 +409,7 @@ class RcTestCase(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises((SystemExit, ValueError)):
             parser.parse_args()
 
-    @patch('reboot.cli.terminal.warn')
+    @patch('reboot.cli.common.terminal.warn')
     async def test_old_flag_requires_equals_syntax(
         self,
         mock_warn,

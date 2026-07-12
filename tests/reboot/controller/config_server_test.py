@@ -37,6 +37,7 @@ class TestConfigModeServer(unittest.IsolatedAsyncioTestCase):
                         MyGreeterServicer,
                     ]
                 ],
+                allowed_origins=None,
             )
             self.assertIsInstance(server, ConfigServer)
 

@@ -122,6 +122,9 @@ ENVVAR_REBOOT_EXPECTED_VERSION = 'REBOOT_EXPECTED_VERSION'
 # running in specific modes, e.g., `rbt dev` or `rbt serve`.
 ENVVAR_RBT_DEV = 'RBT_DEV'
 ENVVAR_RBT_SERVE = 'RBT_SERVE'
+# When 'true', the application is running inside a test — a
+# permissive, local-development-like environment.
+ENVVAR_REBOOT_IN_TEST = 'REBOOT_IN_TEST'
 ENVVAR_RBT_NAME = 'RBT_NAME'
 ENVVAR_RBT_EFFECT_VALIDATION = 'RBT_EFFECT_VALIDATION'
 # When set to 'true', effect validation also runs for "trusted" Reboot
@@ -134,10 +137,12 @@ ENVVAR_RBT_STATE_DIRECTORY = 'RBT_STATE_DIRECTORY'
 ENVVAR_RBT_NODEJS = 'RBT_NODEJS'
 ENVVAR_RBT_SERVERS = 'RBT_SERVERS'
 
-# URL of the MCP frontend dev server for HMR support.
+# URL of the frontend dev server (web + MCP) for HMR support.
 # Format: "http://host:port" (e.g., "http://localhost:4444").
-# When set, Envoy routes "/__/web/**" to this server.
-ENVVAR_RBT_MCP_FRONTEND_HOST = 'RBT_MCP_FRONTEND_HOST'
+# When set, Envoy routes "/__/frontend/**" to this server.
+ENVVAR_RBT_FRONTEND_HOST = 'RBT_FRONTEND_HOST'
+ENVVAR_RBT_FRONTEND_ROOT_PATH = 'RBT_FRONTEND_ROOT_PATH'
+ENVVAR_RBT_FRONTEND_DIST_PATH = 'RBT_FRONTEND_DIST_PATH'
 
 # Environment variable indicating that `rbt` is being invoked from
 # Node.js.
@@ -174,6 +179,10 @@ ENVVAR_REBOOT_OAUTH_SIGNING_SECRET = 'REBOOT_OAUTH_SIGNING_SECRET'
 
 # The shared-secret used to authenticate admin requests.
 ENVVAR_SECRET_REBOOT_ADMIN_TOKEN = 'SECRET_REBOOT_ADMIN_TOKEN'
+
+# The admin credential sent to authenticate admin requests; an
+# alternative to passing `--admin-credential` on the command line.
+ENVVAR_REBOOT_ADMIN_CREDENTIAL = 'REBOOT_ADMIN_CREDENTIAL'
 
 # The level of tracing to use. This is a Reboot-internal environment
 # variable; it is not expected to be set by developers using Reboot.

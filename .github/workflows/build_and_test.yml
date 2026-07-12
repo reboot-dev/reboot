@@ -1,7 +1,3 @@
-# This file is generated from a template in `ci/templates/`.
-# Do not edit it directly.
-# Run `bazel run //:ci_workflows` to regenerate it after editing the template.
-
 name: Build and Test
 
 on:
@@ -35,21 +31,6 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  check-ci-consistency:
-    name: Check CI Consistency
-    uses: ./.github/workflows/devcontainer.yml
-    # The nested job needs write permissions, which means this job also needs
-    # them.
-    permissions:
-      packages: write
-    secrets: inherit
-    with:
-      cancel-workflow-on-failure: true
-      runs-on: depot-ubuntu-24.04-4
-      run: |
-        # Fail if CI workflow files don't match templates.
-        bazel test //:ci_workflows_test
-
   check-code-style:
     name: Check Code Style
     uses: ./.github/workflows/devcontainer.yml
@@ -91,6 +72,56 @@ jobs:
         bazel test \
           --test_tag_filters=-requires-docker,-flaky,-manual \
           //tests/...
+
+  test-react-native-maestro:
+    name: Test React Native mobile app (Maestro)
+    uses: ./.github/workflows/devcontainer.yml
+    permissions:
+      packages: write
+    secrets: inherit
+    with:
+      cancel-workflow-on-failure: false
+      # The Maestro end-to-end test boots a hardware-accelerated
+      # Android emulator, which requires `/dev/kvm`. Our Depot runners
+      # don't expose KVM, so this one job runs on a GitHub-hosted runner
+      # (which does); the rest of CI stays on Depot. The devcontainer
+      # already maps `/dev/kvm` into the container (see the `runArgs` in
+      # `.devcontainer/devcontainer.json`). We use the larger runner
+      # because building the workstation image plus running the emulator
+      # exhausts the disk on a standard GitHub-hosted runner.
+      runs-on: 16_core_GitHub_hosted
+      # On failure, upload Maestro's debug output (per-step screenshots +
+      # the view hierarchy, which Maestro writes to `~/.maestro/tests/`)
+      # and the backend/emulator/Expo logs, so a flaky flow can be
+      # diagnosed from the run without reproducing it locally.
+      artifact-name: maestro-debug
+      artifact-path: maestro-artifacts
+      run: |
+        set -eux
+        # Repo root inside the container; it's bind-mounted from the
+        # runner, so artifacts we drop here are visible to the upload
+        # step that runs back on the runner.
+        workspace="$(pwd)"
+        # The targets are tagged `manual`, so name them explicitly
+        # rather than relying on a wildcard expansion to pick them up.
+        # Capture the status so we can still collect artifacts on failure.
+        returncode=0
+        bazel test --test_output=streamed \
+          //tests/reboot/examples/chat-room:maestro_test \
+          //tests/reboot/examples/bank-pydantic:maestro_test || returncode=$?
+        if [ "${returncode}" -ne 0 ]; then
+          destination="${workspace}/maestro-artifacts"
+          mkdir -p "${destination}"
+          # The backend/emulator/Expo logs upload as-is.
+          cp /tmp/rbt.log /tmp/emulator.log /tmp/expo.log "${destination}/" \
+            2> /dev/null || true
+          # Maestro names its per-step screenshots with a `?`, which
+          # `upload-artifact` rejects, so archive its debug output rather
+          # than copying it raw (the `?` is fine inside a tarball).
+          tar czf "${destination}/maestro-debug.tar.gz" -C "${HOME}" \
+            .maestro/tests 2> /dev/null || true
+        fi
+        exit "${returncode}"
 
   build-reboot-linux-arm64:
     name: Build public repo for Linux arm64
@@ -208,6 +239,7 @@ jobs:
         QUERY="$QUERY \
         except attr(\"tags\",\"requires-docker\",//tests/...) \
         except attr(\"tags\",\"macos_not_supported\",//tests/...) \
+        except attr(\"tags\",\"requires-linux-x86\",//tests/...) \
         except attr(\"tags\",\"manual\",//tests/...)"
 
         # 3) If this is a PR labelled "reboot-release", also drop flaky

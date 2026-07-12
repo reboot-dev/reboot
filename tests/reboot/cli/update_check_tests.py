@@ -5,7 +5,7 @@ import os
 import tempfile
 import time
 import unittest
-from reboot.cli import update_check
+from reboot.cli.common import update_check
 from reboot.settings import ENVVAR_REBOOT_NO_VERSION_CHECK
 from unittest.mock import patch
 

@@ -26,11 +26,14 @@ backend behind a standalone React frontend served at a normal URL.
 > cookies / OAuth), and the cross-cutting rules unique to that
 > layer.
 
-> **Not for MCP Chat Apps.** If the app's primary front door is an
-> MCP host (ChatGPT, Claude, VSCode, Goose, …) with MCP tools and
-> embedded UIs, use the [chat-app skill](../chat-app/SKILL.md) instead.
-> Signals you're in the wrong place: `mcp=Tool()`, `UI()`, `User`
-> auto-construct from the MCP host, MCPJam inspector.
+> **Dual-surface apps are supported.** A single app can serve both
+> a standalone web SPA _and_ an MCP front door from the same
+> backend — they share `oauth=...`, the same `User` actor per
+> upstream identity, and the same servicer code. If your app needs
+> both surfaces, also load the
+> [chat-app skill](../chat-app/SKILL.md) for the MCP-specific
+> additions (`mcp=Tool()`, `UI()`, MCPJam).
+> This skill alone covers the web side.
 
 ## When to Use
 
@@ -45,14 +48,14 @@ backend behind a standalone React frontend served at a normal URL.
 
 The Reboot backend is identical. The deltas are all on the surface:
 
-| Concern      | Chat App (`chat-app`)                                    | Web App (this skill)                                     |
-| ------------ | -------------------------------------------------------- | -------------------------------------------------------- |
-| Front door   | MCP host (ChatGPT, Claude, …) creates a `User` per user. | Browser user logs in; you decide the auth scheme.        |
-| API exposure | `mcp=Tool()` on writer/transaction methods.              | Methods exposed only through the generated React client. |
-| UI shape     | `UI()` methods → artifacts embedded in the MCP host.     | A normal SPA at `web/` opened at a URL.                  |
-| Vite config  | Special — nested `dist/<ui-path>/index.html` for MCP.    | Stock single-page Vite output.                           |
-| Test surface | MCPJam inspector.                                        | Browser + the standard React devtools / Playwright.      |
-| `User` type  | Required — the MCP entry point.                          | Optional — only if your app needs per-user state.        |
+| Concern      | Chat App (`chat-app`)                                    | Web App (this skill)                                                                   |
+| ------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Front door   | MCP host (ChatGPT, Claude, …) creates a `User` per user. | Browser user signs in via `Application(oauth=...)`; same `User` per upstream identity. |
+| API exposure | `mcp=Tool()` on writer/transaction methods.              | Methods exposed only through the generated React client.                               |
+| UI shape     | `UI()` methods → artifacts embedded in the MCP host.     | A normal SPA at `web/` opened at a URL.                                                |
+| Vite config  | Special — nested `dist/<ui-path>/index.html` for MCP.    | Stock single-page Vite output.                                                         |
+| Test surface | MCPJam inspector.                                        | Browser + the standard React devtools / Playwright.                                    |
+| `User` type  | Required — the MCP entry point.                          | Optional — only if your app needs per-user state.                                      |
 
 Backend mechanics (state, methods, Servicers, workflows, refs,
 scheduling, stdlib actors, errors, auth predicates, testing) are
@@ -61,63 +64,96 @@ scheduling, stdlib actors, errors, auth predicates, testing) are
 ## Auth in Web Apps
 
 Web apps wire identity via
-`Application(token_verifier=<TokenVerifier>)`, integrating with an
-external IdP (Auth0, Firebase, your own JWT issuer, …). Standing
-that up is a real piece of work — and until it's done, no caller
-has a `context.auth.user_id`, so authorizer rules that depend on
-identity can't be satisfied.
+`Application(oauth=OAuthProviderByEnvironment(dev=Development(), prod=Google(...)))`
+— the same parameter MCP chat apps use. Reboot mounts its
+built-in OAuth Authorization Server at `/__/oauth/*` and brokers
+sign-in against the configured upstream IdP. Browser sessions
+are carried in an HttpOnly `rbt_session` cookie set by
+`/__/oauth/finish`; the framework reads it as a bearer on every
+RPC, so user code only sees `context.auth.user_id` (same shape
+as MCP).
 
-> **Don't use `Application(oauth=...)` for web apps.** The `oauth=`
-> slot (including `Development()`) is currently MCP-chat-app-only and
-> doesn't work for browser-served web apps. For a web app, leave
-> `oauth=` unset and use the `token_verifier=` path below. (Web-app
-> support for `oauth=` is planned but not yet available.)
+> **`token_verifier=` is the escape hatch, not the default.** Use
+> it only when you need to integrate with an IdP that the
+> built-in `oauth=` providers don't cover (e.g. an enterprise
+> SAML/OIDC broker you can't wrap as an `OAuthProvider`
+> subclass), or when you need custom token semantics. For
+> standard Google/GitHub/Auth0/anonymous sign-in, prefer
+> `oauth=...`. The two compose: when both are set, Reboot's own
+> verifier runs first and any token it has no opinion on
+> (anything that is not a Reboot-minted access JWT) falls
+> through to yours.
 
 Recommended sequence:
 
-1. **Early development (no verifier yet):** **omit `authorizer()`**
-   on Servicers. `rbt dev` allows the calls and logs a 60-second
-   warning naming every unauthorized method — that warning is your
-   TODO list. Do **not** paper this over with `allow()`; `allow()`
-   means "public, unauthenticated internet endpoint" and survives
-   into production.
-2. **Before `rbt serve` / Reboot Cloud:** install a `TokenVerifier`,
-   then add `allow_if(...)` rules to every Servicer that should be
-   externally reachable. See
+1. **Early development (no provider chosen yet):** configure
+   `oauth=OAuthProviderByEnvironment(dev=Development(), prod=None)`.
+   `Development()` is a built-in fake account picker that lets
+   you sign in as any identity at `/__/oauth/start`; `prod=None`
+   fails fast at startup if you accidentally `rbt serve` without
+   choosing a real provider. **Omit `authorizer()`** on
+   Servicers; `rbt dev` allows the calls and logs a 60-second
+   warning naming every unauthorized method — that warning is
+   your TODO list. Do **not** paper this over with `allow()`;
+   `allow()` means "public, unauthenticated internet endpoint"
+   and survives into production.
+2. **Before `rbt serve` / Reboot Cloud:** set `prod=Google(...)`
+   (or `GitHub(...)`, `Auth0(...)`, your own `OAuthProvider`
+   subclass), then add `allow_if(...)` rules to every Servicer
+   that should be externally reachable. See
    `python/references/servicer-authorizer.md`,
    `python/references/auth-allow-if.md`, and
-   `python/references/auth-built-in-predicates.md`. In unit tests,
-   substitute `TokenVerifierForTest()` (from `reboot.aio.tests`)
-   for your IdP verifier and impersonate users with
-   `bearer_token=rbt.make_valid_oauth_access_token(user_id=...)`
-   — the authorizer rules still run for real.
+   `python/references/auth-built-in-predicates.md`. The
+   provider-selection rules are identical to MCP chat apps —
+   load the
+   [chat-app/references/auth-oauth-providers.md](../chat-app/references/auth-oauth-providers.md)
+   reference for the per-provider details (client IDs, scopes,
+   `store_tokens=True`, the user-ID-namespace gotcha when
+   switching providers post-launch). In unit tests, keep
+   `token_verifier=<your IdP verifier>` exactly as in production —
+   the test harness's OAuth server verifies the impersonation token
+   minted by `await rbt.create_external_context_as(name, user_id)`,
+   and a custom bearer a test constructs by hand still hits your IdP
+   verifier; the authorizer rules run for real either way.
 3. **Public, unauthenticated endpoints** (health checks, public
    sign-up, public catalog reads): mark these explicitly with
    `allow()`. That's the one legitimate use.
 
 ### Feeding the user's identity into hooks — never fabricate an id
 
-A generated `use<Type>({ id })` hook needs a **real, non-empty
-actor id on every render**. It is not SWR-style: there is no
-"pass `null`/`undefined` to skip the subscription" mode. A falsy
-id is a hard throw during render, not a paused hook —
+With `Application(oauth=...)`, the signed-in user's own state
+needs no id-threading at all: call the `User` hook with **no
+arguments** and branch on its `{ user, isLoading }` shape (see
+"Browser-side wiring (React)" below); the signed-in user's id —
+for passing into backend calls or other components — is
+`user.state_id`.
+
+An **explicit-id** call (`use<Type>({ id })`) needs a **real,
+non-empty actor id on every render**. It is not SWR-style: there
+is no "pass `null`/`undefined` to skip the subscription" mode. A
+falsy id is a hard throw during render, not a paused hook —
 `id: ''` throws `state ID must have a length of at least 1` and
 `id: undefined` throws a `TypeError` inside `stateIdToRef`. Either
 one crashes the component.
 
-The trap: browser identity (Auth0, Firebase, your own JWT)
-resolves **asynchronously**, so on the first renders you have no
-user id yet. Do **not** dodge the throw by fabricating a
-placeholder — `useUser({ id: userId || '__no-user__' })` is
-wrong. An actor id is a **global key**, so every loading session
+The trap: browser identity resolves **asynchronously** (the
+`/__/oauth/whoami` probe under `oauth=`, or an external IdP like
+Auth0/Firebase under `token_verifier=`), so on the first renders
+you have no user id yet. Do **not** dodge the throw by
+fabricating a placeholder — `useUser({ id: userId || '__no-user__' })`
+is wrong. An actor id is a **global key**, so every loading session
 subscribes to the same shared `__no-user__` actor, it's one
 missed write-guard away from cross-user state, and the placeholder
 addresses nothing — it just silences the crash.
 
-Since the hook can't be told "no id" and can't be called
-conditionally (React's rules of hooks), the fix is to **not mount
-the component that calls the hook until you have the real id**.
-Gate at the parent and pass a guaranteed-real id down:
+Since an explicit-id hook can't be told "no id" and can't be
+called conditionally (React's rules of hooks), the fix is to **not
+mount the component that calls the hook until you have the real
+id**. Guard at the parent and pass a guaranteed-real id down. With
+`oauth=` that guard is the no-arguments `useUser()` pattern from
+"Browser-side wiring (React)" below — inside the signed-in
+subtree, `user.state_id` is guaranteed real. With an external IdP
+the shape is the same:
 
 ```tsx
 function UserHome() {
@@ -143,12 +179,16 @@ key is real.
 
 To act **as the user** at an external service (call their Slack,
 Google, a partner API), store that service's OAuth tokens encrypted in
-an `OAuthTokenManager` and make the call inside a `Workflow`. Because a
-web app has no `Application(oauth=...)`, the chat-app `store_tokens=True`
-shortcut isn't available — you always run the service's OAuth flow
-yourself with your own authorize/callback HTTP endpoints (a callback
-registered `app_internal=True`) and call `OAuthTokenManager.store`. The
-full host-agnostic recipe — endpoints, storage, reading tokens back, the
+an `OAuthTokenManager` and make the call inside a `Workflow`. When the
+API belongs to the identity provider you already sign in with via
+`Application(oauth=...)` (`Google` / `GitHub` / `Auth0`), use the
+`store_tokens=True` shortcut: add the extra `scopes=[...]` your calls
+need and the OAuth server captures the provider's tokens at sign-in
+(Path A in `python/references/auth-external-api-calls.md`). For any
+other service, run that service's OAuth flow yourself with your own
+authorize/callback HTTP endpoints (a callback registered
+`app_internal=True`) and call `OAuthTokenManager.store`. The full
+host-agnostic recipe — endpoints, storage, reading tokens back, the
 in-`Workflow` call, refresh, and erasure — is
 `python/references/auth-external-api-calls.md` (Path B). Never store
 tokens in a plain `str` field or hand-roll `Ciphertext`
@@ -156,6 +196,57 @@ tokens in a plain `str` field or hand-roll `Ciphertext`
 OAuth at all and the user pastes an **API key** instead, that key goes
 through `Ciphertext` (the ciphertext id kept in state) — Path C in the
 same recipe.
+
+### Browser-side wiring (React)
+
+Wrap your app in `<RebootClientProvider>` and branch on the
+generated `useUser()` hook for the `User` state type — the same
+hook MCP-embedded UIs use. Called with no id, `useUser()` returns
+`{ user, isLoading }`: `isLoading` is true while the session probe
+(`/__/oauth/whoami`) is in flight, then `user` is the handle once
+signed in or `undefined` when signed out. Pass the resolved `user`
+handle to your signed-in subtree and read its id from
+`user.state_id`:
+
+```tsx
+import {
+  RebootClientProvider,
+  useSignIn,
+  useSignOut,
+} from "@reboot-dev/reboot-react";
+import { UseUserApi, useUser } from "./gen/your_api/v1/your_api_rbt_react";
+
+function App() {
+  const { user, isLoading } = useUser();
+  const signIn = useSignIn();
+  const signOut = useSignOut();
+  if (isLoading) {
+    return <Spinner />;
+  }
+  if (user === undefined) {
+    return <button onClick={() => signIn()}>Sign in</button>;
+  }
+  return (
+    <>
+      <button onClick={() => signOut()}>Sign out</button>
+      <YourSignedInApp user={user} />
+    </>
+  );
+}
+
+// The signed-in subtree takes the `user` handle directly; read its
+// id from `user.state_id` and its readers/mutators off the handle.
+function YourSignedInApp({ user }: { user: UseUserApi }) {
+  const { response } = user.useWhoami();
+  // ...
+}
+
+export default () => (
+  <RebootClientProvider>
+    <App />
+  </RebootClientProvider>
+);
+```
 
 ## Read These From `python` First
 
@@ -214,8 +305,9 @@ mechanics. The patterns in this skill assume you've read them.
 **Auth (browser users — see "Auth in Web Apps" below for the dev-vs-prod sequence):**
 
 - `python/references/servicer-authorizer.md` — **start here**.
-  Explains the `token_verifier=` vs. `oauth=` distinction and when
-  to defer writing `authorizer()` vs. write rules from day one.
+  Explains `oauth=` (the default) vs. `token_verifier=` (the
+  escape hatch for custom IdPs) and when to defer writing
+  `authorizer()` vs. write rules from day one.
 - `python/references/auth-allow-if.md`,
   `python/references/auth-built-in-predicates.md`,
   `python/references/auth-custom-predicates.md` — the predicate
@@ -370,7 +462,7 @@ Before writing code, analyze the user's request:
    each page call? React hooks generated by `rbt generate --react=...`
    wrap the calls.
 7. **Auth**: Anonymous-only, public-read + authed-write, fully
-   gated, …? See `python/references/auth-*.md`.
+   locked down, …? See `python/references/auth-*.md`.
 
 ## Project Layout
 
@@ -407,7 +499,7 @@ Before writing code, analyze the user's request:
 Key differences from a `chat-app` layout:
 
 - `web/index.html` lives at the top of `web/` (single SPA entry),
-  **not** under `web/ui/<name>/index.html`.
+  **not** under `frontend/mcp/<name>/index.html`.
 - `vite.config.ts` is the **stock** Vite config — no nested-output
   override, no `viteSingleFile` plugin. There's no MCP host
   resolving artifacts by path.
@@ -457,7 +549,7 @@ application directory.**
     `isLoading` with stale `response`. Transport disconnects
     auto-reconnect and do **not** surface via `aborted`, so don't
     reach for `aborted` or a heartbeat for an online/offline badge.
-    When a hook's `id` comes from the authenticated user, gate the
+    When a hook's `id` comes from the authenticated user, guard the
     component so it only mounts once the id is real — see "Feeding
     the user's identity into hooks" above. Never fabricate a
     placeholder id to get past the non-empty-id validation.
@@ -478,18 +570,17 @@ application directory.**
     `Service.ref(id).method(context, ...)` for all calls —
     never instantiate Servicers directly. Register the **real**
     servicers — never subclass a servicer in tests to weaken its
-    `authorizer()`. Impersonate users instead:
-    `Application(..., token_verifier=TokenVerifierForTest())`
-    (from `reboot.aio.tests`; it swaps only the identity layer,
-    standing in for your production IdP verifier) plus
-    `bearer_token=rbt.make_valid_oauth_access_token(user_id=...)`
-    — see the impersonation pattern in `testing-harness.md`. Run
+    `authorizer()`. Impersonate users instead: keep
+    `Application(..., token_verifier=<your IdP verifier>)` exactly
+    as in production and call
+    `await rbt.create_external_context_as(name, user_id)` — see the
+    impersonation pattern in `testing-harness.md`. Run
     `cd backend && uv run pytest` and fix anything that fails.
     Then type-check: run `uv run mypy backend/` from the project
     root and fix every error (config and rationale in
     `python/references/lifecycle-project-setup.md`). Do not
     proceed to the next step until every user-story test passes
-    and mypy is green — together they are the gate that catches
+    and mypy is green — together they are what catches
     contract bugs before the user opens the browser.
 13. Run the app — load the [`run` skill](../run/SKILL.md) and
     follow it. It is the single canonical "start the app"

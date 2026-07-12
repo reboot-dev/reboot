@@ -7,7 +7,7 @@ MCP UI, `RebootClientProvider` must wrap exactly one React element —
 your UI App component. A misconfigured tree now throws at render time
 with a message explaining the fix.
 
-In each UI's `main.tsx` (typically under a `web/ui/<name>/` directory),
+In each UI's `main.tsx` (typically under a `frontend/mcp/<name>/` directory),
 find any `RebootClientProvider` that wraps more than one child, a
 fragment (`<>...</>`), an array, or a non-element child, e.g.:
 

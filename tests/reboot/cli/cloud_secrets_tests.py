@@ -1,7 +1,7 @@
-import reboot.cli.cli as cli
+import reboot.cli.common.cli as cli
 import unittest
-from reboot.cli.cloud.secrets import cloud_secret_set
-from reboot.cli.rc import ArgumentParser
+from reboot.cli.commands.cloud.secrets import cloud_secret_set
+from reboot.cli.common.rc import ArgumentParser
 from tests.reboot.cli.mock_exit import (
     MockExitException,
     mock_raise_instead_of_exit,
@@ -91,9 +91,11 @@ class CloudSecretSetTestCase(unittest.IsolatedAsyncioTestCase):
         # run without a live cloud.
         with (
             self.assertRaises(SystemExit),
-            patch('reboot.cli.cloud.secrets.terminal.fail', mock_fail),
             patch(
-                'reboot.cli.cloud.secrets._parse_common_cloud_args',
+                'reboot.cli.commands.cloud.secrets.terminal.fail', mock_fail
+            ),
+            patch(
+                'reboot.cli.commands.cloud.secrets._parse_common_cloud_args',
                 new_callable=AsyncMock,
                 return_value=(None, 'test/my-app', None),
             ),
@@ -131,12 +133,12 @@ class CloudSecretSetTestCase(unittest.IsolatedAsyncioTestCase):
         with (
             patch.dict('os.environ', {'SOMETHING_FROM_ENV': 'env-value'}),
             patch(
-                'reboot.cli.cloud.secrets._parse_common_cloud_args',
+                'reboot.cli.commands.cloud.secrets._parse_common_cloud_args',
                 new_callable=AsyncMock,
                 return_value=(None, 'test/my-app', None),
             ),
             patch(
-                'reboot.cli.cloud.secrets.Application.ref',
+                'reboot.cli.commands.cloud.secrets.Application.ref',
                 return_value=MagicMock(set_secrets=mock_set_secrets),
             ),
         ):

@@ -1,3 +1,4 @@
+load("//reboot:versions.bzl", "REBOOT_VERSION")
 load("//tests:sh_test_in_working_directory.bzl", "sh_test_in_working_directory")
 
 # TODO: This `sh_library` is a necessary indirection until Bazel 6, because a `sh_binary`
@@ -44,5 +45,32 @@ sh_test_in_working_directory(
     # secure port 9991. We require 'exclusive' to not run multiple
     # tests, that use the same port, concurrently.
     tags = ["exclusive"],
+    working_directory = "reboot/examples/bank/",
+)
+
+frontend_packages = [
+    "//rbt/v1alpha1:reboot-dev-reboot-api",
+    "//reboot:reboot.dev",
+    "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+    "//reboot/web:reboot-dev-reboot-web",
+    "//reboot/react:reboot-dev-reboot-react",
+]
+
+frontend_env = {
+    "REBOOT_API_NPM_PACKAGE": "$(location //rbt/v1alpha1:reboot-dev-reboot-api)",
+    "REBOOT_NPM_PACKAGE": "$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
+    "REBOOT_REACT_NPM_PACKAGE": "$(location //reboot/react:reboot-dev-reboot-react)",
+    "REBOOT_WEB_NPM_PACKAGE": "$(location //reboot/web:reboot-dev-reboot-web)",
+    "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+}
+
+sh_test_in_working_directory(
+    name = "frontend_type_check_test",
+    size = "large",
+    data = frontend_packages + [
+        "//reboot/examples/bank:everything",
+    ],
+    env = frontend_env,
+    script = "frontend/.tests/type_check.sh",
     working_directory = "reboot/examples/bank/",
 )

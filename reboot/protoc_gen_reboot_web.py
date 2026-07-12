@@ -2,7 +2,7 @@
 import os
 import reboot.aio.tracing
 from dataclasses import dataclass
-from reboot.cli import terminal
+from reboot.cli.common import terminal
 from reboot.protoc_gen_reboot_generic import (
     BaseClient,
     BaseFile,

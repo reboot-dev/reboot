@@ -77,13 +77,13 @@ for manual fix-ups).
 uv sync
 
 # Install web dependencies.
-cd web && npm install && cd ..
+cd frontend && npm install && cd ..
 
 # Generate API code (Python + React bindings).
 uv run rbt generate
 
 # Build the React UIs.
-cd web && npm run build && cd ..
+cd frontend && npm run build && cd ..
 ```
 
 The librarian runs on Anthropic's Claude via Pydantic AI, so
@@ -114,7 +114,7 @@ project directory):
 uv run rbt dev run
 
 # Terminal 2: start the Vite dev server for Hot Module Replacement.
-cd web && npm run dev
+cd frontend && npm run dev
 ```
 
 Then open <http://localhost:9991> and follow the setup wizard to
@@ -184,9 +184,9 @@ agent-wiki/
 │       ├── main.py             # Application entrypoint.
 │       └── servicers/wiki.py   # User/Wiki/Page/Transcript servicers
 │                               # plus the Pydantic AI librarian agent.
-└── web/
+└── frontend/
     ├── api/                    # Generated React bindings.
-    └── ui/
+    └── mcp/
         ├── wiki_view/          # Renders a Wiki's markdown body.
         ├── page_view/          # Renders a Page's markdown body.
         ├── transcript_view/    # Renders a raw Transcript.

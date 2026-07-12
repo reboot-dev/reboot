@@ -10,5 +10,5 @@
     "jsx": "react-jsx",
     "incremental": true
   },
-  "exclude": ["node_modules", "dist", "web", "web-vite", "web-next"]
+  "exclude": ["node_modules", "dist", "frontend"]
 }

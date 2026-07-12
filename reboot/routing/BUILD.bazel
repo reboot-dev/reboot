@@ -2,6 +2,16 @@ load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
+    name = "cors_settings_py",
+    srcs = ["cors_settings.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//reboot/aio:headers_py",
+    ],
+)
+
+py_library(
     name = "envoy_config_py",
     srcs = [
         "envoy_config.py",
@@ -24,6 +34,13 @@ py_library(
         "//envoy/extensions/transport_sockets/tls/v3:tlsv3_py_proto",
         "//envoy/extensions/upstreams/http/v3:httpv3_py_proto",
         "//envoy/type/matcher/v3:matcherv3_py_proto",
+        # Repo-relative (unlike the `@com_github_reboot_dev_reboot`
+        # siblings below) so `allowed_origins.py` lands under the same
+        # runfiles root as the `reboot.aio.auth` package that
+        # consumers like `rbt` resolve, in both the mono and the
+        # public workspace.
+        "//reboot/aio/auth:allowed_origins_py",
+        "//reboot/routing:cors_settings_py",
         "//reboot/routing/filters:lua_py",
         "@com_github_reboot_dev_reboot//rbt/v1alpha1:database_py_proto",
         "@com_github_reboot_dev_reboot//reboot:helpers_py",

@@ -40,7 +40,8 @@ self.assertEqual(response.messages, ["Hello, World"])
 
 To satisfy real authorizers (e.g. an MCP-style app where the
 production authorizer is `state_id_is_user_id`), impersonate a user
-with a bearer token — see "Test Against the Real Authorizers" in
+with `await rbt.create_external_context_as(name, user_id)` — see
+"Test Against the Real Authorizers" in
 [testing-harness.md](testing-harness.md). Don't bypass authorization
 by weakening `authorizer()` in tests.
 
@@ -87,11 +88,9 @@ To test that a different user cannot touch another user's state,
 create a **second** context with a different `user_id`:
 
 ```python
-other_context = self.rbt.create_external_context(
+other_context = await self.rbt.create_external_context_as(
     name=f"other-{self.id()}",
-    bearer_token=self.rbt.make_valid_oauth_access_token(
-        user_id="other-user",
-    ),
+    user_id="other-user",
 )
 other_cart = Cart.ref(cart.state_id)
 

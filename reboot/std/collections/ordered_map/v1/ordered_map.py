@@ -865,7 +865,7 @@ class OrderedMapServicer(OrderedMap.singleton.Servicer):
         )
 
         state.maintain_size = request.maintain_size
-        state.root_id = str(uuid.uuid4)
+        state.root_id = str(uuid.uuid4())
         await Node.ref(state.root_id).Create(
             context,
             degree=request.degree,

@@ -30,7 +30,7 @@ generate --boilerplate=boilerplate/
 # Tell `rbt` where to output its generated files.
 # The paths are different for backend and frontend code.
 generate --python=backend/api
-generate --react=web/src/gen
+generate --react=frontend/api
 
 # Watch if any generated or source files are modified.
 dev run --watch=backend/api/**/*.py

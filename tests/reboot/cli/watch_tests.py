@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from contextlib import asynccontextmanager
 from pathlib import Path
-from reboot.cli import watch
+from reboot.cli.common import watch
 from tempfile import TemporaryDirectory
 from typing import AsyncIterator
 

@@ -36,6 +36,6 @@ pushd backend
 popd
 
 # And build the frontend.
-pushd web
+pushd frontend/web
   yarn run next build --no-lint --experimental-build-mode=compile
 popd

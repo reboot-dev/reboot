@@ -34,11 +34,13 @@ class LocalConfigExtractor:
         self,
         serviceables: list[Serviceable],
         servers: Optional[int],
+        allowed_origins: Optional[list[str]],
     ) -> ApplicationConfig:
         spec = application_config_spec_from_routables(
             routables=serviceables,
             replicas=self._replicas,
             servers=servers,
+            allowed_origins=allowed_origins,
         )
         return LocalApplicationConfig(
             application_id=self._application_id,

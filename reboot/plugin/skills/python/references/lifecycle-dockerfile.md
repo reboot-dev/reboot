@@ -64,22 +64,22 @@ static web server for an embedded UI artifact, add two layers between
 
 ```dockerfile
 # After `COPY .rbtrc`, before `RUN rbt generate`:
-COPY web/ web/
+COPY frontend/ frontend/
 
-# Standard rbt codegen — generates `backend/api/` AND `web/api/`.
+# Standard rbt codegen — generates `backend/api/` AND `frontend/api/`.
 RUN rbt generate
 
-# Build the React UIs into `web/dist/`. For MCP apps the Reboot app
+# Build the React UIs into `frontend/dist/`. For MCP apps the Reboot app
 # itself is also the static web server, so it needs these static
 # assets.
-RUN cd web && npm ci && npm run build
+RUN cd frontend && npm ci && npm run build
 
 # Then the existing `COPY backend/src/ backend/src/` and `CMD ...`.
 ```
 
-`COPY web/` lands **before** `RUN rbt generate` on purpose: the
-generator writes fresh React bindings into `web/api/`, and if `web/`
-were copied after, any stale local `web/api/` from a previous run
+`COPY frontend/` lands **before** `RUN rbt generate` on purpose: the
+generator writes fresh React bindings into `frontend/api/`, and if `frontend/`
+were copied after, any stale local `frontend/api/` from a previous run
 would clobber the freshly generated copy.
 
 ## Why the Layering Matters
@@ -89,10 +89,10 @@ layers least- to most-frequently-changing:
 
 1. `COPY requirements.lock requirements.txt` + `RUN pip install` —
    rebuilt only when dependencies change.
-2. `COPY api/` + `COPY .rbtrc` + (for MCP) `COPY web/` — rebuilt when
+2. `COPY api/` + `COPY .rbtrc` + (for MCP) `COPY frontend/` — rebuilt when
    the API schema or `.rbtrc` (or web sources) change.
 3. `RUN rbt generate` — runs whenever the previous layer changes.
-4. (For MCP) `RUN cd web && npm ci && npm run build` — frontend build.
+4. (For MCP) `RUN cd frontend && npm ci && npm run build` — frontend build.
 5. `COPY backend/src/` — rebuilt on every backend edit.
 6. `CMD ["rbt", "serve", "run"]` — never invalidated.
 
@@ -110,6 +110,10 @@ production lines that need to be in `.rbtrc` for a Cloud deploy:
 ```sh
 # Tell `rbt serve` this is a Python application.
 serve run --python
+
+# If the app bundles a frontend (built to `frontend/dist/`), serve it
+# at `/__/frontend/` from the built-in HTTP server.
+serve run --frontend-dist-path=frontend/dist --frontend-root-path=frontend
 
 # Entry point.
 serve run --application=backend/src/main.py
@@ -130,7 +134,7 @@ Keep the build context small and the image clean. Two variants
 matching the two Dockerfile patterns above; both derived from
 [the `reboot-agent-wiki` example's `.dockerignore`](https://github.com/reboot-dev/reboot-agent-wiki/blob/main/.dockerignore).
 
-**Backend-only** (no `web/` content makes it into the image):
+**Backend-only** (no `frontend/` content makes it into the image):
 
 ```gitignore
 # Python runtime caches and venv — rebuilt inside the image.
@@ -163,8 +167,8 @@ web/
 README.md
 ```
 
-**Bundled-web (MCP / chat app)** — keep `web/` sources the in-image
-`npm ci && npm run build` needs, drop everything else under `web/`:
+**Bundled-web (MCP / chat app)** — keep `frontend/` sources the in-image
+`npm ci && npm run build` needs, drop everything else under `frontend/`:
 
 ```gitignore
 # Python runtime caches and venv — rebuilt inside the image.
@@ -179,11 +183,11 @@ __pycache__/
 
 # Generated code — regenerated inside the image.
 backend/api/
-web/api/
+frontend/api/
 
 # Node deps + build output — rebuilt inside the image.
-web/node_modules/
-web/dist/
+frontend/node_modules/
+frontend/dist/
 
 # VCS.
 .git/
@@ -207,9 +211,9 @@ README.md
 - Base image version drifts from the `reboot==` pin. The base image
   bakes in a specific `rbt` CLI and runtime — a mismatch surfaces as
   obscure protocol or codegen errors on first deploy.
-- Running `rbt generate` **before** `COPY web/` (for the bundled-web
-  variant). The fresh `web/api/` bindings get clobbered by the stale
-  local copy when `web/` is finally copied in. Follow the example's
+- Running `rbt generate` **before** `COPY frontend/` (for the bundled-web
+  variant). The fresh `frontend/api/` bindings get clobbered by the stale
+  local copy when `frontend/` is finally copied in. Follow the example's
   order.
 - Putting production flags on the `CMD` line instead of in `.rbtrc`'s
   `serve run` config. It works, but truth is now split across two

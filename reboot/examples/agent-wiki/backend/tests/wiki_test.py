@@ -19,8 +19,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from reboot.aio.applications import Application
-from reboot.aio.auth.oauth_providers import Anonymous
-from reboot.aio.tests import OAuthProviderForTest, Reboot
+from reboot.aio.tests import Reboot
 from servicers import wiki as wiki_module
 from servicers.wiki import (
     PageServicer,
@@ -89,15 +88,12 @@ class _WikiTestBase(unittest.IsolatedAsyncioTestCase):
         await self.rbt.up(
             Application(
                 servicers=APPLICATION_SERVICERS,
-                oauth=OAuthProviderForTest(Anonymous()),
             ),
         )
         self.user_id = "alice"
-        self.context = self.rbt.create_external_context(
+        self.context = await self.rbt.create_external_context_as(
             name=f"test-{self.id()}",
-            bearer_token=self.rbt.make_valid_oauth_access_token(
-                user_id=self.user_id,
-            ),
+            user_id=self.user_id,
         )
         # `User` is an auto-constructed state type: in
         # production the MCP session's "new session" hook

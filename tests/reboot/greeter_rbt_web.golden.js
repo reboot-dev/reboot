@@ -1892,6 +1892,7 @@ class _Idempotently {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: __classPrivateFieldGet(this, __Idempotently_idempotencyKey, "f"),
         });
         return GreeterCreateResponseFromProtobufShape(responseProtobuf);
@@ -1908,6 +1909,7 @@ class _Idempotently {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: __classPrivateFieldGet(this, __Idempotently_idempotencyKey, "f"),
         });
         return GreeterSetAdjectiveResponseFromProtobufShape(responseProtobuf);
@@ -1924,6 +1926,7 @@ class _Idempotently {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: __classPrivateFieldGet(this, __Idempotently_idempotencyKey, "f"),
         });
         return GreeterTransactionSetAdjectiveResponseFromProtobufShape(responseProtobuf);
@@ -1940,6 +1943,7 @@ class _Idempotently {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: __classPrivateFieldGet(this, __Idempotently_idempotencyKey, "f"),
         });
         return GreeterTestLongRunningWriterResponseFromProtobufShape(responseProtobuf);
@@ -1956,6 +1960,7 @@ class _Idempotently {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: __classPrivateFieldGet(this, __Idempotently_idempotencyKey, "f"),
         });
         return GreeterDangerousFieldsResponseFromProtobufShape(responseProtobuf);
@@ -1972,6 +1977,7 @@ class _Idempotently {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: __classPrivateFieldGet(this, __Idempotently_idempotencyKey, "f"),
         });
         return GreeterStoreRecursiveMessageResponseFromProtobufShape(responseProtobuf);
@@ -1988,6 +1994,7 @@ class _Idempotently {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: __classPrivateFieldGet(this, __Idempotently_idempotencyKey, "f"),
         });
         return GreeterConstructAndStoreRecursiveMessageResponseFromProtobufShape(responseProtobuf);
@@ -2026,6 +2033,7 @@ export class GreeterWeakReference {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: idempotencyKey,
         });
         return GreeterCreateResponseFromProtobufShape(protobufResponse);
@@ -2044,6 +2052,7 @@ export class GreeterWeakReference {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: idempotencyKey,
         });
         return GreeterGreetResponseFromProtobufShape(protobufResponse);
@@ -2062,6 +2071,7 @@ export class GreeterWeakReference {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: idempotencyKey,
         });
         return GreeterSetAdjectiveResponseFromProtobufShape(protobufResponse);
@@ -2080,6 +2090,7 @@ export class GreeterWeakReference {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: idempotencyKey,
         });
         return GreeterTransactionSetAdjectiveResponseFromProtobufShape(protobufResponse);
@@ -2098,6 +2109,7 @@ export class GreeterWeakReference {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: idempotencyKey,
         });
         return GreeterTryToConstructContextResponseFromProtobufShape(protobufResponse);
@@ -2116,6 +2128,7 @@ export class GreeterWeakReference {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: idempotencyKey,
         });
         return GreeterTryToConstructExternalContextResponseFromProtobufShape(protobufResponse);
@@ -2134,6 +2147,7 @@ export class GreeterWeakReference {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: idempotencyKey,
         });
         return GreeterTestLongRunningFetchResponseFromProtobufShape(protobufResponse);
@@ -2152,6 +2166,7 @@ export class GreeterWeakReference {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: idempotencyKey,
         });
         return GreeterTestLongRunningWriterResponseFromProtobufShape(protobufResponse);
@@ -2170,6 +2185,7 @@ export class GreeterWeakReference {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: idempotencyKey,
         });
         return GreeterGetWholeStateResponseFromProtobufShape(protobufResponse);
@@ -2188,6 +2204,7 @@ export class GreeterWeakReference {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: idempotencyKey,
         });
         return GreeterFailWithExceptionResponseFromProtobufShape(protobufResponse);
@@ -2206,6 +2223,7 @@ export class GreeterWeakReference {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: idempotencyKey,
         });
         return GreeterFailWithAbortedResponseFromProtobufShape(protobufResponse);
@@ -2224,6 +2242,7 @@ export class GreeterWeakReference {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: idempotencyKey,
         });
         return GreeterDangerousFieldsResponseFromProtobufShape(protobufResponse);
@@ -2242,6 +2261,7 @@ export class GreeterWeakReference {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: idempotencyKey,
         });
         return GreeterStoreRecursiveMessageResponseFromProtobufShape(protobufResponse);
@@ -2260,6 +2280,7 @@ export class GreeterWeakReference {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: idempotencyKey,
         });
         return GreeterReadRecursiveMessageResponseFromProtobufShape(protobufResponse);
@@ -2278,6 +2299,7 @@ export class GreeterWeakReference {
             request: request,
             options: options,
             bearerToken: context.bearerToken,
+            onUnauthenticated: context.onUnauthenticated,
             idempotencyKey: idempotencyKey,
         });
         return GreeterConstructAndStoreRecursiveMessageResponseFromProtobufShape(protobufResponse);

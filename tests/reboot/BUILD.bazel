@@ -277,6 +277,7 @@ py_test(
         ":greeter_servicers_py",
         "//rbt/v1alpha1:tasks_py_grpc",
         "//rbt/v1alpha1:tasks_py_proto",
+        "//reboot:settings_py",
         "//reboot/aio:exceptions_py",
         "//reboot/aio:reboot_py",
         "//reboot/aio:tests_py",

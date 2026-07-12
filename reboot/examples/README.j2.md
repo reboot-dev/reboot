@@ -12,8 +12,8 @@ For the impatient:
 The [Reboot '.proto' definitions](https://docs.reboot.dev/learn_more/define/overview#code-generation)
 can be found in the `api/` directory, grouped into
 subdirectories by proto package, while backend specific code can be
-found in {{ backend_locations }}{% if has_frontend %} and front end specific code in `web/`{% endif %}
-{% if has_non_react_frontend %} and non-React front end in `reboot-non-react-web/`{% endif %}.
+found in {{ backend_locations }}{% if has_frontend %} and front end specific code in `frontend/web/`{% endif %}{% if has_mcp %} and MCP (AI chat) UIs in `frontend/mcp/`{% endif %}{% if has_mobile %} and a React Native (Expo) mobile front end in `frontend/mobile/`{% endif %}
+{% if has_non_react_frontend %} and non-React front end in `frontend/reboot-non-react-web/`{% endif %}.
 
 _For more information on all of the Reboot examples, please [see the docs](https://docs.reboot.dev/full_stack_apps/examples)._
 
@@ -109,10 +109,36 @@ arguments that get expanded when running `rbt dev run`.
 {% if has_frontend %}
 ### Front end
 
-{% if backend_language == "python" %}
+{% if has_mcp %}
 Similar to the backend, the front end has dependencies that need to be installed before running it. Open a separate terminal/shell and do:
 ```shell
-cd web/
+cd frontend/
+npm install
+npm run dev
+```
+
+That starts a single Vite dev server that serves both the web app and
+the MCP UIs. Visit [http://localhost:4444](http://localhost:4444) — it
+redirects to the web app.
+
+{% if web_sign_in_notes %}
+{{ web_sign_in_notes }}
+{% endif %}
+#### MCP
+
+The application is also an MCP server: an AI chat client can call
+its tools and render its UIs (the `frontend/mcp/` directories) right
+in the chat. The easiest way to get connected is the setup wizard
+that the backend serves at
+[http://localhost:9991](http://localhost:9991): it walks you through
+connecting the chat client of your choice (Claude, ChatGPT, ...) —
+including the public tunnel those clients need to reach your machine
+— and suggests example prompts to try. The MCP endpoint itself is
+[http://localhost:9991/mcp](http://localhost:9991/mcp).
+{% elif backend_language == "python" %}
+Similar to the backend, the front end has dependencies that need to be installed before running it. Open a separate terminal/shell and do:
+```shell
+cd frontend/
 npm install
 npm start
 ```
@@ -122,9 +148,11 @@ To run the front end, open a separate terminal/shell and do:
 npm run dev:web
 ```
 {% endif %}
+{% if not has_mcp %}
 
 If using VSCode, the page will load automatically.
 If not using VSCode, visit [http://127.0.0.1:3000](http://127.0.0.1:3000).
+{% endif %}
 {% endif %}
 {% if has_tests %}
 
@@ -135,7 +163,7 @@ The non-React front end can be run in a similar way to the React front end,
 but it uses a different directory and port:
 
 ```shell
-cd reboot-non-react-web/
+cd frontend/reboot-non-react-web/
 npm install
 npm run dev
 ```
@@ -190,13 +218,13 @@ in the output of `rbt cloud up`:
 
 {% if has_frontend %}
 Tell the front end to talk to it by updating the `VITE_REBOOT_URL` value in
-`web/.env`:
+`frontend/web/.env`:
 
 ```tsx
 VITE_REBOOT_URL=YOUR_URL
 ```
 
-Then, in the `web/` directory, run `npm run build`.
+Then, in the `frontend/` directory, run `npm run build`.
 
 Once built, this front end can be deployed to any static hosting provider like
 S3, Vercel, Cloudflare or Firebase hosting.

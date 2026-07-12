@@ -26,5 +26,5 @@ RBT_FLAGS="--state-directory=$(mktemp -d)"
 npx rbt $RBT_FLAGS dev run --terminate-after-health-check
 
 # And build the frontends.
-npx vite build ./web-vite
-npx next build --no-lint --experimental-build-mode=compile ./web-next
+npx vite build ./frontend/web-vite
+npx next build --no-lint --experimental-build-mode=compile ./frontend/web-next

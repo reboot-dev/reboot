@@ -1,18 +1,17 @@
 import unittest
 from account_servicer import AccountServicer
-from bank.v1.proto.customer_rbt import Customer
-from bank.v1.pydantic.account import BalanceResponse, OverdraftError
-from bank.v1.pydantic.account_rbt import Account
-from bank.v1.pydantic.bank import (
+from bank.v1.account import BalanceResponse, OverdraftError
+from bank.v1.account_rbt import Account
+from bank.v1.bank import (
     AccountBalancesResponse,
     AllCustomerIdsResponse,
     SignUpRequest,
     TransferRequest,
 )
-from bank.v1.pydantic.bank_rbt import Bank
+from bank.v1.bank_rbt import Bank
+from bank.v1.customer_rbt import Customer
 from bank_servicer import BankServicer
 from customer_servicer import CustomerServicer
-from google.protobuf.message import Message
 from rbt.v1alpha1 import errors_pb2
 from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow, allow_if
@@ -172,10 +171,6 @@ class TestBank(unittest.IsolatedAsyncioTestCase):
             CUSTOMER_ID_1
         ).open_account(context, initial_deposit=1000.0)
 
-        # The 'Customer' servicer was described in Protobuf, so assert
-        # that the response is a Protobuf message.
-        assert isinstance(open_account_response_1, Message)
-
         await bank.sign_up(
             context,
             # Show field name kwargs request.
@@ -189,10 +184,6 @@ class TestBank(unittest.IsolatedAsyncioTestCase):
         open_account_response_2 = await Customer.ref(
             CUSTOMER_ID_2
         ).open_account(context, initial_deposit=0.0)
-
-        # The 'Customer' servicer was described in Protobuf, so assert
-        # that the response is a Protobuf message.
-        assert isinstance(open_account_response_2, Message)
 
         await bank.transfer(
             context,
