@@ -78,10 +78,10 @@ Next, define your durable state type in Reboot called \`ChatRoomState\` by
 creating a \`ChatRoomState\` class subclassed from \`Model\`. This is where
 your \`messages\` will be stored.
 
-Next, define the methods on your data type calling the \`Methods\` function
-and passing to it the name of your methods, what type of method it is:
-\`Reader\`, \`Writer\`, \`Transaction\` or \`Workflow\`, a \`request\`
-and a \`response\` classes.
+Next, define the methods on your data type by calling \`Methods\` and
+passing it each method's name, its kind (\`Reader\`, \`Writer\`,
+\`Transaction\`, or \`Workflow\`), and its \`request\` and \`response\`
+classes.
 
 Lastly, define your API by passing the API \`Type\`, \`ChatRoom\`, to the \`API\`
 function.
@@ -101,8 +101,9 @@ For brevity we are defining just two operations:
 1. \`send\` takes a \`message\` and updates state, so it is a
 [\`Writer\`](/learn_more/define/methods#kinds) method.
 
-In addition to the operations, we need to define any supporting
-\`classes\`'s, e.g., \`SendRequest\`, \`SendResponse\`, etc.
+In addition to the operations, you need to define the supporting
+request and response classes, e.g., \`SendRequest\` and
+\`MessagesResponse\`.
 
 :::tip
 [\`Reader\`](/learn_more/define/methods#kinds) methods safely execute concurrently!
@@ -156,8 +157,8 @@ api = API(
   title={<div>Create <code>.py</code> implementation file</div>}
   description={`
 
-For each of the \`Methods\`'s we define, we need to
-implement [servicers](/learn_more/implement/servicers) - a class containing
+For each of the API types you define, you need to
+implement a [servicer](/learn_more/implement/servicers) - a class containing
 methods that implement the operations of your data type.
 
 `}>
@@ -168,7 +169,7 @@ mkdir -p ./backend/src && touch ./backend/src/chat_room_servicer.py
 
 </Step>
 <Step
-  title={<div>Implement <code>ChatServicer</code></div>}
+  title={<div>Implement <code>ChatRoomServicer</code></div>}
   description={`
 
 To start, your servicer class must extend \`ChatRoom.Servicer\`.
@@ -178,10 +179,10 @@ An instance of your servicer will be created for every instance of the
 instance via \`self.state\`.
 
 Each method expects a \`context\` as the first argument that aligns
-with the function given in the \`.py\` file; \`Messages\`
-takes a \`ReaderContext\` and \`Send\` takes a \`WriterContext\`.
+with the kind given in your API \`.py\` file; \`messages\`
+takes a \`ReaderContext\` and \`send\` takes a \`WriterContext\`.
 
-\`Send\` can mutate \`self.state\` and \`Messages\` can only read from
+\`send\` can mutate \`self.state\` and \`messages\` can only read from
 it.
 
 :::note
@@ -287,8 +288,8 @@ if __name__ == '__main__':
   description={`
 
 An [\`.rbtrc\`](/develop_locally#rbtrc-and-flags) file contains the flags
-needed to generate code from your \`.proto\` file as well as run your
-app.
+needed to generate code from your API definition file as well as run
+your app.
 
 `}>
 
@@ -302,8 +303,8 @@ touch .rbtrc
   title={<div>Add necessary flags to your <code>.rbtrc</code> file</div>}
   description={`
 
-First, tell Reboot where the proto files live, the \`api/\` directory,
-and where to output the generated code, \`backend/api/\`.
+First, tell Reboot where your API definition files live, the \`api/\`
+directory, and where to output the generated code, \`backend/api/\`.
 
 Next, tell Reboot how to run your app. Give the app a name via
 \`--application-name=chat-room\` to persist state between app restarts. Watch
@@ -312,7 +313,7 @@ is a modification. Finally, tell Reboot that it should use Python to run
 our app.
 
 :::tip
-If you want to remove all of your changes between app restarts, do not pass the
+If you do not want state to persist between app restarts, do not pass the
 \`--application-name\` flag to \`rbt\`.
 :::
 

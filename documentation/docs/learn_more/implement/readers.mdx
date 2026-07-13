@@ -3,8 +3,8 @@ import TabItem from "@theme/TabItem";
 
 # Readers
 
-A `reader` method is _immutable_, so any modifications you make to
-state are ignored.
+A `reader` method has _read-only_ access to state, so any
+modifications you make to state are ignored.
 
 A `reader` method is passed a context of type `ReaderContext`. A
 `ReaderContext` can only be used to make calls to other `reader`

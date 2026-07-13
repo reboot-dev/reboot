@@ -3,6 +3,9 @@ import TabItem from "@theme/TabItem";
 
 # Zod
 
+You can use [Zod](https://zod.dev) to define your API for TypeScript
+backends.
+
 To declare a data type called `ChatRoom` with methods `messages` and
 `send`, put the following in a `.ts` file:
 
@@ -37,6 +40,12 @@ export const api = {
 
 :::important
 Reboot requires `zod/v4`.
+:::
+
+:::important
+All fields must include a `tag` in their `.meta()`, e.g.,
+`.meta({ tag: 1 })`. This is required for safe backwards
+compatibility.
 :::
 
 Depending on its [kind](/learn_more/define/methods), a method

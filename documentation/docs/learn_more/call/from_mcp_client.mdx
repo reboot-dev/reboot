@@ -28,7 +28,8 @@ npx @mcpjam/inspector@2.23.3 --url http://localhost:9991/mcp --oauth
 ```
 
 This opens an interface where you can browse your app's tools, call
-them, and see `UI` method React apps rendered inline.
+them, and see [`UI`](/learn_more/implement/ui_methods) method React
+apps rendered inline.
 
 ### VS Code (Copilot)
 
@@ -62,7 +63,8 @@ supports MCP servers as extensions. To connect your Reboot app:
    running on the same machine as `rbt dev`, use
    `http://localhost:9991/mcp`; otherwise use your Reboot Cloud
    URL (`https://your-app.prod1.rbt.cloud:9991/mcp`) or your
-   `ngrok` tunnel URL with `/mcp` appended.
+   [`ngrok`](/learn_more/nonlocal#ngrok) tunnel URL with `/mcp`
+   appended.
 4. Click **Add extension**.
 
 Alternatively, you can add the extension directly to Goose's
@@ -86,8 +88,8 @@ setup.
 ## On the web
 
 To publish your app to web-based AI platforms, it must be reachable
-on the internet. During development, you can use `ngrok`. In
-production we suggest taking a look at
+on the internet. During development, you can use
+[`ngrok`](/learn_more/nonlocal#ngrok). In production, consider
 [Reboot Cloud](/deploy_on_reboot_cloud).
 
 :::note Local development with `UI` methods
@@ -136,7 +138,9 @@ Once Developer Mode is on, to connect your deployed Reboot app:
    running locally behind an `ngrok` tunnel (see
    [exposing `rbt dev` to the internet](/learn_more/nonlocal#ngrok))
    it will be your tunnel's URL with `/mcp` appended.
-4. If your app uses auth (`Development` or otherwise), select
+4. If your app uses auth
+   ([`Development`](/learn_more/identity_and_external_apis) or
+   otherwise), select
    **OAuth** from the Authentication dropdown — ChatGPT will run
    the OAuth handshake against your Reboot app as soon as you add
    the server. Otherwise, select **No auth**.

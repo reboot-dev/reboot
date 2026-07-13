@@ -8,19 +8,19 @@ Looking for AI Chat App examples? See
 
 [`reboot-dev/reboot-prosemirror-zod`](https://github.com/reboot-dev/reboot-prosemirror-zod) - _TypeScript backend, React frontend_
 
-This example demonstrates integeration with the popular
+This example demonstrates integration with the popular
 [ProseMirror](https://prosemirror.net) library.
 
 It demonstrates:
 
-* how to _sync_ betweeen a React frontend and a Reboot backend
-* how to run a long-lived control loop using a `workflow` method, which takes checkpoints of the ProseMirror document
+* how to _sync_ between a React frontend and a Reboot backend
+* how to run a long-lived control loop using a [`workflow`](/learn_more/define/methods#kinds) method, which takes checkpoints of the ProseMirror document
 
 ## `bank-zod`
 
 [`reboot-dev/reboot-bank-zod`](https://github.com/reboot-dev/reboot-bank-zod) - _TypeScript backend, React frontend_
 
-The `bank` example demonstrates a multiple user "bank", with signup,
+The `bank-zod` example demonstrates a multi-user "bank", with signup,
 transfers, and interest calculations. It strikes a good balance between simplicity and
 real-world utility.
 
@@ -34,7 +34,7 @@ It demonstrates:
 
 [`reboot-dev/reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) - _Python backend, React frontend_
 
-The `bank` example demonstrates a multiple user "bank", with signup,
+The `bank-pydantic` example demonstrates a multi-user "bank", with signup,
 transfers, and interest calculations. It strikes a good balance between simplicity and
 real-world utility.
 
@@ -49,7 +49,7 @@ It demonstrates:
 
 [`reboot-dev/reboot-bank`](https://github.com/reboot-dev/reboot-bank) - _Python backend, React frontend_
 
-The `bank` example demonstrates a multiple user "bank", with signup,
+The `bank` example demonstrates a multi-user "bank", with signup,
 transfers, and interest calculations. It strikes a good balance between simplicity and
 real-world utility.
 

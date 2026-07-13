@@ -143,16 +143,18 @@ same way — "this user hasn't connected the service yet".
 ### Store
 
 A `transaction` that encrypts and persists tokens for a user,
-**replacing** any previously stored ones. If the new `tokens` leaves
-`refresh_token` unset but one was stored before, the existing refresh
-token is carried forward (some services issue a refresh token only on
-the first consent).
+**replacing** any previously stored ones wholesale — including the
+refresh token. Some services issue a refresh token only on the first
+consent, so if a later token response leaves `refresh_token` unset,
+`fetch` the stored tokens first and copy the existing refresh token
+into the new `tokens` before calling `store`.
 
 You call `store` yourself when you run a service's OAuth flow with your
 own endpoints (see
 [Identity and external API calls](/learn_more/identity_and_external_apis));
 with `store_tokens=True` on an `Application(oauth=...)` provider, the
-OAuth server calls it for you.
+OAuth server calls it for you — including carrying an existing refresh
+token forward when a later sign-in doesn't return one.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>

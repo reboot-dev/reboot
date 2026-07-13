@@ -4,14 +4,14 @@ import TabItem from "@theme/TabItem";
 # Queue
 
 A general purpose queue that allows you to enqueue and dequeue [`Item`](/library_services/item)s
-singularly or in bulk to it. It is durable, which means that it will persist across
+singularly or in bulk. It is durable, which means that it will persist across
 restarts or system failures, and transactional, so you can access it safely.
 
 Each `Queue` will need a unique ID and is created implicitly the first time
 you use it. [`Item`](/library_services/item)s can be [`Enqueue`](#enqueue)d as a
-single `Value`, `bytes`, or `Any` object or can be [`Enqueued`](#bulk-enqueue)ed
+single `Value`, `bytes`, or `Any` object or can be [`Enqueue`](#bulk-enqueue)d
 in bulk as a list of `Item`s. They can then be [`Dequeue`](#dequeue)d singularly
-in [bulk](#bulk-dequeue) as well. In practice, you will want to use just one of
+or in [bulk](#bulk-dequeue) as well. In practice, you will want to use just one of
 these formats in a given `Queue`. Read more about [`Item`](/library_services/item)s
 to determine the best format for your data.
 
@@ -80,8 +80,8 @@ new Application({
 
 ## Referencing Queues
 
-This creates references to two `Queue`references with IDs `"my-first-queue"`
-and `"my-second-queue"`. You can then call methods on these references.
+This creates references to `Queue`s with IDs such as `"my-first-queue"` and
+`"my-second-queue"`. You can then call methods on these references.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
@@ -381,7 +381,8 @@ if (response.items.length === 0) {
 
 ### Empty
 
-Returns `True` if the queue has no items in it, otherwise returns `False`.
+Returns a response whose `empty` field is true if the queue has no items in
+it, and false otherwise.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
