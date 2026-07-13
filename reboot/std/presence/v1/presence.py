@@ -338,7 +338,7 @@ def presence_library(
     mouse_position_authorizer: Optional[MousePosition.Authorizer |
                                         AuthorizerRule] = None,
     authorizer: Optional[AuthorizerRule] = None,
-):
+) -> PresenceLibrary:
 
     return PresenceLibrary(
         presence_authorizer,
