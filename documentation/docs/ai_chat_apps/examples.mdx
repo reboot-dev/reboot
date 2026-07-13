@@ -17,7 +17,8 @@ It demonstrates:
 
 * `UI` methods that render React views (wiki, page,
   transcript) inside the AI chat interface.
-* A long-running `workflow` method (`Wiki.ingest`) that
+* A long-running [`workflow`](/learn_more/implement/workflows)
+  method (`Wiki.ingest`) that
   acts as a per-wiki background agent, reacting to new
   transcripts as they arrive.
 * `Transaction`s that atomically create related state
@@ -69,8 +70,7 @@ It demonstrates:
   acting as an entry point that creates other state types.
 * Generated React hooks (`useCounter()`) that work in both AI
   and browser contexts.
-* `App.tsx` component that implements the UI and receive AI-provided
-  configuration as props.
+* An `App.tsx` React component that implements the UI.
 
 Follow the [AI Chat App quickstart](/ai_chat_apps/get_started)
 to build this example from scratch.
