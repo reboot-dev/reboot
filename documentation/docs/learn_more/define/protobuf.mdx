@@ -23,7 +23,7 @@ message ChatRoom {
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
-Reboot uses standard [Protobuf definitions](https://protobuf.dev/programming-guides/proto3/), but take note of the `rbt` [options (aka, annotations)](https://protobuf.dev/programming-guides/proto3/#options), which requires you adding `import "rbt/v1alpha1/options.proto";`.
+Reboot uses standard [Protobuf definitions](https://protobuf.dev/programming-guides/proto3/), but take note of the `rbt` [options (aka, annotations)](https://protobuf.dev/programming-guides/proto3/#options), which require adding `import "rbt/v1alpha1/options.proto";` to your `.proto` file.
 
 In the above example, `rbt.v1alpha1.state` declares that `message
 ChatRoom` is a Reboot data type.
@@ -54,8 +54,10 @@ service ChatRoomMethods {
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
 :::info
-The current convention is that a state's interface has the same name
-as the state with the suffix `Methods`.
+A Reboot service name must end with the suffix `Methods`. By default,
+Reboot associates the service with the state whose name matches the
+part before the suffix, so `ChatRoomMethods` provides the methods for
+`ChatRoom`.
 :::
 
 For each of the `rpc` methods that you declare, you use the

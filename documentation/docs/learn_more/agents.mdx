@@ -1,7 +1,8 @@
 # Agents
 
 Reboot's `reboot.agents` package lets you run [Pydantic AI](https://ai.pydantic.dev/)
-agents inside Reboot workflows with **durable, replay-safe execution
+agents inside Reboot [workflows](/learn_more/implement/workflows) with
+**durable, replay-safe execution
 of model calls and tool calls** -- you get back the same answer on
 re-runs without re-hitting the LLM provider, and tool side-effects
 that have already completed are not repeated.
@@ -124,8 +125,8 @@ Reboot's `@agent.tool_plain` and `@agent.tool` mirror `pydantic_ai`'s
 decorators with one additional convenience: `@agent.tool` accepts a
 `WorkflowContext` as the first parameter, BEFORE the `pydantic_ai`
 `RunContext`. This lets your tool body call into other Reboot data
-types easily, and you can also wrap external work in `at_least_once`
-although know that every tool call is already wrapped in an
+types easily. You can also wrap external work in `at_least_once`
+yourself, though note that every tool call is already wrapped in an
 `at_least_once` for you.
 
 ```python
@@ -222,17 +223,17 @@ agent = Agent(
 
 Reboot uses each MCP toolset's `id` to disambiguate memoization keys
 for `get_tools` / `get_instructions` / `call_tool` across replays. Two
-id-less servers would silently clobber each other's results, so we
-raise a `UserError` at agent construction time when this is
+id-less servers would silently clobber each other's results, so
+Reboot raises a `UserError` at agent construction time when this is
 detected. (For `MCPServer`, `tool_prefix=...` doubles as the id when
 `id=` isn't set.)
 
 ### Why your tool doesn't re-run on replay (but should still be idempotent)
 
 Reboot wraps every tool call in `at_least_once`. On replay, the stored
-return value is reused without invoking your tool function.  Your tool
-function therefore should not be relied upon to be "called once per
-replay". Note that during [effect
+return value is reused without invoking your tool function. You
+therefore can't rely on your tool function being invoked again on
+replay. Note that during [effect
 validation](/learn_more/side_effects), Reboot re-runs your tool to
 verify your code is deterministic, so if you are performing external
 side-effects inside your tool body you need to ensure they are done
@@ -479,8 +480,8 @@ A few things deliberately fall outside Reboot's wrapping:
 
 - **Pydantic AI builtin tools** (web search, code execution,
   etc.) -- these are executed by the model provider, and their
-  call/return parts are baked into the `ModelResponse` we already
-  memoize. They're durable for free.
+  call/return parts are baked into the `ModelResponse` that Reboot
+  already memoizes. They're durable for free.
 - **Dynamic instructions / dynamic system prompt callables** --
   those are `pydantic_ai`'s `_system_prompt_dynamic_functions` and
   the callable entries inside `instructions`. They run on every
@@ -506,8 +507,8 @@ A few things deliberately fall outside Reboot's wrapping:
 - `pydantic_ai`'s `parallel_tool_call_execution_mode='parallel'`
   is rejected at construction time -- use the default
   `'parallel_ordered_events'` or `'sequential'` instead.
-- Calling our entry points through an `AbstractAgent`-typed
-  reference will fail with a `UserError` naming the fix: our
+- Calling Reboot's entry points through an `AbstractAgent`-typed
+  reference will fail with a `UserError` naming the fix: Reboot's
   `run` / `iter` / `run_stream` / `run_stream_events` require
   `context: WorkflowContext` as the first positional argument,
   while the supertype's signature has no `context`. The runtime

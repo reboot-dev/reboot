@@ -5,7 +5,7 @@ import TabItem from "@theme/TabItem";
 
 Reboot uses **qualified method kinds** to provide better safety
 guarantees for your application. Based on a method kind, you can
-easily answers questions such as:
+easily answer questions such as:
 
 - Will a method perform any mutations of a state?
 - Will a method perform any mutations on other states?
@@ -35,9 +35,11 @@ The five kinds of methods in Reboot are:
 
 ## Tool exposure
 
-Every method must explicitly declare its MCP exposure with
-`mcp=Tool()` (to expose it as an AI-callable tool) or
-`mcp=None` (to hide it from the AI). This applies to all
-state types, including `User`. See
+When you define your API with
+[Pydantic](/learn_more/define/pydantic), every method must
+explicitly declare its MCP exposure with `mcp=Tool()` (to
+expose it as an AI-callable tool) or `mcp=None` (to hide it
+from the AI). This applies to all state types, including
+`User`. See
 [Creating tools](/learn_more/define/pydantic#creating-tools-for-the-ai)
 for details.

@@ -52,9 +52,9 @@ async def test_chat_room(self) -> None:
 
 #### Setting Secrets
 
-Some servicers may use secrets for connecting to external services or
-handling sensitive data. In tests, set the required environment
-variables before starting the test harness.
+Some servicers may use [secrets](/learn_more/secrets) for connecting
+to external services or handling sensitive data. In tests, set the
+required environment variables before starting the test harness.
 
 <!-- MARKDOWN-AUTO-DOCS:START
 (CODE:src=../../../reboot/examples/boutique/backend/tests/full_app_test.py&lines=25-25) -->
@@ -70,7 +70,7 @@ os.environ["MAILGUN_API_KEY"] = MAILGUN_API_KEY
 
 For TypeScript, you can use the `Reboot` class from the `@reboot-dev/reboot` package to start your servicer,
 create a context, and call the methods you want to test.
-With the Node.js built-in test runner use `t` to call subtests and remember to `await` on them.
+With the Node.js built-in test runner, call subtests through the `t` argument (`t.test(...)`) and remember to `await` them.
 
 <!-- MARKDOWN-AUTO-DOCS:START
 (CODE:src=../../../reboot/examples/chat-room-nodejs/backend/tests/test.ts&lines=2-36) -->
@@ -165,7 +165,7 @@ describe("ChatRoom Servicer", async () => {
 
 #### Vitest
 
-If you are using Vitest, errors printed to the console coming from 3rd-party libraries, could be potentially suppressed by the default reporters. We provide the `BetterErrorTracingReporter` for Vitest, which you could use for full error output.
+If you are using Vitest, its default reporters can suppress errors that third-party libraries print to the console. Reboot provides the `BetterErrorTracingReporter` for Vitest, which you can use to get full error output.
 
 In your `vitest.config.ts` apply it as follows:
 
@@ -182,6 +182,6 @@ export default defineConfig({
 
 ## Calling your endpoint from outside of an app
 
-You are able to call your servicer methods from outside of a Reboot app using
+You can call your servicer methods from outside of a Reboot app using
 an [`ExternalContext`](/learn_more/call/from_outside_your_app) or directly
 with an [`HTTP`](/learn_more/call/via_http) request.

@@ -192,7 +192,7 @@ By default every ciphertext uses keys tracked in a shared `KeyManager`
 tenants, or data domains — can instead partition their keys into
 **separate managers** by passing `key_manager_id=` to `encrypt`. This
 ensures that two managers that use the *same* `scope` won't shred each
-others ciphertexts (`shred` operates per manager).
+other's ciphertexts (`shred` operates per manager).
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
@@ -237,7 +237,7 @@ A `Ciphertext` remembers its manager, so `decrypt` and `rescope` need no
 ### Decrypt
 
 Returns the plaintext. Supply the same `associated_data` used at `encrypt` time.
-Raises `Ciphertext.DecryptAborted` with a `DecryptionFailed`,
+On failure, raises `Ciphertext.DecryptAborted` with a `DecryptionFailed`,
 `ScopeShredded`, or `UnknownRootKeyVersion` error.
 
 <Tabs groupId="language">
@@ -320,7 +320,7 @@ await Ciphertext.ref(ciphertextId).rescope(context, { scope: "tenant:acme" });
 
 ## Key rotation
 
-When `REBOOT_CRYPTO_ROOT_KEYS` rotates each `KeyManager` instance
+When `REBOOT_CRYPTO_ROOT_KEYS` rotates, each `KeyManager` instance
 **automatically** rotates all of its keys.
 
 A `KeyManager` always rotates to the highest active version in

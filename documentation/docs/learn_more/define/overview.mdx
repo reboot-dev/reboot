@@ -13,8 +13,8 @@ of a specific [_kind_](/learn_more/define/methods), either a
 `reader`, `writer`, `transaction`, `workflow`, or
 [`ui`](/learn_more/implement/ui_methods).
 
-We call the combination of these data types and methods **durable data
-structures** (think durable objects, but so much more).
+The combination of these data types and methods is called **durable
+data structures** (think durable objects, but so much more).
 
 ## API
 
@@ -33,12 +33,14 @@ Reboot generates:
   - [Python and TypeScript servers](/learn_more/implement/servicers)
   - [Python and TypeScript clients](/learn_more/call/from_within_your_app)
   - [React](/learn_more/call/from_react)
-- AI chat tools (from `User` methods and
+- AI chat tools (from
+  [`User`](/learn_more/define/pydantic#special-state-user) methods and
   [`UI`](/learn_more/implement/ui_methods) annotations)
 
 :::note
 
-`rbt dev run` will automatically generate code from your Zod schemas
-or `.proto` files and reload your application when your API changes.
+`rbt dev run` will automatically generate code from your Pydantic
+types, Zod schemas, or `.proto` files and reload your application
+when your API changes.
 
 :::
