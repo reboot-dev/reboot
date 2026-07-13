@@ -67,8 +67,6 @@ class Event:
 class PresenceServicer(Presence.singleton.Servicer):
 
     # Singleton authorizer as class variable.
-    # Discussion here for singleton authorizer vs subclassing the servicer:
-    # https://github.com/reboot-dev/mono/pull/5140#issuecomment-3667592432
     _authorizer: Optional[Presence.Authorizer] = None
 
     def authorizer(self):
@@ -141,8 +139,14 @@ class SubscriberServicer(Subscriber.singleton.Servicer):
 
     _disconnect_events: dict[str, Event] = {}
 
+    # Singleton authorizer as class variable.
+    _authorizer: Optional[Subscriber.Authorizer] = None
+
     def authorizer(self):
-        return allow()
+        if self._authorizer:
+            return self._authorizer
+        else:
+            return allow()
 
     async def Create(
         self,
@@ -241,8 +245,14 @@ class SubscriberServicer(Subscriber.singleton.Servicer):
 
 class MousePositionServicer(MousePosition.singleton.Servicer):
 
+    # Singleton authorizer as class variable.
+    _authorizer: Optional[MousePosition.Authorizer] = None
+
     def authorizer(self):
-        return allow()
+        if self._authorizer:
+            return self._authorizer
+        else:
+            return allow()
 
     async def Update(
         self,
@@ -276,9 +286,13 @@ class PresenceLibrary(Library):
 
     def __init__(
         self,
-        authorizer: Optional[Presence.Authorizer] = None,
+        presence_authorizer: Optional[Presence.Authorizer] = None,
+        subscriber_authorizer: Optional[Subscriber.Authorizer] = None,
+        mouse_position_authorizer: Optional[MousePosition.Authorizer] = None,
     ):
-        PresenceServicer._authorizer = authorizer
+        PresenceServicer._authorizer = presence_authorizer
+        SubscriberServicer._authorizer = subscriber_authorizer
+        MousePositionServicer._authorizer = mouse_position_authorizer
 
     def servicers(self):
         return [PresenceServicer, SubscriberServicer, MousePositionServicer]
@@ -293,6 +307,12 @@ def servicers():
 
 
 def presence_library(
-    authorizer: Optional[Presence.Authorizer] = None,
+    presence_authorizer: Optional[Presence.Authorizer] = None,
+    subscriber_authorizer: Optional[Subscriber.Authorizer] = None,
+    mouse_position_authorizer: Optional[MousePosition.Authorizer] = None,
 ):
-    return PresenceLibrary(authorizer)
+    return PresenceLibrary(
+        presence_authorizer,
+        subscriber_authorizer,
+        mouse_position_authorizer,
+    )
