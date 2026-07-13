@@ -9,7 +9,7 @@
 #      and TypeScript bindings from
 #      `api/reboot_swag_store/v1/store.py`.
 # ---------------------------------------------------------------------------
-FROM ghcr.io/reboot-dev/reboot-base:1.2.1 AS backend
+FROM ghcr.io/reboot-dev/reboot-base:1.3.0 AS backend
 
 WORKDIR /app
 

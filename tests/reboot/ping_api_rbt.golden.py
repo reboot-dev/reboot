@@ -17,7 +17,7 @@ from __future__ import annotations as IMPORT_future_annotations
 # may be invalid (broken) if the generated code is mismatched with the installed
 # libraries.
 import reboot.versioning as IMPORT_reboot_versioning
-IMPORT_reboot_versioning.check_generated_code_compatible("1.2.1")
+IMPORT_reboot_versioning.check_generated_code_compatible("1.3.0")
 
 # ATTENTION: no types in this file should be imported with their unqualified
 #            name (e.g. `from typing import Any`). That would cause clashes
@@ -19049,7 +19049,7 @@ class Ping:
         METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
         ]
 
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message | IMPORT_reboot_api.Model]] = (
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
             METHOD_PROTOBUF_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
@@ -19325,7 +19325,7 @@ class Ping:
         METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
         ]
 
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message | IMPORT_reboot_api.Model]] = (
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
             METHOD_PROTOBUF_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
@@ -19601,7 +19601,7 @@ class Ping:
         METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
         ]
 
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message | IMPORT_reboot_api.Model]] = (
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
             METHOD_PROTOBUF_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
@@ -19877,7 +19877,7 @@ class Ping:
         METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
         ]
 
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message | IMPORT_reboot_api.Model]] = (
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
             METHOD_PROTOBUF_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
@@ -22347,7 +22347,7 @@ class Pong:
         METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
         ]
 
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message | IMPORT_reboot_api.Model]] = (
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
             METHOD_PROTOBUF_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
@@ -22623,7 +22623,7 @@ class Pong:
         METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
         ]
 
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message | IMPORT_reboot_api.Model]] = (
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
             METHOD_PROTOBUF_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
@@ -24213,7 +24213,7 @@ class User:
         METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
         ]
 
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message | IMPORT_reboot_api.Model]] = (
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
             METHOD_PROTOBUF_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
@@ -24489,7 +24489,7 @@ class User:
         METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
         ]
 
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message | IMPORT_reboot_api.Model]] = (
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
             METHOD_PROTOBUF_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
@@ -24765,7 +24765,7 @@ class User:
         METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
         ]
 
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message | IMPORT_reboot_api.Model]] = (
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
             METHOD_PROTOBUF_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
@@ -25041,7 +25041,7 @@ class User:
         METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
         ]
 
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message | IMPORT_reboot_api.Model]] = (
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
             METHOD_PROTOBUF_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
@@ -27442,7 +27442,7 @@ class Counter:
         METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
         ]
 
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message | IMPORT_reboot_api.Model]] = (
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
             METHOD_PROTOBUF_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
@@ -27719,7 +27719,7 @@ class Counter:
         METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
         ]
 
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message | IMPORT_reboot_api.Model]] = (
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
             METHOD_PROTOBUF_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
@@ -27995,7 +27995,7 @@ class Counter:
         METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
         ]
 
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message | IMPORT_reboot_api.Model]] = (
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
             METHOD_PROTOBUF_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
@@ -28271,7 +28271,7 @@ class Counter:
         METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
         ]
 
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message | IMPORT_reboot_api.Model]] = (
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
             METHOD_PROTOBUF_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES

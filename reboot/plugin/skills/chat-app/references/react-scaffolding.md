@@ -29,8 +29,8 @@ auto-discovers and builds every UI. Don't hand-maintain per-UI
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.5.0",
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@reboot-dev/reboot-react": "1.2.1",
-    "@reboot-dev/reboot-api": "1.2.1",
+    "@reboot-dev/reboot-react": "1.3.0",
+    "@reboot-dev/reboot-api": "1.3.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zod": "^4.0.0"
