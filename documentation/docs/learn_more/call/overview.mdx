@@ -56,8 +56,8 @@ constructed.
 
 ### State IDs
 
-We call the ID that you use to get a reference to your data type its
-"state ID". This ID is unique within your application, i.e., you'll
+The ID that you use to get a reference to your data type is called
+its "state ID". This ID is unique within your application, i.e., you'll
 always get the same instance of your data type for that ID.
 
 The ID is also used to automatically partition your data type
@@ -92,8 +92,8 @@ that you pass to [`Application`](/learn_more/applications).
 
 You construct an instance of your data types either _implicitly_
 or _explicitly_, depending on whether or not you have explicitly
-designated certain methods as _constructors_ in your `.proto`, or a
-_factory_, in your Zod schema.
+designated certain methods as _constructors_ in your `.proto`, or as
+a _factory_ in your Pydantic or Zod schema.
 
 :::tip
 If your state can be default constructed, prefer _implicit_
@@ -258,7 +258,8 @@ const [account, response] = await Account.open(context, newAccountId, {
 
 You can call explicit constructors using
 [`idempotently()`](/learn_more/idempotency) external to a Reboot
-application (i.e., using an `ExternalContext`):
+application (i.e., using an
+[`ExternalContext`](/learn_more/call/from_outside_your_app)):
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>

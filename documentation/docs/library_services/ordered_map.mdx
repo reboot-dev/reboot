@@ -10,8 +10,8 @@ Keys are strings and can be associated with a `Value`, `bytes`, or `Any` object
 when inserted into an `OrderedMap`.
   * `Value` represents a dynamically typed value which can be either null, a
     number, a string, a boolean, a recursive struct value, or a list of values.
-    A producer of value is expected to set one of that variants, absence of any
-    variant indicates an error. This type is meant to represent all possible JSON values.
+    A producer of a `Value` is expected to set one of these variants; the
+    absence of any variant indicates an error. This type is meant to represent all possible JSON values.
   * `bytes` is used to store a string of `bytes`.
   * `Any` refers to the `Any` protobuf and is the best choice if you are using protobufs
     to structure your data.
@@ -30,7 +30,7 @@ For example:
     key of your choice and the serialized value of each Protobuf message
     as a value.
 
-To use a `OrderedMap` in your application, you typically want to choose an ID for
+To use an `OrderedMap` in your application, you typically want to choose an ID for
 the map and store it somewhere (e.g., as a field in the appropriate state data
 type). To use the map, first get a `ref()` to the map using its ID and then invoke
 the appropriate operations. The map will be implicitly constructed when the first
@@ -40,7 +40,7 @@ constructed with [`create()`](#create).
 
 ## Imports and set up
 
-To use a `OrderedMap`, import the library where you would like to use it.
+To use an `OrderedMap`, import the library where you would like to use it.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
@@ -129,7 +129,7 @@ Each `OrderedMap` you create will need a unique ID. Using a reference to that
 
 ### Getting a reference
 
-This creates a reference to a `OrderedMap` with ID `"my-map"`.
+This creates a reference to an `OrderedMap` with ID `"my-map"`.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
@@ -235,7 +235,7 @@ Keys which are already in the map will be overwritten.
 Only one of `value`, `bytes`, or `any` can be set.
 
 The examples below show the different ways data can be associated with a key, but
-in practice, we recommend you use a uniform structure for your value.
+in practice, you should use a uniform structure for your value.
 For more information on how to format data, check out the [`Value`](/library_services/item#value)
 and [`Any`](/library_services/item#any) docs for `Item`s.
 
@@ -327,10 +327,10 @@ await myMap.insert(context, {
 
 ### Search
 
-Search for if a given key is in the `OrderedMap`.
+Search for whether a given key is in the `OrderedMap`.
 
 Returns whether or not the key exists. If the key exists, this will also
-return the associated `Value`, `bytes,` or `Any`.
+return the associated `Value`, `bytes`, or `Any`.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
@@ -434,7 +434,7 @@ smallest key.
 You will receive up to `limit` items in the response. The `limit` argument
 is always required to avoid exhausting memory in the client or server.
 
-This returns `entries` that have a `key` and one of `value`, `bytes,` or `any`
+This returns `entries` that have a `key` and one of `value`, `bytes`, or `any`
 set dependent on how you inserted the data.
 
 <Tabs groupId="language">
@@ -491,7 +491,7 @@ largest key.
 You will receive up to `limit` items in the response. The `limit` argument
 is always required to avoid exhausting memory in the client or server.
 
-This returns `entries` that have a `key` and one of `value`, `bytes,` or `any`
+This returns `entries` that have a `key` and one of `value`, `bytes`, or `any`
 set dependent on how you inserted the data.
 
 <Tabs groupId="language">
@@ -539,7 +539,7 @@ your range is not valid.
 ## Errors
 
 ### InvalidRangeError {#invalidrangeerror}
-See [`range`](#range) and [`reverse_range`/`reverseRange`](#reverserange).
+See [`range`](#range) and [`reverse_range`/`reverseRange`](#reverse-range).
 Raised when the requested range is not valid.
 
 The `message` field of the error contains the string explaining why the range

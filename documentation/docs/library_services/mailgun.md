@@ -23,8 +23,8 @@ Created and scheduled using its constructor: `await Message.send(...)`.
 
 Construct and send an email message using the Mailgun API.
 
-Returns a `task_id` which can be used for the message to have
-been sent.
+Returns a `task_id` which can be used to wait for the message to
+have been sent.
 
 ## Messages
 

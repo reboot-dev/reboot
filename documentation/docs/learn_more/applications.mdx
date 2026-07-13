@@ -93,12 +93,14 @@ const initialize = async (context) => {
 </Tabs>
 
 If you have declared an `initialize` function, then you can additionally pass an
-`initialize_bearer_token` (`initializeBearerToken` in TypeScript) which the `initialize` method
-should use to [authenticate](/learn_more/auth) itself to your application.
+`initialize_bearer_token` (`initializeBearerToken` in TypeScript). That token is used
+to construct the context passed to `initialize`, so that the calls `initialize` makes
+are [authenticated](/learn_more/auth) to your application.
 
 ## AI Chat App auto-registration
 
-When your API includes a `User` type or
+When your API includes a
+[`User`](/learn_more/define/pydantic#special-state-user) type or
 [`UI`](/learn_more/implement/ui_methods) methods, `Application`
 automatically registers the necessary endpoints for AI chat
 clients. No extra configuration is needed in your `main.py` —
@@ -112,7 +114,9 @@ application = Application(
 await application.run()
 ```
 
-AI chat clients connect to your app at `/mcp`.
+AI chat clients connect to your app at `/mcp`. See
+[MCP Apps](/learn_more/mcp_apps) for how your methods are exposed to
+AI chat clients.
 
 ## HTTP custom routes
 
@@ -184,9 +188,9 @@ perspective.
 This `context` includes any bearer token from
 `Authorization: Bearer <token>` so that any calls into your Reboot application
 will be properly authorized. In TypeScript, we inject the context for every
-handler. In Python, we follow the FastAPI dependency injection strategy.
-If you want the `context`, you must explicitly add it to your arguments as shown in
-the following example:
+handler. In Python, we follow the FastAPI dependency injection strategy:
+if you want the `context`, you must explicitly add it to your handler's
+arguments as shown in the following example:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
