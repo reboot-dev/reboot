@@ -1547,6 +1547,7 @@ struct PythonNativeLibraryDetails {
   std::string py_library_module;
   std::string py_library_function;
   std::optional<NapiSafeObjectReference> js_authorizer;
+  std::map<std::string, NapiSafeObjectReference> js_authorizers;
 };
 
 using LibraryDetails =
@@ -1573,9 +1574,27 @@ std::vector<std::shared_ptr<LibraryDetails>> make_library_details(
             js_library.Get("authorizer").As<Napi::Object>());
       }
 
+      // Get named authorizers.
+      std::map<std::string, NapiSafeObjectReference> js_authorizers;
+      if (!js_library.Get("authorizers").IsUndefined()) {
+        Napi::Object js_authorizers_object =
+            js_library.Get("authorizers").As<Napi::Object>();
+        Napi::Array keys = js_authorizers_object.GetPropertyNames();
+        for (size_t i = 0; i < keys.Length(); ++i) {
+          std::string key = keys.Get(i).As<Napi::String>().Utf8Value();
+          js_authorizers.emplace(
+              key,
+              NapiSafeObjectReference(
+                  js_authorizers_object.Get(key).As<Napi::Object>()));
+        }
+      }
+
       library_details.push_back(
-          std::make_shared<LibraryDetails>(
-              PythonNativeLibraryDetails{module, function, js_authorizer}));
+          std::make_shared<LibraryDetails>(PythonNativeLibraryDetails{
+              module,
+              function,
+              js_authorizer,
+              std::move(js_authorizers)}));
     } else if (
         !js_library.Get("name").IsUndefined()
         && !js_library.Get("servicers").IsUndefined()) {
@@ -1706,19 +1725,19 @@ py::list make_py_libraries(
     } else if (
         auto python_details =
             std::get_if<PythonNativeLibraryDetails>(details.get())) {
-      // Call the library() function with `authorizer` if one is provided.
-      py::object py_library;
+      // Call the library() function, passing any configured authorizers
+      // as keyword arguments.
+      py::dict kwargs;
       if (python_details->js_authorizer.has_value()) {
-        py_library =
-            py::module::import(python_details->py_library_module.c_str())
-                .attr(python_details->py_library_function.c_str())(
-                    "authorizer"_a =
-                        make_py_authorizer(*python_details->js_authorizer));
-      } else {
-        py_library =
-            py::module::import(python_details->py_library_module.c_str())
-                .attr(python_details->py_library_function.c_str())();
+        kwargs["authorizer"] =
+            make_py_authorizer(*python_details->js_authorizer);
       }
+      for (const auto& [key, js_authorizer] : python_details->js_authorizers) {
+        kwargs[py::str(key)] = make_py_authorizer(js_authorizer);
+      }
+      py::object py_library =
+          py::module::import(python_details->py_library_module.c_str())
+              .attr(python_details->py_library_function.c_str())(**kwargs);
       py_libraries.append(py_library);
     }
   }
