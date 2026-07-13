@@ -24,9 +24,13 @@ export function orderedMapLibrary({
   // refer to the type.
   authorizer?: InstanceType<typeof OrderedMap.Authorizer>;
 } = {}): NativeLibrary {
+  const authorizers: NativeLibrary["authorizers"] = {};
+  if (authorizer !== undefined) {
+    authorizers["authorizer"] = authorizer;
+  }
   return {
     nativeLibraryModule: "reboot.std.collections.ordered_map.v1.ordered_map",
     nativeLibraryFunction: "ordered_map_library",
-    authorizer,
+    authorizers,
   };
 }

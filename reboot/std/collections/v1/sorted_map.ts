@@ -22,9 +22,13 @@ export function sortedMapLibrary({
   // to the type.
   authorizer?: InstanceType<typeof SortedMap.Authorizer>;
 } = {}): NativeLibrary {
+  const authorizers: NativeLibrary["authorizers"] = {};
+  if (authorizer !== undefined) {
+    authorizers["authorizer"] = authorizer;
+  }
   return {
     nativeLibraryModule: "reboot.std.collections.v1.sorted_map",
     nativeLibraryFunction: "sorted_map_library",
-    authorizer,
+    authorizers,
   };
 }
