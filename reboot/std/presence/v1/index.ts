@@ -2,8 +2,8 @@ import {
   AuthorizerRule,
   NativeLibrary,
   NativeServicer,
-  assert,
 } from "@reboot-dev/reboot";
+import { assert } from "@reboot-dev/reboot-api";
 import {
   MousePosition,
   MousePositionRequestTypes,
@@ -50,18 +50,24 @@ export function presenceLibrary({
     | AuthorizerRule<MousePosition.State, MousePositionRequestTypes>;
   authorizer?: AuthorizerRule<any, any>;
 } = {}): NativeLibrary {
-  const authorizers: NativeLibrary["authorizers"] = {};
+  // Check whether a blanket AuthorizationRule has been supplied.
   if (authorizer !== undefined) {
     assert(
       presenceAuthorizer === undefined &&
         subscriberAuthorizer === undefined &&
-        mousePositionAuthorizer == undefined,
+        mousePositionAuthorizer === undefined,
       "If an AuthorizerRule is supplied, it will be applied to all " +
         "three servicers. To specify a specific authorizers for each " +
         "servicer, please use pass in `presenceAuthorizer`, " +
         "`subscriberAuthorizer` and `mousePositionAuthorizer`."
     );
+    presenceAuthorizer = authorizer;
+    subscriberAuthorizer = authorizer;
+    mousePositionAuthorizer = authorizer;
   }
+
+  // Set up `authorizers` to pass into Python.
+  const authorizers: NativeLibrary["authorizers"] = {};
   if (presenceAuthorizer !== undefined) {
     authorizers["presence_authorizer"] =
       presenceAuthorizer instanceof AuthorizerRule
