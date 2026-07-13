@@ -22,9 +22,13 @@ export function queueLibrary({
   // refer to the type.
   authorizer?: InstanceType<typeof Queue.Authorizer>;
 } = {}): NativeLibrary {
+  const authorizers: NativeLibrary["authorizers"] = {};
+  if (authorizer !== undefined) {
+    authorizers["authorizer"] = authorizer;
+  }
   return {
     nativeLibraryModule: "reboot.std.collections.queue.v1.queue",
     nativeLibraryFunction: "queue_library",
-    authorizer,
+    authorizers,
   };
 }
