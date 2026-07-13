@@ -291,9 +291,12 @@ class PresenceLibrary(Library):
 
     def __init__(
         self,
-        presence_authorizer: Optional[Presence.Authorizer] = None,
-        subscriber_authorizer: Optional[Subscriber.Authorizer] = None,
-        mouse_position_authorizer: Optional[MousePosition.Authorizer] = None,
+        presence_authorizer: Optional[Presence.Authorizer |
+                                      AuthorizerRule] = None,
+        subscriber_authorizer: Optional[Subscriber.Authorizer |
+                                        AuthorizerRule] = None,
+        mouse_position_authorizer: Optional[MousePosition.Authorizer |
+                                            AuthorizerRule] = None,
         authorizer: Optional[AuthorizerRule] = None,
     ):
         if authorizer is not None:
@@ -329,9 +332,11 @@ def servicers():
 
 
 def presence_library(
-    presence_authorizer: Optional[Presence.Authorizer] = None,
-    subscriber_authorizer: Optional[Subscriber.Authorizer] = None,
-    mouse_position_authorizer: Optional[MousePosition.Authorizer] = None,
+    presence_authorizer: Optional[Presence.Authorizer | AuthorizerRule] = None,
+    subscriber_authorizer: Optional[Subscriber.Authorizer |
+                                    AuthorizerRule] = None,
+    mouse_position_authorizer: Optional[MousePosition.Authorizer |
+                                        AuthorizerRule] = None,
     authorizer: Optional[AuthorizerRule] = None,
 ):
 

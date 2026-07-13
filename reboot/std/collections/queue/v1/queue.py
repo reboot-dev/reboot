@@ -8,7 +8,11 @@ from rbt.std.collections.queue.v1.queue_rbt import (
     Queue,
 )
 from reboot.aio.applications import Library
-from reboot.aio.auth.authorizers import allow_if, is_app_internal
+from reboot.aio.auth.authorizers import (
+    AuthorizerRule,
+    allow_if,
+    is_app_internal,
+)
 from reboot.aio.contexts import (
     ReaderContext,
     TransactionContext,
@@ -35,7 +39,7 @@ class QueueServicer(Queue.Servicer):
     # Singleton authorizer as class variable.
     # Discussion here for singleton authorizer vs subclassing the servicer:
     # https://github.com/reboot-dev/mono/pull/5140#issuecomment-3667592432
-    _authorizer: Optional[Queue.Authorizer] = None
+    _authorizer: Optional[Queue.Authorizer | AuthorizerRule] = None
 
     def authorizer(self):
         if self._authorizer:
@@ -213,7 +217,7 @@ class QueueLibrary(Library):
 
     def __init__(
         self,
-        authorizer: Optional[Queue.Authorizer] = None,
+        authorizer: Optional[Queue.Authorizer | AuthorizerRule] = None,
     ):
         QueueServicer._authorizer = authorizer
 
@@ -228,5 +232,7 @@ def servicers():
     return [QueueServicer] + sorted_map.servicers()
 
 
-def queue_library(authorizer: Optional[Queue.Authorizer] = None):
+def queue_library(
+    authorizer: Optional[Queue.Authorizer | AuthorizerRule] = None
+):
     return QueueLibrary(authorizer)
