@@ -55,8 +55,9 @@ import { Topic } from "@reboot-dev/reboot-std/pubsub/v1";
   </TabItem>
 </Tabs>
 
-Also make sure to include the pub/sub servicers when starting up your `Application`.
-(Note: this import is different from above.)
+Also make sure to include the pub/sub library and the dependent
+[`Queue`](./queue) and [`SortedMap`](./sorted_map) libraries when starting up
+your `Application`. (Note: this import is different from above.)
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
@@ -94,7 +95,7 @@ new Application({
 
 ## Referencing Topics
 
-This creates references to `Topic`s with IDs `"my-first-topic"` and
+This creates references to `Topic`s with IDs such as `"my-first-topic"` and
 `"my-second-topic"`. You can then call methods on these references.
 
 <Tabs groupId="language">
@@ -189,7 +190,7 @@ Any subsequent messages published to the `Topic` will be received by
 [`dequeue`](/library_services/queue#dequeue)ing on the [`Queue`](/library_services/queue).
 
 Note: Any messages published to the `Topic` *before* the `Queue` is subscribed
-is not guaranteed to be received by the `Queue`.
+are not guaranteed to be received by the `Queue`.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>

@@ -11,10 +11,10 @@ modifications to state are not persisted.
 
 A `writer` method gets passed a context of type `WriterContext`. A
 `WriterContext` can only be used to make calls to `reader`
-methods (**that is not a typo, `writer`'s can only call other
-`reader`'s**).
+methods (**that is not a typo: a `writer` can call `reader`
+methods, but not other `writer` methods**).
 
-Here's an example of a `writer` method called `Deposit` on our
+Here's an example of a `writer` method called `deposit` on our
 `Account` state that increments the account's current balance by some
 amount in the request:
 

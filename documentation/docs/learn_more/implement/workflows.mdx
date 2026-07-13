@@ -12,7 +12,7 @@ methods in Reboot:
 * _Workflows are not atomic_. For example, state updates made by a workflow may
   be visible to other Reboot methods before the workflow completes. Similarly, a
   workflow can obtain multiple read snapshots over the course of its
-  execution. We discuss below how to
+  execution. See below for how to
   [read](/learn_more/implement/workflows#reading-state) and
   [write](/learn_more/implement/workflows#writing-state) state.
 * Workflows can only be run as [tasks](/learn_more/tasks). This means that
@@ -174,10 +174,10 @@ kind of _inline_ `writer`. Most importantly this means that your
 function or lambda will be executed _atomically_ with respect to any
 other `writer` or `transaction` methods.
 
-In the same way that calling a `writer` or `transaction` is done so
-idempotently within a `workflow`, your inline writer is also executed
-idempotently. The first argument to `write()` acts as an idempotency
-alias for that write.
+In the same way that calls to a `writer` or `transaction` from a
+`workflow` are made idempotently, your inline writer is also executed
+idempotently. The string you pass to `.idempotently()` acts as an
+idempotency alias for that write.
 
 :::tip
 
@@ -359,8 +359,8 @@ If the code executed using `at_most_once` (Python) or `atMostOnce` (TypeScript)
 raises an exception, _the code will not be re-executed_ the next time the
 workflow runs. Depending on the nature of the external service you are
 interacting with, this might result in a partial state update or otherwise
-problematic situation. When possible, third-party services that provide support
-safe retries should be preferred. If the external API supports safe retries
+problematic situation. When possible, third-party services that support safe
+retries should be preferred. If the external API supports safe retries
 (e.g., via some notion of an "idempotency key" or a similar concept),
 `at_least_once` (Python) or `atLeastOnce` (TypeScript) can be used in Reboot.
 
@@ -382,7 +382,7 @@ various scenarios and ensure reliable task execution.
 
 Within a `workflow` you can run a control loop by calling
 `context.loop(...)`, which provides an asynchronous iterator that you
-must explicit break or return from within:
+must explicitly break or return from within:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>

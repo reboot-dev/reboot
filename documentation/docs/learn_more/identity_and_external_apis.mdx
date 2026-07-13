@@ -15,7 +15,7 @@ external services that don't use OAuth at all.
 
 What you pass to `Application(oauth=...)` stands first and foremost for
 **identity**: the provider determines who `context.auth.user_id` says
-the caller is. In an MCP application that principal is **the user**, and
+the caller is. In an [MCP application](/learn_more/mcp_apps) that principal is **the user**, and
 there is no middle ground — either every user signs in through this
 OAuth flow, or the application has no per-user auth at all.
 
@@ -54,8 +54,9 @@ async def main():
 
 Under `rbt dev run` the `dev` arm is used; everywhere else (`rbt serve`,
 the Reboot Cloud, or any unrecognized environment) the `prod` arm is.
-Both arms are required, and a selected `None` arm fails at startup — so
-you can't silently ship without choosing a provider.
+Both arms must be passed explicitly (though either may be `None`), and
+a selected `None` arm fails at startup — so you can't silently ship
+without choosing a provider.
 
 The providers that ship in `reboot.aio.auth.oauth_providers`:
 

@@ -3,7 +3,7 @@ import TabItem from "@theme/TabItem";
 
 # From outside your app
 
-By "external" to a Reboot application, we mean from a (micro)service
+"External" to a Reboot application means from a (micro)service
 (e.g., a gRPC or HTTP based service) or a lambda (e.g., using some
 serverless framework), or even from your laptop! Your tests are
 another example of "external".
@@ -59,7 +59,8 @@ call that method from your client.
 
 ## Making calls idempotently
 
-You can make calls `idempotently()` using an `ExternalContext` so
+You can make calls [`idempotently()`](/learn_more/idempotency)
+using an `ExternalContext` so
 that you only perform operations once. You can even pass an
 _idempotency seed_, e.g., a `UUID`, to an `ExternalContext` when
 constructing it so that every time you re-run code using that
@@ -94,7 +95,9 @@ const context = new ExternalContext({
 
 ## Calling readers reactively
 
-Using an `ExternalContext`, you can also call `reader` methods _reactively_. For example:
+Using an `ExternalContext`, you can also call `reader` methods
+_reactively_: you receive a new response every time the state
+changes. For example:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>

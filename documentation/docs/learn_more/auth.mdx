@@ -196,7 +196,7 @@ abstract verifyToken(
 In addition to being able to set any arbitrary `properties` on the
 returned `Auth` object that authorizers can consume, there is a
 specific `user_id` (Python), `userId` (TypeScript) property meant to
-indicate that this is valid user (and its internally represented ID).
+indicate that this is a valid user (and its internally represented ID).
 
 :::tip
 
@@ -388,7 +388,7 @@ the caller's `user_id` matches the `User`'s state ID. In other
 words, each user can access their own `User` state without any
 custom authorizer. App-internal calls are allowed as well.
 
-If you need different rules, you can override override `authorizer()` as
+If you need different rules, you can override `authorizer()` as
 with any other state type.
 
 :::important
@@ -397,17 +397,17 @@ Why am I seeing log messages about **MISSING AUTHORIZATION**?
 
 To streamline development using `rbt dev`, calls missing authorization
 are **allowed**. When running with `rbt serve` or via `rbt cloud`
-those same calls will be **denied** so we emit a log warning to help
-you identify those calls.
+those same calls will be **denied**, so Reboot emits a log warning to
+help you identify those calls.
 
 Implement the `authorizer()` method on your `Servicer` to silence the
 warning.
 
 :::
 
-## Thirdparty auth providers
+## Third-party auth providers
 
-Integrating a thirdparty auth provider like [Auth0](https://auth0.com/docs/quickstarts) or
+Integrating a third-party auth provider like [Auth0](https://auth0.com/docs/quickstarts) or
 [Ory](https://www.ory.sh/docs/getting-started/overview) into your application
 usually involves:
 

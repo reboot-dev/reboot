@@ -12,7 +12,7 @@ for full-stack apps with Python backends.
 A Reboot API is centered on _types_, which contain _state_ and
 _methods_. When building an AI Chat App, you define a `User`
 type (auto-constructed per authenticated user) whose methods
-create other state types. Methods become
+create other state types. Methods with `mcp=Tool()` become
 [tools the AI can call](/learn_more/mcp_apps):
 
 <!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py&syntax=python) -->
