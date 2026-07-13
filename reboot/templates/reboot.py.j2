@@ -4586,7 +4586,7 @@ class {{ client.proto.state_name }}:
             {% endfor %}
         ]
 
-        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message{% if options.proto.pydantic %} | IMPORT_reboot_api.Model{% endif %}]] = (
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
             METHOD_PROTOBUF_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
             IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
