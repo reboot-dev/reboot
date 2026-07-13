@@ -46,7 +46,7 @@ claude plugin marketplace add reboot-dev/reboot-plugin
 claude plugin install reboot@reboot-plugin
 ```
 
-Or, to auto-enable the skill for your whole team, add this to your
+Or, to auto-enable the plugin for your whole team, add this to your
 project's `.claude/settings.json`:
 
 ```json
@@ -139,7 +139,8 @@ pattern described in the
 [hand-written guide](/ai_chat_apps/get_started): `User` is the
 auto-constructed entry point whose methods create other state
 types, and those types' methods use `mcp=Tool()` to be callable
-by the AI.
+by the AI. UI methods use `UI()` and render React inside the MCP
+host.
 
 ## Test your app
 
