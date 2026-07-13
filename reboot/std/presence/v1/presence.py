@@ -29,9 +29,11 @@ from rbt.std.presence.v1.presence_rbt import (
     WatchResponse,
 )
 from rbt.v1alpha1.errors_pb2 import AlreadyExists, FailedPrecondition, NotFound
+from reboot.aio.applications import Library
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import ReaderContext, WorkflowContext, WriterContext
 from reboot.aio.workflows import until
+from typing import Optional
 
 
 class Event:
@@ -64,8 +66,16 @@ class Event:
 
 class PresenceServicer(Presence.singleton.Servicer):
 
+    # Singleton authorizer as class variable.
+    # Discussion here for singleton authorizer vs subclassing the servicer:
+    # https://github.com/reboot-dev/mono/pull/5140#issuecomment-3667592432
+    _authorizer: Optional[Presence.Authorizer] = None
+
     def authorizer(self):
-        return allow()
+        if self._authorizer:
+            return self._authorizer
+        else:
+            return allow()
 
     async def Subscribe(
         self,
@@ -258,9 +268,31 @@ class MousePositionServicer(MousePosition.singleton.Servicer):
         return PositionResponse(left=state.left, top=state.top)
 
 
+PRESENCE_LIBRARY_NAME = "reboot.std.presence.v1.presence"
+
+
+class PresenceLibrary(Library):
+    name = PRESENCE_LIBRARY_NAME
+
+    def __init__(
+        self,
+        authorizer: Optional[Presence.Authorizer] = None,
+    ):
+        PresenceServicer._authorizer = authorizer
+
+    def servicers(self):
+        return [PresenceServicer, SubscriberServicer, MousePositionServicer]
+
+
 def servicers():
     return [
         PresenceServicer,
         SubscriberServicer,
         MousePositionServicer,
     ]
+
+
+def presence_library(
+    authorizer: Optional[Presence.Authorizer] = None,
+):
+    return PresenceLibrary(authorizer)
