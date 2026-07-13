@@ -2,6 +2,9 @@ import asyncio
 import unittest
 from rbt.v1alpha1.errors_pb2 import AlreadyExists, FailedPrecondition, NotFound
 from reboot.aio.applications import Application
+from reboot.aio.auth import Auth
+from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
+from reboot.aio.contexts import ReaderContext
 from reboot.aio.external import ExternalContext
 from reboot.aio.memoize import MemoizeServicer
 from reboot.aio.tests import Reboot
@@ -14,6 +17,18 @@ from reboot.std.presence.v1.presence import (
     Subscriber,
     presence_library,
 )
+from typing import Optional
+
+
+class EmptyTokenVerifier(TokenVerifier):
+    """Test token verifier that always returns that this is a valid Auth token."""
+
+    async def verify_token(
+        self,
+        context: ReaderContext,
+        token: Optional[str],
+    ) -> VerifyTokenResult:
+        return Auth(user_id=token or "default-user")
 
 
 class TestPresence(unittest.IsolatedAsyncioTestCase):
@@ -81,6 +96,7 @@ class TestPresence(unittest.IsolatedAsyncioTestCase):
             Application(
                 servicers=[MemoizeServicer],
                 libraries=[presence_library()],
+                token_verifier=EmptyTokenVerifier(),
             )
         )
 
@@ -99,6 +115,7 @@ class TestPresence(unittest.IsolatedAsyncioTestCase):
             Application(
                 servicers=[MemoizeServicer],
                 libraries=[presence_library()],
+                token_verifier=EmptyTokenVerifier(),
             )
         )
 
@@ -118,6 +135,7 @@ class TestPresence(unittest.IsolatedAsyncioTestCase):
             Application(
                 servicers=[MemoizeServicer],
                 libraries=[presence_library()],
+                token_verifier=EmptyTokenVerifier(),
             )
         )
 
@@ -145,6 +163,7 @@ class TestPresence(unittest.IsolatedAsyncioTestCase):
             Application(
                 servicers=[MemoizeServicer],
                 libraries=[presence_library()],
+                token_verifier=EmptyTokenVerifier(),
             )
         )
 
@@ -173,6 +192,7 @@ class TestPresence(unittest.IsolatedAsyncioTestCase):
             Application(
                 servicers=[MemoizeServicer],
                 libraries=[presence_library()],
+                token_verifier=EmptyTokenVerifier(),
             )
         )
 
@@ -225,6 +245,7 @@ class TestPresence(unittest.IsolatedAsyncioTestCase):
             Application(
                 servicers=[MemoizeServicer],
                 libraries=[presence_library()],
+                token_verifier=EmptyTokenVerifier(),
             )
         )
 

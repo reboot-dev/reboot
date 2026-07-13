@@ -30,7 +30,11 @@ from rbt.std.presence.v1.presence_rbt import (
 )
 from rbt.v1alpha1.errors_pb2 import AlreadyExists, FailedPrecondition, NotFound
 from reboot.aio.applications import Library
-from reboot.aio.auth.authorizers import allow
+from reboot.aio.auth.authorizers import (
+    allow_if,
+    has_verified_token,
+    is_app_internal,
+)
 from reboot.aio.contexts import ReaderContext, WorkflowContext, WriterContext
 from reboot.aio.workflows import until
 from typing import Optional
@@ -73,7 +77,7 @@ class PresenceServicer(Presence.singleton.Servicer):
         if self._authorizer:
             return self._authorizer
         else:
-            return allow()
+            return allow_if(any=[is_app_internal, has_verified_token])
 
     async def Subscribe(
         self,
@@ -146,7 +150,7 @@ class SubscriberServicer(Subscriber.singleton.Servicer):
         if self._authorizer:
             return self._authorizer
         else:
-            return allow()
+            return allow_if(any=[is_app_internal, has_verified_token])
 
     async def Create(
         self,
@@ -252,7 +256,7 @@ class MousePositionServicer(MousePosition.singleton.Servicer):
         if self._authorizer:
             return self._authorizer
         else:
-            return allow()
+            return allow_if(any=[is_app_internal, has_verified_token])
 
     async def Update(
         self,
