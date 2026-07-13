@@ -22,9 +22,13 @@ export function pubsubLibrary({
   // to the type.
   authorizer?: InstanceType<typeof Topic.Authorizer>;
 } = {}): NativeLibrary {
+  const authorizers: NativeLibrary["authorizers"] = {};
+  if (authorizer !== undefined) {
+    authorizers["authorizer"] = authorizer;
+  }
   return {
     nativeLibraryModule: "reboot.std.pubsub.v1.pubsub",
     nativeLibraryFunction: "pubsub_library",
-    authorizer,
+    authorizers,
   };
 }

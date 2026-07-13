@@ -1546,7 +1546,6 @@ struct TypeScriptLibraryDetails {
 struct PythonNativeLibraryDetails {
   std::string py_library_module;
   std::string py_library_function;
-  std::optional<NapiSafeObjectReference> js_authorizer;
   std::map<std::string, NapiSafeObjectReference> js_authorizers;
 };
 
@@ -1567,14 +1566,7 @@ std::vector<std::shared_ptr<LibraryDetails>> make_library_details(
                                  .As<Napi::String>()
                                  .Utf8Value();
 
-      // Get authorizer.
-      std::optional<NapiSafeObjectReference> js_authorizer;
-      if (!js_library.Get("authorizer").IsUndefined()) {
-        js_authorizer = NapiSafeObjectReference(
-            js_library.Get("authorizer").As<Napi::Object>());
-      }
-
-      // Get named authorizers.
+      // Get authorizers.
       std::map<std::string, NapiSafeObjectReference> js_authorizers;
       if (!js_library.Get("authorizers").IsUndefined()) {
         Napi::Object js_authorizers_object =
@@ -1593,7 +1585,6 @@ std::vector<std::shared_ptr<LibraryDetails>> make_library_details(
           std::make_shared<LibraryDetails>(PythonNativeLibraryDetails{
               module,
               function,
-              js_authorizer,
               std::move(js_authorizers)}));
     } else if (
         !js_library.Get("name").IsUndefined()
@@ -1728,10 +1719,6 @@ py::list make_py_libraries(
       // Call the library() function, passing any configured authorizers
       // as keyword arguments.
       py::dict kwargs;
-      if (python_details->js_authorizer.has_value()) {
-        kwargs["authorizer"] =
-            make_py_authorizer(*python_details->js_authorizer);
-      }
       for (const auto& [key, js_authorizer] : python_details->js_authorizers) {
         kwargs[py::str(key)] = make_py_authorizer(js_authorizer);
       }
