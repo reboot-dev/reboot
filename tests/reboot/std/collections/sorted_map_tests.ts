@@ -76,4 +76,21 @@ test("use std servicer", async (t) => {
       );
     }
   });
+
+  await t.test("use overriding authorization rule", async (t) => {
+    await rbt.up(
+      new Application({
+        libraries: [sortedMapLibrary({ authorizer: allow() })],
+      })
+    );
+
+    // Expect to be able to insert even with `appInternal=false`.
+    const context = rbt.createExternalContext("test", {
+      appInternal: false,
+    });
+    const myMap = SortedMap.ref("test-id");
+    await myMap.insert(context, {
+      entries: { foo: new TextEncoder().encode("bar") },
+    });
+  });
 });
