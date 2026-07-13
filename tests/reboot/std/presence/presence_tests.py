@@ -1,8 +1,14 @@
 import asyncio
 import unittest
-from rbt.v1alpha1.errors_pb2 import AlreadyExists, FailedPrecondition, NotFound
+from rbt.v1alpha1.errors_pb2 import (
+    AlreadyExists,
+    FailedPrecondition,
+    NotFound,
+    PermissionDenied,
+)
 from reboot.aio.applications import Application
 from reboot.aio.auth import Auth
+from reboot.aio.auth.authorizers import allow
 from reboot.aio.auth.token_verifiers import TokenVerifier, VerifyTokenResult
 from reboot.aio.contexts import ReaderContext
 from reboot.aio.external import ExternalContext
@@ -284,6 +290,106 @@ class TestPresence(unittest.IsolatedAsyncioTestCase):
         async for response in presence.reactively().List(context):
             if response.subscriber_ids == []:
                 break
+
+    async def test_no_token_verifier_fails_default_auth(self) -> None:
+        """
+        Test that not using a TokenVerifier fails default authorization for
+        Presence.
+        """
+        await self.rbt.up(
+            Application(
+                servicers=[MemoizeServicer],
+                libraries=[presence_library()],
+            )
+        )
+
+        # Assert that Subscriber calls cannot be made.
+        context = self.rbt.create_external_context(name=f"test-{self.id()}-1")
+        with self.assertRaises(Subscriber.CreateAborted) as subscriber_aborted:
+            await Subscriber.ref("subscriber").idempotently().create(context)
+        self.assertTrue(
+            isinstance(subscriber_aborted.exception.error, PermissionDenied)
+        )
+
+        # Assert that Presence calls cannot be made.
+        # Needs own context due to idempotency logic given earlier call fails.
+        context = self.rbt.create_external_context(name=f"test-{self.id()}-2")
+        with self.assertRaises(Presence.SubscribeAborted) as presence_aborted:
+            await Presence.ref("presence"
+                              ).subscribe(context, subscriber_id="subscriber")
+        self.assertTrue(
+            isinstance(presence_aborted.exception.error, PermissionDenied)
+        )
+
+        # Assert that MousePosition calls cannot be made.
+        # Needs own context due to idempotency logic given earlier calls fail.
+        context = self.rbt.create_external_context(name=f"test-{self.id()}-3")
+        with self.assertRaises(
+            MousePosition.UpdateAborted
+        ) as mouse_position_aborted:
+            await MousePosition.ref("subscriber").update(
+                context,
+                left=1,
+                top=1,
+            )
+        self.assertTrue(
+            isinstance(
+                mouse_position_aborted.exception.error, PermissionDenied
+            )
+        )
+
+    async def test_override_auth_allows(self) -> None:
+        """
+        Test that overriding auth allows you to call into the library with a
+        token.
+        """
+        await self.rbt.up(
+            Application(
+                servicers=[MemoizeServicer],
+                libraries=[presence_library(authorizer=allow())],
+            )
+        )
+
+        context = self.rbt.create_external_context(name=f"test-{self.id()}")
+
+        presence = Presence.ref("presence-testing-connect-fail")
+        subscriber = Subscriber.ref("subscriber-testing-connect-fail")
+
+        nonce = "1"
+
+        # This will test calling into Subscriber and Presence servicers.
+        connect_task = await self.make_connection(
+            presence, subscriber, context, nonce
+        )
+
+        # Check that calls into Mouse Position can be made.
+        await MousePosition.ref(subscriber.state_id).update(
+            context,
+            left=1,
+            top=1,
+        )
+
+        connect_task.cancel()
+
+    async def test_pass_too_many_authorizers_assert(self) -> None:
+        """
+        Test if you pass in authorizer and specific authorizers into
+        `presence_library` that it fails with an assert.
+        """
+        with self.assertRaises(AssertionError):
+            await self.rbt.up(
+                Application(
+                    servicers=[MemoizeServicer],
+                    libraries=[
+                        presence_library(
+                            authorizer=allow(),
+                            presence_authorizer=Presence.Authorizer(
+                                subscribe=allow()
+                            ),
+                        )
+                    ],
+                )
+            )
 
 
 if __name__ == '__main__':
