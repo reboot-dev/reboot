@@ -1,0 +1,13 @@
+[submodule "dev-tools"]
+	path = submodules/dev-tools
+	url = ../../3rdparty/dev-tools.git
+	branch = main
+[submodule "pyprotoc-plugin"]
+	path = submodules/pyprotoc-plugin
+	url = ../../reboot-dev/pyprotoc-plugin
+[submodule "submodules/stout"]
+	path = submodules/stout
+	url = https://github.com/3rdparty/stout.git
+[submodule "sha1"]
+	path = reboot/server/sha1
+	url = https://github.com/mpeterv/sha1.git
