@@ -1,5 +1,5 @@
-import { Application, ServicerFactory } from "@reboot-dev/reboot";
-import presence from "@reboot-dev/reboot-std/presence/v1";
+import { Application, allow } from "@reboot-dev/reboot";
+import { presenceLibrary } from "@reboot-dev/reboot-std/presence/v1";
 import { FigBoard } from "../../api/fig/v1/fig_rbt.js";
 import { Users } from "../../api/user/v1/user_rbt.js";
 import { FIG_BOARD_ID, USERS_ID } from "../../constants.js";
@@ -13,13 +13,10 @@ const initialize = async (context) => {
 };
 
 new Application({
-  servicers: [
-    FigServicer,
-    FigBoardServicer,
-    UsersServicer,
-    UserServicer,
+  servicers: [FigServicer, FigBoardServicer, UsersServicer, UserServicer],
+  libraries: [
     // We use `Presence` from the std library.
-    ...presence.servicers(),
+    presenceLibrary({ authorizer: allow() }),
   ],
   initialize,
 }).run();
