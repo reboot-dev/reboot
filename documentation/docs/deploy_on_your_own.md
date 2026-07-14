@@ -10,6 +10,45 @@ for vertical scaling by using multiple cores. If your application needs to scale
 beyond a single machine, [talk to Reboot](mailto:team@reboot.dev) about using
 Reboot Cloud.
 
+### Running your application
+
+The subcommand that runs your application is `rbt serve run`. You can run it
+on any machine that meets the [requirements](#requirements) below, for
+example:
+
+```shell
+rbt serve run \
+  --application=backend/src/main.py \
+  --python \
+  --application-name=my-app \
+  --state-directory=/mnt/reboot-state \
+  --port=9991 \
+  --tls=external
+```
+
+| Flag | Description |
+| --- | --- |
+| `--application=<path>` | Required. Path to the file that runs your `Application` (e.g. `backend/src/main.py` or `backend/src/main.ts`). |
+| `--python` / `--nodejs` | Required (exactly one). Whether to launch the application with Python or Node.js. |
+| `--application-name=<name>` | Required. Name of your application, used to differentiate state within `--state-directory`. |
+| `--state-directory=<dir>` | Required. Directory in which Reboot durably stores application state; it must be on a persistent file system (see [requirements](#requirements)). |
+| `--port=<port>` | Required. Port to listen on. Can also be set through the `PORT` (or `RBT_PORT`) environment variable, which many hosting platforms set automatically. |
+| `--tls=<mode>` | Required. Set `external` if `rbt serve` runs behind an external load balancer that already does TLS termination, or `own-certificate` to provide your own TLS certificate. |
+| `--tls-certificate=<path>`, `--tls-key=<path>` | Paths to your TLS certificate and key; required with (and only valid with) `--tls=own-certificate`. |
+| `--servers=<n>` | Number of servers (serving processes) to spawn; must be a power of 2. Defaults to the number of available cores, rounded down to a power of 2. |
+
+As with all `rbt` commands, you can put these flags in an
+[`.rbtrc`](/develop_locally#rbtrc-and-flags) file — each on a line prefixed
+with `serve run` — so that running plain `rbt serve run` (for example, as the
+`CMD` of a container) picks them up:
+
+```shell
+serve run --application=backend/src/main.py
+serve run --python
+serve run --application-name=my-app
+serve run --tls=external
+```
+
 ### Kubernetes
 The recommended deployment model for `rbt serve` on Kubernetes is to store Reboot's state in
 either:
