@@ -94,7 +94,7 @@ Learn more about idempotency when calling a method
 ## Reading `state`
 
 Unlike other kinds of methods, `state` is not passed as an argument to
-`workflow` methods. Instead, if you need to read state you must fetch a current
+`workflow` methods. Instead, if you need to read state you must fetch a
 _snapshot_:
 
 <Tabs groupId="language">
@@ -125,6 +125,16 @@ const snapshot = await TestTask.ref().read(context);
 
 A workflow method might fetch a snapshot of state multiple times during the
 course of its execution. The contents of these snapshots may differ.
+
+Like calls, reads follow the workflow's
+[idempotency rules](#retries-and-idempotency): by default `read()` behaves as
+though you had used `.per_workflow()` (Python) / `.perWorkflow()`
+(TypeScript), so the snapshot is fetched once per workflow and a retry sees
+the same recorded contents rather than the current state. Inside a
+[control loop](#control-loops) the default is per-iteration, and inside an
+[`until`](#waiting-until-a-condition) every evaluation fetches a fresh
+snapshot. You can also choose explicitly, e.g.
+`TestTask.ref().always().read(context)` to fetch a fresh snapshot every time.
 
 ## Writing state
 
