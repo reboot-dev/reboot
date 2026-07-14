@@ -149,17 +149,18 @@ the `Open` method as an explicit constructor for `Account`:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Pydantic" default>
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/bank-pydantic/api/bank/v1/account.py&syntax=python&lines=49-55) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/bank-pydantic/api/bank/v1/account.py&syntax=python&lines=24-31) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/bank-pydantic/api/bank/v1/account.py -->
 
 ```python
-# Must use this method to create an instance of Account.
-open=Writer(
-    request=None,
-    response=None,
-    factory=True,
-    mcp=None,
-),
+AccountMethods = Methods(
+    # Must use this method to create an instance of Account.
+    open=Writer(
+        request=None,
+        response=None,
+        factory=True,
+        mcp=None,
+    ),
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
