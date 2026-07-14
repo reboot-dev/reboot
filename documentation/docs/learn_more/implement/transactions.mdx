@@ -49,8 +49,9 @@ class BankServicer(Bank.Servicer):
       <TabItem value="object" label="Object literal">
 ```ts
 import { Account } from "../../api/bank/v1/account_rbt.js";
+import { Bank } from "../../api/bank/v1/bank_rbt.js";
 
-const accountServicer = Account.servicer({
+const bankServicer = Bank.servicer({
   transfer: async (
     context: TransactionContext,
     state: Bank.State,
@@ -70,8 +71,9 @@ const accountServicer = Account.servicer({
       <TabItem value="class" label="Class">
 ```ts
 import { Account } from "../../api/bank/v1/account_rbt.js";
+import { Bank } from "../../api/bank/v1/bank_rbt.js";
 
-class AccountServicer extends Account.Servicer {
+class BankServicer extends Bank.Servicer {
   async transfer(
     context: TransactionContext,
     request: Bank.TransferRequest
