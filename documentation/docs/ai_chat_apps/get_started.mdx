@@ -1321,7 +1321,7 @@ the UI uses.
 touch .rbtrc
 ```
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/.rbtrc&lines=1-34&syntax=sh) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/.rbtrc&lines=1-36&syntax=sh) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/.rbtrc -->
 
 ```sh
@@ -1359,6 +1359,8 @@ dev run:hmr --frontend-host=http://localhost:4444
 
 # Dist mode: serve pre-built artifacts from "frontend/dist/" (no Vite HMR).
 # Usage: `uv run rbt dev run --config=dist`
+# Requires: `cd frontend && npm run build`
+dev run:dist --frontend-dist-path=frontend/dist
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
