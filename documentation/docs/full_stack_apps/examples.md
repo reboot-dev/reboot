@@ -79,7 +79,7 @@ It includes:
 
 [reboot-dev/reboot-hello](https://github.com/reboot-dev/reboot-hello) - _Python backend, React frontend_
 
-The [`chat_room` example](https://github.com/reboot-dev/reboot-hello) demonstrates
+The [`hello` example](https://github.com/reboot-dev/reboot-hello) demonstrates
 the simplest possible chat app: a single user, and a [singleton](/learn_more/call/overview#state-ids)
 "chat room". It contains:
 * a reactive frontend: open two browsers pointed at the same backend and see messages flow!
@@ -89,7 +89,7 @@ the simplest possible chat app: a single user, and a [singleton](/learn_more/cal
 * a `Dockerfile` that shows
   [how to publish a Reboot app to the Reboot Cloud](https://github.com/reboot-dev/reboot-hello?tab=readme-ov-file#running-on-the-reboot-cloud).
 
-Because of `chat_room`'s simplicity, it does not use any [transactions](/learn_more/define/methods#kinds) --
+Because of `hello`'s simplicity, it does not use any [transactions](/learn_more/define/methods#kinds) --
 see the [`bank`](#bank) or [`counter`](#counter) examples for those.
 
 

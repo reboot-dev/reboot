@@ -178,8 +178,10 @@ api = API(
 
 Use `mcp=Tool()` on every method you want the AI to call,
 including `User` methods. Methods on other types (like `Counter`)
-that expose `mcp=Tool()` receive a state ID from the AI when it
-creates a new instance and uses it in subsequent calls.
+that expose `mcp=Tool()` operate on a specific instance: the AI
+receives the instance's state ID when the instance is created
+(here, the `counter_id` returned by `create_counter`) and passes
+it in subsequent calls.
 
 Under the hood, AI Chat Apps use [MCP (the Model Context
 Protocol)](/learn_more/mcp_apps) — the standard that AI clients use to

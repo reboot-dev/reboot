@@ -191,7 +191,8 @@ won't conflict.
 :::note
 
 If you want your inline writer to execute _every time_, use
-`.always()`, e.g., in TypeScript `this.state.always().write(context, ...)`.
+`.always()`, e.g., in TypeScript
+`TestTask.ref().always().write(context, ...)`.
 
 :::
 
@@ -254,7 +255,8 @@ also for all other states you may call into.
 `until` will re-execute reactively until a _non-falsy_ value is
 returned, and then it will return that value if it is not a
 boolean. For example, you can wait for a specific key to be set in a
-`SortedMap` and return the value:
+collection such as [`SortedMap`](/library_services/sorted_map) or
+[`OrderedMap`](/library_services/ordered_map) and return the value:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
@@ -306,18 +308,18 @@ const value = await until(
 An `until` block _memoizes_ its result so that once you have
 converged on some condition it won't try to converge again. The first
 argument to an `until` block acts as an idempotency alias, just like
-calling `.idempotently()` or `state.write(...)`.
+the string you pass to `.idempotently()`.
 
 In Python, Reboot will _serialize_ and _deserialize_ the result using
-pickle. However, to ensure that you don't make mistakes, you must also
-pass the keyword argument `type`.
+pickle. You can pass the keyword argument `type` to declare the type
+of the result; when omitted, the return type annotation of your
+function is used.
 
-In TypeScript, Reboot will _serialize_ and _deserialize_ the result as
-part of the memoization using `JSON.stringify` and `JSON.parse`, but
-since these are not type safe, you must pass an options object with a
-`validate` property as the last argument. If instead you would prefer
-to serialize and deserialize a different way you can specify the
-`stringify` and `parse` options instead of `validate`.
+In TypeScript, Reboot will _serialize_ and _deserialize_ the result
+as part of the memoization. To make that type safe, when your
+function returns a non-boolean value you must pass an options object
+with a `schema` property — any Standard Schema, e.g., a Zod schema
+such as `z.json()` — as the last argument.
 
 :::
 
@@ -370,8 +372,8 @@ retries should be preferred. If the external API supports safe retries
 
 You can return a result from the function or lambda you pass as an
 argument just like with `until`, and in TypeScript that means you'll
-also either need to pass a `validate` or your own `stringify` and
-`parse`. See the `until` example above for more details.
+also need to pass a `schema`. See the `until` example above for more
+details.
 
 :::
 
