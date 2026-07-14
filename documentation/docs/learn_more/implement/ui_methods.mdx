@@ -86,12 +86,29 @@ show_dashboard=UI(
 The React component receives `DashboardConfig` fields as props:
 
 ```tsx
-import { type DashboardConfig, useCounter } from "@api/ai_chat_counter/v1/counter_rbt_react";
+import {
+  type DashboardConfig,
+  type UseCounterApi,
+  useCounter,
+} from "@api/ai_chat_counter/v1/counter_rbt_react";
 
 export const DashboardApp: FC<DashboardConfig> = ({
   personalizedMessage,
 }) => {
-  const counter = useCounter();
+  const { counter, isLoading } = useCounter();
+
+  if (isLoading) return <div>loading...</div>;
+  if (counter === undefined) return <div>No counter available.</div>;
+
+  return (
+    <Dashboard counter={counter} personalizedMessage={personalizedMessage} />
+  );
+};
+
+const Dashboard: FC<DashboardConfig & { counter: UseCounterApi }> = ({
+  counter,
+  personalizedMessage,
+}) => {
   const { response } = counter.useGet();
   // ...
 };
@@ -108,13 +125,26 @@ Each `UI` method points to a directory containing:
 The component uses generated hooks (like `useCounter()`) to
 interact with backend state. The state ID is automatically
 provided by the framework when the UI is opened — you do
-not need to pass it.
+not need to pass it. Called without an `id`, the hook returns
+`{ counter, isLoading }`, where `counter` is `undefined` until
+the ID resolves, so check both before using the handle:
 
 ```tsx
-import { useCounter } from "@api/ai_chat_counter/v1/counter_rbt_react";
+import {
+  type UseCounterApi,
+  useCounter,
+} from "@api/ai_chat_counter/v1/counter_rbt_react";
 
 export const ClickerApp: FC = () => {
-  const counter = useCounter();
+  const { counter, isLoading } = useCounter();
+
+  if (isLoading) return <div>loading...</div>;
+  if (counter === undefined) return <div>No counter available.</div>;
+
+  return <Clicker counter={counter} />;
+};
+
+const Clicker: FC<{ counter: UseCounterApi }> = ({ counter }) => {
   const { response } = counter.useGet();
 
   const handleIncrement = async () => {
