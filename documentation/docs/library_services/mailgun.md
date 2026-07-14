@@ -11,6 +11,26 @@ environment variable to your Mailgun API key. See [Secrets](../learn_more/secret
 for how to set this for local development and for deployments to
 Reboot Cloud.
 
+Calls to the integration must also authenticate using that same API
+key as the bearer token: the integration only accepts calls whose
+bearer token matches `MAILGUN_API_KEY`, and rejects all other calls
+as unauthenticated. Pass the key using `Options` when calling
+`Message.send`:
+
+```python
+from reboot.aio.call import Options
+
+await Message.send(
+    context,
+    Options(bearer_token=mailgun_api_key),
+    recipient="alice@example.com",
+    sender="Your App <noreply@yourdomain.com>",
+    domain="yourdomain.com",
+    subject="Hello!",
+    text="Hello from Reboot!",
+)
+```
+
 ## Message {#rbtthirdpartymailgunv1message}
 A single message sent using the integration.
 
