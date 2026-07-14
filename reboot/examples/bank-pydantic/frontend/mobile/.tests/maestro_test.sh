@@ -139,13 +139,18 @@ done
 
 # Install the mobile app's JS dependencies, overlaying the locally
 # built Reboot npm packages in Bazel (same as `react_native_test.sh`).
-cd frontend/mobile
+# `frontend/package.json` declares `mobile` as an npm workspace, so
+# the whole workspace resolves in one pass rooted at `frontend/`;
+# overlaying there replaces every Reboot pin in the workspace.
+cd frontend
 if [[ -n "${REBOOT_NPM_PACKAGE:-}" ]]; then
   npm install --no-save \
     "${SANDBOX_ROOT}${REBOOT_NPM_PACKAGE}" \
     "${SANDBOX_ROOT}${REBOOT_API_NPM_PACKAGE}" \
     "${SANDBOX_ROOT}${REBOOT_WEB_NPM_PACKAGE}" \
-    "${SANDBOX_ROOT}${REBOOT_REACT_NPM_PACKAGE}"
+    "${SANDBOX_ROOT}${REBOOT_REACT_NPM_PACKAGE}" \
+    "${SANDBOX_ROOT}${REBOOT_STD_NPM_PACKAGE}" \
+    "${SANDBOX_ROOT}${REBOOT_STD_API_PACKAGE}"
 else
   npm install
 fi
