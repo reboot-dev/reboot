@@ -1057,9 +1057,6 @@ touch frontend/web/src/main.tsx frontend/web/src/App.tsx
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/frontend/web/src/main.tsx&syntax=tsx) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/frontend/web/src/main.tsx -->
-
 ```tsx
 // frontend/web/src/main.tsx
 import { useUser } from "@api/ai_chat_counter/v1/counter_rbt_react";
@@ -1071,7 +1068,6 @@ import {
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import "./styles.css";
 
 const Root = () => {
   const { user, isLoading } = useUser();
@@ -1110,8 +1106,6 @@ createRoot(document.getElementById("root")!).render(
   </StrictMode>
 );
 ```
-
-<!-- MARKDOWN-AUTO-DOCS:END -->
 
 <!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/frontend/web/src/App.tsx&syntax=tsx) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/frontend/web/src/App.tsx -->
