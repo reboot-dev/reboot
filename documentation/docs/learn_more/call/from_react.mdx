@@ -236,14 +236,36 @@ The key differences:
 - **Automatic ID resolution.** For `User` methods, the hook
   resolves the state ID from the authenticated user
   automatically. For other types (like `Counter`), the ID is
-  provided by the framework when the UI is opened:
+  provided by the framework when the UI is opened. Called without
+  an `id`, the hook returns `{ counter, isLoading }`, where
+  `counter` is `undefined` until the ID resolves, so check both
+  before using the handle (see
+  [`UI` methods](/learn_more/implement/ui_methods) for a complete
+  component):
 
 ```tsx
-import { useCounter } from "@api/ai_chat_counter/v1/counter_rbt_react";
+import {
+  type UseCounterApi,
+  useCounter,
+} from "@api/ai_chat_counter/v1/counter_rbt_react";
 
-const counter = useCounter();
-const { response } = counter.useGet();
-await counter.increment({ amount: 1 });
+export const ClickerApp: FC = () => {
+  const { counter, isLoading } = useCounter();
+
+  if (isLoading) return <div>loading...</div>;
+  if (counter === undefined) return <div>No counter available.</div>;
+
+  return <Clicker counter={counter} />;
+};
+
+const Clicker: FC<{ counter: UseCounterApi }> = ({ counter }) => {
+  const { response } = counter.useGet();
+
+  const handleIncrement = async () => {
+    await counter.increment({ amount: 1 });
+  };
+  // ...
+};
 ```
 
 - **`UI` method props.** For `UI` methods with a `request`
@@ -251,12 +273,15 @@ await counter.increment({ amount: 1 });
   as props:
 
 ```tsx
-import { type DashboardConfig } from "@api/ai_chat_counter/v1/counter_rbt_react";
+import {
+  type DashboardConfig,
+  useCounter,
+} from "@api/ai_chat_counter/v1/counter_rbt_react";
 
 export const DashboardApp: FC<DashboardConfig> = ({
   personalizedMessage,
 }) => {
-  const counter = useCounter();
+  const { counter, isLoading } = useCounter();
   // ...
 };
 ```
