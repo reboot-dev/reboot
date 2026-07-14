@@ -208,7 +208,8 @@ generate -- --mypy_out=backend/api/mypy/
 ```
 
 In these examples, the order of the flags is crucial. All flags that appear
-after `--` are passed directly to `generate`.
+after `--` are passed directly to the underlying tool (in this case,
+`protoc`).
 
 #### AI Chat App flags
 

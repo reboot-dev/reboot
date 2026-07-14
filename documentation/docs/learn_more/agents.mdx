@@ -20,15 +20,16 @@ When you wrap a Pydantic AI agent with Reboot's `Agent`:
   via `at_least_once`. On workflow replay the stored `ModelResponse`
   is returned instead of calling the provider again.
 - **Every tool call** -- whether registered via `@agent.tool`, passed
-  as `tools=`, or contributed by a `toolsets=` -- is memoized too,
+  as `tools=`, or contributed via `toolsets=` -- is memoized too,
   so a tool's side effects aren't repeated on replay. During [effect
   validation](/learn_more/side_effects) tools DO re-run, which helps
   surface non-determinism early.
-- **Streaming runs are drained inside a memoized block.** The
-  `StreamedRunResult` you get back is backed by a fully-stored
-  response; iteration replays the stored events instead of
-  re-streaming from the provider. Live token-by-token streaming is
-  fundamentally incompatible with replay.
+- **Streaming runs are drained inside a memoized block.** Even on
+  the first run, events arrive in a single batch once the model call
+  finishes. The `StreamedRunResult` you get back is backed by a
+  fully-stored response; iteration replays the stored events instead
+  of re-streaming from the provider. Live token-by-token streaming
+  is fundamentally incompatible with replay.
 - **Configuration drift is surfaced.** A snapshot of the agent's
   static config + per-call kwargs is taken at the start of each run.
   On replay, anything that has changed (instructions, system prompt,
@@ -307,7 +308,8 @@ controls how concurrent tool calls dispatched in a single turn
 are scheduled. It accepts three values upstream:
 `'sequential'`, `'parallel'`, and `'parallel_ordered_events'`.
 Reboot accepts the first and last and rejects `'parallel'` at
-construction time.
+construction time. On a Reboot `Agent`, pass the mode as the
+`parallel_execution_mode=` constructor argument:
 
 ```python
 agent = Agent(
@@ -415,8 +417,9 @@ cause an order of magnitude more attempts than you intended:
 - **Reboot workflows** retry the entire method body when an
   uncaught exception escapes (configurable via the workflow's
   retry policy).
-- **Reboot's `at_least_once`** retries the wrapped block until it
-  succeeds.
+- **Reboot's `at_least_once`** doesn't itself retry, but a block
+  that hasn't yet succeeded (and so isn't memoized) re-runs on
+  every workflow retry until it succeeds.
 - **Pydantic AI's agent** has a `retries=` parameter (and a
   `tool.retries=` per tool) that retries on tool / output
   validation failures within a single agent run.
@@ -493,7 +496,7 @@ A few things deliberately fall outside Reboot's wrapping:
   body performs un-memoized writes (e.g., a direct database
   update), effect validation will surface the duplication. Wrap
   external side-effects inside the tool body in `at_least_once`
-  -- see the `search` example above.
+  -- see the `stripe_create_invoice` example above.
 
 ## Limitations
 

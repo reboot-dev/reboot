@@ -76,6 +76,11 @@ instance via `self.state` (Python) or `this.state` (TypeScript class-based).
 In TypeScript, if you're using the object literal syntax, `state` is
 passed as a parameter to your method.
 
+`workflow` methods are an exception: they don't get direct access to
+`state`, but instead read snapshots of it and modify it explicitly
+via `write()` — see
+[Workflows](/learn_more/implement/workflows#reading-state).
+
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
@@ -368,7 +373,7 @@ Reboot's safety guarantees:
 |--------------|----------|------------------|
 | `ReaderContext` | Only `reader` methods | No |
 | `WriterContext` | Only `reader` methods | Yes (own state only) |
-| `TransactionContext` | `reader` and `writer` methods | Yes |
+| `TransactionContext` | `reader`, `writer`, and `transaction` methods | Yes |
 | `WorkflowContext` | Any method type | Yes |
 
 :::tip
