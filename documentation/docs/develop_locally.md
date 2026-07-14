@@ -35,66 +35,40 @@ Your applications don't need to run "inside of" Docker, but Docker is used to
 host a service required for local development.
 :::
 
-<!-- ## Install `rbt`
+## Install `rbt`
 
-For Python you'll need the [`reboot`](https://pypi.org/project/reboot)
-package, and for TypeScript you'll need
-[`@reboot-dev/reboot`](https://www.npmjs.com/package/@reboot-dev/reboot).
+The `rbt` command line tool doesn't have a separate installation; it
+comes with the Reboot library.
 
-### `rbt init`
+<Tabs groupId="language">
+  <TabItem value="python" label="Python">
 
-The `rbt init` command initializes your Reboot project with a `hello_world`
-template. You can customize the project by selecting specific languages and
-platforms, and the tool will automatically update your `.rbtrc` configuration
-based on your selections.
-
-#### Python backend
-
-To set up a Python backend, use the following command:
+For Python, installing the
+[`reboot`](https://pypi.org/project/reboot) package provides `rbt`:
 
 ```shell
-rbt init --application-name=reboot_hello_world --backend=python
+uv add reboot
 ```
 
-This will generate the necessary source files and include a Python script to
-test the connection to the backend.
+Then run it as `uv run rbt ...`, or as plain `rbt ...` in an
+activated virtual environment (e.g. `.venv`).
 
-#### TypeScript backend
+  </TabItem>
 
-For a TypeScript backend, use the following command:
+  <TabItem value="typescript" label="TypeScript">
+
+For TypeScript, installing the
+[`@reboot-dev/reboot`](https://www.npmjs.com/package/@reboot-dev/reboot)
+package provides the `rbt` bin:
 
 ```shell
-rbt init --application-name=reboot_hello_world --backend=nodejs
+npm install @reboot-dev/reboot
 ```
 
-This will create the source files and configure package.json if it doesn't
-already exist.
+Then run it as `npx rbt ...`.
 
-#### Frontend
-
-To initialize a frontend with React, use the following command:
-
-```shell
-rbt init --application-name=reboot_hello_world --frontend=react
-```
-
-This command generates the source files and sets up package.json in the web
-directory for the frontend.
-
-:::note
-You can initialize both backend and frontend simultaneously. Here are examples
-for Python and TypeScript:
-
-For Python:
-```shell
-rbt init --application-name=reboot_hello_world --backend=python --frontend=react
-```
-
-For TypeScript:
-```shell
-npx rbt init --application-name=reboot_hello_world --backend=nodejs --frontend=react
-```
-::: -->
+  </TabItem>
+</Tabs>
 
 ## Directory layout
 
