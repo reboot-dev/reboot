@@ -390,13 +390,9 @@ servicers this application serves.
 touch backend/src/main.py
 ```
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/backend/src/main.py&syntax=python) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/backend/src/main.py -->
-
 ```python
 # backend/src/main.py
 import asyncio
-from example_prompts import example_prompts
 from reboot.aio.applications import Application
 from reboot.aio.auth.oauth_providers import (
     Development,
@@ -420,7 +416,6 @@ async def main() -> None:
             # to start until one is chosen.
             prod=None,
         ),
-        example_prompts=example_prompts,
     )
     await application.run()
 
@@ -428,8 +423,6 @@ async def main() -> None:
 if __name__ == "__main__":
     asyncio.run(main())
 ```
-
-<!-- MARKDOWN-AUTO-DOCS:END -->
 
 </Step>
 <Step
