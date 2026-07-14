@@ -41,4 +41,3 @@ to use HTTPS when using a custom certificate.
 
 This setup ensures secure local development with custom certificates and enables
 compatibility with `rbt dev run`.
-<!-- TODO: https://github.com/reboot-dev/mono/issues/3363 -->
