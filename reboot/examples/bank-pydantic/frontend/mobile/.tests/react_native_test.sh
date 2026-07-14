@@ -55,21 +55,28 @@ RBT_FLAGS="--state-directory=$(mktemp -d)"
 rbt $RBT_FLAGS generate
 
 # Install the mobile app's JavaScript dependencies (Expo, React Native,
-# and the Reboot React client the generated code imports). In a Bazel
-# test we overlay the locally built Reboot npm packages with
-# `--no-save` so the test exercises the in-repo client rather than a
+# and the Reboot React client the generated code imports).
+# `frontend/package.json` declares `mobile` as an npm workspace, so npm
+# resolves the whole workspace — the web frontend's dependencies
+# included — in one pass rooted at `frontend/`. In a Bazel test we
+# therefore overlay the locally built Reboot npm packages with
+# `--no-save` at the workspace root, replacing every Reboot pin in the
+# workspace so the test exercises the in-repo client rather than a
 # published release; `npm install` still resolves the rest (Expo, React
 # Native, ...) from `package.json`.
-cd frontend/mobile
+cd frontend
 if [[ -n "${REBOOT_NPM_PACKAGE:-}" ]]; then
   npm install --no-save \
     "${SANDBOX_ROOT}${REBOOT_NPM_PACKAGE}" \
     "${SANDBOX_ROOT}${REBOOT_API_NPM_PACKAGE}" \
     "${SANDBOX_ROOT}${REBOOT_WEB_NPM_PACKAGE}" \
-    "${SANDBOX_ROOT}${REBOOT_REACT_NPM_PACKAGE}"
+    "${SANDBOX_ROOT}${REBOOT_REACT_NPM_PACKAGE}" \
+    "${SANDBOX_ROOT}${REBOOT_STD_NPM_PACKAGE}" \
+    "${SANDBOX_ROOT}${REBOOT_STD_API_PACKAGE}"
 else
   npm install
 fi
+cd mobile
 
 # Type-check the app against the generated client. This is the React
 # Native "can it build" check: it compiles `src/App.tsx` against the
