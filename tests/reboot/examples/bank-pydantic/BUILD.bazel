@@ -51,9 +51,11 @@ sh_test_in_working_directory(
 # The locally built Reboot npm packages that the frontends are
 # type-checked against, instead of the published releases.
 frontend_packages = [
+    "//rbt/std:reboot-dev-reboot-std-api",
     "//rbt/v1alpha1:reboot-dev-reboot-api",
     "//reboot:reboot.dev",
     "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+    "//reboot/std:reboot-dev-reboot-std",
     "//reboot/web:reboot-dev-reboot-web",
     "//reboot/react:reboot-dev-reboot-react",
 ]
@@ -62,6 +64,8 @@ frontend_env = {
     "REBOOT_API_NPM_PACKAGE": "$(location //rbt/v1alpha1:reboot-dev-reboot-api)",
     "REBOOT_NPM_PACKAGE": "$(location //reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz)",
     "REBOOT_REACT_NPM_PACKAGE": "$(location //reboot/react:reboot-dev-reboot-react)",
+    "REBOOT_STD_API_PACKAGE": "$(location //rbt/std:reboot-dev-reboot-std-api)",
+    "REBOOT_STD_NPM_PACKAGE": "$(location //reboot/std:reboot-dev-reboot-std)",
     "REBOOT_WEB_NPM_PACKAGE": "$(location //reboot/web:reboot-dev-reboot-web)",
     "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
 }
