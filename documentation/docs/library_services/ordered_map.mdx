@@ -443,7 +443,6 @@ set dependent on how you inserted the data.
 range1 = await my_map.range(
     context,
     start_key="key-b",
-    end_key="key-z",
     limit=2,
 )
 
@@ -458,7 +457,6 @@ range2 = await my_map.range(context, limit=3)
 ```ts
 const range1 = await myMap.range(context, {
   startKey: "key-b",
-  endKey: "key-z",
   limit: 2,
 });
 
@@ -500,7 +498,6 @@ set dependent on how you inserted the data.
 range1 = await my_map.reverse_range(
     context,
     start_key="key-z",
-    end_key="key-b",
     limit=2,
 )
 
@@ -515,7 +512,6 @@ range2 = await my_map.reverse_range(context, limit=3)
 ```ts
 const range1 = await myMap.reverseRange(context, {
   startKey: "key-z",
-  endKey: "key-b",
   limit: 2,
 });
 
