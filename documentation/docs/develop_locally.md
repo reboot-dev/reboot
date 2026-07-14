@@ -35,7 +35,7 @@ Your applications don't need to run "inside of" Docker, but Docker is used to
 host a service required for local development.
 :::
 
-## Install `rbt`
+## The `rbt` CLI
 
 The `rbt` command line tool doesn't have a separate installation; it
 comes with the Reboot library.
