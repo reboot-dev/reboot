@@ -51,10 +51,11 @@ message StoreRequest {
   // The user whose tokens these are.
   string user_id = 1;
 
-  // The provider tokens to encrypt and store. If `refresh_token` is unset
-  // but one was previously stored for this user, the existing refresh
-  // token is carried forward (some providers issue a refresh token only on
-  // the first consent).
+  // The provider tokens to encrypt and store, replacing any previously
+  // stored tokens for this user wholesale. A caller that needs to keep
+  // a previously issued refresh token (some providers issue one only
+  // on the first consent) must `Fetch` and merge it into `tokens`
+  // before storing.
   OAuthTokens tokens = 2;
 }
 
