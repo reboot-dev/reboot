@@ -3,172 +3,170 @@
 Your Reboot app exposes an MCP endpoint at `/mcp`. Any MCP-compatible AI
 client can connect to it.
 
-## Local clients
+:::tip Interactive setup wizard
 
-During development it is easiest to use a local MCP client, since they
-can easily reach applications running on `localhost`.
-
-:::tip Recommended for rapid iteration
-
-For tight edit-reload cycles during development, use **MCPJam
-Inspector** (below). Claude and ChatGPT aggressively cache your
-app's assets, which can make rapid iteration frustrating —
-MCPJam picks up changes immediately.
+For an interactive setup experience, visit
+[http://localhost:9991](http://localhost:9991) while `rbt dev run` is
+running: your app's root page is a setup wizard that walks you through
+connecting the MCP client of your choice. It tailors every step to the
+client you pick, detects your tunnel automatically, and confirms once
+your client's first request arrives. A deployed app serves the same
+wizard at its public URL.
 
 :::
 
-### MCPJam Inspector (development)
+The sections below cover the same steps as the wizard.
 
-[MCPJam Inspector](https://mcpjam.com) is a browser-based MCP client
-ideal for testing during development.
+## Pick a chat client
 
-Run MCPJam:
+The wizard has first-class flows for three clients:
+
+- **Claude** ([claude.ai](https://claude.ai)) and **ChatGPT**
+  ([chatgpt.com](https://chatgpt.com)) run in the cloud, so during
+  development they need a [secure tunnel](#set-up-a-secure-tunnel) to
+  reach your machine before you can
+  [install your app](#install-in-claude-or-chatgpt).
+- **MCPJam** ([mcpjam.com](https://mcpjam.com)) is a browser-based MCP
+  inspector that runs locally alongside your app — no tunnel and no
+  install step needed. It's only useful during development.
+
+## MCPJam (development)
+
+MCPJam is ideal for testing during development. Run it in a new
+terminal in your project:
+
 ```sh
 npx @mcpjam/inspector@2.23.3 --url http://localhost:9991/mcp --oauth
 ```
 
-This opens an interface where you can browse your app's tools, call
-them, and see [`UI`](/learn_more/implement/ui_methods) method React
-apps rendered inline.
+This opens MCPJam in your browser (if no tab opens, visit
+[http://localhost:6274](http://localhost:6274)), pointed straight at
+your app's MCP endpoint with OAuth enabled. From there you can browse
+your app's tools, call them, and see
+[`UI`](/learn_more/implement/ui_methods) method React apps rendered
+inline.
 
-### VS Code (Copilot)
+## Set up a secure tunnel
 
-VS Code supports MCP servers through GitHub Copilot. Add a
-`.vscode/mcp.json` file to your workspace:
+Claude and ChatGPT need to reach your machine over the public
+internet, so during development you put a tunnel in front of
+`rbt dev run`. If your app is deployed — for example on
+[Reboot Cloud](/deploy_on_reboot_cloud) — it already has a public URL
+and you can skip this section.
 
-```json
-{
-  "servers": {
-    "my-app": {
-      "type": "streamable-http",
-      "url": "http://localhost:9991/mcp"
-    }
-  }
-}
+The wizard supports three tunnel options, and shows a live
+reachability check for whichever tunnel it finds.
+
+### cloudflared
+
+[cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
+provides free "quick tunnels" with no account required. Start one in a
+new terminal:
+
+```sh
+cloudflared tunnel --metrics localhost:4040 --url http://localhost:9991
 ```
 
-Copilot Chat will discover your tools and offer them as available
-actions.
+The wizard detects the tunnel through cloudflared's metrics endpoint
+(the `--metrics` flag above) and fills in its
+`*.trycloudflare.com` URL for you. It may take a minute after startup
+for the tunnel's DNS to propagate and the reachability check to turn
+green.
 
-### Goose
+### ngrok
 
-[Goose](https://block.github.io/goose/) is a desktop AI agent that
-supports MCP servers as extensions. To connect your Reboot app:
+[ngrok](https://ngrok.com) requires an account. After installing
+`ngrok`, sign in at
+[dashboard.ngrok.com](https://dashboard.ngrok.com/get-started/your-authtoken)
+to grab your authtoken, then run:
 
-1. In Goose, open **Extensions**, then click **+ Add custom
-   extension**.
-2. Enter a name, set **Type** to **Streamable HTTP**, and add a
-   description.
-3. For **Endpoint**, use your MCP server URL — if Goose is
-   running on the same machine as `rbt dev`, use
-   `http://localhost:9991/mcp`; otherwise use your Reboot Cloud
-   URL (`https://your-app.prod1.rbt.cloud:9991/mcp`) or your
-   [`ngrok`](/learn_more/nonlocal#ngrok) tunnel URL with `/mcp`
-   appended.
-4. Click **Add extension**.
-
-Alternatively, you can add the extension directly to Goose's
-configuration file:
-
-```yaml
-extensions:
-  my-app:
-    type: streamable_http
-    uri: http://localhost:9991/mcp
+```sh
+ngrok config add-authtoken <YOUR_TOKEN>
 ```
 
-### Claude Desktop
+Then start a tunnel in a new terminal:
 
-[Claude Desktop](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop)
-supports MCP servers through its `claude_desktop_config.json` file.
-This route is best for local MCP servers that don't require auth
-or render `UI` methods — see Claude's documentation for the full
-setup.
+```sh
+ngrok http 9991
+```
 
-## On the web
+The wizard detects the tunnel through ngrok's local API and fills in
+its URL for you.
 
-To publish your app to web-based AI platforms, it must be reachable
-on the internet. During development, you can use
-[`ngrok`](/learn_more/nonlocal#ngrok). In production, consider
-[Reboot Cloud](/deploy_on_reboot_cloud).
+:::warning Free ngrok tunnels don't work with Claude
 
-:::note Local development with `UI` methods
-
-If your app has `UI` methods and you're tunneling `rbt dev` through
-`ngrok`, the right `.rbtrc` config depends on which client you're
-testing with:
-
-- **ChatGPT** can load UIs from the Vite dev server, so the default
-  `hmr` config (`uv run rbt dev run`) works and you get hot module
-  replacement.
-- **Claude** renders UIs in a sandboxed iframe that blocks HTTP
-  script sources, so it can't load from a local Vite dev server.
-  Build the UIs first with `cd frontend && npm run build`, then run
-  `uv run rbt dev run --config=dist` to serve the pre-built
-  artifacts from `frontend/dist/`.
-
-See your app's `.rbtrc` for the `hmr` and `dist` config
-definitions.
+Claude renders [`UI`](/learn_more/implement/ui_methods) methods as
+HTML with `<script>` tags, and free ngrok tunnels
+(`*.ngrok-free.dev`) serve an HTML interstitial on first request that
+breaks those scripts. When testing with Claude, use `cloudflared` (or
+a paid ngrok plan) instead.
 
 :::
 
+### Other tunnels
+
+Anything that gives your app a public HTTPS URL works — for example
+Tailscale Funnel, a named `cloudflared` tunnel, or an SSH reverse
+tunnel. Pick **Other** in the wizard and paste your tunnel's URL so it
+can run the reachability check and fill in your MCP URL.
+
+## Install in Claude or ChatGPT
+
+Adding your app to a chat client takes two values, which the wizard
+fills in for you:
+
+- **Name** — any name you like; the wizard suggests a slug of your
+  app's title.
+- **MCP URL** — during development, your tunnel's URL with `/mcp`
+  appended (e.g., `https://<your-tunnel>/mcp`); in production, your
+  app's public URL with `/mcp` appended (e.g.,
+  `https://your-app.prod1.rbt.cloud:9991/mcp`).
+
+### Claude
+
+Claude supports custom connectors backed by remote MCP servers on
+Free, Pro, Max, Team, and Enterprise plans (Free is limited to one
+custom connector; on Team and Enterprise only workspace owners can add
+them). See
+[Claude's help article](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)
+for details.
+
+1. Open
+   [Claude's connector settings](https://claude.ai/customize/connectors?modal=add-custom-connector)
+   (**Customize → Connectors → + → Add custom connector**).
+2. Enter the name and MCP URL, then click **Add**. Claude
+   automatically detects whether your app requires auth and discovers
+   your tools.
+3. To use the connector in a chat, click the **+** button in the
+   message composer, choose **Connectors**, and toggle your connector
+   on for that conversation.
+
 ### ChatGPT
 
-ChatGPT supports
-[remote MCP servers](https://developers.openai.com/apps-sdk/deploy/connect-chatgpt)
-through its
+ChatGPT supports MCP apps through its
 [Developer Mode](https://developers.openai.com/api/docs/guides/developer-mode),
 a beta feature available on Pro, Plus, Business, Enterprise, and Edu
-plans. Connecting an app requires Developer Mode to be enabled; on
-Business, Enterprise, and Edu workspaces only a workspace owner (or,
-on Enterprise/Edu, a user granted access via RBAC) can enable it.
-See
+plans; see
 [OpenAI's help article](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt-beta)
-for enablement details.
+for how to enable it.
 
-Once Developer Mode is on, to connect your deployed Reboot app:
+1. Open
+   [ChatGPT's app settings](https://chatgpt.com/#settings/Connectors/Advanced)
+   (**User Profile → Settings → Apps → Advanced Settings**), then
+   click **Create App**.
+2. Enter the name, a description, and the MCP URL. If your app uses
+   auth ([`Development`](/learn_more/identity_and_external_apis) or
+   otherwise), select **OAuth** from the Authentication dropdown —
+   ChatGPT will run the OAuth handshake as soon as you add the server.
+   Otherwise, select **No auth**.
+3. Check **I understand and want to continue**, then create the app.
+   ChatGPT will discover your tools and make them available in the
+   conversation.
 
-1. Open [chatgpt.com](https://chatgpt.com).
-2. From your profile menu in the bottom-left corner, click
-   **Settings**, then **Apps**, then **Advanced Settings** →
-   **Create App**.
-3. Enter a name for your tool, a description, and the URL of your
-   MCP server. If you're running on Reboot Cloud the URL will look
-   like `https://your-app.prod1.rbt.cloud:9991/mcp`; if you're
-   running locally behind an `ngrok` tunnel (see
-   [exposing `rbt dev` to the internet](/learn_more/nonlocal#ngrok))
-   it will be your tunnel's URL with `/mcp` appended.
-4. If your app uses auth
-   ([`Development`](/learn_more/identity_and_external_apis) or
-   otherwise), select
-   **OAuth** from the Authentication dropdown — ChatGPT will run
-   the OAuth handshake against your Reboot app as soon as you add
-   the server. Otherwise, select **No auth**.
-5. Check **I understand and want to continue**, then create the
-   app. ChatGPT will discover your tools and make them available
-   in the conversation.
+## Try an example prompt
 
-### Claude (claude.ai)
-
-[Claude.ai](https://claude.ai) supports custom connectors backed by
-remote MCP servers. They are available on Free, Pro, Max, Team, and
-Enterprise plans (Free is limited to one custom connector). On Team
-and Enterprise plans only workspace owners can add new custom
-connectors. See
-[Claude's help article](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)
-for the canonical walkthrough.
-
-To connect your deployed Reboot app:
-
-1. Open [claude.ai](https://claude.ai).
-2. Click **Customize**, then **Connectors**, then **+**, then
-   **Add Custom Connector**.
-3. Enter a name and the URL of your MCP server — the URL follows
-   the same format as for ChatGPT above (e.g.,
-   `https://your-app.prod1.rbt.cloud:9991/mcp` on Reboot Cloud,
-   or your tunnel URL with `/mcp` appended when running locally).
-4. Click **Add**. Claude will automatically detect whether your
-   app requires auth and discover your tools.
-5. To use the connector in a chat, click the **+** button in the
-   message composer, choose **Connectors**, and toggle your
-   connector on for that conversation.
+Once your client is connected, just ask it what your app can do — or
+give visitors a head start by registering example prompts. Pass
+`example_prompts=[...]` to `Application(...)` (typically loaded from a
+sibling `example_prompts.py`) and the wizard renders them as copyable
+cards. Multi-step examples are meant to be sent one turn at a time.

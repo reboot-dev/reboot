@@ -512,11 +512,11 @@ The client-side call is completed as normal, but the data can be rendered immedi
 because it is passed into the component as a prop.
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/counter/frontend/web-next/app/TakeableCounter.tsx&&lines=6-11) -->
+(CODE:src=../../../../reboot/examples/counter/frontend/web-next/app/TakeableCounter.tsx&&lines=5-10) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/counter/frontend/web-next/app/TakeableCounter.tsx -->
 
 ```tsx
-const TakeableCounter: FC<{ id: string; initialCount: number }> = ({
+const TakeableCounter: React.FC<{ id: string; initialCount: number }> = ({
   id,
   initialCount,
 }) => {
@@ -530,7 +530,7 @@ Now it is easy to render either the `initialCount` that was passed in initially 
 current reactive value of the `response.count` object.
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/counter/frontend/web-next/app/TakeableCounter.tsx&&lines=15-15) -->
+(CODE:src=../../../../reboot/examples/counter/frontend/web-next/app/TakeableCounter.tsx&&lines=14-14) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/counter/frontend/web-next/app/TakeableCounter.tsx -->
 
 ```tsx

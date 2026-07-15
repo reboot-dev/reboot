@@ -417,9 +417,10 @@ cause an order of magnitude more attempts than you intended:
 - **Reboot workflows** retry the entire method body when an
   uncaught exception escapes (configurable via the workflow's
   retry policy).
-- **Reboot's `at_least_once`** doesn't itself retry, but a block
-  that hasn't yet succeeded (and so isn't memoized) re-runs on
-  every workflow retry until it succeeds.
+- **Reboot's `at_least_once`** already gets your block retried:
+  every workflow retry gives an unfinished block another attempt
+  until it succeeds, while blocks that succeeded are never re-run.
+  You don't need retry logic inside the block itself.
 - **Pydantic AI's agent** has a `retries=` parameter (and a
   `tool.retries=` per tool) that retries on tool / output
   validation failures within a single agent run.
