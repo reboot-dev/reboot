@@ -8,8 +8,8 @@ singularly or in bulk. It is durable, which means that it will persist across
 restarts or system failures, and transactional, so you can access it safely.
 
 Each `Queue` will need a unique ID and is created implicitly the first time
-you use it. [`Item`](/library_services/item)s can be [`Enqueue`](#enqueue)d as a
-single `Value`, `bytes`, or `Any` object or can be [`Enqueue`](#bulk-enqueue)d
+you use it. [`Item`](/library_services/item)s can be [`Enqueued`](#enqueue) as a
+single `Value`, `bytes`, or `Any` object or can be [`Enqueued`](#bulk-enqueue)
 in bulk as a list of `Item`s. They can then be [`Dequeue`](#dequeue)d singularly
 or in [bulk](#bulk-dequeue) as well. In practice, you will want to use just one of
 these formats in a given `Queue`. Read more about [`Item`](/library_services/item)s
