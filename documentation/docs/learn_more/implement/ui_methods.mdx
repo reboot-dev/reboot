@@ -92,7 +92,7 @@ import {
   useCounter,
 } from "@api/ai_chat_counter/v1/counter_rbt_react";
 
-export const DashboardApp: FC<DashboardConfig> = ({
+export const DashboardApp: React.FC<DashboardConfig> = ({
   personalizedMessage,
 }) => {
   const { counter, isLoading } = useCounter();
@@ -105,7 +105,7 @@ export const DashboardApp: FC<DashboardConfig> = ({
   );
 };
 
-const Dashboard: FC<DashboardConfig & { counter: UseCounterApi }> = ({
+const Dashboard: React.FC<DashboardConfig & { counter: UseCounterApi }> = ({
   counter,
   personalizedMessage,
 }) => {
@@ -144,7 +144,7 @@ export const ClickerApp: FC = () => {
   return <Clicker counter={counter} />;
 };
 
-const Clicker: FC<{ counter: UseCounterApi }> = ({ counter }) => {
+const Clicker: React.FC<{ counter: UseCounterApi }> = ({ counter }) => {
   const { response } = counter.useGet();
 
   const handleIncrement = async () => {
