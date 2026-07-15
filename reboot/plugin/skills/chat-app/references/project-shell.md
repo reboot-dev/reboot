@@ -10,9 +10,11 @@ tags: project, shell, rbtrc, pyproject, python-version, main, application-entry,
 The `python` skill covers the canonical project shape
 (`lifecycle-project-setup.md`) and the `.rbtrc` format
 (`lifecycle-rbtrc.md`). That shape includes a project-root
-`.mypy.ini` (template in `lifecycle-project-setup.md`) — create it
-when scaffolding; it has no chat-app delta. What an MCP Chat App
-adds on top:
+`.mypy.ini` and a project-root `.gitignore` (templates in
+`lifecycle-project-setup.md`) — create both when scaffolding; they
+have no chat-app delta (the base `.gitignore` already covers
+`frontend/api/`, `frontend/dist/`, and `node_modules/`). What an
+MCP Chat App adds on top:
 
 ### `.python-version`
 
