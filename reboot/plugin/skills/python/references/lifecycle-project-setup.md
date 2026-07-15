@@ -9,7 +9,8 @@ tags: project-setup, pyproject, python-version, dependencies, layout
 
 > **Critical:** the `api/` directory holds pydantic API definition
 > files (`.py`); generated `*_rbt.py` lives under `backend/api/`.
-> Never hand-edit a generated file. No `__init__.py` inside `api/`.
+> Never hand-edit a generated file. No `__init__.py` anywhere — not
+> in `api/`, not under `backend/`.
 
 A Reboot Python project has a fixed top-level layout. The CLI (`rbt`) reads
 `.rbtrc` from the project root, `rbt generate` writes generated code into
@@ -31,6 +32,7 @@ my-app/
 ```
 my-app/
   .rbtrc                 # required: per-project rbt CLI config
+  .gitignore             # required: see below
   .mypy.ini              # required: type-check config (see below)
   pyproject.toml         # required: Python deps
   api/                   # API definition root (referenced from .rbtrc)
@@ -79,6 +81,41 @@ If an older project still has a `[tool.rye]` table (`dev-dependencies`,
 dev dependencies into `[dependency-groups].dev` (dropping any `reboot`
 entry duplicated from the runtime deps), delete the `[tool.rye]` table,
 add `name`/`version`, and replace `requirements*.lock` with `uv lock`.
+
+## `.gitignore` — Keep Generated Files and Local State Out of Git (required)
+
+Create a project-root `.gitignore` when scaffolding the project.
+Reboot projects produce artifacts that must never be committed:
+`rbt dev run` persists application state under `.rbt/`, `rbt generate` output is recreated from the API definitions on every run,
+and `.env` holds secrets (see `lifecycle-secrets.md`).
+
+```gitignore
+# Reboot dev-server state.
+.rbt/
+
+# Generated code; recreated by `rbt generate`.
+backend/api/
+frontend/api/
+
+# Secrets; see `lifecycle-secrets.md`.
+.env
+
+# Python virtual environment and caches.
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+
+# Frontend dependencies and build output (projects with a frontend).
+node_modules/
+frontend/dist/
+```
+
+Because the generated `backend/api/` (and `frontend/api/`) is
+git-ignored, a fresh clone must run `rbt generate` before anything
+imports or type-checks. `rbt dev run` regenerates automatically; CI
+must run `rbt generate` explicitly.
 
 ## `.mypy.ini` — Type-Check Config (required)
 
@@ -142,10 +179,16 @@ uv run mypy backend/   # or `mypy backend/`
 A green mypy run plus passing `uv run pytest` (see
 `testing-project-setup.md`) is the bar for "done."
 
-## Do Not Create `__init__.py` Inside `api/`
+## Do Not Create `__init__.py` — Anywhere
 
-The `api/` directory holds pydantic API definition files only. Adding
-`__init__.py` will confuse `rbt generate`'s package detection.
+Adding `__init__.py` inside `api/` will confuse `rbt generate`'s
+package detection. The `backend/` tree (`backend/api/`,
+`backend/src/`, `backend/tests/`) doesn't need them either: the
+`.mypy.ini` above resolves imports via `explicit_package_bases`, and
+at runtime the interpreter resolves them via the `PYTHONPATH` that
+`rbt` sets up. Resist the packaging reflex ("a directory of modules
+should be a package") — a Reboot project contains no hand-written
+`__init__.py` at all.
 
 ## Generated Code Lives Under `backend/`
 

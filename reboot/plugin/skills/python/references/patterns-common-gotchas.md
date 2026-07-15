@@ -29,10 +29,12 @@ console warning on every `rbt dev run`. Write fresh `.rbtrc` with
 `--application-name`; fix old `.rbtrc` that still has `--name` rather
 than ignoring the warning.
 
-### 3. No `__init__.py` in `api/`
+### 3. No `__init__.py` in `api/` — or Anywhere Else
 
 Hand-written `__init__.py` files in `api/` confuse `rbt generate`'s
-package detection.
+package detection, and the `backend/` tree doesn't need them either
+(`.mypy.ini` sets `explicit_package_bases`; see
+`lifecycle-project-setup.md`). Never create them.
 
 ### 4. Pass Kwargs, Not Request Wrappers
 
