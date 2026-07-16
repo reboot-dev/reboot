@@ -43,9 +43,11 @@ There are two ways to construct a Reboot `Agent`:
 
 ### Directly
 
-```python
-from reboot.agents.pydantic_ai import Agent
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/agents_examples.py&lines=19-23) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/agents_examples.py -->
 
+```py
 agent = Agent(
     "anthropic:claude-sonnet-4-5",
     name="research_agent",
@@ -53,18 +55,23 @@ agent = Agent(
 )
 ```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
 The constructor accepts the same arguments as
 [`pydantic_ai.Agent`](https://ai.pydantic.dev/api/agent/#pydantic_ai.Agent.__init__).
 
 ### Wrapping an existing `pydantic_ai.Agent`
 
-```python
-import pydantic_ai
-from reboot.agents.pydantic_ai import Agent
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/agents_examples.py&lines=25-26) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/agents_examples.py -->
 
+```py
 bare = pydantic_ai.Agent("anthropic:claude-sonnet-4-5", name="research_agent")
 agent = Agent.wrap(bare)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 Useful when the agent comes from code you don't control (e.g., a
 factory function or third-party library). Wrapping doesn't mutate
@@ -81,7 +88,11 @@ Reboot mirrors the four `pydantic_ai` entry points, with one extra
 required argument: the **`WorkflowContext`** for the surrounding
 workflow.
 
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/agents_examples.py&lines=63-70) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/agents_examples.py -->
+
+```py
 @classmethod
 async def workflow(
     cls,
@@ -91,6 +102,8 @@ async def workflow(
     result = await agent.run(context, request.query)
     return ResearchResponse(answer=result.output)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 Available methods:
 
@@ -113,12 +126,20 @@ the same question N times for diversity, or after changes in the
 environment or with your deps that might affect tool responses), pass
 distinct `variant=` strings:
 
-```python
-results = await asyncio.gather(*[
-    agent.run(context, "Generate an idea", variant=f"draft-{i}")
-    for i in range(5)
-])
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/agents_examples.py&lines=74-79) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/agents_examples.py -->
+
+```py
+results = await asyncio.gather(
+    *[
+        agent.run(context, "Generate an idea", variant=f"draft-{i}")
+        for i in range(5)
+    ]
+)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 ## Tools
 
@@ -130,47 +151,44 @@ types easily. You can also wrap external work in `at_least_once`
 yourself, though note that every tool call is already wrapped in an
 `at_least_once` for you.
 
-```python
-import uuid
-from pydantic_ai import RunContext
-from reboot.agents.pydantic_ai import Agent
-from reboot.aio.contexts import WorkflowContext
-from reboot.aio.workflows import at_least_once
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/agents_examples.py&lines=29-58) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/agents_examples.py -->
 
-agent = Agent("anthropic:claude-sonnet-4-5", name="research_agent")
-
+```py
 @agent.tool_plain
 def now() -> str:
     """Return the current UTC timestamp."""
     # Because every tool is wrapped in an `at_least_once`
-    # the same UTC timestamp will be returned during replay! 
+    # the same UTC timestamp will be returned during replay!
     return datetime.utcnow().isoformat()
+
 
 @agent.tool
 async def stripe_create_invoice(
     context: WorkflowContext,
     run: RunContext[None],
     customer_id: str,
-    ...
-) -> list[str]:
+) -> str:
     """Ask Stripe to create an invoice using an idempotency key so
     only one invoice is ever created even in the event of retry."""
-    
+
     async def make_idempotency_key() -> uuid.UUID:
         return uuid.uuid4()
 
-    # Using `at_least_once` is not strictly necessary,
-    # but can be instrumental  memoize values that you
-    # want to ensure will be the same if this tool call
+    # Using `at_least_once` memoizes values that you want to ensure
+    # will be the same every time this tool call is replayed.
     idempotency_key = await at_least_once(
         "Make idempotency key for Stripe",
         context,
         make_idempotency_key,
     )
 
-    # Now call Stripe.
-    ...
+    # Now call Stripe with `idempotency_key`.
+    return str(idempotency_key)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 :::tip
 The above example was merely for demonstration purposes and in
@@ -207,10 +225,11 @@ cached by Reboot, matching `pydantic_ai`'s contract.)
 If you have **more than one MCP toolset on the same agent**, all
 but at most one must have a non-`None` `id=`:
 
-```python
-from pydantic_ai.mcp import MCPServerStdio
-from reboot.agents.pydantic_ai import Agent
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/agents_examples.py&lines=127-135) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/agents_examples.py -->
 
+```py
 # OK -- distinct ids:
 weather = MCPServerStdio("weather-mcp", id="weather")
 calendar = MCPServerStdio("calendar-mcp", id="calendar")
@@ -221,6 +240,8 @@ agent = Agent(
     toolsets=[weather, calendar],
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 Reboot uses each MCP toolset's `id` to disambiguate memoization keys
 for `get_tools` / `get_instructions` / `call_tool` across replays. Two
@@ -265,7 +286,11 @@ Define your handler **inside the workflow method** (or as a helper
 that takes `context` as a parameter and returns the closure) so it
 can capture the surrounding `WorkflowContext`:
 
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/agents_examples.py&lines=90-117) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/agents_examples.py -->
+
+```py
 @classmethod
 async def workflow(
     cls,
@@ -296,6 +321,8 @@ async def workflow(
     return ChatResponse(answer=result.output)
 ```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
 Note: streaming is drained-and-stored, so iteration is replay-safe.
 The events your handler sees on replay are identical to the events
 on first run.
@@ -311,13 +338,19 @@ Reboot accepts the first and last and rejects `'parallel'` at
 construction time. On a Reboot `Agent`, pass the mode as the
 `parallel_execution_mode=` constructor argument:
 
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/agents_examples.py&lines=137-141) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/agents_examples.py -->
+
+```py
 agent = Agent(
     "anthropic:claude-sonnet-4-5",
     name="research_agent",
     parallel_execution_mode="parallel_ordered_events",  # default
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 `'parallel'` is not a valid execution mode because it yields
 tool-result events in *completion* order, which depends on asyncio
@@ -341,10 +374,16 @@ Pydantic AI's
 [`Agent.override(...)`](https://ai.pydantic.dev/api/agent/#pydantic_ai.Agent.override)
 context manager works on Reboot agents:
 
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/agents_examples.py&lines=121-122) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/agents_examples.py -->
+
+```py
 with agent.override(model="openai:gpt-4o-mini"):
     result = await agent.run(context, "Quick check.")
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 `model=` is automatically wrapped so the override stays memoized
 on replay. You may pass a `pydantic_ai.models.Model` instance, a

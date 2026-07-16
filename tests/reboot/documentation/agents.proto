@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package tests.reboot.documentation;
+
+import "rbt/v1alpha1/options.proto";
+
+message Research {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  string answer = 1;
+}
+
+message Chat {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  repeated string events = 1;
+}
+
+service ResearchMethods {
+  rpc Workflow(ResearchRequest) returns (ResearchResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+}
+
+service ChatMethods {
+  rpc Workflow(ChatRequest) returns (ChatResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+}
+
+message ResearchRequest {
+  string query = 1;
+}
+
+message ResearchResponse {
+  string answer = 1;
+}
+
+message ChatRequest {
+  string message = 1;
+}
+
+message ChatResponse {
+  string answer = 1;
+}

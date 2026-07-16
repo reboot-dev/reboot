@@ -335,6 +335,36 @@ js_reboot_test(
     visibility = ["//visibility:public"],
 )
 
+proto_library(
+    name = "agents_proto",
+    srcs = [":agents.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "agents_py_reboot",
+    proto = "agents.proto",
+    proto_library = ":agents_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+)
+
+# Agent examples used as snippets in
+# `documentation/docs/learn_more/agents.mdx`. This `py_library`
+# triggers the build and `mypy` checks of those snippets.
+py_library(
+    name = "agents_examples_py",
+    srcs = ["agents_examples.py"],
+    deps = [
+        ":agents_py_reboot",
+        "//reboot/agents/pydantic_ai:python",
+        "//reboot/aio:workflows_py",
+        requirement("pydantic-ai-slim"),
+    ],
+)
+
 # Authorizer, token verifier, and bearer token examples used as
 # snippets in `documentation/docs/learn_more/auth.mdx`. These
 # targets trigger the build and `mypy`/`tsc` checks of those
