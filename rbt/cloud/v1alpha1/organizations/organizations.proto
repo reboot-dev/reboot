@@ -2,14 +2,21 @@ syntax = "proto3";
 
 package rbt.cloud.v1alpha1.organizations;
 
+import "rbt/cloud/v1alpha1/application/application.proto";
 import "rbt/v1alpha1/options.proto";
 
 /////////////////////////////////////////////////////////////////////////
 
-// A singleton state type for resolving organization names to IDs.
+// A singleton state type for organization-wide operations: resolving
+// organization names to IDs and administering billing exemptions.
 message Organizations {
   option (rbt.v1alpha1.state) = {
   };
+
+  // The IDs of all billing-exempt organizations. Kept consistent with
+  // each `Organization.billing_exempt` flag by the `SetBillingExempt`
+  // transaction.
+  repeated string billing_exempt_organization_ids = 1;
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -22,6 +29,29 @@ service OrganizationsMethods {
 
   // Resolve an organization name to its ID.
   rpc Resolve(ResolveRequest) returns (ResolveResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  // Mark the organization with the given name as billing-exempt: its
+  // application deploys skip the payment-method requirement and its
+  // Stripe subscription (if any) is canceled. Refuses if the
+  // organization already has a payment method. Root-only; there is
+  // currently no way to remove an exemption.
+  rpc SetBillingExempt(SetBillingExemptRequest)
+      returns (SetBillingExemptResponse) {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+      errors: [ "InvalidInputError" ],
+    };
+  }
+
+  // List every billing-exempt organization along with the
+  // applications it currently has running and the size of each, so
+  // that we can estimate the cost of the free infrastructure being
+  // used. Root-only.
+  rpc ListBillingExemptUsage(ListBillingExemptUsageRequest)
+      returns (ListBillingExemptUsageResponse) {
     option (rbt.v1alpha1.method).reader = {
     };
   }
@@ -41,6 +71,58 @@ message ResolveRequest {
 
 message ResolveResponse {
   optional string organization_id = 1;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message InvalidInputError {
+  string reason = 1;
+}
+
+//////////////////////////////////////////////////////////////////////
+
+message SetBillingExemptRequest {
+  string organization_name = 1;
+}
+
+message SetBillingExemptResponse {}
+
+//////////////////////////////////////////////////////////////////////
+
+message ListBillingExemptUsageRequest {}
+
+// A single currently-running application owned by a billing-exempt
+// organization.
+message BillingExemptApplication {
+  string qualified_application_name = 1;
+  rbt.cloud.v1alpha1.application.ApplicationSize size = 2;
+}
+
+// A billing-exempt organization together with the applications it
+// currently has running.
+message BillingExemptOrganization {
+  string organization_id = 1;
+  string name = 2;
+  // The emails of the organization's owners, to identify whose
+  // infrastructure this is.
+  repeated string owner_emails = 3;
+  repeated BillingExemptApplication applications = 4;
+}
+
+// The number of currently-running applications of a given size across
+// all billing-exempt organizations.
+message ApplicationSizeCount {
+  rbt.cloud.v1alpha1.application.ApplicationSize size = 1;
+  uint32 count = 2;
+}
+
+message ListBillingExemptUsageResponse {
+  repeated BillingExemptOrganization organizations = 1;
+
+  // Aggregate count of currently-running applications per size across
+  // all billing-exempt organizations, so the price table can be
+  // applied to estimate total cost.
+  repeated ApplicationSizeCount application_counts = 2;
 }
 
 //////////////////////////////////////////////////////////////////////
