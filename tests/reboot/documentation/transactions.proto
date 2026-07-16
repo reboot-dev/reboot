@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package tests.reboot.documentation;
+
+import "rbt/v1alpha1/options.proto";
+
+message Account {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  uint32 balance = 1;
+}
+
+message Bank {
+  option (rbt.v1alpha1.state) = {
+  };
+}
+
+service AccountMethods {
+  rpc Open(OpenAccountRequest) returns (OpenAccountResponse) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {},
+    };
+  }
+
+  rpc Balance(BalanceRequest) returns (BalanceResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc Deposit(DepositRequest) returns (DepositResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
+
+service BankMethods {
+  rpc Create(CreateBankRequest) returns (CreateBankResponse) {
+    option (rbt.v1alpha1.method).writer = {
+      constructor: {},
+    };
+  }
+
+  rpc Transfer(TransferRequest) returns (TransferResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+}
+
+message OpenAccountRequest {}
+
+message OpenAccountResponse {}
+
+message BalanceRequest {}
+
+message BalanceResponse {
+  uint32 amount = 1;
+}
+
+message DepositRequest {
+  uint32 amount = 1;
+}
+
+message DepositResponse {}
+
+message WithdrawRequest {
+  uint32 amount = 1;
+}
+
+message WithdrawResponse {}
+
+message CreateBankRequest {}
+
+message CreateBankResponse {}
+
+message TransferRequest {
+  string from_account_id = 1;
+  string to_account_id = 2;
+  uint32 amount = 3;
+}
+
+message TransferResponse {}

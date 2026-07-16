@@ -14,7 +14,11 @@ Consider a `ChatRoom` API definition with one data type, `ChatRoom`, one
 
 <Tabs groupId="language">
   <TabItem value="typescript" label="Zod" default>
-```typescript
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/chat_room_zod.ts&lines=1-28) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/chat_room_zod.ts -->
+
+```ts
 import { reader, writer } from "@reboot-dev/reboot-api";
 import { z } from "zod/v4";
 
@@ -44,39 +48,43 @@ export const api = {
   ChatRoom,
 };
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="python" label="Pydantic">
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/chat_room_pydantic.py&lines=1-37) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/chat_room_pydantic.py -->
+
+```py
+from reboot.api import API, Field, Methods, Model, Reader, Type, Writer
 from typing import Optional
-from reboot.api import (
-  API,
-  Field,
-  Methods,
-  Reader,
-  Model,
-  Type,
-  Writer,
-)
+
 
 class ChatRoomState(Model):
     messages: Optional[list[str]] = Field(tag=1)
 
+
 class MessagesResponse(Model):
     messages: list[str] = Field(tag=1)
 
+
 class SendRequest(Model):
     message: str = Field(tag=1)  # E.g. "Hello, World".
+
 
 ChatRoomMethods = Methods(
     # Returns the current list of recorded messages.
     messages=Reader(
         request=None,
         response=MessagesResponse,
+        mcp=None,
     ),
     # Adds a new message to the list of recorded messages.
     send=Writer(
         request=SendRequest,
         response=None,
+        mcp=None,
     ),
 )
 
@@ -87,6 +95,8 @@ api = API(
     ),
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="proto" label="Proto">
 <!-- MARKDOWN-AUTO-DOCS:START
@@ -227,11 +237,17 @@ The key differences:
   `RebootClientProvider` automatically detects the environment.
   You do not pass a `url`:
 
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/ai-chat-counter/frontend/mcp/clicker/main.tsx&lines=9-11) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-chat-counter/frontend/mcp/clicker/main.tsx -->
+
 ```tsx
 <RebootClientProvider>
-  <App />
+  <ClickerApp />
 </RebootClientProvider>
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 - **Automatic ID resolution.** For `User` methods, the hook
   resolves the state ID from the authenticated user
@@ -243,48 +259,58 @@ The key differences:
   [`UI` methods](/learn_more/implement/ui_methods) for a complete
   component):
 
-```tsx
-import {
-  type UseCounterApi,
-  useCounter,
-} from "@api/ai_chat_counter/v1/counter_rbt_react";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/ai-chat-counter/frontend/mcp/clicker/App.tsx&lines=10-31) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-chat-counter/frontend/mcp/clicker/App.tsx -->
 
+```tsx
 export const ClickerApp: FC = () => {
   const { counter, isLoading } = useCounter();
 
-  if (isLoading) return <div>loading...</div>;
-  if (counter === undefined) return <div>No counter available.</div>;
+  if (isLoading) {
+    return <div>loading...</div>;
+  }
+
+  // `isLoading` is checked first: while it is true, `counter` is
+  // still `undefined`. Reaching this check with `undefined` therefore
+  // means resolution finished and there is genuinely no default
+  // Counter id.
+  if (counter === undefined) {
+    console.error("No default Counter id was available; cannot render.");
+    return <div>An error occurred, sorry about that!</div>;
+  }
 
   return <Clicker counter={counter} />;
 };
 
 const Clicker: FC<{ counter: UseCounterApi }> = ({ counter }) => {
-  const { response } = counter.useGet();
-
-  const handleIncrement = async () => {
-    await counter.increment({ amount: 1 });
-  };
-  // ...
-};
+  const [isPending, setIsPending] = useState(false);
+  const { response, isLoading } = counter.useGet();
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+  The resolved `counter` handle exposes the same API as
+  `useCounter({ id })` — e.g., `counter.useGet()` above, or calling
+  a mutator with `counter.increment({ amount: 1 })`.
 
 - **`UI` method props.** For `UI` methods with a `request`
   type, the AI-provided fields are passed to the React component
   as props:
 
-```tsx
-import {
-  type DashboardConfig,
-  useCounter,
-} from "@api/ai_chat_counter/v1/counter_rbt_react";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../reboot/examples/ai-chat-counter-dashboard/frontend/mcp/dashboard/App.tsx&lines=20-21) -->
+<!-- The below code snippet is automatically added from ../../../../reboot/examples/ai-chat-counter-dashboard/frontend/mcp/dashboard/App.tsx -->
 
-export const DashboardApp: FC<DashboardConfig> = ({
-  personalizedMessage,
-}) => {
+```tsx
+export const DashboardApp: FC<DashboardConfig> = ({ personalizedMessage }) => {
   const { counter, isLoading } = useCounter();
-  // ...
-};
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+  The `DashboardConfig` props type is imported from the same
+  generated file as `useCounter`.
 
 ## Reading state
 

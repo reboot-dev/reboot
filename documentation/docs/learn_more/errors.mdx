@@ -42,7 +42,11 @@ method's `errors`:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Pydantic" default>
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/errors_pydantic.py&lines=1-22) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/errors_pydantic.py -->
+
+```py
 from reboot.api import Field, Methods, Model, Writer
 
 
@@ -66,9 +70,15 @@ AccountMethods = Methods(
     # ...
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="Zod">
-```typescript
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/errors_zod.ts&lines=1-27) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/errors_zod.ts -->
+
+```ts
 import { writer } from "@reboot-dev/reboot-api";
 import { z } from "zod/v4";
 
@@ -97,6 +107,8 @@ export const Account = {
   },
 };
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="proto" label="Proto">
 <!-- MARKDOWN-AUTO-DOCS:START
