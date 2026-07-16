@@ -750,3 +750,94 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+async def main():
+    application = Application(
+        libraries=[sorted_map_library()],
+    )
+    await application.run()
+
+
+# Runs the snippets used in
+# `documentation/docs/library_services/sorted_map.mdx`.
+class TestSortedMapDocumentation(unittest.IsolatedAsyncioTestCase):
+
+    async def asyncSetUp(self) -> None:
+        self.rbt = Reboot()
+        await self.rbt.start()
+
+    async def asyncTearDown(self) -> None:
+        await self.rbt.stop()
+
+    async def test_documentation_snippets(self) -> None:
+        await self.rbt.up(
+            Application(libraries=[sorted_map_library()]),
+        )
+
+        context = self.rbt.create_external_context(
+            name="documentation",
+            app_internal=True,
+        )
+
+        my_map = SortedMap.ref("my-map")
+
+        await my_map.insert(
+            context, entries={
+                "key-a": b"value-1",
+                "key-b": b"value-2",
+                "key-c": b"value-3",
+            }
+        )
+
+        # Get key that has a value.
+        response = await my_map.get(context, key="key-a")
+        print(response.value)
+
+        # Get key that has no associated value.
+        missing_response = await my_map.get(context, key="missing-key")
+        # missing_response.HasField("value") == False
+
+        assert not missing_response.HasField("value")
+
+        range1 = await my_map.range(
+            context,
+            start_key="key-b",
+            end_key="key-z",
+            limit=2,
+        )
+
+        for entry in range1.entries:
+            print(entry.key, entry.value)
+
+        # Returns entries associated with the 3 smallest keys.
+        range2 = await my_map.range(context, limit=3)
+
+        assert len(range2.entries) == 3
+
+        range1 = await my_map.reverse_range(
+            context,
+            start_key="key-z",
+            end_key="key-b",
+            limit=2,
+        )
+
+        for entry in range1.entries:
+            print(entry.key, entry.value)
+
+        # Returns entries associated with the 3 largest keys.
+        range2 = await my_map.reverse_range(context, limit=3)
+
+        assert len(range2.entries) == 3
+
+        await my_map.remove(context, keys=["key-a", "key-b"])
+
+        try:
+            await my_map.range(
+                context,
+                start_key="zero",
+                end_key="one",
+            )
+        except SortedMap.RangeAborted as e:
+            # isinstance(e.error, InvalidRangeError) == True
+            print(e.error.message)

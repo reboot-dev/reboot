@@ -64,27 +64,32 @@ Also make sure to include the `SortedMap` library when starting up your `Applica
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
-```py
-from reboot.std.collections.v1.sorted_map import sorted_map_library
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.py&lines=755-759) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.py -->
 
+```py
 async def main():
     application = Application(
-        servicers=[MyServicer],
         libraries=[sorted_map_library()],
     )
     await application.run()
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
-```ts
-import { sortedMapLibrary } from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.ts&lines=83-85) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.ts -->
 
+```ts
 new Application({
-  servicers: [MyServicer],
-  libraries: [sortedMapLibrary()]
-  initialize,
+  libraries: [sortedMapLibrary()],
 }).run();
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -99,14 +104,26 @@ This creates a reference to a `SortedMap` with ID `"my-map"`.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.py&lines=783-783) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.py -->
+
 ```py
 my_map = SortedMap.ref("my-map")
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.ts&lines=109-109) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.ts -->
+
 ```ts
 const myMap = SortedMap.ref("my-map");
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -120,6 +137,10 @@ Keys which are already in the map will be overwritten.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.py&lines=785-791) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.py -->
+
 ```py
 await my_map.insert(
     context, entries={
@@ -129,8 +150,14 @@ await my_map.insert(
     }
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.ts&lines=111-117) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.ts -->
+
 ```ts
 await myMap.insert(context, {
   entries: {
@@ -140,6 +167,8 @@ await myMap.insert(context, {
   },
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -153,6 +182,10 @@ unset.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.py&lines=793-799) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.py -->
+
 ```py
 # Get key that has a value.
 response = await my_map.get(context, key="key-a")
@@ -162,8 +195,14 @@ print(response.value)
 missing_response = await my_map.get(context, key="missing-key")
 # missing_response.HasField("value") == False
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.ts&lines=119-125) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.ts -->
+
 ```ts
 // Get key that has a value.
 const response = await myMap.get(context, { key: "key-a" });
@@ -173,6 +212,8 @@ console.log(new TextDecoder().decode(response.value));
 const missingResponse = await myMap.get(context, { key: "missing-key" });
 // missingResponse.hasOwnProperty("value") === false
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -185,16 +226,28 @@ Any keys in the batch that are not present in the map will be ignored.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.py&lines=833-833) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.py -->
+
 ```py
 await my_map.remove(context, keys=["key-a", "key-b"])
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.ts&lines=163-165) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.ts -->
+
 ```ts
 await myMap.remove(context, {
   keys: ["key-a", "key-b"],
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -217,6 +270,10 @@ or server.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.py&lines=803-814) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.py -->
+
 ```py
 range1 = await my_map.range(
     context,
@@ -231,8 +288,14 @@ for entry in range1.entries:
 # Returns entries associated with the 3 smallest keys.
 range2 = await my_map.range(context, limit=3)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.ts&lines=129-142) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.ts -->
+
 ```ts
 const range1 = await myMap.range(context, {
   startKey: "key-b",
@@ -249,6 +312,8 @@ const range2 = await myMap.range(context, {
   limit: 3,
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -275,6 +340,10 @@ or server
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.py&lines=818-829) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.py -->
+
 ```py
 range1 = await my_map.reverse_range(
     context,
@@ -289,24 +358,32 @@ for entry in range1.entries:
 # Returns entries associated with the 3 largest keys.
 range2 = await my_map.reverse_range(context, limit=3)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.ts&lines=146-159) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.ts -->
+
 ```ts
-const range1 = await myMap.reverseRange(context, {
+const reverseRange1 = await myMap.reverseRange(context, {
   startKey: "key-z",
   endKey: "key-b",
   limit: 2,
 });
 
-for (const entry of range1.entries) {
+for (const entry of reverseRange1.entries) {
   console.log(entry.key, new TextDecoder().decode(entry.value));
 }
 
 // Returns entries associated with the 3 largest keys.
-const range2 = await myMap.reverseRange(context, {
+const reverseRange2 = await myMap.reverseRange(context, {
   limit: 3,
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -327,12 +404,11 @@ is not valid.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
-```py
-from reboot.std.collections.v1.sorted_map import (
-    InvalidRangeError,
-    SortedMap,
-)
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.py&lines=835-843) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.py -->
 
+```py
 try:
     await my_map.range(
         context,
@@ -343,14 +419,15 @@ except SortedMap.RangeAborted as e:
     # isinstance(e.error, InvalidRangeError) == True
     print(e.error.message)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
-```ts
-import {
-  InvalidRangeError,
-  SortedMap,
-} from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.ts&lines=167-179) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.ts -->
 
+```ts
 try {
   await myMap.range(context, {
     startKey: "zero",
@@ -365,5 +442,7 @@ try {
   }
 }
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
