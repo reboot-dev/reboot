@@ -335,6 +335,48 @@ js_reboot_test(
     visibility = ["//visibility:public"],
 )
 
+# Authorizer, token verifier, and bearer token examples used as
+# snippets in `documentation/docs/learn_more/auth.mdx`. These
+# targets trigger the build and `mypy`/`tsc` checks of those
+# snippets; the auth runtime itself is covered by
+# `//tests/reboot:auth_tests_py` and the nodejs auth test.
+py_library(
+    name = "auth_examples_py",
+    srcs = ["auth_examples.py"],
+    deps = [
+        ":bank_py_reboot",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio/auth:authorizers_py",
+        "//reboot/aio/auth:token_verifiers_py",
+    ],
+)
+
+ts_project(
+    name = "auth_examples_ts",
+    srcs = [
+        "auth_examples.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    deps = [
+        ":bank_js_proto",
+        ":bank_js_reboot",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@types/node",
+    ],
+)
+
 # Vitest configuration used as a snippet in
 # `documentation/docs/learn_more/testing.md`.
 ts_project(

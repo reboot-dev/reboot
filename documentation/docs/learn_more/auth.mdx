@@ -40,9 +40,15 @@ from_account = Account.ref(
   </TabItem>
 
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/auth_examples.ts&lines=151-151) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/auth_examples.ts -->
+
 ```ts
 const fromAccount = Account.ref(request.fromAccountId, { bearerToken });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -67,6 +73,10 @@ bank, _ = await Bank.create(
   </TabItem>
 
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/auth_examples.ts&lines=141-146) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/auth_examples.ts -->
+
 ```ts
 const [bank] = await Bank.create(
   context,
@@ -75,6 +85,8 @@ const [bank] = await Bank.create(
   { bearerToken: VALID_JWT }
 );
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
@@ -96,23 +108,35 @@ or from React generated code, do the following:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
-  ```py
-  context = ExternalContext(
-      name='Example',
-      url='http://localhost:9991',
-      bearer_token=token,
-  )
-  ```
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/auth_examples.py&lines=96-100) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/auth_examples.py -->
+
+```py
+context = ExternalContext(
+    name="Example",
+    url="http://localhost:9991",
+    bearer_token=token,
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 
   <TabItem value="typescript" label="TypeScript">
-  ```typescript
-  const context = new ExternalContext({
-    name: "Example",
-    url: "http://localhost:9991",
-    bearerToken: token,
-  });
-  ```
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/auth_examples.ts&lines=132-136) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/auth_examples.ts -->
+
+```ts
+const context = new ExternalContext({
+  name: "Example",
+  url: "http://localhost:9991",
+  bearerToken: token,
+});
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -133,24 +157,35 @@ of unit tests):
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
-  ```py
-  async def main():
-      application = Application(
-          servicers=[...],
-          token_verifier=MyTokenVerifier(...),
-      )
-      await application.run()
-  ```
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/auth_examples.py&lines=87-92) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/auth_examples.py -->
+
+```py
+async def main():
+    application = Application(
+        servicers=[AccountServicer],
+        token_verifier=MyTokenVerifier(),
+    )
+    await application.run()
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 
   <TabItem value="typescript" label="TypeScript">
-  ```typescript
-  new Application({
-    servicers: [...],
-    ...,
-    tokenVerifier: new MyTokenVerifier(...),
-  }).run();
-  ```
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/auth_examples.ts&lines=125-128) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/auth_examples.ts -->
+
+```ts
+new Application({
+  servicers: [AccountServicer],
+  tokenVerifier: new MyTokenVerifier(),
+}).run();
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 
 </Tabs>
@@ -220,9 +255,11 @@ authorizers. You provide an authorizer by implementing the
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
-```py
-from reboot.aio.auth.authorizers import allow, allow_if
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/auth_examples.py&lines=59-66) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/auth_examples.py -->
 
+```py
 class AccountServicer(Account.Servicer):
 
     def authorizer(self):
@@ -230,30 +267,30 @@ class AccountServicer(Account.Servicer):
             balance=allow_if(any=[is_admin, is_account_owner]),
             deposit=allow(),
             withdraw=allow_if(all=[is_account_owner]),
-            ...
         )
-
-    ...
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/auth_examples.ts&lines=96-104) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/auth_examples.ts -->
+
 ```ts
-import { allow, allowIf } from "@reboot-dev/reboot";
-
-class AccountServicer extends Account.Servicer {
-
+export class AccountServicer extends AccountServicerBase {
   authorizer() {
     return new Account.Authorizer({
       balance: allowIf({ any: [isAdmin, isAccountOwner] }),
       deposit: allow(),
       withdraw: allowIf({ all: [isAccountOwner] }),
-      ...
     });
   }
-
-  ...
+}
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -267,30 +304,34 @@ You can alternatively return a single authorizer rule directly from
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
-```py
-from reboot.aio.auth.authorizers import allow_if
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/auth_examples.py&lines=69-72) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/auth_examples.py -->
 
-class AccountServicer(Account.Servicer):
+```py
+class AdminOnlyAccountServicer(Account.Servicer):
 
     def authorizer(self):
         return allow_if(all=[is_admin])
-
-    ...
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/auth_examples.ts&lines=106-110) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/auth_examples.ts -->
+
 ```ts
-import { allowIf } from "@reboot-dev/reboot";
-
-class AccountServicer extends Account.Servicer {
-
+export class AdminOnlyAccountServicer extends AccountServicerBase {
   authorizer() {
     return allowIf({ all: [isAdmin] });
   }
-
-  ...
+}
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -314,17 +355,19 @@ making sure that the token was verified for a valid user:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
-```py
-from rbt.v1alpha1 import errors_pb2
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/auth_examples.py&lines=17-30) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/auth_examples.py -->
 
-def is_valid_user(
+```py
+async def is_valid_user(
     *,
     context: ReaderContext,
     state: Optional[Message],
     request: Optional[Message],
     **kwargs,
 ):
-    if context.auth is None:
+    if context.auth is None or context.auth.user_id is None:
         return errors_pb2.Unauthenticated()
 
     if await validate_user(context.auth.user_id):
@@ -332,13 +375,19 @@ def is_valid_user(
 
     return errors_pb2.PermissionDenied()
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 
   <TabItem value="typescript" label="TypeScript">
-```ts
-import { errors_pb } from "@reboot-dev/reboot-api";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/auth_examples.ts&lines=22-38) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/auth_examples.ts -->
 
-function isValidUser({ context }: {
+```ts
+async function isValidUser({
+  context,
+}: {
   context: ReaderContext;
   state?: Message;
   request?: Message;
@@ -354,6 +403,8 @@ function isValidUser({ context }: {
   return new errors_pb.PermissionDenied();
 }
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
