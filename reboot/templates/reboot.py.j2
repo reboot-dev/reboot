@@ -2535,45 +2535,171 @@ class {{ state.proto.name }}Authorizer(
     {% endfor %}
     {% endfor %}
 
-    @staticmethod
-    def all(
-        *authorizers: {{ state.proto.name }}Authorizer,
-    ) -> {{ state.proto.name }}Authorizer:
-        return {{ state.proto.name }}Authorizer(
+    def _has_only_default_rule(self):
+        return (
             {% for service in state.services %}
             {% for method in service.methods %}
-            {{ method.proto.name | to_snake }}=IMPORT_reboot_aio_auth_authorizers.allow_if(all=[
-                authorizer._{{ method.proto.name | to_snake }} or authorizer.__default
-                for authorizer in authorizers
-                if authorizer._{{ method.proto.name | to_snake }} is not None or authorizer.__default is not None
-            ]),
+            self._{{ method.proto.name | to_snake }} is None and
             {% endfor %}
             {% endfor %}
-            _default = IMPORT_reboot_aio_auth_authorizers.allow_if(all=[
-                authorizer.__default for authorizer in authorizers
-                if authorizer.__default is not None
-            ]),
+            True # This `True` allows code generation to be simpler.
+        )
+
+    @staticmethod
+    def _wrap_authorizer_or_rule(
+        authorizer_or_rule: {{ state.proto.name}}Authorizer | IMPORT_reboot_aio_auth_authorizers.AuthorizerRule
+    ) -> IMPORT_typing.Callable[[str], IMPORT_typing.Optional[IMPORT_reboot_aio_auth_authorizers.AuthorizerRule]]:
+        """
+        Returns a `rule_for_method` which given a `method` (as a string),
+        will return an associated `rule` for it, which is either
+        * The AuthorizationRule if passed in an AuthorizationRule,
+        * The _default AuthorizationRule if the passed in Authorizer only has a
+          default rule,
+        * The AuthorizationRule associated with that method (might be None) for
+          an Authorizer with at least one method with a specified AuthorizationRule.
+        """
+        if isinstance(authorizer_or_rule, IMPORT_reboot_aio_auth_authorizers.AuthorizerRule):
+            def rule_for_method(method: str):
+                return authorizer_or_rule
+            return rule_for_method
+        elif authorizer_or_rule._has_only_default_rule():
+            # An Authorizer with only a `_default` rule should apply it to all methods.
+            def rule_for_method(method: str):
+                return authorizer_or_rule.__default
+            return rule_for_method
+        else:
+            # An Authorizer that has rules for specific methods, should only apply its
+            # `_default` rule to `_default` and not any undefined methods.
+            def rule_for_method(method: str):
+                match method:
+                    {% for service in state.services %}
+                    {% for method in service.methods %}
+                    case "{{ method.proto.name | to_snake }}":
+                        return authorizer_or_rule._{{ method.proto.name | to_snake }}
+                    {% endfor %}
+                    {% endfor %}
+                    case "_default":
+                        return authorizer_or_rule.__default
+                    case _:
+                        return None
+            return rule_for_method
+
+    @staticmethod
+    def all(
+        *authorizer_or_rules: {{ state.proto.name }}Authorizer | IMPORT_reboot_aio_auth_authorizers.AuthorizerRule,
+    ) -> {{ state.proto.name }}Authorizer:
+        """
+        Return an Authorizer that, for each method, applies an
+        `allow_if(all=...)` across
+        * all specified `AuthorizationRule`s for that method from `Authorizer`s
+          passed in,
+        * IF there are any specified `AuthorizationRule`s for the method, also
+          includes
+            * all `AuthorizationRule`s passed in,
+            * all default `AuthorizationRule`s for `Authorizer`s with *only* a
+              default rule. (i.e. An `Authorizer` that applies a single
+              `AuthorizationRule` on all requests, will get applied to all
+              requests of the returned `Authorizer`.)
+
+        Default `AuthorizationRule` forms as an `allow_if(all=...)` across
+        * all default `AuthorizationRule` for all `Authorizer`s.
+        * all `AuthorizationRule` passed in.
+        """
+        # Wrap authorizers / rules into a `rule_for_method` to preserve the ordering
+        # of passed in rules and methods. This preserves the order they get evaluated,
+        # which can affect what error result gets returned.
+        rule_for_methods = [
+            {{ state.proto.name }}Authorizer._wrap_authorizer_or_rule(authorizer_or_rule)
+            for authorizer_or_rule in authorizer_or_rules
+        ]
+
+        return {{ state.proto.name }}Authorizer(
+            # For each method, only specify a non-default `AuthorizationRule`
+            # for it if any of the passed in `Authorizers` has specified a
+            # non-default `AuthorizationRule` for the method. Also ignore any
+            # rules defined as `None`.
+            {% for service in state.services %}
+            {% for method in service.methods %}
+            {{ method.proto.name | to_snake }}=IMPORT_reboot_aio_auth_authorizers.allow_if(all=rules)
+            if any(
+                maybe_authorizer._{{ method.proto.name | to_snake }} is not None
+                for maybe_authorizer in authorizer_or_rules
+                if isinstance(maybe_authorizer, {{ state.proto.name }}Authorizer)
+            ) and (rules := [
+                rule
+                for rule_for_method in rule_for_methods
+                if (rule := rule_for_method("{{ method.proto.name | to_snake }}"))
+            ]) else None,
+            {% endfor %}
+            {% endfor %}
+            _default=IMPORT_reboot_aio_auth_authorizers.allow_if(all=rules)
+            if (rules := [
+                rule
+                for rule_for_method in rule_for_methods
+                if (rule := rule_for_method("_default"))
+            ]) else IMPORT_reboot_aio_auth_authorizers.allow_if(
+                all=[IMPORT_reboot_aio_auth_authorizers.is_app_internal]
+            ),
         )
 
     @staticmethod
     def any(
-        *authorizers: {{ state.proto.name }}Authorizer,
+        *authorizer_or_rules: {{ state.proto.name }}Authorizer | IMPORT_reboot_aio_auth_authorizers.AuthorizerRule,
     ) -> {{ state.proto.name }}Authorizer:
+        """
+        Return an Authorizer that, for each method, applies an
+        `allow_if(any=...)` across
+        * any specified `AuthorizationRule`s for that method from `Authorizer`s
+          passed in,
+        * IF there are any specified `AuthorizationRule`s for the method, also
+          includes
+            * any `AuthorizationRule`s passed in,
+            * any default `AuthorizationRule`s for `Authorizer`s with *only* a
+              default rule. (i.e. An `Authorizer` that applies a single
+              `AuthorizationRule` on any request, will get applied to any
+              request of the returned `Authorizer`.)
+
+        Default `AuthorizationRule` forms as an `allow_if(any=...)` across
+        * any default `AuthorizationRule` for any `Authorizer`.
+        * any `AuthorizationRule` passed in.
+        """
+        # Wrap authorizers / rules into a `rule_for_method` to preserve the ordering
+        # of passed in rules and methods. This preserves the order they get evaluated,
+        # which can affect what error result gets returned.
+        rule_for_methods = [
+            {{ state.proto.name }}Authorizer._wrap_authorizer_or_rule(authorizer_or_rule)
+            for authorizer_or_rule in authorizer_or_rules
+        ]
+
         return {{ state.proto.name }}Authorizer(
+            # For each method, only specify a non-default `AuthorizationRule`
+            # for it if any of the passed in `Authorizers` has specified a
+            # non-default `AuthorizationRule` for the method. Also ignore any
+            # rules defined as `None`.
             {% for service in state.services %}
             {% for method in service.methods %}
-            {{ method.proto.name | to_snake }}=IMPORT_reboot_aio_auth_authorizers.allow_if(any=[
-                authorizer._{{ method.proto.name | to_snake }} or authorizer.__default
-                for authorizer in authorizers
-                if authorizer._{{ method.proto.name | to_snake }} is not None or authorizer.__default is not None
-            ]),
+            {{ method.proto.name | to_snake }}=IMPORT_reboot_aio_auth_authorizers.allow_if(any=rules)
+            if any(
+                maybe_authorizer._{{ method.proto.name | to_snake }} is not None
+                for maybe_authorizer in authorizer_or_rules
+                if isinstance(maybe_authorizer, {{ state.proto.name }}Authorizer)
+            ) and (rules := [
+                rule
+                for rule_for_method in rule_for_methods
+                if (rule := rule_for_method("{{ method.proto.name | to_snake }}"))
+            ]) else None,
             {% endfor %}
             {% endfor %}
-            _default = IMPORT_reboot_aio_auth_authorizers.allow_if(any=[
-                authorizer.__default for authorizer in authorizers
-                if authorizer.__default is not None
-            ]),
+            _default=IMPORT_reboot_aio_auth_authorizers.allow_if(any=rules)
+            if (rules := [
+                rule
+                for rule_for_method in rule_for_methods
+                if (rule := rule_for_method("_default"))
+            ]) else IMPORT_reboot_aio_auth_authorizers.allow_if(
+                all=[IMPORT_reboot_aio_auth_authorizers.is_app_internal]
+            ),
         )
+
 {% endfor %}
 
 ############################ Reboot Servicers ############################
