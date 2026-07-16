@@ -44,14 +44,35 @@ To use an `OrderedMap`, import the library where you would like to use it.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py&lines=14-18) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py -->
+
 ```py
-from reboot.std.collections.ordered_map.v1.ordered_map import OrderedMap
+from reboot.std.collections.ordered_map.v1.ordered_map import (
+    InvalidRangeError,
+    OrderedMap,
+    ordered_map_library,
+)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts&lines=10-15) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts -->
+
 ```ts
-import { OrderedMap } from "@reboot-dev/reboot-std/collections/ordered_map/v1";
+import {
+  InvalidRangeError,
+  Node,
+  OrderedMap,
+  orderedMapLibrary,
+} from "@reboot-dev/reboot-std/collections/ordered_map/v1";
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -60,26 +81,31 @@ Also make sure to include the `OrderedMap` library when starting up your `Applic
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
-```py
-from reboot.std.collections.ordered_map.v1.ordered_map import ordered_map_library
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py&lines=1894-1897) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py -->
 
+```py
 async def main():
-    application = Application(
-        servicers=[MyServicer],
+    await Application(
         libraries=[ordered_map_library()],
     ).run()
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
-```ts
-import { orderedMapLibrary } from "@reboot-dev/reboot-std/collections/ordered_map/v1";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts&lines=94-96) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts -->
 
+```ts
 new Application({
-  servicers: [MyServicer],
   libraries: [orderedMapLibrary()],
-  initialize,
 }).run();
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -92,6 +118,10 @@ library. However, this can be overridden by providing your own
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py&lines=1912-1919) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py -->
+
 ```py
 authorizer = OrderedMap.Authorizer(
     insert=allow_if(all=[is_app_internal]),
@@ -99,12 +129,17 @@ authorizer = OrderedMap.Authorizer(
 )
 
 application = Application(
-    servicers=[MyServicer],
     libraries=[ordered_map_library(authorizer=authorizer)],
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts&lines=138-145) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts -->
+
 ```ts
 const authorizer = new OrderedMap.Authorizer({
   insert: allowIf({ all: [isAppInternal] }),
@@ -112,12 +147,11 @@ const authorizer = new OrderedMap.Authorizer({
 });
 
 const application = new Application({
-  servicers: [MyServicer],
   libraries: [orderedMapLibrary({ authorizer })],
-  initialize,
 });
-
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -133,14 +167,26 @@ This creates a reference to an `OrderedMap` with ID `"my-map"`.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py&lines=1928-1928) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py -->
+
 ```py
 my_map = OrderedMap.ref("my-map")
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts&lines=153-153) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts -->
+
 ```ts
 const myMap = OrderedMap.ref("my-map");
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -170,6 +216,10 @@ before reading.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py&lines=1930-1934) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py -->
+
 ```py
 await my_map.create(
     context,
@@ -177,14 +227,22 @@ await my_map.create(
     maintain_size=True,
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts&lines=155-158) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts -->
+
 ```ts
 await myMap.create(context, {
   degree: 128,
   maintainSize: true,
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -204,6 +262,10 @@ construction.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py&lines=1948-1956) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py -->
+
 ```py
 # Implicitly creates with degree=64 if not yet
 # created, or validates that the existing map
@@ -215,8 +277,14 @@ await my_map.insert(
     degree=64,
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts&lines=170-177) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts -->
+
 ```ts
 // Implicitly creates with degree 64 if not yet
 // created, or validates that the existing map
@@ -227,6 +295,8 @@ await myMap.insert(context, {
   degree: 64,
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -241,9 +311,11 @@ and [`Any`](/library_services/item#any) docs for `Item`s.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
-```py
-from reboot.protobuf import as_str
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py&lines=1961-1977) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py -->
 
+```py
 await my_map.insert(
     context,
     key="key-a",
@@ -259,11 +331,17 @@ await my_map.insert(
 await my_map.insert(
     context,
     key="key-c",
-    any=<Any>,
+    any=any_value,
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts&lines=107-120) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts -->
+
 ```ts
 await myMap.insert(context, {
   key: "key-a",
@@ -277,9 +355,11 @@ await myMap.insert(context, {
 
 await myMap.insert(context, {
   key: "key-c",
-  any: <Any>
+  any: Any.pack(Value.fromJson("any value!")),
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -297,10 +377,11 @@ Each entry's value is specified as an [`Item`](/library_services/item).
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
-```py
-from rbt.std.item.v1.item_pb2 import Item
-from reboot.protobuf import from_str
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py&lines=1979-1985) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py -->
 
+```py
 await my_map.insert(
     context,
     entries={
@@ -309,11 +390,15 @@ await my_map.insert(
     },
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
-```ts
-import { Value } from "@bufbuild/protobuf/wkt";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts&lines=189-194) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts -->
 
+```ts
 await myMap.insert(context, {
   entries: {
     "key-a": { value: Value.fromJson("a value!") },
@@ -321,6 +406,8 @@ await myMap.insert(context, {
   },
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -334,6 +421,10 @@ return the associated `Value`, `bytes`, or `Any`.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py&lines=1987-2001) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py -->
+
 ```py
 # Search for key with associated `Value`.
 response = await my_map.search(context, key="key-a")
@@ -349,10 +440,16 @@ print(response.any)
 
 # Search for key with no associated data.
 missing_response = await my_map.search(context, key="missing-key")
-assert missing_response.found == False
+assert not missing_response.found
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts&lines=196-212) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts -->
+
 ```ts
 // Search for key with associated `Value`.
 const { value } = await myMap.search(context, { key: "key-a" });
@@ -367,9 +464,13 @@ const { any } = await myMap.search(context, { key: "key-c" });
 console.log(any);
 
 // Search for key with no associated data.
-const missingResponse = await myMap.get(context, { key: "missing-key" });
-// missingResponse.found === false
+const missingResponse = await myMap.search(context, {
+  key: "missing-key",
+});
+assert(missingResponse.found === false);
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -382,14 +483,26 @@ Any key that is not present will be ignored.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py&lines=2003-2003) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py -->
+
 ```py
 await my_map.remove(context, key="key-a")
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts&lines=214-214) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts -->
+
 ```ts
 await myMap.remove(context, { key: "key-a" });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -406,19 +519,31 @@ single-key `key` field must be unset.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py&lines=2011-2014) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py -->
+
 ```py
 await my_map.remove(
     context,
     keys=["key-a", "key-b", "key-c"],
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts&lines=221-223) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts -->
+
 ```ts
 await myMap.remove(context, {
   keys: ["key-a", "key-b", "key-c"],
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -439,6 +564,10 @@ set dependent on how you inserted the data.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py&lines=2026-2036) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py -->
+
 ```py
 range1 = await my_map.range(
     context,
@@ -452,8 +581,14 @@ for entry in range1.entries:
 # Returns entries associated with the 3 smallest keys.
 range2 = await my_map.range(context, limit=3)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts&lines=234-246) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts -->
+
 ```ts
 const range1 = await myMap.range(context, {
   startKey: "key-b",
@@ -469,6 +604,8 @@ const range2 = await myMap.range(context, {
   limit: 3,
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -494,6 +631,10 @@ set dependent on how you inserted the data.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py&lines=2040-2050) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py -->
+
 ```py
 range1 = await my_map.reverse_range(
     context,
@@ -507,23 +648,31 @@ for entry in range1.entries:
 # Returns entries associated with the 3 largest keys.
 range2 = await my_map.reverse_range(context, limit=3)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts&lines=250-262) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts -->
+
 ```ts
-const range1 = await myMap.reverseRange(context, {
+const reverseRange1 = await myMap.reverseRange(context, {
   startKey: "key-z",
   limit: 2,
 });
 
-for (const entry of range1.entries) {
+for (const entry of reverseRange1.entries) {
   console.log(entry.key, entry.value, entry.bytes, entry.any);
 }
 
 // Returns entries associated with the 3 largest keys.
-const range2 = await myMap.reverseRange(context, {
+const reverseRange2 = await myMap.reverseRange(context, {
   limit: 3,
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -543,26 +692,26 @@ is not valid.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
-```py
-from reboot.std.collections.ordered_map.v1.ordered_map import (
-    InvalidRangeError,
-    OrderedMap,
-)
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py&lines=2054-2058) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.py -->
 
+```py
 try:
     await my_map.range(context)
 except OrderedMap.RangeAborted as e:
     # isinstance(e.error, InvalidRangeError) == True
     print(e.error.message)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
-```ts
-import {
-  InvalidRangeError,
-  OrderedMap,
-} from "@reboot-dev/reboot-std/collections/v1/ordered_map.js";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts&lines=266-274) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/ordered_map/v1/ordered_map_tests.ts -->
 
+```ts
 try {
   await myMap.range(context);
 } catch (e) {
@@ -572,8 +721,9 @@ try {
   ) {
     console.error(e.error.message);
   }
-}
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 

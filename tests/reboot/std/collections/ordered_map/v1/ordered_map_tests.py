@@ -8,7 +8,7 @@ from rbt.v1alpha1.errors_pb2 import (
     StateAlreadyConstructed,
 )
 from reboot.aio.applications import Application
-from reboot.aio.auth.authorizers import allow, deny
+from reboot.aio.auth.authorizers import allow, allow_if, deny, is_app_internal
 from reboot.aio.tests import Reboot
 from reboot.protobuf import as_str, from_str
 from reboot.std.collections.ordered_map.v1.ordered_map import (
@@ -1889,3 +1889,170 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+async def main():
+    await Application(
+        libraries=[ordered_map_library()],
+    ).run()
+
+
+# Runs the snippets used in
+# `documentation/docs/library_services/ordered_map.mdx`.
+class TestOrderedMapDocumentation(unittest.IsolatedAsyncioTestCase):
+
+    async def asyncSetUp(self) -> None:
+        self.rbt = Reboot()
+        await self.rbt.start()
+
+    async def asyncTearDown(self) -> None:
+        await self.rbt.stop()
+
+    async def test_create(self) -> None:
+        authorizer = OrderedMap.Authorizer(
+            insert=allow_if(all=[is_app_internal]),
+            search=allow(),
+        )
+
+        application = Application(
+            libraries=[ordered_map_library(authorizer=authorizer)],
+        )
+
+        await self.rbt.up(application)
+
+        context = self.rbt.create_external_context(
+            name="documentation",
+            app_internal=True,
+        )
+
+        my_map = OrderedMap.ref("my-map")
+
+        await my_map.create(
+            context,
+            degree=128,
+            maintain_size=True,
+        )
+
+    async def test_insert_search_remove_range(self) -> None:
+        await self.rbt.up(
+            Application(libraries=[ordered_map_library()]),
+        )
+
+        context = self.rbt.create_external_context(
+            name="documentation",
+            app_internal=True,
+        )
+
+        my_map = OrderedMap.ref("my-map")
+
+        # Implicitly creates with degree=64 if not yet
+        # created, or validates that the existing map
+        # was created with degree=64.
+        await my_map.insert(
+            context,
+            key="key-a",
+            value=from_str("a value!"),
+            degree=64,
+        )
+
+        any_value = Any()
+        any_value.Pack(from_str("any value!"))
+
+        await my_map.insert(
+            context,
+            key="key-a",
+            value=from_str("a value!"),
+        )
+
+        await my_map.insert(
+            context,
+            key="key-b",
+            bytes=b"some bytes",
+        )
+
+        await my_map.insert(
+            context,
+            key="key-c",
+            any=any_value,
+        )
+
+        await my_map.insert(
+            context,
+            entries={
+                "key-a": Item(value=from_str("a value!")),
+                "key-b": Item(bytes=b"some bytes"),
+            },
+        )
+
+        # Search for key with associated `Value`.
+        response = await my_map.search(context, key="key-a")
+        print(response.value)
+
+        # Search for key with associated `bytes`.
+        response = await my_map.search(context, key="key-b")
+        print(response.bytes)
+
+        # Search for key with associated `Any`.
+        response = await my_map.search(context, key="key-c")
+        print(response.any)
+
+        # Search for key with no associated data.
+        missing_response = await my_map.search(context, key="missing-key")
+        assert not missing_response.found
+
+        await my_map.remove(context, key="key-a")
+
+        await my_map.insert(
+            context,
+            key="key-a",
+            value=from_str("a value!"),
+        )
+
+        await my_map.remove(
+            context,
+            keys=["key-a", "key-b", "key-c"],
+        )
+
+        await my_map.insert(
+            context,
+            entries={
+                "key-a": Item(value=from_str("a value!")),
+                "key-b": Item(bytes=b"some bytes"),
+                "key-c": Item(value=from_str("c value!")),
+                "key-d": Item(value=from_str("d value!")),
+            },
+        )
+
+        range1 = await my_map.range(
+            context,
+            start_key="key-b",
+            limit=2,
+        )
+
+        for entry in range1.entries:
+            print(entry.key, entry.value, entry.bytes, entry.any)
+
+        # Returns entries associated with the 3 smallest keys.
+        range2 = await my_map.range(context, limit=3)
+
+        assert len(range2.entries) == 3
+
+        range1 = await my_map.reverse_range(
+            context,
+            start_key="key-z",
+            limit=2,
+        )
+
+        for entry in range1.entries:
+            print(entry.key, entry.value, entry.bytes, entry.any)
+
+        # Returns entries associated with the 3 largest keys.
+        range2 = await my_map.reverse_range(context, limit=3)
+
+        assert len(range2.entries) == 3
+
+        try:
+            await my_map.range(context)
+        except OrderedMap.RangeAborted as e:
+            # isinstance(e.error, InvalidRangeError) == True
+            print(e.error.message)
