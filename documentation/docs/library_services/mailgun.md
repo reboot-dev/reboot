@@ -10,14 +10,17 @@ To make the integration part of your application, include its
 servicers when constructing your `Application`, using the
 `servicers()` helper from the `reboot.thirdparty.mailgun` module:
 
-```python
-import reboot.thirdparty.mailgun
-from reboot.aio.applications import Application
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/thirdparty/mailgun/tests.py&lines=16-18) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/thirdparty/mailgun/tests.py -->
 
+```py
 application = Application(
     servicers=[YourServicer] + reboot.thirdparty.mailgun.servicers(),
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 To use the Mailgun integration, set the `MAILGUN_API_KEY`
 environment variable to your Mailgun API key. See [Secrets](../learn_more/secrets.mdx)
@@ -30,9 +33,11 @@ bearer token matches `MAILGUN_API_KEY`, and rejects all other calls
 as unauthenticated. Pass the key using `Options` when calling
 `Message.send`:
 
-```python
-from reboot.aio.call import Options
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/thirdparty/mailgun/tests.py&lines=88-96) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/thirdparty/mailgun/tests.py -->
 
+```py
 await Message.send(
     context,
     Options(bearer_token=mailgun_api_key),
@@ -43,6 +48,8 @@ await Message.send(
     text="Hello from Reboot!",
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 ## Message {#rbtthirdpartymailgunv1message}
 A single message sent using the integration.
@@ -91,12 +98,16 @@ stores emails in memory, allowing you to verify the emails sent during
 your tests. Simply pass it as a servicer to the Reboot class servicers list
 and use the `emails_sent` list to check the emails sent.
 
-```python
-# Some servicer method call, which should send an email.
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/thirdparty/mailgun/tests.py&lines=82-83) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/thirdparty/mailgun/tests.py -->
 
+```py
 await MockMessageServicer.emails_sent_sema.acquire()
 self.assertEqual(1, len(MockMessageServicer.emails_sent))
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 :::note
 When using `MockMessageServicer`, ensure that the `MAILGUN_API_KEY`

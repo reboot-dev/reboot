@@ -52,29 +52,30 @@ from above.)
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
-```py
-from reboot.std.collections.queue.v1.queue import queue_library
-from reboot.std.collections.v1.sorted_map import sorted_map_library
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.py&lines=35-39) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.py -->
 
-async def main():
-    application = Application(
-        servicers=[MyServicer],
-        libraries=[queue_library(), sorted_map_library()],
-    )
-    await application.run()
+```py
+Application(
+    libraries=[
+        queue_library(),
+        sorted_map_library(),
+    ],
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
-```ts
-import { queueLibrary } from "@reboot-dev/reboot-std/collections/queue/v1";
-import { sortedMapLibrary } from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/queue/v1/queue_tests.ts&lines=28-28) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/queue/v1/queue_tests.ts -->
 
-new Application({
-  servicers: [MyServicer],
-  libraries: [queueLibrary(), sortedMapLibrary()]
-  initialize,
-}).run();
+```ts
+new Application({ libraries: [queueLibrary(), sortedMapLibrary()] })
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 

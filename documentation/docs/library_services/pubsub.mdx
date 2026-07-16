@@ -61,35 +61,34 @@ your `Application`. (Note: this import is different from above.)
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
-```py
-from reboot.std.collections.queue.v1.queue import queue_library
-from reboot.std.collections.v1.sorted_map import sorted_map_library
-from reboot.std.pubsub.v1.pubsub import pubsub_library
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/pubsub/v1/pubsub_tests.py&lines=32-38) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/pubsub/v1/pubsub_tests.py -->
 
-async def main():
-    application = Application(
-        servicers=[MyServicer],
-        libraries=[
-            pubsub_library(),
-            queue_library(),
-            sorted_map_library(),
-        ],
-    )
-    await application.run()
+```py
+Application(
+    libraries=[
+        pubsub_library(),
+        queue_library(),
+        sorted_map_library(),
+    ]
+)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
-```ts
-import { queueLibrary } from "@reboot-dev/reboot-std/collections/queue/v1";
-import { sortedMapLibrary } from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
-import { pubsubLibrary } from "@reboot-dev/reboot-std/pubsub/v1";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/pubsub/v1/pubsub_tests.ts&lines=30-32) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/pubsub/v1/pubsub_tests.ts -->
 
+```ts
 new Application({
-  servicers: [MyServicer],
   libraries: [pubsubLibrary(), queueLibrary(), sortedMapLibrary()],
-  initialize,
-}).run();
+})
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 

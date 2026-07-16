@@ -1,6 +1,8 @@
+import reboot.thirdparty.mailgun
 import unittest
 from rbt.thirdparty.mailgun.v1.mailgun_rbt import Message
 from reboot.aio.applications import Application
+from reboot.aio.call import Options
 from reboot.aio.tests import Reboot, temporary_environ
 from reboot.thirdparty import mailgun
 from reboot.thirdparty.mailgun import ENVVAR_MAILGUN_API_KEY
@@ -8,6 +10,13 @@ from reboot.thirdparty.mailgun.servicers import MockMessageServicer
 
 # Any arbitrary mailgun API key works for the `MockMessageServicer`.
 MAILGUN_API_KEY = 'S3CR3T!'
+
+
+def make_application(YourServicer) -> Application:
+    application = Application(
+        servicers=[YourServicer] + reboot.thirdparty.mailgun.servicers(),
+    )
+    return application
 
 
 class TestCase(unittest.IsolatedAsyncioTestCase):
@@ -72,6 +81,21 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         # we received one email: that confirms that the methods are idempotent.
         await MockMessageServicer.emails_sent_sema.acquire()
         self.assertEqual(1, len(MockMessageServicer.emails_sent))
+        MockMessageServicer.emails_sent.clear()
+
+        mailgun_api_key = MAILGUN_API_KEY
+
+        await Message.send(
+            context,
+            Options(bearer_token=mailgun_api_key),
+            recipient="alice@example.com",
+            sender="Your App <noreply@yourdomain.com>",
+            domain="yourdomain.com",
+            subject="Hello!",
+            text="Hello from Reboot!",
+        )
+
+        await MockMessageServicer.emails_sent_sema.acquire()
         MockMessageServicer.emails_sent.clear()
 
 

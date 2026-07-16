@@ -31,29 +31,32 @@ uses when starting your `Application`. For example:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
-```py
-from reboot.std.collections.v1.sorted_map import sorted_map_library
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.py&lines=755-759) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.py -->
 
+```py
 async def main():
     application = Application(
-        servicers=[ChatRoomServicer],
         libraries=[sorted_map_library()],
     )
-
     await application.run()
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
-```ts
-import sortedMap, {
-  SortedMap,
-} from "@reboot-dev/reboot-std/collections/v1/sorted_map.js";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/collections/sorted_map_tests.ts&lines=83-85) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/collections/sorted_map_tests.ts -->
 
+```ts
 new Application({
-  servicers: [ChatRoomServicer, ...sortedMap.servicers()],
-  initialize,
+  libraries: [sortedMapLibrary()],
 }).run();
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
