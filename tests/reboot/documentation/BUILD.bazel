@@ -228,6 +228,168 @@ py_test(
     ],
 )
 
+# Runs the `concurrently` snippets from
+# `documentation/docs/learn_more/call/from_within_your_app.mdx`
+# against the bank fixture.
+py_test(
+    name = "test_concurrently_py",
+    srcs = ["test_concurrently.py"],
+    main = "test_concurrently.py",
+    deps = [
+        ":bank_servicer_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:concurrently_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+proto_library(
+    name = "chat_room_proto",
+    srcs = [":chat_room.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "chat_room_py_reboot",
+    proto = "chat_room.proto",
+    proto_library = ":chat_room_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+)
+
+# The servicer methods in `chat_room_servicer.py` are used as
+# snippets in the `documentation/docs/learn_more/call/` pages.
+py_library(
+    name = "chat_room_servicer_py",
+    srcs = ["chat_room_servicer.py"],
+    deps = [":chat_room_py_reboot"],
+)
+
+py_test(
+    name = "test_chat_room_py",
+    srcs = ["test_chat_room.py"],
+    main = "test_chat_room.py",
+    deps = [
+        ":chat_room_servicer_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+js_proto_library(
+    name = "chat_room_js_proto",
+    package_json = ":package.json",
+    proto = "chat_room.proto",
+    proto_deps = [
+        ":chat_room_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+)
+
+js_reboot_library(
+    name = "chat_room_js_reboot",
+    srcs = [":chat_room_proto"],
+    proto = "chat_room.proto",
+    deps = [":chat_room_js_proto"],
+)
+
+# The servicer methods in `chat_room.ts` are used as snippets in the
+# `documentation/docs/learn_more/call/` pages.
+ts_project(
+    name = "chat_room_ts",
+    srcs = [
+        "chat_room.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    deps = [
+        ":chat_room_js_proto",
+        ":chat_room_js_reboot",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@types/node",
+    ],
+)
+
+js_reboot_test(
+    name = "test_chat_room_ts",
+    data = [
+        ":chat_room_ts",
+    ],
+    entry_point = "chat_room.js",
+    visibility = ["//visibility:public"],
+)
+
+# Vitest configuration used as a snippet in
+# `documentation/docs/learn_more/testing.md`.
+ts_project(
+    name = "vitest_config_ts",
+    srcs = [
+        "vitest_config.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    deps = [
+        "//:node_modules/@reboot-dev/reboot-std",
+        "//:node_modules/@types/node",
+        "//:node_modules/vitest",
+    ],
+)
+
+# Zod API definition with an explicit factory, used as a snippet in
+# `documentation/docs/learn_more/call/overview.mdx`.
+ts_project(
+    name = "factory_zod_ts",
+    srcs = [
+        "factory_zod.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    deps = [
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/zod",
+    ],
+)
+
+# Runs the Zod-to-proto code generation over the snippet so it is
+# validated beyond just type checking.
+js_reboot_library_from_zod(
+    name = "factory_zod_js_reboot",
+    package_json = ":package.json",
+    zod = "factory_zod.ts",
+)
+
 # Pydantic API definition used as a snippet in
 # `documentation/docs/learn_more/call/from_react.mdx`.
 py_library(

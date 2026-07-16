@@ -109,20 +109,32 @@ method:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/test_bank.py&lines=88-91) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/test_bank.py -->
+
+```py
 counter = Counter.ref(id)
 
 # Will implicitly construct if not already constructed!
-await counter.Increment(context)
+await counter.increment(context)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
-```typescript
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/bank.ts&lines=280-283) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/bank.ts -->
+
+```ts
 const counter = Counter.ref(id);
 
 // Will implicitly construct if not already constructed!
 await counter.increment(context);
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -166,21 +178,28 @@ AccountMethods = Methods(
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="Zod">
-```typescript
-export const api: API = {
-  Account: {
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/factory_zod.ts&lines=4-17) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/factory_zod.ts -->
+
+```ts
+export const Account = {
+  state: {
+    balance: z.number().default(0).meta({ tag: 1 }),
+  },
+  methods: {
+    open: writer({
+      // Must use this function to construct an instance of `Account`.
+      factory: {},
+      request: {},
+      response: z.void(),
+    }),
     // ...
-    methods: {
-      // ...
-      open: writer({
-        // Must use this function to construct an instance of `Account`.
-        factory: {},
-        // ...
-      }),
-    },
   },
 };
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -192,20 +211,31 @@ example:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/bank_servicer.py&lines=108-111) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/bank_servicer.py -->
+
+```py
 account, response = await Account.open(
     context,
     customer_name=request.customer_name,
 )
 ```
+
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
-```typescript
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/bank.ts&lines=100-102) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/bank.ts -->
+
+```ts
 const [account, response] = await Account.open(context, {
   customerName: request.customerName,
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -265,19 +295,30 @@ application (i.e., using an
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/test_bank.py&lines=80-83) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/test_bank.py -->
+
+```py
 account, response = await Account.idempotently().open(
-    context,
-    customer_name=request.customer_name,
+    seeded_context,
+    customer_name="Riley",
 )
 ```
+
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
-```typescript
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/bank.ts&lines=268-270) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/bank.ts -->
+
+```ts
 const [account, response] = await Account.idempotently().open(context, {
-  customerName: request.customerName,
+  customerName: "Riley",
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>

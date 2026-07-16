@@ -13,32 +13,42 @@ you'll need to use an `ExternalContext`, for example:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
-```py
-from reboot.aio.external import ExternalContext
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/test_chat_room.py&lines=28-35) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/test_chat_room.py -->
 
+```py
 context = ExternalContext(
     name="send message",
-    url="http://localhost:9991"
+    url=url,
 )
 
 chat_room = ChatRoom.ref(id)
 
 response = await chat_room.send(context, message="Hello, World!")
-````
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
-```ts
-import { ExternalContext } from "@reboot-dev/reboot";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/chat_room.ts&lines=54-63) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/chat_room.ts -->
 
+```ts
 const context = new ExternalContext({
   name: "send message",
-  url: "http://localhost:9991"
+  url,
 });
 
-const chat_room = ChatRoom.ref(id);
+const chatRoom = ChatRoom.ref(id);
 
-const response = await chat_room.send(context, { message: "Hello, World!" });
-````
+const response = await chatRoom.send(context, {
+  message: "Hello, World!",
+});
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
 </Tabs>
@@ -73,22 +83,34 @@ just external to your Reboot application. Here's an example:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/test_chat_room.py&lines=42-46) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/test_chat_room.py -->
+
 ```py
 context = ExternalContext(
     name="send message",
-    url="http://localhost:9991",
+    url=url,
     idempotency_seed=uuid.UUID("123e4567-e89b-12d3-a456-426614174000"),
 )
-````
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/chat_room.ts&lines=74-78) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/chat_room.ts -->
+
 ```ts
 const context = new ExternalContext({
   name: "send message",
-  url: "http://localhost:9991",
-  idempotencySeed="123e4567-e89b-12d3-a456-426614174000",
+  url,
+  idempotencySeed: "123e4567-e89b-12d3-a456-426614174000",
 });
-````
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
 </Tabs>

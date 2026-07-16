@@ -169,6 +169,10 @@ If you are using Vitest, its default reporters can suppress errors that third-pa
 
 In your `vitest.config.ts` apply it as follows:
 
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/vitest_config.ts&lines=1-8) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/vitest_config.ts -->
+
 ```ts
 import { defineConfig } from "vitest/config";
 import { BetterErrorTracingReporter } from "@reboot-dev/reboot-std/vitest";
@@ -179,6 +183,8 @@ export default defineConfig({
   },
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 ## Calling your endpoint from outside of an app
 

@@ -9,6 +9,14 @@ message Account {
   };
 
   uint32 balance = 1;
+  string customer_name = 2;
+}
+
+message Counter {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  uint32 value = 1;
 }
 
 message Bank {
@@ -25,6 +33,11 @@ service AccountMethods {
     };
   }
 
+  rpc GetId(GetIdRequest) returns (GetIdResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
   rpc Balance(BalanceRequest) returns (BalanceResponse) {
     option (rbt.v1alpha1.method).reader = {
     };
@@ -36,6 +49,13 @@ service AccountMethods {
   }
 
   rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
+
+service CounterMethods {
+  rpc Increment(IncrementRequest) returns (IncrementResponse) {
     option (rbt.v1alpha1.method).writer = {
     };
   }
@@ -59,9 +79,17 @@ service BankMethods {
   }
 }
 
-message OpenAccountRequest {}
+message OpenAccountRequest {
+  string customer_name = 1;
+}
 
 message OpenAccountResponse {}
+
+message GetIdRequest {}
+
+message GetIdResponse {
+  string id = 1;
+}
 
 message BalanceRequest {}
 
@@ -89,7 +117,9 @@ message CreateBankRequest {}
 
 message CreateBankResponse {}
 
-message SignUpRequest {}
+message SignUpRequest {
+  string customer_name = 1;
+}
 
 message SignUpResponse {
   string account_id = 1;
@@ -102,3 +132,7 @@ message TransferRequest {
 }
 
 message TransferResponse {}
+
+message IncrementRequest {}
+
+message IncrementResponse {}

@@ -7,9 +7,8 @@ import {
   WriterContext,
 } from "@reboot-dev/reboot";
 import { strict as assert } from "node:assert";
-import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { Account, Bank } from "./bank_rbt.js";
+import { Account, Bank, Counter } from "./bank_rbt.js";
 
 const accountServicer = Account.servicer({
   authorizer: () => {
@@ -21,7 +20,18 @@ const accountServicer = Account.servicer({
     state: Account.State,
     request: Account.OpenRequest
   ): Promise<[Account.State, Account.PartialOpenResponse]> => {
+    state.customerName = request.customerName;
+
     return [state, {}];
+  },
+
+  getId: async (
+    context: ReaderContext,
+    state: Account.State,
+    request: Account.GetIdRequest
+  ): Promise<Account.PartialGetIdResponse> => {
+    const currentId = context.stateId;
+    return { id: currentId };
   },
 
   balance: async (
@@ -53,6 +63,22 @@ const accountServicer = Account.servicer({
   },
 });
 
+const counterServicer = Counter.servicer({
+  authorizer: () => {
+    return allow();
+  },
+
+  increment: async (
+    context: WriterContext,
+    state: Counter.State,
+    request: Counter.IncrementRequest
+  ): Promise<[Counter.State, Counter.PartialIncrementResponse]> => {
+    state.value += 1;
+
+    return [state, {}];
+  },
+});
+
 const bankServicer = Bank.servicer({
   authorizer: () => {
     return allow();
@@ -71,9 +97,11 @@ const bankServicer = Bank.servicer({
     state: Bank.State,
     request: Bank.SignUpRequest
   ): Promise<[Bank.State, Bank.PartialSignUpResponse]> => {
-    const newAccountId = randomUUID();
+    const [account, response] = await Account.open(context, {
+      customerName: request.customerName,
+    });
 
-    await Account.open(context, newAccountId);
+    const newAccountId = account.stateId;
 
     // Transactions like writers can alter state directly.
     state.accountIds.push(newAccountId);
@@ -105,7 +133,17 @@ export class AccountServicer extends Account.Servicer {
     context: WriterContext,
     request: Account.OpenRequest
   ): Promise<Account.PartialOpenResponse> {
+    this.state.customerName = request.customerName;
+
     return {};
+  }
+
+  async getId(
+    context: ReaderContext,
+    request: Account.GetIdRequest
+  ): Promise<Account.PartialGetIdResponse> {
+    const currentId = context.stateId;
+    return { id: currentId };
   }
 
   async balance(
@@ -150,9 +188,11 @@ export class BankServicer extends Bank.Servicer {
     context: TransactionContext,
     request: Bank.SignUpRequest
   ): Promise<Bank.PartialSignUpResponse> {
-    const newAccountId = randomUUID();
+    const [account] = await Account.open(context, {
+      customerName: request.customerName,
+    });
 
-    await Account.open(context, newAccountId);
+    const newAccountId = account.stateId;
 
     // Transactions like writers can alter state directly.
     this.state.accountIds.push(newAccountId);
@@ -183,7 +223,9 @@ test("bank", async (t) => {
     rbt = new Reboot();
     await rbt.start();
     await rbt.up(
-      new Application({ servicers: [accountServicer, bankServicer] })
+      new Application({
+        servicers: [accountServicer, bankServicer, counterServicer],
+      })
     );
   });
   t.after(async () => {
@@ -214,5 +256,32 @@ test("bank", async (t) => {
 
     assert.equal((await fromAccount.balance(context)).balance, 40);
     assert.equal((await toAccount.balance(context)).balance, 60);
+
+    assert.equal((await fromAccount.getId(context)).id, fromAccountId);
+  });
+
+  await t.test("idempotent open", async (t) => {
+    const context = rbt.createExternalContext("test-idempotent-open", {
+      idempotencySeed: "123e4567-e89b-12d3-a456-426614174000",
+    });
+
+    const [account, response] = await Account.idempotently().open(context, {
+      customerName: "Riley",
+    });
+
+    assert.notEqual(account.stateId, "");
+  });
+
+  await t.test("implicit construction", async (t) => {
+    const context = rbt.createExternalContext("test-implicit-construction");
+
+    const id = "my-counter";
+
+    const counter = Counter.ref(id);
+
+    // Will implicitly construct if not already constructed!
+    await counter.increment(context);
+
+    await counter.increment(context);
   });
 });

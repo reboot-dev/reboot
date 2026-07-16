@@ -118,6 +118,10 @@ async send(
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript-object" label="TypeScript Object Literal">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/chat_room.ts&lines=26-33) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/chat_room.ts -->
+
 ```ts
 send: async (
   context: WriterContext,
@@ -126,8 +130,10 @@ send: async (
 ): Promise<[ChatRoom.State, ChatRoom.PartialSendResponse]> => {
   state.messages.push(request.message);
   return [state, {}];
-}
+},
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -143,6 +149,10 @@ You can access the ID of the current state instance via
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/bank_servicer.py&lines=45-51) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/bank_servicer.py -->
+
 ```py
 async def get_id(
     self,
@@ -152,17 +162,25 @@ async def get_id(
     current_id = context.state_id
     return GetIdResponse(id=current_id)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/bank.ts&lines=141-147) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/bank.ts -->
+
 ```ts
 async getId(
   context: ReaderContext,
-  request: GetIdRequest
-): Promise<GetIdResponse> {
+  request: Account.GetIdRequest
+): Promise<Account.PartialGetIdResponse> {
   const currentId = context.stateId;
   return { id: currentId };
 }
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -174,6 +192,10 @@ You can make concurrent calls using
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/test_bank.py&lines=67-72) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/test_bank.py -->
+
 ```py
 balances = await asyncio.gather(
     *[
@@ -182,6 +204,8 @@ balances = await asyncio.gather(
     ]
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
@@ -225,9 +249,11 @@ that improves on `asyncio.gather` in several ways:
 
 The simplest usage passes a generator expression of awaitables:
 
-```python
-from reboot.aio.concurrently import concurrently
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/test_concurrently.py&lines=56-60) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/test_concurrently.py -->
 
+```py
 # Collect all results into a list (like `asyncio.gather`):
 balances = await concurrently(
     Account.ref(account_id).balance(context)
@@ -235,9 +261,15 @@ balances = await concurrently(
 )
 ```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
 Use `async for` to process results as they complete:
 
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/test_concurrently.py&lines=68-72) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/test_concurrently.py -->
+
+```py
 async for balance in concurrently(
     Account.ref(account_id).balance(context)
     for account_id in account_ids
@@ -245,14 +277,24 @@ async for balance in concurrently(
     process(balance)
 ```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
 You can also pass any iterable of awaitables, such as a list:
 
-```python
-balances = await concurrently([
-    Account.ref(account_id).balance(context)
-    for account_id in account_ids
-])
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/test_concurrently.py&lines=78-83) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/test_concurrently.py -->
+
+```py
+balances = await concurrently(
+    [
+        Account.ref(account_id).balance(context)
+        for account_id in account_ids
+    ]
+)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 #### Async generators
 
@@ -260,7 +302,11 @@ When the work to produce each awaitable is more complex (e.g.,
 multi-step logic, or the source of awaitables is itself async),
 pass an async generator directly:
 
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/test_concurrently.py&lines=95-100) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/test_concurrently.py -->
+
+```py
 async def fetch_balances():
     for customer in customers:
         account_id = get_account_id(customer)
@@ -268,6 +314,8 @@ async def fetch_balances():
 
 balances = await concurrently(fetch_balances())
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 Awaitables are consumed lazily — only as many as the adaptive
 concurrency limit allows at a time.
@@ -279,55 +327,77 @@ When you need to associate each input element with its result
 callable. Each iteration yields `(element, result)` tuples,
 which works well in dictionary comprehensions:
 
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/test_concurrently.py&lines=108-113) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/test_concurrently.py -->
+
+```py
 balances_by_account_id = {
-    account_id: balance
-    async for account_id, balance in concurrently(
+    account_id: balance async for account_id, balance in concurrently(
         lambda account_id: Account.ref(account_id).balance(context),
         for_each=account_ids,
     )
 }
 ```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
 With `await`, you get a list of the same `(element, result)` tuples:
 
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/test_concurrently.py&lines=121-127) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/test_concurrently.py -->
+
+```py
 balances = await concurrently(
     lambda account_id: Account.ref(account_id).balance(context),
     for_each=account_ids,
 )
 
 for account_id, balance in balances:
-    process(account_id, balance)
+    process(balance)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 If you just want the results without elements, use a generator
 expression instead of `for_each`:
 
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/test_concurrently.py&lines=57-60) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/test_concurrently.py -->
+
+```py
 balances = await concurrently(
     Account.ref(account_id).balance(context)
     for account_id in account_ids
 )
 ```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
 The `for_each` parameter also accepts an async generator for
 lazy streaming sources like database cursors or paginated APIs:
 
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/test_concurrently.py&lines=136-146) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/test_concurrently.py -->
+
+```py
 async def account_ids():
     async for page in paginated_api():
         for account_id in page:
             yield account_id
 
 balances_by_id = {
-    account_id: balance
-    async for account_id, balance in concurrently(
+    account_id: balance async for account_id, balance in concurrently(
         lambda account_id: Account.ref(account_id).balance(context),
         for_each=account_ids(),
     )
 }
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 #### Error handling
 
@@ -338,10 +408,17 @@ matching `asyncio.gather(return_exceptions=True)`. This works
 with both `await` and `async for`, and enables tools like mypy
 to do `isinstance` narrowing for type-safe error handling:
 
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/test_concurrently.py&lines=154-166) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/test_concurrently.py -->
+
+```py
 # With `await`:
 balances = await concurrently(
-    (Account.ref(account_id).balance(context) for account_id in account_ids),
+    (
+        Account.ref(account_id).balance(context)
+        for account_id in account_ids
+    ),
     return_exceptions=True,
 )
 for balance in balances:
@@ -351,7 +428,13 @@ for balance in balances:
         process(balance)  # mypy narrows the type correctly!
 ```
 
-```python
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/test_concurrently.py&lines=178-187) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/test_concurrently.py -->
+
+```py
 # With `async for` and `for_each`:
 async for account_id, balance in concurrently(
     lambda account_id: Account.ref(account_id).balance(context),
@@ -361,8 +444,10 @@ async for account_id, balance in concurrently(
     if isinstance(balance, BaseException):
         handle_error(account_id, balance)
     else:
-        process(account_id, balance)  # mypy narrows the type correctly!
+        process(account_id, balance)  # mypy narrows correctly!
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 ## Context constraints
 

@@ -1,4 +1,3 @@
-import uuid
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import (
     ReaderContext,
@@ -10,10 +9,15 @@ from tests.reboot.documentation.bank_rbt import (
     BalanceRequest,
     BalanceResponse,
     Bank,
+    Counter,
     CreateBankRequest,
     CreateBankResponse,
     DepositRequest,
     DepositResponse,
+    GetIdRequest,
+    GetIdResponse,
+    IncrementRequest,
+    IncrementResponse,
     OpenAccountRequest,
     OpenAccountResponse,
     SignUpRequest,
@@ -35,7 +39,16 @@ class AccountServicer(Account.Servicer):
         context: WriterContext,
         request: OpenAccountRequest,
     ) -> OpenAccountResponse:
+        self.state.customer_name = request.customer_name
         return OpenAccountResponse()
+
+    async def get_id(
+        self,
+        context: ReaderContext,
+        request: GetIdRequest,
+    ) -> GetIdResponse:
+        current_id = context.state_id
+        return GetIdResponse(id=current_id)
 
     async def balance(
         self,
@@ -61,6 +74,20 @@ class AccountServicer(Account.Servicer):
         return WithdrawResponse(updated_balance=self.state.balance)
 
 
+class CounterServicer(Counter.Servicer):
+
+    def authorizer(self):
+        return allow()
+
+    async def increment(
+        self,
+        context: WriterContext,
+        request: IncrementRequest,
+    ) -> IncrementResponse:
+        self.state.value += 1
+        return IncrementResponse()
+
+
 class BankServicer(Bank.Servicer):
 
     def authorizer(self):
@@ -78,9 +105,12 @@ class BankServicer(Bank.Servicer):
         context: TransactionContext,
         request: SignUpRequest,
     ) -> SignUpResponse:
-        new_account_id = str(uuid.uuid4())
+        account, response = await Account.open(
+            context,
+            customer_name=request.customer_name,
+        )
 
-        await Account.open(context, new_account_id)
+        new_account_id = account.state_id
 
         # Transactions like writers can alter state directly.
         self.state.account_ids.append(new_account_id)
