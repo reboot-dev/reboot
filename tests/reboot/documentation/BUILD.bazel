@@ -431,6 +431,43 @@ ts_project(
     ],
 )
 
+# The Zod-based chat room servicers and application whose contents
+# are used as snippets in
+# `documentation/docs/full_stack_apps/typescript.mdx`.
+ts_project(
+    name = "chat_room_zod_app_ts",
+    srcs = [
+        "chat_room_zod_app.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    deps = [
+        ":chat_room_zod_js_reboot",
+        ":chat_room_zod_ts",
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@types/node",
+        "//:node_modules/zod",
+    ],
+)
+
+js_reboot_test(
+    name = "test_chat_room_zod_app_ts",
+    data = [
+        ":chat_room_zod_app_ts",
+    ],
+    entry_point = "chat_room_zod_app.js",
+    visibility = ["//visibility:public"],
+)
+
 # Zod API definition with an explicit factory, used as a snippet in
 # `documentation/docs/learn_more/call/overview.mdx`.
 ts_project(

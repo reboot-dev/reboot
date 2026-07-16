@@ -88,8 +88,11 @@ Methods of kind [\`reader\`](/learn_more/define/methods#kinds) will safely be ex
 
 `}>
 
-```typescript title=./api/chat_room/v1/chat_room.ts
-// ./api/chat_room/v1/chat_room.ts
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/chat_room_zod.ts&lines=1-31) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/chat_room_zod.ts -->
+
+```ts
 import { reader, writer } from "@reboot-dev/reboot-api";
 import { z } from "zod/v4";
 
@@ -101,17 +104,19 @@ export const ChatRoom = {
       .meta({ tag: 1 }),
   },
   methods: {
+    // Returns the current list of recorded messages.
     messages: reader({
       request: {},
       response: {
         messages: z.array(z.string()).meta({ tag: 1 }),
       },
     }),
+    // Adds a new message to the list of recorded messages.
     send: writer({
       request: {
-        message: z.string().meta({ tag: 1 }),
+        message: z.string().meta({ tag: 1 }), // E.g. "Hello, World".
       },
-      response: {},
+      response: z.void(),
     }),
   },
 };
@@ -120,6 +125,8 @@ export const api = {
   ChatRoom,
 };
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 </Step>
 
@@ -170,11 +177,11 @@ it.
   <Tabs groupId="typescript-object-class">
     <TabItem value="object" label="Object literal" default>
 <!-- prettier-ignore-start -->
-```typescript title=./backend/src/chat_room_servicer.ts
-// ./backend/src/chat_room_servicer.ts
-import { ReaderContext, WriterContext } from "@reboot-dev/reboot";
-import { ChatRoom } from "../../api/chat_room/v1/chat_room_rbt.js";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/chat_room_zod_app.ts&lines=12-29) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/chat_room_zod_app.ts -->
 
+```ts
 export const chatRoomServicer = ChatRoom.servicer({
   messages: async (
     context: ReaderContext,
@@ -188,21 +195,23 @@ export const chatRoomServicer = ChatRoom.servicer({
     context: WriterContext,
     state: ChatRoom.State,
     request: ChatRoom.SendRequest
-  ): Promise<[ChatRoom.State, ChatRoom.SendResponse]> => {
+  ): Promise<[ChatRoom.State]> => {
     state.messages.push(request.message);
-    return [state, {}];
+    return [state];
   },
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 <!-- prettier-ignore-end -->
     </TabItem>
     <TabItem value="class" label="Class">
 <!-- prettier-ignore-start -->
-```typescript title=./backend/src/chat_room_servicer.ts
-// ./backend/src/chat_room_servicer.ts
-import { ReaderContext, WriterContext } from "@reboot-dev/reboot";
-import { ChatRoom } from "../../api/chat_room/v1/chat_room_rbt.js";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/chat_room_zod_app.ts&lines=31-45) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/chat_room_zod_app.ts -->
 
+```ts
 export class ChatRoomServicer extends ChatRoom.Servicer {
   async messages(
     context: ReaderContext,
@@ -214,12 +223,13 @@ export class ChatRoomServicer extends ChatRoom.Servicer {
   async send(
     context: WriterContext,
     request: ChatRoom.SendRequest
-  ): Promise<ChatRoom.SendResponse> {
+  ): Promise<void> {
     this.state.messages.push(request.message);
-    return {};
   }
 }
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 <!-- prettier-ignore-end -->
     </TabItem>
   </Tabs>
@@ -254,42 +264,46 @@ which can be used to construct default state.
 `}>
   <Tabs groupId="typescript-object-class">
     <TabItem value="object" label="Object literal" default>
-```typescript title=./backend/src/main.ts
-// ./backend/src/main.ts
-import { Application, InitializeContext } from "@reboot-dev/reboot";
-import { ChatRoom } from "../../api/chat_room/v1/chat_room_rbt.js";
-import { chatRoomServicer } from "./chat_room_servicer.js";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/chat_room_zod_app.ts&lines=47-51) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/chat_room_zod_app.ts -->
 
+```ts
 const initialize = async (context: InitializeContext) => {
   const chatRoom = ChatRoom.ref("reboot-chat-room");
 
   await chatRoom.send(context, { message: "Hello, World!" });
 };
+```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/chat_room_zod_app.ts&lines=54-57) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/chat_room_zod_app.ts -->
+
+```ts
 new Application({
   servicers: [chatRoomServicer],
   initialize,
 }).run();
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
     </TabItem>
     <TabItem value="class" label="Class">
-```typescript title=./backend/src/main.ts
-// ./backend/src/main.ts
-import { Application, InitializeContext } from "@reboot-dev/reboot";
-import { ChatRoom } from "../../api/chat_room/v1/chat_room_rbt.js";
-import { ChatRoomServicer } from "./chat_room_servicer.js";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/chat_room_zod_app.ts&lines=63-66) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/chat_room_zod_app.ts -->
 
-const initialize = async (context: InitializeContext) => {
-  const chatRoom = ChatRoom.ref("reboot-chat-room");
-
-  await chatRoom.send(context, { message: "Hello, World!" });
-};
-
+```ts
 new Application({
   servicers: [ChatRoomServicer],
   initialize,
 }).run();
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
     </TabItem>
   </Tabs>
 </Step>

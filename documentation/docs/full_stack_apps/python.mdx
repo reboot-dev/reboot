@@ -111,36 +111,39 @@ request and response classes, e.g., \`SendRequest\` and
 
 `}>
 
-```python title=./api/chat_room/v1/chat_room.py
-# ./api/chat_room/v1/chat_room.py
-from reboot.api import (
-    API,
-    Field,
-    Methods,
-    Reader,
-    Model,
-    Writer,
-    Type,
-)
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/chat_room_pydantic.py&lines=1-37) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/chat_room_pydantic.py -->
+
+```py
+from reboot.api import API, Field, Methods, Model, Reader, Type, Writer
 from typing import Optional
+
 
 class ChatRoomState(Model):
     messages: Optional[list[str]] = Field(tag=1)
 
+
 class MessagesResponse(Model):
     messages: list[str] = Field(tag=1)
 
+
 class SendRequest(Model):
-    message: str = Field(tag=1)
+    message: str = Field(tag=1)  # E.g. "Hello, World".
+
 
 ChatRoomMethods = Methods(
+    # Returns the current list of recorded messages.
     messages=Reader(
         request=None,
         response=MessagesResponse,
+        mcp=None,
     ),
+    # Adds a new message to the list of recorded messages.
     send=Writer(
         request=SendRequest,
         response=None,
+        mcp=None,
     ),
 )
 
@@ -151,6 +154,8 @@ api = API(
     ),
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 </Step>
 
 <Step
