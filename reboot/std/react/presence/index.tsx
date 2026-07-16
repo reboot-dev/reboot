@@ -118,8 +118,9 @@ const MouseArrow: FC<{ id: string; arrow: ReactNode }> = ({ id, arrow }) => {
 
   return (
     <div
-      className="absolute text-black"
+      className="presence-mouse-arrow"
       style={{
+        position: "absolute",
         top: response.top,
         left: response.left,
       }}
@@ -134,7 +135,7 @@ export const MouseTracker: FC<{
   arrow: ReactNode;
   className?: string;
   style?: React.CSSProperties;
-  children: ReactNode;
+  children?: ReactNode;
 }> = ({ arrow, className, style, children }) => {
   const { subscriberId, subscriberIds } = usePresenceContext();
 
