@@ -214,6 +214,11 @@ async def generate(
         base_model_schema: typing.Type[Model] = schema
         for field_name, field_info in base_model_schema.model_fields.items():
             field_type = field_info.annotation
+            if field_type is None:
+                fail(
+                    f"Missing type annotation for property '{field_name}' at "
+                    f"'{path}'; all properties must have a type annotation"
+                )
 
             # Discriminated union might be defined only as a field option
             # in the Pydantic model, so we need to get it from there.
