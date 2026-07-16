@@ -26,8 +26,8 @@ another:
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/monorepo/bank/backend/src/bank_servicer.py&lines=45-56) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/monorepo/bank/backend/src/bank_servicer.py -->
+(CODE:src=../../../../tests/reboot/documentation/bank_servicer.py&lines=90-101) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/bank_servicer.py -->
 
 ```py
 async def transfer(
@@ -50,8 +50,8 @@ async def transfer(
     <Tabs groupId="typescript-object-class">
       <TabItem value="object" label="Object literal">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../tests/reboot/documentation/transactions.ts&lines=66-78) -->
-<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/transactions.ts -->
+(CODE:src=../../../../tests/reboot/documentation/bank.ts&lines=84-96) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/bank.ts -->
 
 ```ts
 transfer: async (
@@ -73,8 +73,8 @@ transfer: async (
       </TabItem>
       <TabItem value="class" label="Class">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts&lines=46-57) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts -->
+(CODE:src=../../../../tests/reboot/documentation/bank.ts&lines=163-174) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/bank.ts -->
 
 ```ts
 async transfer(
@@ -104,12 +104,12 @@ method for `Bank` that stores the account IDs:
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/monorepo/bank/backend/src/bank_servicer.py&lines=40-41) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/monorepo/bank/backend/src/bank_servicer.py -->
+(CODE:src=../../../../tests/reboot/documentation/bank_servicer.py&lines=85-86) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/bank_servicer.py -->
 
 ```py
 # Transactions like writers can alter state directly.
-self.state.account_ids.append(account.state_id)
+self.state.account_ids.append(new_account_id)
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -117,15 +117,21 @@ self.state.account_ids.append(account.state_id)
   <TabItem value="typescript" label="TypeScript">
     <Tabs groupId="typescript-object-class">
       <TabItem value="object" label="Object literal">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/bank.ts&lines=78-79) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/bank.ts -->
+
 ```ts
 // Transactions like writers can alter state directly.
 state.accountIds.push(newAccountId);
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
       </TabItem>
       <TabItem value="class" label="Class">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts&lines=35-36) -->
-<!-- The below code snippet is automatically added from ../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts -->
+(CODE:src=../../../../tests/reboot/documentation/bank.ts&lines=157-158) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/bank.ts -->
 
 ```ts
 // Transactions like writers can alter state directly.

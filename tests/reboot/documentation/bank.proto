@@ -14,6 +14,8 @@ message Account {
 message Bank {
   option (rbt.v1alpha1.state) = {
   };
+
+  repeated string account_ids = 1;
 }
 
 service AccountMethods {
@@ -46,6 +48,11 @@ service BankMethods {
     };
   }
 
+  rpc SignUp(SignUpRequest) returns (SignUpResponse) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
   rpc Transfer(TransferRequest) returns (TransferResponse) {
     option (rbt.v1alpha1.method).transaction = {
     };
@@ -59,24 +66,34 @@ message OpenAccountResponse {}
 message BalanceRequest {}
 
 message BalanceResponse {
-  uint32 amount = 1;
+  uint32 balance = 1;
 }
 
 message DepositRequest {
   uint32 amount = 1;
 }
 
-message DepositResponse {}
+message DepositResponse {
+  uint32 updated_balance = 1;
+}
 
 message WithdrawRequest {
   uint32 amount = 1;
 }
 
-message WithdrawResponse {}
+message WithdrawResponse {
+  uint32 updated_balance = 1;
+}
 
 message CreateBankRequest {}
 
 message CreateBankResponse {}
+
+message SignUpRequest {}
+
+message SignUpResponse {
+  string account_id = 1;
+}
 
 message TransferRequest {
   string from_account_id = 1;

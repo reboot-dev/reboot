@@ -135,8 +135,8 @@ js_reboot_test(
 )
 
 proto_library(
-    name = "transactions_proto",
-    srcs = [":transactions.proto"],
+    name = "bank_proto",
+    srcs = [":bank.proto"],
     deps = [
         "//rbt/v1alpha1:options_proto",
         "@com_google_protobuf//:descriptor_proto",
@@ -144,11 +144,11 @@ proto_library(
 )
 
 js_proto_library(
-    name = "transactions_js_proto",
+    name = "bank_js_proto",
     package_json = ":package.json",
-    proto = "transactions.proto",
+    proto = "bank.proto",
     proto_deps = [
-        ":transactions_proto",
+        ":bank_proto",
         # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
         # use `create_protoc_plugin_rule` we need to repeat the dependencies of
         # the `proto_libraries` here.
@@ -158,19 +158,18 @@ js_proto_library(
 )
 
 js_reboot_library(
-    name = "transactions_js_reboot",
-    srcs = [":transactions_proto"],
-    proto = "transactions.proto",
-    deps = [":transactions_js_proto"],
+    name = "bank_js_reboot",
+    srcs = [":bank_proto"],
+    proto = "bank.proto",
+    deps = [":bank_js_proto"],
 )
 
-# The `transfer` transaction in `transactions.ts` is used as a
-# snippet in
-# `documentation/docs/learn_more/implement/transactions.mdx`.
+# The servicer methods in `bank.ts` are used as snippets in the
+# `documentation/docs/learn_more/implement/` pages.
 ts_project(
-    name = "transactions_ts",
+    name = "bank_ts",
     srcs = [
-        "transactions.ts",
+        "bank.ts",
         ":package.json",
     ],
     declaration = True,
@@ -183,8 +182,8 @@ ts_project(
         },
     },
     deps = [
-        ":transactions_js_proto",
-        ":transactions_js_reboot",
+        ":bank_js_proto",
+        ":bank_js_reboot",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@reboot-dev/reboot",
         "//:node_modules/@types/node",
@@ -192,12 +191,38 @@ ts_project(
 )
 
 js_reboot_test(
-    name = "test_transactions_ts",
+    name = "test_bank_ts",
     data = [
-        ":transactions_ts",
+        ":bank_ts",
     ],
-    entry_point = "transactions.js",
+    entry_point = "bank.js",
     visibility = ["//visibility:public"],
+)
+
+py_reboot_library(
+    name = "bank_py_reboot",
+    proto = "bank.proto",
+    proto_library = ":bank_proto",
+    visibility = ["//tests/reboot:__subpackages__"],
+)
+
+# The servicer methods in `bank_servicer.py` are used as snippets in
+# the `documentation/docs/learn_more/implement/` pages.
+py_library(
+    name = "bank_servicer_py",
+    srcs = ["bank_servicer.py"],
+    deps = [":bank_py_reboot"],
+)
+
+py_test(
+    name = "test_bank_py",
+    srcs = ["test_bank.py"],
+    main = "test_bank.py",
+    deps = [
+        ":bank_servicer_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:tests_py",
+    ],
 )
 
 # Pydantic API definition used as a snippet in

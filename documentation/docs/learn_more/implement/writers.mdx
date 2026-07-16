@@ -20,54 +20,60 @@ amount in the request:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/bank_servicer.py&lines=47-53) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/bank_servicer.py -->
+
 ```py
-from bank.v1.bank_rbt import Account
-
-class AccountServicer(Account.Servicer):
-
-    async def deposit(
-        self,
-        context: WriterContext,
-        request: DepositRequest,
-    ) -> DepositResponse:
-        self.state.balance += request.amount
-        return DepositResponse(updated_balance=self.state.balance)
+async def deposit(
+    self,
+    context: WriterContext,
+    request: DepositRequest,
+) -> DepositResponse:
+    self.state.balance += request.amount
+    return DepositResponse(updated_balance=self.state.balance)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
     <Tabs groupId="typescript-object-class">
       <TabItem value="object" label="Object literal">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/bank.ts&lines=35-43) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/bank.ts -->
+
 ```ts
-import { Account } from "../../api/bank/v1/account_rbt.js";
+deposit: async (
+  context: WriterContext,
+  state: Account.State,
+  request: Account.DepositRequest
+): Promise<[Account.State, Account.PartialDepositResponse]> => {
+  state.balance += request.amount;
 
-const accountServicer = Account.servicer({
-  deposit: async (
-    context: WriterContext,
-    state: Account.State,
-    request: Account.DepositRequest
-  ): Promise<[Account.State, Account.PartialDepositResponse]> => {
-    state.balance += request.amount;
-
-    return [state, { updatedBalance: state.balance }];
-  },
-});
+  return [state, { updatedBalance: state.balance }];
+},
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
       </TabItem>
       <TabItem value="class" label="Class">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/bank.ts&lines=118-125) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/bank.ts -->
+
 ```ts
-import { Account } from "../../api/bank/v1/account_rbt.js";
+async deposit(
+  context: WriterContext,
+  request: Account.DepositRequest
+): Promise<Account.PartialDepositResponse> {
+  this.state.balance += request.amount;
 
-class AccountServicer extends Account.Servicer {
-  async deposit(
-    context: WriterContext,
-    request: Account.DepositRequest
-  ): Promise<Account.PartialDepositResponse> {
-    this.state.balance += request.amount;
-
-    return { updatedBalance: this.state.balance };
-  }
+  return { updatedBalance: this.state.balance };
 }
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
       </TabItem>
     </Tabs>
   </TabItem>
