@@ -245,6 +245,33 @@ py_test(
     ],
 )
 
+# Pydantic API definitions used as snippets in
+# `documentation/docs/learn_more/define/pydantic.mdx`.
+py_library(
+    name = "mcp_tools_pydantic_py",
+    srcs = ["mcp_tools_pydantic.py"],
+    deps = ["//reboot:api_py"],
+)
+
+py_library(
+    name = "tool_options_pydantic_py",
+    srcs = ["tool_options_pydantic.py"],
+    deps = ["//reboot:api_py"],
+)
+
+# Runs the Pydantic-to-proto generation over the snippets and checks
+# the declared methods and tool options end up in the protos.
+py_test(
+    name = "test_define_pydantic_py",
+    srcs = ["test_define_pydantic.py"],
+    main = "test_define_pydantic.py",
+    deps = [
+        ":mcp_tools_pydantic_py",
+        ":tool_options_pydantic_py",
+        "//reboot:pydantic_schema_to_proto_py",
+    ],
+)
+
 # Zod API definition used as a snippet in
 # `documentation/docs/learn_more/call/from_react.mdx`.
 ts_project(

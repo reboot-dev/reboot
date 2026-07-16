@@ -3,7 +3,10 @@ import { z } from "zod/v4";
 
 export const ChatRoom = {
   state: {
-    messages: z.array(z.string()).default([]).meta({ tag: 1 }),
+    messages: z
+      .array(z.string())
+      .default(() => [])
+      .meta({ tag: 1 }),
   },
   methods: {
     // Returns the current list of recorded messages.

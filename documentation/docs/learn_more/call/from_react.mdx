@@ -15,7 +15,7 @@ Consider a `ChatRoom` API definition with one data type, `ChatRoom`, one
 <Tabs groupId="language">
   <TabItem value="typescript" label="Zod" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../tests/reboot/documentation/chat_room_zod.ts&lines=1-28) -->
+(CODE:src=../../../../tests/reboot/documentation/chat_room_zod.ts&lines=1-31) -->
 <!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/chat_room_zod.ts -->
 
 ```ts
@@ -24,7 +24,10 @@ import { z } from "zod/v4";
 
 export const ChatRoom = {
   state: {
-    messages: z.array(z.string()).default([]).meta({ tag: 1 }),
+    messages: z
+      .array(z.string())
+      .default(() => [])
+      .meta({ tag: 1 }),
   },
   methods: {
     // Returns the current list of recorded messages.

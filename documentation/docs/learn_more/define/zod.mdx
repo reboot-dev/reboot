@@ -9,24 +9,33 @@ backends.
 To declare a data type called `ChatRoom` with methods `messages` and
 `send`, put the following in a `.ts` file:
 
-```typescript
-import { z } from "zod/v4";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/chat_room_zod.ts&lines=1-31) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/chat_room_zod.ts -->
+
+```ts
 import { reader, writer } from "@reboot-dev/reboot-api";
+import { z } from "zod/v4";
 
 export const ChatRoom = {
   state: {
-    messages: z.array(z.string()).default(() => []).meta({ tag: 1 }),
+    messages: z
+      .array(z.string())
+      .default(() => [])
+      .meta({ tag: 1 }),
   },
   methods: {
+    // Returns the current list of recorded messages.
     messages: reader({
-        request: {},
-        response: {
-          messages: z.array(z.string()).meta({ tag: 1 }),
-        },
-      }),
+      request: {},
+      response: {
+        messages: z.array(z.string()).meta({ tag: 1 }),
+      },
+    }),
+    // Adds a new message to the list of recorded messages.
     send: writer({
       request: {
-        message: z.string().meta({ tag: 1 }),
+        message: z.string().meta({ tag: 1 }), // E.g. "Hello, World".
       },
       response: z.void(),
     }),
@@ -37,6 +46,8 @@ export const api = {
   ChatRoom,
 };
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 :::important
 Reboot requires `zod/v4`.

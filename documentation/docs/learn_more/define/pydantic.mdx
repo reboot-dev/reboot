@@ -201,9 +201,11 @@ This applies to all state types, including `User`. The
 `description` field is what the AI reads to decide when and
 how to call a tool:
 
-```python
-from reboot.api import Tool
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/mcp_tools_pydantic.py&lines=30-74) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/mcp_tools_pydantic.py -->
 
+```py
 UserMethods = Methods(
     # AI-callable — the AI can call this.
     create_counter=Transaction(
@@ -251,6 +253,8 @@ api = API(
 )
 ```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
 For non-`User` types, the AI must specify a state ID when
 calling the tool. It receives the ID when it creates the
 instance (e.g., from `create_counter`).
@@ -264,7 +268,11 @@ instance (e.g., from `create_counter`).
 | `name` | `str` or `None` | Custom tool name. If `None`: defaults to the method name. |
 | `title` | `str` or `None` | Human-readable title. If `None`: defaults to the method name. |
 
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/tool_options_pydantic.py&lines=17-22) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/tool_options_pydantic.py -->
+
+```py
 check_stock=Reader(
     request=CheckStockRequest,
     response=StockResponse,
@@ -272,6 +280,8 @@ check_stock=Reader(
     mcp=Tool(name="inventory_check", title="Check Inventory"),
 ),
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 ### Why hide methods from the AI?
 
@@ -299,35 +309,39 @@ You can also use Pydantic for full-stack apps that are not AI Chat Apps.
 In that case you do not need the `User` type, `UI` methods, or
 `description` fields:
 
-```python
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/chat_room_pydantic.py&lines=1-37) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/chat_room_pydantic.py -->
+
+```py
+from reboot.api import API, Field, Methods, Model, Reader, Type, Writer
 from typing import Optional
-from reboot.api import (
-    API,
-    Field,
-    Methods,
-    Reader,
-    Model,
-    Writer,
-    Type,
-)
+
 
 class ChatRoomState(Model):
     messages: Optional[list[str]] = Field(tag=1)
 
+
 class MessagesResponse(Model):
     messages: list[str] = Field(tag=1)
 
+
 class SendRequest(Model):
-    message: str = Field(tag=1)
+    message: str = Field(tag=1)  # E.g. "Hello, World".
+
 
 ChatRoomMethods = Methods(
+    # Returns the current list of recorded messages.
     messages=Reader(
         request=None,
         response=MessagesResponse,
+        mcp=None,
     ),
+    # Adds a new message to the list of recorded messages.
     send=Writer(
         request=SendRequest,
         response=None,
+        mcp=None,
     ),
 )
 
@@ -338,6 +352,8 @@ api = API(
     ),
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 To learn more about how you implement each data type's methods
 see [Implement your API](/learn_more/implement/servicers).
