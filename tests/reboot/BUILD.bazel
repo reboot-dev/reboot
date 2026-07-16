@@ -592,6 +592,8 @@ py_test(
     main = "auth_tests.py",
     deps = [
         ":bank_py",
+        ":greeter_py_reboot",
+        ":greeter_servicers_py",
         ":test_token_verifier_py",
         "//reboot/aio:tests_py",
     ],

@@ -8,7 +8,13 @@ from rbt.v1alpha1.errors_pb2 import (
     Unknown,
 )
 from reboot.aio.applications import Application
-from reboot.aio.auth.authorizers import allow_if, has_verified_token
+from reboot.aio.auth.authorizers import (
+    allow,
+    allow_if,
+    deny,
+    has_verified_token,
+    is_app_internal,
+)
 from reboot.aio.auth.token_verifiers import TokenVerifier
 from reboot.aio.call import Options
 from reboot.aio.contexts import (
@@ -20,6 +26,8 @@ from reboot.aio.tests import Reboot
 from tests.reboot import bank_rbt
 from tests.reboot.bank import SINGLETON_BANK_ID, AccountServicer, BankServicer
 from tests.reboot.bank_rbt import Account, Bank
+from tests.reboot.greeter_rbt import Greeter
+from tests.reboot.greeter_servicers import MyGreeterServicer
 from tests.reboot.test_token_verifier import TestTokenVerifier
 from typing import Optional
 
@@ -401,6 +409,681 @@ class BankConstructorAuth(unittest.IsolatedAsyncioTestCase):
             SINGLETON_BANK_ID,
             Options(bearer_token=VALID_JWT),
         )
+
+
+# Authorizers for use in tests
+_test_user_authorizer = Greeter.Authorizer(
+    create=allow_if(all=[_is_test_user]),
+)
+
+_internal_auth_rule = allow_if(all=[is_app_internal])
+
+
+class AllAuthorizersGreeterServicer(MyGreeterServicer):
+    """Servicer that composes authorizers via all."""
+
+    def authorizer(self):
+        return Greeter.Authorizer.all(
+            _internal_auth_rule, _test_user_authorizer
+        )
+
+    def token_verifier(self) -> Optional[TokenVerifier]:
+        return TestTokenVerifier(secret=SECRET)
+
+
+class AnyAuthorizersGreeterServicer(MyGreeterServicer):
+    """Servicer that composes authorizers via any."""
+
+    def authorizer(self):
+        return Greeter.Authorizer.any(
+            _internal_auth_rule, _test_user_authorizer
+        )
+
+    def token_verifier(self) -> Optional[TokenVerifier]:
+        return TestTokenVerifier(secret=SECRET)
+
+
+class ComposingAuthorizerTests(unittest.IsolatedAsyncioTestCase):
+    """Test Authorizer.any and Authorizer.all get generated properly."""
+
+    async def asyncSetUp(self):
+        self.rbt = Reboot()
+        await self.rbt.start()
+
+    async def asyncTearDown(self):
+        await self.rbt.stop()
+
+    async def test_authorizer_all_external_user(self) -> None:
+        """
+        Authorizer.all(is_app_internal, is_test_user) should fail
+        when called from external context with user token.
+        """
+        await self.rbt.up(
+            Application(servicers=[AllAuthorizersGreeterServicer]),
+        )
+
+        context = self.rbt.create_external_context(
+            name=self.id(),
+            bearer_token=VALID_JWT,
+        )
+
+        with self.assertRaises(Greeter.CreateAborted) as create_aborted:
+            await Greeter.create(
+                context,
+                'greeter',
+                title="King",
+                name="Chip",
+                adjective="Fluffy",
+            )
+
+        self.assertEqual(
+            type(create_aborted.exception.error),
+            PermissionDenied,
+        )
+
+    async def test_authorizer_all_external_non_user(self) -> None:
+        """
+        Authorizer.all(is_app_internal, is_test_user) should fail
+        when called from external context without user token.
+        """
+        await self.rbt.up(
+            Application(servicers=[AllAuthorizersGreeterServicer]),
+        )
+
+        context = self.rbt.create_external_context(
+            name=self.id(),
+        )
+
+        with self.assertRaises(Greeter.CreateAborted) as create_aborted:
+            await Greeter.create(
+                context,
+                'greeter',
+                title="King",
+                name="Chip",
+                adjective="Fluffy",
+            )
+
+        self.assertEqual(
+            type(create_aborted.exception.error),
+            PermissionDenied,
+        )
+
+    async def test_authorizer_all_internal_user(self) -> None:
+        """
+        Authorizer.all(is_app_internal, is_test_user) should succeed
+        when called from internal context with user token.
+        """
+
+        await self.rbt.up(
+            Application(servicers=[AllAuthorizersGreeterServicer]),
+        )
+
+        context = self.rbt.create_external_context(
+            name=self.id(),
+            app_internal=True,
+            bearer_token=VALID_JWT,
+        )
+
+        # Should not error.
+        await Greeter.create(
+            context,
+            'greeter',
+            title="King",
+            name="Chip",
+            adjective="Fluffy",
+        )
+
+    async def test_authorizer_all_internal_non_user(self) -> None:
+        """
+        Authorizer.all(is_app_internal, is_test_user) should fail
+        when called from internal context without user token.
+        """
+        await self.rbt.up(
+            Application(servicers=[AllAuthorizersGreeterServicer]),
+        )
+
+        context = self.rbt.create_external_context(
+            name=self.id(),
+            app_internal=True,
+            bearer_token=INVALID_JWT,
+        )
+
+        with self.assertRaises(Greeter.CreateAborted) as create_aborted:
+            await Greeter.create(
+                context,
+                'greeter',
+                title="King",
+                name="Chip",
+                adjective="Fluffy",
+            )
+
+        self.assertEqual(
+            type(create_aborted.exception.error),
+            Unauthenticated,
+        )
+
+    async def test_authorizer_any_external_user(self) -> None:
+        """
+        Authorizer.any(is_app_internal, is_test_user) should succeed
+        when called from external context with user token.
+        """
+        await self.rbt.up(
+            Application(servicers=[AnyAuthorizersGreeterServicer]),
+        )
+
+        context = self.rbt.create_external_context(
+            name=self.id(),
+            bearer_token=VALID_JWT,
+        )
+
+        # Should not error.
+        await Greeter.create(
+            context,
+            'greeter',
+            title="King",
+            name="Chip",
+            adjective="Fluffy",
+        )
+
+    async def test_authorizer_any_external_non_user(self) -> None:
+        """
+        Authorizer.any(is_app_internal, is_test_user) should fail
+        when called from external context without user token.
+        """
+        await self.rbt.up(
+            Application(servicers=[AnyAuthorizersGreeterServicer]),
+        )
+
+        context = self.rbt.create_external_context(
+            name=self.id(),
+        )
+
+        with self.assertRaises(Greeter.CreateAborted) as create_aborted:
+            await Greeter.create(
+                context,
+                'greeter',
+                title="King",
+                name="Chip",
+                adjective="Fluffy",
+            )
+
+        self.assertEqual(
+            type(create_aborted.exception.error),
+            PermissionDenied,
+        )
+
+    async def test_authorizer_any_internal_user(self) -> None:
+        """
+        Authorizer.any(is_app_internal, is_test_user) should succeed
+        when called from internal context with user token.
+        """
+        await self.rbt.up(
+            Application(servicers=[AnyAuthorizersGreeterServicer]),
+        )
+
+        context = self.rbt.create_external_context(
+            name=self.id(),
+            app_internal=True,
+            bearer_token=VALID_JWT,
+        )
+
+        # Should not error.
+        await Greeter.create(
+            context,
+            'greeter',
+            title="King",
+            name="Chip",
+            adjective="Fluffy",
+        )
+
+    async def test_authorizer_any_internal_non_user(self) -> None:
+        """
+        Authorizer.any(is_app_internal, is_test_user) should succeed
+        when called from internal context without user token.
+        """
+        await self.rbt.up(
+            Application(servicers=[AnyAuthorizersGreeterServicer]),
+        )
+
+        context = self.rbt.create_external_context(
+            name=self.id(),
+            app_internal=True,
+            bearer_token=INVALID_JWT,
+        )
+
+        # Should not error.
+        await Greeter.create(
+            context,
+            'greeter',
+            title="King",
+            name="Chip",
+            adjective="Fluffy",
+        )
+
+    async def test_authorizer_any_different_methods(self) -> None:
+        """
+        Authorizer.any() should allow if any of the passed in authorizers allow
+        across different methods.
+
+        Additionally, `default` rules for any Authorizers with specific method
+        auth rules should only apply to `_default`, and not every unspecified method.
+        """
+
+        allow_create = Greeter.Authorizer(
+            create=allow(),
+            _default=deny(),
+        )
+
+        allow_greet = Greeter.Authorizer(
+            greet=allow(),
+            _default=deny(),
+        )
+
+        class AuthorizedGreeterServicer(MyGreeterServicer):
+
+            def authorizer(self):
+                return Greeter.Authorizer.any(allow_create, allow_greet)
+
+        await self.rbt.up(
+            Application(servicers=[AuthorizedGreeterServicer]),
+        )
+
+        context = self.rbt.create_external_context(
+            name=self.id(),
+            bearer_token=VALID_JWT,
+        )
+
+        greeter, _ = await Greeter.create(
+            context,
+            'greeter',
+            title="King",
+            name="Chip",
+            adjective="Fluffy",
+        )
+
+        response = await greeter.greet(context, name="Dale")
+
+        self.assertEqual(
+            response.message, "Hi Dale, I am King Chip the Fluffy"
+        )
+
+        # Should fail with PermissionDenied due to default rules denying.
+        with self.assertRaises(Greeter.GetWholeStateAborted) as aborted:
+            await greeter.get_whole_state(context)
+
+        self.assertEqual(
+            type(aborted.exception.error),
+            PermissionDenied,
+        )
+
+    async def test_authorizer_all_different_methods(self) -> None:
+        """
+        Authorizer.all() should allow if all of the passed in authorizers allow
+        across different methods.
+
+        Additionally, `default` rules for all Authorizers with specific method
+        auth rules should only apply to `_default`, and not every unspecified method.
+        """
+
+        allow_create = Greeter.Authorizer(
+            create=allow(),
+            _default=deny(),
+        )
+
+        allow_greet = Greeter.Authorizer(
+            greet=allow(),
+            _default=deny(),
+        )
+
+        class AuthorizedGreeterServicer(MyGreeterServicer):
+
+            def authorizer(self):
+                return Greeter.Authorizer.all(allow_create, allow_greet)
+
+        await self.rbt.up(
+            Application(servicers=[AuthorizedGreeterServicer]),
+        )
+
+        context = self.rbt.create_external_context(
+            name=self.id(),
+            bearer_token=VALID_JWT,
+        )
+
+        greeter, _ = await Greeter.create(
+            context,
+            'greeter',
+            title="King",
+            name="Chip",
+            adjective="Fluffy",
+        )
+
+        response = await greeter.greet(context, name="Dale")
+
+        self.assertEqual(
+            response.message, "Hi Dale, I am King Chip the Fluffy"
+        )
+
+        # Should fail with PermissionDenied due to default rules denying.
+        with self.assertRaises(Greeter.GetWholeStateAborted) as aborted:
+            await greeter.get_whole_state(context)
+
+        self.assertEqual(
+            type(aborted.exception.error),
+            PermissionDenied,
+        )
+
+    async def test_authorizer_any_default_only_authorizer_rule_applies_to_all_methods(
+        self
+    ) -> None:
+        """
+        If an Authorizer *only* has a default rule and no custom authorization
+        rules for any method, that default rule should apply to *all* methods when
+        Authorizer.any()'d.
+        """
+
+        internal_authorizer = Greeter.Authorizer(
+            _default=allow_if(any=[is_app_internal]),
+        )
+
+        class AuthorizedGreeterServicer(MyGreeterServicer):
+
+            def authorizer(self):
+                return Greeter.Authorizer.any(
+                    _test_user_authorizer, internal_authorizer
+                )
+
+        await self.rbt.up(
+            Application(servicers=[AuthorizedGreeterServicer]),
+        )
+
+        context = self.rbt.create_external_context(
+            name=self.id(),
+            app_internal=True,
+        )
+
+        # Should not error.
+        await Greeter.create(
+            context,
+            'greeter',
+            title="King",
+            name="Chip",
+            adjective="Fluffy",
+        )
+
+    async def test_authorizer_all_preserves_order_of_authorizers_and_rules(
+        self
+    ) -> None:
+        """
+        The order of the authorizers / rules passed into Authorizer.all should
+        be preserved in terms of the order they are executed, which influences
+        what error you might receive.
+        """
+
+        # Authorizer.all(is_app_internal, is_test_user) should fail first
+        # on is_app_internal, resulting in PermissionDenied.
+        class IsInternalAppRuleFirstGreeterServicer(MyGreeterServicer):
+
+            def authorizer(self):
+                return Greeter.Authorizer.all(
+                    _internal_auth_rule, _test_user_authorizer
+                )
+
+            def token_verifier(self) -> Optional[TokenVerifier]:
+                return TestTokenVerifier(secret=SECRET)
+
+        await self.rbt.up(
+            Application(servicers=[IsInternalAppRuleFirstGreeterServicer]),
+        )
+
+        context = self.rbt.create_external_context(
+            name=self.id(),
+        )
+
+        with self.assertRaises(Greeter.CreateAborted) as create_aborted:
+            await Greeter.create(
+                context,
+                'greeter',
+                title="King",
+                name="Chip",
+                adjective="Fluffy",
+            )
+
+        self.assertEqual(
+            type(create_aborted.exception.error),
+            PermissionDenied,
+        )
+
+        await self.rbt.down()
+
+        # Authorizer.all(is_test_user, is_app_internal) should fail first
+        # on is_test_user, resulting in Unauthenticated.
+        class UserAuthorizerFirstGreeterServicer(MyGreeterServicer):
+
+            def authorizer(self):
+                return Greeter.Authorizer.all(
+                    _test_user_authorizer, _internal_auth_rule
+                )
+
+            def token_verifier(self) -> Optional[TokenVerifier]:
+                return TestTokenVerifier(secret=SECRET)
+
+        await self.rbt.up(
+            Application(servicers=[UserAuthorizerFirstGreeterServicer]),
+        )
+
+        context = self.rbt.create_external_context(
+            name=self.id(),
+        )
+
+        with self.assertRaises(Greeter.CreateAborted) as create_aborted:
+            await Greeter.create(
+                context,
+                'greeter',
+                title="King",
+                name="Chip",
+                adjective="Fluffy",
+            )
+
+        self.assertEqual(
+            type(create_aborted.exception.error),
+            Unauthenticated,
+        )
+
+    async def test_authorizer_all_with_no_arguments(self) -> None:
+        """
+        Authorizer.all() with no arguments, should return a default
+        is_app_internal Authorizer."
+        """
+
+        class EmptyAllGreeterServicer(MyGreeterServicer):
+
+            def authorizer(self):
+                return Greeter.Authorizer.all()
+
+            def token_verifier(self) -> Optional[TokenVerifier]:
+                return TestTokenVerifier(secret=SECRET)
+
+        await self.rbt.up(
+            Application(servicers=[EmptyAllGreeterServicer]),
+        )
+
+        # External context should error.
+        context = self.rbt.create_external_context(
+            name=self.id(),
+        )
+
+        with self.assertRaises(Greeter.CreateAborted) as create_aborted:
+            await Greeter.create(
+                context,
+                'greeter',
+                title="King",
+                name="Chip",
+                adjective="Fluffy",
+            )
+
+        self.assertEqual(
+            type(create_aborted.exception.error),
+            PermissionDenied,
+        )
+
+        # Internal context should succeed.
+        context = self.rbt.create_external_context(
+            name=self.id() + "2",
+            app_internal=True,
+        )
+
+        # Should not error.
+        await Greeter.create(
+            context,
+            'greeter',
+            title="King",
+            name="Chip",
+            adjective="Fluffy",
+        )
+
+    async def test_authorizer_any_with_no_arguments(self) -> None:
+        """
+        Authorizer.any() with no arguments, should return a default
+        is_app_internal Authorizer."
+        """
+
+        class EmptyAnyGreeterServicer(MyGreeterServicer):
+
+            def authorizer(self):
+                return Greeter.Authorizer.any()
+
+            def token_verifier(self) -> Optional[TokenVerifier]:
+                return TestTokenVerifier(secret=SECRET)
+
+        await self.rbt.up(
+            Application(servicers=[EmptyAnyGreeterServicer]),
+        )
+
+        # External context should error.
+        context = self.rbt.create_external_context(
+            name=self.id(),
+        )
+
+        with self.assertRaises(Greeter.CreateAborted) as create_aborted:
+            await Greeter.create(
+                context,
+                'greeter',
+                title="King",
+                name="Chip",
+                adjective="Fluffy",
+            )
+
+        self.assertEqual(
+            type(create_aborted.exception.error),
+            PermissionDenied,
+        )
+
+        # Internal context should succeed.
+        context = self.rbt.create_external_context(
+            name=self.id() + "2",
+            app_internal=True,
+        )
+
+        # Should not error.
+        await Greeter.create(
+            context,
+            'greeter',
+            title="King",
+            name="Chip",
+            adjective="Fluffy",
+        )
+
+    async def test_authorizer_all_with_global_rule_for_non_specified_method(
+        self
+    ) -> None:
+        """
+        Non-specified methods should use `default rule` and *not* just global rules.
+        """
+        allow_create = Greeter.Authorizer(
+            create=allow(),
+            _default=allow_if(all=[is_app_internal]),
+        )
+
+        allow_test_user = Greeter.Authorizer(
+            _default=allow_if(all=[_is_test_user]),
+        )
+
+        class AllWithGlobalRuleGreeterServicer(MyGreeterServicer):
+
+            def authorizer(self):
+                return Greeter.Authorizer.all(allow_create, allow_test_user)
+
+            def token_verifier(self) -> Optional[TokenVerifier]:
+                return TestTokenVerifier(secret=SECRET)
+
+        await self.rbt.up(
+            Application(servicers=[AllWithGlobalRuleGreeterServicer]),
+        )
+
+        # External user context should error for `greet()`.
+        context = self.rbt.create_external_context(
+            name=self.id(),
+            bearer_token=VALID_JWT,
+        )
+
+        greeter, _ = await Greeter.create(
+            context,
+            'greeter',
+            title="King",
+            name="Chip",
+            adjective="Fluffy",
+        )
+
+        with self.assertRaises(Greeter.GreetAborted) as greet_aborted:
+            await greeter.greet(context, name="Dale")
+
+        self.assertEqual(
+            type(greet_aborted.exception.error),
+            PermissionDenied,
+        )
+
+    async def test_authorizer_any_with_global_rule_for_non_specified_method(
+        self
+    ) -> None:
+        """
+        Non-specified methods should use `default rule` and *not* just global rules.
+        """
+        allow_create = Greeter.Authorizer(
+            create=allow(),
+            _default=allow_if(all=[is_app_internal]),
+        )
+
+        allow_test_user = Greeter.Authorizer(
+            _default=allow_if(all=[_is_test_user]),
+        )
+
+        class AnyWithGlobalRuleGreeterServicer(MyGreeterServicer):
+
+            def authorizer(self):
+                return Greeter.Authorizer.any(allow_create, allow_test_user)
+
+            def token_verifier(self) -> Optional[TokenVerifier]:
+                return TestTokenVerifier(secret=SECRET)
+
+        await self.rbt.up(
+            Application(servicers=[AnyWithGlobalRuleGreeterServicer]),
+        )
+
+        # Internal context should succeed for `greet()`.
+        context = self.rbt.create_external_context(
+            name=self.id(), app_internal=True
+        )
+
+        greeter, _ = await Greeter.create(
+            context,
+            'greeter',
+            title="King",
+            name="Chip",
+            adjective="Fluffy",
+        )
+
+        # Should not error.
+        await greeter.greet(context, name="Dale")
 
 
 if __name__ == '__main__':
