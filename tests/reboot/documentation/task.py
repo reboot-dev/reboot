@@ -1,20 +1,28 @@
 import asyncio
+import requests
 from datetime import datetime, timedelta
+from rbt.v1alpha1.tasks_pb2 import TaskId
 from reboot.aio.applications import Application
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import WorkflowContext, WriterContext
 from reboot.aio.external import InitializeContext
-from reboot.aio.workflows import until
+from reboot.aio.workflows import at_most_once, until
 from reboot.std.collections.v1.sorted_map import SortedMap
 from tests.reboot.documentation.task_rbt import (
+    CheckpointRequest,
+    CheckpointResponse,
     OpenLaterRequest,
     PauseServiceRequest,
     PauseServiceResponse,
     ReadStateRequest,
     ReadStateResponse,
+    RemitPaymentRequest,
+    RemitPaymentResponse,
     TestTask,
     TwoEmailsRequest,
 )
+
+REMITTANCE_PROVIDER_URL = "https://bank.example.com/api/remittances"
 
 
 class TestTaskServicer(TestTask.Servicer):
@@ -111,6 +119,74 @@ class TestTaskServicer(TestTask.Servicer):
         del value
 
         return PauseServiceResponse()
+
+    async def checkpoint(
+        self,
+        context: WriterContext,
+        request: CheckpointRequest,
+    ) -> CheckpointResponse:
+        self.state.iteration += 1
+        return CheckpointResponse()
+
+    @classmethod
+    async def example_of_implicit_idempotency(
+        cls,
+        context: WorkflowContext,
+    ) -> None:
+        await TestTask.ref().checkpoint(context)
+
+        await TestTask.ref().per_workflow().checkpoint(context)
+
+        await TestTask.ref().always().checkpoint(context)
+
+    @classmethod
+    async def example_of_spawn(
+        cls,
+        context: WorkflowContext,
+    ) -> None:
+        task = await TestTask.ref().spawn().welcome_email(context)
+        response = await task
+
+        del response
+
+    @classmethod
+    async def remit_payment(
+        cls,
+        context: WorkflowContext,
+        request: RemitPaymentRequest,
+    ) -> RemitPaymentResponse:
+
+        async def remit_to_provider() -> int:
+            response = requests.post(
+                REMITTANCE_PROVIDER_URL,
+                json=request.to_account_details,
+            )
+            return response.status_code
+
+        await at_most_once("Remit to provider", context, remit_to_provider)
+
+        return RemitPaymentResponse()
+
+    @classmethod
+    async def example_of_control_loop(
+        cls,
+        context: WorkflowContext,
+    ) -> None:
+        async for iteration in context.loop("Some control loop"):
+            ...
+
+    @classmethod
+    async def example_of_retrieve(
+        cls,
+        context: WorkflowContext,
+        welcome_email_task_id: TaskId,
+    ) -> None:
+        response = await TestTask.WelcomeEmailTask.retrieve(
+            context,
+            task_id=welcome_email_task_id,
+        )
+
+        del response
 
 
 async def initialize(context: InitializeContext):

@@ -73,16 +73,28 @@ For example, if `spawn()` is used to run a `workflow` method named
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/task.py&lines=147-148) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/task.py -->
+
 ```py
-task = await self.ref().spawn().welcome_email(context)
+task = await TestTask.ref().spawn().welcome_email(context)
 response = await task
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/task.ts&lines=199-200) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/task.ts -->
+
 ```ts
-const { task } = await this.ref().spawn().welcomeEmail(context);
+const { task } = await TestTask.ref().spawn().welcomeEmail(context);
 const response = await task;
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -116,27 +128,33 @@ available to handle the request.
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/boutique/backend/src/shipping/servicer.py&lines=30-35) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/boutique/backend/src/shipping/servicer.py -->
+(CODE:src=../../../tests/reboot/documentation/task.py&lines=40-45) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/task.py -->
 
 ```py
+now = datetime.now()
+when = now + timedelta(hours=1)
+
 await self.ref().schedule(
-    when=timedelta(seconds=request.quote_expiration_seconds),
-).expire_quote(
-    context,
-    quote=quote,
-)
+    when=when,
+).welcome_email(context)
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
-<!-- TODO: pull this from a real example -->
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/task.ts&lines=135-138) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/task.ts -->
+
 ```ts
-await this.ref().schedule({
-  when: new Date(Date.now() + request.quoteExpirationSeconds * 1000)
-}).expireQuoteTask(context, { quote })
+const now = new Date();
+const when = new Date(now.getTime() + 1000 * 60 * 60); // 1 hour from now
+
+const taskId = await this.ref().schedule({ when }).welcomeEmail(context);
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -155,11 +173,11 @@ If all you have is a `TaskId`, you can use `retrieve()` to get a
 <Tabs groupId="language">
   <TabItem value="python" label="Python">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/monorepo/bank/backend/tests/account_servicer_test.py&lines=89-92) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/monorepo/bank/backend/tests/account_servicer_test.py -->
+(CODE:src=../../../tests/reboot/documentation/task.py&lines=184-187) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/task.py -->
 
 ```py
-response = await Account.WelcomeEmailTask.retrieve(
+response = await TestTask.WelcomeEmailTask.retrieve(
     context,
     task_id=welcome_email_task_id,
 )
@@ -168,9 +186,16 @@ response = await Account.WelcomeEmailTask.retrieve(
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/task.ts&lines=215-217) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/task.ts -->
+
 ```ts
-const response = await Account.WelcomeEmailTask.retrieve(context, { taskId });
+const response = await TestTask.WelcomeEmailTask.retrieve(context, {
+  taskId,
+});
 ```
+
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>

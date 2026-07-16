@@ -36,7 +36,10 @@ py_reboot_library(
 py_library(
     name = "task_py",
     srcs = ["task.py"],
-    deps = [":task_py_reboot"],
+    deps = [
+        ":task_py_reboot",
+        requirement_test("requests"),
+    ],
 )
 
 js_proto_library(

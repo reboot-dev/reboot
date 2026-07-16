@@ -42,14 +42,26 @@ methods using _implicit_ idempotency:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.py&lines=136-136) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.py -->
+
 ```py
-  await self.ref().load_s3_blob(context);
+await TestTask.ref().checkpoint(context)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=191-191) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.ts -->
+
 ```ts
-  await this.ref().loadS3Blob(context);
+await TestTask.ref().checkpoint(context);
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -62,14 +74,26 @@ calls are equivalent to doing the following _explicitly_:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.py&lines=138-138) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.py -->
+
 ```py
-  await self.ref().per_workflow().load_s3_blob(context);
+await TestTask.ref().per_workflow().checkpoint(context)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=193-193) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.ts -->
+
 ```ts
-  await this.ref().perWorkflow().loadS3Blob(context);
+await TestTask.ref().perWorkflow().checkpoint(context);
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -77,14 +101,26 @@ If you want to make the call _every time_, use `.always()`:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.py&lines=140-140) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.py -->
+
 ```py
-  await self.ref().always().load_s3_blob(context);
+await TestTask.ref().always().checkpoint(context)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=195-195) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.ts -->
+
 ```ts
-  await this.ref().always().loadS3Blob(context);
+await TestTask.ref().always().checkpoint(context);
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -100,7 +136,7 @@ _snapshot_:
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../tests/reboot/documentation/task.py&lines=63-63) -->
+(CODE:src=../../../../tests/reboot/documentation/task.py&lines=71-71) -->
 <!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.py -->
 
 ```py
@@ -111,7 +147,7 @@ snapshot = await TestTask.ref().read(context)
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=62-62) -->
+(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=69-69) -->
 <!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.ts -->
 
 ```ts
@@ -144,7 +180,7 @@ read-only. If you want to modify state, you must do so explicitly:
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../tests/reboot/documentation/task.py&lines=75-83) -->
+(CODE:src=../../../../tests/reboot/documentation/task.py&lines=83-91) -->
 <!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.py -->
 
 ```py
@@ -163,7 +199,7 @@ await TestTask.ref().idempotently(
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=84-88) -->
+(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=91-95) -->
 <!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.ts -->
 
 ```ts
@@ -219,7 +255,7 @@ non-empty:
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../tests/reboot/documentation/task.py&lines=93-97) -->
+(CODE:src=../../../../tests/reboot/documentation/task.py&lines=101-105) -->
 <!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.py -->
 
 ```py
@@ -234,7 +270,7 @@ await until("Have messages", context, have_messages)
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=156-159) -->
+(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=223-226) -->
 <!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.ts -->
 
 ```ts
@@ -270,7 +306,7 @@ collection such as [`SortedMap`](/library_services/sorted_map) or
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../tests/reboot/documentation/task.py&lines=99-109) -->
+(CODE:src=../../../../tests/reboot/documentation/task.py&lines=107-117) -->
 <!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.py -->
 
 ```py
@@ -291,7 +327,7 @@ value = await until(
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=161-170) -->
+(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=228-237) -->
 <!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.ts -->
 
 ```ts
@@ -343,24 +379,44 @@ once":
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
-```py
-async def remit_to_provider():
-  return requests.post(
-      REMITTANCE_PROVIDER_URL,
-      json=request.toAccountDetails,
-  )
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.py&lines=159-166) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.py -->
 
-await at_most_once("Remit to provider”, context, remit_to_provider)
+```py
+async def remit_to_provider() -> int:
+    response = requests.post(
+        REMITTANCE_PROVIDER_URL,
+        json=request.to_account_details,
+    )
+    return response.status_code
+
+await at_most_once("Remit to provider", context, remit_to_provider)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=166-177) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.ts -->
+
 ```ts
-await atMostOnce("Remit to provider”, context, async () => {
-  return http.post(REMITTANCE_PROVIDER_URL, {
-    toAccountDetails: request.toAccountDetails
-  });
-});
+await atMostOnce(
+  "Remit to provider",
+  context,
+  async () => {
+    const response = await fetch(REMITTANCE_PROVIDER_URL, {
+      method: "POST",
+      body: JSON.stringify(request.toAccountDetails),
+    });
+    return response.status;
+  },
+  { schema: z.number() }
+);
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 
@@ -397,17 +453,29 @@ must explicitly break or return from within:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.py&lines=175-176) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.py -->
+
 ```py
 async for iteration in context.loop("Some control loop"):
     ...
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../../tests/reboot/documentation/task.ts&lines=206-208) -->
+<!-- The below code snippet is automatically added from ../../../../tests/reboot/documentation/task.ts -->
+
 ```ts
 for await (const iteration of context.loop("Some control loop")) {
-  ...
+  // ...
 }
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
 </Tabs>
 

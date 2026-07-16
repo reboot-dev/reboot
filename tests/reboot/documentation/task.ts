@@ -8,10 +8,13 @@ import {
   WorkflowContext,
   WriterContext,
 } from "@reboot-dev/reboot";
+import { tasks_pb } from "@reboot-dev/reboot-api";
 import { OrderedMap } from "@reboot-dev/reboot-std/collections/ordered_map/v1";
 import test from "node:test";
 import { z } from "zod/v4";
 import {
+  CheckpointRequest,
+  CheckpointResponse,
   CreateRequest,
   CreateResponse,
   CreateWorkflowRequest,
@@ -24,12 +27,16 @@ import {
   PauseServiceResponse,
   ReadStateRequest,
   ReadStateResponse,
+  RemitPaymentRequest,
+  RemitPaymentResponse,
   StartPipelineRequest,
   StartPipelineResponse,
   TestTask,
   WelcomeEmailRequest,
   WelcomeEmailResponse,
 } from "./task_rbt.js";
+
+const REMITTANCE_PROVIDER_URL = "https://bank.example.com/api/remittances";
 
 class TestTaskServicer extends TestTask.Servicer {
   authorizer() {
@@ -150,6 +157,66 @@ class TestTaskServicer extends TestTask.Servicer {
       .welcomeEmail(context);
 
     return { welcomeEmailTaskId: task1.taskId };
+  }
+
+  static async remitPayment(
+    context: WorkflowContext,
+    request: RemitPaymentRequest
+  ): Promise<PartialMessage<RemitPaymentResponse>> {
+    await atMostOnce(
+      "Remit to provider",
+      context,
+      async () => {
+        const response = await fetch(REMITTANCE_PROVIDER_URL, {
+          method: "POST",
+          body: JSON.stringify(request.toAccountDetails),
+        });
+        return response.status;
+      },
+      { schema: z.number() }
+    );
+
+    return {};
+  }
+
+  async checkpoint(
+    context: WriterContext,
+    request: CheckpointRequest
+  ): Promise<PartialMessage<CheckpointResponse>> {
+    this.state.iteration++;
+    return {};
+  }
+
+  static async exampleOfImplicitIdempotency(context: WorkflowContext) {
+    await TestTask.ref().checkpoint(context);
+
+    await TestTask.ref().perWorkflow().checkpoint(context);
+
+    await TestTask.ref().always().checkpoint(context);
+  }
+
+  static async exampleOfSpawn(context: WorkflowContext) {
+    const { task } = await TestTask.ref().spawn().welcomeEmail(context);
+    const response = await task;
+
+    void response;
+  }
+
+  static async exampleOfControlLoop(context: WorkflowContext) {
+    for await (const iteration of context.loop("Some control loop")) {
+      // ...
+    }
+  }
+
+  static async exampleOfRetrieve(
+    context: WorkflowContext,
+    taskId: tasks_pb.TaskId
+  ) {
+    const response = await TestTask.WelcomeEmailTask.retrieve(context, {
+      taskId,
+    });
+
+    void response;
   }
 
   static async exampleOfUntil(context: WorkflowContext) {

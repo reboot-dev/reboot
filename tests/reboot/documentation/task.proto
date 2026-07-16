@@ -70,6 +70,16 @@ service TestTaskMethods {
     option (rbt.v1alpha1.method).workflow = {
     };
   }
+
+  rpc RemitPayment(RemitPaymentRequest) returns (RemitPaymentResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  rpc Checkpoint(CheckpointRequest) returns (CheckpointResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
 }
 
 message CreateRequest {}
@@ -129,3 +139,13 @@ message LoadS3BlobRequest {}
 message LoadS3BlobResponse {
   rbt.v1alpha1.TaskId task_id = 1;
 }
+
+message RemitPaymentRequest {
+  string to_account_details = 1;
+}
+
+message RemitPaymentResponse {}
+
+message CheckpointRequest {}
+
+message CheckpointResponse {}
