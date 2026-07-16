@@ -1,4 +1,5 @@
 import { Application } from "@reboot-dev/reboot";
+import presence from "@reboot-dev/reboot-std/presence/v1";
 import { Counter } from "../../api/counter/v1/counter_rbt.js";
 import { COUNTER_IDS } from "../../constants.js";
 import { CounterServicer } from "./counter_servicer.js";
@@ -12,6 +13,6 @@ const initialize = async (context) => {
 };
 
 new Application({
-  servicers: [CounterServicer],
+  servicers: [CounterServicer, ...presence.servicers()],
   initialize,
 }).run();

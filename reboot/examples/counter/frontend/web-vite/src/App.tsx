@@ -1,4 +1,5 @@
 import { COUNTER_IDS } from "../../../constants.js";
+import PresenceThing from "./PresenceThing.js";
 import TakeableCounter from "./TakeableCounter.js";
 
 function App() {
@@ -7,6 +8,7 @@ function App() {
       {COUNTER_IDS.map((id: string) => (
         <TakeableCounter id={id} key={id} />
       ))}
+      <PresenceThing id="fish" />
     </div>
   );
 }
