@@ -4,7 +4,7 @@ from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot
 from reboot.protobuf import as_int, as_str, from_int, from_str, pack, unpack
 
-# Import used in Queue documentation, so we want to keep them
+# Import used in Queue documentation, so we want to keep them separate.
 # isort: off
 from reboot.std.collections.queue.v1.queue import Queue
 from reboot.std.item.v1.item import Item
