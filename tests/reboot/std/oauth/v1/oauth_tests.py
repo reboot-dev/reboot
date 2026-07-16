@@ -172,3 +172,68 @@ class TestOAuthTokenManager(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# Runs the snippets used in
+# `documentation/docs/library_services/oauth_token_manager.mdx`.
+class TestOAuthTokenManagerDocumentation(unittest.IsolatedAsyncioTestCase):
+
+    async def asyncSetUp(self) -> None:
+        self.rbt = Reboot()
+        await self.rbt.start()
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    oauth_library(),
+                    ciphertext_library(),
+                    ordered_map_library(),
+                ]
+            )
+        )
+        self.context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+    async def asyncTearDown(self) -> None:
+        await self.rbt.stop()
+
+    async def test_documentation_snippets(self) -> None:
+        context = self.context
+
+        user_id = "u1"
+        access_token = "access-1"
+        refresh_token = "refresh-1"
+        expires_at = 2000000000
+        granted_scopes = ["calendar.events"]
+
+        await OAuthTokenManager.ref("slack.com").store(
+            context,
+            user_id=user_id,
+            tokens=OAuthTokens(
+                access_token=access_token,
+                refresh_token=refresh_token,  # Omit if none was issued.
+                expires_at=expires_at,  # Epoch seconds, if reported.
+                scopes=granted_scopes,
+            ),
+        )
+
+        await OAuthTokenManager.ref(GOOGLE).store(
+            context,
+            user_id=user_id,
+            tokens=OAuthTokens(access_token=access_token),
+        )
+
+        response = await OAuthTokenManager.ref(GOOGLE).fetch(
+            context,
+            user_id=user_id,
+        )
+        if response.found:
+            access_token = response.tokens.access_token
+
+        assert response.found
+
+        await KeyManager.ref(_key_manager_id(GOOGLE)).shred(
+            context,
+            scope=user_id,
+        )

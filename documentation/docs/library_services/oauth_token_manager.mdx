@@ -45,38 +45,38 @@ your `Application`; omitting any of them fails fast at startup.
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 
-```py
-from reboot.std.oauth.v1.oauth import oauth_library
-from reboot.std.ciphertext.v1.ciphertext import ciphertext_library
-from reboot.std.collections.ordered_map.v1.ordered_map import (
-    ordered_map_library,
-)
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/oauth/v1/oauth_tests.py&lines=185-192) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/oauth/v1/oauth_tests.py -->
 
-async def main():
-    application = Application(
-        servicers=[MyServicer],
+```py
+    Application(
         libraries=[
             oauth_library(),
             ciphertext_library(),
             ordered_map_library(),
-        ],
+        ]
     )
-    await application.run()
+)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 
-```ts
-import { oauthLibrary } from "@reboot-dev/reboot-std/oauth/v1";
-import { ciphertextLibrary } from "@reboot-dev/reboot-std/ciphertext/v1";
-import { orderedMapLibrary } from "@reboot-dev/reboot-std/collections/ordered_map/v1";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/oauth/v1/oauth_tests.ts&lines=12-15) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/oauth/v1/oauth_tests.ts -->
 
-new Application({
-  servicers: [MyServicer],
-  libraries: [oauthLibrary(), ciphertextLibrary(), orderedMapLibrary()],
-}).run();
+```ts
+function main() {
+  new Application({
+    libraries: [oauthLibrary(), ciphertextLibrary(), orderedMapLibrary()],
+  }).run();
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
 </Tabs>
@@ -107,30 +107,40 @@ crypto-shredded.
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 
-```py
-from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager
-from reboot.std.oauth.v1.oauth import GOOGLE
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/oauth/v1/oauth_tests.py&lines=227-232) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/oauth/v1/oauth_tests.py -->
 
+```py
 response = await OAuthTokenManager.ref(GOOGLE).fetch(
-    context, user_id=user_id,
+    context,
+    user_id=user_id,
 )
 if response.found:
     access_token = response.tokens.access_token
 ```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 
-```ts
-import { GOOGLE, OAuthTokenManager } from "@reboot-dev/reboot-std/oauth/v1";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/oauth/v1/oauth_tests.ts&lines=63-70) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/oauth/v1/oauth_tests.ts -->
 
+```ts
 const response = await OAuthTokenManager.ref(GOOGLE).fetch(context, {
   userId,
 });
 if (response.found) {
   const accessToken = response.tokens.accessToken;
+
+  void accessToken;
 }
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
 </Tabs>
@@ -159,37 +169,45 @@ token forward when a later sign-in doesn't return one.
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 
-```py
-from rbt.std.oauth.v1.oauth_rbt import OAuthTokenManager, OAuthTokens
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/oauth/v1/oauth_tests.py&lines=210-219) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/oauth/v1/oauth_tests.py -->
 
+```py
 await OAuthTokenManager.ref("slack.com").store(
     context,
     user_id=user_id,
     tokens=OAuthTokens(
         access_token=access_token,
         refresh_token=refresh_token,  # Omit if none was issued.
-        expires_at=expires_at,        # Epoch seconds, if reported.
+        expires_at=expires_at,  # Epoch seconds, if reported.
         scopes=granted_scopes,
     ),
 )
 ```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 
-```ts
-import { OAuthTokenManager } from "@reboot-dev/reboot-std/oauth/v1";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/oauth/v1/oauth_tests.ts&lines=48-56) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/oauth/v1/oauth_tests.ts -->
 
+```ts
 await OAuthTokenManager.ref("slack.com").store(context, {
   userId,
   tokens: {
     accessToken,
     refreshToken, // Omit if none was issued.
-    expiresAt,    // Epoch seconds, if reported.
+    expiresAt, // Epoch seconds, if reported.
     scopes: grantedScopes,
   },
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
 </Tabs>
@@ -210,14 +228,18 @@ user's tokens in a per-user crypto-shred scope. To erase one user's
 tokens for a service — for example as part of deleting the user —
 shred their scope in that service's manager:
 
-```py
-from rbt.std.ciphertext.v1.ciphertext_rbt import KeyManager
-from reboot.std.oauth.v1.oauth import GOOGLE, _key_manager_id
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/oauth/v1/oauth_tests.py&lines=236-239) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/oauth/v1/oauth_tests.py -->
 
+```py
 await KeyManager.ref(_key_manager_id(GOOGLE)).shred(
-    context, scope=user_id,
+    context,
+    scope=user_id,
 )
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
 `fetch` then reports `found: false` for that user. See
 [`Ciphertext`](./ciphertext#crypto-shred-shred) for how shredding works.

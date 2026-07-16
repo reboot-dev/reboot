@@ -18,6 +18,7 @@ from reboot.std.ciphertext.v1.ciphertext import (
 from reboot.std.collections.ordered_map.v1.ordered_map import (
     ordered_map_library,
 )
+from uuid import uuid4
 
 PLAINTEXT = b"123-45-6789"
 ASSOCIATED_DATA = make_associated_data(user_id="42", purpose="ssn")
@@ -315,3 +316,87 @@ class TestCiphertextCrypto(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+async def main():
+    application = Application(
+        libraries=[ciphertext_library(),
+                   ordered_map_library()],
+    )
+    await application.run()
+
+
+# Runs the snippets used in
+# `documentation/docs/library_services/ciphertext.mdx`.
+class TestCiphertextDocumentation(unittest.IsolatedAsyncioTestCase):
+
+    async def asyncSetUp(self) -> None:
+        self.rbt = Reboot()
+        await self.rbt.start()
+        await self.rbt.up(
+            Application(
+                libraries=[
+                    ciphertext_library(),
+                    ordered_map_library(),
+                ]
+            )
+        )
+        self.context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+    async def asyncTearDown(self) -> None:
+        await self.rbt.stop()
+
+    async def test_documentation_snippets(self) -> None:
+        context = self.context
+
+        associated_data = make_associated_data(user_id="42", purpose="ssn")
+
+        del associated_data
+
+        ciphertext_id = str(uuid4())
+        ciphertext, _ = await Ciphertext.encrypt(
+            context,
+            ciphertext_id,
+            plaintext=b"123-45-6789",
+            associated_data=make_associated_data(user_id="42", purpose="ssn"),
+            scope="user_id:42",
+            key_manager_id=APP_SHARED_KEY_MANAGER_ID,
+        )
+
+        del ciphertext
+
+        response = await Ciphertext.ref(ciphertext_id).decrypt(
+            context,
+            associated_data=make_associated_data(user_id="42", purpose="ssn"),
+        )
+        plaintext = response.plaintext
+
+        assert plaintext == b"123-45-6789"
+
+        await Ciphertext.ref(ciphertext_id).rescope(
+            context,
+            scope="tenant:acme",
+        )
+
+        ciphertext_id = str(uuid4())
+
+        # Encrypt under a named manager.
+        await Ciphertext.encrypt(
+            context,
+            ciphertext_id,
+            plaintext=b"123-45-6789",
+            associated_data=make_associated_data(user_id="42", purpose="ssn"),
+            scope="user_id:42",
+            key_manager_id="tenant:acme",
+        )
+
+        # Shred that scope within the same manager.
+        await KeyManager.ref("tenant:acme").shred(context, scope="user_id:42")
+
+        await KeyManager.ref(APP_SHARED_KEY_MANAGER_ID).shred(
+            context,
+            scope="user_id:42",
+        )

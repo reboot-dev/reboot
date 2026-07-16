@@ -1,5 +1,7 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_test")
+load("//reboot/nodejs:rules.bzl", "js_reboot_test")
 
 py_test(
     name = "ciphertext_tests_py",
@@ -15,4 +17,36 @@ py_test(
         "@com_github_reboot_dev_reboot//rbt/std/ciphertext/v1:ciphertext_py_reboot",
         requirement("cryptography"),
     ],
+)
+
+ts_project(
+    name = "ciphertext_tests_ts",
+    srcs = [
+        "ciphertext_tests.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-std",
+        "//:node_modules/@types/node",
+    ],
+)
+
+js_reboot_test(
+    name = "test_ciphertext_tests_ts",
+    data = [
+        ":ciphertext_tests_ts",
+    ],
+    entry_point = "ciphertext_tests.js",
+    visibility = ["//visibility:public"],
 )

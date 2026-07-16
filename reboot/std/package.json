@@ -26,6 +26,7 @@
     "./collections/ordered_map/v1": "./collections/ordered_map/v1/index.js",
     "./collections/v1/sorted_map.js": "./collections/v1/sorted_map.js",
     "./item/v1": "./item/v1/index.js",
+    "./oauth/v1": "./oauth/v1/index.js",
     "./presence/v1": "./presence/v1/index.js",
     "./presence/subscriber/v1": "./presence/subscriber/v1/index.js",
     "./presence/mouse_tracker/v1": "./presence/mouse_tracker/v1/index.js",

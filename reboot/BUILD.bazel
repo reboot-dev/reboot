@@ -477,6 +477,7 @@ py_library(
         "//reboot/std/collections/ordered_map/v1:ordered_map_py",
         "//reboot/std/collections/queue/v1:queue_py",
         "//reboot/std/collections/v1:sorted_map_py",
+        "//reboot/std/oauth/v1:oauth_py",
         "//reboot/std/presence/v1:presence_py",
         "//reboot/std/pubsub/v1:pubsub_py",
     ],

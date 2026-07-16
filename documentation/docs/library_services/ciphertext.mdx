@@ -60,33 +60,36 @@ both when starting your `Application`.
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.py&lines=321-326) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.py -->
+
 ```py
-
-from reboot.std.ciphertext.v1.ciphertext import ciphertext_library
-from reboot.std.collections.ordered_map.v1.ordered_map import (
-    ordered_map_library,
-)
-
 async def main():
     application = Application(
-        servicers=[MyServicer],
-        libraries=[ciphertext_library(), ordered_map_library()],
+        libraries=[ciphertext_library(),
+                   ordered_map_library()],
     )
     await application.run()
 ```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 
-```ts
-import { ciphertextLibrary } from "@reboot-dev/reboot-std/ciphertext/v1";
-import { orderedMapLibrary } from "@reboot-dev/reboot-std/collections/ordered_map/v1";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.ts&lines=13-16) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.ts -->
 
-new Application({
-  servicers: [MyServicer],
-  libraries: [ciphertextLibrary(), orderedMapLibrary()],
-}).run();
+```ts
+function main() {
+  new Application({
+    libraries: [ciphertextLibrary(), orderedMapLibrary()],
+  }).run();
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
 </Tabs>
@@ -106,11 +109,11 @@ across [independent key managers](#multiple-key-managers).
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 
-```py
-from rbt.std.ciphertext.v1.ciphertext_rbt import Ciphertext
-from reboot.std.ciphertext.v1.ciphertext import APP_SHARED_KEY_MANAGER_ID
-from uuid import uuid4
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.py&lines=359-367) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.py -->
 
+```py
 ciphertext_id = str(uuid4())
 ciphertext, _ = await Ciphertext.encrypt(
     context,
@@ -122,15 +125,16 @@ ciphertext, _ = await Ciphertext.encrypt(
 )
 ```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 
-```ts
-import {
-  APP_SHARED_KEY_MANAGER_ID,
-  Ciphertext,
-} from "@reboot-dev/reboot-std/ciphertext/v1";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.ts&lines=50-56) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.ts -->
 
+```ts
 const ciphertextId = crypto.randomUUID();
 const [ciphertext] = await Ciphertext.encrypt(context, ciphertextId, {
   plaintext: new TextEncoder().encode("123-45-6789"),
@@ -139,6 +143,8 @@ const [ciphertext] = await Ciphertext.encrypt(context, ciphertextId, {
   keyManagerId: APP_SHARED_KEY_MANAGER_ID,
 });
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
 </Tabs>
@@ -164,20 +170,31 @@ one language decrypts from the other.
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 
-```py
-from reboot.std.ciphertext.v1.ciphertext import make_associated_data
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.py&lines=355-355) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.py -->
 
+```py
 associated_data = make_associated_data(user_id="42", purpose="ssn")
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 
-```ts
-import { makeAssociatedData } from "@reboot-dev/reboot-std/ciphertext/v1";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.ts&lines=43-46) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.ts -->
 
-const associatedData = makeAssociatedData({ user_id: "42", purpose: "ssn" });
+```ts
+const associatedData = makeAssociatedData({
+  user_id: "42",
+  purpose: "ssn",
+});
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
 </Tabs>
@@ -197,6 +214,10 @@ other's ciphertexts (`shred` operates per manager).
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.py&lines=386-397) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.py -->
+
 ```py
 # Encrypt under a named manager.
 await Ciphertext.encrypt(
@@ -212,8 +233,14 @@ await Ciphertext.encrypt(
 await KeyManager.ref("tenant:acme").shred(context, scope="user_id:42")
 ```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.ts&lines=79-90) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.ts -->
 
 ```ts
 // Encrypt under a named manager.
@@ -225,8 +252,12 @@ await Ciphertext.encrypt(context, ciphertextId, {
 });
 
 // Shred that scope within the same manager.
-await KeyManager.ref("tenant:acme").shred(context, { scope: "user_id:42" });
+await KeyManager.ref("tenant:acme").shred(context, {
+  scope: "user_id:42",
+});
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
 </Tabs>
@@ -243,6 +274,10 @@ On failure, raises `Ciphertext.DecryptAborted` with a `DecryptionFailed`,
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.py&lines=371-375) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.py -->
+
 ```py
 response = await Ciphertext.ref(ciphertext_id).decrypt(
     context,
@@ -251,8 +286,14 @@ response = await Ciphertext.ref(ciphertext_id).decrypt(
 plaintext = response.plaintext
 ```
 
+<!-- MARKDOWN-AUTO-DOCS:END -->
+
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
+
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.ts&lines=60-63) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.ts -->
 
 ```ts
 const response = await Ciphertext.ref(ciphertextId).decrypt(context, {
@@ -260,6 +301,8 @@ const response = await Ciphertext.ref(ciphertextId).decrypt(context, {
 });
 const plaintext = new TextDecoder().decode(response.plaintext);
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
 </Tabs>
@@ -274,24 +317,33 @@ Shred through the `KeyManager` instance that you encrypted ciphertext for.
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 
-```py
-from rbt.std.ciphertext.v1.ciphertext_rbt import KeyManager
-from reboot.std.ciphertext.v1.ciphertext import APP_SHARED_KEY_MANAGER_ID
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.py&lines=399-402) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.py -->
 
-await KeyManager.ref(APP_SHARED_KEY_MANAGER_ID).shred(context, scope="user_id:42")
+```py
+await KeyManager.ref(APP_SHARED_KEY_MANAGER_ID).shred(
+    context,
+    scope="user_id:42",
+)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 
-```ts
-import {
-  APP_SHARED_KEY_MANAGER_ID,
-  KeyManager,
-} from "@reboot-dev/reboot-std/ciphertext/v1";
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.ts&lines=92-94) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.ts -->
 
-await KeyManager.ref(APP_SHARED_KEY_MANAGER_ID).shred(context, { scope: "user_id:42" });
+```ts
+await KeyManager.ref(APP_SHARED_KEY_MANAGER_ID).shred(context, {
+  scope: "user_id:42",
+});
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
 </Tabs>
@@ -304,16 +356,33 @@ Only the small wrapped DEK changes; the bulk data is untouched.
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.py&lines=379-382) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.py -->
+
 ```py
-await Ciphertext.ref(ciphertext_id).rescope(context, scope="tenant:acme")
+await Ciphertext.ref(ciphertext_id).rescope(
+    context,
+    scope="tenant:acme",
+)
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.ts&lines=67-69) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/ciphertext/v1/ciphertext_tests.ts -->
+
 ```ts
-await Ciphertext.ref(ciphertextId).rescope(context, { scope: "tenant:acme" });
+await Ciphertext.ref(ciphertextId).rescope(context, {
+  scope: "tenant:acme",
+});
 ```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
 
   </TabItem>
 </Tabs>

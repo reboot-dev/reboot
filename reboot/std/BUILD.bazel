@@ -52,6 +52,7 @@ ts_project(
         "//reboot/std/collections/queue/v1:queue_ts",
         "//reboot/std/collections/v1:sorted_map_ts",
         "//reboot/std/item/v1:item_ts",
+        "//reboot/std/oauth/v1:oauth_ts",
         "//reboot/std/presence/mouse_tracker/v1:presence_mouse_tracker_ts",
         "//reboot/std/presence/subscriber/v1:presence_subscriber_ts",
         "//reboot/std/presence/v1:presence_ts",
