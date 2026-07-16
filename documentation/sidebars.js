@@ -135,6 +135,7 @@ const sidebars = {
         "library_services/mailgun",
         "library_services/oauth_token_manager",
         "library_services/ordered_map",
+        "library_services/presence",
         "library_services/pubsub",
         "library_services/queue",
         "library_services/sorted_map",

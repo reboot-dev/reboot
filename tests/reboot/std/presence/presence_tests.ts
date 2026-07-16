@@ -9,7 +9,9 @@ import {
 import { errors_pb } from "@reboot-dev/reboot-api";
 import { MousePosition } from "@reboot-dev/reboot-std/presence/mouse_tracker/v1";
 import { Subscriber } from "@reboot-dev/reboot-std/presence/subscriber/v1";
-import { Presence, presenceLibrary } from "@reboot-dev/reboot-std/presence/v1";
+import { Presence } from "@reboot-dev/reboot-std/presence/v1";
+// eslint-disable-next-line
+import { presenceLibrary } from "@reboot-dev/reboot-std/presence/v1";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
