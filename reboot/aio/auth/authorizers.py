@@ -126,6 +126,21 @@ class AuthorizerRule(
     ) -> Authorizer.Decision:
         pass
 
+    async def __call__(
+        self,
+        *,
+        context: ReaderContext,
+        state: Optional[ContravariantStateType],
+        request: Optional[ContravariantRequestType],
+        **kwargs,
+    ) -> Authorizer.Decision:
+        return await self.execute(
+            context=context,
+            state=state,
+            request=request,
+            **kwargs,
+        )
+
 
 class DenyAuthorizerRule(
     AuthorizerRule[Message | Model, Message | Model | None]

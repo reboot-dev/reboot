@@ -2535,6 +2535,45 @@ class {{ state.proto.name }}Authorizer(
     {% endfor %}
     {% endfor %}
 
+    @staticmethod
+    def all(
+        *authorizers: {{ state.proto.name }}Authorizer,
+    ) -> {{ state.proto.name }}Authorizer:
+        return {{ state.proto.name }}Authorizer(
+            {% for service in state.services %}
+            {% for method in service.methods %}
+            {{ method.proto.name | to_snake }}=IMPORT_reboot_aio_auth_authorizers.allow_if(all=[
+                authorizer._{{ method.proto.name | to_snake }} or authorizer.__default
+                for authorizer in authorizers
+                if authorizer._{{ method.proto.name | to_snake }} is not None or authorizer.__default is not None
+            ]),
+            {% endfor %}
+            {% endfor %}
+            _default = IMPORT_reboot_aio_auth_authorizers.allow_if(all=[
+                authorizer.__default for authorizer in authorizers
+                if authorizer.__default is not None
+            ]),
+        )
+
+    @staticmethod
+    def any(
+        *authorizers: {{ state.proto.name }}Authorizer,
+    ) -> {{ state.proto.name }}Authorizer:
+        return {{ state.proto.name }}Authorizer(
+            {% for service in state.services %}
+            {% for method in service.methods %}
+            {{ method.proto.name | to_snake }}=IMPORT_reboot_aio_auth_authorizers.allow_if(any=[
+                authorizer._{{ method.proto.name | to_snake }} or authorizer.__default
+                for authorizer in authorizers
+                if authorizer._{{ method.proto.name | to_snake }} is not None or authorizer.__default is not None
+            ]),
+            {% endfor %}
+            {% endfor %}
+            _default = IMPORT_reboot_aio_auth_authorizers.allow_if(any=[
+                authorizer.__default for authorizer in authorizers
+                if authorizer.__default is not None
+            ]),
+        )
 {% endfor %}
 
 ############################ Reboot Servicers ############################
