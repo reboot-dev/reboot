@@ -14,13 +14,19 @@ from reboot.aio.contexts import ReaderContext
 from reboot.aio.external import ExternalContext
 from reboot.aio.memoize import MemoizeServicer
 from reboot.aio.tests import Reboot
+
+# Import used in Presence documentation, so we want to keep them separate.
+# isort: off
+from reboot.std.presence.v1.presence import (
+    MousePosition,
+    Presence,
+    Subscriber,
+)
+# isort: on
 from reboot.std.presence.v1.presence import (
     ListResponse,
-    MousePosition,
     PositionResponse,
-    Presence,
     StatusResponse,
-    Subscriber,
     presence_library,
 )
 from typing import Optional

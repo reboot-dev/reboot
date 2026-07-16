@@ -1,0 +1,488 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Presence
+
+Tracks which subscribers (e.g. users, browser tabs, or other clients) are
+currently connected, automatically detecting when a connection has dropped.
+
+The library is composed of three servicers:
+- `Presence`: Each `Presence` instance (identified by an `ID`) tracks a set of
+   currently online subscribers. To track online presence in different instances
+   (e.g. multiple chat rooms or shared documents), use a different `ID` for each
+   `Presence` instance.
+- `Subscriber`: Represents an individual client connection.
+- `MousePosition`: Optional servicer for tracking and syncing mouse cursor
+   position in real time.
+
+This library also has build in [React](#react) support so you can quickly drop
+these features into your React app.
+
+
+
+## Imports and set up
+
+To use `Presence`, include its library when starting up your `Application`.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+from reboot.std.presence.v1.presence import presence_library
+
+async def main():
+    application = Application(
+        servicers=[MyServicer],
+        libraries=[presence_library()],
+    )
+    await application.run()
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+import { presenceLibrary } from "@reboot-dev/reboot-std/presence/v1";
+
+new Application({
+  servicers: [MyServicer],
+  libraries: [presenceLibrary()]
+  initialize,
+}).run();
+```
+  </TabItem>
+</Tabs>
+
+### Authorizer
+
+By default, `Presence` allows all calls coming internally (e.g. from
+your Reboot backend) or externally (e.g. from your React app). However,
+this can be overridden by providing your own
+[authorizer](/learn_more/auth#authorizers).
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+presence_authorizer = Presence.Authorizer(
+    ... # !!! TODO: FILL OUT, also, which of these are actually necessary for react?
+)
+
+subscriber_authorizer = Subscriber.Authorizer(
+    ...
+)
+
+mouse_position_authorizer = MousePosition.Authorizer(
+    ...
+)
+
+application = Application(
+    servicers=[MyServicer],
+    libraries=[presence_library(
+        presence_authorizer=presence_authorizer,
+        subscriber_authorizer=subscriber_authorizer,
+        mouse_position_authorizer=mouse_position_authorizer,
+    )],
+)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const presenceAuthorizer = new Presence.Authorizer({
+  ... // !!! TODO: FILL OUT, also, which of these are actually necessary for react?
+});
+
+const subscriberAuthorizer = new Subscriber.Authorizer({
+  ...
+});
+
+const mousePositionAuthorizer = new MousePosition.Authorizer({
+  ...
+});
+
+const application = new Application({
+  servicers: [MyServicer],
+  libraries: [presenceLibrary({
+    presenceAuthorizer,
+    subscriberAuthorizer,
+    mousePositionAuthorizer,
+  })],
+  initialize,
+});
+
+```
+  </TabItem>
+</Tabs>
+
+## React
+
+Once you've [set up](/learn_more/call/from_react) your React app to call
+into your Reboot API, you can use the `Presence` React library to quickly
+add presence tracking in your React app.
+
+First, add `@reboot-dev/reboot-std-api` and
+`@reboot-dev/reboot-std-react` to your `package.json`.
+
+```bash
+!!! TODO: what about reboot-react or reboot-std
+npm install -S @reboot-dev/reboot-std-api
+npm install -S reboot-dev/reboot-std-react
+```
+
+You may also want to, in defining your Reboot application, wish to [override
+the default authorizer](#authorizer).
+
+The [`Presence`](#presence-component) and
+[`MouseTracker`](#mousetracker-component) components allow you to quickly add
+these features to your app. However, you can also call the library
+[methods](#direct-library-usage) directly from React. See [Call your API from
+React](/learn_more/call/from_react) to learn more about how to do this.
+
+### Presence Component
+
+The `Presence` React component is used to
+1. Track the current client who is online, identified by a `subscriberId`.
+2. Receive a list of subscribers by ID who are currently connected.
+
+Place any components that need presence data in a `Presence` component.
+The children components can then call `usePresenceContext()` to get
+the list of online subscribers by ID.
+
+#### Properties of &lt;Presence&gt;
+* `presenceId` is the `string` ID of the `Presence` instance you want to track
+the subscriber for.
+* `subscriberId` is the `string` ID of the `Subscriber` who is connecting.
+
+#### Properties returned from `usePresenceContext()`
+* `subscriberId` is the `string` ID `Subscriber` who is connecting.
+* `subscriberIds` is a `string[]` of `Subscribers` who are connected.
+
+```tsx
+import {
+  Presence,
+  usePresenceContext,
+} from "@reboot-dev/reboot-std-react/presence";
+
+// ...
+
+<Presence id={presenceId} subscriberId={subscriberId}>
+  <SubscriberList />
+</Presence>
+
+// ...
+
+const SubscriberList: FC<{}> = () => {
+  const { subscriberId, subscriberIds } = usePresenceContext();
+
+  return (
+    <ul>
+      {subscriberIds.map((id) => (
+        <li key={id}>{id === subscriberId ? `${id} (you)` : id}</li>
+      ))}
+    </ul>
+  );
+};
+```
+
+### MouseTracker Component
+
+The `MouseTracker` component can be added as a child to the `Presence`
+component to sync mouse positions across clients.
+
+The `arrow` prop defines how the other synchronized cursors will appear.
+
+```tsx
+<Presence id={presenceId} subscriberId={subscriberId}>
+  <MouseTracker
+    style={{
+      width: "400px",
+      height: "250px",
+    }}
+    arrow={<span>↖</span>}
+  />
+</Presence>
+```
+
+
+## Direct Library Usage
+
+If you want to use the `Presence` library directly, such as access the
+information server side, you can call the Reboot methods directly as usual.
+
+### Imports
+
+To use `Presence`, `Subscriber` or `MousePosition` servicers, import them where
+you would like to use it.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/presence/presence_tests.py&lines=11-15) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/presence/presence_tests.py -->
+
+```py
+from reboot.std.presence.v1.presence import (
+    MousePosition,
+    Presence,
+    Subscriber,
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/presence/presence_tests.ts&lines=3-5) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/presence/presence_tests.ts -->
+
+```ts
+import { MousePosition } from "@reboot-dev/reboot-std/presence/mouse_tracker/v1";
+import { Subscriber } from "@reboot-dev/reboot-std/presence/subscriber/v1";
+import { Presence } from "@reboot-dev/reboot-std/presence/v1";
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
+
+## Presence Methods
+
+Each `Presence` instance tracks a set of currently online subscribers. You
+can have as many `Presence` instances as you like, each with a unique ID
+(e.g. one per room, channel, or document).
+
+### Getting a reference
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+presence = Presence.ref("my-room")
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const presence = Presence.ref("my-room");
+```
+  </TabItem>
+</Tabs>
+
+### Subscribe
+
+Register a subscriber as present. The subscriber's [`status()`](#status) must
+already be `present` or you will receive a `FailedPrecondition` error.
+
+If the subscriber disconnects, they will automatically be removed from the list
+of online subscribers.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+await presence.subscribe(
+    context,
+    subscriber_id="user-abc",
+)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+await presence.subscribe(context, {
+  subscriberId: "user-abc",
+});
+```
+  </TabItem>
+</Tabs>
+
+### List
+
+Return the IDs of all the subscribers currently connected.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+response = await presence.list(context)
+print(response.subscriber_ids)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const { subscriberIds } = await presence.list(context);
+console.log(subscriberIds);
+```
+  </TabItem>
+</Tabs>
+
+## Subscriber Methods
+
+Each `Subscriber` represents a single connected client.
+
+You may want to use one `Subscriber` per user or per connection. For example,
+if you want to list which users are in a chat room without listing the user
+twice if they are connected via computer or mobile device, use one `Subscriber`
+per user. If instead you want to show the user as appearing 5 times when they
+have 5 browser tabs open to your app, you would want to use one `Subscriber` for
+each of those browser tab connections.
+
+One `Subscriber` can be added to multiple `Presence` instances (e.g. to show
+a user is generally online and in specific chat rooms).
+
+### Getting a reference
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+subscriber = Subscriber.ref("user-abc")
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const subscriber = Subscriber.ref("user-abc");
+```
+  </TabItem>
+</Tabs>
+
+### Create
+
+Creates the `Subscriber` or ensures that it has already been created.
+This needs to be called before calling [`connect()`](#connect), and it is
+recommended to make this call before any [`connect()`](#connect) attempt.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+await subscriber.create(context)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+await subscriber.create(context);
+```
+  </TabItem>
+</Tabs>
+
+
+### Connect
+
+Used to initiate a subscription and detects when the subscriber is no longer
+present.
+
+This method runs indefinitely, that is, it does return. It also requires a
+unique nonce for every call.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+nonce = uuid.uuid4().hex
+
+# TODO !!! CHECK THIS
+
+# connect() runs indefinitely; run it concurrently with toggle().
+asyncio.gather(
+    subscriber.connect(context, nonce=nonce),
+    subscriber.toggle(context, nonce=nonce),
+)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+// TODO !!! CHECK THIS
+
+const nonce = uuidv4();
+
+// connect() runs indefinitely; run it concurrently with toggle().
+const abortController = new AbortController();
+Promise.all([
+  subscriber.connect(
+    { signal: abortController.signal },
+    { nonce },
+  ),
+  subscriber.toggle(context, { nonce }),
+]);
+```
+  </TabItem>
+</Tabs>
+
+### Toggle
+
+Required to confirm that [`connect()`](#connect) for a given `nonce` is live.
+The [`status()`](#status) of the `Subscriber` is not set to present *until* `toggle()` call
+is made.
+
+Requires the same `nonce` that was used for the [`connect()`](#connect) call.
+
+See [`connect()`](#connect) for concurrent call example.
+
+### Status
+
+Returns the `status` of the `Subscriber`. `present` is true if any of the
+`Subscriber`'s connections (made via a [`connect()`](#connect) and
+[`toggle()`](#toggle)) are still live. Otherwise returns false.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+response = await subscriber.status(context)
+print(response.present)  # True if connected
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const { present } = await subscriber.status(context);
+console.log(present); // true if connected
+```
+  </TabItem>
+</Tabs>
+
+## MousePosition Methods
+
+`MousePosition` is an optional Servicer that stores a client's current mouse
+cursor coordinates.
+
+The easiest way get started using `MousePosition` is to use the same `ID`
+as the `Subscriber`, and to use one `Subscriber` per connection.
+
+### Getting a reference
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+mouse_position = MousePosition.ref("user-abc")
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const mousePosition = MousePosition.ref("user-abc");
+```
+  </TabItem>
+</Tabs>
+
+### Update
+
+Set the current mouse position.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+await mouse_position.update(context, left=120, top=240)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+await mousePosition.update(context, { left: 120, top: 240 });
+```
+  </TabItem>
+</Tabs>
+
+### Position
+
+Returns the current mouse position.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+response = await mouse_position.position(context)
+print(response.left, response.top)
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const { left, top } = await mousePosition.position(context);
+console.log(left, top);
+```
+  </TabItem>
+</Tabs>
