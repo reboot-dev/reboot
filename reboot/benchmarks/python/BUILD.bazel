@@ -1,0 +1,33 @@
+load("//reboot/benchmarks/bazel:benchmark.bzl", "benchmark_py")
+
+APP_SRCS = [
+    "api/benchmark/v1/benchmark.py",
+    "backend/src/benchmark_servicer.py",
+    "backend/src/main.py",
+    "pyproject.toml",
+    "states.py",
+]
+
+[
+    benchmark_py(
+        name = script[:-len(".py")],
+        concurrency = "8",
+        duration = "30s",
+        partitions = "8",
+        rbtrc = ".rbtrc",
+        script = script,
+        srcs = APP_SRCS,
+        working_directory = "reboot/benchmarks/python",
+    )
+    for script in [
+        "construct.py",
+        "reader.py",
+        "reader_ceiling.py",
+        "writer.py",
+        "writer_ceiling.py",
+        "transaction_noop.py",
+        "transaction_single.py",
+        "transaction_read.py",
+        "transaction_write.py",
+    ]
+]

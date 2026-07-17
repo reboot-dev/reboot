@@ -1,4 +1,6 @@
 exports_files([
     "benchmark_launcher.sh",
+    "benchmark_py_launcher.sh",
+    "harness.py",
     "harness.ts",
 ])

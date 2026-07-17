@@ -1,0 +1,8 @@
+# Reboot state saved by `rbt dev run`.
+.rbt/
+
+# Generated code.
+backend/api/
+
+# Virtual environment, if one is created for manual runs.
+.venv/

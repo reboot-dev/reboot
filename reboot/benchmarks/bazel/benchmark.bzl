@@ -1,6 +1,7 @@
 """
-# Description of the 'benchmark' macro, which executes a 'harness.ts' statistics
-# collection script on a given benchmark script.
+# Description of the 'benchmark' and 'benchmark_py' macros, which execute a
+# statistics collection script ('harness.ts' or 'harness.py') on a given
+# benchmark script.
 """
 
 load("@com_github_reboot_dev_reboot//reboot:versions.bzl", "REBOOT_VERSION")
@@ -15,6 +16,14 @@ dev_reboot_packages = [
     "@com_github_reboot_dev_reboot//rbt/v1alpha1:reboot-dev-reboot-api",
     "//reboot:reboot.dev",
     "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
+]
+
+dev_reboot_py_env = {
+    "REBOOT_WHL_FILE": "$(location //reboot:reboot.dev)",
+}
+
+dev_reboot_py_packages = [
+    "//reboot:reboot.dev",
 ]
 
 def _validate_env(env):
@@ -156,6 +165,105 @@ def benchmark(
     native.sh_binary(
         name = name,
         srcs = ["//reboot/benchmarks/bazel:benchmark_launcher.sh"],
+        args = [
+            "'%s'" % name,
+            "'%s'" % working_directory,
+            "'%s'" % script,
+            "'%s'" % duration,
+            "'%s'" % partitions,
+            "'%s'" % concurrency,
+            "'%s'" % report_directory,
+        ],
+        data = final_data,
+        env = final_env,
+        tags = tags,
+    )
+
+def benchmark_py(
+        name,
+        working_directory,
+        script,
+        duration,
+        partitions,
+        concurrency,
+        srcs,
+        rbtrc,
+        data = [],
+        env = {},
+        tags = [
+            "exclusive",
+            "macos_not_supported",
+        ],
+        use_dev_reboot = True,
+        report_directory = ""):
+    """
+    Like `benchmark`, but for Python benchmarks.
+
+    Bootstraps a virtual environment with the development Reboot wheel and
+    executes the 'harness.py' statistics collection script against a Python
+    application run by `rbt dev run`.
+
+    Args:
+      name: The name of the target.
+      working_directory: The working directory to use.
+      script: The benchmark script from the working directory.
+      duration: The duration of benchmark script.
+      partitions: Maximum number of partitions to use.
+      concurrency: Maximum number of concurrent requests.
+      srcs: The source files to include in the target, which are required to run `rbt dev run`.
+      rbtrc: The .rbtrc file to include in the target.
+      data: The data files to make available to the script.
+      env: The environment variables to set for the script.
+      tags: Bazel tags to apply to the target.
+      use_dev_reboot: Whether to use the default dev-reboot environment.
+      report_directory: The directory to write the report to.
+    """
+
+    if working_directory == "":
+        fail("working_directory must be non-empty")
+    if script == "":
+        fail("script must be non-empty")
+    if duration == "":
+        fail("duration must be non-empty")
+    if partitions == "":
+        fail("partitions must be non-empty")
+    if concurrency == "":
+        fail("concurrency must be non-empty")
+
+    if use_dev_reboot:
+        _validate_env(env)
+
+    final_data = ["//reboot/benchmarks/bazel:harness.py"]
+
+    if use_dev_reboot:
+        final_env = _merge_dicts(dev_reboot_py_env, env)
+
+        # See the note in `benchmark` about why this `sh_library`
+        # indirection is necessary.
+        native.sh_library(
+            # Using the 'name' prefix to avoid name conflicts if multiple
+            # benchmarks are defined in the same BUILD file.
+            name = name + "_dev_reboot_packages",
+            data = dev_reboot_py_packages,
+        )
+
+        alias_reboot_dev_packages_label = ":" + name + "_dev_reboot_packages"
+
+        final_data += dev_reboot_py_packages + [
+            alias_reboot_dev_packages_label,
+        ] + data
+    else:
+        final_data += data
+        final_env = env
+
+    final_data += srcs + [
+        rbtrc,
+        script,
+    ]
+
+    native.sh_binary(
+        name = name,
+        srcs = ["//reboot/benchmarks/bazel:benchmark_py_launcher.sh"],
         args = [
             "'%s'" % name,
             "'%s'" % working_directory,

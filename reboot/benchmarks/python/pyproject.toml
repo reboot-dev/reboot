@@ -1,0 +1,11 @@
+[project]
+name = "benchmarks-python"
+version = "0.1.0"
+requires-python = ">= 3.10"
+dependencies = [
+    "reboot==1.2.1",
+]
+
+# There is no `[build-system]` table: that tells `uv` this is a virtual
+# (non-package) project — it installs the dependencies into `.venv` but
+# never tries to build/install the project itself.

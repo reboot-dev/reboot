@@ -1,0 +1,15 @@
+# Find API definitions in 'api/'.
+generate api/
+
+# Tell `rbt generate` where to put generated files.
+generate --python=backend/api
+
+dev run --no-chaos
+# Don't run every writer twice to validate that its effects are
+# deterministic; that would skew the benchmark results.
+dev run --effect-validation=disabled
+dev run --python
+dev run --application-name=benchmarks-python
+dev run --application=backend/src/main.py
+
+dev expunge --application-name=benchmarks-python

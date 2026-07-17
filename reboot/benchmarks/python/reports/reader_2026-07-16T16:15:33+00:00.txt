@@ -1,0 +1,29 @@
+System Info: Linux d84c7940ad6b 6.8.0-1063-gcp #69~22.04.1-Ubuntu SMP Tue Jun 30 15:12:15 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+Date & Time: 2026-07-16 16:15:33
+CPU Model: Intel(R) Xeon(R) CPU @ 2.80GHz
+
+PARTITIONS=1
+
+Concurrency;50th percentile;99th percentile;99.9th percentile;op/s
+1;1.236;1.615;2.002;799
+2;1.239;1.724;2.202;1578
+4;1.730;2.726;3.357;2261
+8;3.360;4.930;6.472;2301
+
+PARTITIONS=2
+
+Concurrency;50th percentile;99th percentile;99.9th percentile;op/s
+2;1.376;1.897;2.234;1431
+4;1.779;2.778;3.266;2184
+8;2.607;4.462;5.170;2975
+
+PARTITIONS=4
+
+Concurrency;50th percentile;99th percentile;99.9th percentile;op/s
+4;1.927;2.932;3.422;2032
+8;2.866;4.554;5.259;2731
+
+PARTITIONS=8
+
+Concurrency;50th percentile;99th percentile;99.9th percentile;op/s
+8;3.232;4.928;5.571;2437
