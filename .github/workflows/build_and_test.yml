@@ -1,11 +1,20 @@
 name: Build and Test
 
 on:
-  # We don't run CI on our main branch, only on pull requests to the
-  # main branch. The main branch can only change via pull requests, and
-  # checks on those pull requests must pass before merging to main, so
-  # checks on main are redundant.
-  pull_request:
+  # We don't run CI on our `main` branch, only on pull requests to the
+  # `main` branch. The `main` branch can only change via pull requests,
+  # and checks on those pull requests must pass before merging to
+  # `main`, so checks on `main` are redundant.
+  #
+  # We use `pull_request_target` rather than `pull_request` so that CI
+  # can reach the Bazel remote cache secrets even on pull requests from
+  # forks (`pull_request` withholds secrets from fork runs, and without
+  # the cache our jobs cannot run). The workflow definition itself comes
+  # from the base branch, but the jobs below check out and run the PR's
+  # own code, so a fork PR executes untrusted code with our secrets. The
+  # `approve-fork-pr` job holds every such run for maintainer approval
+  # before any of that code runs; see its comment for the full model.
+  pull_request_target:
     # Run CI on pull requests. Passing checks will be required to merge.
     branches:
       - "**"
@@ -25,14 +34,55 @@ concurrency:
   #
   # See documentation about the `github` context variables here:
   #   https://docs.github.com/en/actions/learn-github-actions/contexts#github-context
-  group: ${{ github.workflow }}-${{ github.ref }}
-  # Do not cancel runs on the main branch. On the main branch we want every
-  # commit to be tested.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  #
+  # We key the group on the PR number, not `github.ref`: under
+  # `pull_request_target` `github.ref` is the base branch (e.g.
+  # `refs/heads/main`) and so is identical for every PR, which would
+  # collapse all PRs into one group. `merge_group` runs have no PR
+  # number, so they fall back to `github.ref` (the unique merge-queue
+  # ref).
+  group: >-
+    ${{ github.workflow }}-${{
+    github.event.pull_request.number || github.ref }}
+  # Cancel superseded runs for a PR when it gets new commits, but let
+  # every `merge_group` run finish so each queued commit is tested.
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
 
 jobs:
+  # External fork pull requests run with `pull_request_target`, which
+  # grants our secrets and a read/write token even though the PR's own
+  # (untrusted) code is what gets built and tested by the jobs below.
+  # Hold every such run here until a maintainer has read the PR and
+  # approved the `fork-pr-ci` environment. Same-repo pull requests (from
+  # people who already have write access) and `merge_group` runs are
+  # already trusted, so this job is skipped and CI proceeds with no
+  # approval step. Every downstream job `needs` this one, so nothing
+  # checks out or runs PR code before the approval clears.
+  #
+  # SETUP REQUIRED: the `fork-pr-ci` environment must exist in the
+  # repository settings with "Required reviewers" configured. Without
+  # that protection rule this job passes immediately and provides no
+  # checkpoint at all.
+  approve-fork-pr:
+    name: Approve fork PR CI
+    if: >-
+      ${{ github.event_name == 'pull_request_target' &&
+          github.event.pull_request.head.repo.full_name != github.repository }}
+    runs-on: ubuntu-latest
+    environment: fork-pr-ci
+    steps:
+      - name: Await maintainer approval
+        run: echo "A maintainer approved running CI for this fork PR."
+
   check-code-style:
     name: Check Code Style
+    # Runs only after `approve-fork-pr` clears (or is skipped for a
+    # trusted run); see that job.
+    needs: approve-fork-pr
+    if: >-
+      ${{ !cancelled() &&
+          (needs.approve-fork-pr.result == 'success' ||
+           needs.approve-fork-pr.result == 'skipped') }}
     uses: ./.github/workflows/devcontainer.yml
     # The nested job needs write permissions, which means this job also needs
     # them.
@@ -52,6 +102,13 @@ jobs:
 
   build-reboot-linux-x86_x64-public:
     name: Build public repo for Linux x86_64
+    # Runs only after `approve-fork-pr` clears (or is skipped for a
+    # trusted run); see that job.
+    needs: approve-fork-pr
+    if: >-
+      ${{ !cancelled() &&
+          (needs.approve-fork-pr.result == 'success' ||
+           needs.approve-fork-pr.result == 'skipped') }}
     uses: ./.github/workflows/devcontainer.yml
     # The nested job needs write permissions, which means this job also needs
     # them.
@@ -75,6 +132,13 @@ jobs:
 
   test-react-native-maestro:
     name: Test React Native mobile app (Maestro)
+    # Runs only after `approve-fork-pr` clears (or is skipped for a
+    # trusted run); see that job.
+    needs: approve-fork-pr
+    if: >-
+      ${{ !cancelled() &&
+          (needs.approve-fork-pr.result == 'success' ||
+           needs.approve-fork-pr.result == 'skipped') }}
     uses: ./.github/workflows/devcontainer.yml
     permissions:
       packages: write
@@ -125,6 +189,13 @@ jobs:
 
   build-reboot-linux-arm64:
     name: Build public repo for Linux arm64
+    # Runs only after `approve-fork-pr` clears (or is skipped for a
+    # trusted run); see that job.
+    needs: approve-fork-pr
+    if: >-
+      ${{ !cancelled() &&
+          (needs.approve-fork-pr.result == 'success' ||
+           needs.approve-fork-pr.result == 'skipped') }}
     uses: ./.github/workflows/devcontainer.yml
     permissions:
       packages: write
@@ -173,11 +244,27 @@ jobs:
 
   build-reboot-documentation:
     name: Build Reboot documentation
+    # Runs only after `approve-fork-pr` clears (or is skipped for a
+    # trusted run); see that job.
+    needs: approve-fork-pr
+    if: >-
+      ${{ !cancelled() &&
+          (needs.approve-fork-pr.result == 'success' ||
+           needs.approve-fork-pr.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          # Under `pull_request_target`, checkout defaults to the
+          # base branch; check out the PR head so CI tests the
+          # proposed code (`merge_group` falls back to the queued
+          # merge commit). `allow-unsafe-pr-checkout` is required
+          # now that `actions/checkout` refuses fork PR heads by
+          # default; it is safe because the run first waits for
+          # maintainer approval via the `fork-pr-ci` environment.
+          ref: ${{ github.event.pull_request.head.sha }}
+          allow-unsafe-pr-checkout: true
           show-progress: false
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -194,6 +281,13 @@ jobs:
 
   test-manylinux-x86_64:
     name: Test Manylinux x86_64
+    # Runs only after `approve-fork-pr` clears (or is skipped for a
+    # trusted run); see that job.
+    needs: approve-fork-pr
+    if: >-
+      ${{ !cancelled() &&
+          (needs.approve-fork-pr.result == 'success' ||
+           needs.approve-fork-pr.result == 'skipped') }}
     uses: ./.github/workflows/manylinux.yml
     secrets: inherit
     with:
@@ -208,6 +302,13 @@ jobs:
 
   test-manylinux-arm64:
     name: Test Manylinux arm64
+    # Runs only after `approve-fork-pr` clears (or is skipped for a
+    # trusted run); see that job.
+    needs: approve-fork-pr
+    if: >-
+      ${{ !cancelled() &&
+          (needs.approve-fork-pr.result == 'success' ||
+           needs.approve-fork-pr.result == 'skipped') }}
     uses: ./.github/workflows/manylinux.yml
     secrets: inherit
     with:
@@ -222,6 +323,13 @@ jobs:
 
   build-reboot-MacOS-arm64:
     name: Build public repo for MacOS arm64
+    # Runs only after `approve-fork-pr` clears (or is skipped for a
+    # trusted run); see that job.
+    needs: approve-fork-pr
+    if: >-
+      ${{ !cancelled() &&
+          (needs.approve-fork-pr.result == 'success' ||
+           needs.approve-fork-pr.result == 'skipped') }}
     uses: ./.github/workflows/reboot_macos_environment.yml
     secrets: inherit
     with:
@@ -244,7 +352,7 @@ jobs:
 
         # 3) If this is a PR labelled "reboot-release", also drop flaky
         # tests.
-        if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && \
+        if [ "$GITHUB_EVENT_NAME" = "pull_request_target" ] && \
           jq -r '.pull_request.labels[].name' "$GITHUB_EVENT_PATH" \
             | grep -qx reboot-release; then
           echo "NOTE: reboot-release label found — excluding flaky tests"

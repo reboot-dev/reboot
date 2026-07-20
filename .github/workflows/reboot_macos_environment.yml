@@ -172,6 +172,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          # Under `pull_request_target`, checkout defaults to the
+          # base branch; check out the PR head so CI tests the
+          # proposed code (`merge_group` falls back to the queued
+          # merge commit). `allow-unsafe-pr-checkout` is required
+          # now that `actions/checkout` refuses fork PR heads by
+          # default; it is safe because the run first waits for
+          # maintainer approval via the `fork-pr-ci` environment.
+          ref: ${{ github.event.pull_request.head.sha }}
+          allow-unsafe-pr-checkout: true
           submodules: recursive
           show-progress: false
 
