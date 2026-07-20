@@ -6,14 +6,50 @@ on:
   # manually. We also do NOT test on pushes to `main`, only on PRs:
   # `main` can only change via PR, and PRs must pass all checks to
   # merge, so checks on `main` are redundant.
-  pull_request:
+  #
+  # We use `pull_request_target` rather than `pull_request` so that CI
+  # can reach the Bazel remote cache secrets even on pull requests from
+  # forks. The jobs below check out and run the PR's own code, so a fork
+  # PR executes untrusted code with our secrets; the `approve-fork-pr`
+  # job holds every such run for maintainer approval first.
+  pull_request_target:
   merge_group:
     # Required if we want to use GitHub's Merge Queue feature. See:
     #   https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue#triggering-merge-group-checks-with-github-actions
 
 jobs:
+  # External fork pull requests run with `pull_request_target`, which
+  # grants our secrets and a read/write token even though the PR's own
+  # (untrusted) code is what gets built and tested below. Hold every
+  # such run here until a maintainer has read the PR and approved the
+  # `fork-pr-ci` environment. Same-repo pull requests and `merge_group`
+  # runs are already trusted, so this job is skipped and CI proceeds
+  # with no approval step.
+  #
+  # SETUP REQUIRED: the `fork-pr-ci` environment must exist in the
+  # repository settings with "Required reviewers" configured. Without
+  # that protection rule this job passes immediately and provides no
+  # checkpoint at all.
+  approve-fork-pr:
+    name: Approve fork PR CI
+    if: >-
+      ${{ github.event_name == 'pull_request_target' &&
+          github.event.pull_request.head.repo.full_name != github.repository }}
+    runs-on: ubuntu-latest
+    environment: fork-pr-ci
+    steps:
+      - name: Await maintainer approval
+        run: echo "A maintainer approved running CI for this fork PR."
+
   build-test-development-containers:
     name: Build and Test Development Containers
+    # Runs only after `approve-fork-pr` clears (or is skipped for a
+    # trusted run); see that job.
+    needs: approve-fork-pr
+    if: >-
+      ${{ !cancelled() &&
+          (needs.approve-fork-pr.result == 'success' ||
+           needs.approve-fork-pr.result == 'skipped') }}
     uses: ./.github/workflows/development_containers_build_test_push.yml
     permissions:
       # The workflow we're about to run requires the following permissions,
