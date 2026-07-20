@@ -118,6 +118,22 @@ jobs:
           # `reboot/examples`.
           path: reboot/examples/
 
+      # The standalone build below and the Dev Container build further
+      # down both build `reboot/containers/development`, whose base
+      # image comes from a registry that occasionally returns transient
+      # 5xx errors. Pre-pull that base image with retries so a registry
+      # hiccup doesn't sink the job; once pulled, both builds resolve
+      # it from the local image store. The pre-pull is best-effort with
+      # capped backoff: if it ultimately fails, the builds' own pulls
+      # still run.
+      - name: Pre-pull development container base image
+        uses: 3rdparty/dev-tools/pre-pull-docker-image@main
+        # Treat a pre-pull failure as non-fatal at the workflow level;
+        # each build below falls back to pulling the base image itself.
+        continue-on-error: true
+        with:
+          dockerfile: reboot/containers/development/Dockerfile
+
       # TODO(rjh): set things up so that our UID and GID are NOT 1000, so that
       #            we test the container's UID/GID switching ability.
       - name: Build and Test Standalone Docker Container
