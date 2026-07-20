@@ -6,7 +6,17 @@
 # a Dev Container, the `.devcontainer/devcontainer.json` file uses this
 # Dockerfile as a starting point and then adds additional features.
 
-FROM ubuntu:jammy-20240808
+# Raw `curl` downloads in this file retry transient failures with
+# `--retry 5 --retry-all-errors -f` (plain `--retry` does not retry
+# connection resets; `-f`/`--fail` turns an HTTP error status into a
+# failed download rather than writing the error body to the output
+# file). Installer scripts are downloaded to a temporary file and
+# executed from it rather than piped straight into an interpreter,
+# because on a retry after a mid-body failure curl re-sends the whole
+# body into the already-written pipe, corrupting the stream.
+
+# The same pinned Ubuntu base as the repo-root `Dockerfile` uses.
+FROM ubuntu:jammy-20251001
 
 ################### Container for development work #####################
 # The following sections are required to get a working container that can be
@@ -41,7 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Our addition is that we set an entrypoint that starts Docker before the user
 # is handed control; see the final notes below.
 ARG DIND_VERSION=2.6.0
-RUN curl https://raw.githubusercontent.com/devcontainers/features/feature_docker-in-docker_${DIND_VERSION}/src/docker-in-docker/install.sh -o /tmp/install_dind.sh \
+RUN curl --retry 5 --retry-all-errors -f https://raw.githubusercontent.com/devcontainers/features/feature_docker-in-docker_${DIND_VERSION}/src/docker-in-docker/install.sh -o /tmp/install_dind.sh \
   && chmod +x /tmp/install_dind.sh \
   # Skip the script's `buildx` GitHub download, since the `moby-buildx`
   # apt package installed by this same script already provides `docker
@@ -118,8 +128,10 @@ ARG UPGRADE_PACKAGES=false
 # user's UID/GID need to change at startup-time (see comments above).
 ARG INSTALL_OH_MYS=false
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive  \
-  && bash -c "$(curl -fsSL "https://raw.githubusercontent.com/microsoft/vscode-dev-containers/${VSCODE_SCRIPTS_COMMIT}/script-library/common-debian.sh")" \
-  -- "${INSTALL_ZSH}" "${USERNAME}" "${UID}" "${GID}" "${UPGRADE_PACKAGES}" "${INSTALL_OH_MYS}" \
+  && curl --retry 5 --retry-all-errors -fsSL "https://raw.githubusercontent.com/microsoft/vscode-dev-containers/${VSCODE_SCRIPTS_COMMIT}/script-library/common-debian.sh" -o /tmp/common-debian.sh \
+  && bash /tmp/common-debian.sh \
+  "${INSTALL_ZSH}" "${USERNAME}" "${UID}" "${GID}" "${UPGRADE_PACKAGES}" "${INSTALL_OH_MYS}" \
+  && rm /tmp/common-debian.sh \
   # Clean up, leaving a smaller layer.
   && rm -rf /var/lib/apt/lists/*
 
@@ -139,7 +151,9 @@ RUN mkdir -p /workspaces \
 # Install GitHub CLI through Codespace's preferred mechanism.
 # https://github.com/microsoft/vscode-dev-containers/blob/main/script-library/docs/github-cli.md
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive  \
-  && bash -c "$(curl -fsSL "https://raw.githubusercontent.com/microsoft/vscode-dev-containers/main/script-library/github-debian.sh")" \
+  && curl --retry 5 --retry-all-errors -fsSL "https://raw.githubusercontent.com/microsoft/vscode-dev-containers/main/script-library/github-debian.sh" -o /tmp/github-debian.sh \
+  && bash /tmp/github-debian.sh \
+  && rm /tmp/github-debian.sh \
   # Clean up, leaving a smaller layer.
   && rm -rf /var/lib/apt/lists/*
 
@@ -194,7 +208,9 @@ ARG NODE_MAJOR_VERSION=20
 ARG NVM_DIR=/usr/local/nvm
 
 RUN mkdir $NVM_DIR && \
-  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v${NVM_VERSION}/install.sh | NVM_DIR="$NVM_DIR" bash && \
+  curl --retry 5 --retry-all-errors -f https://raw.githubusercontent.com/nvm-sh/nvm/v${NVM_VERSION}/install.sh -o /tmp/nvm-install.sh && \
+  NVM_DIR="$NVM_DIR" bash /tmp/nvm-install.sh && \
+  rm /tmp/nvm-install.sh && \
   . "$NVM_DIR/nvm.sh" && \
   nvm install ${NODE_MAJOR_VERSION}
 
@@ -203,7 +219,10 @@ RUN echo ". $NVM_DIR/nvm.sh" >> /home/$USERNAME/.bashrc
 
 # Install uv as the target user.
 USER $USERNAME
-RUN curl -LsSf https://astral.sh/uv/0.11.13/install.sh | sh
+RUN curl --retry 5 --retry-all-errors -LsSf https://astral.sh/uv/0.11.13/install.sh \
+  -o /tmp/uv-install.sh \
+  && sh /tmp/uv-install.sh \
+  && rm /tmp/uv-install.sh
 
 # Bazel's `--incompatible_strict_action_env` causes a hardcoded PATH to be used which
 # does not include the path where `uv` is installed. Rather than changing Bazel's PATH,

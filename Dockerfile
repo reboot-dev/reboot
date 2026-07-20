@@ -37,6 +37,20 @@ ARG ENVOY_VERSION=1.38.2
 # manylinux-builder container.
 ARG CLANG_VERSION=20
 
+# Raw `curl` and `wget` downloads in this file retry transient
+# failures: `curl --retry 5 --retry-all-errors -f` (plain `--retry`
+# does not retry connection resets, hence `--retry-all-errors`, and
+# `-f`/`--fail` turns an HTTP error status into a failed download
+# rather than writing the error body to the output file) and `wget
+# --tries=5 --waitretry=10 --retry-connrefused`. Installer scripts
+# are downloaded to a temporary file and executed from it rather than
+# piped straight into an interpreter, because on a retry after a
+# mid-body failure curl re-sends the whole body into the
+# already-written pipe, corrupting the stream. Pipes into key-material
+# consumers like `apt-key` and `gpg --dearmor` keep the pipe: their
+# input is validated cryptographically, so a torn stream fails the
+# build loudly.
+
 ###############################################################################
 # Use a specific ubuntu version so we're not surprised by silent changes to gcc
 # versions (and thus C++ feature support). We additionally care about the `glibc`
@@ -77,7 +91,10 @@ RUN update-alternatives --install /usr/bin/python usr-bin-python /usr/bin/python
     && python --version | grep -Eq "^Python ${PYTHON_VERSION}.*"
 
 # Ensure pip is installed and up to date.
-RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python \
+RUN curl --retry 5 --retry-all-errors -fsS https://bootstrap.pypa.io/get-pip.py \
+    -o /tmp/get-pip.py \
+    && python /tmp/get-pip.py \
+    && rm /tmp/get-pip.py \
     && update-alternatives --install /usr/local/bin/pip pip /usr/local/bin/pip3 3
 
 ENV TINI_VERSION=v0.19.0
@@ -99,7 +116,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 #   https://github.com/fullstorydev/grpcurl
 ARG GRPCURL_VERSION=1.9.2
 RUN if [ "${TARGETARCH}" = "amd64" ]; then \
-    wget https://github.com/fullstorydev/grpcurl/releases/download/v${GRPCURL_VERSION}/grpcurl_${GRPCURL_VERSION}_linux_x86_64.tar.gz \
+    wget --tries=5 --waitretry=10 --retry-connrefused https://github.com/fullstorydev/grpcurl/releases/download/v${GRPCURL_VERSION}/grpcurl_${GRPCURL_VERSION}_linux_x86_64.tar.gz \
     && tar -xvf ./grpcurl_${GRPCURL_VERSION}_linux_x86_64.tar.gz grpcurl \
     && rm ./grpcurl_${GRPCURL_VERSION}_linux_x86_64.tar.gz \
     && chmod +x grpcurl \
@@ -209,7 +226,7 @@ RUN apt-get update \
     zsh \
     # Install clang. Instructions:
     # https://apt.llvm.org/
-    && wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
+    && wget --tries=5 --waitretry=10 --retry-connrefused -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
     && add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-${CLANG_VERSION} main" \
     && apt-get update \
     && apt install -y clang-${CLANG_VERSION} \
@@ -225,7 +242,7 @@ RUN apt-get update \
     # Install Docker from the official Docker repository. Instructions:
     #   https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository
     && install -m 0755 -d /etc/apt/keyrings \
-    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc \
+    && curl --retry 5 --retry-all-errors -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc \
     && chmod a+r /etc/apt/keyrings/docker.asc \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null \
     && apt-get update \
@@ -236,13 +253,16 @@ RUN apt-get update \
 
 # Install Bazel.
 ARG BAZELISK_VERSION=v1.27.0
-RUN wget -O /usr/local/bin/bazel https://github.com/bazelbuild/bazelisk/releases/download/${BAZELISK_VERSION}/bazelisk-linux-${TARGETARCH} \
+RUN wget --tries=5 --waitretry=10 --retry-connrefused -O /usr/local/bin/bazel https://github.com/bazelbuild/bazelisk/releases/download/${BAZELISK_VERSION}/bazelisk-linux-${TARGETARCH} \
     && chmod +x /usr/local/bin/bazel
 
 # Install k3d.io which we'll use to run integration tests.
 # See https://k3d.io/v5.8.3/#install-specific-release
 ARG K3D_VERSION=v5.8.3
-RUN curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | TAG=${K3D_VERSION} bash
+RUN curl --retry 5 --retry-all-errors -fsS https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh \
+    -o /tmp/k3d-install.sh \
+    && TAG=${K3D_VERSION} bash /tmp/k3d-install.sh \
+    && rm /tmp/k3d-install.sh
 # The version of Kubernetes used by k3d is determined by the version of k3s it
 # installs, which is determined by the version of k3d. Confirm that the expected
 # Kubernetes version is indeed that k3d's default.
@@ -253,13 +273,16 @@ RUN k3d version | grep -q "k3s version ${KUBERNETES_VERSION}-k3s"
 # (+/- 1 version) with the Kubernetes used by the k3d installation above.
 # See https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/#install-kubectl-binary-with-curl-on-linux
 ARG KUBECTL_VERSION=$KUBERNETES_VERSION
-RUN curl -LO  https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl \
+RUN curl --retry 5 --retry-all-errors -fLO  https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl \
     && chmod +x kubectl \
     && mv kubectl /usr/local/bin/kubectl
 
 # Install Istio.
 # See https://istio.io/latest/docs/setup/getting-started/
-RUN curl -L https://istio.io/downloadIstio | ISTIO_VERSION=${ISTIO_VERSION} sh - \
+RUN curl --retry 5 --retry-all-errors -fL https://istio.io/downloadIstio \
+    -o /tmp/downloadIstio \
+    && ISTIO_VERSION=${ISTIO_VERSION} sh /tmp/downloadIstio \
+    && rm /tmp/downloadIstio \
     && mv istio-${ISTIO_VERSION}/bin/istioctl /usr/local/bin/istioctl \
     && chmod +x /usr/local/bin/istioctl \
     && rm -rf istio-${ISTIO_VERSION}
@@ -268,7 +291,7 @@ RUN curl -L https://istio.io/downloadIstio | ISTIO_VERSION=${ISTIO_VERSION} sh -
 #   https://skaffold.dev/docs/install/
 # Latest version as of 2023-04-17.
 ARG SKAFFOLD_VERSION=2.3.1
-RUN curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/v${SKAFFOLD_VERSION}/skaffold-linux-${TARGETARCH} \
+RUN curl --retry 5 --retry-all-errors -fLo skaffold https://storage.googleapis.com/skaffold/releases/v${SKAFFOLD_VERSION}/skaffold-linux-${TARGETARCH} \
     && chmod +x skaffold && mv skaffold /usr/local/bin/
 
 # Skaffold will call kustomize via the `kustomize build` command; however, we
@@ -290,14 +313,14 @@ RUN set -e; \
     else \
     echo "Unsupported arch: ${TARGETARCH}" && exit 1; \
     fi; \
-    curl -sL "https://github.com/google/go-containerregistry/releases/download/v${CRANE_VERSION}/go-containerregistry_linux_${ARCH_SUFFIX}.tar.gz" > go-containerregistry.tar.gz \
+    curl --retry 5 --retry-all-errors -fsL "https://github.com/google/go-containerregistry/releases/download/v${CRANE_VERSION}/go-containerregistry_linux_${ARCH_SUFFIX}.tar.gz" -o go-containerregistry.tar.gz \
     && tar -zxvf go-containerregistry.tar.gz -C /usr/local/bin/ crane \
     && rm go-containerregistry.tar.gz
 
 # Install the Groundcover CLI based on instructions here:
 #   https://github.com/groundcover-com/cli#from-the-binary-releases
 ARG GROUNDCOVER_VERSION=0.21.0
-RUN curl -SsL https://github.com/groundcover-com/cli/releases/download/v${GROUNDCOVER_VERSION}/groundcover_${GROUNDCOVER_VERSION}_linux_${TARGETARCH}.tar.gz -o /tmp/groundcover.tar.gz \
+RUN curl --retry 5 --retry-all-errors -fSsL https://github.com/groundcover-com/cli/releases/download/v${GROUNDCOVER_VERSION}/groundcover_${GROUNDCOVER_VERSION}_linux_${TARGETARCH}.tar.gz -o /tmp/groundcover.tar.gz \
     && tar -zxf /tmp/groundcover.tar.gz -C /usr/bin \
     && chmod +x /usr/bin/groundcover
 
@@ -312,13 +335,13 @@ RUN set -e; \
     echo "Unsupported arch: ${TARGETARCH}" && exit 1; \
     fi; \
     BINARY_NAME="envoy-${ENVOY_VERSION}-linux-${ARCH_SUFFIX}"; \
-    wget https://github.com/envoyproxy/envoy/releases/download/v${ENVOY_VERSION}/${BINARY_NAME}; \
+    wget --tries=5 --waitretry=10 --retry-connrefused https://github.com/envoyproxy/envoy/releases/download/v${ENVOY_VERSION}/${BINARY_NAME}; \
     chmod +x ${BINARY_NAME}; \
     mv ${BINARY_NAME} /usr/local/bin/envoy
 
 # Install `ngrok`, useful in testing MCP servers from non-local clients
 # like `claude.ai` - or to intercept traffic for inspection.
-RUN curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
+RUN curl --retry 5 --retry-all-errors -fsSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc \
     | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null \
     && echo "deb https://ngrok-agent.s3.amazonaws.com bookworm main" \
     | sudo tee /etc/apt/sources.list.d/ngrok.list \
@@ -360,7 +383,9 @@ ENV SHELL=/bin/bash \
 ARG VSCODE_SCRIPTS_COMMIT=ef146121026c67d41bbca80d9af482f20f89f9e0
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive  \
     && apt-get -y install --no-install-recommends curl ca-certificates \
-    && bash -c "$(curl -fsSL "https://raw.githubusercontent.com/microsoft/vscode-dev-containers/${VSCODE_SCRIPTS_COMMIT}/script-library/common-debian.sh")" -- "true" "${UNAME}" "${UID}" "${GID}" "true" \
+    && curl --retry 5 --retry-all-errors -fsSL "https://raw.githubusercontent.com/microsoft/vscode-dev-containers/${VSCODE_SCRIPTS_COMMIT}/script-library/common-debian.sh" -o /tmp/common-debian.sh \
+    && bash /tmp/common-debian.sh "true" "${UNAME}" "${UID}" "${GID}" "true" \
+    && rm /tmp/common-debian.sh \
     && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
 # Finish setting up user account:
@@ -376,7 +401,9 @@ CMD ["sleep", "infinity"]
 # Install GitHub CLI through Codespace's preferred mechanism.
 # https://github.com/microsoft/vscode-dev-containers/blob/main/script-library/docs/github-cli.md
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive  \
-    && bash -c "$(curl -fsSL "https://raw.githubusercontent.com/microsoft/vscode-dev-containers/main/script-library/github-debian.sh")" \
+    && curl --retry 5 --retry-all-errors -fsSL "https://raw.githubusercontent.com/microsoft/vscode-dev-containers/main/script-library/github-debian.sh" -o /tmp/github-debian.sh \
+    && bash /tmp/github-debian.sh \
+    && rm /tmp/github-debian.sh \
     && rm -rf /var/lib/apt/lists/*
 
 # Ensure we have the most up to date version of the public key for
@@ -389,7 +416,7 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive  \
 # TODO(benh): do we need this once/if the 'FROM' gets updated correctly?
 #
 # TODO(gorm,rjh): try out whether this is still needed.
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+RUN curl --retry 5 --retry-all-errors -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
     && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
 
@@ -398,7 +425,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | d
 #
 # We use the latest Buildifier version that matches our Bazel major version.
 ARG BUILDIFIER_VERSION=6.4.0
-RUN wget https://github.com/bazelbuild/buildtools/releases/download/v${BUILDIFIER_VERSION}/buildifier-linux-${TARGETARCH} \
+RUN wget --tries=5 --waitretry=10 --retry-connrefused https://github.com/bazelbuild/buildtools/releases/download/v${BUILDIFIER_VERSION}/buildifier-linux-${TARGETARCH} \
     && chmod +x ./buildifier-linux-${TARGETARCH} \
     && mv ./buildifier-linux-${TARGETARCH} /usr/local/bin/buildifier
 
@@ -408,7 +435,7 @@ RUN wget https://github.com/bazelbuild/buildtools/releases/download/v${BUILDIFIE
 ARG NODE_MAJOR=20
 ARG NPM_VERSION=11.5.1
 RUN mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && curl --retry 5 --retry-all-errors -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
     && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
     && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs \
@@ -450,7 +477,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -yq fish \
 # We need 'google-chrome-stable' for test purposes, we do not run tests on arm64
 # (currently).
 RUN if [ "${TARGETARCH}" = "amd64" ]; then \
-    wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    wget --tries=5 --waitretry=10 --retry-connrefused -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
     && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
     && apt-get update -qqy \
     && DEBIAN_FRONTEND=noninteractive apt-get install -qqy google-chrome-stable; \
@@ -468,7 +495,7 @@ RUN set -e; \
     else \
     echo "Unsupported arch: ${TARGETARCH}" && exit 1; \
     fi; \
-    curl "https://awscli.amazonaws.com/awscli-exe-linux-${ARCH_SUFFIX}.zip" -o "awscliv2.zip" \
+    curl --retry 5 --retry-all-errors -f "https://awscli.amazonaws.com/awscli-exe-linux-${ARCH_SUFFIX}.zip" -o "awscliv2.zip" \
     && unzip awscliv2.zip \
     && ./aws/install \
     && rm awscliv2.zip
@@ -476,7 +503,7 @@ RUN set -e; \
 # Install `aws-iam-authenticator`, which `kubectl` uses to authenticate with
 # AWS.
 ARG AWS_IAM_AUTHENTICATOR_VERSION=0.6.11
-RUN curl -Lo aws-iam-authenticator https://github.com/kubernetes-sigs/aws-iam-authenticator/releases/download/v${AWS_IAM_AUTHENTICATOR_VERSION}/aws-iam-authenticator_${AWS_IAM_AUTHENTICATOR_VERSION}_linux_${TARGETARCH} \
+RUN curl --retry 5 --retry-all-errors -fLo aws-iam-authenticator https://github.com/kubernetes-sigs/aws-iam-authenticator/releases/download/v${AWS_IAM_AUTHENTICATOR_VERSION}/aws-iam-authenticator_${AWS_IAM_AUTHENTICATOR_VERSION}_linux_${TARGETARCH} \
     && chmod +x ./aws-iam-authenticator \
     && mv ./aws-iam-authenticator /usr/local/bin/
 
@@ -494,7 +521,7 @@ RUN set -e; \
     echo "Unsupported arch: ${TARGETARCH}" && exit 1; \
     fi; \
     ARCHIVE_NAME="pulumi-v${PULUMI_VERSION}-linux-${ARCH_SUFFIX}.tar.gz"; \
-    wget https://get.pulumi.com/releases/sdk/${ARCHIVE_NAME} \
+    wget --tries=5 --waitretry=10 --retry-connrefused https://get.pulumi.com/releases/sdk/${ARCHIVE_NAME} \
     && tar -xvf ${ARCHIVE_NAME} \
     && mv ./pulumi/* /usr/local/bin/ \
     && rm ${ARCHIVE_NAME}
@@ -503,7 +530,10 @@ RUN set -e; \
 # versions. (The latter is optional but enables the Python versions to be
 # cached in the Docker image).
 USER $UNAME
-RUN curl -LsSf https://astral.sh/uv/0.11.13/install.sh | sh \
+RUN curl --retry 5 --retry-all-errors -LsSf https://astral.sh/uv/0.11.13/install.sh \
+    -o /tmp/uv-install.sh \
+    && sh /tmp/uv-install.sh \
+    && rm /tmp/uv-install.sh \
     && "$HOME/.local/bin/uv" python install 3.10.13 3.11.8 3.12.2
 
 # Bazel's `--incompatible_strict_action_env` causes a hardcoded PATH to be used which
@@ -520,7 +550,10 @@ RUN echo "export PATH=\"$HOME/.local/bin:\$PATH\"" >> "$HOME/.bashrc"
 # like `uv` above so non-interactive shells and other users find it too.
 # It's a human-driven tool, so we don't pin the version and leave
 # auto-update on.
-RUN curl -fsSL https://claude.ai/install.sh | bash \
+RUN curl --retry 5 --retry-all-errors -fsSL https://claude.ai/install.sh \
+    -o /tmp/claude-install.sh \
+    && bash /tmp/claude-install.sh \
+    && rm /tmp/claude-install.sh \
     && sudo ln -sf "$HOME/.local/bin/claude" /usr/local/bin/claude
 
 # Give Claude Code the headless Chrome DevTools MCP server in the user's
@@ -533,21 +566,24 @@ USER root
 
 # Install Helm.
 ARG HELM_VERSION=3.15.4
-RUN wget https://get.helm.sh/helm-v${HELM_VERSION}-linux-${TARGETARCH}.tar.gz \
+RUN wget --tries=5 --waitretry=10 --retry-connrefused https://get.helm.sh/helm-v${HELM_VERSION}-linux-${TARGETARCH}.tar.gz \
     && tar --to-stdout -xvf ./helm-v${HELM_VERSION}-linux-${TARGETARCH}.tar.gz linux-${TARGETARCH}/helm > /usr/local/bin/helm \
     && rm ./helm-v${HELM_VERSION}-linux-${TARGETARCH}.tar.gz \
     && chmod +x /usr/local/bin/helm
 
 # Install the Helm chart-testing tool.
 ARG CHART_TESTING_VERSION=3.11.0
-RUN wget https://github.com/helm/chart-testing/releases/download/v${CHART_TESTING_VERSION}/chart-testing_${CHART_TESTING_VERSION}_linux_${TARGETARCH}.tar.gz \
+RUN wget --tries=5 --waitretry=10 --retry-connrefused https://github.com/helm/chart-testing/releases/download/v${CHART_TESTING_VERSION}/chart-testing_${CHART_TESTING_VERSION}_linux_${TARGETARCH}.tar.gz \
     && tar --to-stdout -xvf ./chart-testing_${CHART_TESTING_VERSION}_linux_${TARGETARCH}.tar.gz ct > /usr/local/bin/ct \
     && rm ./chart-testing_${CHART_TESTING_VERSION}_linux_${TARGETARCH}.tar.gz \
     && chmod +x /usr/local/bin/ct
 
 # Install `pnpm` at a version compatible with our `aspect_rules_js`.
 ARG PNPM_VERSION=8.15.8
-RUN curl -fsSL https://get.pnpm.io/install.sh | env PNPM_VERSION=${PNPM_VERSION} sh -
+RUN curl --retry 5 --retry-all-errors -fsSL https://get.pnpm.io/install.sh \
+    -o /tmp/pnpm-install.sh \
+    && env PNPM_VERSION=${PNPM_VERSION} sh /tmp/pnpm-install.sh \
+    && rm /tmp/pnpm-install.sh
 
 # Install additional npm packages: `corepack` in order to get `yarn`, and the
 # Firebase CLI.
@@ -568,7 +604,7 @@ RUN set -e; \
     TMPDIR="$(mktemp -d)" \
     && cd "${TMPDIR}" \
     && KREW="krew-linux_${TARGETARCH}" \
-    && curl -fsSLO "https://github.com/kubernetes-sigs/krew/releases/download/${KREW_VERSION}/${KREW}.tar.gz" \
+    && curl --retry 5 --retry-all-errors -fsSLO "https://github.com/kubernetes-sigs/krew/releases/download/${KREW_VERSION}/${KREW}.tar.gz" \
     && tar zxf "${KREW}.tar.gz" \
     && ./"${KREW}" install krew \
     && ln -s "${KREW_ROOT}/bin/kubectl-krew" /usr/local/bin/kubectl-krew \
@@ -652,7 +688,9 @@ RUN if [ "${TARGETARCH}" = "amd64" ]; then \
 # above). Only on amd64, matching the SDK install above.
 USER $UNAME
 RUN if [ "${TARGETARCH}" = "amd64" ]; then \
-    curl -fsSL "https://get.maestro.mobile.dev" | bash; \
+    curl --retry 5 --retry-all-errors -fsSL "https://get.maestro.mobile.dev" -o /tmp/maestro-install.sh \
+    && bash /tmp/maestro-install.sh \
+    && rm /tmp/maestro-install.sh; \
     fi
 USER root
 
@@ -777,7 +815,7 @@ RUN set -e; \
     else \
     echo "Unsupported arch: ${TARGETARCH}" && exit 1; \
     fi; \
-    wget -O /usr/local/bin/bazel https://github.com/bazelbuild/bazelisk/releases/download/${BAZELISK_VERSION}/bazelisk-linux-${ARCH_SUFFIX} \
+    wget --tries=5 --waitretry=10 --retry-connrefused -O /usr/local/bin/bazel https://github.com/bazelbuild/bazelisk/releases/download/${BAZELISK_VERSION}/bazelisk-linux-${ARCH_SUFFIX} \
     && chmod +x /usr/local/bin/bazel
 
 # Install Python build dependencies.
@@ -824,7 +862,7 @@ RUN set -e; \
     echo "Unsupported arch: ${TARGETARCH}" && exit 1; \
     fi; \
     BINARY_NAME="envoy-${ENVOY_VERSION}-linux-${ARCH_SUFFIX}"; \
-    wget https://github.com/envoyproxy/envoy/releases/download/v${ENVOY_VERSION}/${BINARY_NAME}; \
+    wget --tries=5 --waitretry=10 --retry-connrefused https://github.com/envoyproxy/envoy/releases/download/v${ENVOY_VERSION}/${BINARY_NAME}; \
     chmod +x ${BINARY_NAME}; \
     mv ${BINARY_NAME} /usr/local/bin/envoy
 
@@ -834,7 +872,10 @@ RUN dnf install -y nodejs && dnf clean all
 # Install uv for the builder user. We create a symlink in /usr/local/bin
 # so it's accessible on the PATH regardless of the user.
 USER builder
-RUN curl -LsSf https://astral.sh/uv/0.11.13/install.sh | sh
+RUN curl --retry 5 --retry-all-errors -LsSf https://astral.sh/uv/0.11.13/install.sh \
+    -o /tmp/uv-install.sh \
+    && sh /tmp/uv-install.sh \
+    && rm /tmp/uv-install.sh
 
 USER root
 RUN ln -sf /home/builder/.local/bin/uv /usr/local/bin/uv

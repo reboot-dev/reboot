@@ -119,6 +119,26 @@ jobs:
         with:
           include-devcontainer-json: "true"
 
+      # Registries (Docker Hub included) occasionally return 5xx errors
+      # that abort `docker buildx` before it can resolve the
+      # devcontainer's base image, which fails the whole job before any
+      # useful work happens. Pre-pulling that base image with retries
+      # keeps the registry off the build's critical path: the
+      # `devcontainers/ci` build below uses the default `docker` buildx
+      # driver, which resolves `FROM` images from the local store when
+      # they are already present. Both the amd64 and arm64
+      # devcontainers build the repo-root `Dockerfile`, so the image is
+      # parsed from it rather than hard-coded here. The pre-pull is
+      # best-effort with capped backoff: if it ultimately fails, the
+      # build's own pull still runs.
+      - name: Pre-pull devcontainer base image (retry transient registry errors)
+        uses: 3rdparty/dev-tools/pre-pull-docker-image@main
+        # Treat a pre-pull failure as non-fatal at the workflow level;
+        # the build below falls back to pulling the base image itself.
+        continue-on-error: true
+        with:
+          dockerfile: Dockerfile
+
       - name: Run
         uses: devcontainers/ci@v0.3
         env:
