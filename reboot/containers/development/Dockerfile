@@ -6,7 +6,8 @@
 # a Dev Container, the `.devcontainer/devcontainer.json` file uses this
 # Dockerfile as a starting point and then adds additional features.
 
-FROM ubuntu:jammy-20240808
+# The same pinned Ubuntu base as the repo-root `Dockerfile` uses.
+FROM ubuntu:jammy-20251001
 
 ################### Container for development work #####################
 # The following sections are required to get a working container that can be
