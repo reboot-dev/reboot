@@ -373,3 +373,14 @@ AUTO_CONSTRUCT_STATE_TYPE = "User"
 # Constructor method name for auto-constructed state types.
 AUTO_CONSTRUCT_METHOD = "create"  # As used in Python.
 AUTO_CONSTRUCT_PROTO_METHOD = "Create"  # As used in protobuf.
+
+# Name of the claims-delivery method the framework injects on
+# auto-constructed state types: a transaction through which the
+# framework delivers the user's verified identity claims (see the
+# generated `set_claims` servicer method). The proto-level name is a
+# wire contract: the cloud controller validates every deployed
+# application's descriptors for backwards compatibility on upgrade and
+# rejects a deleted (renamed) method, and replicas of different
+# versions exchange RPCs by this name during rolling deploys.
+SET_CLAIMS_METHOD = "set_claims"  # As used in Python.
+SET_CLAIMS_PROTO_METHOD = "SetClaims"  # As used in protobuf.

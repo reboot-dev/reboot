@@ -8,7 +8,11 @@ from google.protobuf import json_format
 from google.protobuf.message import Message
 from google.protobuf.struct_pb2 import Value
 from pydantic.fields import FieldInfo
-from reboot.settings import AUTO_CONSTRUCT_METHOD, AUTO_CONSTRUCT_STATE_TYPE
+from reboot.settings import (
+    AUTO_CONSTRUCT_METHOD,
+    AUTO_CONSTRUCT_STATE_TYPE,
+    SET_CLAIMS_METHOD,
+)
 from typing import (
     Any,
     Dict,
@@ -1173,6 +1177,20 @@ class Type(pydantic.BaseModel):
         )
 
 
+class SetClaimsRequest(Model):
+    """Request for the `set_claims` method the framework injects on
+    auto-constructed state types. The framework fills it in when it
+    delivers a user's verified identity claims at sign-in; it is not
+    meant to be built by application code.
+    """
+    # The user's verified identity claims, keyed by their presented
+    # names. A `dict[str, Any]` (a `map<string, google.protobuf.Value>`
+    # on the wire) so it carries free-form JSON claim values verbatim
+    # and stays decoupled from whatever claims the identity provider
+    # was configured to deliver.
+    claims: dict[str, Any] = Field(tag=1, default_factory=dict)
+
+
 class API(pydantic.BaseModel):
     """Main API definition containing multiple Reboot data types.
     We set extra='allow' to permit dynamic data type fields, i.e.
@@ -1255,6 +1273,20 @@ class API(pydantic.BaseModel):
                         f"'{type_name}' for a new AI "
                         "session."
                     )
+                if SET_CLAIMS_METHOD in data_type.methods:
+                    raise UserPydanticError(
+                        f"'{SET_CLAIMS_METHOD}' is a "
+                        "reserved method name for "
+                        f"{type_name} types: the framework "
+                        "calls it to deliver a user's "
+                        "verified identity claims. If you "
+                        "want to act on those claims, "
+                        f"override the default "
+                        f"'{SET_CLAIMS_METHOD}' Transaction "
+                        "in your servicer implementation "
+                        "instead of declaring it in the API "
+                        "definition."
+                    )
                 # The auto-constructed `create` is a `Transaction`, so
                 # that a servicer overriding it can call other state
                 # machines while constructing a `User`, e.g. "when a
@@ -1268,6 +1300,20 @@ class API(pydantic.BaseModel):
                     # is called by the Reboot internally and shouldn't
                     # be exposed as an MCP tool so others can't call it
                     # directly.
+                    mcp=None,
+                )
+                # The `set_claims` method delivers the user's verified
+                # identity claims. It is a `Transaction` (like
+                # `create`) so a servicer overriding it can call other
+                # state machines. It is a plain method, not a
+                # constructor: the framework calls it only after
+                # `create` has brought the state into existence.
+                data_type.methods[SET_CLAIMS_METHOD] = Transaction(
+                    request=SetClaimsRequest,
+                    response=None,
+                    factory=False,
+                    # `set_claims` is only called app-internal, so never
+                    # over MCP.
                     mcp=None,
                 )
 

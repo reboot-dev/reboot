@@ -16,6 +16,8 @@ reported in user code. #}
 {% set AUTO_CONSTRUCT_PER_USER_ID = 1 %}
 {% set AUTO_CONSTRUCT_PROTO_METHOD = "Create" %}
 {% set AUTO_CONSTRUCT_METHOD = "create" %}
+{% set SET_CLAIMS_PROTO_METHOD = "SetClaims" %}
+{% set SET_CLAIMS_METHOD = "set_claims" %}
 
 {# Determine whether or not we'll be overriding 'Read'/'Write'. #}
 {% for client in clients %}
@@ -1736,6 +1738,29 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 context_type=IMPORT_reboot_aio_contexts.ReaderContext,
             ) as context:
                 context.auth = auth
+                {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
+
+                # The framework's `set_claims` method should only ever
+                # be app-internal; even the owning user shouldn't be
+                # trusted to call it, since the identity provider's
+                # claims may deliver info like "validated email address"
+                # and other things we don't trust the user to set
+                # directly.
+                #
+                # This extra app-internal check comes before any
+                # authorizer, so no authorizer — including a blanket
+                # `allow()` — can expose the method to external callers.
+                if (
+                    method_name.split('.')[-1] == '{{ SET_CLAIMS_PROTO_METHOD }}'
+                    and not context.app_internal
+                ):
+                    raise IMPORT_reboot.aio.aborted.SystemAborted(
+                        IMPORT_rbt_v1alpha1.errors_pb2.PermissionDenied(),
+                        message=
+                        f"You are not authorized to call '{method_name}' on "
+                        f"`{{ state.proto.full_name }}('{headers.state_ref.id}')`"
+                    )
+                {% endif %}
 
                 # Get the authorizer decision.
                 authorization_decision = await self._authorizer.authorize(
@@ -3774,10 +3799,15 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
         raise NotImplementedError
     {% elif method.options.proto.kind == 'transaction' %}
-    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
+    {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED and method.proto.name in [AUTO_CONSTRUCT_PROTO_METHOD, SET_CLAIMS_PROTO_METHOD] %}
+    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD %}
     # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`.
     # Override in your Servicer to run custom initialization
     # on new {{ state.proto.name }} instances.
+    {% else %}
+    # Concrete no-op default for `{{ SET_CLAIMS_METHOD }}`. You may 
+    # override it in your Servicer to use the delivered claims.
+    {% endif %}
     async def {{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
@@ -3786,7 +3816,13 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         request: {{ state.proto.name}}.{{ method.proto.name }}Request,
         {% endif %}
     ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
-        pass
+        return await self.{{ method.proto.name | to_snake }}(
+            context,
+            state,
+            {% if method.has_non_none_request %}
+            request,
+            {% endif %}
+        )
 
     async def {{ method.proto.name | to_snake }}(
         self,
@@ -3796,6 +3832,16 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         request: {{ state.proto.name}}.{{ method.proto.name }}Request,
         {% endif %}
     ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
+        {% if method.proto.name == SET_CLAIMS_PROTO_METHOD %}
+        """The framework calls this on every sign-in to deliver the
+        user's verified identity claims. `request.claims` is the
+        complete, current set of verified claims (a `dict[str, Any]`
+        keyed by claim name); treat it as a full replace and fully
+        derive any claim-backed {{ state.proto.name }} state from it.
+        This makes the method idempotent — re-delivering the same
+        claims is harmless — which is required, since it runs on
+        every sign-in, not just the first."""
+        {% endif %}
         pass
     {% else %}
     # To be backwards compatible during the renaming don't make this
@@ -4069,12 +4115,17 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
     {% for service in state.services %}
     {% for method in service.methods %}
     # For '{{ method.proto.full_name }}'.
-    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
+    {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED and method.proto.name in [AUTO_CONSTRUCT_PROTO_METHOD, SET_CLAIMS_PROTO_METHOD] %}
+    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD %}
     # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`. The
     # auto-constructed `{{ AUTO_CONSTRUCT_METHOD }}` is always a
     # `Transaction` (see `api.py`), so it takes a `TransactionContext`.
     # Override in your Servicer to run custom initialization
     # on new {{ state.proto.name }} instances.
+    {% else %}
+    # Concrete no-op default for `{{ SET_CLAIMS_METHOD }}`. You may 
+    # override it in your Servicer to use the delivered claims.
+    {% endif %}
     async def {{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
@@ -4096,6 +4147,16 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         request: {{ state.proto.name }}.{{ method.proto.name }}Request,
         {% endif %}
     ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
+        {% if method.proto.name == SET_CLAIMS_PROTO_METHOD %}
+        """The framework calls this on every sign-in to deliver the
+        user's verified identity claims. `request.claims` is the
+        complete, current set of verified claims (a `dict[str, Any]`
+        keyed by claim name); treat it as a full replace and fully
+        derive any claim-backed {{ state.proto.name }} state from it.
+        This makes the method idempotent — re-delivering the same
+        claims is harmless — which is required, since it runs on
+        every sign-in, not just the first."""
+        {% endif %}
         pass
     {% else %}
     # To be backwards compatible during the renaming don't make this
