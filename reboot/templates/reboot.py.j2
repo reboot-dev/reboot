@@ -3828,8 +3828,9 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     # Override in your Servicer to run custom initialization
     # on new {{ state.proto.name }} instances.
     {% else %}
-    # Concrete no-op default for `{{ SET_CLAIMS_METHOD }}`. You may 
-    # override it in your Servicer to use the delivered claims.
+    # Default `{{ SET_CLAIMS_METHOD }}` that raises when verified
+    # identity claims are delivered but your Servicer hasn't
+    # overridden it. Override it to consume the delivered claims.
     {% endif %}
     async def {{ method.proto.name }}(
         self,
@@ -3864,8 +3865,18 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         This makes the method idempotent — re-delivering the same
         claims is harmless — which is required, since it runs on
         every sign-in, not just the first."""
-        {% endif %}
+        raise NotImplementedError(
+            "Verified identity claims were delivered for this "
+            "`{{ state.proto.name }}`, but its servicer does not "
+            "override `{{ SET_CLAIMS_METHOD }}`, so the claims would "
+            "be discarded. Override `{{ SET_CLAIMS_METHOD }}` to "
+            "derive `{{ state.proto.name }}` state from "
+            "`request.claims`, or stop requesting claims from your "
+            "identity provider."
+        )
+        {% else %}
         pass
+        {% endif %}
     {% else %}
     # To be backwards compatible during the renaming don't make this
     # method to be 'abstractmethod', so that new code that
@@ -4146,8 +4157,9 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
     # Override in your Servicer to run custom initialization
     # on new {{ state.proto.name }} instances.
     {% else %}
-    # Concrete no-op default for `{{ SET_CLAIMS_METHOD }}`. You may 
-    # override it in your Servicer to use the delivered claims.
+    # Default `{{ SET_CLAIMS_METHOD }}` that raises when verified
+    # identity claims are delivered but your Servicer hasn't
+    # overridden it. Override it to consume the delivered claims.
     {% endif %}
     async def {{ method.proto.name }}(
         self,
@@ -4179,8 +4191,18 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         This makes the method idempotent — re-delivering the same
         claims is harmless — which is required, since it runs on
         every sign-in, not just the first."""
-        {% endif %}
+        raise NotImplementedError(
+            "Verified identity claims were delivered for this "
+            "`{{ state.proto.name }}`, but its servicer does not "
+            "override `{{ SET_CLAIMS_METHOD }}`, so the claims would "
+            "be discarded. Override `{{ SET_CLAIMS_METHOD }}` to "
+            "derive `{{ state.proto.name }}` state from "
+            "`request.claims`, or stop requesting claims from your "
+            "identity provider."
+        )
+        {% else %}
         pass
+        {% endif %}
     {% else %}
     # To be backwards compatible during the renaming don't make this
     # method to be 'abstractmethod', so that new code that

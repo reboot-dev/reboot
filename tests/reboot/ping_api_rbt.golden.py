@@ -18043,8 +18043,9 @@ class UserSingletonServicer(UserBaseServicer):
         pass
 
     # For 'reboot.ping.UserMethods.SetClaims'.
-    # Concrete no-op default for `set_claims`. You may 
-    # override it in your Servicer to use the delivered claims.
+    # Default `set_claims` that raises when verified
+    # identity claims are delivered but your Servicer hasn't
+    # overridden it. Override it to consume the delivered claims.
     async def SetClaims(
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
@@ -18071,7 +18072,15 @@ class UserSingletonServicer(UserBaseServicer):
         This makes the method idempotent — re-delivering the same
         claims is harmless — which is required, since it runs on
         every sign-in, not just the first."""
-        pass
+        raise NotImplementedError(
+            "Verified identity claims were delivered for this "
+            "`User`, but its servicer does not "
+            "override `set_claims`, so the claims would "
+            "be discarded. Override `set_claims` to "
+            "derive `User` state from "
+            "`request.claims`, or stop requesting claims from your "
+            "identity provider."
+        )
 
 
     # For 'reboot.ping.UserMethods.CreateCounter'.
@@ -18345,8 +18354,9 @@ class UserServicer(UserBaseServicer):
         pass
 
     # For 'reboot.ping.UserMethods.SetClaims'.
-    # Concrete no-op default for `set_claims`. You may 
-    # override it in your Servicer to use the delivered claims.
+    # Default `set_claims` that raises when verified
+    # identity claims are delivered but your Servicer hasn't
+    # overridden it. Override it to consume the delivered claims.
     async def SetClaims(
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
@@ -18370,7 +18380,15 @@ class UserServicer(UserBaseServicer):
         This makes the method idempotent — re-delivering the same
         claims is harmless — which is required, since it runs on
         every sign-in, not just the first."""
-        pass
+        raise NotImplementedError(
+            "Verified identity claims were delivered for this "
+            "`User`, but its servicer does not "
+            "override `set_claims`, so the claims would "
+            "be discarded. Override `set_claims` to "
+            "derive `User` state from "
+            "`request.claims`, or stop requesting claims from your "
+            "identity provider."
+        )
 
 
     # For 'reboot.ping.UserMethods.CreateCounter'.
