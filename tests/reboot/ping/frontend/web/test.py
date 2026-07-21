@@ -23,8 +23,8 @@ This is the smallest test that simultaneously exercises:
   feeds it to `setBearerToken`, and from there mutations carry the
   bearer in the proto field over the WebSocket multiplex.
 * The same `User` actor materializes the first time we touch it
-  (`_post_authenticate` auto-construct), even though no manual setup
-  call was made.
+  (the `_authenticated` hook auto-constructs it on token mint), even
+  though no manual setup call was made.
 """
 
 import asyncio

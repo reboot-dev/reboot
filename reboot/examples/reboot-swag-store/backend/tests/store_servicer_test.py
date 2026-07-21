@@ -101,7 +101,7 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
             name=f"test-{self.id()}",
             user_id=self.user_id,
         )
-        await UserServicer._auto_construct(
+        await UserServicer._authenticated(
             self.context,
             state_id=self.user_id,
         )

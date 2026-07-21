@@ -49,7 +49,7 @@ class AutoConstructUserTest(unittest.IsolatedAsyncioTestCase):
     async def test_create_transaction_constructs_related_state(
         self,
     ) -> None:
-        await UserServicer._auto_construct(self.context, state_id=_USER_ID)
+        await UserServicer._authenticated(self.context, state_id=_USER_ID)
 
         # The override recorded the `Profile` it created on the `User`.
         user_response = await User.ref(_USER_ID).get(self.context)
@@ -69,8 +69,8 @@ class AutoConstructUserTest(unittest.IsolatedAsyncioTestCase):
         # Auto-construction may be triggered repeatedly (e.g. at the
         # start of every session); doing so must be a no-op rather
         # than re-running the constructing transaction.
-        await UserServicer._auto_construct(self.context, state_id=_USER_ID)
-        await UserServicer._auto_construct(self.context, state_id=_USER_ID)
+        await UserServicer._authenticated(self.context, state_id=_USER_ID)
+        await UserServicer._authenticated(self.context, state_id=_USER_ID)
 
         user_response = await User.ref(_USER_ID).get(self.context)
         self.assertEqual(

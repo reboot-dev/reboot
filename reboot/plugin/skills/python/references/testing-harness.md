@@ -204,14 +204,17 @@ be attributed to a user.
 ## Auto-Construct Under Auth
 
 If a state type has a real authorizer that gates its constructor —
-typically the case for `User`-shaped front-door types — the MCP session
-hook in production calls `_auto_construct` to create the state for an
-authenticated user. Tests that don't use MCP skip that hook, so trigger
-it manually right after creating the context:
+typically the case for `User`-shaped front-door types — the framework
+calls `_authenticated` to create the state for an authenticated user
+whenever a token is minted for them. `create_external_context_as(...)`
+and `make_valid_oauth_access_token(...)` mint a token, so they
+construct the `User` as a side effect and most tests need no manual
+setup. To construct the state for a user no context was created for,
+call `_authenticated` directly with an app-internal context:
 
 ```python
-await UserServicer._auto_construct(
-    self.context,
+await UserServicer._authenticated(
+    self.rbt.create_external_context(name="internal", app_internal=True),
     state_id=self.user_id,
 )
 ```

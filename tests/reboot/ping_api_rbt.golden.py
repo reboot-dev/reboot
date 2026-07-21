@@ -8505,8 +8505,8 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context.auth = auth
 
                 # The framework's `set_claims` method should only ever
-                # be app-internal only; even the owning user shouldn't
-                # be trusted to call it, since the identity provider's
+                # be app-internal; even the owning user shouldn't be
+                # trusted to call it, since the identity provider's
                 # claims may deliver info like "validated email address"
                 # and other things we don't trust the user to set
                 # directly.
@@ -17292,7 +17292,7 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
             id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
             # State is auto-constructed when the user's
-            # JWT is minted; see `_auto_construct`.
+            # JWT is minted; see `_authenticated`.
             ref = User.ref(id)
             return await ref.create_counter(reboot_context, request)
 
@@ -17309,7 +17309,7 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
             id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
             # State is auto-constructed when the user's
-            # JWT is minted; see `_auto_construct`.
+            # JWT is minted; see `_authenticated`.
             ref = User.ref(id)
             return await ref.list_counters(reboot_context)
 
@@ -17326,25 +17326,36 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
             id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
             # State is auto-constructed when the user's
-            # JWT is minted; see `_auto_construct`.
+            # JWT is minted; see `_authenticated`.
             ref = User.ref(id)
             return await ref.whoami(reboot_context)
 
         pass  # End of _add_mcp.
 
     @staticmethod
-    async def _auto_construct(
+    async def _authenticated(
         context: IMPORT_reboot_aio_external.ExternalContext,
         state_id: str,
+        claims: IMPORT_typing.Optional[
+            IMPORT_typing.Mapping[str, IMPORT_typing.Any]
+        ] = None,
     ) -> None:
-        """Auto-construct a `User` state."""
-        # Some states have `_auto_construct` called many times, e.g. a
-        # per-user state may get auto-constructed at the start of every
-        # MCP session. We derive a deterministic idempotency key from the
-        # state ID so that repeated calls (even from different contexts)
-        # are a NOOP. We prefer this over catching the
-        # `StateAlreadyExists` error that would otherwise result, since
-        # that logs an `ERROR` to user-visible logs.
+        """Record that a user authenticated: construct their
+        `User` if it does not exist yet, then, when
+        `claims` is given, deliver their verified identity claims.
+
+        `claims=None` means the caller has no claims information for
+        this authentication (e.g. a token refresh, which never
+        consults the identity provider); it never means "no claims"
+        and never clears previously delivered claims.
+        """
+        # A `User` may be authenticated many times,
+        # e.g. a per-user state on every sign-in. We derive a
+        # deterministic idempotency key from the state ID so that the
+        # construct is a NOOP once the state exists (even across
+        # different contexts). We prefer this over catching the
+        # `StateAlreadyConstructed` error that would otherwise result,
+        # since that logs an `ERROR` to user-visible logs.
         idempotency_key = IMPORT_uuid.uuid5(
             IMPORT_uuid.NAMESPACE_URL,
             f"urn:dev.reboot:auto-construct:User:{state_id}",
@@ -17352,6 +17363,18 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         await User.idempotently(
             key=idempotency_key,
         ).create(context, state_id)
+        # The two calls are deliberately sequential rather than wrapped
+        # in one transaction: an idempotent construct followed by a
+        # full-replace `set_claims` compose convergently.
+        # `set_claims` runs on every sign-in (`.always()`)
+        # because even if `set_state(claims=FOO)` has been called before,
+        # it could be that `set_state(claims=BAR)` was called since
+        # then, and `set_state(claims=FOO)` would have an effect again -
+        # we want to converge on the most recently delivered claims.
+        if claims is not None:
+            await User.ref(state_id).always().set_claims(
+                context, claims=claims
+            )
 
     def ref(
         self,

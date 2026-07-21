@@ -73,10 +73,10 @@ logger = get_logger(__name__)
 
 _MCP_PATH = "/mcp"
 
-# Cap on the per-instance cache of user ids that `_post_authenticate`
+# Cap on the per-instance cache of user ids that `_authenticated`
 # has already handled. Eviction is harmless: the next JWT mint for an
 # evicted user re-runs the idempotent auto-construct calls.
-_POST_AUTHENTICATED_USER_IDS_LIMIT = 16_384
+_AUTHENTICATED_USER_IDS_LIMIT = 16_384
 
 
 def _handle_unknown_exception(
@@ -439,12 +439,11 @@ class Application:
         self._oauth = oauth
         self._oauth_server: Optional[OAuthServer] = None
         # Bounded LRU (keys only; values are a placeholder `None`) of
-        # users for whom `_post_authenticate` has already run. Kept
+        # users for whom `_authenticated` has already run. Kept
         # per-instance rather than on the class so a fresh `Reboot()` +
         # state store per test method doesn't inherit a stale "already
         # authenticated" flag from a sibling test.
-        self._post_authenticated_user_ids: OrderedDict[str,
-                                                       None] = (OrderedDict())
+        self._authenticated_user_ids: OrderedDict[str, None] = (OrderedDict())
         # `allowed_origins=None` (the default) is meaningfully
         # distinct from `allowed_origins=[]` (an explicit choice).
         # The default tells us the developer hasn't thought about
@@ -790,7 +789,7 @@ class Application:
                 auto_construct_state_type_full_names=(
                     auto_construct_state_type_full_names
                 ),
-                post_authenticate=self._post_authenticate,
+                authenticated=self._authenticated,
                 allowed_origins=self._allowed_origins,
             )
             self._oauth_server = oauth_server
@@ -808,7 +807,7 @@ class Application:
             oauth_server.mount_routes(self.http)
         return auto_construct_state_type_full_names
 
-    async def _post_authenticate(
+    async def _authenticated(
         self,
         context: ExternalContext,
         user_id: str,
@@ -830,8 +829,8 @@ class Application:
         # attribute, so a fresh `Reboot()` + state store per test
         # method doesn't inherit a stale "already authenticated" flag
         # from a sibling test.
-        if user_id in self._post_authenticated_user_ids:
-            self._post_authenticated_user_ids.move_to_end(user_id)
+        if user_id in self._authenticated_user_ids:
+            self._authenticated_user_ids.move_to_end(user_id)
             return
         # Fan out across all auto-construct servicers in parallel —
         # every JWT mint blocks on this, so a serial loop would add N
@@ -839,20 +838,19 @@ class Application:
         # construct state types.
         await asyncio.gather(
             *(
-                servicer_cls._auto_construct(context, state_id=user_id)
+                servicer_cls._authenticated(context, state_id=user_id)
                 for servicer_cls in (self._servicers or [])
                 if servicer_cls._is_auto_construct
             )
         )
-        self._post_authenticated_user_ids[user_id] = None
+        self._authenticated_user_ids[user_id] = None
         # Evict least-recently-authenticated entries beyond the cap; an
         # evicted user's next mint just redoes the (idempotent, cheap)
         # auto-construct calls.
         while (
-            len(self._post_authenticated_user_ids)
-            > _POST_AUTHENTICATED_USER_IDS_LIMIT
+            len(self._authenticated_user_ids) > _AUTHENTICATED_USER_IDS_LIMIT
         ):
-            self._post_authenticated_user_ids.popitem(last=False)
+            self._authenticated_user_ids.popitem(last=False)
 
     def _mount_mcp(
         self,

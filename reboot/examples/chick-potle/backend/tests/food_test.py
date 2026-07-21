@@ -37,10 +37,10 @@ class ServicerTest(unittest.IsolatedAsyncioTestCase):
             user_id=self.user_id,
         )
         # `User` is an auto-constructed state type: in
-        # production the MCP session's "new session" hook
-        # calls `_auto_construct` for the authenticated user.
-        # Tests don't go through that hook, so we do it here.
-        await UserServicer._auto_construct(
+        # production the framework calls `_authenticated` for the
+        # authenticated user when their token is minted. Tests can
+        # trigger it explicitly here.
+        await UserServicer._authenticated(
             self.context,
             state_id=self.user_id,
         )

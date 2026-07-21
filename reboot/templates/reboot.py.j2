@@ -2717,7 +2717,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endif %}
 {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
             # State is auto-constructed when the user's
-            # JWT is minted; see `_auto_construct`.
+            # JWT is minted; see `_authenticated`.
 {% endif %}
 {% if method.options.proto.constructor %}
 {% if method.input_type_fields %}
@@ -2773,7 +2773,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endif %}
 {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
             # State is auto-constructed when the user's
-            # JWT is minted; see `_auto_construct`.
+            # JWT is minted; see `_authenticated`.
 {% endif %}
             # Construct request from URI params, coercing types
             # as needed.
@@ -2820,7 +2820,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endif %}
 {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
             # State is auto-constructed when the user's
-            # JWT is minted; see `_auto_construct`.
+            # JWT is minted; see `_authenticated`.
 {% endif %}
 {% if method.options.proto.constructor %}
             _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, {{ mcp_name_prefix }}id)
@@ -3086,18 +3086,29 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
 {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
     @staticmethod
-    async def _auto_construct(
+    async def _authenticated(
         context: IMPORT_reboot_aio_external.ExternalContext,
         state_id: str,
+        claims: IMPORT_typing.Optional[
+            IMPORT_typing.Mapping[str, IMPORT_typing.Any]
+        ] = None,
     ) -> None:
-        """Auto-construct a `{{ state.proto.name }}` state."""
-        # Some states have `_auto_construct` called many times, e.g. a
-        # per-user state may get auto-constructed at the start of every
-        # MCP session. We derive a deterministic idempotency key from the
-        # state ID so that repeated calls (even from different contexts)
-        # are a NOOP. We prefer this over catching the
-        # `StateAlreadyExists` error that would otherwise result, since
-        # that logs an `ERROR` to user-visible logs.
+        """Record that a user authenticated: construct their
+        `{{ state.proto.name }}` if it does not exist yet, then, when
+        `claims` is given, deliver their verified identity claims.
+
+        `claims=None` means the caller has no claims information for
+        this authentication (e.g. a token refresh, which never
+        consults the identity provider); it never means "no claims"
+        and never clears previously delivered claims.
+        """
+        # A `{{ state.proto.name }}` may be authenticated many times,
+        # e.g. a per-user state on every sign-in. We derive a
+        # deterministic idempotency key from the state ID so that the
+        # construct is a NOOP once the state exists (even across
+        # different contexts). We prefer this over catching the
+        # `StateAlreadyConstructed` error that would otherwise result,
+        # since that logs an `ERROR` to user-visible logs.
         idempotency_key = IMPORT_uuid.uuid5(
             IMPORT_uuid.NAMESPACE_URL,
             f"urn:dev.reboot:auto-construct:{{ state.proto.name }}:{state_id}",
@@ -3105,6 +3116,18 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         await {{ state.proto.name }}.idempotently(
             key=idempotency_key,
         ).{{ AUTO_CONSTRUCT_METHOD }}(context, state_id)
+        # The two calls are deliberately sequential rather than wrapped
+        # in one transaction: an idempotent construct followed by a
+        # full-replace `{{ SET_CLAIMS_METHOD }}` compose convergently.
+        # `{{ SET_CLAIMS_METHOD }}` runs on every sign-in (`.always()`)
+        # because even if `set_state(claims=FOO)` has been called before,
+        # it could be that `set_state(claims=BAR)` was called since
+        # then, and `set_state(claims=FOO)` would have an effect again -
+        # we want to converge on the most recently delivered claims.
+        if claims is not None:
+            await {{ state.proto.name }}.ref(state_id).always().{{ SET_CLAIMS_METHOD }}(
+                context, claims=claims
+            )
 {% endif %}
 
     def ref(
