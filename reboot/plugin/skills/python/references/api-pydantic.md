@@ -132,8 +132,8 @@ Error while parsing option value for "method": Message type
 
 ```python
 # OK
-open=Writer(... factory=True ...),       # Account.Open(ctx, id, ...)
-place=Transaction(... factory=True ...), # Order.Place(ctx, id, ...)
+open=Writer(... factory=True ...),       # Account.factory.open(ctx, id, ...)
+place=Transaction(... factory=True ...), # Order.factory.place(ctx, id, ...)
 
 # REJECTED by `rbt generate`
 hello=Workflow(... factory=True ...),    # codegen error

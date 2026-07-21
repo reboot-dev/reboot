@@ -264,7 +264,7 @@ async def create_page(
     content. Returns the new page's state ID, which you
     should link to from the wiki's markdown as
     `Page:<state_id>`."""
-    page, _ = await Page.create(
+    page, _ = await Page.factory.create(
         context,
         title=title,
         content=content,
@@ -288,7 +288,7 @@ class UserServicer(User.Servicer):
             context.auth.user_id if context.auth is not None and
             context.auth.user_id is not None else ""
         )
-        wiki, _ = await Wiki.create(
+        wiki, _ = await Wiki.factory.create(
             context,
             name=request.name,
             description=request.description,
@@ -363,7 +363,7 @@ class WikiServicer(Wiki.Servicer):
     ) -> WikiAddTranscriptResponse:
         """Create a new Transcript belonging to this Wiki and
         record it as pending ingestion on the Wiki."""
-        transcript, _ = await Transcript.create(
+        transcript, _ = await Transcript.factory.create(
             context,
             messages=list(request.messages),
             owner_id=self.state.owner_id,

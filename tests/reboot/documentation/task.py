@@ -114,7 +114,7 @@ class TestTaskServicer(TestTask.Servicer):
 
 
 async def initialize(context: InitializeContext):
-    await TestTask.create(context, "task")
+    await TestTask.factory.create(context, "task")
 
 
 # These tests are different from the other tests in this directory in that do not

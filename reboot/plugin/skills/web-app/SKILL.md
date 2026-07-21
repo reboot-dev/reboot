@@ -287,7 +287,7 @@ mechanics. The patterns in this skill assume you've read them.
   `self.state_id`); `self.ref().schedule(...)`.
 - `python/references/rpc-calls.md` — kwargs not Request wrappers.
 - `python/references/rpc-constructor-calls.md` —
-  `Service.create(context, id)` semantics.
+  `Service.factory.create(context, id)` semantics.
 
 **Workflows:**
 

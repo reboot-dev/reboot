@@ -14,7 +14,7 @@ Reboot Cloud.
 ## Message {#rbtthirdpartymailgunv1message}
 A single message sent using the integration.
 
-Created and scheduled using its constructor: `await Message.send(...)`.
+Created and scheduled using its constructor: `await Message.factory.send(...)`.
 
 ### Send
 

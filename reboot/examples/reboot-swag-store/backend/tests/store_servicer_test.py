@@ -65,7 +65,7 @@ class NoFulfillOrderServicer(OrderServicer):
 
 
 async def _initialize(context) -> None:
-    await CouponBook.create(context, COUPON_BOOK_ID)
+    await CouponBook.factory.create(context, COUPON_BOOK_ID)
 
 
 class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
@@ -179,7 +179,7 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
         don't probe the writers from the wrong user because
         Reboot's effect-validation can't safely retry a
         non-idempotent mutation that aborted."""
-        cart, _ = await Cart.create(
+        cart, _ = await Cart.factory.create(
             self.context,
             owner_id=self.user_id,
         )
@@ -204,7 +204,9 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
     # ----- Cart.add_item / get_cart / remove_item ---------------
 
     async def test_add_item_and_get_cart(self) -> None:
-        cart, _ = await Cart.create(self.context, owner_id=self.user_id)
+        cart, _ = await Cart.factory.create(
+            self.context, owner_id=self.user_id
+        )
         await cart.add_item(self.context, quantity=2, **HOODIE)
         response = await cart.get_cart(self.context)
         self.assertEqual(len(response.items), 1)
@@ -217,7 +219,9 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
     async def test_add_same_variant_increments_quantity(
         self,
     ) -> None:
-        cart, _ = await Cart.create(self.context, owner_id=self.user_id)
+        cart, _ = await Cart.factory.create(
+            self.context, owner_id=self.user_id
+        )
         await cart.add_item(self.context, quantity=2, **HOODIE)
         await cart.add_item(self.context, quantity=1, **HOODIE)
         response = await cart.get_cart(self.context)
@@ -227,7 +231,9 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
     async def test_add_different_variant_adds_a_line(
         self,
     ) -> None:
-        cart, _ = await Cart.create(self.context, owner_id=self.user_id)
+        cart, _ = await Cart.factory.create(
+            self.context, owner_id=self.user_id
+        )
         small = {**HOODIE, "variant_id": "hoodie-1-s", "size": "S"}
         await cart.add_item(self.context, quantity=1, **HOODIE)
         await cart.add_item(self.context, quantity=1, **small)
@@ -237,7 +243,9 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sizes, ["L", "S"])
 
     async def test_remove_item(self) -> None:
-        cart, _ = await Cart.create(self.context, owner_id=self.user_id)
+        cart, _ = await Cart.factory.create(
+            self.context, owner_id=self.user_id
+        )
         await cart.add_item(self.context, quantity=1, **HOODIE)
         await cart.remove_item(self.context, product_id="hoodie-1")
         response = await cart.get_cart(self.context)
@@ -248,7 +256,9 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
     async def test_checkout_on_empty_cart_raises_cart_empty(
         self,
     ) -> None:
-        cart, _ = await Cart.create(self.context, owner_id=self.user_id)
+        cart, _ = await Cart.factory.create(
+            self.context, owner_id=self.user_id
+        )
         with self.assertRaises(Cart.CheckoutAborted) as cm:
             await cart.checkout(
                 self.context,
@@ -260,7 +270,9 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
     async def test_checkout_with_invalid_coupon_raises(
         self,
     ) -> None:
-        cart, _ = await Cart.create(self.context, owner_id=self.user_id)
+        cart, _ = await Cart.factory.create(
+            self.context, owner_id=self.user_id
+        )
         await cart.add_item(self.context, quantity=1, **HOODIE)
         with self.assertRaises(Cart.CheckoutAborted) as cm:
             await cart.checkout(
@@ -274,7 +286,9 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(response.items), 1)
 
     async def test_checkout_happy_path(self) -> None:
-        cart, _ = await Cart.create(self.context, owner_id=self.user_id)
+        cart, _ = await Cart.factory.create(
+            self.context, owner_id=self.user_id
+        )
         await cart.add_item(self.context, quantity=2, **HOODIE)
 
         code = await self._mint_coupon()
@@ -305,7 +319,9 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         code = await self._mint_coupon()
 
-        cart, _ = await Cart.create(self.context, owner_id=self.user_id)
+        cart, _ = await Cart.factory.create(
+            self.context, owner_id=self.user_id
+        )
         await cart.add_item(self.context, quantity=1, **HOODIE)
         await cart.checkout(
             self.context,
@@ -314,7 +330,9 @@ class TestStoreServicers(unittest.IsolatedAsyncioTestCase):
         )
 
         # Same code a second time should no longer be valid.
-        cart2, _ = await Cart.create(self.context, owner_id=self.user_id)
+        cart2, _ = await Cart.factory.create(
+            self.context, owner_id=self.user_id
+        )
         await cart2.add_item(self.context, quantity=1, **HOODIE)
         with self.assertRaises(Cart.CheckoutAborted) as cm:
             await cart2.checkout(

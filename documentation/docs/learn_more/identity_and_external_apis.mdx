@@ -272,7 +272,7 @@ key is still a secret at rest, so encrypt it with
 reference to the encrypted value:
 
 ```py
-ciphertext, _ = await Ciphertext.encrypt(
+ciphertext, _ = await Ciphertext.factory.encrypt(
     context,
     plaintext=request.api_key.encode(),
     associated_data=make_associated_data(

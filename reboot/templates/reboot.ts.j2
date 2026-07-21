@@ -2200,6 +2200,138 @@ export class {{ client.proto.state_name }}WeakReference {
   }
 }
 
+export class {{ client.proto.state_name }}Factory {
+
+  {% for service in client.services %}
+  {% for method in service.methods %}
+  {%- if method.options.proto.kind == 'workflow' %}
+  {# TODO(benh): support constructor "tasks" and workflows. #}
+  {%- else %}
+  {% if method.options.proto.constructor %}
+  static async {{ method.proto.name | to_lower_camel }}(
+    context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
+    partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
+    options?: { bearerToken?: string | null }
+  ): Promise<[
+    {{ client.proto.state_name }}.WeakReference,
+    {% if method.has_non_none_response %}
+    {{ client.proto.state_name }}.{{ method.proto.name }}Response,
+    {% else %}
+    void,
+    {% endif %}
+  ]>;
+
+  static async {{ method.proto.name | to_lower_camel }}(
+    context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
+    id: string,
+    partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
+    options?: { bearerToken?: string | null }
+  ): Promise<[
+    {{ client.proto.state_name }}.WeakReference,
+    {% if method.has_non_none_response %}
+    {{ client.proto.state_name }}.{{ method.proto.name }}Response,
+    {% else %}
+    void,
+    {% endif %}
+  ]>;
+
+  static async {{ method.proto.name | to_lower_camel }}(
+    context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
+    idOrPartialRequest?: string | {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
+    partialRequestOrOptions?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | { bearerToken?: string | null },
+    optionsOrUndefined?: { bearerToken?: string | null }
+  ): Promise<[
+    {{ client.proto.state_name }}.WeakReference,
+    {% if method.has_non_none_response %}
+    {{ client.proto.state_name }}.{{ method.proto.name }}Response,
+    {% else %}
+    void,
+    {% endif %}
+  ]> {
+    let id: string | undefined = undefined;
+    let partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | undefined = undefined;
+    let options: { bearerToken?: string | null } | undefined = undefined;
+
+    if (typeof idOrPartialRequest === "string" || idOrPartialRequest instanceof String) {
+      id = idOrPartialRequest;
+      partialRequest = partialRequestOrOptions;
+      options = optionsOrUndefined;
+    } else {
+      partialRequest = idOrPartialRequest;
+      options = partialRequestOrOptions;
+      if (optionsOrUndefined !== undefined) {
+        throw new Error(
+          `Invalid arguments passed to '{{ client.proto.state_name }}.factory.{{ method.proto.name | to_lower_camel }}'`
+        );
+      }
+    }
+
+    if (options === undefined || !("idempotency" in options)) {
+      if (context instanceof WorkflowContext) {
+        return await (
+          reboot.isWithinLoop()
+            ? {{ client.proto.state_name }}.factory.perIteration()
+            : {{ client.proto.state_name }}.factory.perWorkflow()
+        ).{{ method.proto.name | to_lower_camel }}(
+          context,
+          idOrPartialRequest,
+          partialRequestOrOptions,
+          optionsOrUndefined
+        );
+      } else if (context instanceof InitializeContext) {
+        return await {{ client.proto.state_name }}.factory.idempotently()
+          .{{ method.proto.name | to_lower_camel }}(
+            context,
+            idOrPartialRequest,
+            partialRequestOrOptions,
+            optionsOrUndefined
+          );
+      }
+    }
+
+    if (id === undefined) {
+      id = uuid.v4();
+    }
+
+    const weakReference = {{ client.proto.state_name }}.ref(id);
+
+    const response = await weakReference.__externalServiceCall{{ method.proto.name }}(
+      context,
+      partialRequest,
+      options,
+    );
+
+    return [
+      weakReference,
+      response,
+    ];
+  }
+
+  {% endif %}
+  {% endif %}
+  {% endfor %}
+  {% endfor %}
+  static idempotently(aliasOrOptions: string | reboot_api.IdempotencyOptions = {} as reboot_api.IdempotencyOptions) {
+    const idempotency = (typeof aliasOrOptions === "string" || aliasOrOptions instanceof String) ? { alias: aliasOrOptions as string } : aliasOrOptions;
+    return new {{ client.proto.state_name }}._ConstructIdempotently(idempotency);
+  }
+
+  static perWorkflow(alias?: string) {
+    return {{ client.proto.state_name }}.factory
+      .idempotently({ alias });
+  }
+
+  static perIteration(alias?: string) {
+    return {{ client.proto.state_name }}.factory
+      .idempotently({ alias, perIteration: true });
+  }
+
+  static always() {
+    return {{ client.proto.state_name }}.factory
+      .idempotently({ always: true });
+  }
+}
+
 export class {{ client.proto.state_name }} {
 
   {% if client.state is not none %}
@@ -2220,6 +2352,8 @@ export class {{ client.proto.state_name }} {
 
   {% endfor %}
   {% endfor %}
+
+  static factory = {{ client.proto.state_name }}Factory;
 
   public static ref(
     idOrOptions?: string | { bearerToken?: string | null },
@@ -2257,115 +2391,6 @@ export class {{ client.proto.state_name }} {
     return new {{ client.proto.state_name }}.WeakReference(idOrOptions, options?.bearerToken);
   }
 
-  {% for service in client.services %}
-  {% for method in service.methods %}
-  {%- if method.options.proto.kind == 'workflow' %}
-  {# TODO(benh): support constructor "tasks" and workflows. #}
-  {%- else %}
-  {% if method.options.proto.constructor %}
-  public async {{ method.proto.name | to_lower_camel }}(
-    context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
-    partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-    options?: { bearerToken?: string | null }
-  ): Promise<[
-    {{ client.proto.state_name }}.WeakReference,
-    {% if method.has_non_none_response %}
-    {{ client.proto.state_name }}.{{ method.proto.name }}Response,
-    {% else %}
-    void,
-    {% endif %}
-  ]>;
-
-  public async {{ method.proto.name | to_lower_camel }}(
-    context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
-    id: string,
-    partialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-    options?: { bearerToken?: string | null }
-  ): Promise<[
-    {{ client.proto.state_name }}.WeakReference,
-    {% if method.has_non_none_response %}
-    {{ client.proto.state_name }}.{{ method.proto.name }}Response,
-    {% else %}
-    void,
-    {% endif %}
-  ]>;
-
-  public static async {{ method.proto.name | to_lower_camel }}(
-    context: reboot.TransactionContext | reboot.WorkflowContext | reboot.ExternalContext,
-    idOrPartialRequest?: string | {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
-    partialRequestOrOptions?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | { bearerToken?: string | null },
-    optionsOrUndefined?: { bearerToken?: string | null }
-  ): Promise<[
-    {{ client.proto.state_name }}.WeakReference,
-    {% if method.has_non_none_response %}
-    {{ client.proto.state_name }}.{{ method.proto.name }}Response,
-    {% else %}
-    void,
-    {% endif %}
-  ]> {
-    let id: string | undefined = undefined;
-    let partialRequest: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request | undefined = undefined;
-    let options: { bearerToken?: string | null } | undefined = undefined;
-
-    if (typeof idOrPartialRequest === "string" || idOrPartialRequest instanceof String) {
-      id = idOrPartialRequest;
-      partialRequest = partialRequestOrOptions;
-      options = optionsOrUndefined;
-    } else {
-      partialRequest = idOrPartialRequest;
-      options = partialRequestOrOptions;
-      if (optionsOrUndefined !== undefined) {
-        throw new Error(
-          `Invalid arguments passed to '{{ client.proto.state_name }}.{{ method.proto.name | to_lower_camel }}'`
-        );
-      }
-    }
-
-    if (options === undefined || !("idempotency" in options)) {
-      if (context instanceof WorkflowContext) {
-        return await (
-          reboot.isWithinLoop()
-            ? {{ client.proto.state_name }}.perIteration()
-            : {{ client.proto.state_name }}.perWorkflow()
-        ).{{ method.proto.name | to_lower_camel }}(
-          context,
-          idOrPartialRequest,
-          partialRequestOrOptions,
-          optionsOrUndefined
-        );
-      } else if (context instanceof InitializeContext) {
-        return await {{ client.proto.state_name }}.idempotently()
-          .{{ method.proto.name | to_lower_camel }}(
-            context,
-            idOrPartialRequest,
-            partialRequestOrOptions,
-            optionsOrUndefined
-          );
-      }
-    }
-
-    if (id === undefined) {
-      id = uuid.v4();
-    }
-
-    const weakReference = {{ client.proto.state_name }}.ref(id);
-
-    const response = await weakReference.__externalServiceCall{{ method.proto.name }}(
-      context,
-      partialRequest,
-      options,
-    );
-
-    return [
-      weakReference,
-      response,
-    ];
-  }
-
-  {% endif %}
-  {% endif %}
-  {% endfor %}
-  {% endfor %}
 
   static _Forall = class {
     #ids: string[];
@@ -2410,25 +2435,6 @@ export class {{ client.proto.state_name }} {
     return new {{ client.proto.state_name }}._Forall(ids);
   }
 
-  public static idempotently(aliasOrOptions: string | reboot_api.IdempotencyOptions = {} as reboot_api.IdempotencyOptions) {
-    const idempotency = (typeof aliasOrOptions === "string" || aliasOrOptions instanceof String) ? { alias: aliasOrOptions as string } : aliasOrOptions;
-    return new {{ client.proto.state_name }}._ConstructIdempotently(idempotency);
-  }
-
-  public static perWorkflow(alias?: string) {
-    return {{ client.proto.state_name }}
-      .idempotently({ alias });
-  }
-
-  public static perIteration(alias?: string) {
-    return {{ client.proto.state_name }}
-      .idempotently({ alias, perIteration: true });
-  }
-
-  public static always() {
-    return {{ client.proto.state_name }}
-      .idempotently({ always: true });
-  }
 
   static _ConstructIdempotently = class {
     #idempotency: reboot_api.IdempotencyOptions;
@@ -2510,7 +2516,7 @@ export class {{ client.proto.state_name }} {
         ) as string;
       }
 
-      return await {{ client.proto.state_name }}.{{ method.proto.name | to_lower_camel }}(
+      return await {{ client.proto.state_name }}.factory.{{ method.proto.name | to_lower_camel }}(
         context,
         id,
         partialRequest,

@@ -19,7 +19,7 @@ function reportErrorToUser(errorMessage: string): void {
 async function performErroringWithdrawal(context: any): Promise<void> {
   const accountId = "account-nodejs";
 
-  const [account] = await Account.open(context, accountId, {});
+  const [account] = await Account.factory.open(context, accountId, {});
 
   try {
     await account.withdraw(context, { amount: 65 });
@@ -66,7 +66,7 @@ test("Calling Bank.SignUp", async (t) => {
   await t.test("Sign Up", async (t) => {
     const context = rbt.createExternalContext("test");
 
-    const [bank] = await Bank.create(context, "bank-nodejs");
+    const [bank] = await Bank.factory.create(context, "bank-nodejs");
 
     const response = await bank.signUp(context, {
       customerId: "test@reboot.dev",
@@ -152,7 +152,7 @@ test("Transfer with Customer", async (t) => {
   await t.test("Sign Up", async (t) => {
     const context = rbt.createExternalContext("test");
 
-    const [bank] = await Bank.create(context, "bank-nodejs");
+    const [bank] = await Bank.factory.create(context, "bank-nodejs");
 
     const CUSTOMER_ID_1 = "test@reboot.dev";
     const CUSTOMER_ID_2 = "test2@reboot.dev";

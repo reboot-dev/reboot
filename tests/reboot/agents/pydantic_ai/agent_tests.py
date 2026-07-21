@@ -569,7 +569,9 @@ class WorkflowAgentRunTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
         self.context = self.rbt.create_external_context(name=self.id())
-        self.general, _ = await General.constructor_writer(self.context)
+        self.general, _ = await General.factory.constructor_writer(
+            self.context
+        )
 
     async def asyncTearDown(self) -> None:
         await self.rbt.stop()

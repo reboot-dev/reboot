@@ -17,7 +17,7 @@ from tests.reboot.test_token_verifier import TestTokenVerifier
 
 async def initialize(context: InitializeContext):
     """Create the singleton bank for our test."""
-    await Bank.Create(context, SINGLETON_BANK_ID)
+    await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
 
 if __name__ == '__main__':

@@ -55,7 +55,7 @@ Constructor calls return a `(ref, response)` tuple — the ref to the
 newly-constructed actor and the response from the method:
 
 ```python
-account, _ = await Account.open(context, request.account_id)
+account, _ = await Account.factory.open(context, request.account_id)
 await account.deposit(context, amount=request.initial_deposit)
 ```
 

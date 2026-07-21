@@ -27,7 +27,7 @@ class PreloadTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.create(context, SINGLETON_BANK_ID)
 
         await bank.sign_up(
             context,
@@ -73,7 +73,7 @@ class PreloadTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.create(context, SINGLETON_BANK_ID)
 
         await bank.sign_up(
             context,
@@ -126,7 +126,7 @@ class PreloadTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.create(context, SINGLETON_BANK_ID)
 
         await bank.sign_up(
             context,
@@ -176,7 +176,7 @@ class PreloadTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.create(context, SINGLETON_BANK_ID)
 
         await bank.sign_up(
             context,
@@ -219,7 +219,7 @@ class PreloadTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.create(context, SINGLETON_BANK_ID)
 
         await bank.sign_up(
             context,

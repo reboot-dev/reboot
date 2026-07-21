@@ -4,7 +4,7 @@ import { DOCUBOT_ASSISTANT_ID } from "../../constants.js";
 import docubot from "@reboot-dev/docubot";
 
 const initialize = async (context) => {
-  await Assistant.create(context, DOCUBOT_ASSISTANT_ID, {
+  await Assistant.factory.create(context, DOCUBOT_ASSISTANT_ID, {
     name: DOCUBOT_ASSISTANT_ID,
     url: "https://docs.reboot.dev",
   });

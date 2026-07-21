@@ -25,7 +25,7 @@ test("Reboot down test", async (t) => {
     idempotencySeed: uuid.v4(),
   });
 
-  let [greeter, _] = await Greeter.create(context, {
+  let [greeter, _] = await Greeter.factory.create(context, {
     title: "Dr",
     name: "Jonathan",
     adjective: "Best",

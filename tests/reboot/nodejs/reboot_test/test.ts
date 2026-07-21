@@ -52,7 +52,7 @@ test("Reboot", async (t) => {
     });
 
     application.http.post("/hello_world", async (context, req, res) => {
-      const [greeter] = await Greeter.create(context, {
+      const [greeter] = await Greeter.factory.create(context, {
         title: "Dr",
         name: "Jonathan",
         adjective: "Best",
@@ -116,7 +116,7 @@ test("Reboot", async (t) => {
 
     const context = rbt.createExternalContext("test");
 
-    const [greeter] = await Greeter.create(context, {
+    const [greeter] = await Greeter.factory.create(context, {
       title: "Dr",
       name: "Jonathan",
       adjective: "Best",
@@ -165,7 +165,7 @@ test("Reboot", async (t) => {
 
     const context = rbt.createExternalContext("test");
 
-    const [greeter] = await Greeter.create(context, {
+    const [greeter] = await Greeter.factory.create(context, {
       title: "Dr",
       name: "Jonathan",
       adjective: "Best",

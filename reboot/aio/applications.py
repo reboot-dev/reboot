@@ -818,7 +818,7 @@ class Application:
         user.
 
         `context` is app-internal: materializing the state is a Writer
-        call (`User.Create(...)`) that the authorizer permits from
+        call (`User.factory.Create(...)`) that the authorizer permits from
         trusted app code (auto-construct `User` types allow
         app-internal callers).
         """

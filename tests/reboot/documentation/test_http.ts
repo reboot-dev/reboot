@@ -57,7 +57,7 @@ test("Tests for Reboot HTTP documentation", async (t) => {
         name: string;
         adjective: string;
       };
-      const [greeter] = await Greeter.create(context, {
+      const [greeter] = await Greeter.factory.create(context, {
         title,
         name,
         adjective,

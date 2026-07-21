@@ -32,7 +32,7 @@ class ChannelServicer(Channel.Servicer):
         context: TransactionContext,
         request: ChannelCreateRequest,
     ) -> ChannelCreateResponse:
-        await Index.create(
+        await Index.factory.create(
             context,
             messages_id(context.state_id),
             order=100,

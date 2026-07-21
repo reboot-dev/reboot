@@ -265,7 +265,7 @@ class TestServicer(Test.Servicer):
         STR_VALUE = "initialized from workflow"
         STR_VALUE_WITH_STATE_ID = "initialized from workflow with state id"
         MY_STATE_ID = "my-state-id"
-        test_ref, _ = await Test.initialize_from_workflow(
+        test_ref, _ = await Test.factory.initialize_from_workflow(
             context,
             str_value=STR_VALUE,
         )
@@ -273,7 +273,7 @@ class TestServicer(Test.Servicer):
         assert (test_ref_state.snapshot.current_str == STR_VALUE)
         assert test_ref.state_id != MY_STATE_ID
 
-        test_ref_with_state_id, _ = await Test.initialize_from_workflow(
+        test_ref_with_state_id, _ = await Test.factory.initialize_from_workflow(
             context,
             MY_STATE_ID,
             str_value=STR_VALUE_WITH_STATE_ID,

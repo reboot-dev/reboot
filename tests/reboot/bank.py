@@ -168,7 +168,7 @@ class AccountServicer(Account.singleton.Servicer):
         state.balance += 10
 
         # We abort below so this call should also not take effect.
-        await Account.open(context, f'{context.state_id}-nested')
+        await Account.factory.open(context, f'{context.state_id}-nested')
 
         raise Account.TestNestedTransactionThatAbortsAborted(
             bank_rbt.UserError()
@@ -256,7 +256,7 @@ class BankServicer(Bank.Servicer):
         # Since we may manually retry the following call, we must
         # provide idempotency, which we do via passing the string
         # alias 'open'.
-        await Account.idempotently('open').open(
+        await Account.factory.idempotently('open').open(
             context,
             request.account_id,
             Options(bearer_token=context.caller_bearer_token),
@@ -268,7 +268,7 @@ class BankServicer(Bank.Servicer):
 
         # For testing purposes, call the 'open' method again - so that it's always
         # called twice, and idempotency is demonstrated.
-        account, _ = await Account.idempotently('open').open(
+        account, _ = await Account.factory.idempotently('open').open(
             context,
             request.account_id,
             Options(bearer_token=context.caller_bearer_token),
@@ -556,7 +556,7 @@ class BankServicer(Bank.Servicer):
         else:
             raise RuntimeError('Expecting to abort!')
 
-        account, response = await Account.open(
+        account, response = await Account.factory.open(
             context,
             f'{request.account_id}-parent',
             initial_deposit=42,
@@ -571,7 +571,7 @@ class BankServicer(Bank.Servicer):
     ) -> Empty:
         # We (the root transaction) first join the account by opening
         # it.
-        account, _ = await Account.open(
+        account, _ = await Account.factory.open(
             context,
             request.account_id,
             initial_deposit=10,
@@ -697,7 +697,7 @@ class BankServicer(Bank.Servicer):
     ) -> Empty:
         # Open the remote account with a known balance so that the
         # nested transaction below shares (rather than constructs) it.
-        await Account.open(
+        await Account.factory.open(
             context,
             request.remote_account_id,
             initial_deposit=100,
@@ -778,13 +778,13 @@ class BankServicer(Bank.Servicer):
             request.type ==
             bank_rbt.TestNestedTransactionsRequest.NESTED_TXN_SAME_STATE
         ):
-            await Account.open(
+            await Account.factory.open(
                 context,
                 'jonathan-same-state',
                 Options(bearer_token=context.caller_bearer_token),
                 initial_deposit=2,
             )
-            await Account.open(
+            await Account.factory.open(
                 context,
                 'ben-same-state',
                 Options(bearer_token=context.caller_bearer_token),
@@ -804,13 +804,13 @@ class BankServicer(Bank.Servicer):
             request.type ==
             bank_rbt.TestNestedTransactionsRequest.NESTED_TXN_PARENT_WRITER
         ):
-            jonathan, _ = await Account.open(
+            jonathan, _ = await Account.factory.open(
                 context,
                 'jonathan-parent-writer',
                 Options(bearer_token=context.caller_bearer_token),
                 initial_deposit=2,
             )
-            await Account.open(
+            await Account.factory.open(
                 context,
                 'ben-parent-writer',
                 Options(bearer_token=context.caller_bearer_token),
@@ -830,13 +830,13 @@ class BankServicer(Bank.Servicer):
             request.type == bank_rbt.TestNestedTransactionsRequest.
             NESTED_TXN_SHARED_WRITE_ABORT
         ):
-            await Account.open(
+            await Account.factory.open(
                 context,
                 'jonathan-shared-write-abort',
                 Options(bearer_token=context.caller_bearer_token),
                 initial_deposit=1,
             )
-            await Account.open(
+            await Account.factory.open(
                 context,
                 'ben-shared-write-abort',
                 Options(bearer_token=context.caller_bearer_token),

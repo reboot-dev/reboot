@@ -1,26 +1,29 @@
 ---
-title: Use `Service.create` and `Service.<ctor>` for Constructor Calls
+title: Use `Service.factory.create` and `Service.factory.<ctor>` for Constructor Calls
 impact: MEDIUM
 impactDescription: Calling a constructor through `.ref(...).method(...)` skips creation semantics
 tags: rpc, constructor, create, factory
 ---
 
-## Use `Service.create` and `Service.<ctor>` for Constructor Calls
+## Use `Service.factory.create` and `Service.factory.<ctor>` for Constructor Calls
 
 > **Critical:** never invoke a constructor through `Service.ref(id).method(...)`
-> — that skips creation semantics. Use `await Service.create(context, id)`
-> for default constructors and `await Service.<CtorMethod>(context, id, ...)`
-> for named ones. Both return a `(ref, response)` tuple.
+> — that skips creation semantics. Use
+> `await Service.factory.create(context, id)` for default constructors and
+> `await Service.factory.<CtorMethod>(context, id, ...)` for named ones.
+> Both return a `(ref, response)` tuple.
 
 A method declared with `factory=True` is the actor's creation path.
-Invoke it via the generated factory call:
+Invoke it through the `factory` namespace on the state type:
 
-- `await Service.create(context, id)` — for the implicit/default
-  constructor (e.g., `Bank.create(context, SINGLETON_BANK_ID)`).
-- `await Service.<CtorMethod>(context, id, **kwargs)` — for a named
-  constructor method (e.g., `Account.open(context, account_id)`).
+- `await Service.factory.create(context, id)` — for the implicit/default
+  constructor (e.g., `Bank.factory.create(context, SINGLETON_BANK_ID)`).
+- `await Service.factory.<CtorMethod>(context, id, **kwargs)` — for a named
+  constructor method (e.g., `Account.factory.open(context, account_id)`).
 
-Both return a `(ref, response)` tuple.
+Both return a `(ref, response)` tuple. Routing constructors through the
+`factory` namespace keeps the top level of the state type free for
+framework methods like `ref()`.
 
 **Incorrect (using `.ref(...).method(...)` for a constructor):**
 
@@ -45,18 +48,18 @@ open=Writer(
 `main.py`:
 
 ```python
-account, _ = await Account.open(context, account_id)
+account, _ = await Account.factory.open(context, account_id)
 await account.deposit(context, amount=request.initial_deposit)
 ```
 
-## `Service.create(context, id)` Is the Idempotent Default
+## `Service.factory.create(context, id)` Is the Idempotent Default
 
 When the `Type` has no explicit factory (no `factory=True` method),
-use `Service.create` from the `initialize` hook:
+use `Service.factory.create` from the `initialize` hook:
 
 ```python
 async def initialize(context: InitializeContext):
-    await Bank.create(context, SINGLETON_BANK_ID)
+    await Bank.factory.create(context, SINGLETON_BANK_ID)
 ```
 
 This is safe to call on every application start; existing actors aren't
@@ -68,7 +71,7 @@ The first element of the returned tuple is the ref. Prefer using it
 directly rather than re-constructing one with `Service.ref(...)`:
 
 ```python
-account, _ = await Account.open(context, account_id)
+account, _ = await Account.factory.open(context, account_id)
 # Use the returned ref:
 await account.deposit(context, amount=100)
 

@@ -50,13 +50,13 @@ describe("Reader state-ID change", () => {
     const context = rbt.createExternalContext("test-state-id-change");
 
     // Create two independent Greeter state instances.
-    await Greeter.create(context, "greeter-alpha", {
+    await Greeter.factory.create(context, "greeter-alpha", {
       title: "Dr",
       name: "Alpha",
       adjective: "first",
     });
 
-    await Greeter.create(context, "greeter-beta", {
+    await Greeter.factory.create(context, "greeter-beta", {
       title: "Mr",
       name: "Beta",
       adjective: "second",

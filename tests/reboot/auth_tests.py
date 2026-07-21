@@ -160,7 +160,7 @@ class BankAccountAuthTests(unittest.IsolatedAsyncioTestCase):
             bearer_token=VALID_JWT,
         )
 
-        bank, _ = await Bank.create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.create(context, SINGLETON_BANK_ID)
         await bank.sign_up(context, account_id=ACCOUNT_NAME)
 
     async def asyncTearDown(self):
@@ -325,7 +325,7 @@ class BankAccountAuthTestsNoAccountPresent(unittest.IsolatedAsyncioTestCase):
             bearer_token=VALID_JWT,
         )
 
-        bank, _ = await Bank.create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.create(context, SINGLETON_BANK_ID)
 
     async def asyncTearDown(self):
         await self.rbt.stop()
@@ -396,7 +396,7 @@ class BankConstructorAuth(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
 
         # Test that a bearer token can be used via construct.
-        bank, _ = await Bank.create(
+        bank, _ = await Bank.factory.create(
             context,
             SINGLETON_BANK_ID,
             Options(bearer_token=VALID_JWT),

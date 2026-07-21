@@ -56,7 +56,7 @@ class ReactivityTestCase(unittest.IsolatedAsyncioTestCase):
         """
         await self.rbt.up(Application(servicers=[MyGreeterServicer]))
         context = self.rbt.create_external_context(name=f"test-{self.id()}")
-        greeter, _ = await Greeter.Create(
+        greeter, _ = await Greeter.factory.Create(
             context,
             "my-greeter",
             title="Mr.",

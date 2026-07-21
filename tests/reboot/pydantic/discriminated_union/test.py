@@ -42,7 +42,7 @@ class DiscriminatedUnionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        test, _ = await DiscriminatedUnionTest.initialize(
+        test, _ = await DiscriminatedUnionTest.factory.initialize(
             context,
             _TEST_STATE_ID,
         )
@@ -82,7 +82,7 @@ class DiscriminatedUnionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        test, _ = await DiscriminatedUnionTest.initialize(
+        test, _ = await DiscriminatedUnionTest.factory.initialize(
             context,
             _TEST_STATE_ID,
         )
@@ -114,7 +114,7 @@ class DiscriminatedUnionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        test, _ = await DiscriminatedUnionTest.initialize(
+        test, _ = await DiscriminatedUnionTest.factory.initialize(
             context,
             _TEST_STATE_ID,
         )
@@ -175,7 +175,7 @@ class NestedDiscriminatedUnionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        test, _ = await NestedDiscriminatedUnionTest.initialize(
+        test, _ = await NestedDiscriminatedUnionTest.factory.initialize(
             context,
             _TEST_STATE_ID,
         )
@@ -215,7 +215,7 @@ class NestedDiscriminatedUnionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        test, _ = await NestedDiscriminatedUnionTest.initialize(
+        test, _ = await NestedDiscriminatedUnionTest.factory.initialize(
             context,
             _TEST_STATE_ID,
         )
@@ -248,7 +248,7 @@ class NestedDiscriminatedUnionTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        test, _ = await NestedDiscriminatedUnionTest.initialize(
+        test, _ = await NestedDiscriminatedUnionTest.factory.initialize(
             context,
             _TEST_STATE_ID,
         )
