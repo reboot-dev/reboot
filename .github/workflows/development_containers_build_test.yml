@@ -16,6 +16,12 @@ on:
   merge_group:
     # Required if we want to use GitHub's Merge Queue feature. See:
     #   https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue#triggering-merge-group-checks-with-github-actions
+  # Manual trigger so a maintainer can run a branch's own workflow
+  # definition before merge. Under `pull_request_target` the workflow
+  # YAML always comes from the base branch, so edits to this file are
+  # otherwise untested until merged; `workflow_dispatch` runs the
+  # selected branch's version (with secrets) to validate them.
+  workflow_dispatch:
 
 jobs:
   # External fork pull requests run with `pull_request_target`, which
