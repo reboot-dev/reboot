@@ -207,6 +207,15 @@ def pydantic_to_zod(
         # Currently only used for methods with no response.
         return 'z.void()'
 
+    if input is Any:
+        # `Any` — e.g. a `dict[str, Any]` map value — accepts any JSON
+        # value. `z.json()` is the schema our `zod-to-proto` converts
+        # to a `google.protobuf.Value`.
+        output = 'z.json()'
+        if tag is not None:
+            output += f'.meta({{ tag: {tag} }})'
+        return output
+
     origin = get_origin(input)
     args = get_args(input)
 

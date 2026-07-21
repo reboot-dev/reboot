@@ -9,6 +9,9 @@ from reboot.aio.external import InitializeContext
 from reboot.aio.tests import Reboot
 from tests.reboot.pydantic.methods.servicer import TestServicer
 from tests.reboot.pydantic.methods.servicer_api import (
+    ARBITRARY_JSON_METADATA,
+    ARBITRARY_JSON_NOTE,
+    ARBITRARY_JSON_TAGS,
     AnotherError,
     ArbitraryData,
     GetSnapshotResponse,
@@ -205,6 +208,9 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
                 current_float=3.14,
                 current_bool=True,
                 current_data=expected_data,
+                current_metadata=ARBITRARY_JSON_METADATA,
+                current_note=ARBITRARY_JSON_NOTE,
+                current_tags=ARBITRARY_JSON_TAGS,
             )
         )
 
@@ -227,6 +233,9 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
                 current_float=3.14,
                 current_bool=False,
                 current_data=expected_data,
+                current_metadata=ARBITRARY_JSON_METADATA,
+                current_note=ARBITRARY_JSON_NOTE,
+                current_tags=ARBITRARY_JSON_TAGS,
             )
         )
 
@@ -282,6 +291,9 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
                         "initialized",
                     ],
                 ),
+                current_metadata=ARBITRARY_JSON_METADATA,
+                current_note=ARBITRARY_JSON_NOTE,
+                current_tags=ARBITRARY_JSON_TAGS,
             )
         )
 

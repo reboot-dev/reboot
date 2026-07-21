@@ -9,9 +9,50 @@ from reboot.api import (
     Workflow,
     Writer,
 )
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 LiteralType = Literal["option1", "option2", "option3"]
+
+# A heterogeneous JSON value used to exercise the `dict[str, Any]`
+# (`map<string, google.protobuf.Value>`) round-trip: strings, a bool,
+# a number, a nested object, a list, and a null.
+ARBITRARY_JSON_METADATA: dict[str, Any] = {
+    "email": "jane@example.com",
+    "email_verified": True,
+    "login_count": 3,
+    "address": {
+        "city": "Springfield",
+        "zipcode": "00000",
+    },
+    "roles": ["admin", "user"],
+    "middle_name": None,
+}
+
+# A bare `Any` value (a field typed just `Any`, not inside a `dict` or
+# `list`) used to exercise the top-level `Any` round-trip: a nested
+# JSON object mixing a string, a number, a bool, a list, and a null.
+ARBITRARY_JSON_NOTE: Any = {
+    "summary": "hello",
+    "attempts": 2,
+    "flagged": True,
+    "labels": ["a", "b"],
+    "extra": None,
+}
+
+# A `list[Any]` value used to exercise the `Any`-inside-`list`
+# round-trip: heterogeneous elements (a string, a number, a bool, a
+# null, a nested object, and a nested list), each of which lowers to a
+# `google.protobuf.Value`.
+ARBITRARY_JSON_TAGS: list[Any] = [
+    "admin",
+    7,
+    True,
+    None,
+    {
+        "nested": "object"
+    },
+    ["nested", "list"],
+]
 
 
 class ArbitraryData(Model):
@@ -83,6 +124,18 @@ class State(Model):
         current_float: float = Field(tag=3)
         current_bool: bool = Field(tag=4)
         current_data: ArbitraryData = Field(tag=5)
+        # `dict[str, Any]` — a `map<string, google.protobuf.Value>`
+        # carrying free-form JSON values; snapshotting it here proves
+        # it round-trips out through a response message too.
+        current_metadata: dict[str, Any] = Field(tag=6, default_factory=dict)
+        # A bare `Any` — a `google.protobuf.Value` carrying an
+        # arbitrary JSON value; snapshotting it proves a top-level
+        # `Any` round-trips out through a response message too.
+        current_note: Any = Field(tag=7)
+        # `list[Any]` — a `repeated google.protobuf.Value` carrying
+        # heterogeneous JSON values; snapshotting it proves it
+        # round-trips out through a response message too.
+        current_tags: list[Any] = Field(tag=8, default_factory=list)
 
     ### Required fields. ###
 
@@ -107,6 +160,22 @@ class State(Model):
     literal_list_value: list[LiteralType] = Field(tag=21)
     # `dict[str, <Literal>]` — a `map` with `enum` values.
     literal_dict_value: dict[str, LiteralType] = Field(tag=22)
+    # `dict[str, Any]` — a `map<string, google.protobuf.Value>`
+    # carrying arbitrary, heterogeneous JSON values (strings, bools,
+    # numbers, nested objects, lists, nulls). We want to ensure codegen
+    # lowers it to a `google.protobuf.Value` map and that the runtime
+    # round-trips the values verbatim.
+    metadata: dict[str, Any] = Field(tag=23, default_factory=dict)
+    # A bare `Any` — a single `google.protobuf.Value` carrying an
+    # arbitrary JSON value. We want to ensure codegen lowers a
+    # top-level `Any` (not just a `dict`/`list` element) to a
+    # `google.protobuf.Value` and that the runtime round-trips it.
+    note: Any = Field(tag=24)
+    # `list[Any]` — a `repeated google.protobuf.Value` carrying
+    # arbitrary, heterogeneous JSON values. We want to ensure codegen
+    # lowers an `Any` list element to a `google.protobuf.Value` and
+    # that the runtime round-trips the values verbatim.
+    tags: list[Any] = Field(tag=25, default_factory=list)
 
     ### Empty default values. ###
     str_default_value: str = Field(

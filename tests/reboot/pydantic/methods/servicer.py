@@ -13,6 +13,9 @@ from reboot.aio.contexts import (
     WriterContext,
 )
 from tests.reboot.pydantic.methods.servicer_api import (
+    ARBITRARY_JSON_METADATA,
+    ARBITRARY_JSON_NOTE,
+    ARBITRARY_JSON_TAGS,
     AnotherError,
     ArbitraryData,
     ComplexTypesRequest,
@@ -134,6 +137,19 @@ class TestServicer(Test.Servicer):
             "b": "option1",
         }
 
+        # Exercise `dict[str, Any]` (a `map<string,
+        # google.protobuf.Value>`): set a heterogeneous JSON value that
+        # `get_snapshot` reads back out of storage, proving the runtime
+        # round-trips the values verbatim.
+        self.state.metadata = ARBITRARY_JSON_METADATA
+
+        # Exercise a bare `Any` (a single `google.protobuf.Value`) and
+        # a `list[Any]` (a `repeated google.protobuf.Value`): set them
+        # so `get_snapshot` reads them back out of storage, proving the
+        # runtime round-trips top-level and list `Any` values verbatim.
+        self.state.note = ARBITRARY_JSON_NOTE
+        self.state.tags = ARBITRARY_JSON_TAGS
+
     def authorizer(self):
 
         def update_state_rule(
@@ -227,6 +243,9 @@ class TestServicer(Test.Servicer):
                 current_float=self.state.float_value,
                 current_bool=self.state.bool_value,
                 current_data=self.state.data_value,
+                current_metadata=self.state.metadata,
+                current_note=self.state.note,
+                current_tags=self.state.tags,
             )
         )
 

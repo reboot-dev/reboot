@@ -4,7 +4,9 @@ import re
 import types
 import typing
 from enum import Enum
+from google.protobuf import json_format
 from google.protobuf.message import Message
+from google.protobuf.struct_pb2 import Value
 from pydantic.fields import FieldInfo
 from reboot.settings import AUTO_CONSTRUCT_METHOD, AUTO_CONSTRUCT_STATE_TYPE
 from typing import (
@@ -302,6 +304,13 @@ def _pydantic_to_proto(
         # or a 'Model'. Otherwise it will be a collection
         # type like 'list' or 'dict'.
         input_type_or_origin = input_type
+
+    if input_type is Any:
+        # An `Any`-typed value — e.g. a `dict[str, Any]` map value —
+        # is carried on the wire as a `google.protobuf.Value`, which
+        # represents any JSON value: `null`, a number, a string, a
+        # bool, a list, or an object.
+        return json_format.ParseDict(input, Value())
 
     if input_type_or_origin is Union or input_type_or_origin is types.UnionType:
         # It might be a discriminated union or an `Optional[T]`.
@@ -624,6 +633,12 @@ def _proto_to_pydantic(
         # we don't want to create an arbitrary data structure, but return
         # 'None' directly.
         return None
+
+    if output_type is Any:
+        # Reverse of the `Any` case in `_pydantic_to_proto`: a
+        # `google.protobuf.Value` becomes the JSON value it holds.
+        assert isinstance(input, Value)
+        return json_format.MessageToDict(input)
 
     output_type_or_origin = get_origin(output_type)
 
@@ -1081,6 +1096,11 @@ class Type(pydantic.BaseModel):
                             f"non-string value `{arg}`. Only string "
                             "literals are supported."
                         )
+            elif field_type is Any:
+                # `dict[str, Any]` becomes a Protobuf `map<string,
+                # google.protobuf.Value>` carrying arbitrary JSON
+                # values; the value type needs no further validation.
+                pass
             elif issubclass(field_type, pydantic.BaseModel):
                 if not issubclass(field_type, Model):
                     state_or_method = ""
