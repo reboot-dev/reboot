@@ -29,7 +29,7 @@ class IdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
 
         with self.assertRaises(ValueError) as exc:
-            await Account.idempotently(
+            await Account.factory.idempotently(
                 key="key",
                 alias="alias",  # type: ignore[call-overload]
             ).Open(context, "one")
@@ -53,7 +53,7 @@ class IdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        account, _ = await Account.Open(context)
+        account, _ = await Account.factory.Open(context)
 
         await account.Deposit(context, amount=1000)
 
@@ -108,7 +108,7 @@ class IdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        account, _ = await Account.Open(context)
+        account, _ = await Account.factory.Open(context)
 
         await account.Deposit(context, amount=1000)
 
@@ -146,7 +146,7 @@ class IdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         await bank.idempotently(*args, **kwargs).SignUp(
             context,
@@ -205,7 +205,7 @@ class IdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        account, _ = await Account.idempotently(
+        account, _ = await Account.factory.idempotently(
             'Open',
         ).Open(context, 'test-1234')
 
@@ -236,7 +236,7 @@ class IdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        account, _ = await Account.idempotently(
+        account, _ = await Account.factory.idempotently(
             'Open',
         ).Open(
             context,
@@ -247,7 +247,7 @@ class IdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
         # Using the same idempotency alias but for different metadata
         # should fail.
         with self.assertRaises(ValueError) as error:
-            await Account.idempotently('Open').Open(
+            await Account.factory.idempotently('Open').Open(
                 context,
                 'test-1234',
                 Options(metadata=(('x-reboot-some-key', '41'),)),
@@ -267,12 +267,14 @@ class IdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        account, _ = await Account.idempotently().Open(context, 'test-1234')
+        account, _ = await Account.factory.idempotently().Open(
+            context, 'test-1234'
+        )
 
         # Doing another call should fail, regardless of if it has
         # different arguments, metadata, etc.
         with self.assertRaises(ValueError) as error:
-            await Account.idempotently().Open(
+            await Account.factory.idempotently().Open(
                 context,
                 'test-1234',
                 Options(metadata=(('x-reboot-some-key', '41'),)),
@@ -288,7 +290,7 @@ class IdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
     async def test_idempotency_failed_mutation_violation(self) -> None:
         await self.rbt.up(Application(servicers=[AccountServicer]))
         context = self.rbt.create_external_context(name=self.id())
-        account, _ = await Account.Open(context, "foo")
+        account, _ = await Account.factory.Open(context, "foo")
 
         # A failed mutation that we can't be sure is due to an error
         # that came from the backend will make this idempotency
@@ -327,13 +329,13 @@ class IdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
 
         # First call: construct the account idempotently.
         state_id = 'idempotent-constructor-test'
-        account1, _ = await Account.idempotently(
+        account1, _ = await Account.factory.idempotently(
             'open account',
         ).Open(context, state_id)
 
         # Second call: exact same alias, context, and state ID. This
         # must succeed (not raise `StateAlreadyConstructed`).
-        account2, _ = await Account.idempotently(
+        account2, _ = await Account.factory.idempotently(
             'open account',
         ).Open(context, state_id)
 
@@ -344,7 +346,7 @@ class IdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
         # Verify that calling the constructor *without* idempotency on
         # the same state ID does raise `StateAlreadyConstructed`.
         with self.assertRaises(Account.OpenAborted) as aborted:
-            await Account.Open(context, state_id)
+            await Account.factory.Open(context, state_id)
 
         self.assertEqual(
             type(aborted.exception.error), StateAlreadyConstructed
@@ -364,7 +366,7 @@ class IdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         # First call: sign up the account idempotently.
         await bank.idempotently('sign up jonathan').SignUp(
@@ -394,7 +396,7 @@ class IdempotencyTestCase(unittest.IsolatedAsyncioTestCase):
                 name='create_or_assert',
                 idempotency_seed=idempotency_seed,
             )
-            account, _ = await Account.idempotently().Open(
+            account, _ = await Account.factory.idempotently().Open(
                 context,
             )
             nonlocal created_id

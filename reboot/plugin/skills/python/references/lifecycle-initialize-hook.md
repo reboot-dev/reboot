@@ -10,7 +10,7 @@ tags: initialize, InitializeContext, create, singleton, bootstrap
 > **Critical:** `initialize` runs on **every** application start, so
 > its calls get an **auto-generated idempotency key** (one per
 > `actor` + `method`) and run once. Constructors —
-> `Service.create(context, id)` / factory methods — are a no-op on
+> `Service.factory.create(context, id)` / factory methods — are a no-op on
 > existing actors. The catch: to call the **same method on the same
 > actor more than once** you **must** distinguish the calls with
 > `.idempotently("alias")` (or an explicit `key=`), or the second one
@@ -23,7 +23,7 @@ runs against an `InitializeContext` and is the right place to create
 singletons or seed data that must exist before the first real request.
 
 The callback runs each time the application starts; Reboot's idempotent
-`Service.create(context, id)` makes calling it on every boot safe.
+`Service.factory.create(context, id)` makes calling it on every boot safe.
 
 **Incorrect (creating singletons inside a Servicer's `__init__`):**
 
@@ -33,7 +33,7 @@ class BankServicer(Bank.Servicer):
     def __init__(self):
         # This won't run "at startup"; it runs the first time
         # someone references the Bank actor.
-        Bank.create(...)  # also: no context here
+        Bank.factory.create(...)  # also: no context here
 ```
 
 **Correct (matches the [`reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) example, `backend/src/main.py`):**
@@ -47,7 +47,7 @@ SINGLETON_BANK_ID = 'SVB'
 
 
 async def initialize(context: InitializeContext):
-    await Bank.create(context, SINGLETON_BANK_ID)
+    await Bank.factory.create(context, SINGLETON_BANK_ID)
 
 
 async def main():
@@ -61,7 +61,7 @@ async def main():
 
 If a `Type` does **not** declare a `factory=True` method, Reboot will
 implicitly create the actor on the first writer call. A simple chat
-room can use this — no explicit `ChatRoom.create(...)` is needed when
+room can use this — no explicit `ChatRoom.factory.create(...)` is needed when
 `send` is a `Writer`:
 
 ```python
@@ -73,13 +73,14 @@ async def initialize(context: InitializeContext):
 
 When the API **does** declare a factory (`Writer(... factory=True ...)`
 or `Transaction(... factory=True ...)`), call it explicitly via
-`Service.create(context, id)` or `Service.<CtorMethod>(context, id, ...)`.
+`Service.factory.create(context, id)` or
+`Service.factory.<CtorMethod>(context, id, ...)`.
 
 ## Calling the Same Method More Than Once — `.idempotently("alias")`
 
 `initialize` auto-generates an idempotency key per `(actor, method)`,
 so **one** call to a given method is fine bare — that's why
-`Service.create(...)` followed by a single `ref.send(...)` works
+`Service.factory.create(...)` followed by a single `ref.send(...)` works
 without any alias. But calling that **same** method on the **same**
 actor again in the same `initialize` raises:
 
@@ -94,7 +95,7 @@ Give each call a **distinct** `.idempotently("alias")` (or explicit
 
 ```python
 async def initialize(context: InitializeContext):
-    hello, _ = await Hello.create(
+    hello, _ = await Hello.factory.create(
         context, "reboot-hello", initial_message="Welcome!",
     )
 

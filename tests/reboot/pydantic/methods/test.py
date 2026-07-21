@@ -42,7 +42,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
             STR_VALUE = "initialized from workflow"
             STR_VALUE_WITH_STATE_ID = "initialized from workflow with state id"
 
-            test_ref, _ = await Test.initialize_from_workflow(
+            test_ref, _ = await Test.factory.initialize_from_workflow(
                 context,
                 str_value=STR_VALUE,
             )
@@ -56,7 +56,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
                 MY_STATE_ID,
             )
 
-            test_ref_with_state_id, _ = await Test.initialize_from_workflow(
+            test_ref_with_state_id, _ = await Test.factory.initialize_from_workflow(
                 context,
                 MY_STATE_ID,
                 str_value=STR_VALUE_WITH_STATE_ID,
@@ -83,7 +83,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        test, response = await Test.initialize(
+        test, response = await Test.factory.initialize(
             context,
             _TEST_STATE_ID,
         )
@@ -111,7 +111,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        test, _ = await Test.initialize(
+        test, _ = await Test.factory.initialize(
             context,
             _TEST_STATE_ID,
         )
@@ -186,7 +186,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        test, _ = await Test.initialize(
+        test, _ = await Test.factory.initialize(
             context,
             _TEST_STATE_ID,
         )
@@ -253,14 +253,14 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        test, _ = await Test.initialize(
+        test, _ = await Test.factory.initialize(
             context,
             _TEST_STATE_ID,
         )
 
         _SECOND_STATE_ID = f"{_TEST_STATE_ID}_other"
 
-        second_test, _ = await Test.initialize(
+        second_test, _ = await Test.factory.initialize(
             context,
             _SECOND_STATE_ID,
         )
@@ -343,7 +343,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        test, _ = await Test.initialize(
+        test, _ = await Test.factory.initialize(
             context,
             _TEST_STATE_ID,
         )
@@ -376,7 +376,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        test, _ = await Test.initialize(
+        test, _ = await Test.factory.initialize(
             context,
             _TEST_STATE_ID,
         )
@@ -400,7 +400,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        test, _ = await Test.initialize(
+        test, _ = await Test.factory.initialize(
             context,
             _TEST_STATE_ID,
         )
@@ -423,7 +423,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        test, _ = await Test.idempotently('initialize').initialize(
+        test, _ = await Test.factory.idempotently('initialize').initialize(
             context,
             _TEST_STATE_ID,
         )
@@ -499,7 +499,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
             "test-forall-3",
         ]
         for state_id in state_ids_list:
-            await Test.initialize(context, state_id)
+            await Test.factory.initialize(context, state_id)
 
         # Test `forall` with `dict.keys()`.
         state_ids_dict = {state_id: None for state_id in state_ids_list}

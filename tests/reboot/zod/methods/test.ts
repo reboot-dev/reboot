@@ -17,7 +17,7 @@ test("Test Zod Service", async (t) => {
 
     const context = rbt.createExternalContext("test");
 
-    const [test] = await Test.construct(context, {});
+    const [test] = await Test.factory.construct(context, {});
 
     await test.writer(context, {
       data: "initialize",

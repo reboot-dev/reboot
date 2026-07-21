@@ -174,7 +174,7 @@ class UserServicer(User.Servicer):
         request: User.ConnectAcmeRequest,
     ) -> User.ConnectAcmeResponse:
         user_id = self.ref().state_id
-        ciphertext, _ = await Ciphertext.encrypt(
+        ciphertext, _ = await Ciphertext.factory.encrypt(
             context,
             plaintext=request.api_key.encode(),
             associated_data=make_associated_data(
@@ -316,7 +316,7 @@ await KeyManager.ref(_key_manager_id(GOOGLE)).shred(context, scope=user_id)
       (any other service): your own authorize + callback routes, callback registered `app_internal=True`, the
       OAuth `state` HMAC-signed and verified, `OAuthTokenManager.store`
       called with the app-internal `external_context(request)`. Path C
-      (the user provides an API key, not OAuth): `Ciphertext.encrypt`,
+      (the user provides an API key, not OAuth): `Ciphertext.factory.encrypt`,
       with the returned `state_id` — never the raw key — kept in state.
       A key the developer holds for the whole app is an application
       secret (`rbt cloud secret`), not actor state.

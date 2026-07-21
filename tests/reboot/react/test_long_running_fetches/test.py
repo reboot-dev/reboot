@@ -24,7 +24,7 @@ async def test(context: ExternalContext, uri: str):
         # long running fetches.
         return
 
-    await Greeter.idempotently(f"Create '{STATE_ID}'").Create(
+    await Greeter.factory.idempotently(f"Create '{STATE_ID}'").Create(
         context,
         STATE_ID,
         title='Count',

@@ -50,7 +50,7 @@ test("Reboot", async (t) => {
       url: rbt.url(),
     });
 
-    const [greeter] = await Greeter.create(context, {
+    const [greeter] = await Greeter.factory.create(context, {
       title: "Dr",
       name: "Jonathan",
       adjective: "Best",
@@ -85,7 +85,7 @@ test("Reboot", async (t) => {
       bearerToken: TOKEN_FOR_TEST,
     });
 
-    const [greeter] = await Greeter.create(context, {
+    const [greeter] = await Greeter.factory.create(context, {
       title: "Dr",
       name: "Jonathan",
       adjective: "Best",
@@ -124,7 +124,7 @@ test("Reboot", async (t) => {
       bearerToken: asyncBearerToken,
     });
 
-    const [greeter] = await Greeter.create(context, {
+    const [greeter] = await Greeter.factory.create(context, {
       title: "Dr",
       name: "Jonathan",
       adjective: "Best",
@@ -160,7 +160,7 @@ test("Reboot", async (t) => {
       url: rbt.url(),
     });
 
-    const [greeter] = await Greeter.create(context, {
+    const [greeter] = await Greeter.factory.create(context, {
       title: "Dr",
       name: "Jonathan",
       adjective: "Best",
@@ -215,7 +215,7 @@ test("Reboot", async (t) => {
       url: rbt.url(),
     });
 
-    const [greeter] = await Greeter.create(context, "my-greeter", {
+    const [greeter] = await Greeter.factory.create(context, "my-greeter", {
       title: "Dr",
       name: "Jonathan",
       adjective: "Best",
@@ -265,7 +265,7 @@ test("Reboot", async (t) => {
       url: rbt.url(),
     });
 
-    const [greeter] = await Greeter.create(context, {
+    const [greeter] = await Greeter.factory.create(context, {
       title: "Dr",
       name: "Jonathan",
       adjective: "Best",

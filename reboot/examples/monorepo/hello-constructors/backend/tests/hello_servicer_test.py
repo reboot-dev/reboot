@@ -22,7 +22,9 @@ class TestHello(unittest.IsolatedAsyncioTestCase):
         # Create the state machine by calling its constructor. The fact that the
         # state machine _has_ a constructor means that this step is required
         # before other methods can be called on it.
-        hello, _ = await Hello.create(context, initial_message="first message")
+        hello, _ = await Hello.factory.create(
+            context, initial_message="first message"
+        )
 
         # Send another message.
         await hello.send(context, message="second message")
