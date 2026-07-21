@@ -3138,9 +3138,23 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         # then, and `set_state(claims=FOO)` would have an effect again -
         # we want to converge on the most recently delivered claims.
         if claims is not None:
+{% if options.proto.pydantic %}
             await {{ state.proto.name }}.ref(state_id).always().{{ SET_CLAIMS_METHOD }}(
                 context, claims=claims
             )
+{% else %}
+            # This state's `{{ SET_CLAIMS_METHOD }}` request carries
+            # claims as a `map<string, google.protobuf.Value>`, but the
+            # framework delivers them as native Python values. A
+            # `Struct` wraps each native value in the `Value` the
+            # generated request expects, so we load the claims into one
+            # and hand its fields to `{{ SET_CLAIMS_METHOD }}`.
+            claims_struct = google.protobuf.struct_pb2.Struct()
+            claims_struct.update(claims)
+            await {{ state.proto.name }}.ref(state_id).always().{{ SET_CLAIMS_METHOD }}(
+                context, claims=dict(claims_struct.fields)
+            )
+{% endif %}
 
     @staticmethod
     async def _set_claims_if_exists(
@@ -3163,9 +3177,19 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         carries the current claims.
         """
         try:
+{% if options.proto.pydantic %}
             await {{ state.proto.name }}.ref(state_id).always().{{ SET_CLAIMS_METHOD }}(
                 context, claims=claims
             )
+{% else %}
+            # See `_authenticated` for why the claims are loaded into
+            # a `Struct` here.
+            claims_struct = google.protobuf.struct_pb2.Struct()
+            claims_struct.update(claims)
+            await {{ state.proto.name }}.ref(state_id).always().{{ SET_CLAIMS_METHOD }}(
+                context, claims=dict(claims_struct.fields)
+            )
+{% endif %}
         except {{ state.proto.name }}.{{ SET_CLAIMS_PROTO_METHOD }}Aborted as aborted:
             # A `{{ SET_CLAIMS_METHOD }}` on a state that was never
             # constructed aborts with `StateNotConstructed` (and logs
