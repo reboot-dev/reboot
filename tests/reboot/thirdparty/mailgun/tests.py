@@ -36,7 +36,7 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
             bearer_token=MAILGUN_API_KEY,
         )
 
-        _, send_response = await Message.Send(
+        _, send_response = await Message.factory.Send(
             context,
             recipient="team@reboot.dev",
             sender="hipsterstore@reboot.dev",
@@ -54,7 +54,7 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(MockMessageServicer.emails_sent))
         MockMessageServicer.emails_sent.clear()
 
-        _, send_response = await Message.Send(
+        _, send_response = await Message.factory.Send(
             context,
             recipient="team@reboot.dev",
             sender="hipsterstore@reboot.dev",

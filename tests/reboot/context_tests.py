@@ -45,7 +45,7 @@ class ContextTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        greeter, response = await Greeter.Create(
+        greeter, response = await Greeter.factory.Create(
             context,
             title='Dr',
             name='Jonathan',
@@ -88,7 +88,7 @@ class ContextTestCase(unittest.IsolatedAsyncioTestCase):
             fake_to_grpc_metadata
         ):
             with self.assertRaises(Greeter.CreateAborted) as aborted:
-                await Greeter.Create(
+                await Greeter.factory.Create(
                     context,
                     title='Dr',
                     name='Jonathan',

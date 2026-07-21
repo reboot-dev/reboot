@@ -150,7 +150,7 @@ class TestBank(unittest.IsolatedAsyncioTestCase):
             )
         )
         context = self.rbt.create_external_context(name=f"test-{self.id()}")
-        bank, response = await Bank.create(context, BANK_ID)
+        bank, response = await Bank.factory.create(context, BANK_ID)
 
         # Assert that the constructor returns 'None' as described in
         # Pydantic schema.
@@ -237,10 +237,10 @@ class TestBank(unittest.IsolatedAsyncioTestCase):
             )
         )
         context = self.rbt.create_external_context(name=f"test-{self.id()}")
-        await Bank.create(context, BANK_ID)
+        await Bank.factory.create(context, BANK_ID)
 
         ACCOUNT_ID = "test-overdraft-account"
-        account, _ = await Account.open(context, ACCOUNT_ID)
+        account, _ = await Account.factory.open(context, ACCOUNT_ID)
         try:
             await account.withdraw(context, amount=50.50)
             raise Exception("Expected `OverdraftError` to be thrown")
@@ -260,11 +260,11 @@ class TestBank(unittest.IsolatedAsyncioTestCase):
             )
         )
         context = self.rbt.create_external_context(name=f"test-{self.id()}")
-        await Bank.create(context, BANK_ID)
+        await Bank.factory.create(context, BANK_ID)
 
         ACCOUNT_ID = "test-overdraft-account"
 
-        account, _ = await Account.open(context, ACCOUNT_ID)
+        account, _ = await Account.factory.open(context, ACCOUNT_ID)
 
         task = await account.spawn().deposit(context, amount=10.0)
 

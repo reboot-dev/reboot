@@ -59,7 +59,7 @@ test("app internal", async (t) => {
 
     const context = rbt.createExternalContext("test", { appInternal: true });
 
-    await Greeter.create(context, {});
+    await Greeter.factory.create(context, {});
   });
 
   // Test that without a token verifier the authorizer and method both
@@ -69,7 +69,7 @@ test("app internal", async (t) => {
 
     const context = rbt.createExternalContext("test", { appInternal: true });
 
-    await Greeter.create(context, {});
+    await Greeter.factory.create(context, {});
   });
 
   // Test that _with_ a token verifier the authorizer and method both
@@ -84,6 +84,6 @@ test("app internal", async (t) => {
 
     const context = rbt.createExternalContext("test", { appInternal: true });
 
-    await Greeter.create(context, {});
+    await Greeter.factory.create(context, {});
   });
 });

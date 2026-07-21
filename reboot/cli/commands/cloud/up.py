@@ -87,7 +87,7 @@ async def _maybe_create_application(
         bearer_token=api_key,
     )
     try:
-        await Application.Create(context, qualified_application_name)
+        await Application.factory.Create(context, qualified_application_name)
     except Aborted as aborted:
         match aborted.error:
             case StateAlreadyConstructed():  # type: ignore[misc]

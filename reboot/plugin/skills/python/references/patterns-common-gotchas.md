@@ -45,16 +45,16 @@ await account.deposit(context, DepositRequest(amount=10))
 await account.deposit(context, amount=10)
 ```
 
-### 5. Constructor Calls Use `Service.create` / `Service.<ctor>`
+### 5. Constructor Calls Use `Service.factory.create` / `Service.factory.<ctor>`
 
-Don't call a constructor through `.ref(id).method(...)`. Use the factory
-form so creation semantics apply:
+Don't call a constructor through `.ref(id).method(...)`. Invoke it
+through the `factory` namespace so creation semantics apply:
 
 ```python
 # Wrong:
 await Account.ref(id).open(context)
 # Right:
-account, _ = await Account.open(context, id)
+account, _ = await Account.factory.open(context, id)
 ```
 
 ### 6. Servicer `authorizer()` Returns an Instance
@@ -105,8 +105,8 @@ Workflow, Not a Transaction" in `servicer-transaction.md`.
 
 ### 9. `initialize` Runs on Every Restart
 
-It's idempotent only if **you** make it so. Use `Service.create` and
-`context.constructor` to gate set-once work.
+It's idempotent only if **you** make it so. Use `Service.factory.create`
+and `context.constructor` to gate set-once work.
 
 ### 10. Don't Hand-Edit `*_rbt.py`
 

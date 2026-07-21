@@ -47,7 +47,7 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 9. RPC (rpc)
 
 **Impact:** MEDIUM
-**Description:** Calling actors via `Service.ref(id)` and `await ref.method(context, ...)`. Constructor calls (`Service.create`), fan-out via `Service.forall(ids).method(context)`, and the kwargs-not-Request convention.
+**Description:** Calling actors via `Service.ref(id)` and `await ref.method(context, ...)`. Constructor calls (`Service.factory.create`), fan-out via `Service.forall(ids).method(context)`, and the kwargs-not-Request convention.
 
 ## 10. Scheduling (scheduling)
 

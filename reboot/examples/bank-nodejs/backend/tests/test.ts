@@ -14,7 +14,7 @@ function reportErrorToUser(errorMessage: string): void {
 async function performErroringWithdrawal(context: any): Promise<void> {
   const accountId = "account-nodejs";
 
-  const [account] = await Account.open(context, accountId, {
+  const [account] = await Account.factory.open(context, accountId, {
     customerName: "Tony",
   });
 

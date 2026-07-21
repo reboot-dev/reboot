@@ -428,7 +428,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         response = await bank.SignUp(context, account_id='jonathan')
 
@@ -580,7 +580,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        greeter, _ = await Greeter.Create(
+        greeter, _ = await Greeter.factory.Create(
             context,
             title='Dr',
             name='Jonathan',
@@ -666,7 +666,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
 
         # Construct.
-        g, _ = await General.ConstructorWriter(context)
+        g, _ = await General.factory.ConstructorWriter(context)
 
         task = await g.spawn().Workflow(context)
 
@@ -750,7 +750,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
 
         # Construct.
-        g, _ = await General.ConstructorWriter(context)
+        g, _ = await General.factory.ConstructorWriter(context)
 
         task = await g.spawn().Workflow(context)
 
@@ -799,7 +799,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
 
         # Construct.
-        g, _ = await General.ConstructorWriter(context)
+        g, _ = await General.factory.ConstructorWriter(context)
 
         # Spawn a workflow with an absolute time that includes the timezone.
         task = await g.spawn(when=datetime.now(tz=get_localzone())
@@ -886,7 +886,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
 
         # Construct.
-        g, _ = await General.ConstructorWriter(context)
+        g, _ = await General.factory.ConstructorWriter(context)
 
         # Call Writer that will schedule a workflow with an absolute time that does not include the timezone.
         await g.Writer(context, content={'timezone_attached': ""})
@@ -981,7 +981,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
 
         # Construct.
-        g, _ = await General.ConstructorTransaction(context, ID)
+        g, _ = await General.factory.ConstructorTransaction(context, ID)
 
         # Call Transaction that will schedule a workflow with an absolute time that does not include the timezone.
         await g.Transaction(context, content={'timezone_attached': ""})
@@ -1056,7 +1056,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
 
         # Construct.
-        g, _ = await General.ConstructorWriter(context)
+        g, _ = await General.factory.ConstructorWriter(context)
 
         # Call Transaction that will schedule a workflow with a timedelta.
         await g.Transaction(context)
@@ -1120,7 +1120,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
 
         # Construct.
-        g, _ = await General.ConstructorTransaction(context, ID)
+        g, _ = await General.factory.ConstructorTransaction(context, ID)
 
         # Call Transaction that will schedule a workflow with a timedelta.
         await g.Transaction(context)
@@ -1191,7 +1191,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
 
         # Construct.
-        g, _ = await General.constructor_writer(context)
+        g, _ = await General.factory.constructor_writer(context)
 
         # Run the workflow.
         await g.workflow(context)
@@ -1296,7 +1296,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
 
         # Construct.
-        g, _ = await General.constructor_writer(context)
+        g, _ = await General.factory.constructor_writer(context)
 
         # Spawn the workflow.
         task = await g.spawn().workflow(context)
@@ -1426,7 +1426,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
 
         # Construct.
-        g, _ = await General.constructor_writer(context)
+        g, _ = await General.factory.constructor_writer(context)
 
         # Spawn the workflow.
         task = await g.spawn().workflow(context)
@@ -1586,7 +1586,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
 
         # Construct.
-        g, _ = await General.constructor_writer(context)
+        g, _ = await General.factory.constructor_writer(context)
 
         # Spawn the workflow.
         task = await g.spawn().workflow(context)
@@ -1690,7 +1690,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        g, _ = await General.constructor_writer(context)
+        g, _ = await General.factory.constructor_writer(context)
 
         await g.workflow(context)
 
@@ -1773,7 +1773,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        g, _ = await General.constructor_writer(context)
+        g, _ = await General.factory.constructor_writer(context)
 
         await g.workflow(context)
 
@@ -1856,7 +1856,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        g, _ = await General.constructor_writer(context)
+        g, _ = await General.factory.constructor_writer(context)
 
         await g.workflow(context)
 
@@ -1923,7 +1923,7 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        g, _ = await General.constructor_writer(context)
+        g, _ = await General.factory.constructor_writer(context)
 
         await g.workflow(context)
 
