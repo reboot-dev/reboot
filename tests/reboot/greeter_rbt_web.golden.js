@@ -2306,10 +2306,7 @@ export class GreeterWeakReference {
     }
 }
 _GreeterWeakReference_id = new WeakMap(), _GreeterWeakReference_options = new WeakMap();
-export class Greeter {
-    static ref(id, options) {
-        return new Greeter.WeakReference(id, options === null || options === void 0 ? void 0 : options.bearerToken);
-    }
+export class GreeterFactory {
     static async create(context, idOrPartialRequest, inputPartialRequest, options) {
         let id = undefined;
         let partialRequest = undefined;
@@ -2332,4 +2329,10 @@ export class Greeter {
         return [weakReference, response];
     }
 }
+export class Greeter {
+    static ref(id, options) {
+        return new Greeter.WeakReference(id, options === null || options === void 0 ? void 0 : options.bearerToken);
+    }
+}
 Greeter.WeakReference = GreeterWeakReference;
+Greeter.factory = GreeterFactory;
