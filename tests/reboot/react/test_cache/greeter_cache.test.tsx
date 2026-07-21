@@ -35,7 +35,7 @@ describe("Disconnected mode - offline cache enabled", () => {
     it("creates Greeter and changes adjective", async () => {
       const context = rbt.createExternalContext("test-context-1");
 
-      await Greeter.create(context, "greeter-test-id-1", {
+      await Greeter.factory.create(context, "greeter-test-id-1", {
         title: "Dr",
         name: "Jonathan",
         adjective: "Best",
@@ -157,7 +157,7 @@ describe("Disconnected mode - offline cache disabled", () => {
     it("creates Greeter and changes adjectiv", async () => {
       const context = rbt.createExternalContext("test-context-1");
 
-      await Greeter.create(context, "greeter-test-id-1", {
+      await Greeter.factory.create(context, "greeter-test-id-1", {
         title: "Dr",
         name: "Jonathan",
         adjective: "Best",

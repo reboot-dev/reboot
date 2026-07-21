@@ -624,7 +624,7 @@ class TasksServicerTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        general, _ = await General.ConstructorWriter(
+        general, _ = await General.factory.ConstructorWriter(
             context, "scheduled-loop-test"
         )
         task = await general.spawn().Workflow(context)
@@ -715,7 +715,7 @@ class TasksServicerTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        general, _ = await General.ConstructorWriter(
+        general, _ = await General.factory.ConstructorWriter(
             context, "test_iteration_count"
         )
         task = await general.spawn().Workflow(context)

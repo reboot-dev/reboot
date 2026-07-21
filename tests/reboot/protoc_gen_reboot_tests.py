@@ -118,7 +118,8 @@ class GeneratorTest(unittest.TestCase):
         # Reboot services don't support (custom) HTTP annotations.
         #
         # Modify the descriptor set to form the basis for the test. In this
-        # case, add an HTTP annotation to the `Greeter.Create()` method.
+        # case, add an HTTP annotation to the `Greeter.factory.Create()`
+        # method.
         file = self.descriptor_set.file[-1]
         self.assertEqual(file.name, 'tests/reboot/greeter.proto')
 

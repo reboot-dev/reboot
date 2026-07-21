@@ -155,7 +155,7 @@ class UserServicer(User.Servicer):
         context: TransactionContext,
         request: CreateCounterRequest,
     ) -> CreateCounterResponse:
-        counter, _ = await Counter.create(
+        counter, _ = await Counter.factory.create(
             context,
             description=request.description,
             owner_id=context.state_id,

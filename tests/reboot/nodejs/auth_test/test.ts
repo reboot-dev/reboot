@@ -114,7 +114,7 @@ test("auth", async (t) => {
         bearerToken: options?.bearerToken,
       });
       try {
-        await Greeter.create(context, options?.id);
+        await Greeter.factory.create(context, options?.id);
         assert(false, `Should not have successfully authed with ${options}`);
       } catch (e) {
         assert(e instanceof Greeter.CreateAborted, "not CreateAborted");
@@ -135,7 +135,7 @@ test("auth", async (t) => {
     const authedContext = rbt.createExternalContext("test", {
       bearerToken: TOKEN_FOR_TEST,
     });
-    const [greeter] = await Greeter.create(authedContext);
+    const [greeter] = await Greeter.factory.create(authedContext);
 
     // Confirm that our authorizer does not allow access to any other method
     // by default, since we have not overridden other methods.
@@ -157,7 +157,7 @@ test("auth", async (t) => {
   await t.test("via construct and lookup", async (t) => {
     // Test that an authenticated construct succeeds.
     const context = rbt.createExternalContext("test");
-    const [greeter] = await Greeter.create(
+    const [greeter] = await Greeter.factory.create(
       context,
       {
         title: "Dr",

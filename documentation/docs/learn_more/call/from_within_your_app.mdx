@@ -49,7 +49,7 @@ async def transfer(
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts&lines=46-54) -->
+(CODE:src=../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts&lines=50-61) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts -->
 
 ```ts
@@ -62,6 +62,9 @@ async transfer(
 
   await fromAccount.withdraw(context, { amount: request.amount });
   await toAccount.deposit(context, { amount: request.amount });
+
+  return {};
+}
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->

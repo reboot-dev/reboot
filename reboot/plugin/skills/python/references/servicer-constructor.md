@@ -7,10 +7,11 @@ tags: servicer, constructor, context.constructor, create, initialization
 
 ## Handle Constructor Methods
 
-> **Critical:** invoke a constructor as `await Service.create(context, id)`
-> (or `await Service.<CtorMethod>(context, id, **kwargs)`), **never**
-> as `Service.ref(id).method(...)` — the latter skips creation
-> semantics. Inside the implementation, branch on
+> **Critical:** invoke a constructor as
+> `await Service.factory.create(context, id)` (or
+> `await Service.factory.<CtorMethod>(context, id, **kwargs)`),
+> **never** as `Service.ref(id).method(...)` — the latter skips
+> creation semantics. Inside the implementation, branch on
 > `context.constructor` for set-once initial state.
 
 A method declared with `factory=True` on its `Writer(...)` or
@@ -18,7 +19,7 @@ A method declared with `factory=True` on its `Writer(...)` or
 The Servicer implementation is just an ordinary writer/transaction
 method — the _constructor-ness_ shows up in two places:
 
-1. **Caller side**: use `await Service.create(context, id)` (not
+1. **Caller side**: use `await Service.factory.create(context, id)` (not
    `Service.ref(id).method(...)`) to invoke it.
 2. **Servicer side**: branch on `context.constructor` to set initial state
    only on the creation pass.
@@ -74,10 +75,10 @@ second call.
 
 ```python
 async def initialize(context: InitializeContext):
-    await Bank.create(context, SINGLETON_BANK_ID)
+    await Bank.factory.create(context, SINGLETON_BANK_ID)
 ```
 
-`Service.create(context, id)` is **idempotent** when called from the
+`Service.factory.create(context, id)` is **idempotent** when called from the
 `initialize` hook, so it's safe to invoke on every application start.
 
 ## Calling from a Transaction
@@ -88,10 +89,10 @@ A transaction can create and operate on a new actor in one atomic step:
 async def sign_up(
     self, context: TransactionContext, request: Bank.SignUpRequest,
 ) -> None:
-    account, _ = await Account.open(context, request.account_id)
+    account, _ = await Account.factory.open(context, request.account_id)
     await account.deposit(context, amount=request.initial_deposit)
 ```
 
-`Account.open(context, id)` here is the constructor (the `open` method
+`Account.factory.open(context, id)` here is the constructor (the `open` method
 declared `factory=True`) and returns the actor reference plus the
 response (or `None` when `response=None`).

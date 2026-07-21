@@ -112,7 +112,7 @@ from reboot.std.ciphertext.v1.ciphertext import APP_SHARED_KEY_MANAGER_ID
 from uuid import uuid4
 
 ciphertext_id = str(uuid4())
-ciphertext, _ = await Ciphertext.encrypt(
+ciphertext, _ = await Ciphertext.factory.encrypt(
     context,
     ciphertext_id,
     plaintext=b"123-45-6789",
@@ -132,7 +132,7 @@ import {
 } from "@reboot-dev/reboot-std/ciphertext/v1";
 
 const ciphertextId = crypto.randomUUID();
-const [ciphertext] = await Ciphertext.encrypt(context, ciphertextId, {
+const [ciphertext] = await Ciphertext.factory.encrypt(context, ciphertextId, {
   plaintext: new TextEncoder().encode("123-45-6789"),
   associatedData: makeAssociatedData({ user_id: "42", purpose: "ssn" }),
   scope: "user_id:42",
@@ -199,7 +199,7 @@ others ciphertexts (`shred` operates per manager).
 
 ```py
 # Encrypt under a named manager.
-await Ciphertext.encrypt(
+await Ciphertext.factory.encrypt(
     context,
     ciphertext_id,
     plaintext=b"123-45-6789",
@@ -217,7 +217,7 @@ await KeyManager.ref("tenant:acme").shred(context, scope="user_id:42")
 
 ```ts
 // Encrypt under a named manager.
-await Ciphertext.encrypt(context, ciphertextId, {
+await Ciphertext.factory.encrypt(context, ciphertextId, {
   plaintext: new TextEncoder().encode("123-45-6789"),
   associatedData: makeAssociatedData({ user_id: "42", purpose: "ssn" }),
   scope: "user_id:42",

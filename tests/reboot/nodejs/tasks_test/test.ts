@@ -115,7 +115,7 @@ test("tasks", async (t) => {
 
     const context = rbt.createExternalContext("test");
 
-    const [task, _] = await Task.constructorTransaction(context);
+    const [task, _] = await Task.factory.constructorTransaction(context);
 
     // Test that we schedule a writer task and run it immediately.
     await task.transaction(context);
@@ -152,7 +152,7 @@ test("tasks", async (t) => {
 
     const context = rbt.createExternalContext("test");
 
-    const [task, _] = await Task.constructorTransaction(context);
+    const [task, _] = await Task.factory.constructorTransaction(context);
 
     // Test that we schedule a transaction task and run it immediately.
     await task.transaction(context);
@@ -189,7 +189,7 @@ test("tasks", async (t) => {
 
     const context = rbt.createExternalContext("test");
 
-    const [task, _] = await Task.constructorTransaction(context);
+    const [task, _] = await Task.factory.constructorTransaction(context);
 
     // Test that we schedule a workflow task and run it immediately.
     await task.transaction(context);

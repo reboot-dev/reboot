@@ -71,7 +71,7 @@ async def main():
 
 The intended dance, per the type's docs:
 
-1. Client `Subscriber.create(context, subscriber_id)` — once.
+1. Client `Subscriber.factory.create(context, subscriber_id)` — once.
 2. Client opens a long-lived `Subscriber.ref(id).connect(context)`
    reader RPC; this stays open as long as the client is connected.
 3. Client `Subscriber.ref(id).toggle(context)` to mark itself as live;

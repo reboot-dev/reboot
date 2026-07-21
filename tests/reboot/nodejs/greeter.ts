@@ -218,7 +218,7 @@ export class GreeterServicer extends Greeter.Servicer {
     // iteration via `.perIteration()` by default.
     //
     // Create the other `Greeter` once per workflow.
-    const [other] = await Greeter.create(context, {
+    const [other] = await Greeter.factory.create(context, {
       title: "Dr",
       name: "Evil",
       adjective: "cunning",

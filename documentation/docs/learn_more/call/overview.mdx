@@ -24,7 +24,7 @@ from_account = Account.ref(request.from_account_id)
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts&lines=50-50) -->
+(CODE:src=../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts&lines=54-54) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts -->
 
 ```ts
@@ -191,7 +191,7 @@ example:
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 ```python
-account, response = await Account.open(
+account, response = await Account.factory.open(
     context,
     customer_name=request.customer_name,
 )
@@ -200,7 +200,7 @@ account, response = await Account.open(
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 ```typescript
-const [account, response] = await Account.open(context, {
+const [account, response] = await Account.factory.open(context, {
   customerName: request.customerName,
 });
 ```
@@ -230,7 +230,7 @@ an example of constructing an `Account` with an explicit ID using the
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/monorepo/bank/backend/src/bank_servicer.py -->
 
 ```python
-account, _ = await Account.open(
+account, _ = await Account.factory.open(
     context,
     new_account_id,
     customer_name=request.customer_name,
@@ -240,13 +240,17 @@ account, _ = await Account.open(
 <!-- MARKDOWN-AUTO-DOCS:END -->
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts&syntax=typescript&lines=39-41) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts&syntax=typescript&lines=39-45) -->
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/bank-nodejs/backend/src/bank_servicer.ts -->
 
 ```typescript
-const [account, response] = await Account.open(context, newAccountId, {
-  customerName: request.customerName,
-});
+const [account, response] = await Account.factory.open(
+  context,
+  newAccountId,
+  {
+    customerName: request.customerName,
+  }
+);
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -263,7 +267,7 @@ application (i.e., using an `ExternalContext`):
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 ```python
-account, response = await Account.idempotently().open(
+account, response = await Account.factory.idempotently().open(
     context,
     customer_name=request.customer_name,
 )
@@ -272,7 +276,7 @@ account, response = await Account.idempotently().open(
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 ```typescript
-const [account, response] = await Account.idempotently().open(context, {
+const [account, response] = await Account.factory.idempotently().open(context, {
   customerName: request.customerName,
 });
 ```

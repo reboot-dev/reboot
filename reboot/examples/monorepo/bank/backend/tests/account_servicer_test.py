@@ -28,7 +28,7 @@ class TestAccount(unittest.IsolatedAsyncioTestCase):
         # Create the state machine by calling its constructor. The fact that the
         # state machine _has_ a constructor means that this step is required
         # before other methods can be called on it.
-        account, _ = await Account.open(context, customer_name="Alice")
+        account, _ = await Account.factory.open(context, customer_name="Alice")
 
         # We can now call methods on the state machine. It should have a balance
         # of 0.
@@ -78,7 +78,7 @@ class TestAccount(unittest.IsolatedAsyncioTestCase):
 
         # When we open an account, we expect the user to receive a welcome
         # email.
-        account, open_response = await Account.open(
+        account, open_response = await Account.factory.open(
             context,
             customer_name="Alice",
         )

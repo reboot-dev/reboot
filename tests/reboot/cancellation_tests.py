@@ -88,7 +88,7 @@ class CancellationTestCase(unittest.IsolatedAsyncioTestCase):
         context = self.rbt.create_external_context(name=self.id())
 
         # Construct.
-        g, _ = await General.ConstructorWriter(context)
+        g, _ = await General.factory.ConstructorWriter(context)
 
         # Start task to Reader to test the unary case.
         reader_task = asyncio.create_task(g.Reader(context))

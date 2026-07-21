@@ -88,7 +88,7 @@ async def create(
     self, context: TransactionContext, request: CreateRequest,
 ) -> CreateResponse:
     self.state.account_ids_map_id = str(uuid4())
-    await OrderedMap.create(
+    await OrderedMap.factory.create(
         context, self.state.account_ids_map_id,
     )
     return CreateResponse()

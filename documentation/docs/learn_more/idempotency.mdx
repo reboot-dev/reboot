@@ -22,10 +22,11 @@ distinguish each call, for example:
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../tests/reboot/idempotency_tests.py&lines=370-373) -->
+(CODE:src=../../../tests/reboot/idempotency_tests.py&lines=371-375) -->
 <!-- The below code snippet is automatically added from ../../../tests/reboot/idempotency_tests.py -->
 
 ```py
+# First call: sign up the account idempotently.
 await bank.idempotently('sign up jonathan').SignUp(
     context,
     account_id='jonathan',
@@ -40,7 +41,7 @@ await bank.idempotently('sign up jonathan').SignUp(
 <!-- The below code snippet is automatically added from ../../../tests/reboot/nodejs/greeter_test/test.ts -->
 
 ```ts
-await Greeter.idempotently("generated").create(context, {
+await Greeter.factory.idempotently("generated").create(context, {
   title: "Mr",
   name: "John",
   adjective: "Dangerous",

@@ -137,7 +137,7 @@ async def benchmark() -> None:
         state_ids = [str(state_id) for state_id in range(4096)]
         await asyncio.gather(
             *(
-                General.ConstructorWriter(context, state_id)
+                General.factory.ConstructorWriter(context, state_id)
                 for state_id in state_ids
             )
         )

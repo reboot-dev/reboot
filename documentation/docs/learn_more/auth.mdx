@@ -56,7 +56,7 @@ construction](/learn_more/call/overview#explicit-construction):
 <!-- The below code snippet is automatically added from ../../../tests/reboot/auth_tests.py -->
 
 ```py
-bank, _ = await Bank.create(
+bank, _ = await Bank.factory.create(
     context,
     SINGLETON_BANK_ID,
     Options(bearer_token=VALID_JWT),
@@ -68,7 +68,7 @@ bank, _ = await Bank.create(
 
   <TabItem value="typescript" label="TypeScript">
 ```ts
-const [bank] = await Bank.create(
+const [bank] = await Bank.factory.create(
   context,
   SINGLETON_BANK_ID,
   {},
