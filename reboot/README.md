@@ -194,6 +194,30 @@ After the workflow completes, look for and approve PRs opened by the workflow: o
 - **You will need to manually review and approve these PRs.**
 - Aviator (MergeQueue) will automatically merge the PRs once you've approved them. It's still good to check that indeed happens (e.g. checks, if any, must pass).
 
+### 6. Tag the release and publish release notes
+
+Every release gets a Git tag and a GitHub release (with release
+notes) in the repository.
+
+First write the release notes: a short, user-facing summary of what
+changed since the previous release.
+
+Create the tag and the release in one step. The tag is the bare
+version number (e.g. `1.3.0`) and ideally must point at the
+"Prepare <version> for release" version-bump commit on `main`.
+
+You can use GitHub UI or do it through the CLI:
+
+```sh
+gh release create <version> --repo reboot-dev/reboot \
+    --target <sha-of-version-bump-commit> \
+    --title "Reboot <version>" \
+    --notes-file <release-notes-file>
+```
+
+Finally, post the same release notes to the Discord announcements
+channel.
+
 ## Integrating changes from public repos
 
 When the public repositories changes (have new commits on `main`), we must

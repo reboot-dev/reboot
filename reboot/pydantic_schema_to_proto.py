@@ -215,6 +215,11 @@ async def generate(
         for field_name, field_info in base_model_schema.model_fields.items():
             field_type = field_info.annotation
 
+            # Pydantic declares `annotation` as optional, but a model
+            # field is always defined by a type annotation, so it is
+            # present for every field we iterate here.
+            assert field_type is not None
+
             # Discriminated union might be defined only as a field option
             # in the Pydantic model, so we need to get it from there.
             # If it was passed from the parent call, we just use that, and

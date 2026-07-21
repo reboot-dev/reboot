@@ -13,10 +13,11 @@ from watchdog.events import (
     FileSystemEventHandler,
 )
 from watchdog.observers import Observer
+from watchdog.observers.api import BaseObserver
 
 
 @contextmanager
-def file_watcher() -> Iterator[Observer]:
+def file_watcher() -> Iterator['FileWatcher']:
     """Creates an `Observer` to be shared across multiple watch calls.
 
     TODO: This is necessary due to
@@ -35,7 +36,7 @@ def file_watcher() -> Iterator[Observer]:
 
 @dataclass(frozen=True)
 class FileWatcher:
-    observer: Observer
+    observer: BaseObserver
 
     @asynccontextmanager
     async def watch(
