@@ -1,0 +1,42 @@
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//reboot:rules.bzl", "py_reboot_library")
+
+proto_library(
+    name = "test_proto",
+    srcs = ["test.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:struct_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "test_py_reboot",
+    proto = "test.proto",
+    proto_library = ":test_proto",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "test_servicer_py",
+    srcs = ["test_servicer.py"],
+    visibility = ["//tests/reboot:__subpackages__"],
+    deps = [
+        ":test_py_reboot",
+    ],
+)
+
+py_test(
+    name = "test_py",
+    srcs = ["test.py"],
+    main = "test.py",
+    deps = [
+        ":test_py_reboot",
+        ":test_servicer_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:tests_py",
+    ],
+)

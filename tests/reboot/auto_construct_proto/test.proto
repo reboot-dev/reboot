@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package tests.reboot.auto_construct_proto;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "rbt/v1alpha1/options.proto";
+
+// A proto-defined (i.e. non-Pydantic) state that is auto-constructed
+// `PER_USER_ID`. The framework injects an overridable `Create`
+// factory and an overridable `SetClaims` claims-delivery method. This
+// exercises the proto codegen path for claims delivery, in which the
+// framework's native claim values must be converted into the
+// `google.protobuf.Value`s the `SetClaims` request carries — a path a
+// Pydantic state, whose request accepts native values directly, never
+// takes.
+message User {
+  option (rbt.v1alpha1.state) = {
+    auto_construct: PER_USER_ID
+  };
+
+  string email = 1;
+  int32 update_count = 2;
+}
+
+message UserSetClaimsRequest {
+  map<string, google.protobuf.Value> claims = 1;
+}
+
+message GetResponse {
+  string email = 1;
+  int32 update_count = 2;
+}
+
+service UserMethods {
+  rpc Create(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+      constructor: {}
+    };
+  }
+
+  rpc SetClaims(UserSetClaimsRequest) returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  rpc Get(google.protobuf.Empty) returns (GetResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+}
