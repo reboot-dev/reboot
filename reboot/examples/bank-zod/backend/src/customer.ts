@@ -29,7 +29,7 @@ export const CustomerServicer = Customer.servicer({
     const accountId = uuidv4();
     state.accountIds.push(accountId);
 
-    const [account] = await Account.open(context, accountId, {});
+    const [account] = await Account.factory.open(context, accountId, {});
 
     await account.deposit(context, { amount: initialDeposit });
 

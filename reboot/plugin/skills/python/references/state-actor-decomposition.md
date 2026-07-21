@@ -111,9 +111,9 @@ class UserServicer(User.Servicer):
     ) -> None:
         if context.constructor:
             self.state.display_name = request.display_name
-            session, _ = await TelegramSession.create(context)
+            session, _ = await TelegramSession.factory.create(context)
             self.state.telegram_session_id = session.state_id
-            manager, _ = await MonitoringManager.create(context)
+            manager, _ = await MonitoringManager.factory.create(context)
             self.state.monitoring_manager_id = manager.state_id
 ```
 

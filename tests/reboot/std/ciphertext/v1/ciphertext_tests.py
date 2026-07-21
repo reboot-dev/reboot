@@ -55,7 +55,7 @@ class TestCiphertext(unittest.IsolatedAsyncioTestCase):
         scope: str,
         key_manager_id: str,
     ) -> str:
-        ciphertext, _ = await Ciphertext.encrypt(
+        ciphertext, _ = await Ciphertext.factory.encrypt(
             self.context,
             plaintext=plaintext,
             associated_data=associated_data,

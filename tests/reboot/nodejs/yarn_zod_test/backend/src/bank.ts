@@ -64,7 +64,7 @@ export const BankServicer = Bank.servicer({
     state: Bank.State,
     { accountId, initialDeposit }: Bank.SignUpRequest
   ): Promise<[Bank.State]> => {
-    const [account] = await Account.open(context, accountId, {});
+    const [account] = await Account.factory.open(context, accountId, {});
 
     await account.deposit(context, { amount: initialDeposit });
 

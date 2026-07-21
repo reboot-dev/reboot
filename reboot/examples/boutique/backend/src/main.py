@@ -11,9 +11,11 @@ from shipping.servicer import ShippingServicer
 
 
 async def initialize(context):
-    await Checkout.create(context, CHECKOUT_ACTOR_ID)
+    await Checkout.factory.create(context, CHECKOUT_ACTOR_ID)
 
-    await ProductCatalog.load_products(context, PRODUCT_CATALOG_ACTOR_ID)
+    await ProductCatalog.factory.load_products(
+        context, PRODUCT_CATALOG_ACTOR_ID
+    )
 
 
 async def main():

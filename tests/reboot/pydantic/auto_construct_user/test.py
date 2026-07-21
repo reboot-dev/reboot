@@ -167,8 +167,8 @@ class AutoConstructUserTest(unittest.IsolatedAsyncioTestCase):
         # already-constructed — and still deliver claims — rather
         # than aborting with `StateAlreadyConstructed`.
         user_id = "preexisting-user"
-        await User.idempotently("explicit-construction"
-                               ).create(self.internal, user_id)
+        await User.factory.idempotently("explicit-construction"
+                                       ).create(self.internal, user_id)
 
         await UserServicer._authenticated(
             self.internal,

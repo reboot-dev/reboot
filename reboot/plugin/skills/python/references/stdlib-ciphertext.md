@@ -61,13 +61,13 @@ async def main():
 
 ### Methods
 
-| Call                                                                                      | Type                      | Notes                                                                                                                                                                    |
-| ----------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Ciphertext.encrypt(context, [id], *, plaintext, associated_data, scope, key_manager_id)` | transaction (constructor) | `key_manager_id` is **required** (pass `APP_SHARED_KEY_MANAGER_ID`); returns `(ref, EncryptResponse)`; omit `id` to auto-generate one and read it back as `ref.state_id` |
-| `Ciphertext.ref(id).decrypt(context, *, associated_data)`                                 | reader                    | `-> DecryptResponse(plaintext)`. Raises `DecryptAborted`                                                                                                                 |
-| `Ciphertext.ref(id).rescope(context, *, scope)`                                           | transaction               | move a ciphertext to a different scope (same manager); only the wrapped DEK changes                                                                                      |
-| `KeyManager.ref(APP_SHARED_KEY_MANAGER_ID).shred(context, *, scope)`                      | transaction               | crypto-shred a scope — idempotent                                                                                                                                        |
-| `KeyManager.ref(APP_SHARED_KEY_MANAGER_ID).status(context)`                               | reader                    | `-> StatusResponse(active_version, rotating)`; poll to confirm a rotation finished (`active_version` reached and `rotating` is false)                                    |
+| Call                                                                                              | Type                      | Notes                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Ciphertext.factory.encrypt(context, [id], *, plaintext, associated_data, scope, key_manager_id)` | transaction (constructor) | `key_manager_id` is **required** (pass `APP_SHARED_KEY_MANAGER_ID`); returns `(ref, EncryptResponse)`; omit `id` to auto-generate one and read it back as `ref.state_id` |
+| `Ciphertext.ref(id).decrypt(context, *, associated_data)`                                         | reader                    | `-> DecryptResponse(plaintext)`. Raises `DecryptAborted`                                                                                                                 |
+| `Ciphertext.ref(id).rescope(context, *, scope)`                                                   | transaction               | move a ciphertext to a different scope (same manager); only the wrapped DEK changes                                                                                      |
+| `KeyManager.ref(APP_SHARED_KEY_MANAGER_ID).shred(context, *, scope)`                              | transaction               | crypto-shred a scope — idempotent                                                                                                                                        |
+| `KeyManager.ref(APP_SHARED_KEY_MANAGER_ID).status(context)`                                       | reader                    | `-> StatusResponse(active_version, rotating)`; poll to confirm a rotation finished (`active_version` reached and `rotating` is false)                                    |
 
 Imports:
 
@@ -84,7 +84,7 @@ from reboot.std.ciphertext.v1.ciphertext import (
 ### Encrypt
 
 ```python
-ciphertext, _ = await Ciphertext.encrypt(
+ciphertext, _ = await Ciphertext.factory.encrypt(
     context,
     plaintext=b"123-45-6789",
     associated_data=make_associated_data(user_id="42", purpose="ssn"),

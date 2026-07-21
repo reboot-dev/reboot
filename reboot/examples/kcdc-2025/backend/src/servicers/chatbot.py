@@ -76,7 +76,7 @@ class ChatbotServicer(Chatbot.Servicer):
 
         # Create our messages reactions index so folks can react to
         # our messages.
-        await Index.create(
+        await Index.factory.create(
             context,
             f'{request.name}-messages-reactions',
             order=100,

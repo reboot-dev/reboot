@@ -23,7 +23,7 @@ class UserServicer(User.Servicer):
         `Profile` for this user; a `Transaction` can call other state
         machines during construction."""
         profile_id = f"profile-{context.state_id}"
-        await Profile.create(context, profile_id)
+        await Profile.factory.create(context, profile_id)
         self.state.profile_id = profile_id
 
     async def set_claims(

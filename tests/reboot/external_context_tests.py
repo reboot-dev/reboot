@@ -296,7 +296,7 @@ class ExternalContextTestCase(unittest.IsolatedAsyncioTestCase):
             url=proxied_url,
             name="test_keepalive_and_retry_unary_reader",
         )
-        general, _ = await General.ConstructorWriter(context)
+        general, _ = await General.factory.ConstructorWriter(context)
 
         call_task: asyncio.Task[None] = asyncio.create_task(
             make_call(context, general)

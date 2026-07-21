@@ -97,9 +97,9 @@ test("transactions", async (t) => {
   await t.test("transfer", async (t) => {
     const context = rbt.createExternalContext("test");
 
-    const [bank] = await Bank.create(context, "bank");
-    const [fromAccount] = await Account.open(context, "alice");
-    const [toAccount] = await Account.open(context, "bob");
+    const [bank] = await Bank.factory.create(context, "bank");
+    const [fromAccount] = await Account.factory.open(context, "alice");
+    const [toAccount] = await Account.factory.open(context, "bob");
 
     await fromAccount.deposit(context, { amount: 100 });
 

@@ -16,7 +16,10 @@ wrappers, raise typed `<Method>Aborted`) are in
 - One Servicer class per type — `UserServicer` plus one per
   application type.
 - The User Servicer's `create_<X>` Transaction calls
-  `<X>.create(context)` and returns the `state_id` in a response.
+  `<X>.factory.create(context)` and returns the `state_id` in a
+  response. Constructors live under the `factory` namespace on the
+  state class (`<X>.factory.create(...)`), keeping the top-level
+  state-class namespace free for framework methods like `ref()`.
 - Workflow Servicers use `MyType.ref()` (no args, picks up `state_id`
   from `WorkflowContext`) — see Gotcha #11 below; `cls.ref()` and
   `self.ref()` are both wrong.
@@ -44,9 +47,10 @@ class UserServicer(User.Servicer):
         """Create a new Counter and return its ID."""
         # Factory create: pass request fields as keyword args directly
         # — do NOT wrap in a Request object.
-        # No-args:    Counter.create(context)
-        # With args:  Counter.create(context, title="...", count=0)
-        counter, _ = await Counter.create(context)
+        # No-args:    Counter.factory.create(context)
+        # With args:  Counter.factory.create(
+        #                 context, title="...", count=0)
+        counter, _ = await Counter.factory.create(context)
         return User.CreateCounterResponse(
             counter_id=counter.state_id,
         )
@@ -188,7 +192,7 @@ class UserServicer(User.Servicer):
         context: TransactionContext,
         request: User.CreateGameRequest,
     ) -> User.CreateGameResponse:
-        game, _ = await Game.create(context, ...)
+        game, _ = await Game.factory.create(context, ...)
         # GOOD — schedule the workflow from the transaction.
         # Empty request: just pass `context`.
         await Game.ref(game.state_id).schedule().autoplay(context)

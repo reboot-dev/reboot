@@ -14,7 +14,7 @@ async def test(context: ExternalContext, uri: str):
 
     # Call the constructor for this actor so we have state to receive
     # when .Greet is called.
-    await Greeter.idempotently(f"Create '{state_id}'").Create(
+    await Greeter.factory.idempotently(f"Create '{state_id}'").Create(
         context,
         state_id,
         title='Count',

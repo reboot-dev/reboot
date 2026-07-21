@@ -22,7 +22,7 @@ class UserServicer(User.Servicer):
         request: CreateCounterRequest,
     ) -> CreateCounterResponse:
         """Create a new Counter and return its ID."""
-        counter, _ = await Counter.create(
+        counter, _ = await Counter.factory.create(
             context, description=request.description
         )
         self.state.counter_ids.append(counter.state_id)

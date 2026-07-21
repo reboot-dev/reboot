@@ -249,7 +249,7 @@ exactly one of them — the step that needs it.
   `self.state_id`); `self.ref().schedule(...)`.
 - `python/references/rpc-calls.md` — kwargs, not Request wrappers.
 - `python/references/rpc-constructor-calls.md` —
-  `Service.create(context, id)` semantics.
+  `Service.factory.create(context, id)` semantics.
 - `python/references/servicer-workflow.md` — only when you declared
   a `Workflow`, and then top to bottom: the `@classmethod` /
   `WorkflowContext` declaration shape, the call-classification

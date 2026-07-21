@@ -8,12 +8,12 @@ tags: patterns, idempotency, initialize, constructor, restart
 ## Make Constructor and `initialize` Calls Idempotent
 
 > **Critical:** `initialize` runs on every restart, and Reboot may
-> retry transactions internally. `Service.create(context, id)` is the
+> retry transactions internally. `Service.factory.create(context, id)` is the
 > idempotent creation primitive — safe to call repeatedly. Inside a
 > reusable constructor, gate set-once fields on `context.constructor`.
 
 The `initialize` hook runs every time the application starts. Anything it
-does must be safe to do repeatedly. Reboot's `Service.create(context, id)`
+does must be safe to do repeatedly. Reboot's `Service.factory.create(context, id)`
 is the canonical idempotent creation primitive: calling it on an existing
 actor is a no-op.
 
@@ -31,7 +31,7 @@ async def initialize(context: InitializeContext):
 ```python
 async def initialize(context: InitializeContext):
     # Create-once: idempotent on subsequent boots.
-    await Bank.create(context, SINGLETON_BANK_ID)
+    await Bank.factory.create(context, SINGLETON_BANK_ID)
 ```
 
 ## Branch on `context.constructor` for Set-Once Fields

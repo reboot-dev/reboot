@@ -10,7 +10,7 @@ tags: gotchas, traps, errors, mcp, ui, factory, workflow, ref, schedule, optiona
 For the rest of the trip-list — `.rbtrc` line-based, no `__init__.py`
 in `api/`, pydantic Field zero-default rule, `self.ref().state_id`
 not `self.state_id`, kwargs not Request wrappers, generated import
-paths, `Service.create(context, id)` semantics, register-all-Servicers
+paths, `Service.factory.create(context, id)` semantics, register-all-Servicers
 — see `python/references/patterns-common-gotchas.md` and
 the per-topic references.
 

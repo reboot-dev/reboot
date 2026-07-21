@@ -115,7 +115,7 @@ class UserServicer(User.Servicer):
         # authorizer only admits that user (or app-internal callers), so
         # `context.state_id` is the ordering user's ID — even for
         # app-internal calls, which carry no `context.auth`.
-        order, _ = await FoodOrder.create(
+        order, _ = await FoodOrder.factory.create(
             context,
             menu=MENU_ITEMS,
             user_id=context.state_id,

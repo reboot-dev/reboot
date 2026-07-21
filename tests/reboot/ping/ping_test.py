@@ -68,7 +68,7 @@ class PingTest(unittest.IsolatedAsyncioTestCase):
             app_internal=True,
         )
 
-        counter, _ = await Counter.create(
+        counter, _ = await Counter.factory.create(
             context, description="test counter", owner_id="test-owner"
         )
 

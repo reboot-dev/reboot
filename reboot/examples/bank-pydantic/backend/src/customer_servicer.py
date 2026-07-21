@@ -29,7 +29,7 @@ class CustomerServicer(Customer.Servicer):
         account_id = str(uuid.uuid4())
         self.state.account_ids.append(account_id)
 
-        account, _ = await Account.open(
+        account, _ = await Account.factory.open(
             context,
             account_id,
         )

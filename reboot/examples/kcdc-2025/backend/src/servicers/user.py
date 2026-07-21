@@ -62,7 +62,7 @@ class UserServicer(User.Servicer):
         if context.constructor:
             users = Users.ref(USERS_SINGLETON)
             await users.add(context, user=context.state_id)
-            await Index.create(
+            await Index.factory.create(
                 context,
                 self._messages_reactions.state_id,
                 order=100,
@@ -94,7 +94,7 @@ class UserServicer(User.Servicer):
         request: AddChatbotRequest,
     ) -> AddChatbotResponse:
 
-        chatbot, _ = await Chatbot.create(
+        chatbot, _ = await Chatbot.factory.create(
             context,
             name=request.name,
             channel_id=request.channel_id,

@@ -436,7 +436,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        greeter, _ = await Greeter.Create(
+        greeter, _ = await Greeter.factory.Create(
             context,
             title='Dr',
             name='Jonathan',

@@ -19,7 +19,7 @@ from user_servicer import UserServicer
 
 
 async def initialize(context: InitializeContext):
-    await Bank.create(context, SINGLETON_BANK_ID)
+    await Bank.factory.create(context, SINGLETON_BANK_ID)
 
 
 async def main():

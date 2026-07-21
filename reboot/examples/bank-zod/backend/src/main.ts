@@ -7,7 +7,7 @@ import { CustomerServicer } from "./customer.js";
 const SINGLETON_BANK_ID = "reboot-bank";
 
 const initialize = async (context) => {
-  await Bank.create(context, SINGLETON_BANK_ID);
+  await Bank.factory.create(context, SINGLETON_BANK_ID);
 };
 
 new Application({

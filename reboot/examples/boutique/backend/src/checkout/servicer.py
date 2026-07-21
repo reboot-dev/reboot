@@ -107,7 +107,7 @@ class CheckoutServicer(Checkout.Servicer):
         confirmation = template.render(order=order_result)
 
         if mailgun_api_key := await self._mailgun_api_key():
-            await Message.send(
+            await Message.factory.send(
                 context,
                 Options(bearer_token=mailgun_api_key),
                 recipient=request.email,

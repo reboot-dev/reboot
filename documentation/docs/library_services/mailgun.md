@@ -28,12 +28,12 @@ Calls to the integration must also authenticate using that same API
 key as the bearer token: the integration only accepts calls whose
 bearer token matches `MAILGUN_API_KEY`, and rejects all other calls
 as unauthenticated. Pass the key using `Options` when calling
-`Message.send`:
+`Message.factory.send`:
 
 ```python
 from reboot.aio.call import Options
 
-await Message.send(
+await Message.factory.send(
     context,
     Options(bearer_token=mailgun_api_key),
     recipient="alice@example.com",
@@ -47,7 +47,7 @@ await Message.send(
 ## Message {#rbtthirdpartymailgunv1message}
 A single message sent using the integration.
 
-Created and scheduled using its constructor: `await Message.send(...)`.
+Created and scheduled using its constructor: `await Message.factory.send(...)`.
 
 ### Send
 

@@ -161,7 +161,7 @@ class BankServicer(Bank.Servicer):
         account_id = request.account_id
 
         if mailgun_api_key := await self._mailgun_api_key():
-            await mailgun.Message.send(
+            await mailgun.Message.factory.send(
                 context,
                 None,
                 Options(bearer_token=mailgun_api_key),
@@ -173,7 +173,7 @@ class BankServicer(Bank.Servicer):
                 text=self._text_email,
             )
 
-        account, _ = await Account.open(context, account_id)
+        account, _ = await Account.factory.open(context, account_id)
 
         await account.deposit(context, amount=request.initial_deposit)
 
@@ -213,7 +213,7 @@ class BankServicer(Bank.Servicer):
 
 
 async def initialize(context: InitializeContext):
-    await Bank.create(context, SINGLETON_BANK_ID)
+    await Bank.factory.create(context, SINGLETON_BANK_ID)
 
 
 async def main():

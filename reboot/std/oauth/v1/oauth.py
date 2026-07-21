@@ -117,7 +117,7 @@ class OAuthTokenManagerServicer(OAuthTokenManager.Servicer):
         # merge first — we can't read the index here, since this same
         # transaction writes it (Reboot forbids reading and writing the
         # same state in one transaction).
-        ciphertext, _ = await Ciphertext.encrypt(
+        ciphertext, _ = await Ciphertext.factory.encrypt(
             context,
             plaintext=request.tokens.SerializeToString(),
             associated_data=_associated_data(service, request.user_id),

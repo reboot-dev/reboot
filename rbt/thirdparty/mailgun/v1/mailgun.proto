@@ -19,7 +19,8 @@ import "google/protobuf/timestamp.proto";
 /**
  * A single message sent using the integration.
  *
- * Created and scheduled using its constructor: `await Message.Send(...)`.
+ * Created and scheduled using its constructor:
+ * `await Message.factory.Send(...)`.
  */
 service MessageMethods {
   /**

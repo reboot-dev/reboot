@@ -31,7 +31,7 @@ class BankServicer(Bank.Servicer):
         new_account_id = str(uuid.uuid4())
 
         # Let's go create the account.
-        account, _ = await Account.open(
+        account, _ = await Account.factory.open(
             context,
             new_account_id,
             customer_name=request.customer_name,

@@ -51,7 +51,7 @@ export const BankServicer = Bank.servicer({
     state: Bank.State,
     { customerId }: Bank.SignUpRequest
   ): Promise<[Bank.State]> => {
-    await Customer.signUp(context, customerId);
+    await Customer.factory.signUp(context, customerId);
 
     // Save the account ID to our _distributed_ map using a UUIDv7
     // to get a "timestamp" based ordering.
