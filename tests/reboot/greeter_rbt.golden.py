@@ -31713,220 +31713,223 @@ class Greeter:
             bearer_token=bearer_token,
         )
 
-    @IMPORT_typing.overload
-    @classmethod
-    async def Create(
-        __cls__,
-        __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
-        __state_id_or_request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId | Greeter.CreateRequest] = None,
-        __request_or_options_or_idempotency__: IMPORT_typing.Optional[Greeter.CreateRequest | IMPORT_reboot_aio_call.Options] = None,
-        __options_or_idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options | IMPORT_reboot_aio_idempotency.Idempotency] = None,
-        __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
-    ) -> tuple[Greeter.WeakReference, Greeter.CreateResponse]:
-        ...
+    class _Factory:
+        @IMPORT_typing.overload
+        @classmethod
+        async def Create(
+            __cls__,
+            __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+            __state_id_or_request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId | Greeter.CreateRequest] = None,
+            __request_or_options_or_idempotency__: IMPORT_typing.Optional[Greeter.CreateRequest | IMPORT_reboot_aio_call.Options] = None,
+            __options_or_idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options | IMPORT_reboot_aio_idempotency.Idempotency] = None,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
+        ) -> tuple[Greeter.WeakReference, Greeter.CreateResponse]:
+            ...
 
-    @IMPORT_typing.overload
-    @classmethod
-    async def Create(
-        __cls__,
-        __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
-        __state_id_or_request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId | IMPORT_reboot_aio_call.Options] = None,
-        __request_or_options_or_idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options | IMPORT_reboot_aio_idempotency.Idempotency] = None,
-        __options_or_idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
-        *,
-        title: IMPORT_typing.Optional[str] | Unset = UNSET,
-        name: IMPORT_typing.Optional[str] | Unset = UNSET,
-        adjective: IMPORT_typing.Optional[str] | Unset = UNSET,
-    ) -> tuple[Greeter.WeakReference, Greeter.CreateResponse]:
-        ...
+        @IMPORT_typing.overload
+        @classmethod
+        async def Create(
+            __cls__,
+            __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+            __state_id_or_request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId | IMPORT_reboot_aio_call.Options] = None,
+            __request_or_options_or_idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options | IMPORT_reboot_aio_idempotency.Idempotency] = None,
+            __options_or_idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
+            *,
+            title: IMPORT_typing.Optional[str] | Unset = UNSET,
+            name: IMPORT_typing.Optional[str] | Unset = UNSET,
+            adjective: IMPORT_typing.Optional[str] | Unset = UNSET,
+        ) -> tuple[Greeter.WeakReference, Greeter.CreateResponse]:
+            ...
 
-    @classmethod
-    async def Create( # type: ignore[misc]
-        __cls__,
-        __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
-        __state_id_or_request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId | Greeter.CreateRequest | IMPORT_reboot_aio_call.Options] = None,
-        __request_or_options_or_idempotency__: IMPORT_typing.Optional[Greeter.CreateRequest | IMPORT_reboot_aio_call.Options | IMPORT_reboot_aio_idempotency.Idempotency] = None,
-        __options_or_idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options | IMPORT_reboot_aio_idempotency.Idempotency] = None,
-        __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
-        *,
-        title: IMPORT_typing.Optional[str] | Unset = UNSET,
-        name: IMPORT_typing.Optional[str] | Unset = UNSET,
-        adjective: IMPORT_typing.Optional[str] | Unset = UNSET,
-    ) -> tuple[Greeter.WeakReference, Greeter.CreateResponse]:
-        # Within a `workflow`, all "bare" calls are
-        # `per_workflow()` calls, unless we're within a control
-        # loop, in which case they are syntactic sugar for
-        # `per_iteration()`.
-        #
-        # Unless we are "within until" in which case all "bare"
-        # calls are `.always()`.
+        @classmethod
+        async def Create( # type: ignore[misc]
+            __cls__,
+            __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+            __state_id_or_request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId | Greeter.CreateRequest | IMPORT_reboot_aio_call.Options] = None,
+            __request_or_options_or_idempotency__: IMPORT_typing.Optional[Greeter.CreateRequest | IMPORT_reboot_aio_call.Options | IMPORT_reboot_aio_idempotency.Idempotency] = None,
+            __options_or_idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options | IMPORT_reboot_aio_idempotency.Idempotency] = None,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
+            *,
+            title: IMPORT_typing.Optional[str] | Unset = UNSET,
+            name: IMPORT_typing.Optional[str] | Unset = UNSET,
+            adjective: IMPORT_typing.Optional[str] | Unset = UNSET,
+        ) -> tuple[Greeter.WeakReference, Greeter.CreateResponse]:
+            # Within a `workflow`, all "bare" calls are
+            # `per_workflow()` calls, unless we're within a control
+            # loop, in which case they are syntactic sugar for
+            # `per_iteration()`.
+            #
+            # Unless we are "within until" in which case all "bare"
+            # calls are `.always()`.
 
-        __request__: IMPORT_typing.Optional[Greeter.CreateRequest] = None
-        __state_id__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId] = None
-        __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None
+            __request__: IMPORT_typing.Optional[Greeter.CreateRequest] = None
+            __state_id__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.StateId] = None
+            __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None
 
-        if isinstance(__state_id_or_request_or_options__, IMPORT_reboot_aio_types.StateId):
-            __state_id__ = __state_id_or_request_or_options__
-            if isinstance(__request_or_options_or_idempotency__, Greeter.CreateRequest):
-                __request__ = __request_or_options_or_idempotency__
-                assert __options_or_idempotency__ is None or isinstance(__options_or_idempotency__, IMPORT_reboot_aio_call.Options)
-                __options__ = __options_or_idempotency__
-                assert __idempotency__ is None or isinstance(__idempotency__, IMPORT_reboot_aio_idempotency.Idempotency)
+            if isinstance(__state_id_or_request_or_options__, IMPORT_reboot_aio_types.StateId):
+                __state_id__ = __state_id_or_request_or_options__
+                if isinstance(__request_or_options_or_idempotency__, Greeter.CreateRequest):
+                    __request__ = __request_or_options_or_idempotency__
+                    assert __options_or_idempotency__ is None or isinstance(__options_or_idempotency__, IMPORT_reboot_aio_call.Options)
+                    __options__ = __options_or_idempotency__
+                    assert __idempotency__ is None or isinstance(__idempotency__, IMPORT_reboot_aio_idempotency.Idempotency)
 
-                assert title is UNSET
-                assert name is UNSET
-                assert adjective is UNSET
-            else:
+                    assert title is UNSET
+                    assert name is UNSET
+                    assert adjective is UNSET
+                else:
+                    assert __request_or_options_or_idempotency__ is None or isinstance(__request_or_options_or_idempotency__, IMPORT_reboot_aio_call.Options)
+                    __options__ = __request_or_options_or_idempotency__
+                    assert __options_or_idempotency__ is None or isinstance(__options_or_idempotency__, IMPORT_reboot_aio_idempotency.Idempotency)
+                    __idempotency__ = __options_or_idempotency__
+
+                    __request__ = GreeterCreateRequestFromInputFields(
+                        title=title,
+                        name=name,
+                        adjective=adjective,
+                    )
+            elif isinstance(__state_id_or_request_or_options__, Greeter.CreateRequest):
+                __request__ = __state_id_or_request_or_options__
                 assert __request_or_options_or_idempotency__ is None or isinstance(__request_or_options_or_idempotency__, IMPORT_reboot_aio_call.Options)
                 __options__ = __request_or_options_or_idempotency__
                 assert __options_or_idempotency__ is None or isinstance(__options_or_idempotency__, IMPORT_reboot_aio_idempotency.Idempotency)
                 __idempotency__ = __options_or_idempotency__
+            else:
+                assert (
+                    __state_id_or_request_or_options__ is None
+                    or isinstance(__state_id_or_request_or_options__, IMPORT_reboot_aio_call.Options)
+                ), "Invalid argument type. Did you pass:\n" \
+                "  - A 'state_id' that is not of type 'reboot.aio.types.StateId'?\n" \
+                "  - 'options' that are not of type 'reboot.aio.call.Options'?"
+                __options__ = __state_id_or_request_or_options__
+                assert __request_or_options_or_idempotency__ is None or isinstance(__request_or_options_or_idempotency__, IMPORT_reboot_aio_idempotency.Idempotency)
+                __idempotency__ = __request_or_options_or_idempotency__
 
                 __request__ = GreeterCreateRequestFromInputFields(
                     title=title,
                     name=name,
                     adjective=adjective,
                 )
-        elif isinstance(__state_id_or_request_or_options__, Greeter.CreateRequest):
-            __request__ = __state_id_or_request_or_options__
-            assert __request_or_options_or_idempotency__ is None or isinstance(__request_or_options_or_idempotency__, IMPORT_reboot_aio_call.Options)
-            __options__ = __request_or_options_or_idempotency__
-            assert __options_or_idempotency__ is None or isinstance(__options_or_idempotency__, IMPORT_reboot_aio_idempotency.Idempotency)
-            __idempotency__ = __options_or_idempotency__
-        else:
-            assert (
-                __state_id_or_request_or_options__ is None
-                or isinstance(__state_id_or_request_or_options__, IMPORT_reboot_aio_call.Options)
-            ), "Invalid argument type. Did you pass:\n" \
-            "  - A 'state_id' that is not of type 'reboot.aio.types.StateId'?\n" \
-            "  - 'options' that are not of type 'reboot.aio.call.Options'?"
-            __options__ = __state_id_or_request_or_options__
-            assert __request_or_options_or_idempotency__ is None or isinstance(__request_or_options_or_idempotency__, IMPORT_reboot_aio_idempotency.Idempotency)
-            __idempotency__ = __request_or_options_or_idempotency__
 
-            __request__ = GreeterCreateRequestFromInputFields(
-                title=title,
-                name=name,
-                adjective=adjective,
-            )
-
-        if __idempotency__ is None:
-            __args__: tuple[IMPORT_typing.Any, ...] = (
-                __context__,
-            )
-            if __state_id__ is not None:
-                # Don't include `state_id` if it is `None`, so that
-                # we won't break the positional argument deduction.
-                __args__ += (__state_id__,)
-            __args__ += (
-                __request__,
-                __options__,
-            )
-            if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
-                return await (
-                    __cls__.always() if __context__.within_until()
-                    else (
-                        __cls__.per_iteration() if __context__.within_loop()
-                        else __cls__.per_workflow()
-                    )
-                ).Create(
-                    *__args__
-                )
-            elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
-                return await __cls__.idempotently().Create(
-                    *__args__
-                )
-
-        __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
-        __bearer_token__: IMPORT_typing.Optional[str] = None
-
-        if __options__ is not None:
-            IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
-            if __options__.metadata is not None:
-                __metadata__ = __options__.metadata
-            if __options__.bearer_token is not None:
-                __bearer_token__ = __options__.bearer_token
-
-        if __state_id__ is None:
             if __idempotency__ is None:
-                __state_id__ = str(IMPORT_uuid.uuid4())
-            else:
-                __state_id__ = __context__.generate_idempotent_state_id(
-                    state_type_name=__cls__.__state_type_name__,
-                    service_name=IMPORT_reboot_aio_types.ServiceName('tests.reboot.GreeterMethods'),
-                    method='Create',
-                    idempotency=__idempotency__,
+                __args__: tuple[IMPORT_typing.Any, ...] = (
+                    __context__,
                 )
-
-        __reference__ = Greeter.ref(
-            __state_id__, bearer_token=__bearer_token__
-        )
-        __stub__ = __reference__._writer(__context__)
-        return (
-            __reference__,
-            GreeterCreateResponseFromProto(
-                await __stub__.Create(
+                if __state_id__ is not None:
+                    # Don't include `state_id` if it is `None`, so that
+                    # we won't break the positional argument deduction.
+                    __args__ += (__state_id__,)
+                __args__ += (
                     __request__,
-                    idempotency=__idempotency__,
-                    metadata=__metadata__,
-                    bearer_token=__bearer_token__,
+                    __options__,
                 )
-            ),
-        )
+                if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return await (
+                        __cls__.always() if __context__.within_until()
+                        else (
+                            __cls__.per_iteration() if __context__.within_loop()
+                            else __cls__.per_workflow()
+                        )
+                    ).Create(
+                        *__args__
+                    )
+                elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
+                    return await __cls__.idempotently().Create(
+                        *__args__
+                    )
 
-    # Keep the original functions on the client, so old code will
-    # continue to work, but use the new 'snake_case' method in
-    # the new code.
-    create = Create
+            __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
+            __bearer_token__: IMPORT_typing.Optional[str] = None
 
-    @IMPORT_typing.overload
-    @classmethod
-    def idempotently(cls, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Greeter._ConstructIdempotently:
-        ...
+            if __options__ is not None:
+                IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
+                if __options__.metadata is not None:
+                    __metadata__ = __options__.metadata
+                if __options__.bearer_token is not None:
+                    __bearer_token__ = __options__.bearer_token
 
-    @IMPORT_typing.overload
-    @classmethod
-    def idempotently(cls, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Greeter._ConstructIdempotently:
-        ...
+            if __state_id__ is None:
+                if __idempotency__ is None:
+                    __state_id__ = str(IMPORT_uuid.uuid4())
+                else:
+                    __state_id__ = __context__.generate_idempotent_state_id(
+                        state_type_name=Greeter.__state_type_name__,
+                        service_name=IMPORT_reboot_aio_types.ServiceName('tests.reboot.GreeterMethods'),
+                        method='Create',
+                        idempotency=__idempotency__,
+                    )
 
-    @classmethod
-    def idempotently(
-        cls,
-        alias: IMPORT_typing.Optional[str] = None,
-        *,
-        key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
-        how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
-    ) -> Greeter._ConstructIdempotently:
-        return Greeter._ConstructIdempotently(
-            _idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
-                alias=alias,
-                key=key,
-                how=how,
-            ),
-        )
+            __reference__ = Greeter.ref(
+                __state_id__, bearer_token=__bearer_token__
+            )
+            __stub__ = __reference__._writer(__context__)
+            return (
+                __reference__,
+                GreeterCreateResponseFromProto(
+                    await __stub__.Create(
+                        __request__,
+                        idempotency=__idempotency__,
+                        metadata=__metadata__,
+                        bearer_token=__bearer_token__,
+                    )
+                ),
+            )
 
-    @classmethod
-    def per_workflow(
-        cls,
-        alias: IMPORT_typing.Optional[str] = None,
-    ):
-        return cls.idempotently(alias)
+        # Keep the original functions on the client, so old code will
+        # continue to work, but use the new 'snake_case' method in
+        # the new code.
+        create = Create
 
-    @classmethod
-    def per_iteration(
-        cls,
-        alias: IMPORT_typing.Optional[str] = None,
-    ):
-        return cls.idempotently(
-            alias,
-            how=IMPORT_reboot_aio_idempotency.PER_ITERATION,
-        )
+        @IMPORT_typing.overload
+        @classmethod
+        def idempotently(cls, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Greeter._ConstructIdempotently:
+            ...
 
-    @classmethod
-    def always(cls):
-        return cls.idempotently(
-            how=IMPORT_reboot_aio_idempotency.ALWAYS,
-        )
+        @IMPORT_typing.overload
+        @classmethod
+        def idempotently(cls, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Greeter._ConstructIdempotently:
+            ...
+
+        @classmethod
+        def idempotently(
+            cls,
+            alias: IMPORT_typing.Optional[str] = None,
+            *,
+            key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
+            how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
+        ) -> Greeter._ConstructIdempotently:
+            return Greeter._ConstructIdempotently(
+                _idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
+                    alias=alias,
+                    key=key,
+                    how=how,
+                ),
+            )
+
+        @classmethod
+        def per_workflow(
+            cls,
+            alias: IMPORT_typing.Optional[str] = None,
+        ):
+            return cls.idempotently(alias)
+
+        @classmethod
+        def per_iteration(
+            cls,
+            alias: IMPORT_typing.Optional[str] = None,
+        ):
+            return cls.idempotently(
+                alias,
+                how=IMPORT_reboot_aio_idempotency.PER_ITERATION,
+            )
+
+        @classmethod
+        def always(cls):
+            return cls.idempotently(
+                how=IMPORT_reboot_aio_idempotency.ALWAYS,
+            )
+
+    factory = _Factory
 
     @IMPORT_dataclasses.dataclass(frozen=True)
     class _ConstructIdempotently:
@@ -32031,7 +32034,7 @@ class Greeter:
                     __this__._idempotency,
                 )
 
-            return await Greeter.Create(
+            return await Greeter.factory.Create(
                 *__args__,
             )
 

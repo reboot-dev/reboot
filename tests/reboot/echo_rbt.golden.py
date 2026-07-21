@@ -28727,55 +28727,58 @@ class Echo:
             bearer_token=bearer_token,
         )
 
+    class _Factory:
 
-    @IMPORT_typing.overload
-    @classmethod
-    def idempotently(cls, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Echo._ConstructIdempotently:
-        ...
+        @IMPORT_typing.overload
+        @classmethod
+        def idempotently(cls, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Echo._ConstructIdempotently:
+            ...
 
-    @IMPORT_typing.overload
-    @classmethod
-    def idempotently(cls, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Echo._ConstructIdempotently:
-        ...
+        @IMPORT_typing.overload
+        @classmethod
+        def idempotently(cls, *, key: IMPORT_uuid.UUID, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> Echo._ConstructIdempotently:
+            ...
 
-    @classmethod
-    def idempotently(
-        cls,
-        alias: IMPORT_typing.Optional[str] = None,
-        *,
-        key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
-        how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
-    ) -> Echo._ConstructIdempotently:
-        return Echo._ConstructIdempotently(
-            _idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
-                alias=alias,
-                key=key,
-                how=how,
-            ),
-        )
+        @classmethod
+        def idempotently(
+            cls,
+            alias: IMPORT_typing.Optional[str] = None,
+            *,
+            key: IMPORT_typing.Optional[IMPORT_uuid.UUID] = None,
+            how: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.How] = None,
+        ) -> Echo._ConstructIdempotently:
+            return Echo._ConstructIdempotently(
+                _idempotency=IMPORT_reboot_aio_contexts.Context.idempotency(
+                    alias=alias,
+                    key=key,
+                    how=how,
+                ),
+            )
 
-    @classmethod
-    def per_workflow(
-        cls,
-        alias: IMPORT_typing.Optional[str] = None,
-    ):
-        return cls.idempotently(alias)
+        @classmethod
+        def per_workflow(
+            cls,
+            alias: IMPORT_typing.Optional[str] = None,
+        ):
+            return cls.idempotently(alias)
 
-    @classmethod
-    def per_iteration(
-        cls,
-        alias: IMPORT_typing.Optional[str] = None,
-    ):
-        return cls.idempotently(
-            alias,
-            how=IMPORT_reboot_aio_idempotency.PER_ITERATION,
-        )
+        @classmethod
+        def per_iteration(
+            cls,
+            alias: IMPORT_typing.Optional[str] = None,
+        ):
+            return cls.idempotently(
+                alias,
+                how=IMPORT_reboot_aio_idempotency.PER_ITERATION,
+            )
 
-    @classmethod
-    def always(cls):
-        return cls.idempotently(
-            how=IMPORT_reboot_aio_idempotency.ALWAYS,
-        )
+        @classmethod
+        def always(cls):
+            return cls.idempotently(
+                how=IMPORT_reboot_aio_idempotency.ALWAYS,
+            )
+
+    factory = _Factory
 
     @IMPORT_dataclasses.dataclass(frozen=True)
     class _ConstructIdempotently:
