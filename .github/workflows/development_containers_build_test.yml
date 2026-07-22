@@ -24,7 +24,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Have at most one of these workflows running per branch, cancelling older
+  # Have at most one of these workflows running per PR, cancelling older
   # runs that haven't completed yet when they become obsolete.
   #
   # When pushing new commits to a PR, each one of those commits triggers a new
