@@ -23,6 +23,32 @@ on:
   # selected branch's version (with secrets) to validate them.
   workflow_dispatch:
 
+concurrency:
+  # Have at most one of these workflows running per PR, cancelling older
+  # runs that haven't completed yet when they become obsolete.
+  #
+  # When pushing new commits to a PR, each one of those commits triggers a new
+  # workflow run that would normally run to completion, even when subsequent
+  # pushes to the PR make their result obsolete. This consumes resources for no
+  # benefit. We override that default behavior to save resources, cancelling any
+  # older still-running workflows when a new workflow starts.
+  #
+  # See documentation about the `github` context variables here:
+  #   https://docs.github.com/en/actions/learn-github-actions/contexts#github-context
+  #
+  # We key the group on the PR number, not `github.ref`: under
+  # `pull_request_target` `github.ref` is the base branch (e.g.
+  # `refs/heads/main`) and so is identical for every PR, which would
+  # collapse all PRs into one group. `merge_group` runs have no PR
+  # number, so they fall back to `github.ref` (the unique merge-queue
+  # ref).
+  group: >-
+    ${{ github.workflow }}-${{
+    github.event.pull_request.number || github.ref }}
+  # Cancel superseded runs for a PR when it gets new commits, but let
+  # every `merge_group` run finish so each queued commit is tested.
+  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
+
 jobs:
   # External fork pull requests run with `pull_request_target`, which
   # grants our secrets and a read/write token even though the PR's own
