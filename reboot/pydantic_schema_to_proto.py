@@ -19,7 +19,16 @@ from reboot.api import (
 )
 from reboot.fail import fail
 from reboot.settings import AUTO_CONSTRUCT_STATE_TYPE
-from typing import Dict, List, Literal, Optional, Union, get_args, get_origin
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Union,
+    get_args,
+    get_origin,
+)
 
 # Proto `AutoConstruct` enum value name for per-user
 # auto-construction. Must match the enum in
@@ -38,6 +47,13 @@ def _pydantic_field_type_string_from_type(
     model_name: str,
 ) -> str:
     origin = get_origin(field_type)
+
+    if field_type is Any:
+        # `Any` (e.g. a `dict[str, Any]` value) renders as
+        # `typing.Any`; on the wire it becomes a
+        # `google.protobuf.Value`. We import `typing` as
+        # `IMPORT_typing` to avoid name conflicts in generated code.
+        return 'IMPORT_typing.Any'
 
     if origin is Union or origin is types.UnionType:
         non_none_args = [
@@ -353,6 +369,19 @@ async def generate(
                     required,
                     field_type_string,
                 )
+            elif inner_type is Any:
+                # A bare `Any` field carries an arbitrary JSON value,
+                # just like a `dict[str, Any]` value; both lower to a
+                # `google.protobuf.Value`. `struct.proto` is imported
+                # by every generated file.
+                await _write_field_maybe_with_type_string_annotation(
+                    proto,
+                    proto_field_name,
+                    "google.protobuf.Value",
+                    tag,
+                    required,
+                    field_type_string,
+                )
             elif inner_origin in (list, List):
                 type_name = to_pascal_case(field_name) + "Array"
                 await proto.write(f"  message {type_name} {{\n")
@@ -486,6 +515,11 @@ async def generate(
                 type_name = "double"
             elif value_type == bool:
                 type_name = "bool"
+            elif value_type is Any:
+                # `dict[str, Any]` carries arbitrary JSON values, which
+                # a `google.protobuf.Value` represents; `struct.proto`
+                # is already imported by every generated file.
+                type_name = "google.protobuf.Value"
             elif value_origin in (list, List):
                 type_name = "Value"
                 await proto.write("  message Value {\n")
@@ -556,6 +590,11 @@ async def generate(
                 type_name = "double"
             elif item_type == bool:
                 type_name = "bool"
+            elif item_type is Any:
+                # A `list[Any]` carries arbitrary JSON values; each
+                # element becomes a `google.protobuf.Value`, just like
+                # a `dict[str, Any]` value.
+                type_name = "google.protobuf.Value"
             elif item_origin in (list, List):
                 type_name = "Item"
                 await proto.write("  message Item {\n")

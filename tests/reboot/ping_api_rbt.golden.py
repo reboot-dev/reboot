@@ -523,6 +523,52 @@ def UserCreateRequestToProto(
     return google.protobuf.empty_pb2.Empty()
 
 
+def UserSetClaimsResponseToProto(
+    response: None
+) -> google.protobuf.empty_pb2.Empty:
+    assert response is None
+    return google.protobuf.empty_pb2.Empty()
+
+def UserSetClaimsResponseFromProto(
+    response: google.protobuf.empty_pb2.Empty
+) -> None:
+    assert isinstance(response, IMPORT_google_protobuf_empty_pb2_Empty)
+    return None
+
+def UserSetClaimsRequestToProto(
+    request: User.SetClaimsRequest
+) -> reboot.ping.ping_api_pb2.UserSetClaimsRequest:
+    assert isinstance(request, IMPORT_reboot_api.Model)
+    return IMPORT_reboot_api.pydantic_to_proto(
+        request,
+        User.SetClaimsRequest,
+        reboot.ping.ping_api_pb2.UserSetClaimsRequest,
+    )
+
+def UserSetClaimsRequestFromProto(
+    request: reboot.ping.ping_api_pb2.UserSetClaimsRequest
+) -> User.SetClaimsRequest:
+    assert isinstance(request, IMPORT_google_protobuf_message.Message)
+    return IMPORT_reboot_api.proto_to_pydantic(
+        request,
+        User.SetClaimsRequest
+    )
+
+def UserSetClaimsRequestFromInputFields(
+    claims: dict[str, IMPORT_typing.Any] | Unset,
+):
+    assert User.SetClaimsRequest is not None
+
+
+    __args__: dict[str, IMPORT_typing.Any] = {}
+
+    if not isinstance(claims, Unset):
+        __args__['claims'] = claims
+
+    return User.SetClaimsRequest(
+        **__args__,
+    )
+
 
 def CounterToProto(state: Counter.State, protobuf_state: reboot.ping.ping_api_pb2.Counter):
     assert isinstance(state, IMPORT_reboot_api.Model)
@@ -5081,6 +5127,7 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
             'ListCounters': google.protobuf.empty_pb2.Empty,
             'Whoami': google.protobuf.empty_pb2.Empty,
             'Create': google.protobuf.empty_pb2.Empty,
+            'SetClaims': reboot.ping.ping_api_pb2.UserSetClaimsRequest,
         }
 
         # Get authorizer, if any, converting from a rule if necessary.
@@ -5321,6 +5368,24 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     f"Method '{method}' is invalid"
             )
             yield  # Necessary for type checking.
+        elif method == 'SetClaims':
+            # Invariant here is that users should not have called this
+            # directly but only through code generated React
+            # components which should not have been generated except
+            # for valid method candidates.
+            logger.warning(
+                "Got a React query request with an invalid method name: "
+                f"Method '{method}' is invalid for servicer User."
+                "\n"
+                "Do you have a browser tab open for an older version "
+                "of this application, or for a different application all together?"
+            )
+            raise IMPORT_reboot.aio.aborted.SystemAborted(
+                IMPORT_rbt_v1alpha1.errors_pb2.InvalidMethod(),
+                message=
+                    f"Method '{method}' is invalid"
+            )
+            yield  # Necessary for type checking.
         else:
             logger.warning(
                 "Got a React query request with an invalid method name: "
@@ -5473,6 +5538,56 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                             status
                         ) from None
                     raise User.CreateAborted.from_grpc_aio_rpc_error(
+                        error
+                     ) from None
+
+        elif method == 'SetClaims':
+            request = reboot.ping.ping_api_pb2.UserSetClaimsRequest()
+            request.ParseFromString(request_bytes)
+
+            # NOTE: we automatically retry mutations that come through
+            # React when we get a `IMPORT_grpc.StatusCode.UNAVAILABLE` to
+            # match the retry logic we do in the React code generated
+            # to handle lack/loss of connectivity.
+            #
+            # TODO(benh): revisit this decision if we ever see reason
+            # to call `react_mutate()` from any place other than where
+            # we're executing React (e.g., browser, next.js server
+            # component, etc).
+            call_backoff = IMPORT_reboot_aio_backoff.Backoff()
+            while True:
+                # We make a full-fledged gRPC call, so that if this traffic
+                # was misrouted (i.e. this server is not authoritative
+                # for the state), it will now go to the right place. The
+                # receiving middleware will handle things like effect
+                # validation and so forth.
+                assert headers.application_id is not None  # Guaranteed by `Headers`.
+                stub = reboot.ping.ping_api_pb2_grpc.UserMethodsStub(
+                    self.channel_manager.get_channel_to(
+                        self.placement_client.address_for_actor(
+                            headers.application_id,
+                            headers.state_ref,
+                        )
+                    )
+                )
+                call = stub.SetClaims(
+                    request=request,
+                    metadata=headers.to_grpc_metadata(),
+                )
+                try:
+                    return await call
+                except IMPORT_grpc.aio.AioRpcError as error:
+                    if error.code() == IMPORT_grpc.StatusCode.UNAVAILABLE:
+                        await call_backoff()
+                        continue
+
+                    # Reconstitute the error that the server threw, if it was a declared error.
+                    status = await IMPORT_rpc_status_async.from_call(call)
+                    if status is not None:
+                        raise User.SetClaimsAborted.from_status(
+                            status
+                        ) from None
+                    raise User.SetClaimsAborted.from_grpc_aio_rpc_error(
                         error
                      ) from None
 
@@ -5789,6 +5904,83 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                     ),
                     state_type_name = IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
                     method='Create',
+                    context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
+                    task=task,
+                    # Propagate state manager and state type so that
+                    # `until()` calls (via `WorkflowContext.retry_reactively_until()`)
+                    # can enter `reactively()` scoped to each `until()`
+                    # invocation.
+                    reactively_state_manager=self._state_manager,
+                    reactively_state_type=(
+                        self._servicer.__state_type__
+                    ),
+                )
+            )
+        elif 'SetClaims' == task.method_name:
+            if only_validate:
+                # TODO(benh): validate 'task.request' is correct type.
+                return (google.protobuf.empty_pb2.Empty(), None)
+
+            # Use an inline method to create a new scope, so that we can use
+            # variable names like `context` and `effects` in multiple branches
+            # in this code (notably when there are multiple task types) without
+            # hitting a mypy error that the variable's type is not consistent.
+            async def run_SetClaims(
+                context: IMPORT_reboot_aio_contexts.WorkflowContext,
+                *,
+                validating_effects: bool = False,
+            ):
+                async with self._state_manager.task_workflow(
+                    context,
+                    task,
+                    on_loop_iteration=on_loop_iteration,
+                    validating_effects=validating_effects,
+                ) as complete:
+                    try:
+                        response = await (UserWorkflowStub(
+                            context=context,
+                            state_ref=context._state_ref,
+                        ).SetClaims(
+                            UserSetClaimsRequestFromProto(IMPORT_typing.cast(reboot.ping.ping_api_pb2.UserSetClaimsRequest, task.request)),
+                            bearer_token=__internal_magic_token__,
+                            idempotency=IMPORT_reboot_aio_idempotency.Idempotency(
+                                alias=f'Task {IMPORT_uuid.UUID(bytes=task.task_id.task_uuid)}',
+                            ),
+                        ))
+                        await complete(task, (response, None))
+                        return (response, None)
+                    except IMPORT_asyncio.CancelledError:
+                        # Do not retry a task if it was cancelled by a caller.
+                        if self.tasks_dispatcher.is_task_cancelled(task.task_id.task_uuid):
+                            result = (
+                                None,
+                                IMPORT_reboot.aio.aborted.SystemAborted(
+                                    IMPORT_rbt_v1alpha1.errors_pb2.Cancelled(),
+                                ).to_status(),
+                            )
+                            await complete(task, result)
+                            return result
+                        else:
+                            raise
+                    except IMPORT_reboot.aio.aborted.Aborted as aborted:
+                        error_type = f'{aborted._protobuf_error.__class__.__module__}.{aborted._protobuf_error.__class__.__qualname__}'
+                        # Do not retry a task if the error was specified in the
+                        # proto file.
+                        if error_type in self._specified_errors_by_service_method_name.get('reboot.ping.UserMethods.SetClaims', []):
+                            result = (None, aborted.to_status())
+                            await complete(task, result)
+                            return result
+                        raise
+
+
+            return await run_SetClaims(
+                self.create_context(
+                    headers=IMPORT_reboot_aio_headers.Headers(
+                        application_id=self.application_id,
+                        state_ref=IMPORT_reboot_aio_types.StateRef(task.task_id.state_ref),
+                    ),
+                    state_type_name = IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
+                    method='SetClaims',
                     context_type=IMPORT_reboot_aio_contexts.WorkflowContext,
                     task=task,
                     # Propagate state manager and state type so that
@@ -7773,6 +7965,512 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
         with IMPORT_reboot_aio_tracing.context_from_headers(headers):
             return await _run()
 
+    async def __SetClaims(
+        self,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
+        state: reboot.ping.ping_api_pb2.User,
+        request: reboot.ping.ping_api_pb2.UserSetClaimsRequest,
+        *,
+        validating_effects: bool,
+    ) -> google.protobuf.empty_pb2.Empty:
+        try:
+            typed_state: User.State = UserFromProto(state, is_initial_state=(context.state_id in states_being_constructed))
+
+            # TODO: assert that there are no ongoing transactions for this state.
+            #
+            # The `typed_state` should be already validated above, so we can
+            # just store it here.
+            ongoing_transaction_states[ongoing_transaction_state_key(context)] = typed_state
+            response = (
+                await self._servicer._SetClaims(
+                    context=context,
+                    state=typed_state,
+                    request=request
+                )
+            )
+
+
+            UserToProto(typed_state, state)
+
+            IMPORT_reboot_aio_types.assert_type(
+                response,
+                [google.protobuf.empty_pb2.Empty],
+            )
+            self.maybe_raise_effect_validation_retry(
+                logger=logger,
+                idempotency_manager=context,
+                method_name='User.SetClaims',
+                validating_effects=validating_effects,
+                context=context,
+            )
+            return response
+        except IMPORT_reboot_aio_contexts.EffectValidationRetry:
+            # Doing effect validation, just let this propagate.
+            raise
+        except IMPORT_reboot.aio.aborted.Aborted as aborted:
+            # If the caller aborted due to a retryable error, just
+            # propagate the aborted instead of propagating `Unknown`
+            # so that a client can transparently retry.
+            if IMPORT_reboot.aio.aborted.is_retryable(aborted):
+                raise aborted
+            # Log any _unhandled_ abort stack traces to make it
+            # easier for debugging.
+            #
+            # NOTE: we don't log if we're a task as it will be logged
+            # in `public/reboot/aio/internals/tasks_dispatcher.py` instead.
+            aborted_type: IMPORT_typing.Optional[type] = None
+            aborted_type = User.SetClaimsAborted
+            if isinstance(aborted, IMPORT_reboot.aio.aborted.SystemAborted):
+                # Not logging when within `node` as we already log there.
+                if IMPORT_reboot_nodejs_python.should_print_stacktrace():
+                    logger.warning(
+                        f"Unhandled (in 'reboot.ping.User.SetClaims') {aborted}; propagating as 'Unknown'\n" +
+                        ''.join(IMPORT_traceback.format_exception(aborted))
+                    )
+                raise IMPORT_reboot.aio.aborted.SystemAborted(
+                    IMPORT_rbt_v1alpha1.errors_pb2.Unknown(),
+                    # TODO(benh): consider whether or not we want to
+                    # include the 'package.service.method' which may
+                    # get concatenated together forming a kind of
+                    # "stack trace"; while it's super helpful for
+                    # debugging, it does expose implementation
+                    # information.
+                    message=f"unhandled (in 'reboot.ping.User.SetClaims') {aborted}"
+                )
+            else:
+                if (
+                    aborted_type is not None and
+                    not isinstance(aborted, aborted_type) and
+                    aborted_type.is_declared_error(aborted.error)
+                ):
+                    # We propagate declared errors that might have
+                    # come from another call, i.e., we might have an
+                    # `Aborted` but not for this method but the
+                    # `Aborted` that we have has an error that this
+                    # method declared. This allows a developer to
+                    # simply add the declared error to their `.proto`
+                    # file rather than having to catch and re-raise
+                    # the error with their own aborted type.
+                    if context.task is None:
+                        logger.warning(
+                            f"Propagating unhandled but declared error (in 'reboot.ping.User.SetClaims') {aborted}"
+                        )
+                elif (
+                    aborted_type is None or
+                    not isinstance(aborted, aborted_type)
+                ):
+                    # Not logging when within `node` as we already log there.
+                    if IMPORT_reboot_nodejs_python.should_print_stacktrace():
+                        logger.warning(
+                            f"Unhandled (in 'reboot.ping.User.SetClaims') {aborted}; propagating as 'Unknown'\n" +
+                            ''.join(IMPORT_traceback.format_exception(aborted))
+                        )
+                    # If this wasn't a declared error than we
+                    # propagate it as `Unknown`.
+                    raise IMPORT_reboot.aio.aborted.SystemAborted(
+                        IMPORT_rbt_v1alpha1.errors_pb2.Unknown(),
+                        # TODO(benh): consider whether or not we want to
+                        # include the 'package.service.method' which may
+                        # get concatenated together forming a kind of
+                        # "stack trace"; while it's super helpful for
+                        # debugging, it does expose implementation
+                        # information.
+                        message=f"unhandled (in 'reboot.ping.User.SetClaims') {aborted}"
+                    )
+
+            raise
+        except IMPORT_asyncio.CancelledError:
+            # It's pretty normal for an RPC to be cancelled; it's not useful to
+            # print a stack trace.
+            raise
+        except IMPORT_google_protobuf_message.DecodeError as decode_error:
+            # We usually see this error when we are trying to construct a proto
+            # message which is too deeply nested: protobuf has a limit of 100
+            # nested messages. See the limits here:
+            #   https://protobuf.dev/programming-guides/proto-limits/
+
+            if IMPORT_reboot_nodejs_python.should_print_stacktrace():
+                logger.warning(
+                    "Unhandled (in 'reboot.ping.User.SetClaims') "
+                    f"{type(decode_error).__name__}{': ' + str(decode_error) if len(str(decode_error)) > 0 else ''}; "
+                    "This is usually caused by a deeply nested protobuf message, which is not supported by protobuf.\n"
+                    "See the limits here: https://protobuf.dev/programming-guides/proto-limits/" +
+                    ''.join(IMPORT_traceback.format_exception(decode_error))
+                )
+            raise IMPORT_reboot.aio.aborted.SystemAborted(
+                IMPORT_rbt_v1alpha1.errors_pb2.Unknown(),
+                message=f"unhandled (in 'reboot.ping.User.SetClaims') {decode_error}; "
+                        "This is usually caused by a deeply nested protobuf message, which is not supported by protobuf.\n"
+                        "See the limits here: https://protobuf.dev/programming-guides/proto-limits/"
+            )
+        except BaseException as exception:
+            # Not logging when within `node` as we already log there.
+            if IMPORT_reboot_nodejs_python.should_print_stacktrace():
+                logger.warning(
+                    "Unhandled (in 'reboot.ping.User.SetClaims') "
+                    f"{type(exception).__name__}{': ' + str(exception) if len(str(exception)) > 0 else ''}; "
+                    "propagating as 'Unknown'\n" +
+                    ''.join(IMPORT_traceback.format_exception(exception))
+                )
+            raise IMPORT_reboot.aio.aborted.SystemAborted(
+                IMPORT_rbt_v1alpha1.errors_pb2.Unknown(),
+                # TODO(benh): consider whether or not we want to
+                # include the 'package.service.method' which may
+                # get concatenated together forming a kind of
+                # "stack trace"; while it's super helpful for
+                # debugging, it does expose implementation
+                # information.
+                message=f"unhandled (in 'reboot.ping.User.SetClaims') {type(exception).__name__}: {exception}"
+            )
+        finally:
+            if ongoing_transaction_state_key(context) in ongoing_transaction_states:
+                del ongoing_transaction_states[ongoing_transaction_state_key(context)]
+
+    @IMPORT_reboot_aio_tracing.function_span(
+        # We expect an `EffectValidationRetry` exception; that's not an error.
+        set_status_on_exception=False
+    )
+    async def _SetClaims(
+        self,
+        request: reboot.ping.ping_api_pb2.UserSetClaimsRequest,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
+        *,
+        validating_effects: bool,
+        grpc_context: IMPORT_typing.Optional[IMPORT_grpc.aio.ServicerContext] = None,
+    ) -> google.protobuf.empty_pb2.Empty:
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=context._headers, method='SetClaims'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
+        # Check if we already have performed this mutation!
+        #
+        # We do this _before_ calling 'transactionally()' because
+        # if this call is for a transaction method _and_ we've
+        # already performed the transaction then we don't want to
+        # become a transaction participant (again) we just want to
+        # return the transaction's response.
+        idempotent_mutation = await self._state_manager.check_for_idempotent_mutation(
+            context
+        )
+
+        if idempotent_mutation is not None:
+            response = google.protobuf.empty_pb2.Empty()
+            response.ParseFromString(idempotent_mutation.response)
+            return response
+
+        async with self._state_manager.transactionally(
+            context,
+            self.tasks_dispatcher,
+            aborted_type=User.SetClaimsAborted,
+        ) as transaction:
+            assert transaction is not None
+            async with self._state_manager.transaction(
+                context,
+                self._servicer.__state_type__,
+                transaction,
+                authorize=self._maybe_authorize(
+                    method_name='reboot.ping.UserMethods.SetClaims',
+                    headers=context._headers,
+                    auth=context.auth,
+                    request=request,
+                ),
+                from_constructor=False,
+                requires_constructor=True
+            ) as (state, complete):
+
+                response = await self.__SetClaims(
+                    context,
+                    state,
+                    request,
+                    validating_effects=validating_effects,
+                )
+
+                await complete(
+                    IMPORT_reboot_aio_state_managers.Effects(
+                        state=state,
+                        response=response,
+                    )
+                )
+                return response
+
+    async def _schedule_SetClaims(
+        self,
+        *,
+        request: reboot.ping.ping_api_pb2.UserSetClaimsRequest,
+        headers: IMPORT_reboot_aio_headers.Headers,
+        grpc_context: IMPORT_grpc.aio.ServicerContext,
+    ) -> tuple[IMPORT_reboot_aio_contexts.WriterContext, google.protobuf.empty_pb2.Empty]:
+        context: IMPORT_reboot_aio_contexts.WriterContext = self.create_context(
+            headers=headers,
+            state_type_name = IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
+            method='SetClaims',
+            context_type=IMPORT_reboot_aio_contexts.WriterContext,
+        )
+        response = google.protobuf.empty_pb2.Empty()
+
+        # Try to verify the token if a token verifier exists.
+        context.auth = await self._maybe_verify_token(
+            headers=headers, method='SetClaims'
+        )
+
+        # Try and "preload" to opportunistically load both state and
+        # idempotent mutations from the database in a single
+        # round-trip. This is fire-and-forget; subsequent calls to
+        # `_load()` and `check_for_idempotent_mutation()` should find
+        # the preloaded data and skip their own calls to the database.
+        #
+        # TODO: a tradeoff we're making here is that we load
+        # idempotent mutations even if this is just a reader and we
+        # don't need them. Consider only preloading for writers and
+        # transactions if loading idempotent mutations is
+        # unnecessarily slow (and we haven't optimized that via a
+        # database stored bloom filter).
+        #
+        # We do this _after_ verifying the token so it is not a
+        # denial-of-service attack vector, i.e., only callers with
+        # valid tokens may trigger preloads on the database.
+        self._state_manager.preload(
+            context.state_type_name,
+            context._state_ref,
+        )
+
+        # Check if we already have performed this schedule! Note that
+        # we need to do this for all kinds of methods because this is
+        # effectively a mutation (actually a `writer`, see below).
+        #
+        # We do this _before_ calling 'transactionally()' because
+        # if this call is for a transaction method _and_ we've
+        # already performed the transaction then we don't want to
+        # become a transaction participant (again) we just want to
+        # return the transaction's response.
+        idempotent_mutation = await self._state_manager.check_for_idempotent_mutation(
+            context
+        )
+
+        if idempotent_mutation is not None:
+            response.ParseFromString(idempotent_mutation.response)
+
+            # We should have only scheduled a single task!
+            assert len(idempotent_mutation.task_ids) == 1
+            assert grpc_context is not None
+            grpc_context.set_trailing_metadata(
+                grpc_context.trailing_metadata() +
+                (
+                    (
+                        IMPORT_reboot_aio_headers.TASK_ID_UUID,
+                        str(IMPORT_uuid.UUID(bytes=idempotent_mutation.task_ids[0].task_uuid))
+                    ),
+                )
+            )
+
+            return context, response
+
+        async with self._state_manager.transactionally(
+            context,
+            self.tasks_dispatcher,
+            aborted_type=User.SetClaimsAborted,
+        ) as transaction:
+
+            async with self._state_manager.writer(
+                context,
+                self._servicer.__state_type__,
+                self.tasks_dispatcher,
+                transaction=transaction,
+                authorize=self._maybe_authorize(
+                    method_name='reboot.ping.UserMethods.SetClaims',
+                    headers=context._headers,
+                    auth=context.auth,
+                    request=request,
+                ),
+                from_constructor=False,
+                requires_constructor=True
+            ) as (state, writer):
+
+                task = await UserServicerTasks(
+                    context=context,
+                    state_ref=context._state_ref,
+                ).SetClaims(
+                    UserSetClaimsRequestFromProto(request),
+                    schedule=context._headers.task_schedule,
+                )
+
+                effects = IMPORT_reboot_aio_state_managers.Effects(
+                    response=response,
+                    state=state,
+                    tasks=[task],
+                )
+
+                assert effects.tasks is not None
+
+                await writer.complete(effects)
+
+                assert grpc_context is not None
+
+                grpc_context.set_trailing_metadata(
+                    grpc_context.trailing_metadata() +
+                    (
+                        (
+                            IMPORT_reboot_aio_headers.TASK_ID_UUID,
+                            str(IMPORT_uuid.UUID(bytes=task.task_id.task_uuid))
+                        ),
+                    )
+                )
+
+                return context, response
+
+        return context, response
+
+
+    # Entrypoint for non-reactive network calls (i.e. typical gRPC calls).
+    async def SetClaims(
+        self,
+        request: reboot.ping.ping_api_pb2.UserSetClaimsRequest,
+        grpc_context: IMPORT_grpc.aio.ServicerContext,
+    ) -> google.protobuf.empty_pb2.Empty:
+        headers = IMPORT_reboot_aio_headers.Headers.from_grpc_context(grpc_context)
+        assert headers.application_id is not None  # Guaranteed by `Headers`.
+
+        # Confirm whether this is the right server to be serving this
+        # request.
+        try:
+            authoritative_server = self.placement_client.server_for_actor(
+                headers.application_id,
+                headers.state_ref,
+            )
+        except IMPORT_reboot_aio_placement.UnknownApplicationError:
+            # It's possible that the user did indeed type an application ID
+            # that doesn't exist, but it's also quite possible that this
+            # request reached us before the placement planner had gossipped
+            # out the information about which applications exist (we see
+            # this e.g. after `rbt dev`'s chaos monkey restarts). For that
+            # reason, abort with a retryable error.
+            await grpc_context.abort(
+                IMPORT_grpc.StatusCode.UNAVAILABLE,
+                f"Application '{headers.application_id}' not found. If you "
+                "are confident the application exists, this may be because "
+                "the system is still starting.",
+            )
+            raise  # Unreachable but necessary for mypy.
+        if authoritative_server != self.server_id:
+            # This is NOT the correct server. Fail.
+            await grpc_context.abort(
+                IMPORT_grpc.StatusCode.UNAVAILABLE,
+                f"Server '{self.server_id}' is not authoritative for this "
+                f"request; server '{authoritative_server}' is.",
+            )
+            raise  # Unreachable but necessary for mypy.
+
+        @IMPORT_reboot_aio_internals_middleware.maybe_run_function_twice_to_validate_effects
+        async def _run(
+            validating_effects: bool,
+        ) -> google.protobuf.empty_pb2.Empty:
+            context: IMPORT_typing.Optional[IMPORT_reboot_aio_contexts.Context] = None
+            try:
+                if headers.task_schedule is not None:
+                    context, response = await self._schedule_SetClaims(
+                        headers=headers,
+                        request=request,
+                        grpc_context=grpc_context,
+                    )
+                    return response
+
+                context = self.create_context(
+                    headers=headers,
+                    state_type_name = IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
+                    method='SetClaims',
+                    context_type=IMPORT_reboot_aio_contexts.TransactionContext,
+                )
+                assert context is not None
+
+                return await self._SetClaims(
+                    request,
+                    context,
+                    validating_effects=validating_effects,
+                    grpc_context=grpc_context,
+                )
+            except IMPORT_reboot_aio_contexts.EffectValidationRetry:
+                # Doing effect validation, just let this propagate.
+                raise
+            except IMPORT_reboot.aio.aborted.Aborted as aborted:
+                status = IMPORT_rpc_status_sync.to_status(aborted.to_status())
+                # Need to add transaction participants here because
+                # calling `grpc_context.abort_with_status()` will
+                # ignore any other trailing metadata. Only propagate
+                # transaction participants metadata if the caller cares.
+                # Callers that care are those that are themselves transactions.
+                # It's important to not just send this information to everyone;
+                # some clients can't tolerate trailers, see:
+                #   https://github.com/reboot-dev/mono/issues/5081
+                if context is not None and headers.transaction_ids is not None:
+                    assert context.transaction_id is not None
+                    status = status._replace(
+                        trailing_metadata=status.trailing_metadata + context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
+                    )
+                await grpc_context.abort_with_status(status)
+                raise  # Unreachable but necessary for mypy.
+            except IMPORT_asyncio.CancelledError:
+                # It's pretty normal for an RPC to be cancelled; it's not useful to
+                # print a stack trace.
+                raise
+            except BaseException as exception:
+                # Print the exception stack trace for easier debugging. Note
+                # that we don't include the stack trace in an error message
+                # for the same reason that gRPC doesn't do so by default,
+                # see https://github.com/grpc/grpc/issues/14897, but since this
+                # should only get logged on the server side it is safe.
+                logger.warning(
+                    'Unhandled exception\n' +
+                    ''.join(IMPORT_traceback.format_exc() if IMPORT_reboot_nodejs_python.should_print_stacktrace() else [f"{type(exception).__name__}: {exception}"])
+                )
+
+                # Re-raise the exception for gRPC to handle!
+                #
+                # TODO: gRPC will print a stack trace from this
+                # exception which we don't want if we're executing via
+                # Node.js.
+                raise
+            finally:
+                # Propagate transaction participants, if the caller cares.
+                # Callers that care are those that are themselves transactions.
+                # It's important to not just send this information to everyone;
+                # some clients can't tolerate trailers, see:
+                #   https://github.com/reboot-dev/mono/issues/5081
+                if context is not None and headers.transaction_ids is not None:
+                    assert context.transaction_id is not None
+                    grpc_context.set_trailing_metadata(
+                        grpc_context.trailing_metadata() +
+                        context.participants.to_grpc_metadata(
+                            read_only_aware=headers.coordinator_read_only_aware,
+                        )
+                    )
+
+        with IMPORT_reboot_aio_tracing.context_from_headers(headers):
+            return await _run()
+
     def _maybe_authorize(
         self,
         *,
@@ -7805,6 +8503,27 @@ class UserServicerMiddleware(IMPORT_reboot_aio_internals_middleware.Middleware):
                 context_type=IMPORT_reboot_aio_contexts.ReaderContext,
             ) as context:
                 context.auth = auth
+
+                # The framework's `set_claims` method should only ever
+                # be app-internal; even the owning user shouldn't be
+                # trusted to call it, since the identity provider's
+                # claims may deliver info like "validated email address"
+                # and other things we don't trust the user to set
+                # directly.
+                #
+                # This extra app-internal check comes before any
+                # authorizer, so no authorizer — including a blanket
+                # `allow()` — can expose the method to external callers.
+                if (
+                    method_name.split('.')[-1] == 'SetClaims'
+                    and not context.app_internal
+                ):
+                    raise IMPORT_reboot.aio.aborted.SystemAborted(
+                        IMPORT_rbt_v1alpha1.errors_pb2.PermissionDenied(),
+                        message=
+                        f"You are not authorized to call '{method_name}' on "
+                        f"`reboot.ping.User('{headers.state_ref.id}')`"
+                    )
 
                 # Get the authorizer decision.
                 authorization_decision = await self._authorizer.authorize(
@@ -12176,6 +12895,7 @@ class UserReaderStub(_UserStub):
 
 
 
+
 class UserWriterStub(_UserStub):
 
     def __init__(
@@ -12239,6 +12959,7 @@ class UserWriterStub(_UserStub):
         ) as call:
             assert isinstance(call, IMPORT_typing.Awaitable), type(call)
             return await call
+
 
 
 
@@ -12380,6 +13101,49 @@ class UserWorkflowStub(_UserStub):
                 reader=False,
                 response_type=google.protobuf.empty_pb2.Empty,
                 aborted_type=User.CreateAborted,
+                metadata=metadata,
+                idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
+                bearer_token=bearer_token,
+            ) as call:
+                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                return await call
+
+    async def SetClaims(
+        self,
+        request: User.SetClaimsRequest,
+        idempotency: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
+        *,
+        metadata: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None,
+        bearer_token: IMPORT_typing.Optional[str] = None,
+    ) -> google.protobuf.empty_pb2.Empty:
+        idempotency_key: IMPORT_typing.Optional[IMPORT_uuid.UUID]
+        proto_request = UserSetClaimsRequestToProto(
+            request,
+        )
+
+        with self._idempotency_manager.idempotently(
+            state_type_name=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
+            state_ref=self._headers.state_ref,
+            service_name=IMPORT_reboot_aio_types.ServiceName('reboot.ping.UserMethods'),
+            method='SetClaims',
+            mutation=True,
+            request=proto_request,
+            metadata=metadata,
+            idempotency=idempotency,
+            aborted_type=User.SetClaimsAborted,
+        ) as idempotency_key:
+            async with self._call(
+                IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
+                IMPORT_reboot_aio_types.ServiceName('reboot.ping.UserMethods'),
+                'SetClaims',
+                self._reboot_ping_usermethods_stub.SetClaims,
+                proto_request,
+                unary=True,
+                reader=False,
+                response_type=google.protobuf.empty_pb2.Empty,
+                aborted_type=User.SetClaimsAborted,
                 metadata=metadata,
                 idempotency_key=idempotency_key,
                 per_iteration=idempotency.per_iteration if idempotency is not None else False,
@@ -12563,6 +13327,59 @@ class UserTasksStub(_UserStub):
                     IMPORT_rbt_v1alpha1.errors_pb2.Internal(),
                     message='Trailing metadata missing for task schedule',
                 )
+    async def SetClaims(
+        self,
+        request: User.SetClaimsRequest,
+        idempotency: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
+        *,
+        metadata: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None,
+        bearer_token: IMPORT_typing.Optional[str] = None,
+    ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+        idempotency_key: IMPORT_typing.Optional[IMPORT_uuid.UUID]
+        proto_request = UserSetClaimsRequestToProto(
+            request,
+        )
+
+        with self._idempotency_manager.idempotently(
+            state_type_name=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
+            state_ref=self._headers.state_ref,
+            service_name=IMPORT_reboot_aio_types.ServiceName('reboot.ping.UserMethods'),
+            method='SetClaims',
+            mutation=True,
+            request=proto_request,
+            metadata=metadata,
+            idempotency=idempotency,
+            aborted_type=User.SetClaimsAborted,
+        ) as idempotency_key:
+            async with self._call(
+                IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
+                IMPORT_reboot_aio_types.ServiceName('reboot.ping.UserMethods'),
+                'SetClaims',
+                self._reboot_ping_usermethods_stub.SetClaims,
+                proto_request,
+                unary=True,
+                reader=False,
+                response_type=google.protobuf.empty_pb2.Empty,
+                aborted_type=User.SetClaimsAborted,
+                metadata=metadata,
+                idempotency_key=idempotency_key,
+                per_iteration=idempotency.per_iteration if idempotency is not None else False,
+                always=idempotency.always if idempotency is not None else False,
+                bearer_token=bearer_token,
+            ) as call:
+                assert isinstance(call, IMPORT_typing.Awaitable), type(call)
+                await call
+                for (key, value) in await call.trailing_metadata():  # type: ignore[misc, attr-defined]
+                    if key == IMPORT_reboot_aio_headers.TASK_ID_UUID:
+                        return IMPORT_rbt_v1alpha1.tasks_pb2.TaskId(
+                            state_type=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
+                            state_ref=self._headers.state_ref.to_str(),
+                            task_uuid=IMPORT_uuid.UUID(value).bytes,
+                        )
+                raise IMPORT_reboot.aio.aborted.SystemAborted(
+                    IMPORT_rbt_v1alpha1.errors_pb2.Internal(),
+                    message='Trailing metadata missing for task schedule',
+                )
 
 
 class UserServicerTasks:
@@ -12657,6 +13474,29 @@ class UserServicerTasks:
             state_ref=self._state_ref,
             method_name='Create',
             request=UserCreateRequestToProto(
+            ),
+            schedule=(IMPORT_reboot_time_DateTimeWithTimeZone.now() + schedule) if isinstance(
+                schedule, IMPORT_datetime_timedelta
+            ) else schedule,
+        )
+
+        self._context._tasks.append(task)
+
+        return task
+
+    async def SetClaims(
+        self,
+        request: User.SetClaimsRequest,
+        *,
+        schedule: IMPORT_typing.Optional[IMPORT_datetime_datetime | IMPORT_datetime_timedelta] = None,
+    ) -> IMPORT_reboot_aio_tasks.TaskEffect:
+        schedule = ensure_has_timezone(when=schedule)
+        task = IMPORT_reboot_aio_tasks.TaskEffect(
+            state_type=IMPORT_reboot_aio_types.StateTypeName('reboot.ping.User'),
+            state_ref=self._state_ref,
+            method_name='SetClaims',
+            request=UserSetClaimsRequestToProto(
+                request,
             ),
             schedule=(IMPORT_reboot_time_DateTimeWithTimeZone.now() + schedule) if isinstance(
                 schedule, IMPORT_datetime_timedelta
@@ -13761,7 +14601,8 @@ class PongAuthorizer(
 UserStateType: IMPORT_typing.TypeAlias = reboot.ping.ping_api_pb2.User
 UserRequestTypes: IMPORT_typing.TypeAlias = \
         reboot.ping.ping_api_pb2.UserCreateCounterRequest \
-        | google.protobuf.empty_pb2.Empty
+        | google.protobuf.empty_pb2.Empty \
+        | reboot.ping.ping_api_pb2.UserSetClaimsRequest
 
 class UserAuthorizer(
     IMPORT_reboot_aio_auth_authorizers.Authorizer[UserStateType, UserRequestTypes],
@@ -13821,6 +14662,18 @@ class UserAuthorizer(
               None
             ]
         ] = None,
+        SetClaims: IMPORT_typing.Optional[
+            IMPORT_reboot_aio_auth_authorizers.AuthorizerRule[
+              User.State,
+              User.SetClaimsRequest,
+            ]
+        ] = None,
+        set_claims: IMPORT_typing.Optional[
+            IMPORT_reboot_aio_auth_authorizers.AuthorizerRule[
+              User.State,
+              User.SetClaimsRequest,
+            ]
+        ] = None,
         # NOTE: using `_` prefix for `_default` so as not to collide
         # with any method names since a prefixed `_` is forbidden by
         # our protoc plugins.
@@ -13854,6 +14707,11 @@ class UserAuthorizer(
                 f"Cannot specify both 'Create' and 'create' authorizer rules"
             )
         self._create = create or Create
+        if set_claims is not None and SetClaims is not None:
+            raise ValueError(
+                f"Cannot specify both 'SetClaims' and 'set_claims' authorizer rules"
+            )
+        self._set_claims = set_claims or SetClaims
         self.__default = _default
 
     async def authorize(
@@ -13884,6 +14742,12 @@ class UserAuthorizer(
         elif method_name == 'reboot.ping.UserMethods.Create':
             return await self.Create(
                 context=context,
+            )
+        elif method_name == 'reboot.ping.UserMethods.SetClaims':
+            return await self.SetClaims(
+                context=context,
+                state=UserFromProto(state, is_initial_state=(context.state_id in states_being_constructed)) if state is not None else state,
+                request=UserSetClaimsRequestFromProto(request) if request is not None else request,
             )
         else:
             return IMPORT_rbt_v1alpha1.errors_pb2.PermissionDenied()
@@ -13947,6 +14811,20 @@ class UserAuthorizer(
             # in the Pydantic API. We need to support dropping 'request'
             # argument in the default 'AuthorizerRule's before.
             request=None,
+        )
+
+    # For 'reboot.ping.UserMethods.SetClaims'.
+    async def SetClaims(
+        self,
+        *,
+        context: IMPORT_reboot_aio_contexts.ReaderContext,
+        state: User.State,
+        request: User.SetClaimsRequest,
+    ) -> IMPORT_reboot_aio_auth_authorizers.Authorizer.Decision:
+        return await (self._set_claims or self.__default).execute(
+            context=context,
+            state=state,
+            request=request,
         )
 
 
@@ -16414,7 +17292,7 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
             id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
             # State is auto-constructed when the user's
-            # JWT is minted; see `_auto_construct`.
+            # JWT is minted; see `_authenticated`.
             ref = User.ref(id)
             return await ref.create_counter(reboot_context, request)
 
@@ -16431,7 +17309,7 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
             id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
             # State is auto-constructed when the user's
-            # JWT is minted; see `_auto_construct`.
+            # JWT is minted; see `_authenticated`.
             ref = User.ref(id)
             return await ref.list_counters(reboot_context)
 
@@ -16448,25 +17326,36 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             reboot_context = IMPORT_reboot_mcp_context.get_reboot_context(ctx)
             id = IMPORT_reboot_mcp_context.get_mcp_user_id(ctx)
             # State is auto-constructed when the user's
-            # JWT is minted; see `_auto_construct`.
+            # JWT is minted; see `_authenticated`.
             ref = User.ref(id)
             return await ref.whoami(reboot_context)
 
         pass  # End of _add_mcp.
 
     @staticmethod
-    async def _auto_construct(
+    async def _authenticated(
         context: IMPORT_reboot_aio_external.ExternalContext,
         state_id: str,
+        claims: IMPORT_typing.Optional[
+            IMPORT_typing.Mapping[str, IMPORT_typing.Any]
+        ] = None,
     ) -> None:
-        """Auto-construct a `User` state."""
-        # Some states have `_auto_construct` called many times, e.g. a
-        # per-user state may get auto-constructed at the start of every
-        # MCP session. We derive a deterministic idempotency key from the
-        # state ID so that repeated calls (even from different contexts)
-        # are a NOOP. We prefer this over catching the
-        # `StateAlreadyExists` error that would otherwise result, since
-        # that logs an `ERROR` to user-visible logs.
+        """Record that a user authenticated: construct their
+        `User` if it does not exist yet, then, when
+        `claims` is given, deliver their verified identity claims.
+
+        `claims=None` means the caller has no claims information for
+        this authentication (e.g. a token refresh, which never
+        consults the identity provider); it never means "no claims"
+        and never clears previously delivered claims.
+        """
+        # A `User` may be authenticated many times,
+        # e.g. a per-user state on every sign-in. We derive a
+        # deterministic idempotency key from the state ID so that the
+        # construct is a NOOP once the state exists (even across
+        # different contexts). We prefer this over catching the
+        # `StateAlreadyConstructed` error that would otherwise result,
+        # since that logs an `ERROR` to user-visible logs.
         idempotency_key = IMPORT_uuid.uuid5(
             IMPORT_uuid.NAMESPACE_URL,
             f"urn:dev.reboot:auto-construct:User:{state_id}",
@@ -16474,6 +17363,18 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         await User.idempotently(
             key=idempotency_key,
         ).create(context, state_id)
+        # The two calls are deliberately sequential rather than wrapped
+        # in one transaction: an idempotent construct followed by a
+        # full-replace `set_claims` compose convergently.
+        # `set_claims` runs on every sign-in (`.always()`)
+        # because even if `set_state(claims=FOO)` has been called before,
+        # it could be that `set_state(claims=BAR)` was called since
+        # then, and `set_state(claims=FOO)` would have an effect again -
+        # we want to converge on the most recently delivered claims.
+        if claims is not None:
+            await User.ref(state_id).always().set_claims(
+                context, claims=claims
+            )
 
     def ref(
         self,
@@ -16512,6 +17413,7 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
             IMPORT_reboot_aio_types.assert_type(state, [reboot.ping.ping_api_pb2.User])
 
             super().__init__(state=state, response=response, tasks=tasks, _colocated_upserts=_colocated_upserts)
+
 
 
 
@@ -17001,6 +17903,16 @@ class UserBaseServicer(IMPORT_reboot_aio_servicers.Servicer):
     ) -> google.protobuf.empty_pb2.Empty:
         raise NotImplementedError
 
+    # For 'reboot.ping.UserMethods.SetClaims'.
+    @IMPORT_abc_abstractmethod
+    async def _SetClaims(
+        self,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
+        state: User.State,
+        request: reboot.ping.ping_api_pb2.UserSetClaimsRequest,
+    ) -> google.protobuf.empty_pb2.Empty:
+        raise NotImplementedError
+
 
 
 class UserSingletonServicer(UserBaseServicer):
@@ -17118,7 +18030,10 @@ class UserSingletonServicer(UserBaseServicer):
         context: IMPORT_reboot_aio_contexts.TransactionContext,
         state: User.State,
     ) -> None:
-        pass
+        return await self.create(
+            context,
+            state,
+        )
 
     async def create(
         self,
@@ -17126,6 +18041,46 @@ class UserSingletonServicer(UserBaseServicer):
         state: reboot.ping.ping_api_pb2.User,
     ) -> None:
         pass
+
+    # For 'reboot.ping.UserMethods.SetClaims'.
+    # Default `set_claims` that raises when verified
+    # identity claims are delivered but your Servicer hasn't
+    # overridden it. Override it to consume the delivered claims.
+    async def SetClaims(
+        self,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
+        state: User.State,
+        request: User.SetClaimsRequest,
+    ) -> None:
+        return await self.set_claims(
+            context,
+            state,
+            request,
+        )
+
+    async def set_claims(
+        self,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
+        state: reboot.ping.ping_api_pb2.User,
+        request: User.SetClaimsRequest,
+    ) -> None:
+        """The framework calls this on every sign-in to deliver the
+        user's verified identity claims. `request.claims` is the
+        complete, current set of verified claims (a `dict[str, Any]`
+        keyed by claim name); treat it as a full replace and fully
+        derive any claim-backed User state from it.
+        This makes the method idempotent — re-delivering the same
+        claims is harmless — which is required, since it runs on
+        every sign-in, not just the first."""
+        raise NotImplementedError(
+            "Verified identity claims were delivered for this "
+            "`User`, but its servicer does not "
+            "override `set_claims`, so the claims would "
+            "be discarded. Override `set_claims` to "
+            "derive `User` state from "
+            "`request.claims`, or stop requesting claims from your "
+            "identity provider."
+        )
 
 
     # For 'reboot.ping.UserMethods.CreateCounter'.
@@ -17218,6 +18173,31 @@ class UserSingletonServicer(UserBaseServicer):
                 await self.Create(
                     context,
                     state,
+                )
+            )
+
+
+    # For 'reboot.ping.UserMethods.SetClaims'.
+    async def _SetClaims(
+        self,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
+        state: User.State,
+        request: reboot.ping.ping_api_pb2.UserSetClaimsRequest,
+    ) -> google.protobuf.empty_pb2.Empty:
+        # Wrap the call to the developer's method in a `span` so that it
+        # is traced using its fully-qualified Python name.
+        with IMPORT_reboot_aio_tracing.span(
+                state_name=f"reboot.ping.User('{context.state_id}')",
+                span_name=f"{IMPORT_reboot_aio_tracing.qualified_type_name(self)}.SetClaims()",
+                level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                python_specific=True,
+        ):
+            typed_request = UserSetClaimsRequestFromProto(request)
+            return UserSetClaimsResponseToProto(
+                await self.SetClaims(
+                    context,
+                    state,
+                    typed_request
                 )
             )
 
@@ -17373,6 +18353,43 @@ class UserServicer(UserBaseServicer):
     ) -> None:
         pass
 
+    # For 'reboot.ping.UserMethods.SetClaims'.
+    # Default `set_claims` that raises when verified
+    # identity claims are delivered but your Servicer hasn't
+    # overridden it. Override it to consume the delivered claims.
+    async def SetClaims(
+        self,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
+        request: User.SetClaimsRequest,
+    ) -> None:
+        return await self.set_claims(
+            context,
+            request,
+        )
+
+    async def set_claims(
+        self,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
+        request: User.SetClaimsRequest,
+    ) -> None:
+        """The framework calls this on every sign-in to deliver the
+        user's verified identity claims. `request.claims` is the
+        complete, current set of verified claims (a `dict[str, Any]`
+        keyed by claim name); treat it as a full replace and fully
+        derive any claim-backed User state from it.
+        This makes the method idempotent — re-delivering the same
+        claims is harmless — which is required, since it runs on
+        every sign-in, not just the first."""
+        raise NotImplementedError(
+            "Verified identity claims were delivered for this "
+            "`User`, but its servicer does not "
+            "override `set_claims`, so the claims would "
+            "be discarded. Override `set_claims` to "
+            "derive `User` state from "
+            "`request.claims`, or stop requesting claims from your "
+            "identity provider."
+        )
+
 
     # For 'reboot.ping.UserMethods.CreateCounter'.
     async def _CreateCounter(
@@ -17495,6 +18512,39 @@ class UserServicer(UserBaseServicer):
                 return UserCreateResponseToProto(
                     await instance.Create(
                         context,
+                    )
+                )
+        finally:
+            UserServicer._state.set(None)
+
+    # For 'reboot.ping.UserMethods.SetClaims'.
+    async def _SetClaims(
+        self,
+        context: IMPORT_reboot_aio_contexts.TransactionContext,
+        state: User.State,
+        request: reboot.ping.ping_api_pb2.UserSetClaimsRequest,
+    ) -> google.protobuf.empty_pb2.Empty:
+        # We should have an asyncio task and thus context per request,
+        # let's confirm this assumption by making sure that
+        # `_state is None`.
+        assert UserServicer._state.get() is None
+        UserServicer._state.set(state)
+        try:
+            # Wrap the call to the developer's method in a `span` so that it
+            # is traced using its fully-qualified Python name.
+            instance = self._instance(context.state_id)
+            with IMPORT_reboot_aio_tracing.span(
+                    state_name=f"reboot.ping.User('{context.state_id}')",
+                    span_name=f"{IMPORT_reboot_aio_tracing.qualified_type_name(instance)}.SetClaims()",
+                    level=IMPORT_reboot_aio_tracing.TraceLevel.CUSTOMER,
+                    python_specific=True,
+            ):
+                typed_request = UserSetClaimsRequestFromProto(request)
+
+                return UserSetClaimsResponseToProto(
+                    await instance.SetClaims(
+                        context,
+                        typed_request,
                     )
                 )
         finally:
@@ -24080,6 +25130,9 @@ class User:
 
 
 
+    SetClaimsRequest: IMPORT_typing.TypeAlias = IMPORT_typing.cast(type, IMPORT_api.User.methods['set_claims'].request)
+
+
     __state_type_name__ = IMPORT_reboot_aio_types.StateTypeName("reboot.ping.User")
 
     class CreateCounterTask:
@@ -25186,6 +26239,282 @@ class User:
                 return type(error) in IMPORT_api.User.methods['create'].errors
             return False
 
+    class SetClaimsTask:
+        """Represents a scheduled task running for the
+        state. Note that this is not a coroutine because we are trying
+        to convey the semantics that the task is already running (or
+        will soon be).
+        """
+
+        @classmethod
+        def retrieve(
+            cls,
+            context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
+            *,
+            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+        ):
+            return cls(context, task_id=task_id)
+
+        def __init__(
+            self,
+            context: IMPORT_reboot_aio_contexts.Context | IMPORT_reboot_aio_external.ExternalContext,
+            *,
+            task_id: IMPORT_rbt_v1alpha1.tasks_pb2.TaskId,
+        ) -> None:
+            # Depending on the context type (inside or outside a Reboot application)
+            # we may or may not know the application ID. If we don't know it, then
+            # the `ExternalContext.gateway` will determine it.
+            #
+            # TODO: in the future we expect to support cross-application calls, in
+            #       which case the developer may explicitly pass in an application ID
+            #       here.
+            self._application_id: IMPORT_typing.Optional[IMPORT_reboot_aio_types.ApplicationId] = None
+            if isinstance(context, IMPORT_reboot_aio_contexts.Context):
+                self._application_id = context.application_id
+            self._channel_manager = context.channel_manager
+            self._task_id = task_id
+
+        @property
+        def task_id(self) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+            return self._task_id
+
+        def __await__(self) -> IMPORT_typing.Generator[None, None, None]:
+            """Awaits for task to finish and returns its response."""
+            async def wait_for_task() -> google.protobuf.empty_pb2.Empty:
+                channel = self._channel_manager.get_channel_to_state(
+                    IMPORT_reboot_aio_types.StateTypeName(self._task_id.state_type),
+                    IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
+                )
+
+                stub = IMPORT_rbt_v1alpha1.tasks_pb2_grpc.TasksStub(channel)
+
+                try:
+                    call = IMPORT_reboot_aio_stubs.UnaryRetriedCall(
+                        call=None,  # `RetriedCall` can create the call itself.
+                        stub_method=stub.Wait,
+                        method_name="Wait",
+                        request=IMPORT_rbt_v1alpha1.tasks_pb2.WaitRequest(task_id=self._task_id),
+                        metadata=IMPORT_reboot_aio_headers.Headers(
+                            state_ref=IMPORT_reboot_aio_types.StateRef(self._task_id.state_ref),
+                            application_id=self._application_id,
+                        ).to_grpc_metadata(),
+                        aborted_type=IMPORT_reboot.aio.aborted.SystemAborted,
+                    )
+
+                    wait_for_task_response = await call
+                except IMPORT_reboot.aio.aborted.SystemAborted as error:
+                    if error.code == IMPORT_grpc.StatusCode.NOT_FOUND:
+                        raise IMPORT_reboot.aio.aborted.SystemAborted(
+                            IMPORT_rbt_v1alpha1.errors_pb2.UnknownTask()
+                        ) from None
+
+                    raise
+                else:
+                    response_or_error: IMPORT_typing.Optional[IMPORT_google_protobuf_any_pb2.Any] = None
+                    is_error = False
+
+                    if wait_for_task_response.response_or_error.WhichOneof("response_or_error") == "response":
+                        response_or_error = wait_for_task_response.response_or_error.response
+                    else:
+                        is_error = True
+                        response_or_error = wait_for_task_response.response_or_error.error
+
+                    assert response_or_error is not None
+                    assert response_or_error.TypeName() != ""
+
+                    response = google.protobuf.empty_pb2.Empty()
+
+                    if (
+                        not is_error and response_or_error.TypeName() != response.DESCRIPTOR.full_name
+                    ):
+                        raise IMPORT_reboot.aio.aborted.SystemAborted(
+                            IMPORT_rbt_v1alpha1.errors_pb2.InvalidArgument(),
+                            message=
+                            f"task with UUID {IMPORT_uuid.UUID(bytes=self._task_id.task_uuid)} "
+                            f"has a response of type '{response_or_error.TypeName()}' "
+                            "but expecting type 'google.protobuf.empty_pb2.Empty'; "
+                            "are you waiting on a task of the correct method?",
+                        ) from None
+
+                    if is_error:
+                        aborted_type = User.SetClaimsAborted
+
+                        # In Reboot >= 0.40.2 we expect the error to be a `google.rpc.Status`.
+                        if response_or_error.Is(IMPORT_google_rpc_status_pb2.Status.DESCRIPTOR):
+                            status = IMPORT_google_rpc_status_pb2.Status()
+                            response_or_error.Unpack(status)
+                            raise aborted_type.from_status(status)
+
+                        # In Reboot < 0.40.2 workflows throwing declared errors behaved poorly;
+                        # we don't aim to emulate its behavior. Indicate that we don't know the
+                        # reason for the abort.
+                        raise IMPORT_reboot.aio.aborted.SystemAborted(
+                            IMPORT_rbt_v1alpha1.errors_pb2.Unknown(),
+                        )
+
+                    else:
+                        response_or_error.Unpack(response)
+                        return UserSetClaimsResponseFromProto(response)
+
+            return wait_for_task().__await__()
+
+
+    class SetClaimsAborted(IMPORT_reboot.aio.aborted.Aborted):
+
+
+        Error = IMPORT_typing.Union[
+            IMPORT_reboot.aio.aborted.GrpcError,
+            IMPORT_reboot.aio.aborted.RebootError,
+        ]
+
+        METHOD_PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = [
+        ]
+
+        PROTOBUF_ERROR_TYPES: list[type[IMPORT_google_protobuf_message.Message]] = (
+            METHOD_PROTOBUF_ERROR_TYPES +
+            IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES +
+            IMPORT_reboot.aio.aborted.REBOOT_ERROR_TYPES
+        )
+
+        _error: Error
+
+        MethodProtobufError = IMPORT_typing.Union[
+            IMPORT_reboot.aio.aborted.GrpcError,
+            IMPORT_reboot.aio.aborted.RebootError,
+        ]
+        _method_protobuf_error: MethodProtobufError
+
+        _code: IMPORT_grpc.StatusCode
+        _message: IMPORT_typing.Optional[str]
+
+        def __init__(
+            self,
+            error:  IMPORT_reboot.aio.aborted.GrpcError,
+            *,
+            message: IMPORT_typing.Optional[str] = None,
+            # Do not set this value when constructing in order to
+            # raise. This is only used internally when constructing
+            # from aborted calls.
+            error_types: IMPORT_typing.Sequence[type[MethodProtobufError]] = (
+                METHOD_PROTOBUF_ERROR_TYPES + IMPORT_reboot.aio.aborted.GRPC_ERROR_TYPES
+            ),
+        ):
+            super().__init__()
+
+            self._message = None
+
+            if self.is_declared_error(error):
+                # If the error is a declared error, we should always
+                # store both formats for Pydantic and Protobuf for that
+                # error, so users can access the Pydantic version via
+                # `aborted.error` and the Protobuf version will be used
+                # to send the error over the wire.
+                if isinstance(error, IMPORT_reboot.api.Model):
+                    # Happens when somebody raises an aborted with a Pydantic
+                    # error format, usually in the backend method
+                    # implementation.
+
+                    self._error = error
+
+                else:
+                    # Usually happens on the client side when we are
+                    # constructing an aborted from the `AioRpcError`, so
+                    # the error will be in Protobuf shape, and we want
+                    # to convert it back to Pydantic if possible.
+                    self._method_protobuf_error = error
+
+            else:
+                # Non declared error should be well known Reboot or gRPC
+                # error, which always comes in the Protobuf format, however
+                # it might be a case when the server is using new API and
+                # client is old, so server might send a declared error from
+                # the server perspective, but client doesn't know that it
+                # is a declared error now, so we need to gracefully
+                # cover that case.
+                if isinstance(error, IMPORT_reboot.api.Model):
+                    # Store both formats so users can access the Pydantic
+                    # version via `aborted.error` and the Protobuf version
+                    # will be used to send the error over the wire.
+                    self._error = IMPORT_rbt_v1alpha1.errors_pb2.Unknown()
+                    self._method_protobuf_error = IMPORT_rbt_v1alpha1.errors_pb2.Unknown()
+
+                    self._message = (
+                        "Received a declared error from the server, "
+                        "but the client doesn't know about it; "
+                        "please update the client to the latest version\n"
+                    ) + (
+                        f"Original error: {error.model_dump_json()}\n"
+                    ) + message if message is not None else ""
+
+                # Store both formats so users can access the error via
+                # `aborted.error` and the Protobuf version
+                # will be used to send the error over the wire.
+                self._error = error
+                self._method_protobuf_error = error
+
+            IMPORT_reboot_aio_types.assert_type(self._protobuf_error, error_types)
+
+            code = self.grpc_status_code_from_error(self._protobuf_error)
+
+            if code is None:
+                # Must be a Reboot specific or declared method error.
+                code = IMPORT_grpc.StatusCode.ABORTED
+
+            self._code = code
+
+            self._message = self._message if self._message is not None else message
+
+        @property
+        def error(self) -> Error | MethodProtobufError:
+            return self._error
+
+        @property
+        def _protobuf_error(self) -> MethodProtobufError:
+            return self._method_protobuf_error
+
+        @property
+        def code(self) -> IMPORT_grpc.StatusCode:
+            return self._code
+
+        @property
+        def message(self) -> IMPORT_typing.Optional[str]:
+            return self._message
+
+        @classmethod
+        def from_status(cls, status: IMPORT_google_rpc_status_pb2.Status):
+            error = cls.error_from_google_rpc_status_details(
+                status,
+                cls.PROTOBUF_ERROR_TYPES,
+            )
+
+            message = status.message if len(status.message) > 0 else None
+
+            if error is not None:
+                return cls(error, message=message, error_types=cls.PROTOBUF_ERROR_TYPES)
+
+            error = cls.error_from_google_rpc_status_code(status)
+
+            assert error is not None
+
+            # TODO(benh): also consider getting the type names from
+            # `status.details` and including that in `message` to make
+            # debugging easier.
+
+            return cls(error, message=message)
+
+        @classmethod
+        def from_grpc_aio_rpc_error(cls, aio_rpc_error: IMPORT_grpc.aio.AioRpcError):
+            return cls(
+                cls.error_from_grpc_aio_rpc_error(aio_rpc_error),
+                message=aio_rpc_error.details(),
+            )
+
+        @classmethod
+        def is_declared_error(cls, error: IMPORT_google_protobuf_message.Message | IMPORT_reboot.api.Model) -> bool:
+            if isinstance(error, IMPORT_reboot.api.Model):
+                return type(error) in IMPORT_api.User.methods['set_claims'].errors
+            return False
+
 
     class WeakReference(IMPORT_typing.Generic[User_ScheduleTypeVar]):
 
@@ -25808,6 +27137,75 @@ class User:
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             whoami = Whoami
+            @IMPORT_typing.overload
+            async def SetClaims(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: User.SetClaimsRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> None:
+                ...
+
+            @IMPORT_typing.overload
+            async def SetClaims(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
+            ) -> None:
+                ...
+
+            async def SetClaims( # type: ignore[misc]
+                # In methods which are dealing with user input, (i.e.,
+                # proto message field names), we should use '__double_underscored__'
+                # variables to avoid any potential name conflicts with the method's
+                # parameters.
+                # The '__self__' parameter is a convention in Python to
+                # indicate that this method is a bound method, so we use
+                # '__this__' instead.
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[User.SetClaimsRequest | IMPORT_reboot_aio_call.Options] = None,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
+            ) -> None:
+                # UX improvement: check that neither positional argument was accidentally
+                # given a gRPC request type.
+                IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=User.SetClaimsRequest)
+                IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type=User.SetClaimsRequest)
+
+                __request__: IMPORT_typing.Optional[User.SetClaimsRequest] = None
+                if isinstance(__request_or_options__, User.SetClaimsRequest):
+                    assert __request_or_options__ is not None
+                    assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
+                    __options__ = __options__ or IMPORT_reboot_aio_call.Options()
+
+                    assert claims is UNSET
+
+                    __request__ = __request_or_options__
+                else:
+                    assert __options__ is None
+                    assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
+                    __options__ = __request_or_options__ or IMPORT_reboot_aio_call.Options()
+
+                    __request__ = UserSetClaimsRequestFromInputFields(
+                        claims=claims,
+                    )
+                IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
+
+                return await __this__._weak_reference.SetClaims(
+                    __context__,
+                    __request__,
+                    __options__,
+                    __idempotency__=__this__._idempotency,
+                )
+
+            # Keep the original functions on the client, so old code will
+            # continue to work, but use the new 'snake_case' method in
+            # the new code.
+            set_claims = SetClaims
 
         @IMPORT_typing.overload
         def idempotently(self, alias: IMPORT_typing.Optional[str] = None, *, how: IMPORT_reboot_aio_idempotency.How = IMPORT_reboot_aio_idempotency.PER_WORKFLOW) -> User.WeakReference._Idempotently[User_ScheduleTypeVar]:
@@ -26204,6 +27602,92 @@ class User:
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             whoami = Whoami
+            @IMPORT_typing.overload
+            async def SetClaims(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __request_or_options__: User.SetClaimsRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+                ...
+
+            @IMPORT_typing.overload
+            async def SetClaims(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+                ...
+
+            async def SetClaims( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.TransactionContext,
+                __request_or_options__: IMPORT_typing.Optional[User.SetClaimsRequest | IMPORT_reboot_aio_call.Options] = None,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.TransactionContext])
+                # UX improvement: check that neither positional argument was accidentally
+                # given a gRPC request type.
+                IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=User.SetClaimsRequest)
+                IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type=User.SetClaimsRequest)
+
+                __request__: IMPORT_typing.Optional[User.SetClaimsRequest] = None
+                if isinstance(__request_or_options__, User.SetClaimsRequest):
+                    assert __request_or_options__ is not None
+                    assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
+
+                    assert claims is UNSET
+
+                    __request__ = __request_or_options__
+                else:
+                    assert __options__ is None
+                    assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
+                    __options__ = __request_or_options__
+
+                    __request__ = UserSetClaimsRequestFromInputFields(
+                        claims=claims,
+                    )
+
+                __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
+                    __this__._when, IMPORT_datetime_timedelta
+                ) else __this__._when
+
+                __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
+                __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = __this__._idempotency
+                __bearer_token__: IMPORT_typing.Optional[str] = None
+
+                if __options__ is not None:
+                    IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
+                    if __options__.metadata is not None:
+                        __metadata__ = __options__.metadata
+                    if __options__.bearer_token is not None:
+                        __bearer_token__ = __options__.bearer_token
+
+                # Add scheduling information to the metadata.
+                __metadata__ = (
+                    (IMPORT_reboot_aio_headers.TASK_SCHEDULE,
+                    __schedule__.isoformat() if __schedule__ else ''),
+                ) + (__metadata__ or tuple())
+
+                __task_id__ = await __this__._tasks(
+                    __context__
+                ).SetClaims(
+                    __request__,
+                    idempotency=__idempotency__,
+                    metadata=__metadata__,
+                    bearer_token=__bearer_token__,
+                )
+
+                return __task_id__
+
+            # Keep the original functions on the client, so old code will
+            # continue to work, but use the new 'snake_case' method in
+            # the new code.
+            set_claims = SetClaims
 
         # A `WriterContext` can not call any methods in `_Schedule` to
         # prevent a writer from doing a `Foo.ref()` and trying to
@@ -26429,6 +27913,102 @@ class User:
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             whoami = Whoami
+            @IMPORT_typing.overload
+            async def SetClaims(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __request_or_options__: User.SetClaimsRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+                ...
+
+            @IMPORT_typing.overload
+            async def SetClaims(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+                ...
+
+            async def SetClaims( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WriterContext | IMPORT_reboot_aio_contexts.TransactionContext,
+                __request_or_options__: IMPORT_typing.Optional[User.SetClaimsRequest | IMPORT_reboot_aio_call.Options] = None,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
+            ) -> IMPORT_rbt_v1alpha1.tasks_pb2.TaskId:
+                # Only `writer`s and `transaction`s should ``schedule()`, a
+                # `workflow` should `spawn()`.
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WriterContext, IMPORT_reboot_aio_contexts.TransactionContext])
+
+                # UX improvement: check that neither positional argument was accidentally
+                # given a gRPC request type.
+                IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=User.SetClaimsRequest)
+                IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type=User.SetClaimsRequest)
+
+                __request__: IMPORT_typing.Optional[User.SetClaimsRequest] = None
+                if isinstance(__request_or_options__, User.SetClaimsRequest):
+                    assert __request_or_options__ is not None
+                    assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
+
+                    assert claims is UNSET
+
+                    __request__ = __request_or_options__
+                else:
+                    assert __options__ is None
+                    assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
+                    __options__ = __request_or_options__
+
+                    __request__ = UserSetClaimsRequestFromInputFields(
+                        claims=claims,
+                    )
+
+                if isinstance(__context__, IMPORT_reboot_aio_contexts.WriterContext):
+                    return (await UserServicerTasks(
+                        context=__context__,
+                        state_ref=__context__._state_ref,
+                    ).SetClaims(
+                        __request__,
+                        schedule=__this__._when,
+                    )).task_id
+
+                __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
+                    __this__._when, IMPORT_datetime_timedelta
+                ) else __this__._when
+
+                __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
+                __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = __this__._idempotency
+                __bearer_token__: IMPORT_typing.Optional[str] = None
+
+                if __options__ is not None:
+                    IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
+                    if __options__.metadata is not None:
+                        __metadata__ = __options__.metadata
+                    if __options__.bearer_token is not None:
+                        __bearer_token__ = __options__.bearer_token
+
+                # Add scheduling information to the metadata.
+                __metadata__ = (
+                    (IMPORT_reboot_aio_headers.TASK_SCHEDULE,
+                    __schedule__.isoformat() if __schedule__ else ''),
+                ) + (__metadata__ or tuple())
+
+                return await __this__._tasks(
+                    __context__
+                ).SetClaims(
+                    __request__,
+                    idempotency=__idempotency__,
+                    metadata=__metadata__,
+                    bearer_token=__bearer_token__,
+                )
+
+            # Keep the original functions on the client, so old code will
+            # continue to work, but use the new 'snake_case' method in
+            # the new code.
+            set_claims = SetClaims
 
         def spawn(
             self,
@@ -26650,6 +28230,95 @@ class User:
             # continue to work, but use the new 'snake_case' method in
             # the new code.
             whoami = Whoami
+            @IMPORT_typing.overload
+            async def SetClaims(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: User.SetClaimsRequest,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            ) -> User.SetClaimsTask:
+                ...
+
+            @IMPORT_typing.overload
+            async def SetClaims(
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
+            ) -> User.SetClaimsTask:
+                ...
+
+            async def SetClaims( # type: ignore[misc]
+                __this__,
+                __context__: IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+                __request_or_options__: IMPORT_typing.Optional[User.SetClaimsRequest | IMPORT_reboot_aio_call.Options] = None,
+                __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+                *,
+                claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
+            ) -> User.SetClaimsTask:
+                IMPORT_reboot_aio_types.assert_type(__context__, [IMPORT_reboot_aio_contexts.WorkflowContext, IMPORT_reboot_aio_external.ExternalContext])
+                # UX improvement: check that neither positional argument was accidentally
+                # given a gRPC request type.
+                IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=User.SetClaimsRequest)
+                IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type=User.SetClaimsRequest)
+
+
+                __request__: IMPORT_typing.Optional[User.SetClaimsRequest] = None
+                if isinstance(__request_or_options__, User.SetClaimsRequest):
+                    assert __request_or_options__ is not None
+                    assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
+
+                    assert claims is UNSET
+
+                    __request__ = __request_or_options__
+                else:
+                    assert __options__ is None
+                    assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
+                    __options__ = __request_or_options__
+
+                    __request__ = UserSetClaimsRequestFromInputFields(
+                        claims=claims,
+                    )
+                __schedule__: IMPORT_typing.Optional[IMPORT_reboot_time_DateTimeWithTimeZone] = (IMPORT_reboot_time_DateTimeWithTimeZone.now() + __this__._when) if isinstance(
+                    __this__._when, IMPORT_datetime_timedelta
+                ) else __this__._when
+
+                __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
+                __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = __this__._idempotency
+                __bearer_token__: IMPORT_typing.Optional[str] = None
+
+                if __options__ is not None:
+                    IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
+                    if __options__.metadata is not None:
+                        __metadata__ = __options__.metadata
+                    if __options__.bearer_token is not None:
+                        __bearer_token__ = __options__.bearer_token
+
+                # Add scheduling information to the metadata.
+                __metadata__ = (
+                    (IMPORT_reboot_aio_headers.TASK_SCHEDULE,
+                    __schedule__.isoformat() if __schedule__ else ''),
+                ) + (__metadata__ or tuple())
+
+                __task_id__ = await __this__._tasks(
+                    __context__
+                ).SetClaims(
+                    __request__,
+                    idempotency=__idempotency__,
+                    metadata=__metadata__,
+                    bearer_token=__bearer_token__,
+                )
+
+                return User.SetClaimsTask(
+                    __context__,
+                    task_id=__task_id__,
+                )
+
+            # Keep the original functions on the client, so old code will
+            # continue to work, but use the new 'snake_case' method in
+            # the new code.
+            set_claims = SetClaims
 
         async def read(
             self,
@@ -26894,6 +28563,102 @@ class User:
         # continue to work, but use the new 'snake_case' method in
         # the new code.
         whoami = Whoami
+        @IMPORT_typing.overload
+        async def SetClaims(
+            __this__,
+            __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+            __request_or_options__: User.SetClaimsRequest,
+            __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
+        ) -> None:
+            ...
+
+        @IMPORT_typing.overload
+        async def SetClaims(
+            __this__,
+            __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+            __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
+            claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
+        ) -> None:
+            ...
+
+        async def SetClaims( # type: ignore[misc]
+            __this__,
+            __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+            __request_or_options__: IMPORT_typing.Optional[User.SetClaimsRequest | IMPORT_reboot_aio_call.Options] = None,
+            __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            __idempotency__: IMPORT_typing.Optional[IMPORT_reboot_aio_idempotency.Idempotency] = None,
+            claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
+        ) -> None:
+            # UX improvement: check that neither positional argument was accidentally
+            # given a gRPC request type.
+            IMPORT_reboot_aio_types.assert_not_request_type(__context__, request_type=User.SetClaimsRequest)
+            IMPORT_reboot_aio_types.assert_not_request_type(__options__, request_type=User.SetClaimsRequest)
+
+            __request__: IMPORT_typing.Optional[User.SetClaimsRequest] = None
+            if isinstance(__request_or_options__, User.SetClaimsRequest):
+                assert __request_or_options__ is not None
+                assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
+
+                assert claims is UNSET
+
+                __request__ = __request_or_options__
+            else:
+                assert __options__ is None
+                assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
+                __options__ = __request_or_options__
+
+                __request__ = UserSetClaimsRequestFromInputFields(
+                    claims=claims,
+                )
+
+            # Within a `workflow`, all "bare" calls are
+            # `per_workflow()` calls, unless we're within a control
+            # loop, in which case they are syntactic sugar for
+            # `per_iteration()`.
+            if __idempotency__ is None:
+                if isinstance(__context__, IMPORT_reboot_aio_contexts.WorkflowContext):
+                    return await (
+                        __this__.per_iteration() if __context__.within_loop()
+                        else __this__.per_workflow()
+                    ).SetClaims(
+                        __context__,
+                        __request__,
+                        __options__ or IMPORT_reboot_aio_call.Options(),
+                    )
+                elif isinstance(__context__, IMPORT_reboot_aio_external.InitializeContext):
+                    return await __this__.idempotently().SetClaims(
+                        __context__,
+                        __request__,
+                        __options__ or IMPORT_reboot_aio_call.Options(),
+                    )
+
+            __metadata__: IMPORT_typing.Optional[IMPORT_reboot_aio_types.GrpcMetadata] = None
+            __bearer_token__: IMPORT_typing.Optional[str] = None
+            if __options__ is not None:
+                IMPORT_reboot_aio_types.assert_type(__options__, [IMPORT_reboot_aio_call.Options])
+                if __options__.metadata is not None:
+                    __metadata__ = __options__.metadata
+                if __options__.bearer_token is not None:
+                    __bearer_token__ = __options__.bearer_token
+
+            return UserSetClaimsResponseFromProto(
+                await __this__._workflow(__context__).SetClaims(
+                    __request__,
+                    idempotency=__idempotency__,
+                    metadata=__metadata__,
+                    bearer_token=__bearer_token__,
+                )
+            )
+
+        # Keep the original functions on the client, so old code will
+        # continue to work, but use the new 'snake_case' method in
+        # the new code.
+        set_claims = SetClaims
 
     class _Forall:
 
@@ -27035,6 +28800,81 @@ class User:
         # continue to work, but use the new 'snake_case' method in
         # the new code.
         whoami = Whoami
+        @IMPORT_typing.overload
+        async def SetClaims(
+            __this__,
+            __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+            __request_or_options__: User.SetClaimsRequest,
+            __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+        ) -> list[None]:
+            ...
+
+        @IMPORT_typing.overload
+        async def SetClaims(
+            __this__,
+            __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+            __request_or_options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
+        ) -> list[None]:
+            ...
+
+        async def SetClaims( # type: ignore[misc]
+            # In methods which are dealing with user input, (i.e.,
+            # proto message field names), we should use '__double_underscored__'
+            # variables to avoid any potential name conflicts with the method's
+            # parameters.
+            # The '__self__' parameter is a convention in Python to
+            # indicate that this method is a bound method, so we use
+            # '__this__' instead.
+            __this__,
+            __context__: IMPORT_reboot_aio_contexts.TransactionContext | IMPORT_reboot_aio_contexts.WorkflowContext | IMPORT_reboot_aio_external.ExternalContext,
+            __request_or_options__: IMPORT_typing.Optional[User.SetClaimsRequest | IMPORT_reboot_aio_call.Options] = None,
+            __options__: IMPORT_typing.Optional[IMPORT_reboot_aio_call.Options] = None,
+            *,
+            claims: dict[str, IMPORT_typing.Any] | Unset = UNSET,
+        ) -> list[None]:
+            if isinstance(__request_or_options__, User.SetClaimsRequest):
+                assert __request_or_options__ is not None
+                assert __options__ is None or isinstance(__options__, IMPORT_reboot_aio_call.Options)
+                __options__ = __options__ or IMPORT_reboot_aio_call.Options()
+
+                assert claims is UNSET
+
+                return await IMPORT_asyncio.gather(
+                    *[
+                        User.ref(
+                            id
+                        ).SetClaims(
+                            __context__,
+                            __request_or_options__,
+                            __options__,
+                        ) for id in __this__._ids
+                    ]
+                )
+            else:
+                assert __options__ is None
+                assert __request_or_options__ is None or isinstance(__request_or_options__, IMPORT_reboot_aio_call.Options)
+                __options__ = __request_or_options__ or IMPORT_reboot_aio_call.Options()
+
+                return await IMPORT_asyncio.gather(
+                    *[
+                        User.ref(
+                            id
+                        ).SetClaims(
+                            __context__,
+                            UserSetClaimsRequestFromInputFields(
+                                claims=claims,
+                            ),
+                            __options__,
+                        ) for id in __this__._ids
+                    ]
+                )
+
+        # Keep the original functions on the client, so old code will
+        # continue to work, but use the new 'snake_case' method in
+        # the new code.
+        set_claims = SetClaims
 
     @classmethod
     def forall(cls, ids: IMPORT_typing.Iterable[str]) -> User._Forall:

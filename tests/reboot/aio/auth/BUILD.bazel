@@ -19,6 +19,7 @@ py_test(
         "//reboot/std/ciphertext/v1:ciphertext_py",
         "//reboot/std/collections/ordered_map/v1:ordered_map_py",
         "//reboot/std/oauth/v1:oauth_py",
+        "//tests/reboot/pydantic/auto_construct_user:servicer_py",
         "@com_github_reboot_dev_reboot//rbt/std/oauth/v1:oauth_py_reboot",
         requirement("httpx"),
         requirement("mcp"),

@@ -32,7 +32,10 @@ from reboot.options import (
     has_service_options,
     is_reboot_state,
 )
-from reboot.settings import AUTO_CONSTRUCT_PROTO_METHOD
+from reboot.settings import (
+    AUTO_CONSTRUCT_PROTO_METHOD,
+    SET_CLAIMS_PROTO_METHOD,
+)
 from reboot.version import REBOOT_VERSION
 from typing import Any, Literal, Optional, Sequence
 
@@ -954,15 +957,16 @@ class RebootProtocPlugin(ProtocPlugin):
             # Note: duplicate methods between services are checked for during
             #       client generation.
 
-        # Validate that auto-constructed states have the
-        # auto-constructor.
+        # Validate that auto-constructed states have both the
+        # auto-constructor and the claims-delivery method the
+        # framework calls.
         if proto_state.auto_construct != options_pb2.AUTO_CONSTRUCT_UNSPECIFIED:
-            has_auto_construct = any(
-                method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD
+            method_names = {
+                method.proto.name
                 for service in base_services
                 for method in service.methods
-            )
-            if not has_auto_construct:
+            }
+            if AUTO_CONSTRUCT_PROTO_METHOD not in method_names:
                 raise UserProtoError(
                     f"State type '{proto_state.name}' requires "
                     f"a '{AUTO_CONSTRUCT_PROTO_METHOD}' "
@@ -973,6 +977,24 @@ class RebootProtocPlugin(ProtocPlugin):
                     "    option (rbt.v1alpha1.method) = "
                     "{ transaction: {} };\n"
                     "  }"
+                )
+            if SET_CLAIMS_PROTO_METHOD not in method_names:
+                raise UserProtoError(
+                    f"State type '{proto_state.name}' requires "
+                    f"a '{SET_CLAIMS_PROTO_METHOD}' Transaction "
+                    "method through which the framework delivers "
+                    "each user's verified identity claims. Add to "
+                    "your service:\n"
+                    f"  rpc {SET_CLAIMS_PROTO_METHOD}"
+                    f"({proto_state.name}{SET_CLAIMS_PROTO_METHOD}"
+                    "Request) returns (google.protobuf.Empty) {\n"
+                    "    option (rbt.v1alpha1.method) = "
+                    "{ transaction: {} };\n"
+                    "  }\n"
+                    f"where '{proto_state.name}"
+                    f"{SET_CLAIMS_PROTO_METHOD}Request' is a message "
+                    "with a 'map<string, google.protobuf.Value> "
+                    "claims = 1;' field."
                 )
 
         return base_services

@@ -111,7 +111,8 @@ Recommended sequence:
    load the
    [chat-app/references/auth-oauth-providers.md](../chat-app/references/auth-oauth-providers.md)
    reference for the per-provider details (client IDs, scopes,
-   `store_tokens=True`, the user-ID-namespace gotcha when
+   `store_tokens=True`, requesting identity claims like the
+   user's email via `claims=`, the user-ID-namespace gotcha when
    switching providers post-launch). In unit tests, keep
    `token_verifier=<your IdP verifier>` exactly as in production —
    the test harness's OAuth server verifies the impersonation token

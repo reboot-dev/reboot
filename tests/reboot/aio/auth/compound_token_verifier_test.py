@@ -70,7 +70,7 @@ class CompoundTokenVerifierTest(unittest.IsolatedAsyncioTestCase):
         # opinion and the token falls through to
         # `_BearerIsUserIdForTest`, which authenticates user "bob".
         context = self._context_as("bob", "bob")
-        await UserServicer._auto_construct(context, state_id="bob")
+        await UserServicer._authenticated(context, state_id="bob")
 
         response = await User.ref("bob").whoami(context)
         self.assertEqual(response.user_id, "bob")

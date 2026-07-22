@@ -4,9 +4,15 @@ import re
 import types
 import typing
 from enum import Enum
+from google.protobuf import json_format
 from google.protobuf.message import Message
+from google.protobuf.struct_pb2 import Value
 from pydantic.fields import FieldInfo
-from reboot.settings import AUTO_CONSTRUCT_METHOD, AUTO_CONSTRUCT_STATE_TYPE
+from reboot.settings import (
+    AUTO_CONSTRUCT_METHOD,
+    AUTO_CONSTRUCT_STATE_TYPE,
+    SET_CLAIMS_METHOD,
+)
 from typing import (
     Any,
     Dict,
@@ -302,6 +308,13 @@ def _pydantic_to_proto(
         # or a 'Model'. Otherwise it will be a collection
         # type like 'list' or 'dict'.
         input_type_or_origin = input_type
+
+    if input_type is Any:
+        # An `Any`-typed value — e.g. a `dict[str, Any]` map value —
+        # is carried on the wire as a `google.protobuf.Value`, which
+        # represents any JSON value: `null`, a number, a string, a
+        # bool, a list, or an object.
+        return json_format.ParseDict(input, Value())
 
     if input_type_or_origin is Union or input_type_or_origin is types.UnionType:
         # It might be a discriminated union or an `Optional[T]`.
@@ -624,6 +637,12 @@ def _proto_to_pydantic(
         # we don't want to create an arbitrary data structure, but return
         # 'None' directly.
         return None
+
+    if output_type is Any:
+        # Reverse of the `Any` case in `_pydantic_to_proto`: a
+        # `google.protobuf.Value` becomes the JSON value it holds.
+        assert isinstance(input, Value)
+        return json_format.MessageToDict(input)
 
     output_type_or_origin = get_origin(output_type)
 
@@ -1081,6 +1100,11 @@ class Type(pydantic.BaseModel):
                             f"non-string value `{arg}`. Only string "
                             "literals are supported."
                         )
+            elif field_type is Any:
+                # `dict[str, Any]` becomes a Protobuf `map<string,
+                # google.protobuf.Value>` carrying arbitrary JSON
+                # values; the value type needs no further validation.
+                pass
             elif issubclass(field_type, pydantic.BaseModel):
                 if not issubclass(field_type, Model):
                     state_or_method = ""
@@ -1151,6 +1175,20 @@ class Type(pydantic.BaseModel):
             state=state,
             methods=methods,
         )
+
+
+class SetClaimsRequest(Model):
+    """Request for the `set_claims` method the framework injects on
+    auto-constructed state types. The framework fills it in when it
+    delivers a user's verified identity claims at sign-in; it is not
+    meant to be built by application code.
+    """
+    # The user's verified identity claims, keyed by their presented
+    # names. A `dict[str, Any]` (a `map<string, google.protobuf.Value>`
+    # on the wire) so it carries free-form JSON claim values verbatim
+    # and stays decoupled from whatever claims the identity provider
+    # was configured to deliver.
+    claims: dict[str, Any] = Field(tag=1, default_factory=dict)
 
 
 class API(pydantic.BaseModel):
@@ -1235,6 +1273,20 @@ class API(pydantic.BaseModel):
                         f"'{type_name}' for a new AI "
                         "session."
                     )
+                if SET_CLAIMS_METHOD in data_type.methods:
+                    raise UserPydanticError(
+                        f"'{SET_CLAIMS_METHOD}' is a "
+                        "reserved method name for "
+                        f"{type_name} types: the framework "
+                        "calls it to deliver a user's "
+                        "verified identity claims. If you "
+                        "want to act on those claims, "
+                        f"override the default "
+                        f"'{SET_CLAIMS_METHOD}' Transaction "
+                        "in your servicer implementation "
+                        "instead of declaring it in the API "
+                        "definition."
+                    )
                 # The auto-constructed `create` is a `Transaction`, so
                 # that a servicer overriding it can call other state
                 # machines while constructing a `User`, e.g. "when a
@@ -1248,6 +1300,20 @@ class API(pydantic.BaseModel):
                     # is called by the Reboot internally and shouldn't
                     # be exposed as an MCP tool so others can't call it
                     # directly.
+                    mcp=None,
+                )
+                # The `set_claims` method delivers the user's verified
+                # identity claims. It is a `Transaction` (like
+                # `create`) so a servicer overriding it can call other
+                # state machines. It is a plain method, not a
+                # constructor: the framework calls it only after
+                # `create` has brought the state into existence.
+                data_type.methods[SET_CLAIMS_METHOD] = Transaction(
+                    request=SetClaimsRequest,
+                    response=None,
+                    factory=False,
+                    # `set_claims` is only called app-internal, so never
+                    # over MCP.
                     mcp=None,
                 )
 

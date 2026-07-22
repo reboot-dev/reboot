@@ -74,10 +74,14 @@ class ListCountersResponse(Model):
 
 class WhoAmIResponse(Model):
     user_id: str = Field(tag=1)
+    email: str = Field(tag=2, default="")
 
 
 class UserState(Model):
     counter_ids: list[str] = Field(tag=1, default_factory=list)
+    # The email identity claim most recently delivered at sign-in
+    # (empty when the identity provider supplied none).
+    email: str = Field(tag=2, default="")
 
 
 # -- Counter models (simple counter). --

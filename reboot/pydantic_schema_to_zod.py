@@ -4,6 +4,7 @@ import aiofiles
 import importlib
 import os
 import pydantic_core
+import reboot.api
 import types
 from importlib import import_module
 from pydantic.fields import FieldInfo
@@ -206,6 +207,15 @@ def pydantic_to_zod(
             return 'z.object({})'
         # Currently only used for methods with no response.
         return 'z.void()'
+
+    if input is Any:
+        # `Any` — e.g. a `dict[str, Any]` map value — accepts any JSON
+        # value. `z.json()` is the schema our `zod-to-proto` converts
+        # to a `google.protobuf.Value`.
+        output = 'z.json()'
+        if tag is not None:
+            output += f'.meta({{ tag: {tag} }})'
+        return output
 
     origin = get_origin(input)
     args = get_args(input)
@@ -515,6 +525,24 @@ async def generate_zod_file_from_api(
                         external_imports,
                         visited,
                     )
+
+    # `_collect_external_references` above sorted every referenced
+    # `Model` into two buckets: those defined in THIS file, in
+    # `models_in_module` (emitted inline below), and those defined
+    # elsewhere, in `external_imports` (imported from that file's own
+    # generated `.ts`).
+    #
+    # Framework-injected models fit neither: the framework defines them
+    # in `reboot.api` and injects them into the API — e.g. the
+    # `SetClaimsRequest` it adds as the auto-constructed type's
+    # `set_claims` request — so they land in `external_imports` under
+    # `reboot.api`, which is framework Python with no generated `.ts`
+    # to import from (an import for it would dangle and fail to
+    # compile). So treat them like local models: drop them from
+    # `external_imports` (suppressing the bogus import) and append them
+    # to `models_in_module` so their schemas are emitted inline.
+    for model_name in sorted(external_imports.pop(reboot.api.__name__, set())):
+        models_in_module.append(getattr(reboot.api, model_name))
 
     # Build the `external_refs` dict for `Model` name -> import alias.
     external_refs: dict[str, str] = {}

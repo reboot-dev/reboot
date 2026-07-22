@@ -16,6 +16,8 @@ reported in user code. #}
 {% set AUTO_CONSTRUCT_PER_USER_ID = 1 %}
 {% set AUTO_CONSTRUCT_PROTO_METHOD = "Create" %}
 {% set AUTO_CONSTRUCT_METHOD = "create" %}
+{% set SET_CLAIMS_PROTO_METHOD = "SetClaims" %}
+{% set SET_CLAIMS_METHOD = "set_claims" %}
 
 {# Determine whether or not we'll be overriding 'Read'/'Write'. #}
 {% for client in clients %}
@@ -1736,6 +1738,29 @@ class {{ state.proto.name }}ServicerMiddleware(IMPORT_reboot_aio_internals_middl
                 context_type=IMPORT_reboot_aio_contexts.ReaderContext,
             ) as context:
                 context.auth = auth
+                {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
+
+                # The framework's `set_claims` method should only ever
+                # be app-internal; even the owning user shouldn't be
+                # trusted to call it, since the identity provider's
+                # claims may deliver info like "validated email address"
+                # and other things we don't trust the user to set
+                # directly.
+                #
+                # This extra app-internal check comes before any
+                # authorizer, so no authorizer — including a blanket
+                # `allow()` — can expose the method to external callers.
+                if (
+                    method_name.split('.')[-1] == '{{ SET_CLAIMS_PROTO_METHOD }}'
+                    and not context.app_internal
+                ):
+                    raise IMPORT_reboot.aio.aborted.SystemAborted(
+                        IMPORT_rbt_v1alpha1.errors_pb2.PermissionDenied(),
+                        message=
+                        f"You are not authorized to call '{method_name}' on "
+                        f"`{{ state.proto.full_name }}('{headers.state_ref.id}')`"
+                    )
+                {% endif %}
 
                 # Get the authorizer decision.
                 authorization_decision = await self._authorizer.authorize(
@@ -2692,7 +2717,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endif %}
 {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
             # State is auto-constructed when the user's
-            # JWT is minted; see `_auto_construct`.
+            # JWT is minted; see `_authenticated`.
 {% endif %}
 {% if method.options.proto.constructor %}
 {% if method.input_type_fields %}
@@ -2748,7 +2773,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endif %}
 {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
             # State is auto-constructed when the user's
-            # JWT is minted; see `_auto_construct`.
+            # JWT is minted; see `_authenticated`.
 {% endif %}
             # Construct request from URI params, coercing types
             # as needed.
@@ -2795,7 +2820,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% endif %}
 {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
             # State is auto-constructed when the user's
-            # JWT is minted; see `_auto_construct`.
+            # JWT is minted; see `_authenticated`.
 {% endif %}
 {% if method.options.proto.constructor %}
             _, response = await {{ state.proto.name }}.{{ method.proto.name }}(reboot_context, {{ mcp_name_prefix }}id)
@@ -3061,18 +3086,29 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 
 {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
     @staticmethod
-    async def _auto_construct(
+    async def _authenticated(
         context: IMPORT_reboot_aio_external.ExternalContext,
         state_id: str,
+        claims: IMPORT_typing.Optional[
+            IMPORT_typing.Mapping[str, IMPORT_typing.Any]
+        ] = None,
     ) -> None:
-        """Auto-construct a `{{ state.proto.name }}` state."""
-        # Some states have `_auto_construct` called many times, e.g. a
-        # per-user state may get auto-constructed at the start of every
-        # MCP session. We derive a deterministic idempotency key from the
-        # state ID so that repeated calls (even from different contexts)
-        # are a NOOP. We prefer this over catching the
-        # `StateAlreadyExists` error that would otherwise result, since
-        # that logs an `ERROR` to user-visible logs.
+        """Record that a user authenticated: construct their
+        `{{ state.proto.name }}` if it does not exist yet, then, when
+        `claims` is given, deliver their verified identity claims.
+
+        `claims=None` means the caller has no claims information for
+        this authentication (e.g. a token refresh, which never
+        consults the identity provider); it never means "no claims"
+        and never clears previously delivered claims.
+        """
+        # A `{{ state.proto.name }}` may be authenticated many times,
+        # e.g. a per-user state on every sign-in. We derive a
+        # deterministic idempotency key from the state ID so that the
+        # construct is a NOOP once the state exists (even across
+        # different contexts). We prefer this over catching the
+        # `StateAlreadyConstructed` error that would otherwise result,
+        # since that logs an `ERROR` to user-visible logs.
         idempotency_key = IMPORT_uuid.uuid5(
             IMPORT_uuid.NAMESPACE_URL,
             f"urn:dev.reboot:auto-construct:{{ state.proto.name }}:{state_id}",
@@ -3080,6 +3116,18 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
         await {{ state.proto.name }}.idempotently(
             key=idempotency_key,
         ).{{ AUTO_CONSTRUCT_METHOD }}(context, state_id)
+        # The two calls are deliberately sequential rather than wrapped
+        # in one transaction: an idempotent construct followed by a
+        # full-replace `{{ SET_CLAIMS_METHOD }}` compose convergently.
+        # `{{ SET_CLAIMS_METHOD }}` runs on every sign-in (`.always()`)
+        # because even if `set_state(claims=FOO)` has been called before,
+        # it could be that `set_state(claims=BAR)` was called since
+        # then, and `set_state(claims=FOO)` would have an effect again -
+        # we want to converge on the most recently delivered claims.
+        if claims is not None:
+            await {{ state.proto.name }}.ref(state_id).always().{{ SET_CLAIMS_METHOD }}(
+                context, claims=claims
+            )
 {% endif %}
 
     def ref(
@@ -3774,10 +3822,16 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
     ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
         raise NotImplementedError
     {% elif method.options.proto.kind == 'transaction' %}
-    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
+    {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED and method.proto.name in [AUTO_CONSTRUCT_PROTO_METHOD, SET_CLAIMS_PROTO_METHOD] %}
+    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD %}
     # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`.
     # Override in your Servicer to run custom initialization
     # on new {{ state.proto.name }} instances.
+    {% else %}
+    # Default `{{ SET_CLAIMS_METHOD }}` that raises when verified
+    # identity claims are delivered but your Servicer hasn't
+    # overridden it. Override it to consume the delivered claims.
+    {% endif %}
     async def {{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
@@ -3786,7 +3840,13 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         request: {{ state.proto.name}}.{{ method.proto.name }}Request,
         {% endif %}
     ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
-        pass
+        return await self.{{ method.proto.name | to_snake }}(
+            context,
+            state,
+            {% if method.has_non_none_request %}
+            request,
+            {% endif %}
+        )
 
     async def {{ method.proto.name | to_snake }}(
         self,
@@ -3796,7 +3856,27 @@ class {{ state.proto.name }}SingletonServicer({{ state.proto.name }}BaseServicer
         request: {{ state.proto.name}}.{{ method.proto.name }}Request,
         {% endif %}
     ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
+        {% if method.proto.name == SET_CLAIMS_PROTO_METHOD %}
+        """The framework calls this on every sign-in to deliver the
+        user's verified identity claims. `request.claims` is the
+        complete, current set of verified claims (a `dict[str, Any]`
+        keyed by claim name); treat it as a full replace and fully
+        derive any claim-backed {{ state.proto.name }} state from it.
+        This makes the method idempotent — re-delivering the same
+        claims is harmless — which is required, since it runs on
+        every sign-in, not just the first."""
+        raise NotImplementedError(
+            "Verified identity claims were delivered for this "
+            "`{{ state.proto.name }}`, but its servicer does not "
+            "override `{{ SET_CLAIMS_METHOD }}`, so the claims would "
+            "be discarded. Override `{{ SET_CLAIMS_METHOD }}` to "
+            "derive `{{ state.proto.name }}` state from "
+            "`request.claims`, or stop requesting claims from your "
+            "identity provider."
+        )
+        {% else %}
         pass
+        {% endif %}
     {% else %}
     # To be backwards compatible during the renaming don't make this
     # method to be 'abstractmethod', so that new code that
@@ -4069,12 +4149,18 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
     {% for service in state.services %}
     {% for method in service.methods %}
     # For '{{ method.proto.full_name }}'.
-    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD and state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED %}
+    {% if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED and method.proto.name in [AUTO_CONSTRUCT_PROTO_METHOD, SET_CLAIMS_PROTO_METHOD] %}
+    {% if method.proto.name == AUTO_CONSTRUCT_PROTO_METHOD %}
     # Concrete no-op default for `{{ AUTO_CONSTRUCT_METHOD }}`. The
     # auto-constructed `{{ AUTO_CONSTRUCT_METHOD }}` is always a
     # `Transaction` (see `api.py`), so it takes a `TransactionContext`.
     # Override in your Servicer to run custom initialization
     # on new {{ state.proto.name }} instances.
+    {% else %}
+    # Default `{{ SET_CLAIMS_METHOD }}` that raises when verified
+    # identity claims are delivered but your Servicer hasn't
+    # overridden it. Override it to consume the delivered claims.
+    {% endif %}
     async def {{ method.proto.name }}(
         self,
         context: IMPORT_reboot_aio_contexts.TransactionContext,
@@ -4096,7 +4182,27 @@ class {{ state.proto.name }}Servicer({{ state.proto.name }}BaseServicer):
         request: {{ state.proto.name }}.{{ method.proto.name }}Request,
         {% endif %}
     ) -> {% if method.has_non_none_response %}{{ state.proto.name }}.{{ method.proto.name }}Response{% else %}None{% endif %}:
+        {% if method.proto.name == SET_CLAIMS_PROTO_METHOD %}
+        """The framework calls this on every sign-in to deliver the
+        user's verified identity claims. `request.claims` is the
+        complete, current set of verified claims (a `dict[str, Any]`
+        keyed by claim name); treat it as a full replace and fully
+        derive any claim-backed {{ state.proto.name }} state from it.
+        This makes the method idempotent — re-delivering the same
+        claims is harmless — which is required, since it runs on
+        every sign-in, not just the first."""
+        raise NotImplementedError(
+            "Verified identity claims were delivered for this "
+            "`{{ state.proto.name }}`, but its servicer does not "
+            "override `{{ SET_CLAIMS_METHOD }}`, so the claims would "
+            "be discarded. Override `{{ SET_CLAIMS_METHOD }}` to "
+            "derive `{{ state.proto.name }}` state from "
+            "`request.claims`, or stop requesting claims from your "
+            "identity provider."
+        )
+        {% else %}
         pass
+        {% endif %}
     {% else %}
     # To be backwards compatible during the renaming don't make this
     # method to be 'abstractmethod', so that new code that

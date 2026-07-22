@@ -11,7 +11,7 @@ from mcp.server.fastmcp import FastMCP
 from rbt.v1alpha1.application_config_pb2 import ApplicationConfig
 from reboot.aio.external import ExternalContext
 from reboot.aio.types import ServiceName, StateTypeName
-from typing import Callable, Optional
+from typing import Any, Callable, Mapping, Optional
 
 
 class Servicer(ABC):
@@ -59,9 +59,23 @@ class Servicer(ABC):
     # Naming: has a leading underscore to ensure it doesn't collide with
     # customer-API-defined methods; those can't use leading underscores.
     @staticmethod
-    async def _auto_construct(context: ExternalContext, state_id: str) -> None:
+    async def _authenticated(
+        context: ExternalContext,
+        state_id: str,
+        claims: Optional[Mapping[str, Any]] = None,
+    ) -> None:
         """
-        Auto-construct a state with the given ID, if auto-constructable.
+        Record that a user authenticated: construct their state with
+        the given ID if it does not exist yet (idempotently, so
+        repeated calls are a NOOP), then, when `claims` is given,
+        deliver the user's verified identity claims through the
+        state's `set_claims` method.
+
+        `claims=None` means the caller has no claims information for
+        this authentication (e.g. a token refresh, which never
+        consults the identity provider) and so skips `set_claims`
+        entirely; it never means "the user has no claims" and never
+        clears previously delivered claims.
 
         Overridden by generated code for auto-constructable state types.
         """

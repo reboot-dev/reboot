@@ -14,13 +14,22 @@ class ProfileGetResponse(Model):
 
 
 # The `User` state is auto-constructed `PER_USER_ID`, so the framework
-# injects a reserved, overridable `create` factory onto it.
+# injects a reserved, overridable `create` factory and a reserved,
+# overridable `set_claims` claims-delivery method onto it.
 class UserState(Model):
     profile_id: str = Field(tag=1, default="")
+    # The email identity claim most recently delivered via
+    # `set_claims`.
+    email: str = Field(tag=2, default="")
+    # How many claims deliveries have reached `set_claims`, so tests
+    # can observe which deliveries executed.
+    update_count: int = Field(tag=3, default=0)
 
 
 class UserGetResponse(Model):
     profile_id: str = Field(tag=1)
+    email: str = Field(tag=2, default="")
+    update_count: int = Field(tag=3, default=0)
 
 
 api = API(

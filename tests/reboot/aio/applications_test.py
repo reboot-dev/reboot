@@ -283,7 +283,7 @@ class TestCase(unittest.IsolatedAsyncioTestCase):
             name=f"fallthrough-{self.id()}",
             bearer_token="carol",
         )
-        await UserServicer._auto_construct(
+        await UserServicer._authenticated(
             custom_context,
             state_id="carol",
         )
