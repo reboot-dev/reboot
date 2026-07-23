@@ -4754,7 +4754,17 @@ class SidecarStateManager(
             for transaction in self._lookup_participant_transactions(
                 state_type_name, state_ref
             ).values():
-                if transaction.idempotency_key == context.idempotency_key:
+                if (
+                    transaction.idempotency_key == context.idempotency_key or
+                    # A prepared transaction recovered after a restart
+                    # has `idempotency_key == None`, but its recovered
+                    # uncommitted idempotent mutations are keyed by the
+                    # idempotency keys of the calls that produced them,
+                    # including the transaction's own, so a key match
+                    # means this call is a duplicate of that
+                    # transaction.
+                    context.idempotency_key in transaction.idempotent_mutations
+                ):
                     await transaction
                     break
 
@@ -6015,13 +6025,19 @@ class SidecarStateManager(
                     # users can tradeoff performance for better error
                     # detection of their own code).
                     if len(transaction.idempotent_mutations) > 0:
-                        # Invariant here is that if this transaction
-                        # includes idempotent mutations then we should
-                        # have already recovered them from the
-                        # database (we'll get a `KeyError` here if
-                        # this invariant is broken).
-                        self._idempotent_mutations[state_type][
-                            state_ref].update(
+                        # A transaction that executed on this server
+                        # has always populated this cache entry via
+                        # `check_for_idempotent_mutation()`, but a
+                        # transaction recovered after a restart
+                        # commits without any prior lookup, so the
+                        # entry may be absent. In that case skipping
+                        # the update is safe: any later lookup
+                        # recovers from the database, which as of the
+                        # commit above includes these mutations.
+                        idempotent_mutations = self._idempotent_mutations[
+                            state_type].get(state_ref)
+                        if idempotent_mutations is not None:
+                            idempotent_mutations.update(
                                 transaction.idempotent_mutations
                             )
 

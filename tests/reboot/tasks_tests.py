@@ -17,6 +17,7 @@ from reboot.aio.internals.tasks_cache import (
     TASKS_RESPONSES_CACHE_TARGET_CAPACITY,
 )
 from reboot.aio.internals.tasks_dispatcher import TasksDispatcher
+from reboot.aio.state_managers import SidecarStateManager
 from reboot.aio.tests import Reboot
 from reboot.aio.types import StateRef
 from reboot.aio.workflows import until_changes
@@ -1330,6 +1331,192 @@ class TasksTestCase(unittest.IsolatedAsyncioTestCase):
         # mutations and thus not run them again.
         self.assertEqual(writer_call_count, 1)
         self.assertEqual(transaction_call_count, 1)
+
+    async def test_workflow_transaction_uncommitted_at_failure_survives_recovery(
+        self,
+    ) -> None:
+        """Test that a workflow's transaction whose two phase commit
+        was durably prepared but whose commit had not yet become
+        durable at the time of a failure is executed exactly once: on
+        recovery the transaction is recovered as prepared and
+        committed, and the workflow's re-executed call must reuse its
+        response rather than execute the transaction again.
+
+        A transaction's response is returned to its caller once all
+        participants have durably prepared, while the commit becomes
+        durable asynchronously. To make this interleaving
+        deterministic we block every participant commit on an event
+        that we only set once `rbt.down()`, `rbt.up()`, and the
+        re-executed workflow's duplicate transaction call reaching
+        its idempotency check have all happened. The application and
+        its state managers run in the test's own process and event
+        loop, so `asyncio.Event`s and `mock.patch` reach them
+        directly.
+        """
+        # Every `transaction_participant_commit()` blocks on this
+        # event, so the transaction is uncommitted when `rbt.down()`
+        # happens and the recovered transaction is still pending
+        # while the duplicate call checks idempotency.
+        proceed_with_commit = asyncio.Event()
+
+        # Set when the re-executed workflow's duplicate transaction
+        # call after recovery reaches its idempotency check.
+        transaction_reattempted = asyncio.Event()
+
+        # Set by the test once `rbt.down()` has happened, so that
+        # only post-recovery idempotency checks signal
+        # `transaction_reattempted`.
+        recovered = False
+
+        transaction_participant_commit = (
+            SidecarStateManager.transaction_participant_commit
+        )
+
+        async def blocked_transaction_participant_commit(
+            state_manager: SidecarStateManager,
+            transaction,
+        ):
+            await proceed_with_commit.wait()
+            return await transaction_participant_commit(
+                state_manager, transaction
+            )
+
+        check_for_idempotent_mutation = (
+            SidecarStateManager.check_for_idempotent_mutation
+        )
+
+        async def observed_check_for_idempotent_mutation(
+            state_manager: SidecarStateManager,
+            context,
+        ):
+            if recovered and isinstance(context, TransactionContext):
+                transaction_reattempted.set()
+            return await check_for_idempotent_mutation(state_manager, context)
+
+        writer_and_transaction_called = asyncio.Event()
+        proceed_after_down = asyncio.Event()
+
+        writer_call_count = 0
+        transaction_call_count = 0
+
+        class TestServicer(GeneralServicer):
+
+            def authorizer(self):
+                return allow()
+
+            async def constructor_writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                return GeneralResponse()
+
+            async def writer(
+                self,
+                context: WriterContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                nonlocal writer_call_count
+                writer_call_count += 1
+                return GeneralResponse()
+
+            async def transaction(
+                self,
+                context: TransactionContext,
+                state: General.State,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                nonlocal transaction_call_count
+                transaction_call_count += 1
+                return GeneralResponse()
+
+            @classmethod
+            async def workflow(
+                cls,
+                context: WorkflowContext,
+                request: GeneralRequest,
+            ) -> GeneralResponse:
+                g = General.ref()
+
+                # Make writer and transaction calls which are
+                # idempotent by default.
+                await g.writer(context)
+                await g.transaction(context)
+
+                # Signal that both have been called.
+                writer_and_transaction_called.set()
+
+                # Wait until the test tells us to proceed (after
+                # `rbt.down()`/`rbt.up()`).
+                await proceed_after_down.wait()
+
+                return GeneralResponse()
+
+        with mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager'
+            '.transaction_participant_commit',
+            blocked_transaction_participant_commit,
+        ), mock.patch(
+            'reboot.aio.state_managers.SidecarStateManager'
+            '.check_for_idempotent_mutation',
+            observed_check_for_idempotent_mutation,
+        ):
+            revision = await self.rbt.up(
+                Application(servicers=[TestServicer]),
+                # Need to disable effect validation because this test
+                # relies on setting some nonlocal variables.
+                effect_validation=EffectValidation.DISABLED,
+            )
+
+            context = self.rbt.create_external_context(name=self.id())
+
+            # Construct.
+            g, _ = await General.constructor_writer(context)
+
+            # Spawn the workflow.
+            task = await g.spawn().workflow(context)
+
+            # Wait for both mutations to be called.
+            await writer_and_transaction_called.wait()
+
+            self.assertEqual(writer_call_count, 1)
+            self.assertEqual(transaction_call_count, 1)
+
+            # Simulate failure. The transaction's commit is blocked
+            # on `proceed_with_commit` so the transaction is durably
+            # prepared but uncommitted.
+            await self.rbt.down()
+
+            # Reset events for the re-run after recovery.
+            writer_and_transaction_called.clear()
+
+            recovered = True
+
+            await self.rbt.up(revision=revision)
+
+            # Wait for the re-executed workflow's duplicate
+            # transaction call to reach its idempotency check while
+            # the recovered transaction is still pending, then let
+            # the recovered transaction commit.
+            await transaction_reattempted.wait()
+            proceed_with_commit.set()
+
+            # Let the workflow proceed to completion.
+            proceed_after_down.set()
+
+            await task
+
+            # We should have tried to call both mutations again.
+            await writer_and_transaction_called.wait()
+
+            # But they still should only have been called once even
+            # after recovery because the workflow's re-executed calls
+            # must reuse the recovered mutations, including the
+            # transaction's, which only commits during recovery.
+            self.assertEqual(writer_call_count, 1)
+            self.assertEqual(transaction_call_count, 1)
 
     async def test_control_loop_per_iteration_idempotency_survives_recovery(
         self,
