@@ -184,6 +184,15 @@ build:macos --copt=-Werror=unguarded-availability
 # credentials isn't a problem.
 common --repo_env=OCI_GET_TOKEN_ALLOW_FAIL=1
 
+# Retry the downloads that repository rules like `http_archive` make.
+# This flag defaults to `0`, meaning Bazel makes exactly one attempt
+# per URL and then fails the whole invocation, so a single slow
+# response from a third-party host is enough to break a build. Five
+# attempts, with the exponential backoff Bazel applies between them,
+# is the same budget our `Dockerfile`s give their `curl`/`wget`
+# fetches.
+common --experimental_repository_downloader_retries=5
+
 # Normally, on restart, Bazel will check that its `bazel-bin` and
 # `bazel-out` directories are untouched. As part of this for every file
 # in those directories it will check the modification time, possibly
