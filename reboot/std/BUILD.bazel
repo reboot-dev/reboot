@@ -47,6 +47,7 @@ ts_project(
     },
     visibility = ["//visibility:public"],
     deps = [
+        "//reboot/std/blobs/v1:blobs_ts",
         "//reboot/std/ciphertext/v1:ciphertext_ts",
         "//reboot/std/collections/ordered_map/v1:ordered_map_ts",
         "//reboot/std/collections/queue/v1:queue_ts",

@@ -1,0 +1,54 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@rbt_pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "blobs_py",
+    srcs = [
+        "_data_plane.py",
+        "_filesystem_server.py",
+        "_http.py",
+        "_proxy.py",
+        "_store.py",
+        "blobs.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//log:log_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:contexts_py",
+        "//reboot/aio:http_py",
+        "//reboot/aio:workflows_py",
+        "//reboot/aio/auth:authorizers_py",
+        "//reboot/crypto:root_keys_py",
+        "@com_github_reboot_dev_reboot//rbt/std/blobs/v1:blobs_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/std/blobs/v1:data_plane_py_reboot",
+        requirement("aiohttp"),
+        requirement("grpcio"),
+        requirement("starlette"),
+        requirement("uvicorn"),
+    ],
+)
+
+ts_project(
+    name = "blobs_ts",
+    srcs = [
+        "index.ts",
+        "package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-std-api",
+        "//:node_modules/@types/node",
+    ],
+)

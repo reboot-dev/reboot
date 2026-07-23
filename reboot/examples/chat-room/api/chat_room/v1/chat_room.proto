@@ -6,10 +6,29 @@ import "rbt/v1alpha1/options.proto";
 
 ////////////////////////////////////////////////////////////////////////
 
+// Raised when a requested attachment exceeds the chat room's
+// per-attachment size limit.
+message AttachmentTooLarge {
+  // The maximum allowed attachment size, in bytes, so the client can
+  // show a helpful message.
+  uint64 max_size_bytes = 1;
+}
+
+message Message {
+  string text = 1;
+
+  // Ids of `rbt.std.blobs.v1.Blob`s holding this message's
+  // attachments. Attachments are visible to all participants from the
+  // moment the message is sent, while their bytes may still be
+  // uploading; render their progress reactively via `Blob.Info`.
+  repeated string attachment_blob_ids = 2;
+}
+
 message ChatRoom {
   option (rbt.v1alpha1.state) = {
   };
-  repeated string messages = 1;
+  reserved 1;
+  repeated Message messages = 2;
 }
 
 service ChatRoomMethods {
@@ -19,9 +38,14 @@ service ChatRoomMethods {
     };
   }
 
-  // Adds a new message to the list of recorded messages.
+  // Adds a new message to the list of recorded messages, creating a
+  // `Blob` for each requested attachment. The message is published
+  // immediately; the caller then uploads the attachment bytes into
+  // the returned blob ids.
   rpc Send(SendRequest) returns (SendResponse) {
-    option (rbt.v1alpha1.method).writer = {
+    option (rbt.v1alpha1.method) = {
+      transaction: {},
+      errors: [ "AttachmentTooLarge" ],
     };
   }
 }
@@ -29,11 +53,23 @@ service ChatRoomMethods {
 message MessagesRequest {}
 
 message MessagesResponse {
-  repeated string messages = 1;
+  repeated Message messages = 1;
+}
+
+// Describes an attachment the sender intends to upload.
+message Attachment {
+  string content_type = 1;  // E.g. "image/png".
+  uint64 size_bytes = 2;
 }
 
 message SendRequest {
   string message = 1;  // E.g. "Hello, World".
+  repeated Attachment attachments = 2;
 }
 
-message SendResponse {}
+message SendResponse {
+  // One `Blob` id per requested attachment, in request order. Upload
+  // the attachment bytes into these (e.g. with `useBlobUpload` from
+  // `@reboot-dev/reboot-std-react/blobs`).
+  repeated string attachment_blob_ids = 1;
+}

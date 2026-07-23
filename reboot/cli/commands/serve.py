@@ -1,5 +1,6 @@
 import aiofiles.os
 import argparse
+import asyncio
 import math
 import os
 import sys
@@ -13,6 +14,10 @@ from reboot.cli.commands.dev import (
     try_and_become_child_subreaper_on_linux,
 )
 from reboot.cli.common import terminal
+from reboot.cli.common.blob_data_plane import (
+    BLOBS_SUBDIRECTORY,
+    start_filesystem_data_plane,
+)
 from reboot.cli.common.detect_cores import detect_cores
 from reboot.cli.common.directories import (
     add_working_directory_options,
@@ -325,6 +330,24 @@ async def serve_run(
         for (key, value) in args.env or []:
             env[key] = value
 
+        # Start the filesystem blob data plane (unless a data plane is
+        # already configured, e.g. by Reboot Cloud provisioning or via
+        # `--env`) and point the application at it. Bytes live under the
+        # state directory alongside the rest of the application's state.
+        # Done after `--env` is applied so an explicitly-configured data
+        # plane is honored rather than spawning a redundant local one.
+        blobs_directory = os.path.join(
+            env.get(ENVVAR_RBT_STATE_DIRECTORY, os.getcwd()),
+            BLOBS_SUBDIRECTORY,
+        )
+        data_plane_tasks: list[asyncio.Task] = []
+        await start_filesystem_data_plane(
+            env,
+            blobs_directory,
+            subprocesses,
+            data_plane_tasks,
+        )
+
         # If 'PYTHONPATH' is not explicitly set, we'll set it to the
         # specified generated code directory plus each proto directory.
         # We want to get the directories from 'rbt generate' flags,
@@ -381,8 +404,16 @@ async def serve_run(
             application if not auto_transpilation else str(bundle),
         ]
 
-        async with subprocesses.exec(*args, env=env) as process:
-            return await process.wait()
+        try:
+            async with subprocesses.exec(*args, env=env) as process:
+                return await process.wait()
+        finally:
+            for data_plane_task in data_plane_tasks:
+                data_plane_task.cancel()
+                try:
+                    await data_plane_task
+                except asyncio.CancelledError:
+                    pass
 
 
 async def handle_serve_subcommand(

@@ -473,6 +473,7 @@ compile_pip_requirements(
 py_library(
     name = "python_std",
     deps = [
+        "//reboot/std/blobs/v1:blobs_py",
         "//reboot/std/ciphertext/v1:ciphertext_py",
         "//reboot/std/collections/ordered_map/v1:ordered_map_py",
         "//reboot/std/collections/queue/v1:queue_py",
@@ -598,8 +599,12 @@ sh_library(
         ":reboot.dev",
         "//rbt/v1alpha1:reboot-dev-reboot-api",
         "//reboot/create-ui:reboot-dev-create-ui",
+        "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
         "//reboot/react:reboot-dev-reboot-react",
+        "//reboot/std:reboot-dev-reboot-std",
+        "//reboot/std/react:reboot-dev-reboot-std-react",
         "//reboot/web:reboot-dev-reboot-web",
+        "@com_github_reboot_dev_reboot//rbt/std:reboot-dev-reboot-std-api",
     ],
 )
 
@@ -616,8 +621,12 @@ sh_binary(
         ":reboot.dev",
         "//rbt/v1alpha1:reboot-dev-reboot-api",
         "//reboot/create-ui:reboot-dev-create-ui",
+        "//reboot/nodejs:reboot-dev-reboot-" + REBOOT_VERSION + ".tgz",
         "//reboot/react:reboot-dev-reboot-react",
+        "//reboot/std:reboot-dev-reboot-std",
+        "//reboot/std/react:reboot-dev-reboot-std-react",
         "//reboot/web:reboot-dev-reboot-web",
+        "@com_github_reboot_dev_reboot//rbt/std:reboot-dev-reboot-std-api",
     ],
     deps = [":stage_and_publish_local_lib"],
 )

@@ -30,6 +30,10 @@ from reboot.cli.commands.generate import generate_direct
 # We import the whole `terminal` module (as opposed to the methods it contains)
 # to allow us to mock these methods out in tests.
 from reboot.cli.common import terminal
+from reboot.cli.common.blob_data_plane import (
+    BLOBS_SUBDIRECTORY,
+    start_filesystem_data_plane,
+)
 from reboot.cli.common.directories import (
     add_working_directory_options,
     dot_rbt_dev_directory,
@@ -80,6 +84,7 @@ from reboot.settings import (
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
     LocalEnvoyMode,
 )
+from reboot.std.blobs.v1._data_plane import ENVVAR_BLOB_DATA_PLANE_URL
 from reboot.version import REBOOT_VERSION
 from typing import Any, Awaitable, Callable, Optional, TextIO, TypeVar
 
@@ -1436,6 +1441,39 @@ async def __dev_run(
         root_keys_path.parent.mkdir(parents=True, exist_ok=True)
         root_keys_path.write_text(root_keys)
         return root_keys
+
+    # Honor a blob data plane configured via `--env-file`/`--env` (they
+    # are otherwise only composed into the application's environment at
+    # launch, below) so that no local one is spawned; mirror
+    # `compose_env`'s precedence: `--env` wins over `--env-file`.
+    if args.env_file is not None and os.path.isfile(args.env_file):
+        data_plane_url = _load_env_file(args.env_file
+                                       ).get(ENVVAR_BLOB_DATA_PLANE_URL)
+        if data_plane_url is not None:
+            env[ENVVAR_BLOB_DATA_PLANE_URL] = data_plane_url
+    for (key, value) in args.env or []:
+        if key == ENVVAR_BLOB_DATA_PLANE_URL:
+            env[key] = value
+
+    # Start the filesystem blob data plane (unless a data plane is
+    # already configured) and point the application at it. Started
+    # with `env` — after the cryptographic root keys above, which its
+    # URL signing derives from. Bytes live under the application's
+    # state directory so `rbt dev expunge` removes them along with the
+    # rest of the state.
+    blobs_directory = os.path.join(
+        env.get(
+            ENVVAR_RBT_STATE_DIRECTORY,
+            str(dot_rbt_dev_directory(args, parser)),
+        ),
+        BLOBS_SUBDIRECTORY,
+    )
+    await start_filesystem_data_plane(
+        env,
+        blobs_directory,
+        subprocesses,
+        background_command_tasks,
+    )
 
     if tracing == Tracing.JAEGER:
         # TODO: dynamic port. See comment in `_run_jaeger()`.

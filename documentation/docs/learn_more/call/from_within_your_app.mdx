@@ -83,14 +83,15 @@ passed as a parameter to your method.
 <!-- The below code snippet is automatically added from ../../../../reboot/examples/chat-room/backend/src/chat_room_servicer.py -->
 
 ```py
+    self,
+    context: ReaderContext,
+    request: MessagesRequest,
+) -> MessagesResponse:
+    return MessagesResponse(messages=self.state.messages)
+
 async def send(
     self,
-    context: WriterContext,
-    request: SendRequest,
-) -> SendResponse:
-    message = request.message
-    self.state.messages.extend([message])
-    return SendResponse()
+    context: TransactionContext,
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->

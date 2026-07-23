@@ -12,6 +12,7 @@ py_library(
         requirement("cryptography"),
         requirement("python-dotenv"),
         ":generate_py",
+        "//reboot/cli/common:blob_data_plane_py",
         "//reboot/cli/common:directories_py",
         "//reboot/cli/common:frontend_py",
         "//reboot/cli/common:monkeys_py",
@@ -95,6 +96,7 @@ py_library(
     deps = [
         requirement("aiofiles"),
         ":dev_py",
+        "//reboot/cli/common:blob_data_plane_py",
         "//reboot/cli/common:detect_cores_py",
         "//reboot/cli/common:directories_py",
         "//reboot/cli/common:frontend_py",

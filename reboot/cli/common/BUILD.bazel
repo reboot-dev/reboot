@@ -94,6 +94,17 @@ py_library(
 )
 
 py_library(
+    name = "blob_data_plane_py",
+    srcs = ["blob_data_plane.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":subprocesses_py",
+        "@com_github_reboot_dev_reboot//reboot/std/blobs/v1:blobs_py",
+    ],
+)
+
+py_library(
     name = "monkeys_py",
     srcs = ["monkeys.py"],
     srcs_version = "PY3",
