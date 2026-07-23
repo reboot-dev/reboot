@@ -6,10 +6,43 @@
 
 Third-party integration that supports sending email messages using the Mailgun API.
 
+To make the integration part of your application, include its
+servicers when constructing your `Application`, using the
+`servicers()` helper from the `reboot.thirdparty.mailgun` module:
+
+```python
+import reboot.thirdparty.mailgun
+from reboot.aio.applications import Application
+
+application = Application(
+    servicers=[YourServicer] + reboot.thirdparty.mailgun.servicers(),
+)
+```
+
 To use the Mailgun integration, set the `MAILGUN_API_KEY`
 environment variable to your Mailgun API key. See [Secrets](../learn_more/secrets.mdx)
 for how to set this for local development and for deployments to
 Reboot Cloud.
+
+Calls to the integration must also authenticate using that same API
+key as the bearer token: the integration only accepts calls whose
+bearer token matches `MAILGUN_API_KEY`, and rejects all other calls
+as unauthenticated. Pass the key using `Options` when calling
+`Message.send`:
+
+```python
+from reboot.aio.call import Options
+
+await Message.send(
+    context,
+    Options(bearer_token=mailgun_api_key),
+    recipient="alice@example.com",
+    sender="Your App <noreply@yourdomain.com>",
+    domain="yourdomain.com",
+    subject="Hello!",
+    text="Hello from Reboot!",
+)
+```
 
 ## Message {#rbtthirdpartymailgunv1message}
 A single message sent using the integration.
@@ -23,8 +56,8 @@ Created and scheduled using its constructor: `await Message.send(...)`.
 
 Construct and send an email message using the Mailgun API.
 
-Returns a `task_id` which can be used for the message to have
-been sent.
+Returns a `task_id` which can be used to wait for the message to
+have been sent.
 
 ## Messages
 

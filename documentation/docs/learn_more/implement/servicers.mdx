@@ -6,7 +6,8 @@ import TabItem from "@theme/TabItem";
 For each of your data types you need to implement its methods. You do
 that by implementing server-side (backend) **servicers** based on the
 data types and methods you defined (e.g., using
-[Zod](/learn_more/define/zod) or
+[Pydantic](/learn_more/define/pydantic),
+[Zod](/learn_more/define/zod), or
 [protobuf](/learn_more/define/protobuf)).
 
 :::note
@@ -16,7 +17,7 @@ implementation. You only implement `reader`, `writer`,
 `transaction`, and `workflow` methods in the servicer.
 :::
 
-For Python, you'll be creating subclasses of the code generated
+For Python, you'll be creating subclasses of the code-generated
 `Servicer` class where you can implement each of the methods you
 defined. For TypeScript you can either create subclasses or you can
 create an object literal.
@@ -61,7 +62,7 @@ Each method gets passed:
 - `context`: a subclass of
 [`Context`](/learn_more/call/from_within_your_app) specific to the
 method kind (e.g., `ReaderContext`)
-- `request`: the type defined in your Zod schema or `.proto`
+- `request`: the type defined in your API file
 
 To read and write the **state** of your data type from within one
 of your methods:
@@ -72,12 +73,13 @@ of your methods:
 
 :::important
 
-When creating a subclasses of `Servicer`, there is a 1-1 mapping
+When creating a subclass of `Servicer`, there is a 1-1 mapping
 between an instance of your subclass and an instance of your data type
-that was either implicitly or explicitly created.
+that was either
+[implicitly or explicitly created](/learn_more/call/overview#constructing-instances).
 
 When using object literals in TypeScript, a single servicer may
-handles many different instances of your data types differentiated by
+handle many different instances of your data types differentiated by
 different `state` arguments.
 
 :::

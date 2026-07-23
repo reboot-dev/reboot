@@ -28,7 +28,8 @@ automatically registers an MCP endpoint at `/mcp`. This means:
   types (like `Counter`) also use `mcp=Tool()`. The AI receives
   the state ID when it creates the instance and passes it in
   subsequent calls.
-- **`UI` methods become MCP tools + resources.** When the AI
+- **[`UI`](/learn_more/implement/ui_methods) methods become MCP
+  tools + resources.** When the AI
   calls a `UI` tool, it receives metadata pointing to a compiled
   React app (served as an MCP resource) — that prompts the AI to
   display that app in the chat.
@@ -58,8 +59,9 @@ For the full API reference and code examples, see
 ## Users and `User` state
 
 When an authenticated user connects to your app via MCP, Reboot
-automatically creates a `User` state instance for that user (if one does
-not already exist). `User` acts as an entry point: its methods typically
+automatically creates a
+[`User`](/learn_more/define/pydantic#special-state-user) state instance
+for that user (if one does not already exist). `User` acts as an entry point: its methods typically
 create other state types (like `Counter`) whose IDs can be stored in the
 `User`'s state. Such IDs can also be returned to the AI, which can use
 them to make further calls (like `Counter.increment()`) directly to

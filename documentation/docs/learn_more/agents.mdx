@@ -1,7 +1,8 @@
 # Agents
 
 Reboot's `reboot.agents` package lets you run [Pydantic AI](https://ai.pydantic.dev/)
-agents inside Reboot workflows with **durable, replay-safe execution
+agents inside Reboot [workflows](/learn_more/implement/workflows) with
+**durable, replay-safe execution
 of model calls and tool calls** -- you get back the same answer on
 re-runs without re-hitting the LLM provider, and tool side-effects
 that have already completed are not repeated.
@@ -19,15 +20,16 @@ When you wrap a Pydantic AI agent with Reboot's `Agent`:
   via `at_least_once`. On workflow replay the stored `ModelResponse`
   is returned instead of calling the provider again.
 - **Every tool call** -- whether registered via `@agent.tool`, passed
-  as `tools=`, or contributed by a `toolsets=` -- is memoized too,
+  as `tools=`, or contributed via `toolsets=` -- is memoized too,
   so a tool's side effects aren't repeated on replay. During [effect
   validation](/learn_more/side_effects) tools DO re-run, which helps
   surface non-determinism early.
-- **Streaming runs are drained inside a memoized block.** The
-  `StreamedRunResult` you get back is backed by a fully-stored
-  response; iteration replays the stored events instead of
-  re-streaming from the provider. Live token-by-token streaming is
-  fundamentally incompatible with replay.
+- **Streaming runs are drained inside a memoized block.** Even on
+  the first run, events arrive in a single batch once the model call
+  finishes. The `StreamedRunResult` you get back is backed by a
+  fully-stored response; iteration replays the stored events instead
+  of re-streaming from the provider. Live token-by-token streaming
+  is fundamentally incompatible with replay.
 - **Configuration drift is surfaced.** A snapshot of the agent's
   static config + per-call kwargs is taken at the start of each run.
   On replay, anything that has changed (instructions, system prompt,
@@ -124,8 +126,8 @@ Reboot's `@agent.tool_plain` and `@agent.tool` mirror `pydantic_ai`'s
 decorators with one additional convenience: `@agent.tool` accepts a
 `WorkflowContext` as the first parameter, BEFORE the `pydantic_ai`
 `RunContext`. This lets your tool body call into other Reboot data
-types easily, and you can also wrap external work in `at_least_once`
-although know that every tool call is already wrapped in an
+types easily. You can also wrap external work in `at_least_once`
+yourself, though note that every tool call is already wrapped in an
 `at_least_once` for you.
 
 ```python
@@ -222,17 +224,17 @@ agent = Agent(
 
 Reboot uses each MCP toolset's `id` to disambiguate memoization keys
 for `get_tools` / `get_instructions` / `call_tool` across replays. Two
-id-less servers would silently clobber each other's results, so we
-raise a `UserError` at agent construction time when this is
+id-less servers would silently clobber each other's results, so
+Reboot raises a `UserError` at agent construction time when this is
 detected. (For `MCPServer`, `tool_prefix=...` doubles as the id when
 `id=` isn't set.)
 
 ### Why your tool doesn't re-run on replay (but should still be idempotent)
 
 Reboot wraps every tool call in `at_least_once`. On replay, the stored
-return value is reused without invoking your tool function.  Your tool
-function therefore should not be relied upon to be "called once per
-replay". Note that during [effect
+return value is reused without invoking your tool function. You
+therefore can't rely on your tool function being invoked again on
+replay. Note that during [effect
 validation](/learn_more/side_effects), Reboot re-runs your tool to
 verify your code is deterministic, so if you are performing external
 side-effects inside your tool body you need to ensure they are done
@@ -306,7 +308,8 @@ controls how concurrent tool calls dispatched in a single turn
 are scheduled. It accepts three values upstream:
 `'sequential'`, `'parallel'`, and `'parallel_ordered_events'`.
 Reboot accepts the first and last and rejects `'parallel'` at
-construction time.
+construction time. On a Reboot `Agent`, pass the mode as the
+`parallel_execution_mode=` constructor argument:
 
 ```python
 agent = Agent(
@@ -414,8 +417,10 @@ cause an order of magnitude more attempts than you intended:
 - **Reboot workflows** retry the entire method body when an
   uncaught exception escapes (configurable via the workflow's
   retry policy).
-- **Reboot's `at_least_once`** retries the wrapped block until it
-  succeeds.
+- **Reboot's `at_least_once`** already gets your block retried:
+  every workflow retry gives an unfinished block another attempt
+  until it succeeds, while blocks that succeeded are never re-run.
+  You don't need retry logic inside the block itself.
 - **Pydantic AI's agent** has a `retries=` parameter (and a
   `tool.retries=` per tool) that retries on tool / output
   validation failures within a single agent run.
@@ -479,8 +484,8 @@ A few things deliberately fall outside Reboot's wrapping:
 
 - **Pydantic AI builtin tools** (web search, code execution,
   etc.) -- these are executed by the model provider, and their
-  call/return parts are baked into the `ModelResponse` we already
-  memoize. They're durable for free.
+  call/return parts are baked into the `ModelResponse` that Reboot
+  already memoizes. They're durable for free.
 - **Dynamic instructions / dynamic system prompt callables** --
   those are `pydantic_ai`'s `_system_prompt_dynamic_functions` and
   the callable entries inside `instructions`. They run on every
@@ -492,7 +497,7 @@ A few things deliberately fall outside Reboot's wrapping:
   body performs un-memoized writes (e.g., a direct database
   update), effect validation will surface the duplication. Wrap
   external side-effects inside the tool body in `at_least_once`
-  -- see the `search` example above.
+  -- see the `stripe_create_invoice` example above.
 
 ## Limitations
 
@@ -506,8 +511,8 @@ A few things deliberately fall outside Reboot's wrapping:
 - `pydantic_ai`'s `parallel_tool_call_execution_mode='parallel'`
   is rejected at construction time -- use the default
   `'parallel_ordered_events'` or `'sequential'` instead.
-- Calling our entry points through an `AbstractAgent`-typed
-  reference will fail with a `UserError` naming the fix: our
+- Calling Reboot's entry points through an `AbstractAgent`-typed
+  reference will fail with a `UserError` naming the fix: Reboot's
   `run` / `iter` / `run_stream` / `run_stream_events` require
   `context: WorkflowContext` as the first positional argument,
   while the supertype's signature has no `context`. The runtime

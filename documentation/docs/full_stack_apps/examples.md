@@ -8,19 +8,19 @@ Looking for AI Chat App examples? See
 
 [`reboot-dev/reboot-prosemirror-zod`](https://github.com/reboot-dev/reboot-prosemirror-zod) - _TypeScript backend, React frontend_
 
-This example demonstrates integeration with the popular
+This example demonstrates integration with the popular
 [ProseMirror](https://prosemirror.net) library.
 
 It demonstrates:
 
-* how to _sync_ betweeen a React frontend and a Reboot backend
-* how to run a long-lived control loop using a `workflow` method, which takes checkpoints of the ProseMirror document
+* how to _sync_ between a React frontend and a Reboot backend
+* how to run a long-lived control loop using a [`workflow`](/learn_more/define/methods#kinds) method, which takes checkpoints of the ProseMirror document
 
 ## `bank-zod`
 
 [`reboot-dev/reboot-bank-zod`](https://github.com/reboot-dev/reboot-bank-zod) - _TypeScript backend, React frontend_
 
-The `bank` example demonstrates a multiple user "bank", with signup,
+The `bank-zod` example demonstrates a multi-user "bank", with signup,
 transfers, and interest calculations. It strikes a good balance between simplicity and
 real-world utility.
 
@@ -34,7 +34,7 @@ It demonstrates:
 
 [`reboot-dev/reboot-bank-pydantic`](https://github.com/reboot-dev/reboot-bank-pydantic) - _Python backend, React frontend_
 
-The `bank` example demonstrates a multiple user "bank", with signup,
+The `bank-pydantic` example demonstrates a multi-user "bank", with signup,
 transfers, and interest calculations. It strikes a good balance between simplicity and
 real-world utility.
 
@@ -49,7 +49,7 @@ It demonstrates:
 
 [`reboot-dev/reboot-bank`](https://github.com/reboot-dev/reboot-bank) - _Python backend, React frontend_
 
-The `bank` example demonstrates a multiple user "bank", with signup,
+The `bank` example demonstrates a multi-user "bank", with signup,
 transfers, and interest calculations. It strikes a good balance between simplicity and
 real-world utility.
 
@@ -79,7 +79,7 @@ It includes:
 
 [reboot-dev/reboot-hello](https://github.com/reboot-dev/reboot-hello) - _Python backend, React frontend_
 
-The [`chat_room` example](https://github.com/reboot-dev/reboot-hello) demonstrates
+The [`hello` example](https://github.com/reboot-dev/reboot-hello) demonstrates
 the simplest possible chat app: a single user, and a [singleton](/learn_more/call/overview#state-ids)
 "chat room". It contains:
 * a reactive frontend: open two browsers pointed at the same backend and see messages flow!
@@ -89,7 +89,7 @@ the simplest possible chat app: a single user, and a [singleton](/learn_more/cal
 * a `Dockerfile` that shows
   [how to publish a Reboot app to the Reboot Cloud](https://github.com/reboot-dev/reboot-hello?tab=readme-ov-file#running-on-the-reboot-cloud).
 
-Because of `chat_room`'s simplicity, it does not use any [transactions](/learn_more/define/methods#kinds) --
+Because of `hello`'s simplicity, it does not use any [transactions](/learn_more/define/methods#kinds) --
 see the [`bank`](#bank) or [`counter`](#counter) examples for those.
 
 

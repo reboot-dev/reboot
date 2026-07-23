@@ -310,9 +310,10 @@ const range2 = await myMap.reverseRange(context, {
   </TabItem>
 </Tabs>
 
-If you have an error in your range request (i.e. you don't specify a `limit`
-or you specify an `end_key` smaller than your `start_key`), you'll receive an
-[`InvalidRangeError`](#invalidrangeerror) explaining why your range is not valid.
+If you have an error in your reverse range request (i.e. you don't specify a
+`limit` or you specify an `end_key` greater than your `start_key`), you'll
+receive an [`InvalidRangeError`](#invalidrangeerror) explaining why your range
+is not valid.
 
 
 ## Errors

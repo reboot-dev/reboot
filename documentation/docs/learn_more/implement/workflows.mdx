@@ -12,7 +12,7 @@ methods in Reboot:
 * _Workflows are not atomic_. For example, state updates made by a workflow may
   be visible to other Reboot methods before the workflow completes. Similarly, a
   workflow can obtain multiple read snapshots over the course of its
-  execution. We discuss below how to
+  execution. See below for how to
   [read](/learn_more/implement/workflows#reading-state) and
   [write](/learn_more/implement/workflows#writing-state) state.
 * Workflows can only be run as [tasks](/learn_more/tasks). This means that
@@ -94,7 +94,7 @@ Learn more about idempotency when calling a method
 ## Reading `state`
 
 Unlike other kinds of methods, `state` is not passed as an argument to
-`workflow` methods. Instead, if you need to read state you must fetch a current
+`workflow` methods. Instead, if you need to read state you must fetch a
 _snapshot_:
 
 <Tabs groupId="language">
@@ -125,6 +125,16 @@ const snapshot = await TestTask.ref().read(context);
 
 A workflow method might fetch a snapshot of state multiple times during the
 course of its execution. The contents of these snapshots may differ.
+
+Like calls, reads follow the workflow's
+[idempotency rules](#retries-and-idempotency): by default `read()` behaves as
+though you had used `.per_workflow()` (Python) / `.perWorkflow()`
+(TypeScript), so the snapshot is fetched once per workflow and a retry sees
+the same recorded contents rather than the current state. Inside a
+[control loop](#control-loops) the default is per-iteration, and inside an
+[`until`](#waiting-until-a-condition) every evaluation fetches a fresh
+snapshot. You can also choose explicitly, e.g.
+`TestTask.ref().always().read(context)` to fetch a fresh snapshot every time.
 
 ## Writing state
 
@@ -174,10 +184,10 @@ kind of _inline_ `writer`. Most importantly this means that your
 function or lambda will be executed _atomically_ with respect to any
 other `writer` or `transaction` methods.
 
-In the same way that calling a `writer` or `transaction` is done so
-idempotently within a `workflow`, your inline writer is also executed
-idempotently. The first argument to `write()` acts as an idempotency
-alias for that write.
+In the same way that calls to a `writer` or `transaction` from a
+`workflow` are made idempotently, your inline writer is also executed
+idempotently. The string you pass to `.idempotently()` acts as an
+idempotency alias for that write.
 
 :::tip
 
@@ -191,7 +201,7 @@ won't conflict.
 :::note
 
 If you want your inline writer to execute _every time_, use
-`.always()`, e.g., in TypeScript `this.state.always().write(context, ...)`.
+`.always()`, e.g.,`TestTask.ref().always().write(...)`.
 
 :::
 
@@ -254,7 +264,8 @@ also for all other states you may call into.
 `until` will re-execute reactively until a _non-falsy_ value is
 returned, and then it will return that value if it is not a
 boolean. For example, you can wait for a specific key to be set in a
-`SortedMap` and return the value:
+collection such as [`SortedMap`](/library_services/sorted_map) or
+[`OrderedMap`](/library_services/ordered_map) and return the value:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
@@ -306,18 +317,18 @@ const value = await until(
 An `until` block _memoizes_ its result so that once you have
 converged on some condition it won't try to converge again. The first
 argument to an `until` block acts as an idempotency alias, just like
-calling `.idempotently()` or `state.write(...)`.
+the string you pass to `.idempotently()`.
 
 In Python, Reboot will _serialize_ and _deserialize_ the result using
-pickle. However, to ensure that you don't make mistakes, you must also
-pass the keyword argument `type`.
+pickle. You can pass the keyword argument `type` to declare the type
+of the result; when omitted, the return type annotation of your
+function is used.
 
-In TypeScript, Reboot will _serialize_ and _deserialize_ the result as
-part of the memoization using `JSON.stringify` and `JSON.parse`, but
-since these are not type safe, you must pass an options object with a
-`validate` property as the last argument. If instead you would prefer
-to serialize and deserialize a different way you can specify the
-`stringify` and `parse` options instead of `validate`.
+In TypeScript, Reboot will _serialize_ and _deserialize_ the result
+as part of the memoization. To make that type safe, when your
+function returns a non-boolean value you must pass an options object
+with a `schema` property — any Standard Schema, e.g., a Zod schema
+such as `z.json()` — as the last argument.
 
 :::
 
@@ -359,8 +370,8 @@ If the code executed using `at_most_once` (Python) or `atMostOnce` (TypeScript)
 raises an exception, _the code will not be re-executed_ the next time the
 workflow runs. Depending on the nature of the external service you are
 interacting with, this might result in a partial state update or otherwise
-problematic situation. When possible, third-party services that provide support
-safe retries should be preferred. If the external API supports safe retries
+problematic situation. When possible, third-party services that support safe
+retries should be preferred. If the external API supports safe retries
 (e.g., via some notion of an "idempotency key" or a similar concept),
 `at_least_once` (Python) or `atLeastOnce` (TypeScript) can be used in Reboot.
 
@@ -370,8 +381,8 @@ safe retries should be preferred. If the external API supports safe retries
 
 You can return a result from the function or lambda you pass as an
 argument just like with `until`, and in TypeScript that means you'll
-also either need to pass a `validate` or your own `stringify` and
-`parse`. See the `until` example above for more details.
+also need to pass a `schema`. See the `until` example above for more
+details.
 
 :::
 
@@ -382,7 +393,7 @@ various scenarios and ensure reliable task execution.
 
 Within a `workflow` you can run a control loop by calling
 `context.loop(...)`, which provides an asynchronous iterator that you
-must explicit break or return from within:
+must explicitly break or return from within:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>

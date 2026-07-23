@@ -30,12 +30,87 @@ Throwing any unexpected error can then be treated as a bug to be reported (class
 ### Reporting Expected Errors in Reboot
 
 Reboot methods should enumerate all errors that are expected as part of normal
-business in their proto definitions.
+business in their API definitions — whether you [define your
+API](/learn_more/define/overview) with
+[Pydantic](/learn_more/define/pydantic), [Zod](/learn_more/define/zod), or
+[protobuf](/learn_more/define/protobuf).
 
 For example, a `Withdraw` method for a bank account might raise an
 `OverdraftError` if the account doesn't have sufficient funds for the requested
-withdrawal:
+withdrawal. The error is itself defined as a type in your API and listed in the
+method's `errors`:
 
+<Tabs groupId="language">
+  <TabItem value="python" label="Pydantic" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/errors_pydantic.py&lines=1-22) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/errors_pydantic.py -->
+
+```py
+from reboot.api import Field, Methods, Model, Writer
+
+
+class WithdrawRequest(Model):
+    amount: float = Field(tag=1)
+
+
+# Error returned when a withdrawal would overdraft the account.
+class OverdraftError(Model):
+    # Amount that the account would have been overdrafted by.
+    amount: float = Field(tag=1)
+
+
+AccountMethods = Methods(
+    withdraw=Writer(
+        request=WithdrawRequest,
+        response=None,
+        errors=[OverdraftError],
+        mcp=None,
+    ),
+    # ...
+)
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="Zod">
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/documentation/errors_zod.ts&lines=1-27) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/errors_zod.ts -->
+
+```ts
+import { writer } from "@reboot-dev/reboot-api";
+import { z } from "zod/v4";
+
+export const Account = {
+  state: {
+    balance: z.number().default(0).meta({ tag: 1 }),
+  },
+  methods: {
+    withdraw: writer({
+      request: {
+        amount: z.number().meta({ tag: 1 }),
+      },
+      response: z.void(),
+      errors: [
+        // Error returned when a withdrawal would overdraft the
+        // account; the `type` literal names the error.
+        z
+          .object({
+            type: z.literal("OverdraftError"),
+            amount: z.number().meta({ tag: 1 }),
+          })
+          .meta({ tag: 1 }),
+      ] as const,
+    }),
+    // ...
+  },
+};
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="proto" label="Proto">
 <!-- MARKDOWN-AUTO-DOCS:START
 (CODE:src=../../../reboot/examples/monorepo/api/bank/v1/account.proto&syntax=protobuf&lines=37-42) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/monorepo/api/bank/v1/account.proto -->
@@ -66,15 +141,17 @@ message OverdraftError {
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+</Tabs>
 
 :::note
 For a complete enumeration, a method must explicitly list _all_ the errors it
 expects to return, including the errors from all methods it calls.
 :::
 
-Reboot uses the proto-defined error messages to generate raisable
+Reboot uses the error types declared in your API to generate raisable
 types for use in code. Each method gets a wrapper type, `MethodNameAborted`, which
-can contain any of the error types listed in the RPC definition. This wrapper
+can contain any of the error types listed in the method definition. This wrapper
 allows clients to catch all possible errors, even when the server's list of
 error types is incomplete or gets updated.
 

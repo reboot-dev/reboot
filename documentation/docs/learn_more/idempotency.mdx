@@ -8,7 +8,8 @@ import TabItem from "@theme/TabItem";
 Calls from code generated for React will use idempotency keys by
 default. Within Reboot, you only need to manually handle idempotency
 if you're trying to retry things manually in a client (using
-`ExternalContext`) or when writing a `workflow` method (using
+[`ExternalContext`](/learn_more/call/from_outside_your_app)) or when
+writing a [`workflow`](/learn_more/implement/workflows) method (using
 `WorkflowContext`, which is automatically retried).
 
 If you're only trying to call a method of a specific state _once_
@@ -54,8 +55,10 @@ await Greeter.idempotently("generated").create(context, {
 
 When you don't pass anything to `.idempotently()`, or when you just
 pass a string alias, Reboot will deterministically generate an
-idempotency key for you. You can also manually pass an
-idempotency key by calling `.idempotently(key=...)`.
+idempotency key for you. You can also manually pass an idempotency
+key by calling `.idempotently(key=...)` in Python (where `key` is a
+`uuid.UUID`) or `.idempotently({ key: ... })` in TypeScript (where
+`key` is a string).
 
 ## Why require idempotency?
 

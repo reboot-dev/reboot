@@ -230,6 +230,11 @@ async def generate(
         base_model_schema: typing.Type[Model] = schema
         for field_name, field_info in base_model_schema.model_fields.items():
             field_type = field_info.annotation
+            if field_type is None:
+                fail(
+                    f"Missing type annotation for property '{field_name}' at "
+                    f"'{path}'; all properties must have a type annotation"
+                )
 
             # Pydantic declares `annotation` as optional, but a model
             # field is always defined by a type annotation, so it is

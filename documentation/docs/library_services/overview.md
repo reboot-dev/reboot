@@ -13,7 +13,7 @@ The current libraries are:
 * [PubSub](./pubsub) - A pub/sub implementation that enables you to subscribe and broadcast to topics.
 * [Queue](./queue) - A durable queue implementation that allows you to enqueue and dequeue items.
 * [OrderedMap](./ordered_map) - A newer implementation of a collection / dictionary / map that may be larger than memory. We recommend using this.
-* [SortedMap](./sorted_map) - A older implementation of a collection / dictionary / map that may be larger than memory, and
+* [SortedMap](./sorted_map) - An older implementation of a collection / dictionary / map that may be larger than memory, and
   which is efficiently mapped to Reboot's underlying storage.
 
 ## Integrations
@@ -26,8 +26,8 @@ The currently supported integrations are:
 
 ## Usage
 
-To use a library service, you must update the list of servicers when starting
-your `Application` to include each library service your code uses. For example:
+To use a library service, you must include each library service your code
+uses when starting your `Application`. For example:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>

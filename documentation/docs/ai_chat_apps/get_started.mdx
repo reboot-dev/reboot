@@ -381,7 +381,7 @@ class CounterServicer(Counter.Servicer):
   title="Create your entrypoint"
   description={`
 
-Create a \`backend/src/main.py\` file. In it, we define the backend
+Create a \`backend/src/main.py\` file. In it, you define the backend
 servicers this application serves.
 
 `}>
@@ -390,13 +390,12 @@ servicers this application serves.
 touch backend/src/main.py
 ```
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/backend/src/main.py&syntax=python) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/backend/src/main.py -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../tests/reboot/documentation/backend/src/main.py&syntax=python) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/backend/src/main.py -->
 
 ```python
 # backend/src/main.py
 import asyncio
-from example_prompts import example_prompts
 from reboot.aio.applications import Application
 from reboot.aio.auth.oauth_providers import (
     Development,
@@ -420,7 +419,6 @@ async def main() -> None:
             # to start until one is chosen.
             prod=None,
         ),
-        example_prompts=example_prompts,
     )
     await application.run()
 
@@ -1064,8 +1062,8 @@ touch frontend/web/src/main.tsx frontend/web/src/App.tsx
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/frontend/web/src/main.tsx&syntax=tsx) -->
-<!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/frontend/web/src/main.tsx -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../tests/reboot/documentation/get_started_main.tsx&syntax=tsx) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/documentation/get_started_main.tsx -->
 
 ```tsx
 // frontend/web/src/main.tsx
@@ -1078,7 +1076,6 @@ import {
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import "./styles.css";
 
 const Root = () => {
   const { user, isLoading } = useUser();
@@ -1321,7 +1318,7 @@ the UI uses.
 touch .rbtrc
 ```
 
-<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/.rbtrc&lines=1-34&syntax=sh) -->
+<!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/.rbtrc&lines=1-36&syntax=sh) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/ai-chat-counter/.rbtrc -->
 
 ```sh
@@ -1359,6 +1356,8 @@ dev run:hmr --frontend-host=http://localhost:4444
 
 # Dist mode: serve pre-built artifacts from "frontend/dist/" (no Vite HMR).
 # Usage: `uv run rbt dev run --config=dist`
+# Requires: `cd frontend && npm run build`
+dev run:dist --frontend-dist-path=frontend/dist
 ```
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
@@ -1425,10 +1424,10 @@ MCPJam opens a browser-based interface where you can test your app's
 tools and UIs.
 
 Click **App Builder** in the left sidebar. You should see tools
-including `session_create_counter`, `counter_get`,
+including `create_counter`, `counter_get`,
 `counter_increment`, and `counter_show_clicker`.
 
-1. Select **`show_clicker`** and click **Run** to show your UI. You
+1. Select **`counter_show_clicker`** and click **Run** to show your UI. You
    should be able to increment the counter by clicking a button.
 2. If you are signed in to MCPJam you can additionally ask the LLM to
    take actions for you in conversation, like your users will. Try

@@ -22,6 +22,13 @@ class OverdraftError(Model):
 
 
 AccountMethods = Methods(
+    # Must use this method to create an instance of Account.
+    open=Writer(
+        request=None,
+        response=None,
+        factory=True,
+        mcp=None,
+    ),
     balance=Reader(
         request=None,
         response=BalanceResponse,
@@ -45,13 +52,6 @@ AccountMethods = Methods(
         "insufficient. Get the `account_id` from "
         "`bank_account_balances`.",
         mcp=Tool(),
-    ),
-    # Must use this method to create an instance of Account.
-    open=Writer(
-        request=None,
-        response=None,
-        factory=True,
-        mcp=None,
     ),
     interest=Writer(
         request=None,

@@ -4,12 +4,18 @@ load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rbt_test_pypi//:requirements.bzl", requirement_test = "requirement")
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 load(
+    "//reboot:pydantic_to_proto.bzl",
+    "js_reboot_react_library_from_pydantic",
+    "py_reboot_library_from_pydantic",
+)
+load(
     "//reboot:rules.bzl",
     "js_proto_library",
     "js_reboot_library",
     "py_reboot_library",
 )
 load("//reboot/nodejs:rules.bzl", "js_reboot_test")
+load("//tests:zod_to_proto.bzl", "js_reboot_library_from_zod")
 
 proto_library(
     name = "task_proto",
@@ -133,6 +139,249 @@ js_reboot_test(
     visibility = ["//visibility:public"],
 )
 
+proto_library(
+    name = "transactions_proto",
+    srcs = [":transactions.proto"],
+    deps = [
+        "//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+)
+
+js_proto_library(
+    name = "transactions_js_proto",
+    package_json = ":package.json",
+    proto = "transactions.proto",
+    proto_deps = [
+        ":transactions_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+)
+
+js_reboot_library(
+    name = "transactions_js_reboot",
+    srcs = [":transactions_proto"],
+    proto = "transactions.proto",
+    deps = [":transactions_js_proto"],
+)
+
+# The `transfer` transaction in `transactions.ts` is used as a
+# snippet in
+# `documentation/docs/learn_more/implement/transactions.mdx`.
+ts_project(
+    name = "transactions_ts",
+    srcs = [
+        "transactions.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    deps = [
+        ":transactions_js_proto",
+        ":transactions_js_reboot",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@types/node",
+    ],
+)
+
+js_reboot_test(
+    name = "test_transactions_ts",
+    data = [
+        ":transactions_ts",
+    ],
+    entry_point = "transactions.js",
+    visibility = ["//visibility:public"],
+)
+
+# Pydantic API definition used as a snippet in
+# `documentation/docs/learn_more/call/from_react.mdx`.
+py_library(
+    name = "chat_room_pydantic_py",
+    srcs = ["chat_room_pydantic.py"],
+    deps = ["//reboot:api_py"],
+)
+
+# Runs the Pydantic-to-proto generation over the snippet's API
+# definition and checks the declared methods end up in the proto.
+py_test(
+    name = "test_chat_room_pydantic_py",
+    srcs = ["test_chat_room_pydantic.py"],
+    main = "test_chat_room_pydantic.py",
+    deps = [
+        ":chat_room_pydantic_py",
+        "//reboot:pydantic_schema_to_proto_py",
+    ],
+)
+
+# Zod API definition used as a snippet in
+# `documentation/docs/learn_more/call/from_react.mdx`.
+ts_project(
+    name = "chat_room_zod_ts",
+    srcs = [
+        "chat_room_zod.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    deps = [
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/zod",
+    ],
+)
+
+# Runs the Zod-to-proto code generation over the snippet so it is
+# validated beyond just type checking.
+js_reboot_library_from_zod(
+    name = "chat_room_zod_js_reboot",
+    package_json = ":package.json",
+    zod = "chat_room_zod.ts",
+)
+
+ts_project(
+    name = "test_chat_room_zod_ts",
+    srcs = [
+        "test_chat_room_zod.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    deps = [
+        ":chat_room_zod_ts",
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@types/node",
+        "//:node_modules/zod",
+    ],
+)
+
+# Checks the snippet declares its `messages` reader and `send`
+# writer with working schemas.
+js_reboot_test(
+    name = "test_chat_room_zod",
+    data = [
+        ":test_chat_room_zod_ts",
+    ],
+    entry_point = "test_chat_room_zod.js",
+    visibility = ["//visibility:public"],
+)
+
+# Pydantic API definition used as a snippet in
+# `documentation/docs/learn_more/errors.mdx`. These `py_library`
+# targets trigger the build and `mypy` checks of that snippet.
+py_library(
+    name = "errors_pydantic_py",
+    srcs = ["errors_pydantic.py"],
+    deps = ["//reboot:api_py"],
+)
+
+py_library(
+    name = "errors_pydantic_api_py",
+    srcs = ["errors_pydantic_api.py"],
+    deps = [":errors_pydantic_py"],
+)
+
+# Runs the Pydantic-to-proto generation over the snippet's API
+# definition and checks the declared error ends up in the proto.
+py_test(
+    name = "test_errors_pydantic_py",
+    srcs = ["test_errors_pydantic.py"],
+    main = "test_errors_pydantic.py",
+    deps = [
+        ":errors_pydantic_api_py",
+        "//reboot:pydantic_schema_to_proto_py",
+    ],
+)
+
+# Zod API definition used as a snippet in
+# `documentation/docs/learn_more/errors.mdx`.
+ts_project(
+    name = "errors_zod_ts",
+    srcs = [
+        "errors_zod.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    deps = [
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/zod",
+    ],
+)
+
+# Runs the Zod-to-proto code generation over the snippet so it is
+# validated beyond just type checking.
+js_reboot_library_from_zod(
+    name = "errors_zod_js_reboot",
+    package_json = ":package.json",
+    zod = "errors_zod.ts",
+)
+
+ts_project(
+    name = "test_errors_zod_ts",
+    srcs = [
+        "test_errors_zod.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    deps = [
+        ":errors_zod_ts",
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/@types/node",
+        "//:node_modules/zod",
+    ],
+)
+
+# Checks the snippet's declared error schema parses (and rejects)
+# `OverdraftError` payloads as expected.
+js_reboot_test(
+    name = "test_errors_zod",
+    data = [
+        ":test_errors_zod_ts",
+    ],
+    entry_point = "test_errors_zod.js",
+    visibility = ["//visibility:public"],
+)
+
 py_test(
     name = "test_http_py",
     srcs = [
@@ -147,5 +396,116 @@ py_test(
         "//reboot/aio:http_py",
         "//reboot/aio:tests_py",
         "//tests/reboot:greeter_servicers_py",
+    ],
+)
+
+# The `get_started` tutorial's Pydantic API definition, pulled as
+# the tested `main.py` entrypoint snippet in
+# `documentation/docs/ai_chat_apps/get_started.mdx`.
+py_library(
+    name = "ai_chat_counter_py",
+    srcs = ["ai_chat_counter.py"],
+    deps = ["//reboot:api_py"],
+)
+
+# Generates the `_rbt` code from the API definition at build time, so
+# the servicer is checked against real generated code.
+py_reboot_library_from_pydantic(
+    name = "ai_chat_counter_py_reboot",
+    py_deps = [":ai_chat_counter_py"],
+    pydantic = ":ai_chat_counter.py",
+)
+
+# The tutorial's servicer, importable as `servicers.counter` so the
+# `main.py` snippet's `from servicers.counter import ...` resolves the
+# way a real app's does. The `backend/src` import root mirrors the
+# real app's layout and keeps the API definition (which the generated
+# `_rbt` code imports by its full path) out of the root, so `mypy`
+# names each source consistently.
+py_library(
+    name = "ai_chat_counter_servicer_py",
+    srcs = [
+        "backend/src/servicers/__init__.py",
+        "backend/src/servicers/counter.py",
+    ],
+    imports = ["backend/src"],
+    deps = [
+        ":ai_chat_counter_py",
+        ":ai_chat_counter_py_reboot",
+    ],
+)
+
+# The `get_started` entrypoint, pulled as the `main.py` snippet in
+# `documentation/docs/ai_chat_apps/get_started.mdx`.
+py_library(
+    name = "get_started_main_py",
+    srcs = ["backend/src/main.py"],
+    imports = ["backend/src"],
+    deps = [":ai_chat_counter_servicer_py"],
+)
+
+# Exercises the tutorial's `User` and `Counter` servicers, and checks
+# the `main.py` snippet is real, importable code.
+py_test(
+    name = "test_ai_chat_counter_py",
+    srcs = ["test_ai_chat_counter.py"],
+    imports = ["backend/src"],
+    main = "test_ai_chat_counter.py",
+    deps = [
+        ":ai_chat_counter_servicer_py",
+        ":get_started_main_py",
+        "//reboot/aio:applications_py",
+        "//reboot/aio:tests_py",
+    ],
+)
+
+js_reboot_react_library_from_pydantic(
+    name = "ai_chat_counter_js_reboot_react",
+    package_json = ":package.json",
+    pydantic = ":ai_chat_counter.py",
+)
+
+# Type-checks the `get_started` React entrypoint (`main.tsx`) and the
+# `App` it renders against the generated hooks, so the `main.tsx`
+# snippet the docs pull stays real. The `@api/...` alias maps the
+# tutorial's import path onto the Bazel-generated hooks module.
+ts_project(
+    name = "get_started_main_ts",
+    srcs = [
+        "App.tsx",
+        "get_started_env.d.ts",
+        "get_started_main.tsx",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "baseUrl": ".",
+            "jsx": "react-jsx",
+            "lib": [
+                "ES2022",
+                "DOM",
+                "DOM.Iterable",
+            ],
+            "module": "esnext",
+            "moduleResolution": "bundler",
+            "paths": {
+                "@api/ai_chat_counter/v1/counter_rbt_react": [
+                    "./ai_chat_counter_zod_rbt_react",
+                ],
+            },
+            "skipLibCheck": True,
+            "strict": True,
+            "target": "es2022",
+        },
+    },
+    deps = [
+        ":ai_chat_counter_js_reboot_react",
+        "//:node_modules/@reboot-dev/reboot-react",
+        "//:node_modules/@reboot-dev/reboot-web",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/zod",
     ],
 )

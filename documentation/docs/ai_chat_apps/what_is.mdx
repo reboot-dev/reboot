@@ -39,7 +39,7 @@ In Reboot, you define your chat app with three things:
    safety and scalability.
 3. **Durable state types** — these are like Python classes, but their
    state is automatically persisted. Use these to store the data your
-   app needs - no external database. These is also where the backend
+   app needs - no external database. This is also where the backend
    methods live; they operate on your app's durable state directly.
 
 <!-- MARKDOWN-AUTO-DOCS:START (CODE:src=../../../reboot/examples/ai-chat-counter/api/ai_chat_counter/v1/counter.py&syntax=python) -->
@@ -178,8 +178,10 @@ api = API(
 
 Use `mcp=Tool()` on every method you want the AI to call,
 including `User` methods. Methods on other types (like `Counter`)
-that expose `mcp=Tool()` receive a state ID from the AI when it
-creates a new instance and uses it in subsequent calls.
+that expose `mcp=Tool()` operate on a specific instance: the AI
+receives the instance's state ID when the instance is created
+(here, the `counter_id` returned by `create_counter`) and passes
+it in subsequent calls.
 
 Under the hood, AI Chat Apps use [MCP (the Model Context
 Protocol)](/learn_more/mcp_apps) — the standard that AI clients use to

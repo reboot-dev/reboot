@@ -50,8 +50,9 @@ If you build with the Reboot plugin for Claude Code or Codex:
 
 ## Upgrading by hand
 
-1. Read the migration notes for every version between the one your
-   application currently pins and the one you are upgrading to:
+1. Read the migration notes for every version newer than the one
+   your application currently pins, up to and including the one you
+   are upgrading to:
    [reboot-plugin/skills/upgrade/migrations](https://github.com/reboot-dev/reboot-plugin/tree/main/skills/upgrade/migrations).
    Apply the code changes they describe, in version order. Many
    releases need no code changes at all.
