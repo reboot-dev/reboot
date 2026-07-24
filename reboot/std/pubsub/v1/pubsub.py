@@ -9,7 +9,7 @@ from rbt.std.pubsub.v1.pubsub_rbt import (
     Topic,
 )
 from reboot.aio.applications import Library
-from reboot.aio.auth.authorizers import allow
+from reboot.aio.auth.authorizers import AuthorizerRule, allow
 from reboot.aio.concurrently import concurrently
 from reboot.aio.contexts import WorkflowContext, WriterContext
 from reboot.aio.workflows import until
@@ -24,7 +24,7 @@ class TopicServicer(Topic.Servicer):
     # Singleton authorizer as class variable.
     # Discussion here for singleton authorizer vs subclassing the servicer:
     # https://github.com/reboot-dev/mono/pull/5140#issuecomment-3667592432
-    _authorizer: Optional[Topic.Authorizer] = None
+    _authorizer: Optional[Topic.Authorizer | AuthorizerRule] = None
 
     def authorizer(self):
         if self._authorizer:
@@ -127,7 +127,7 @@ class PubSubLibrary(Library):
 
     def __init__(
         self,
-        authorizer: Optional[Topic.Authorizer] = None,
+        authorizer: Optional[Topic.Authorizer | AuthorizerRule] = None,
     ):
         TopicServicer._authorizer = authorizer
 
@@ -142,5 +142,7 @@ def servicers():
     return [TopicServicer] + queue.servicers()
 
 
-def pubsub_library(authorizer: Optional[Topic.Authorizer] = None):
+def pubsub_library(
+    authorizer: Optional[Topic.Authorizer | AuthorizerRule] = None
+):
     return PubSubLibrary(authorizer)

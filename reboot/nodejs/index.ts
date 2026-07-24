@@ -890,7 +890,7 @@ export function isAppInternal({
 export type NativeLibrary = {
   nativeLibraryModule: string;
   nativeLibraryFunction: string;
-  authorizer?: Authorizer<unknown, unknown>;
+  authorizers?: Record<string, Authorizer<unknown, unknown>>;
 };
 
 export type TypeScriptLibrary = {
