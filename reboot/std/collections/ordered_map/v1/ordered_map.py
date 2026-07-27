@@ -64,7 +64,11 @@ from rbt.std.collections.ordered_map.v1.ordered_map_rbt import (
 from rbt.std.item.v1.item_pb2 import Item
 from rbt.v1alpha1.errors_pb2 import InvalidArgument, StateAlreadyConstructed
 from reboot.aio.applications import Library
-from reboot.aio.auth.authorizers import allow_if, is_app_internal
+from reboot.aio.auth.authorizers import (
+    AuthorizerRule,
+    allow_if,
+    is_app_internal,
+)
 from reboot.aio.concurrently import concurrently
 from reboot.aio.contexts import (
     ReaderContext,
@@ -693,7 +697,7 @@ class OrderedMapServicer(OrderedMap.singleton.Servicer):
     # Singleton authorizer as class variable.
     # Discussion here for singleton authorizer vs subclassing the servicer:
     # https://github.com/reboot-dev/mono/pull/5140#issuecomment-3667592432
-    _authorizer: Optional[OrderedMap.Authorizer] = None
+    _authorizer: Optional[OrderedMap.Authorizer | AuthorizerRule] = None
 
     def authorizer(self):
         if self._authorizer:
@@ -1148,7 +1152,7 @@ class OrderedMapLibrary(Library):
 
     def __init__(
         self,
-        authorizer: Optional[OrderedMap.Authorizer] = None,
+        authorizer: Optional[OrderedMap.Authorizer | AuthorizerRule] = None,
     ):
         OrderedMapServicer._authorizer = authorizer
 
@@ -1163,5 +1167,7 @@ def servicers():
     ]
 
 
-def ordered_map_library(authorizer: Optional[OrderedMap.Authorizer] = None):
+def ordered_map_library(
+    authorizer: Optional[OrderedMap.Authorizer | AuthorizerRule] = None
+):
     return OrderedMapLibrary(authorizer)

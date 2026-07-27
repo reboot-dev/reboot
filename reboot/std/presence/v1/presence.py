@@ -29,9 +29,16 @@ from rbt.std.presence.v1.presence_rbt import (
     WatchResponse,
 )
 from rbt.v1alpha1.errors_pb2 import AlreadyExists, FailedPrecondition, NotFound
-from reboot.aio.auth.authorizers import allow
+from reboot.aio.applications import Library
+from reboot.aio.auth.authorizers import (
+    AuthorizerRule,
+    allow_if,
+    has_verified_token,
+    is_app_internal,
+)
 from reboot.aio.contexts import ReaderContext, WorkflowContext, WriterContext
 from reboot.aio.workflows import until
+from typing import Optional
 
 
 class Event:
@@ -64,8 +71,14 @@ class Event:
 
 class PresenceServicer(Presence.singleton.Servicer):
 
+    # Singleton authorizer as class variable.
+    _authorizer: Optional[Presence.Authorizer | AuthorizerRule] = None
+
     def authorizer(self):
-        return allow()
+        if self._authorizer:
+            return self._authorizer
+        else:
+            return allow_if(any=[is_app_internal, has_verified_token])
 
     async def Subscribe(
         self,
@@ -131,8 +144,14 @@ class SubscriberServicer(Subscriber.singleton.Servicer):
 
     _disconnect_events: dict[str, Event] = {}
 
+    # Singleton authorizer as class variable.
+    _authorizer: Optional[Subscriber.Authorizer | AuthorizerRule] = None
+
     def authorizer(self):
-        return allow()
+        if self._authorizer:
+            return self._authorizer
+        else:
+            return allow_if(any=[is_app_internal, has_verified_token])
 
     async def Create(
         self,
@@ -231,8 +250,14 @@ class SubscriberServicer(Subscriber.singleton.Servicer):
 
 class MousePositionServicer(MousePosition.singleton.Servicer):
 
+    # Singleton authorizer as class variable.
+    _authorizer: Optional[MousePosition.Authorizer | AuthorizerRule] = None
+
     def authorizer(self):
-        return allow()
+        if self._authorizer:
+            return self._authorizer
+        else:
+            return allow_if(any=[is_app_internal, has_verified_token])
 
     async def Update(
         self,
@@ -258,9 +283,66 @@ class MousePositionServicer(MousePosition.singleton.Servicer):
         return PositionResponse(left=state.left, top=state.top)
 
 
+PRESENCE_LIBRARY_NAME = "reboot.std.presence.v1.presence"
+
+
+class PresenceLibrary(Library):
+    name = PRESENCE_LIBRARY_NAME
+
+    def __init__(
+        self,
+        presence_authorizer: Optional[Presence.Authorizer |
+                                      AuthorizerRule] = None,
+        subscriber_authorizer: Optional[Subscriber.Authorizer |
+                                        AuthorizerRule] = None,
+        mouse_position_authorizer: Optional[MousePosition.Authorizer |
+                                            AuthorizerRule] = None,
+        authorizer: Optional[AuthorizerRule] = None,
+    ):
+        if authorizer is not None:
+            assert (
+                presence_authorizer is None and
+                subscriber_authorizer is None and
+                mouse_position_authorizer is None
+            ), (
+                "If `authorizer` as an `AuthorizerRule` is supplied, it will "
+                "be applied to all three servicers. To specify a specific "
+                "authorizers for each servicer, please use pass in "
+                "`presence_authorizer`, `subscriber_authorizer` and "
+                "`mouse_position_authorizer`."
+            )
+            PresenceServicer._authorizer = authorizer
+            SubscriberServicer._authorizer = authorizer
+            MousePositionServicer._authorizer = authorizer
+        else:
+            PresenceServicer._authorizer = presence_authorizer
+            SubscriberServicer._authorizer = subscriber_authorizer
+            MousePositionServicer._authorizer = mouse_position_authorizer
+
+    def servicers(self):
+        return [PresenceServicer, SubscriberServicer, MousePositionServicer]
+
+
 def servicers():
     return [
         PresenceServicer,
         SubscriberServicer,
         MousePositionServicer,
     ]
+
+
+def presence_library(
+    presence_authorizer: Optional[Presence.Authorizer | AuthorizerRule] = None,
+    subscriber_authorizer: Optional[Subscriber.Authorizer |
+                                    AuthorizerRule] = None,
+    mouse_position_authorizer: Optional[MousePosition.Authorizer |
+                                        AuthorizerRule] = None,
+    authorizer: Optional[AuthorizerRule] = None,
+) -> PresenceLibrary:
+
+    return PresenceLibrary(
+        presence_authorizer,
+        subscriber_authorizer,
+        mouse_position_authorizer,
+        authorizer,
+    )
