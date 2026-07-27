@@ -114,9 +114,14 @@ api = API(
 Build reactive backends with React frontends — great as a full-page extension
 of your AI chat app, or as a standalone web app.
 
-- [TypeScript Quickstart](https://docs.reboot.dev/full_stack_apps/typescript)
 - [Python Quickstart](https://docs.reboot.dev/full_stack_apps/python)
+- [TypeScript Quickstart](https://docs.reboot.dev/full_stack_apps/typescript)
 - [Full-stack Examples](https://docs.reboot.dev/full_stack_apps/examples)
+
+TypeScript backend support is in alpha: the core of Reboot works in
+both languages, but some features — including MCP apps, `UI` methods,
+the built-in OAuth sign-in flow, and durable agents — are currently
+Python-only. If you don't have a strong preference, start with Python.
 
 ## Key features
 
