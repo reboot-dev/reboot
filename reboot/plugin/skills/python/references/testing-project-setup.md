@@ -61,11 +61,21 @@ needs a `pip install -e .`:
 pythonpath=
   src/
   api/
+  ../api/
 ```
+
+**Three entries, not two.** `src/` and `api/` cover your servicers
+and the generated `_rbt` modules, but tests also import the
+hand-written API definition itself — the typed errors and models —
+as `from <pkg>.v1.<name> import QuotaExceededError`, and that module
+lives in the project-root `api/` directory, one level up from
+`backend/`. Leave `../api/` out and the suite fails at import with
+`ModuleNotFoundError: No module named '<pkg>.v1.<name>'`, which
+looks like a codegen failure but is a path problem.
 
 If the layout uses `backend/src` from the project root instead of
 running pytest from `backend/`, adjust the paths accordingly (e.g.
-`pythonpath = backend/src backend/api`).
+`pythonpath = backend/src backend/api api`).
 
 ## `conftest.py` — Only When Needed
 

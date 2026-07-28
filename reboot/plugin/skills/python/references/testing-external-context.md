@@ -139,6 +139,38 @@ with self.assertRaises(Aborted):
     await other_cart.get_cart(other_context)
 ```
 
+## Asserting a Live Update — `reactively()`
+
+A "another session sees the change without refreshing" story is
+tested with `reactively()`, the same push-based subscription the
+generated React hooks use. `Type.ref(id).reactively().<reader>(context)`
+returns an **async iterator** that yields a fresh response on every
+state change; `anext()` pulls the next one. Never poll in a loop
+with `asyncio.sleep` — that tests the sleep, not the reactivity.
+
+```python
+# The "other browser session" subscribes...
+subscription = TaskList.ref(list_id).reactively().get(bob)
+first = await asyncio.wait_for(anext(subscription), timeout=10)
+self.assertEqual(first.tasks, [])
+
+# ...another session writes...
+await TaskList.ref(list_id).add_task(alice, title="Milk")
+
+# ...and the subscription is pushed the update.
+while True:
+    update = await asyncio.wait_for(anext(subscription), timeout=10)
+    if len(update.tasks) == 1:
+        break
+self.assertEqual(update.tasks[0].title, "Milk")
+```
+
+Two details that make the difference between a passing and a
+flaky test: always wrap `anext()` in `asyncio.wait_for` so a
+missing update fails fast instead of hanging the suite, and loop
+until the state you expect rather than asserting on the very next
+yield — a subscription may deliver an intermediate snapshot first.
+
 ## Waiting for Spawned Tasks and Workflows
 
 When a method spawns a task (via `schedule(...).method(context)`

@@ -7,9 +7,16 @@ tags: react, app-tsx, hooks, useType, css-module, snake-camel, app-tsx-example, 
 
 ## React App.tsx — Generated Hooks and Component Patterns
 
-`frontend/mcp/<ui-name>/App.tsx` is the React component for one UI. The
-generated `use<Type>()` hook returns reader subscriptions and
-mutation functions:
+`frontend/mcp/<ui-name>/App.tsx` is the React component for one UI.
+
+> **The generated client contract is shared with web apps** — the
+> `use<Type>()` overloads, the `Use<Type>Api` surface, the three
+> fields a reader returns, why mutations resolve to
+> `{ response, aborted }` instead of throwing, and the typed error
+> classes are all in
+> [`python/references/react-generated-client.md`](../../python/references/react-generated-client.md).
+> Read that for the shapes; this file covers what is specific to a
+> UI rendered inside an MCP host.
 
 ```tsx
 import { useCounter } from "@api/<pkg>/v1/<name>_rbt_react";
@@ -17,12 +24,12 @@ import { useCounter } from "@api/<pkg>/v1/<name>_rbt_react";
 // useCounter() connects to the Counter state instance.
 const counter = useCounter();
 
-// Reader (WebSocket subscription, auto-updates):
-const { response, isLoading } = counter.useGet();
+// Reader (a live subscription — pushed on every change):
+const { response } = counter.useGet();
 const value = response?.value ?? 0;
 
-// Writer (direct call to Reboot backend):
-await counter.increment({ amount: 1 });
+// Mutation (resolves to `{ response, aborted }` — it never throws):
+const { aborted } = await counter.increment({ amount: 1 });
 ```
 
 For list state, the same pattern applies — use the generated hook for
@@ -70,13 +77,6 @@ follow-up read or to follow a navigation chain to another
 entity of the same Type), `useMcpToolData()` from
 `@reboot-dev/reboot-react` returns the raw `{ids, ...}` object
 the framework received.
-
-## Naming Convention: snake_case → camelCase
-
-The generated React bindings convert Python snake_case field names
-to TypeScript camelCase. Python `from_index` becomes TypeScript
-`fromIndex`. Same for every snake_case field name on every Request
-or Response Model.
 
 ## Generated React Imports
 

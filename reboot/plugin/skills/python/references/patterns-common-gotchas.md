@@ -240,3 +240,51 @@ been deployed can make it fail to boot ("Updated state or method
 definitions are not backwards compatible") and get its deploy
 rejected. Read `api-schema-evolution.md` for the rules you must
 follow before changing such an API.
+
+### 20. A `ref()` Belongs to One Context — `MixedContextsError`
+
+**Reusing a ref for many calls on the same context is fine** — hold
+it in a local and call it as often as you like:
+
+```python
+task_list = TaskList.ref(list_id)
+await task_list.add_task(context, title="Milk")
+await task_list.toggle_task(context, task_id=task_id)
+snapshot = await task_list.get(context)      # All fine.
+```
+
+What is not allowed is carrying that same ref object across to a
+**different** context. `Type.ref(id)` binds to the first `Context`
+it is used with (it carries that context's idempotency manager), so
+a ref stashed on `self`, hoisted to a module constant, or shared
+between two test contexts raises `MixedContextsError` — on readers
+as well as mutations, and regardless of the id being identical:
+
+```python
+# Wrong — one ref object, two contexts.
+shared = TaskList.ref(list_id)
+await shared.get(alice)
+await shared.get(alice2)     # MixedContextsError, even for the
+                             # same user and the same list id.
+
+# Right — a fresh ref per context; `ref()` is cheap.
+await TaskList.ref(list_id).get(alice)
+await TaskList.ref(list_id).get(alice2)
+```
+
+The error names the fix directly: "Instead create a new
+`WeakReference` for every `Context`."
+
+### 21. The State Type Named `User` Is Auto-Constructed
+
+A state type literally named `User` is special: when
+`Application(oauth=...)` is configured, Reboot auto-constructs one
+`User` actor per signed-in identity, whose state id **is** the
+`context.auth.user_id`, on first access. Do not write a sign-up
+method that creates it, do not pass an id to `useUser()` in the
+browser, and do not construct it in tests — impersonating a user
+with `await rbt.create_external_context_as(name, user_id)` is enough
+for `User.ref(user_id)` to resolve. The auto-construction happens
+only under `oauth=`; an app with a `User` type and no `oauth=` fails
+to start. Other state types are constructed explicitly, by their
+factory `create`.

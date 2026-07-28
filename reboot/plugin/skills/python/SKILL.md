@@ -478,6 +478,12 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/testing-harness.md`
 - `references/testing-external-context.md`
 
+**Frontend** (shared by `web-app` and `chat-app`):
+
+- `references/react-generated-client.md` — what
+  `rbt generate --react=` emits: hook overloads, `Use<Type>Api`,
+  reader/mutation return shapes, typed errors, naming rules.
+
 **Patterns** (`patterns-`):
 
 - `references/patterns-error-handling.md`

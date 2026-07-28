@@ -138,7 +138,7 @@ warn_unused_configs = True
 # Find modules in our source tree (and tests). Since `protoc` doesn't
 # generate `__init__.py` files, treat these as explicit package bases:
 #   https://mypy.readthedocs.io/en/stable/running_mypy.html#mapping-file-paths-to-modules
-mypy_path = backend/tests:backend/src:backend/api
+mypy_path = backend/tests:backend/src:backend/api:api
 explicit_package_bases = True
 
 # Stricter than the default, but cheap to adhere to and high value.
@@ -157,10 +157,24 @@ ignore_missing_imports = True
 
 # The generated `*_rbt.py` for your API package is not hand-written;
 # don't type-check it (you never edit it anyway). Repeat per package.
-[mypy-<pkg>.v1.*]
+# Name the generated module specifically — a blanket `<pkg>.v1.*`
+# would also silence your own `api/<pkg>/v1/<name>.py`, and with it
+# every state and request model your code is annotated with.
+[mypy-<pkg>.v1.<name>_rbt]
 ignore_errors = True
 ignore_missing_imports = True
 ```
+
+**Both details in that file are load-bearing.** The project-root
+`api/` entry in `mypy_path` is what lets mypy resolve the
+hand-written pydantic API module, and the narrow ignore stanza is
+what stops it being silenced again. Get either wrong and
+`from <pkg>.v1.<name> import <X>State` quietly resolves to `Any`:
+mypy still reports "Success", but every annotation mentioning a
+state or request model checks nothing, and a misspelled field on
+`state` sails through to a test failure. A quick way to confirm the
+config is live: add a bogus attribute access on a state model and
+check that mypy reports `has no attribute`.
 
 ## Always Type-Check What You Write
 
