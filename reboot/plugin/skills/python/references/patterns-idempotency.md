@@ -72,3 +72,47 @@ Reboot may retry transactions internally. Don't write transaction code
 that depends on running exactly once — every action inside a transaction
 should be idempotent at the level of "the same input produces the same
 state change once committed".
+
+## Uncertain Mutations — `IdempotencyUncertainError`
+
+When a mutation call raises, the client has to decide whether the
+mutation actually happened on the server. It can only be sure when
+the exception is **definitively from the backend**: an `Aborted`
+carrying an error the method _declared_. Those are recoverable — a
+caller can catch one and the transaction still commits.
+
+Anything else (a transport failure, a cancellation, an undeclared
+error) leaves the client genuinely unable to tell, so it marks the
+context as having an **uncertain mutation**. The next mutation you
+make from that same context _without_ an idempotency key then
+fails with `IdempotencyUncertainError`:
+
+> Because we don't know if the mutation from calling `X` of state
+> `'…'` failed or succeeded AND you've made some NON-IDEMPOTENT
+> mutations we can't reliably determine whether or not the call to
+> `Y` … is due to a retry which may cause an undesired mutation
+
+It is not complaining about the call it refused — it is refusing
+because an _earlier_ call left the context uncertain.
+
+Two consequences worth knowing before you meet them:
+
+- **Asserting a declared error is safe.** A test that does
+  `with self.assertRaises(TaskList.AddTaskAborted)` on a method
+  that declares `QuotaExceededError` creates no uncertainty, and
+  the context stays usable for the assertions that follow.
+- **Retrying a mutation yourself requires an idempotency key.**
+  Any hand-written retry loop, and any mutation issued after a
+  cancelled or transport-failed one, must carry
+  `.idempotently("alias")` or an explicit `key=`:
+
+  ```python
+  await TaskList.ref(list_id).idempotently("Add the first task").add_task(
+      context, title="Milk",
+  )
+  ```
+
+  The alias must be unique within the lifetime of the context —
+  reusing one is how you tell Reboot "this is the same logical
+  mutation", which is exactly right for a retry and exactly wrong
+  for two different additions.

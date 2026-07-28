@@ -126,7 +126,6 @@ A rule's `execute` returns one of three outcomes:
 
 ## One Authorizer per Servicer
 
-`def authorizer(self)` returns a single rule that applies to every
-method on the Servicer. Per-method differentiation (e.g. allow reads
-but gate writes) requires a custom authorizer subclass — see
-`auth-custom-predicates.md`.
+One rule covers every method on the Servicer; see
+`servicer-authorizer.md` for what to do when methods need
+different rules.

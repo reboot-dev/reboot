@@ -54,7 +54,7 @@ README for the manual install, team auto-enable, and the Codex
 - Adding features, state, or UI to an existing Reboot AI Chat App
 - Modifying state model, methods, or React UI in a Reboot AI Chat App
 - Running an existing Reboot AI Chat App — e.g. at the start of a
-  new session. This needs no Plan or Build phase: load the
+  new session. This needs no design or build phase: load the
   [`run` skill](../run/SKILL.md), which detects the app type,
   starts the backend and frontend, and opens the setup wizard (from
   which the user can launch MCPJam on demand).
@@ -155,19 +155,17 @@ they cover aren't restated inline below.
 | [`references/auth-custom-oauth-provider.md`](references/auth-custom-oauth-provider.md) | **Writing your own OAuth provider** when none of the shipped ones fits (self-hosted Keycloak, internal SSO, an IdP Auth0 can't broker): subclass `RegisteredOAuthProvider`, implement `authorization_url` + `exchange_code` → `ExchangeResult` (the user id must be **stable** — it becomes `context.auth.user_id`), the `validate()` / `mount_routes()` hooks, and `token_service_id` + `OAuthTokens` for `store_tokens=True` support.                                                                                                                                                                                                                                                                                                                                                                         |
 | [`references/auth-store-tokens.md`](references/auth-store-tokens.md)                   | **Acting on the user's behalf** at an external service — the built-in `store_tokens=True` shortcut (works on any `oauth=` surface, web apps included): when the API belongs to your `Application(oauth=...)` identity provider, add extra OAuth `scopes=[...]` + `store_tokens=True` (needs `oauth_library()` + `ciphertext_library()` + `ordered_map_library()`) and the server captures its tokens. Reboot stores **the provider's own tokens only** (an `Auth0` sign-in stores an Auth0 token, not the upstream Google token). The full host-agnostic recipe — custom OAuth endpoints for any _other_ service, reading tokens back, calling the API **inside a `Workflow`**, refresh tokens, erasure — is [`python/references/auth-external-api-calls.md`](../python/references/auth-external-api-calls.md). |
 
-## Workflow: Plan First, Then Build
+## Workflow: Settle the Design, Then Build
 
-**Always plan the design and get approval before writing code.** The
-state model is the foundation — getting entities, field types, or
-method types wrong means regenerating everything across 12+ files.
+**Always settle the design before writing code.** The state model
+is the foundation — getting entities, field types, or method types
+wrong means regenerating everything across 12+ files.
 
-### Plan Phase
+### Design Phase
 
 1. Analyze the user's description using the State Model Assessment
    below.
-2. Begin a plan for the user to approve (in Claude Code, enter plan
-   mode; in Codex, present the plan and wait for the go-ahead).
-3. Present the proposed design:
+2. State the design you are about to build:
    - `User` type and its methods (the MCP front door for creating new
      application-type instances and locating existing ones).
    - Application types: state shape (fields, types, tags).
@@ -179,20 +177,19 @@ method types wrong means regenerating everything across 12+ files.
      main user story — and most of them ending on a turn that
      renders a `UI()` component, not just a tool call (see
      "Example Prompts" under Key Framework Concepts).
-4. Get user approval before writing any files.
-5. Then execute the Step-by-Step Build Flow.
+3. Then execute the Step-by-Step Build Flow.
 
-For updates to existing apps, still plan: read current state, propose
-changes, confirm, then modify.
+For updates to existing apps, still work the design first: read
+current state, state the changes, then modify.
 
-### Writing the Plan for Human Review
+### Writing the Design for a Human Reader
 
-The plan is read by a **human who has not read the skill files**.
-They are evaluating the design — entities, collections, methods,
-auth — not verifying that you followed the skill. Write so the
-plan stands on its own.
+The design is read by a **human who has not read the skill files**.
+They are judging the design — entities, collections, methods,
+auth — not verifying that you followed the skill. Write so it
+stands on its own.
 
-**Don't quote skill-internal terms** when presenting the plan.
+**Don't quote skill-internal terms** when presenting the design.
 They mean nothing outside this skill:
 
 - `Shape A` / `Shape B` / `Shape C` — name the actual data
@@ -240,7 +237,7 @@ Nested model reasoning — GOOD:
 > own state actors because they have no lifecycle, methods, or
 > auth independent of the Person they belong to.
 
-**Escape hatch.** When the precise type name _is_ what the user
+**Escape hatch.** When the precise type name _is_ what the reader
 needs to see ("I'm proposing `OrderedMap` here, not `list[str]`"),
 name the type — but pair it with the plain-English reason in the
 same sentence. The rule is "no bare jargon", not "no technical
@@ -545,7 +542,7 @@ triggers a `UI()` method — phrase that turn as a natural "show me
 example, the "…and show me the counter" / "show me the wins counter"
 turns are exactly this: they resolve to the `Counter` UI and render the
 live component, not just a text reply. When you write the set, look at
-the method map from the plan: for each `UI()` method, make sure at
+the method map from the design: for each `UI()` method, make sure at
 least one example drives the user to it.
 
 They live in `backend/src/example_prompts.py` and are passed to
@@ -595,8 +592,7 @@ a worked set are in
 
 ## Step-by-Step Build Flow
 
-**Only execute after plan approval. All commands run from the
-application directory.**
+**All commands run from the application directory.**
 
 1. Create `.python-version`, `pyproject.toml`, `.rbtrc`, and
    `.mypy.ini` — see
@@ -629,7 +625,7 @@ application directory.**
 11. `cd frontend && npm run build`.
 12. **Write and run backend unit tests covering each user-facing
     user story before handing the app off.** Enumerate the user
-    stories from the plan — every action the user should be able
+    stories from the design — every action the user should be able
     to _do_ through the MCP tool surface (e.g. "create a new
     todo list", "add an item and see it listed", "rename a
     list"). Write one test method per user story in
