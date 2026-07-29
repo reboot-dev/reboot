@@ -3,8 +3,9 @@ id: overview
 slug: /
 ---
 
-import Link from "@docusaurus/Link";
 import { Card, CardSection } from "../src/components/Cards";
+import ClaudeLogo from "../static/img/claude-logo.svg";
+import CodexLogo from "../static/img/codex-logo.svg";
 import PythonLogo from "../static/img/python-logo.svg";
 import TSLogo from "../static/img/ts-logo.svg";
 
@@ -12,14 +13,44 @@ import TSLogo from "../static/img/ts-logo.svg";
 
 <div style={{ fontSize: "1.2rem" }}>
   Reboot lets you build stateful, multiplayer apps on a durable
-  backend. Build AI chat apps that run inside ChatGPT, Claude, and
-  VS Code, or full-stack web apps with React frontends.
+  backend. Build full-stack web apps with React frontends, or AI
+  chat apps that run inside ChatGPT, Claude, and VS Code.
 </div>
 
 ## Where your app runs
 
 The same backend, two different ways to reach your users. Pick a starting
 point:
+
+### As a full-stack web app
+
+<CardSection
+  id="full-stack-apps"
+  description="A reactive Reboot backend behind a standalone React
+  frontend, on its own or as a full-page extension of your chat
+  app."
+>
+  <Card
+    title="Get Started (Claude Code)"
+    to="/full_stack_apps/get_started_claude_code"
+    icon={<ClaudeLogo />}
+  />
+  <Card
+    title="Get Started (Codex)"
+    to="/full_stack_apps/get_started_codex"
+    icon={<CodexLogo />}
+  />
+  <Card
+    title="Get Started (Python)"
+    to="/full_stack_apps/python"
+    icon={<PythonLogo />}
+  />
+  <Card
+    title="Get Started (TypeScript)"
+    icon={<TSLogo />}
+    to="/full_stack_apps/typescript"
+  />
+</CardSection>
 
 ### Inside an AI chat
 
@@ -33,44 +64,21 @@ point:
     to="/ai_chat_apps/what_is"
   />
   <Card
+    title="Get Started (Claude Code)"
+    to="/ai_chat_apps/get_started_claude_code"
+    icon={<ClaudeLogo />}
+  />
+  <Card
+    title="Get Started (Codex)"
+    to="/ai_chat_apps/get_started_codex"
+    icon={<CodexLogo />}
+  />
+  <Card
     title="Get Started (Python)"
     to="/ai_chat_apps/get_started"
     icon={<PythonLogo />}
   />
 </CardSection>
-
-<div style={{ fontSize: "0.9rem", marginTop: "-2rem" }}>
-  Prefer to build with an AI coding agent? Get started with{" "}
-  <Link to="/ai_chat_apps/get_started_claude_code">Claude Code</Link>{" "}
-  or <Link to="/ai_chat_apps/get_started_codex">Codex</Link>.
-</div>
-
-### As a full-stack web app
-
-<CardSection
-  id="full-stack-apps"
-  description="A reactive Reboot backend behind a standalone React
-  frontend, on its own or as a full-page extension of your chat
-  app."
->
-  <Card
-    title="Get Started (Python)"
-    to="/full_stack_apps/python"
-    icon={<PythonLogo />}
-  />
-  <Card
-    title="Get Started (TypeScript)"
-    icon={<TSLogo />}
-    to="/full_stack_apps/typescript"
-  />
-</CardSection>
-
-<div style={{ fontSize: "0.9rem", marginTop: "-2rem" }}>
-  <Link to="/full_stack_apps/typescript">TypeScript backend support</Link>{" "}
-  is in <strong>alpha</strong>, and some features are still
-  Python-only. If you don't have a strong preference, start with
-  Python.
-</div>
 
 ### Examples
 
@@ -79,11 +87,11 @@ point:
   description="A variety of examples demonstrating Reboot in action."
 >
   <Card
-    title="AI Chat App Examples"
-    to="/ai_chat_apps/examples"
-  />
-  <Card
     title="Full-stack Examples"
     to="/full_stack_apps/examples"
+  />
+  <Card
+    title="AI Chat App Examples"
+    to="/ai_chat_apps/examples"
   />
 </CardSection>
