@@ -57,7 +57,7 @@ This file defines the rule categories for Reboot Python best practices. Rules ar
 ## 11. Testing (testing)
 
 **Impact:** LOW-MEDIUM
-**Description:** The `Reboot()` test harness, `rbt.up(Application(...))`, and `create_external_context` for issuing calls in tests.
+**Description:** The `Reboot()` test harness, `rbt.up(Application(...))`, and `create_external_context` for issuing calls in tests, plus restarting the app under test with `rbt.down()` / `rbt.up(revision=...)` to exercise recovery from failures.
 
 ## 12. Patterns (patterns)
 

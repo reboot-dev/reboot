@@ -66,6 +66,128 @@ os.environ["MAILGUN_API_KEY"] = MAILGUN_API_KEY
 
 <!-- MARKDOWN-AUTO-DOCS:END -->
 
+#### Testing recovery from failures
+
+The test harness can take your application down and bring it back
+up, so you can test how your app recovers from a failure:
+`rbt.up(...)` returns an `ApplicationRevision`, and passing it back
+to `rbt.up()` restores the same application.
+
+```py
+revision = await self.rbt.up(Application(servicers=[OrderServicer]))
+
+context = self.rbt.create_external_context(name=f"test-{self.id()}")
+order = Order.ref(f"order-{self.id()}")
+await order.place(context, sku="ABC", quantity=2)
+
+# The process dies...
+await self.rbt.down()
+
+# ...and comes back.
+await self.rbt.up(revision=revision)
+```
+
+:::tip Test in-flight work, not plain durability
+
+Committed state surviving a restart is Reboot's own guarantee, so a
+test that only asserts "the data is still there" afterwards is
+testing Reboot rather than your application. What's worth testing is
+what your app had **in flight** when the process died — a
+[task](/learn_more/tasks) half-run, a
+[workflow](/learn_more/implement/workflows) between steps, an effect
+that must happen exactly once — and the invariants a partial
+recovery could break: a counter that must not double-count, a
+payment that must not go out twice.
+
+:::
+
+A few rules the harness enforces:
+
+* Call `down()` before a second `up()`; bringing up an application
+  that is already up raises a `ValueError`.
+* `down()` stops the servers, while `rbt.stop()` tears down the
+  harness itself — your `asyncTearDown` still calls `stop()`.
+* While the app is down, don't `await` a unary call from the test's
+  context. An
+  [`ExternalContext`](/learn_more/call/from_outside_your_app) is the
+  one context type that retries individual calls, and it retries
+  `Unavailable` with no attempt limit — so the call waits for the app
+  to come back instead of failing.
+
+##### Failing inside a method, not between calls
+
+A restart _between_ two calls only exercises a boundary the app
+would survive anyway. To make the failure land in the middle of a
+method — half a workflow done, a task picked up but unfinished —
+replace that method with one that blocks until the test has taken
+the app down:
+
+```py
+async def test_fulfillment_survives_a_crash_mid_flight(self) -> None:
+    reached_mark_paid = asyncio.Event()
+    app_is_down = asyncio.Event()
+
+    # `mark_paid` is the writer the `fulfill` workflow calls once the
+    # payment goes through.
+    original_mark_paid = OrderServicer.mark_paid
+
+    async def stalling_mark_paid(self, context, request):
+        reached_mark_paid.set()
+        # Hold the method open until the test kills the app.
+        await app_is_down.wait()
+        return await original_mark_paid(self, context, request)
+
+    with mock.patch(
+        "servicers.orders.OrderServicer.mark_paid", stalling_mark_paid
+    ):
+        revision = await self.rbt.up(
+            Application(servicers=[OrderServicer])
+        )
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}"
+        )
+
+        order = Order.ref(f"order-{self.id()}")
+        await order.place(context, sku="ABC", quantity=2)
+        task = await order.spawn().fulfill(context)
+
+        # Wait until the app is provably inside `mark_paid`.
+        await reached_mark_paid.wait()
+
+        await self.rbt.down()
+        app_is_down.set()
+
+        await self.rbt.up(revision=revision)
+
+        # The workflow was picked back up and ran to completion.
+        await task
+
+    # The payment was recorded exactly once, despite the crash.
+    response = await order.get(context)
+    self.assertEqual(len(response.payments), 1)
+```
+
+The two `asyncio.Event`s are what make this deterministic instead of
+a `sleep` race: one proves the app reached the method before the
+kill, the other releases the method only afterwards.
+
+Assert on the **state** the work produced — one payment recorded, a
+balance that moved once — rather than on how many times a method
+body ran. In unit tests Reboot enables **effect validation**, which
+deliberately re-executes writer and transaction bodies to catch
+bodies that aren't safe to re-run, so a counter incremented inside a
+writer reports more calls than the test made. If a test really must
+count those invocations, disable it for that test:
+
+```py
+from reboot.aio.contexts import EffectValidation
+
+revision = await self.rbt.up(
+    Application(servicers=[OrderServicer]),
+    effect_validation=EffectValidation.DISABLED,
+)
+```
+
 ### TypeScript
 
 For TypeScript, you can use the `Reboot` class from the `@reboot-dev/reboot` package to start your servicer,

@@ -372,6 +372,10 @@ with "unknown actor type."
 - `references/testing-external-context.md` — `create_external_context`,
   asserting on `<Method>Aborted`, waiting on tasks/workflows, mocking
   external services / LLMs, one-test-per-user-story
+- `references/testing-failure-recovery.md` — restarting the app under
+  test with `rbt.down()` / `rbt.up(revision=...)`, landing the crash
+  inside a method with a stalling mock, and asserting work happened
+  exactly once across it
 
 ### Type-checking (do this after every change)
 
@@ -488,6 +492,7 @@ above lists the right ones grouped by task type. The full catalog:
 - `references/testing-project-setup.md`
 - `references/testing-harness.md`
 - `references/testing-external-context.md`
+- `references/testing-failure-recovery.md`
 
 **Frontend** (shared by `web-app` and `chat-app`):
 

@@ -232,10 +232,13 @@ under Key Framework Concepts):
   reads the ID from the URL; a shared `rbt_session` keeps the user
   signed in across surfaces.
 
-**Before the tests:** the three `python/references/testing-*.md`
+**Before the tests:** the four `python/references/testing-*.md`
 files, plus `python/references/patterns-idempotency.md` — it
 explains `IdempotencyUncertainError`, which is otherwise the one
 runtime error whose cause is not in any reference you have read.
+`testing-failure-recovery.md` is the one to read whenever the app
+has a spawned task, a `Workflow`, or `schedule()`d work: it covers
+restarting the app under test and asserting that work survived.
 
 **Before running the app:** the [`run` skill](../run/SKILL.md).
 
