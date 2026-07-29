@@ -27,7 +27,7 @@ backend is the API server; any UI is deployed separately). Matches
 verbatim:
 
 ```dockerfile
-FROM ghcr.io/reboot-dev/reboot-base:1.3.0
+FROM ghcr.io/reboot-dev/reboot-base:1.4.0
 
 WORKDIR /app
 
