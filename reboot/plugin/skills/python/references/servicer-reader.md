@@ -45,11 +45,12 @@ class ChatRoomServicer(ChatRoom.Servicer):
 
 ## Method Signature Matches the API File
 
-The Servicer method name matches the entry name in the
-`Methods(...)` block exactly. Arguments are `(self, context)` when
-`request=None`, or `(self, context, request)` when a request type
-was bound, and the return type is the declared response (`None` if
-`response=None`).
+The signature codegen obliges — the base class to subclass, the
+`request=None` / `response=None` variants, and the two lookalike
+shapes you will find if you grep the generated `*_rbt.py` — is in
+`api-methods.md` ("The Servicer Signature Each Declaration
+Obliges"). Reading it is cheaper than opening the generated file,
+and complete.
 
 ## Readers Run Concurrently
 

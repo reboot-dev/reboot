@@ -1502,6 +1502,9 @@ wraps the underlying model call in `at_least_once` for you. The
 
 ## Related
 
+- `api-methods.md` — "The Servicer Signature Each Declaration
+  Obliges": the exact shape codegen requires, `@classmethod` and
+  `cls` included. Read it instead of the generated `*_rbt.py`.
 - `agent-pydantic-ai.md` / `agent-tools.md` — backend LLM calls and
   AI agents via the durable Reboot `Agent`.
 - `api-methods.md` — the `Workflow(...)` factory and `errors=[...]`.

@@ -198,7 +198,9 @@ at the frontend step; don't reconstruct it from memory here.
 
 Everything you read stays in the conversation and is re-sent on
 every later turn, so **read each reference at the step that needs
-it**, not all of them up front. The tiers below are in build order.
+it** — not all of them up front — and read each one **once**. The
+groups below are in build order, and each reference appears in
+exactly one of them — the step that needs it.
 
 > **Never read `chat-app/references/*` for a web app.** They cover
 > the MCP surface — `UI()` artifacts, the MCPJam inspector, the
@@ -211,96 +213,52 @@ it**, not all of them up front. The tiers below are in build order.
 > [chat-app/references/auth-oauth-providers.md](../chat-app/references/auth-oauth-providers.md),
 > which is surface-neutral: read it when you pick a real provider.
 
-**Tier 0 — before you write the API definition:**
+**Before the API definition:**
 
 - `python/references/patterns-common-gotchas.md` — recurring trips
   (`self.ref().state_id`, kwargs convention, a `ref()` belongs to
-  one context, the auto-constructed `User` type, etc.).
+  one context, the auto-constructed `User` type, `--name` vs.
+  `--application-name`).
 - `python/references/api-pydantic.md` — pydantic API rules (every
   Field needs a zero-value default; non-Optional `Model`-typed
   fields can't take defaults).
 - `python/references/api-methods.md` — factory → context type
   mapping (Reader/Writer/Transaction/Workflow).
-- `python/references/state-collections.md` — when the app has any
-  "list of X" concept.
-
-**Tier 1 — before you write the servicer:** the
-`python/references/servicer-*.md` file for each context type you
-actually declared, plus `python/references/api-errors.md` if the
-API declares typed errors, and `rpc-refs.md` / `rpc-calls.md`.
-
-**Tier 2 — before you write the frontend:**
-[`references/react-client.md`](references/react-client.md) for the
-web shell, backend URL, and sign-in, plus
-`python/references/react-generated-client.md` for the generated
-hook/mutation/error shapes.
-
-**Tier 3 — before you write tests:** the three
-`python/references/testing-*.md` files, plus
-`python/references/patterns-idempotency.md` — it explains
-`IdempotencyUncertainError`, which is otherwise the one runtime
-error whose cause is not in any reference you have read.
-
-**Tier 4 — before you run the app:** the
-[`run` skill](../run/SKILL.md).
-
-Read a reference **once**. If you find yourself grepping the
-framework's installed source or a generated file to answer a
-question, see "When the Skills Don't Answer It" below — do not
-explore it in the main conversation.
-
-The rest of this section is what each reference covers.
-
-**Always relevant:**
-
-- `python/references/patterns-common-gotchas.md` — recurring trips
-  (`self.ref().state_id`, kwargs convention, `--name` vs.
-  `--application-name`, etc.).
-- `python/references/api-pydantic.md` — pydantic API rules (every
-  Field needs a zero-value default; non-Optional `Model`-typed
-  fields can't take defaults).
-
-**Defining the API:**
-
-- `python/references/api-methods.md` — factory → context type
-  mapping (Reader/Writer/Transaction/Workflow).
-- `python/references/api-errors.md` — typed errors.
-- `python/references/state-collections.md` — **always read when
-  the app has any "list of X" concept.** Decides whether each X
-  should be its own state `Type` (most of the time, yes) and picks
-  between in-state `list[Sub]`, in-state `list[str]` of foreign
-  IDs, or an `OrderedMap` of foreign IDs. The trap is
-  defaulting to `list[Todo]`/`list[Document]`/etc. on one parent
-  for entity collections — see Step 1 of that reference.
+- `python/references/api-errors.md` — typed errors, when the API
+  declares any.
+- `python/references/state-collections.md` — **always read when the
+  app has any "list of X" concept.** Decides whether each X should
+  be its own state `Type` (most of the time, yes) and picks between
+  in-state `list[Sub]`, in-state `list[str]` of foreign IDs, or an
+  `OrderedMap` of foreign IDs. The trap is defaulting to
+  `list[Todo]`/`list[Document]`/etc. on one parent for entity
+  collections — see Step 1 of that reference.
 - `python/references/state-nested-models.md` — the same rule from
   the nested-`Model` angle.
 
-**Implementing Servicers:**
+**Before the project shell** (`.rbtrc`, `pyproject.toml`,
+`.mypy.ini`, `main.py`):
 
-- `python/references/servicer-{reader,writer,transaction,constructor,authorizer}.md` — one per context type.
+- `python/references/lifecycle-{project-setup,rbtrc,application-entry,initialize-hook}.md` — the canonical layout, the CLI flags, the
+  `Application(...)` constructor, the `initialize` hook.
+
+**Before the servicer:**
+
+- `python/references/servicer-{reader,writer,transaction,constructor}.md` — one per context type you actually declared.
 - `python/references/rpc-refs.md` — `self.ref().state_id` (never
   `self.state_id`); `self.ref().schedule(...)`.
-- `python/references/rpc-calls.md` — kwargs not Request wrappers.
+- `python/references/rpc-calls.md` — kwargs, not Request wrappers.
 - `python/references/rpc-constructor-calls.md` —
   `Service.create(context, id)` semantics.
-
-**Workflows:**
-
-- `python/references/servicer-workflow.md` — the single,
-  comprehensive workflow reference. Read it top to bottom: the
-  `@classmethod` / `WorkflowContext` declaration shape, the
-  call-classification decision tree (Reboot scopes vs.
-  `at_least_once` vs. `at_most_once`), `context.loop`, inline state
-  writes,
+- `python/references/servicer-workflow.md` — only when you declared
+  a `Workflow`, and then top to bottom: the `@classmethod` /
+  `WorkflowContext` declaration shape, the call-classification
+  decision tree (Reboot scopes vs. `at_least_once` vs.
+  `at_most_once`), `context.loop`, inline state writes,
   `until` / `until_changes`, and workflow exit semantics.
 
-**Project shell:**
-
-- `python/references/lifecycle-{project-setup,rbtrc,application-entry,initialize-hook}.md` — the canonical layout,
-  the CLI flags, the `Application(...)` constructor, the
-  `initialize` hook.
-
-**Auth (browser users — see "Auth in Web Apps" below for the dev-vs-prod sequence):**
+**Before the authorizers** (browser users — see "Auth in Web Apps"
+above for the dev-vs-prod sequence):
 
 - `python/references/servicer-authorizer.md` — **start here**.
   Explains `oauth=` (the default) vs. `token_verifier=` (the
@@ -320,15 +278,29 @@ The rest of this section is what each reference covers.
   → read back + call inside a `Workflow`. Never a plain `str` token
   field.
 
-**Browser frontend:**
+**Before the frontend:**
 
 - [`references/react-client.md`](references/react-client.md) — the
-  `web/` shell (stock Vite config + the two `@reboot-dev` packages),
-  the backend URL (`VITE_REBOOT_URL` — the default detection
-  resolves to Vite's origin, not the backend's), the generated
-  `use<Type>()` hook surface, why mutations return
-  `{ response, aborted }` instead of throwing, and how a typed
-  backend error becomes a message the user sees.
+  `web/` shell (Vite config, including the `server.host` the browser
+  needs), the backend URL (`VITE_REBOOT_URL` — the default detection
+  resolves to Vite's origin, not the backend's), sign-in/sign-out,
+  and how a typed backend error becomes a message the user sees.
+- `python/references/react-generated-client.md` — what
+  `rbt generate --react=` emits: the `use<Type>()` overloads, the
+  three-field reader return, why mutations resolve to
+  `{ response, aborted }` instead of throwing, the typed error
+  classes, and the snake→camel naming rules.
+
+**Before the tests:** the three `python/references/testing-*.md`
+files, plus `python/references/patterns-idempotency.md` — it
+explains `IdempotencyUncertainError`, which is otherwise the one
+runtime error whose cause is not in any reference you have read.
+
+**Before running the app:** the [`run` skill](../run/SKILL.md).
+
+If you find yourself grepping the framework's installed source or a
+generated file to answer a question, the next section is for you —
+do not explore it in the main conversation.
 
 ## Never Read Generated or Installed Source in the Main Thread
 
@@ -549,7 +521,9 @@ Key differences from a `chat-app` layout:
    marker → context-type rules in
    `python/references/api-methods.md`. Do **not** add `mcp=Tool()`
    or `UI()` — those are chat-app only.
-4. `uv run rbt generate`.
+4. `uv run rbt generate`. Don't read what it wrote: the signature
+   your servicer must match is in `python/references/api-methods.md`
+   ("The Servicer Signature Each Declaration Obliges").
 5. Write the servicer (`backend/src/servicers/<name>.py`) —
    context-type patterns in `python/references/servicer-*.md`.
 6. Write `main.py` — `python/references/lifecycle-application-entry.md`.

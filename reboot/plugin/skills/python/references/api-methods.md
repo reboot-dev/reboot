@@ -64,6 +64,65 @@ BankMethods = Methods(
 )
 ```
 
+## The Servicer Signature Each Declaration Obliges
+
+`rbt generate` turns every `Methods(...)` entry into one method
+declaration on `<Type>.Servicer`, and the servicer you write must
+match it. The whole contract is these six lines — there is nothing
+further to learn by opening the generated `*_rbt.py`, which is tens
+of thousands of lines:
+
+```python
+class AnyNameServicer(<Type>.Servicer):    # subclass this alias
+
+    # `@classmethod`, for a `Workflow(...)` method only.
+    async def <entry_name>(                # snake_case, as declared
+        self,                              # `cls` for a `Workflow`
+        context: <Kind>Context,            # per the factory, above
+        request: <Type>.<Entry>Request,   # omitted if `request=None`
+    ) -> <Type>.<Entry>Response:          # `None` if `response=None`
+```
+
+`<Entry>` is the PascalCase form of the entry name: `add_task`
+declared on `Type("TaskList", ...)` gives `TaskList.AddTaskRequest` /
+`TaskList.AddTaskResponse`, while the method you write stays
+snake_case. So
+
+```python
+add_task=Transaction(
+    request=AddTaskRequest, response=AddTaskResponse, mcp=None,
+),
+lists=Reader(request=None, response=ListsResponse, mcp=None),
+ensure=Transaction(request=None, response=None, mcp=None),
+```
+
+obliges exactly:
+
+```python
+async def add_task(
+    self,
+    context: TransactionContext,
+    request: TaskList.AddTaskRequest,
+) -> TaskList.AddTaskResponse: ...
+
+async def lists(self, context: ReaderContext) -> User.ListsResponse: ...
+
+async def ensure(self, context: TransactionContext) -> None: ...
+```
+
+**Two shapes in the generated file look like contradictions of this.
+Both are real, and neither is what you write:**
+
+- A **PascalCase twin** of every method (`AddTask` next to
+  `add_task`) that delegates to the snake_case one. It keeps
+  servicers written before the snake_case rename working. Implement
+  the snake_case method.
+- A **`state:` parameter**, in signatures like
+  `(self, context, state, request)`. Those belong to
+  `<Type>.singleton.Servicer`, a variant the framework uses for its
+  own singletons. Applications subclass `<Type>.Servicer` and reach
+  state through `self.state`.
+
 ## `factory=True` Marks the Creation Method
 
 A `Writer` or `Transaction` with `factory=True` is the explicit

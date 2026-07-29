@@ -132,6 +132,10 @@ async def increment(
 
 ## See Also
 
+- `api-methods.md` — "The Servicer Signature Each Declaration
+  Obliges": the exact shape codegen requires, including the
+  `request=None` / `response=None` variants. Read it instead of
+  the generated `*_rbt.py`.
 - `rpc-refs.md` — `self.ref().state_id` (not `self.state_id`) for this
   actor's ID; `self.ref().schedule(...)` for self-scheduling.
 - `rpc-calls.md` — kwargs convention for calling other actors.
