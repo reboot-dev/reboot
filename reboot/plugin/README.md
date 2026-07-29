@@ -150,9 +150,10 @@ Build a todo list chat app with drag-to-reorder
 ```
 
 In Claude Code you can also invoke a skill directly, e.g.
-`/chat-app Build a todo list app`. Either way the builder skills plan
-first — they analyze your description, propose a state model and method
-map, and wait for your approval before writing any code.
+`/chat-app Build a todo list app`. Either way the builder skills
+settle the design first — they analyze your description and state the
+state model and method map they are about to build, so you can redirect
+before the code exists.
 
 ## Skill reminders
 

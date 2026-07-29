@@ -157,6 +157,10 @@ orchestration calls where the caller only needs success/failure
 
 ## See Also
 
+- `api-methods.md` — "The Servicer Signature Each Declaration
+  Obliges": the exact shape codegen requires, including the
+  `request=None` / `response=None` variants. Read it instead of
+  the generated `*_rbt.py`.
 - `rpc-refs.md` — `self.ref().state_id` (not `self.state_id`).
 - `rpc-calls.md` — kwargs convention; `await ref.method(context, k=v)`.
 - `rpc-forall.md` — `Service.forall(ids).method(context, ...)` for

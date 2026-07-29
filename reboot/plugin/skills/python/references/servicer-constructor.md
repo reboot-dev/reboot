@@ -95,3 +95,10 @@ async def sign_up(
 `Account.open(context, id)` here is the constructor (the `open` method
 declared `factory=True`) and returns the actor reference plus the
 response (or `None` when `response=None`).
+
+## See Also
+
+- `api-methods.md` — "The Servicer Signature Each Declaration
+  Obliges": the exact shape codegen requires for a factory method,
+  including the `request=None` / `response=None` variants. Read it
+  instead of the generated `*_rbt.py`.
