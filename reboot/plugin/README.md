@@ -16,9 +16,10 @@ agent. The same skills work in both **Claude Code** and **Codex**.
 | [`python`](skills/python/)     | Reboot Python framework reference: proto- or pydantic-defined APIs, Servicers, contexts, refs, scheduling, and testing                    |
 | [`upgrade`](skills/upgrade/)   | Upgrade an existing Reboot app to this plugin's Reboot version — applies migration steps, bumps pins, regenerates                         |
 
-The skill files are tool-agnostic. Claude Code invokes skills by name
-(e.g. `/chat-app`); Codex selects a skill automatically from its
-`description`. Both read the same `SKILL.md` files and `references/`.
+The skill files are tool-agnostic. Claude Code invokes skills by
+plugin-namespaced name (e.g. `/reboot:chat-app`); Codex selects a
+skill automatically from its `description`. Both read the same
+`SKILL.md` files and `references/`.
 
 ## Installation
 
@@ -150,7 +151,8 @@ Build a todo list chat app with drag-to-reorder
 ```
 
 In Claude Code you can also invoke a skill directly, e.g.
-`/chat-app Build a todo list app`. Either way the builder skills
+`/reboot:chat-app Build a todo list app` — plugin skills are
+namespaced by the plugin's name. Either way the builder skills
 settle the design first — they analyze your description and state the
 state model and method map they are about to build, so you can redirect
 before the code exists.

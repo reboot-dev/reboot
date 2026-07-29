@@ -22,6 +22,34 @@ const sidebars = {
     {
       type: "category",
       collapsed: false,
+      label: "Full-stack apps",
+      items: [
+        {
+          type: "doc",
+          id: "full_stack_apps/get_started_claude_code",
+          label: "Get Started (with Claude Code)",
+        },
+        {
+          type: "doc",
+          id: "full_stack_apps/get_started_codex",
+          label: "Get Started (with Codex)",
+        },
+        {
+          type: "category",
+          collapsed: true,
+          label: "Get Started (hand-written)",
+          items: [
+            "full_stack_apps/typescript",
+            "full_stack_apps/python",
+            "full_stack_apps/react",
+          ],
+        },
+        "full_stack_apps/examples",
+      ],
+    },
+    {
+      type: "category",
+      collapsed: true,
       label: "AI Chat Apps",
       items: [
         "ai_chat_apps/what_is",
@@ -45,24 +73,6 @@ const sidebars = {
           id: "ai_chat_apps/examples",
           label: "Examples",
         },
-      ],
-    },
-    {
-      type: "category",
-      collapsed: true,
-      label: "Full-stack apps",
-      items: [
-        {
-          type: "category",
-          collapsed: true,
-          label: "Get started",
-          items: [
-            "full_stack_apps/typescript",
-            "full_stack_apps/python",
-            "full_stack_apps/react",
-          ],
-        },
-        "full_stack_apps/examples",
       ],
     },
     {
