@@ -11,11 +11,27 @@
 # inject env vars from a SessionStart hook. `$CLAUDE_PLUGIN_ROOT` is the
 # plugin's install directory, set for hook commands by Claude Code.
 #
+# Codex discovers and runs the same `hooks.json`, so this handler runs
+# there too. Codex sets `$CLAUDE_PLUGIN_ROOT`, but has no per-command
+# env file and so sets no `$CLAUDE_ENV_FILE`; there the same PATH
+# prepend is wired by the `shell_environment_policy.set.PATH` entry
+# that `install.sh` merges into `~/.codex/config.toml`, and this
+# handler is a quiet no-op.
+#
 # Note that this SessionStart hook will only trigger if the plugin is
 # already installed at session-start time. Developers will need to
 # restart their agent CLI after installing this plugin for this hook to
 # take effect.
 set -euo pipefail
+
+# Both variables are required to write a meaningful line: an env file
+# to append to, and the plugin root whose `bin/` goes on PATH. When
+# either is missing this is a silent, successful no-op, since a
+# non-zero status — an unset-variable abort under `set -u`, say —
+# surfaces to the developer as a hook error.
+if [ -z "${CLAUDE_ENV_FILE:-}" ] || [ -z "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+    exit 0
+fi
 
 # Note the careful quoting: `${CLAUDE_PLUGIN_ROOT}` must expand *now*
 # (so the env file captures the plugin's absolute path from the time the

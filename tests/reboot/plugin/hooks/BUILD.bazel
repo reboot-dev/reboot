@@ -12,6 +12,17 @@ py_test(
 )
 
 py_test(
+    name = "session_start_test",
+    size = "small",
+    srcs = ["session_start_test.py"],
+    data = ["//reboot/plugin/hooks-handlers:session_start_sh"],
+    env = {
+        "SESSION_START_SH": "$(location //reboot/plugin/hooks-handlers:session_start_sh)",
+    },
+    main = "session_start_test.py",
+)
+
+py_test(
     name = "remind_test",
     size = "small",
     srcs = ["remind_test.py"],
