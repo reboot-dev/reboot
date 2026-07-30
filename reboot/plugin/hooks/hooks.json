@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "grep -qE '\"skill\"[[:space:]]*:[[:space:]]*\"reboot:(app|chat-app|web-app|python|run|upgrade)\"' && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\"}}'; exit 0"
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/auto-approve.sh"
           }
         ]
       },

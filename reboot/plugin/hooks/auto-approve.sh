@@ -19,9 +19,10 @@
 #
 # Guards that hold for every case:
 #
-#   - $CLAUDE_PLUGIN_ROOT must be set. Claude Code sets it to the
-#     plugin's real install path when invoking its hooks; without
-#     it the `.../skills/` prefix check is meaningless.
+#   - $CLAUDE_PLUGIN_ROOT must be set. Both Claude Code and Codex
+#     set it to the plugin's real install path when invoking these
+#     hooks; without it the `.../skills/` prefix check is
+#     meaningless.
 #   - No argument may contain `..` — that would let a path step
 #     out of whatever directory it was checked against.
 #
@@ -43,7 +44,41 @@ fi
 
 input=$(cat)
 
+# Claude Code and Codex both run this plugin's hooks, but only Claude
+# Code understands a permissionDecision:"allow" response. Codex's
+# parser REJECTS a bare "allow" (it reserves "allow" for responses
+# that also rewrite the call via `updatedInput`) and reports
+# "PreToolUse hook returned unsupported permissionDecision:allow".
+# Codex has no hook-driven auto-approve at all -- its parser only acts
+# on "deny", and the documented output for an allow/defer is empty
+# stdout. See https://github.com/reboot-dev/reboot/issues/118. So emit
+# the allow JSON only when the runtime is positively Claude Code, and
+# stay silent otherwise (the Codex-safe default).
+#
+# Two signals must agree:
+#
+#   - $CLAUDECODE, which Claude Code exports into the processes it
+#     spawns, hooks included. Codex exports only the two
+#     compatibility variables $CLAUDE_PLUGIN_ROOT and
+#     $CLAUDE_PLUGIN_DATA.
+#   - No `turn_id` in the payload. Codex's
+#     `pre-tool-use.command.input` schema requires `turn_id`, as a
+#     documented Codex extension; Claude Code sends it only for
+#     `MessageDisplay`, never for PreToolUse.
+#
+# The payload half is what catches a Codex running inside a Claude
+# Code session, where $CLAUDECODE is inherited across the boundary
+# but the payload still comes from Codex.
+#
+# `permission_mode` cannot serve as the signal, despite reading like
+# a Claude Code-only concept: Codex's schema requires it too, with
+# Claude Code's exact enum.
+is_claude_code() {
+    [ -n "${CLAUDECODE}" ] && [ -z "$(field turn_id)" ]
+}
+
 emit_allow() {
+    is_claude_code || return 0
     echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"}}'
 }
 
@@ -102,6 +137,19 @@ in_reboot_project() {
 tool=$(field tool_name)
 
 case "$tool" in
+    Skill)
+        # A skill routed by this plugin auto-approves its own Skill
+        # invocation so the hand-off between skills doesn't trigger a
+        # prompt. Only this plugin's skills qualify, matched by their
+        # `reboot:` selector; `deploy` and `inspect` are intentionally
+        # excluded because they reach outside the local project.
+        case "$(field skill)" in
+            reboot:app | reboot:chat-app | reboot:web-app | \
+            reboot:python | reboot:run | reboot:upgrade)
+                emit_allow
+                ;;
+        esac
+        ;;
     Read)
         path=$(field file_path)
         has_traversal "$path" && exit 0

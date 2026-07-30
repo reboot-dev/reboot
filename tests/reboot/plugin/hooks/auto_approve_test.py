@@ -57,25 +57,57 @@ class Where(enum.Enum):
     UNSET = "unset"
 
 
+class Runtime(enum.Enum):
+    """The agent runtime supplying the hook's environment and payload.
+
+    Claude Code and Codex both run this plugin's hooks, but only Claude
+    Code accepts a `permissionDecision: "allow"` response, so the hook
+    must approve under Claude Code and stay silent under Codex. The
+    payloads and environments each value produces mirror ones captured
+    from real runs of the two CLIs."""
+    CLAUDE_CODE = "claude_code"
+    CODEX = "codex"
+    # A Codex session launched from inside a Claude Code session. It
+    # inherits Claude Code's environment, so the env var alone reads as
+    # Claude Code, while the payload still comes from Codex.
+    CODEX_NESTED = "codex_nested"
+
+
 def run_hook(
     tool_name: str,
     tool_input: dict,
     *,
     plugin_root: str | None = PLUGIN_ROOT,
     cwd: str | None = None,
+    runtime: Runtime = Runtime.CLAUDE_CODE,
 ) -> str:
     """Invoke the hook with the given tool input. Returns stdout.
 
-    `cwd` populates the top-level `cwd` field Claude Code passes in
-    the hook payload — the directory the Reboot-project gate resolves
-    relative paths against. Omitted when `None`."""
+    `cwd` populates the top-level `cwd` field both runtimes pass in the
+    hook payload — the directory the Reboot-project check resolves
+    relative paths against. Omitted when `None`.
+
+    `runtime` selects which runtime the hook believes it is running
+    under, via the two signals it reads: `$CLAUDECODE`, which only
+    Claude Code exports, and the payload's `turn_id`, which only Codex
+    sends for PreToolUse. `CLAUDE_PLUGIN_ROOT` stays set for every
+    runtime, because Codex exports it for compatibility too, and so
+    does `permission_mode`, which both runtimes send and which
+    therefore cannot tell them apart."""
     payload: dict = {
         "tool_name": tool_name,
         "tool_input": tool_input,
+        "permission_mode": "default",
     }
     if cwd is not None:
         payload["cwd"] = cwd
+    if runtime is not Runtime.CLAUDE_CODE:
+        payload["turn_id"] = "019fb4ee-7e6e-7e23-b4ae-9e253b9a6b6f"
     env = {**os.environ}
+    if runtime is Runtime.CODEX:
+        env.pop("CLAUDECODE", None)
+    else:
+        env["CLAUDECODE"] = "1"
     if plugin_root is None:
         env.pop("CLAUDE_PLUGIN_ROOT", None)
     else:
@@ -114,6 +146,48 @@ def decision_from_stdout(stdout: str) -> Decision:
 # hook must reject. Adding a new case is one line — the structure is:
 #   (label, tool_name, tool_input, expected_decision)
 CASES: list[tuple[str, str, dict, Decision]] = [
+    # ----- Skill tool: this plugin's own skills auto-approve. -----
+    (
+        "Skill: reboot:run is approved",
+        "Skill",
+        {
+            "skill": "reboot:run"
+        },
+        Decision.APPROVE,
+    ),
+    (
+        "Skill: reboot:chat-app is approved",
+        "Skill",
+        {
+            "skill": "reboot:chat-app"
+        },
+        Decision.APPROVE,
+    ),
+    (
+        "Skill: reboot:deploy is NOT auto-approved (reaches outside)",
+        "Skill",
+        {
+            "skill": "reboot:deploy"
+        },
+        Decision.REJECT,
+    ),
+    (
+        "Skill: reboot:inspect is NOT auto-approved (reaches outside)",
+        "Skill",
+        {
+            "skill": "reboot:inspect"
+        },
+        Decision.REJECT,
+    ),
+    (
+        "Skill: another plugin's skill is never approved",
+        "Skill",
+        {
+            "skill": "other:run"
+        },
+        Decision.REJECT,
+    ),
+
     # ----- Read tool: legitimate reads of plugin references. -----
     (
         "Read: SKILL.md inside plugin",
@@ -793,6 +867,74 @@ class AutoApproveTest(unittest.TestCase):
                     f"{label}: expected {expected.value}, got "
                     f"{actual.value}; stdout={stdout!r}",
                 )
+
+    def test_codex_never_approves(self) -> None:
+        """Under Codex, the hook must never emit an `allow` decision.
+
+        Codex rejects a bare `permissionDecision: "allow"` as an
+        unsupported response (it only acts on `deny`), surfacing it as a
+        hook error — see
+        https://github.com/reboot-dev/reboot/issues/118. So every input
+        that Claude Code approves must fall through to empty stdout when
+        the same input arrives under Codex, including a Codex nested in
+        a Claude Code session, which inherits `$CLAUDECODE`."""
+        approved = [
+            (tool_name, tool_input)
+            for _, tool_name, tool_input, expected in CASES
+            if expected is Decision.APPROVE
+        ]
+        # Guard against the list silently losing its APPROVE cases.
+        self.assertTrue(approved)
+        for runtime in (Runtime.CODEX, Runtime.CODEX_NESTED):
+            for tool_name, tool_input in approved:
+                with self.subTest(
+                    runtime=runtime,
+                    tool=tool_name,
+                    tool_input=tool_input,
+                ):
+                    stdout = run_hook(tool_name, tool_input, runtime=runtime)
+                    self.assertEqual(
+                        decision_from_stdout(stdout),
+                        Decision.REJECT,
+                        f"under {runtime.value}, {tool_name} {tool_input} "
+                        f"must not be approved, but got stdout={stdout!r}",
+                    )
+
+    def test_codex_reboot_dev_commands_never_approve(self) -> None:
+        """The Reboot dev commands the `run` skill issues must also stay
+        silent under Codex, even under the exact conditions that make
+        Claude Code approve them."""
+        with (
+            tempfile.TemporaryDirectory() as project,
+            tempfile.TemporaryDirectory() as non_project,
+        ):
+            open(os.path.join(project, ".rbtrc"), "w").close()
+            os.makedirs(os.path.join(project, "web"))
+            cwd_for: dict[Where, str | None] = {
+                Where.PROJECT: project,
+                Where.NON_PROJECT: non_project,
+                Where.UNSET: None,
+            }
+            for runtime in (Runtime.CODEX, Runtime.CODEX_NESTED):
+                for label, command, where, expected in REBOOT_DEV_CASES:
+                    if expected is not Decision.APPROVE:
+                        continue
+                    with self.subTest(runtime=runtime, label=label):
+                        stdout = run_hook(
+                            "Bash",
+                            {
+                                "command":
+                                    command.replace("{project}", project),
+                            },
+                            cwd=cwd_for[where],
+                            runtime=runtime,
+                        )
+                        self.assertEqual(
+                            decision_from_stdout(stdout),
+                            Decision.REJECT,
+                            f"{label}: under {runtime.value} must not be "
+                            f"approved, got stdout={stdout!r}",
+                        )
 
     def test_reboot_dev_cases(self) -> None:
         """The `run` skill's Reboot dev commands: auto-approved inside
