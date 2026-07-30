@@ -12,11 +12,11 @@
 # plugin's install directory, set for hook commands by Claude Code.
 #
 # Codex discovers and runs the same `hooks.json`, so this handler runs
-# there too. Codex sets `$CLAUDE_PLUGIN_ROOT`, but has no per-command
-# env file and so sets no `$CLAUDE_ENV_FILE`; there the same PATH
-# prepend is wired by the `shell_environment_policy.set.PATH` entry
-# that `install.sh` merges into `~/.codex/config.toml`, and this
-# handler is a quiet no-op.
+# there too. But `$CLAUDE_PLUGIN_ROOT` and `$CLAUDE_ENV_FILE` are set
+# by Claude Code, not Codex, so under Codex neither is present and the
+# guard below makes this handler a quiet no-op. There the same PATH
+# prepend is instead wired by the `shell_environment_policy.set.PATH`
+# entry that `install.sh` merges into `~/.codex/config.toml`.
 #
 # Note that this SessionStart hook will only trigger if the plugin is
 # already installed at session-start time. Developers will need to
