@@ -3,3 +3,9 @@ filegroup(
     srcs = ["remind.sh"],
     visibility = ["//visibility:public"],
 )
+
+filegroup(
+    name = "session_start_sh",
+    srcs = ["session-start.sh"],
+    visibility = ["//visibility:public"],
+)
