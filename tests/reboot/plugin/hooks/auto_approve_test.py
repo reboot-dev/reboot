@@ -868,6 +868,28 @@ class AutoApproveTest(unittest.TestCase):
                     f"{actual.value}; stdout={stdout!r}",
                 )
 
+    def test_cases_with_trailing_slash_plugin_root(self) -> None:
+        """Every case must decide the same way when
+        `$CLAUDE_PLUGIN_ROOT` carries a trailing slash, which is what
+        adding a local directory as the marketplace source produces.
+        The paths the agent sends are normalized, so a `//skills/`
+        prefix would match nothing and silently approve nothing."""
+        for label, tool_name, tool_input, expected in CASES:
+            with self.subTest(label=label):
+                stdout = run_hook(
+                    tool_name,
+                    tool_input,
+                    plugin_root=f"{PLUGIN_ROOT}/",
+                )
+                actual = decision_from_stdout(stdout)
+                self.assertEqual(
+                    actual,
+                    expected,
+                    f"{label}: with a trailing slash on the plugin root, "
+                    f"expected {expected.value}, got {actual.value}; "
+                    f"stdout={stdout!r}",
+                )
+
     def test_codex_never_approves(self) -> None:
         """Under Codex, the hook must never emit an `allow` decision.
 

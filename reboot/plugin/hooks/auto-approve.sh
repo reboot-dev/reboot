@@ -37,7 +37,16 @@
 # Anything not matching exits silently with status 0; Claude Code
 # then falls back to the normal permission prompt.
 
-# No env var ⇒ defer to normal prompt.
+# Adding a local directory as the marketplace source — what
+# `install.sh` does when run from a checkout — leaves a trailing slash
+# on the root. Strip it, so the `"${CLAUDE_PLUGIN_ROOT}/skills/"`
+# prefixes below don't end in `//` and match nothing: the agent
+# normalizes the paths it sends, so nothing can match a `//` prefix.
+CLAUDE_PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT%/}"
+
+# No env var ⇒ defer to normal prompt. Also catches a root of `/`,
+# emptied by the strip above, whose `/skills/` prefix would match
+# paths anywhere on the filesystem.
 if [ -z "${CLAUDE_PLUGIN_ROOT}" ]; then
     exit 0
 fi
