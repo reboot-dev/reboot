@@ -26,8 +26,8 @@ from reboot.settings import (
     ENVVAR_REBOOT_ENABLE_EVENT_LOOP_BLOCKED_WATCHDOG,
     ENVVAR_REBOOT_IN_TEST,
 )
-from reboot.std.blobs.v1._data_plane import ENVVAR_BLOB_DATA_PLANE_URL
-from reboot.std.blobs.v1._filesystem_server import FilesystemDataPlane
+from reboot.std.blob.v1._data_plane import ENVVAR_BLOB_DATA_PLANE_URL
+from reboot.std.blob.v1._filesystem_server import FilesystemDataPlane
 from typing import (
     Any,
     Awaitable,
@@ -171,7 +171,7 @@ class Reboot(reboot.aio.reboot.Reboot):
     async def start(self):
         result = await super().start()
         # Run a filesystem blob data plane for the duration of the
-        # test, so that applications using `reboot.std.blobs` work in
+        # test, so that applications using `reboot.std.blob` work in
         # unit tests exactly as they do under `rbt dev run` (which
         # spawns the same data plane). An already-configured data plane
         # is honored, mirroring the CLI — including one set up by
