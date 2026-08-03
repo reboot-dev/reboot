@@ -7,7 +7,7 @@ from chat_room.v1.chat_room_rbt import (
     SendRequest,
     SendResponse,
 )
-from rbt.std.blobs.v1.blobs_rbt import Blob
+from rbt.std.blob.v1.blob_rbt import Blob
 from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import ReaderContext, TransactionContext
 
@@ -34,11 +34,11 @@ class ChatRoomServicer(ChatRoom.Servicer):
     ) -> SendResponse:
         # Create a `Blob` for every requested attachment. This is the
         # application-mediated step where attachment policy is
-        # enforced; the blobs' random ids then act as upload/download
+        # enforced; the blobs' random IDs then act as upload/download
         # capabilities. This example has no end-user authentication,
-        # so `uploader_id` is left empty: anyone who knows a blob's id
+        # so `uploader_id` is left empty: anyone who knows a blob's ID
         # may upload into it. `downloader_ids` is likewise omitted, so
-        # anyone who knows a blob's id may download it too.
+        # anyone who knows a blob's ID may download it too.
         attachment_blob_ids = []
         for attachment in request.attachments:
             if attachment.size_bytes > MAX_ATTACHMENT_BYTES:

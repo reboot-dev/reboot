@@ -1,9 +1,9 @@
-import { Blob_Status } from "@reboot-dev/reboot-std-api/blobs/v1/blobs_pb.js";
+import { Blob_Status } from "@reboot-dev/reboot-std-api/blob/v1/blob_pb.js";
 import {
   useBlob,
   useBlobDownloadUrl,
   useBlobUpload,
-} from "@reboot-dev/reboot-std-react/blobs";
+} from "@reboot-dev/reboot-std-react/blob";
 import { FC, useRef, useState } from "react";
 import css from "./App.module.css";
 import {
@@ -48,8 +48,8 @@ const Attachment: FC<{ blobId: string }> = ({ blobId }) => {
   const isImage = info?.contentType.startsWith("image/") ?? false;
   const committed = info?.status === Blob_Status.COMMITTED && url !== undefined;
   const gone =
-    info?.status === Blob_Status.DELETING ||
-    info?.status === Blob_Status.DELETED;
+    info?.status === Blob_Status.REMOVING ||
+    info?.status === Blob_Status.REMOVED;
 
   const total = Number(info?.size ?? 0);
   const uploaded = Number(info?.bytesUploaded ?? 0);

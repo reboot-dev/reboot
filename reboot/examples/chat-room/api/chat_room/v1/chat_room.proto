@@ -17,7 +17,7 @@ message AttachmentTooLarge {
 message Message {
   string text = 1;
 
-  // Ids of `rbt.std.blobs.v1.Blob`s holding this message's
+  // Ids of `rbt.std.blob.v1.Blob`s holding this message's
   // attachments. Attachments are visible to all participants from the
   // moment the message is sent, while their bytes may still be
   // uploading; render their progress reactively via `Blob.Info`.
@@ -41,7 +41,7 @@ service ChatRoomMethods {
   // Adds a new message to the list of recorded messages, creating a
   // `Blob` for each requested attachment. The message is published
   // immediately; the caller then uploads the attachment bytes into
-  // the returned blob ids.
+  // the returned blob IDs.
   rpc Send(SendRequest) returns (SendResponse) {
     option (rbt.v1alpha1.method) = {
       transaction: {},
@@ -68,8 +68,8 @@ message SendRequest {
 }
 
 message SendResponse {
-  // One `Blob` id per requested attachment, in request order. Upload
+  // One `Blob` ID per requested attachment, in request order. Upload
   // the attachment bytes into these (e.g. with `useBlobUpload` from
-  // `@reboot-dev/reboot-std-react/blobs`).
+  // `@reboot-dev/reboot-std-react/blob`).
   repeated string attachment_blob_ids = 1;
 }

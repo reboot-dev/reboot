@@ -115,7 +115,7 @@ message AttachmentTooLarge {
 message Message {
   string text = 1;
 
-  // Ids of `rbt.std.blobs.v1.Blob`s holding this message's
+  // Ids of `rbt.std.blob.v1.Blob`s holding this message's
   // attachments. Attachments are visible to all participants from the
   // moment the message is sent, while their bytes may still be
   // uploading; render their progress reactively via `Blob.Info`.
