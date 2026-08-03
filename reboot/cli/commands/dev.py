@@ -84,7 +84,7 @@ from reboot.settings import (
     RBT_APPLICATION_EXIT_CODE_BACKWARDS_INCOMPATIBILITY,
     LocalEnvoyMode,
 )
-from reboot.std.blobs.v1._data_plane import ENVVAR_BLOB_DATA_PLANE_URL
+from reboot.std.blob.v1._data_plane import ENVVAR_BLOB_DATA_PLANE_URL
 from reboot.version import REBOOT_VERSION
 from typing import Any, Awaitable, Callable, Optional, TextIO, TypeVar
 

@@ -100,7 +100,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":subprocesses_py",
-        "@com_github_reboot_dev_reboot//reboot/std/blobs/v1:blobs_py",
+        "@com_github_reboot_dev_reboot//reboot/std/blob/v1:blob_py",
     ],
 )
 

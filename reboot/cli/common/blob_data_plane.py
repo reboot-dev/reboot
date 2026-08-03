@@ -1,7 +1,7 @@
 """Spawning the filesystem blob data plane for local runs.
 
 `rbt dev run` and `rbt serve run` start the open-source filesystem blob
-data-plane server (`reboot.std.blobs.v1._filesystem_server`) as a
+data-plane server (`reboot.std.blob.v1._filesystem_server`) as a
 background subprocess whenever `REBOOT_BLOB_DATA_PLANE_URL` is not
 already set, and point the application at it on localhost. In Reboot
 Cloud the variable is set by provisioning (to the app's facilitator),
@@ -22,7 +22,7 @@ import shutil
 import sys
 import tempfile
 from reboot.cli.common.subprocesses import Subprocesses
-from reboot.std.blobs.v1._data_plane import ENVVAR_BLOB_DATA_PLANE_URL
+from reboot.std.blob.v1._data_plane import ENVVAR_BLOB_DATA_PLANE_URL
 from typing import Optional
 
 # The filesystem data plane binds loopback only (its gRPC control
@@ -110,7 +110,7 @@ async def start_filesystem_data_plane(
     argv = [
         sys.executable,
         "-m",
-        "reboot.std.blobs.v1._filesystem_server",
+        "reboot.std.blob.v1._filesystem_server",
         "--directory",
         blobs_directory,
         "--ready-file",
