@@ -1,7 +1,7 @@
 // The blob data-plane interface.
 //
 // A `BlobDataPlane` holds blob *bytes*; all blob *metadata* lives in
-// the `Blob` control-plane state machine (see `blobs.proto`). The
+// the `Blob` control-plane state machine (see `blob.proto`). The
 // control plane never touches bytes: it calls this service to
 // provision uploads, finalize them, mint download URLs, and delete
 // objects, and the bytes themselves travel directly between the client
@@ -11,9 +11,7 @@
 //
 // This is a plain gRPC service, deliberately free of any Reboot
 // framework options, so that it can be implemented by anything and
-// addressed by a bare URL (`REBOOT_BLOB_DATA_PLANE_URL`). The
-// open-source filesystem server implements it; Reboot Cloud implements
-// it privately (S3, and eventually a CDN) in each app's facilitator.
+// addressed by a bare URL (`REBOOT_BLOB_DATA_PLANE_URL`).
 //
 // The control plane retries `BeginUpload`, `CompleteUpload`, and
 // `Delete` inside workflows, so every method must be *safe* to call
@@ -21,13 +19,13 @@
 // are naturally idempotent (a completed blob returns its ETag;
 // deleting an absent blob succeeds). `BeginUpload` should reuse an
 // existing uncommitted session where it can; a backend that can only
-// mint fresh upload ids is still acceptable — a lost response then
+// mint fresh upload IDs is still acceptable — a lost response then
 // orphans a session, which is reclaimed when the blob expires
 // uncommitted or is deleted.
 
 syntax = "proto3";
 
-package rbt.std.blobs.v1;
+package rbt.std.blob.v1;
 
 service BlobDataPlane {
   // Reports what the control plane needs to know to talk to this data
@@ -36,9 +34,9 @@ service BlobDataPlane {
   rpc Configuration(ConfigurationRequest) returns (ConfigurationResponse);
 
   // Provisions an upload session for a blob and returns its data-plane
-  // upload id (e.g. an S3 multipart upload id). Should reuse an
-  // existing uncommitted session for the same blob; a fresh session is
-  // acceptable (see the idempotency note above).
+  // upload ID (e.g. an S3 multipart upload ID). Should reuse an
+  // existing uncommitted session for the same blob where possible; a
+  // fresh session is acceptable (see the idempotency note above).
   rpc BeginUpload(DataPlaneBeginUploadRequest)
       returns (DataPlaneBeginUploadResponse);
 
@@ -63,8 +61,7 @@ service BlobDataPlane {
   // Mints a URL from which the committed object's bytes can be
   // downloaded: absolute (e.g. a presigned S3/CloudFront URL) or
   // application-relative under a forwarded path, like
-  // `UploadInstructions` URLs. Minted afresh per request so that
-  // swapping the data-plane implementation takes effect immediately.
+  // `UploadInstructions` URLs.
   rpc GetDownloadUrl(DataPlaneGetDownloadUrlRequest)
       returns (DataPlaneGetDownloadUrlResponse);
 

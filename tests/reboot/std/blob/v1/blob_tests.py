@@ -3,7 +3,7 @@ import asyncio
 import hashlib
 import tempfile
 import unittest
-from rbt.std.blobs.v1.blobs_rbt import (
+from rbt.std.blob.v1.blob_rbt import (
     Blob,
     Downloaders,
     IncompleteParts,
@@ -13,14 +13,14 @@ from rbt.std.blobs.v1.blobs_rbt import (
 )
 from reboot.aio.applications import Application
 from reboot.aio.tests import Reboot
-from reboot.std.blobs.v1._store import (
+from reboot.std.blob.v1._store import (
     DEFAULT_PART_SIZE_BYTES,
     BlobStoreError,
     FilesystemBlobStore,
     UploadedPart,
     _encode_blob_id,
 )
-from reboot.std.blobs.v1.blobs import blobs_library
+from reboot.std.blob.v1.blob import blob_library
 
 
 class TestBlobs(unittest.IsolatedAsyncioTestCase):
@@ -34,7 +34,7 @@ class TestBlobs(unittest.IsolatedAsyncioTestCase):
         await self.rbt.start()
 
         await self.rbt.up(
-            Application(libraries=[blobs_library()]),
+            Application(libraries=[blob_library()]),
             local_envoy=True,
         )
 
@@ -464,8 +464,8 @@ class TestBlobs(unittest.IsolatedAsyncioTestCase):
         url = (await blob.download_url(self.context)).url
 
         await blob.remove(self.context)
-        info = await self._wait_until_status(blob, {Blob.State.DELETED})
-        self.assertEqual(info.status, Blob.State.DELETED)
+        info = await self._wait_until_status(blob, {Blob.State.REMOVED})
+        self.assertEqual(info.status, Blob.State.REMOVED)
 
         # The bytes must be gone from the data plane.
         async with aiohttp.ClientSession(self.rbt.url()) as session:

@@ -43,7 +43,7 @@ HTTP_PATH_PREFIX = "/__/reboot/blob"
 
 # HKDF `info` (domain separator) for the filesystem store's URL-signing
 # key.
-_SIGNING_INFO = b"reboot.std.blobs.url-signing"
+_SIGNING_INFO = b"reboot.std.blob.url-signing"
 
 
 class BlobStoreError(Exception):
@@ -191,9 +191,9 @@ class FilesystemBlobStore:
         encoded = _encode_blob_id(blob_id)
 
         def sync():
-            # Idempotent by blob id: if an uncommitted session already
+            # Idempotent by blob ID: if an uncommitted session already
             # exists (a retried `BeginUpload`), reuse it rather than
-            # orphaning it under a fresh upload id.
+            # orphaning it under a fresh upload ID.
             existing = self.read_meta(encoded)
             if (
                 existing is not None and

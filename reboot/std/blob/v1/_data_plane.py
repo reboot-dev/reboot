@@ -11,7 +11,7 @@ the URL themselves (Reboot Cloud points it at the app's facilitator).
 
 import grpc
 import os
-from rbt.std.blobs.v1.data_plane_pb2_grpc import BlobDataPlaneStub
+from rbt.std.blob.v1.data_plane_pb2_grpc import BlobDataPlaneStub
 from urllib.parse import urlparse
 
 # The URL of the `BlobDataPlane` gRPC service. A bare `host:port`, or a

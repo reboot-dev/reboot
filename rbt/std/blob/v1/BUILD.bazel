@@ -8,9 +8,9 @@ load(
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 
 proto_library(
-    name = "blobs_proto",
+    name = "blob_proto",
     srcs = [
-        ":blobs.proto",
+        ":blob.proto",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -41,18 +41,18 @@ py_reboot_library(
 )
 
 py_reboot_library(
-    name = "blobs_py_reboot",
-    proto = "blobs.proto",
-    proto_library = ":blobs_proto",
+    name = "blob_py_reboot",
+    proto = "blob.proto",
+    proto_library = ":blob_proto",
     visibility = ["//visibility:public"],
 )
 
 js_proto_library(
-    name = "blobs_js_proto",
+    name = "blob_js_proto",
     package_json = ":package.json",
-    proto = "blobs.proto",
+    proto = "blob.proto",
     proto_deps = [
-        ":blobs_proto",
+        ":blob_proto",
         # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
         # use `create_protoc_plugin_rule` we need to repeat the dependencies of
         # the `proto_libraries` here.
@@ -63,25 +63,25 @@ js_proto_library(
 )
 
 js_reboot_library(
-    name = "blobs_js_reboot",
+    name = "blob_js_reboot",
     srcs = [
-        ":blobs_proto",
+        ":blob_proto",
     ],
-    proto = "blobs.proto",
+    proto = "blob.proto",
     visibility = ["//visibility:public"],
     deps = [
-        ":blobs_js_proto",
+        ":blob_js_proto",
     ],
 )
 
 js_reboot_react_library(
-    name = "blobs_js_reboot_react",
+    name = "blob_js_reboot_react",
     srcs = [
-        ":blobs_js_proto",
+        ":blob_js_proto",
     ],
-    proto = "blobs.proto",
+    proto = "blob.proto",
     proto_deps = [
-        ":blobs_proto",
+        ":blob_proto",
         # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
         # use `create_protoc_plugin_rule` we need to repeat the dependencies of
         # the `proto_libraries` here.

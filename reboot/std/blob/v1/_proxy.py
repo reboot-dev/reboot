@@ -19,14 +19,14 @@ routes.
 """
 
 import aiohttp
-from rbt.std.blobs.v1.data_plane_pb2 import (
+from rbt.std.blob.v1.data_plane_pb2 import (
     HTTP_METHOD_GET,
     HTTP_METHOD_PUT,
     ForwardedPath,
     HttpMethod,
 )
 from reboot.aio.http import PythonWebFramework
-from reboot.std.blobs.v1._data_plane import FORWARDED_PATH_PREFIX
+from reboot.std.blob.v1._data_plane import FORWARDED_PATH_PREFIX
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 from typing import Iterable

@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package rbt.std.blobs.v1;
+package rbt.std.blob.v1;
 
 import "rbt/v1alpha1/options.proto";
 
@@ -22,15 +22,18 @@ message SizeMismatch {
   uint64 bytes_uploaded = 1;
 }
 
-// Raised when `Commit` is called with no parts uploaded, or with a
-// set of part numbers that is not contiguous starting at 1.
+// Raised when the reported parts cannot form a complete object:
+// `Commit` was called before any part was reported, or the reported
+// part numbers are not contiguous starting at 1. Also raised when
+// `PartUploaded` reports an out-of-range part number or a malformed
+// ETag.
 message IncompleteParts {}
 
 ////////////////////////////////////////////////////////////////////////
 
 // The set of users allowed to download a blob. Wrapping the list in a
 // message lets the download allow-list be *omitted* (anyone who knows
-// the blob's id may download) distinctly from *present but empty* (no
+// the blob's ID may download) distinctly from *present but empty* (no
 // one but app-internal callers may download).
 message Downloaders {
   repeated string user_ids = 1;
@@ -67,19 +70,19 @@ message Blob {
     UPLOADING = 0;
 
     // `Commit` was called; the `CompleteUpload` workflow is
-    // finalizing the object in the storage backend.
+    // finalizing the object in the data plane.
     COMMITTING = 1;
 
     // The blob's bytes are immutable and downloadable.
     COMMITTED = 2;
 
     // `Remove` was called (or the upload expired); the
-    // `PerformRemove` workflow is removing the bytes from the
-    // storage backend.
-    DELETING = 3;
+    // `PerformRemove` workflow is removing the bytes from the data
+    // plane.
+    REMOVING = 3;
 
     // The bytes are gone; only this metadata tombstone remains.
-    DELETED = 4;
+    REMOVED = 4;
   }
 
   Status status = 1;
@@ -89,27 +92,29 @@ message Blob {
 
   // Expected total size in bytes, when known at `Create` time;
   // enables definite progress tracking and is enforced at `Commit`.
+  // Independent of `max_size`: either, both, or neither may be set.
   optional uint64 size = 3;
 
   // Upper bound on the total size in bytes, enforced as parts are
-  // reported and at `Commit`.
+  // reported and at `Commit`. Independent of `size`; when both are
+  // set both constraints apply.
   optional uint64 max_size = 4;
 
-  // The user that may upload into this blob. Empty means anyone who
-  // knows this blob's id may upload; see the authorizer note in
-  // `reboot.std.blobs.v1.blobs`.
+  // The ID of the user that may upload into this blob. Empty means
+  // anyone who knows this blob's ID may upload; see the authorizer
+  // note in `reboot.std.blob.v1.blob`.
   string uploader_id = 5;
 
-  // Who may download this blob. When unset (omitted at `Create`),
-  // anyone who knows the blob's id may download. When set, only the
-  // listed users may (an empty list means no one but app-internal
-  // callers). The uploader is NOT implicitly a downloader. See the
-  // authorizer note in `reboot.std.blobs.v1.blobs`.
+  // The IDs of the users who may download this blob. When unset
+  // (omitted at `Create`), anyone who knows the blob's ID may
+  // download. When set, only the listed users may (an empty list
+  // means no one but app-internal callers). The uploader is NOT
+  // implicitly a downloader. See the authorizer note in
+  // `reboot.std.blob.v1.blob`.
   optional Downloaders downloader_ids = 10;
 
-  // Storage-backend upload session id, set by the `BeginUpload`
-  // workflow. `UploadInstructions` reports `ready: false` until this
-  // is set.
+  // Data-plane upload session ID, set by the `BeginUpload` workflow.
+  // `UploadInstructions` reports `ready: false` until this is set.
   optional string upload_id = 6;
 
   // The parts reported uploaded so far, ordered by part number.
@@ -146,16 +151,16 @@ message CreateRequest {
   // `size <= max_size`.
   optional uint64 max_size = 3;
 
-  // The user that may upload into this blob. Leave empty to allow
-  // anyone who knows this blob's id to upload.
+  // The ID of the user that may upload into this blob. Leave empty to
+  // allow anyone who knows this blob's ID to upload.
   string uploader_id = 4;
 
-  // Who may download this blob. Omit the field entirely to let anyone
-  // who knows the blob's id download it; set it (even to an empty
-  // list) to restrict downloads to the listed users. The uploader is
-  // NOT implicitly a downloader — omit them from the list if they
-  // shouldn't be able to download (e.g. a drop-box). Can be changed
-  // later with `SetDownloaders`.
+  // The IDs of the users who may download this blob. Omit the field
+  // entirely to let anyone who knows the blob's ID download it; set it
+  // (even to an empty list) to restrict downloads to the listed users.
+  // The uploader is NOT implicitly a downloader — omit them from the
+  // list if they shouldn't be able to download (e.g. a drop-box). Can
+  // be changed later with `SetDownloaders`.
   optional Downloaders downloader_ids = 5;
 }
 
@@ -164,10 +169,10 @@ message CreateResponse {}
 ////////////////////////////////////////////////////////////////////////
 
 message SetDownloadersRequest {
-  // The new download allow-list. Omit the field entirely to remove
-  // any restriction (anyone who knows the blob's id may download);
-  // set it (even to an empty list) to restrict downloads to the
-  // listed users.
+  // The download allow-list to apply, replacing any previous one.
+  // Omit the field entirely to remove any restriction (anyone who
+  // knows the blob's ID may download); set it (even to an empty list)
+  // to restrict downloads to the listed users.
   optional Downloaders downloader_ids = 1;
 }
 
@@ -198,7 +203,7 @@ message PartUploadInstruction {
 
 message UploadInstructionsResponse {
   // False until the `BeginUpload` workflow has provisioned the
-  // storage-backend upload session; call this method reactively (or
+  // data-plane upload session; call this method reactively (or
   // poll) until true.
   bool ready = 1;
 
@@ -215,7 +220,7 @@ message PartUploadedRequest {
   uint32 part_number = 1;
 
   // The ETag returned by the data plane for this part. Validated by
-  // the storage backend at `Commit` time.
+  // the data plane at `Commit` time.
   string etag = 2;
 
   // Size of this part in bytes.
@@ -307,7 +312,7 @@ service BlobMethods {
 
   // Replaces the blob's download allow-list. Application-mediated
   // (app-internal only), like `Create`. Omit `downloader_ids` in the
-  // request to remove any restriction (anyone who knows the id may
+  // request to remove any restriction (anyone who knows the ID may
   // download again); set it to restrict downloads to the listed
   // users.
   rpc SetDownloaders(SetDownloadersRequest) returns (SetDownloadersResponse) {
@@ -316,7 +321,7 @@ service BlobMethods {
     };
   }
 
-  // Provisions the storage-backend upload session and records its
+  // Provisions the data-plane upload session and records its
   // `upload_id`. Scheduled by `Create`; not for direct use.
   rpc BeginUpload(BeginUploadRequest) returns (BeginUploadResponse) {
     option (rbt.v1alpha1.method) = {
@@ -346,7 +351,7 @@ service BlobMethods {
   }
 
   // Validates the reported parts and schedules the `CompleteUpload`
-  // workflow that finalizes the object in the storage backend.
+  // workflow that finalizes the object in the data plane.
   // Observe the outcome reactively via `Info`: `status` becomes
   // `COMMITTED`, or reverts to `UPLOADING` with `commit_error` set.
   rpc Commit(CommitRequest) returns (CommitResponse) {
@@ -356,7 +361,7 @@ service BlobMethods {
     };
   }
 
-  // Finalizes the object in the storage backend (which validates the
+  // Finalizes the object in the data plane (which validates the
   // reported part ETags). Scheduled by `Commit`; not for direct use.
   rpc CompleteUpload(CompleteUploadRequest) returns (CompleteUploadResponse) {
     option (rbt.v1alpha1.method) = {
@@ -367,7 +372,7 @@ service BlobMethods {
   // Metadata and upload progress. Reactive: watch it to render a
   // progress bar. Visible to anyone who may upload or download the
   // blob: the `uploader_id` and any listed `downloader_ids`, plus anyone
-  // who knows the id whenever either side is left open.
+  // who knows the ID whenever either side is left open.
   rpc Info(InfoRequest) returns (InfoResponse) {
     option (rbt.v1alpha1.method) = {
       reader: {},
@@ -384,7 +389,7 @@ service BlobMethods {
   }
 
   // Marks the blob for deletion and schedules the `PerformRemove`
-  // workflow that removes its bytes from the storage backend.
+  // workflow that removes its bytes from the data plane.
   // (Named `Remove` because `Delete` is a reserved Reboot method
   // name.)
   rpc Remove(RemoveRequest) returns (RemoveResponse) {
@@ -393,7 +398,7 @@ service BlobMethods {
     };
   }
 
-  // Removes the blob's bytes from the storage backend. Scheduled by
+  // Removes the blob's bytes from the data plane. Scheduled by
   // `Remove` and `ExpireIfNotCommitted`; not for direct use.
   rpc PerformRemove(PerformRemoveRequest) returns (PerformRemoveResponse) {
     option (rbt.v1alpha1.method) = {

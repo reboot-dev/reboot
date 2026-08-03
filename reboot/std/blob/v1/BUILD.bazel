@@ -3,14 +3,14 @@ load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
-    name = "blobs_py",
+    name = "blob_py",
     srcs = [
         "_data_plane.py",
         "_filesystem_server.py",
         "_http.py",
         "_proxy.py",
         "_store.py",
-        "blobs.py",
+        "blob.py",
     ],
     visibility = ["//visibility:public"],
     deps = [
@@ -21,8 +21,8 @@ py_library(
         "//reboot/aio:workflows_py",
         "//reboot/aio/auth:authorizers_py",
         "//reboot/crypto:root_keys_py",
-        "@com_github_reboot_dev_reboot//rbt/std/blobs/v1:blobs_py_reboot",
-        "@com_github_reboot_dev_reboot//rbt/std/blobs/v1:data_plane_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/std/blob/v1:blob_py_reboot",
+        "@com_github_reboot_dev_reboot//rbt/std/blob/v1:data_plane_py_reboot",
         requirement("aiohttp"),
         requirement("grpcio"),
         requirement("starlette"),
@@ -31,7 +31,7 @@ py_library(
 )
 
 ts_project(
-    name = "blobs_ts",
+    name = "blob_ts",
     srcs = [
         "index.ts",
         "package.json",

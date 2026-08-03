@@ -35,7 +35,7 @@ import rbt.v1alpha1.errors_pb2
 import re
 from datetime import timedelta
 from grpc.aio import AioRpcError
-from rbt.std.blobs.v1.blobs_rbt import (
+from rbt.std.blob.v1.blob_rbt import (
     AlreadyCommitted,
     BeginUploadRequest,
     BeginUploadResponse,
@@ -68,7 +68,7 @@ from rbt.std.blobs.v1.blobs_rbt import (
     UploadInstructionsRequest,
     UploadInstructionsResponse,
 )
-from rbt.std.blobs.v1.data_plane_pb2 import (
+from rbt.std.blob.v1.data_plane_pb2 import (
     ConfigurationRequest,
     ConfigurationResponse,
     DataPlaneBeginUploadRequest,
@@ -78,19 +78,19 @@ from rbt.std.blobs.v1.data_plane_pb2 import (
     DataPlaneUploadedPart,
     DataPlaneUploadInstructionsRequest,
 )
-from rbt.std.blobs.v1.data_plane_pb2_grpc import BlobDataPlaneStub
+from rbt.std.blob.v1.data_plane_pb2_grpc import BlobDataPlaneStub
 from reboot.aio.applications import Application, Library
 from reboot.aio.auth.authorizers import allow_if, is_app_internal
 from reboot.aio.contexts import ReaderContext, WorkflowContext, WriterContext
 from reboot.aio.http import PythonWebFramework
 from reboot.aio.workflows import at_least_once_per_workflow
-from reboot.std.blobs.v1._data_plane import (
+from reboot.std.blob.v1._data_plane import (
     ENVVAR_BLOB_DATA_PLANE_URL,
     proxy_target_from_environment,
     stub_from_environment,
 )
-from reboot.std.blobs.v1._proxy import mount_proxy_routes
-from reboot.std.blobs.v1._store import MAX_PARTS
+from reboot.std.blob.v1._proxy import mount_proxy_routes
+from reboot.std.blob.v1._store import MAX_PARTS
 from typing import Optional
 
 logger = log.log.get_logger(__name__)
@@ -160,7 +160,7 @@ def _downloader_or_open(*, context, state=None, request=None, **kwargs):
 class BlobServicer(Blob.Servicer):
 
     # The data-plane gRPC stub and the part size it reported, both set
-    # by `BlobsLibrary` once it has connected to the data plane.
+    # by `BlobLibrary` once it has connected to the data plane.
     _data_plane: BlobDataPlaneStub
     _part_size: int
 
@@ -203,7 +203,7 @@ class BlobServicer(Blob.Servicer):
         if request.HasField("max_size"):
             self.state.max_size = request.max_size
 
-        # The storage-backend side effect (provisioning the upload
+        # The data-plane side effect (provisioning the upload
         # session) happens in the `BeginUpload` workflow, not here.
         await self.ref().schedule().begin_upload(context)
 
@@ -221,7 +221,7 @@ class BlobServicer(Blob.Servicer):
     ) -> SetDownloadersResponse:
         # Replace semantics: a present `downloader_ids` (even empty)
         # restricts downloads to the listed users; an omitted one
-        # removes any restriction so anyone who knows the id may
+        # removes any restriction so anyone who knows the ID may
         # download again.
         if request.HasField("downloader_ids"):
             self.state.downloader_ids.CopyFrom(request.downloader_ids)
@@ -407,7 +407,7 @@ class BlobServicer(Blob.Servicer):
         )
 
         # Only transition if the blob is still COMMITTING: a
-        # concurrent `Remove` may have moved it to DELETING/DELETED,
+        # concurrent `Remove` may have moved it to REMOVING/REMOVED,
         # which must win (otherwise we'd resurrect a deleted blob or
         # mark a bytes-less blob COMMITTED).
         superseded = [False]
@@ -484,11 +484,11 @@ class BlobServicer(Blob.Servicer):
         request: RemoveRequest,
     ) -> RemoveResponse:
         if self.state.status in (
-            Blob.State.DELETING,
-            Blob.State.DELETED,
+            Blob.State.REMOVING,
+            Blob.State.REMOVED,
         ):
             return RemoveResponse()
-        self.state.status = Blob.State.DELETING
+        self.state.status = Blob.State.REMOVING
         await self.ref().schedule().perform_remove(context)
         return RemoveResponse()
 
@@ -507,7 +507,7 @@ class BlobServicer(Blob.Servicer):
         await at_least_once_per_workflow("remove bytes", context, remove)
 
         async def record(state: Blob.State) -> None:
-            state.status = Blob.State.DELETED
+            state.status = Blob.State.REMOVED
             del state.parts[:]
 
         await Blob.ref().write(context, record)
@@ -519,7 +519,7 @@ class BlobServicer(Blob.Servicer):
         request: ExpireIfNotCommittedRequest,
     ) -> ExpireIfNotCommittedResponse:
         if self.state.status == Blob.State.UPLOADING:
-            self.state.status = Blob.State.DELETING
+            self.state.status = Blob.State.REMOVING
             await self.ref().schedule().perform_remove(context)
         elif self.state.status == Blob.State.COMMITTING:
             # A commit is in flight. If it fails it will revert to
@@ -531,10 +531,10 @@ class BlobServicer(Blob.Servicer):
         return ExpireIfNotCommittedResponse()
 
 
-BLOBS_LIBRARY_NAME = "reboot.std.blobs.v1.blobs"
+BLOBS_LIBRARY_NAME = "reboot.std.blob.v1.blob"
 
 
-class BlobsLibrary(Library):
+class BlobLibrary(Library):
     name = BLOBS_LIBRARY_NAME
 
     def __init__(self):
@@ -607,5 +607,5 @@ def servicers():
     return [BlobServicer]
 
 
-def blobs_library() -> BlobsLibrary:
-    return BlobsLibrary()
+def blob_library() -> BlobLibrary:
+    return BlobLibrary()

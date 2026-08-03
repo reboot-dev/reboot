@@ -19,7 +19,7 @@ import asyncio
 import grpc
 import os
 import uvicorn  # type: ignore[import]
-from rbt.std.blobs.v1.data_plane_pb2 import (
+from rbt.std.blob.v1.data_plane_pb2 import (
     HTTP_METHOD_GET,
     HTTP_METHOD_PUT,
     ConfigurationResponse,
@@ -31,12 +31,12 @@ from rbt.std.blobs.v1.data_plane_pb2 import (
     DataPlaneUploadInstructionsResponse,
     ForwardedPath,
 )
-from rbt.std.blobs.v1.data_plane_pb2_grpc import (
+from rbt.std.blob.v1.data_plane_pb2_grpc import (
     BlobDataPlaneServicer,
     add_BlobDataPlaneServicer_to_server,
 )
-from reboot.std.blobs.v1._http import build_http_app
-from reboot.std.blobs.v1._store import (
+from reboot.std.blob.v1._http import build_http_app
+from reboot.std.blob.v1._store import (
     DEFAULT_PART_SIZE_BYTES,
     HTTP_PATH_PREFIX,
     BlobStoreError,

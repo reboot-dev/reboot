@@ -18,7 +18,7 @@ import hmac
 import os
 import re
 import time
-from reboot.std.blobs.v1._store import (
+from reboot.std.blob.v1._store import (
     HTTP_PATH_PREFIX,
     MAX_PARTS,
     FilesystemBlobStore,
@@ -32,7 +32,7 @@ _STREAM_CHUNK_SIZE = 1024 * 1024
 
 # Path parameters are also filesystem path components; restrict them
 # to the alphabets the store actually produces (URL-safe base64 blob
-# ids, hex upload ids) as defense in depth against traversal — even
+# IDs, hex upload IDs) as defense in depth against traversal — even
 # though a forged path could never carry a valid signature.
 _ENCODED_BLOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]+={0,2}$")
 _UPLOAD_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
