@@ -16,6 +16,7 @@ this server on its own port (see `_proxy.py`).
 
 import argparse
 import asyncio
+import contextlib
 import grpc
 import os
 import uvicorn  # type: ignore[import]
@@ -43,7 +44,7 @@ from reboot.std.blob.v1._store import (
     FilesystemBlobStore,
     UploadedPart,
 )
-from typing import Optional
+from typing import Generator, Optional
 from uuid import uuid4
 
 # The filesystem server binds loopback only: it has no authentication
@@ -174,7 +175,17 @@ class FilesystemDataPlane:
         reports is already serving."""
         store = FilesystemBlobStore(directory, part_size=part_size)
 
-        http_server = uvicorn.Server(
+        class Server(uvicorn.Server):
+            """We need to override the installation of signal handlers as
+            Reboot is already handling this itself.
+            """
+
+            @contextlib.contextmanager
+            def capture_signals(self) -> Generator[None, None, None]:
+                # Do nothing
+                yield
+
+        http_server = Server(
             uvicorn.Config(
                 build_http_app(store),
                 host=LOOPBACK_HOST,
