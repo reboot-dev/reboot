@@ -41,7 +41,7 @@ CORS_ALLOW_HEADERS = (
 
 # Response headers cross-origin JavaScript is allowed to read. `etag`
 # is exposed so that browser blob uploads can read each part's ETag
-# from the data plane's response (see `reboot.std.blobs`).
+# from the data plane's response (see `reboot.std.blob`).
 CORS_EXPOSE_HEADERS = ('grpc-status', 'grpc-message', 'etag')
 
 # How long a browser may cache a CORS preflight response, in seconds

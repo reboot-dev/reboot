@@ -23,7 +23,7 @@
   "exports": {
     "./package.json": "./package.json",
     ".": "./index.js",
-    "./blobs": "./blobs/index.js",
+    "./blob": "./blob/index.js",
     "./presence": "./presence/index.js"
   }
 }

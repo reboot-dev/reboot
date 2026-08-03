@@ -1,7 +1,7 @@
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 
 ts_project(
-    name = "blobs_ts",
+    name = "blob_ts",
     srcs = [
         "index.tsx",
         "package.json",

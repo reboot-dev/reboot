@@ -1,4 +1,4 @@
-// Browser-side helpers for `reboot.std.blobs`: a dead-simple hook for
+// Browser-side helpers for `reboot.std.blob`: a dead-simple hook for
 // uploading a `File` into a `Blob` the application backend has
 // created, plus the lower-level `BlobUploader` for bytes that come
 // from somewhere other than a file input.
@@ -17,10 +17,10 @@ import { useEffect, useMemo, useState } from "react";
 // Re-exported so applications can reactively render blob metadata
 // (e.g. a progress bar for an attachment some *other* client is
 // uploading) without a separate import of the generated client.
-export { useBlob } from "@reboot-dev/reboot-std-api/blobs/v1/blobs_rbt_react.js";
+export { useBlob } from "@reboot-dev/reboot-std-api/blob/v1/blob_rbt_react.js";
 
-const STATE_TYPE = "rbt.std.blobs.v1.Blob";
-const METHODS_SERVICE = "rbt.std.blobs.v1.BlobMethods";
+const STATE_TYPE = "rbt.std.blob.v1.Blob";
+const METHODS_SERVICE = "rbt.std.blob.v1.BlobMethods";
 
 export interface UploadProgress {
   uploadedBytes: number;
@@ -75,7 +75,7 @@ async function callBlobMethod(
 /**
  * Uploads bytes into a `Blob` that the application backend has
  * created (blob creation is always application-mediated; ask your
- * backend for a blob id first).
+ * backend for a blob ID first).
  *
  * Use `upload(...)` for a `File`/`Blob`/`Uint8Array` you already
  * have, or `putPart(...)`/`commit()` directly when producing bytes
@@ -165,7 +165,7 @@ export class BlobUploader {
   }
 
   /**
-   * Commits the upload and waits for the storage backend to confirm,
+   * Commits the upload and waits for the data plane to confirm,
    * returning the blob's ETag or the reason the commit failed. The
    * failure reason describes what went wrong but does not identify
    * which parts, if any, were at fault; to retry, re-`putPart` (parts
@@ -232,7 +232,7 @@ export class BlobUploader {
 }
 
 /**
- * The dead-simple upload hook. The blob id comes from an
+ * The dead-simple upload hook. The blob ID comes from an
  * application-level RPC (blob creation is application-mediated), and
  * then:
  *
@@ -292,7 +292,7 @@ export function useBlobDownloadUrl(blobId: string): string | undefined {
           }
           return;
         }
-        if (info.status === "DELETING" || info.status === "DELETED") {
+        if (info.status === "REMOVING" || info.status === "REMOVED") {
           return;
         }
         await sleep(500);
