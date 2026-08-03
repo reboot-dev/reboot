@@ -47,7 +47,7 @@ service ChatRoomMethods {
   // Adds a new message to the list of recorded messages, creating a
   // `Blob` for each requested attachment. The message is published
   // immediately; the caller then uploads the attachment bytes into
-  // the returned blob ids.
+  // the returned blob IDs.
   rpc Send(SendRequest) returns (SendResponse) {
     option (rbt.v1alpha1.method) = {
       transaction: {},
