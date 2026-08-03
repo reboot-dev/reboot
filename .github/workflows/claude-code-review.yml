@@ -129,6 +129,14 @@ jobs:
           CLAUDE_CODE_MAX_OUTPUT_TOKENS: ${{ steps.budget.outputs.tokens }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Without a token here the action mints one by exchanging a
+          # GitHub OIDC token for a Claude GitHub App token, and that
+          # exchange refuses tokens minted for `pull_request_target`
+          # runs, failing the job with "Invalid OIDC token" (see
+          # anthropics/claude-code-action#713). Supplying a token skips
+          # the exchange; the job's `pull-requests: write` is all the
+          # inline comments need.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
           plugins: "code-review@claude-code-plugins"
           # Pass `--comment` so findings post as inline PR comments;
