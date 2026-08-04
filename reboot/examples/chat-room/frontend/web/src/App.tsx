@@ -51,7 +51,11 @@ const Attachment: FC<{ blobId: string }> = ({ blobId }) => {
     info?.status === Blob_Status.REMOVING ||
     info?.status === Blob_Status.REMOVED;
 
-  const total = Number(info?.size ?? 0);
+  // Only an exact `size` gives a definite total to measure against; a
+  // `max_size` upper bound leaves progress indeterminate.
+  const total = Number(
+    info?.sizeLimit.case === "size" ? info.sizeLimit.value : 0
+  );
   const uploaded = Number(info?.bytesUploaded ?? 0);
   const fraction = total > 0 ? uploaded / total : 0;
 
