@@ -592,23 +592,14 @@ export class {{ client.proto.state_name }}WeakReference {
   {% endfor %}
 }
 
-export class {{ client.proto.state_name }} {
-
-  static WeakReference = {{ client.proto.state_name }}WeakReference;
-
-  public static ref(
-    id: string,
-    options?: { bearerToken?: string }
-  ) {
-    return new {{ client.proto.state_name }}.WeakReference(id, options?.bearerToken);
-  }
+export class {{ client.proto.state_name }}Factory {
 
   {% for service in client.services %}
   {% for method in service.methods %}
   {%- if method.options.proto.kind == 'workflow' %}
   {# TODO(benh): support "tasks" and workflows. #}
   {% elif method.options.proto.constructor %}
-  public static async {{ method.proto.name | to_lower_camel }}(
+  static async {{ method.proto.name | to_lower_camel }}(
     context: reboot_web.WebContext,
     idOrPartialRequest?: string | {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
     inputPartialRequest?: {{ client.proto.state_name }}.Partial{{ method.proto.name }}Request,
@@ -649,6 +640,21 @@ export class {{ client.proto.state_name }} {
   {% endif %}
   {% endfor %}
   {% endfor %}
+}
+
+export class {{ client.proto.state_name }} {
+
+  static WeakReference = {{ client.proto.state_name }}WeakReference;
+
+  static factory = {{ client.proto.state_name }}Factory;
+
+  public static ref(
+    id: string,
+    options?: { bearerToken?: string }
+  ) {
+    return new {{ client.proto.state_name }}.WeakReference(id, options?.bearerToken);
+  }
+
 
 
 }

@@ -28,7 +28,7 @@ class ErrorsTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        account, _ = await Account.Open(context)
+        account, _ = await Account.factory.Open(context)
 
         await account.Deposit(context, amount=100)
 
@@ -50,7 +50,7 @@ class ErrorsTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         await bank.SignUp(context, account_id='jonathan', initial_deposit=100)
         await bank.SignUp(context, account_id='morten')
@@ -77,7 +77,7 @@ class ErrorsTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         await bank.SignUp(context, account_id='jonathan')
 
@@ -99,7 +99,7 @@ class ErrorsTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         with self.assertRaises(Bank.SignUpAborted) as aborted:
             await bank.SignUp(
@@ -123,7 +123,7 @@ class ErrorsTestCase(unittest.IsolatedAsyncioTestCase):
 
         context = self.rbt.create_external_context(name=self.id())
 
-        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+        bank, _ = await Bank.factory.Create(context, SINGLETON_BANK_ID)
 
         await bank.SignUp(context, account_id='jonathan')
         account = Account.ref('jonathan')
@@ -198,7 +198,7 @@ class ErrorsTestCase(unittest.IsolatedAsyncioTestCase):
             name=self.id() + "2"
         )
 
-        account, _ = await Account.Open(context1)
+        account, _ = await Account.factory.Open(context1)
 
         with self.assertRaises(MixedContextsError) as error:
             await account.Deposit(context2, amount=200)

@@ -191,7 +191,7 @@ class EffectValidationTestCase(unittest.IsolatedAsyncioTestCase):
         self, effect_validation: EffectValidation
     ) -> tuple[General.WeakReference, ExternalContext]:
         context = await self.up(effect_validation)
-        general, _ = await General.ConstructorWriter(context)
+        general, _ = await General.factory.ConstructorWriter(context)
         return general, context
 
     async def test_disabled(self) -> None:
@@ -237,7 +237,7 @@ class EffectValidationTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_constructor_transaction(self) -> None:
         context = await self.up(EffectValidation.ENABLED)
-        general, _ = await General.ConstructorTransaction(context)
+        general, _ = await General.factory.ConstructorTransaction(context)
         self.assert_effects(
             "constructor_transaction", "constructor_transaction"
         )
@@ -371,7 +371,7 @@ class EffectValidationTestCase(unittest.IsolatedAsyncioTestCase):
             effect_validation=EffectValidation.ENABLED,
         )
         context = self.rbt.create_external_context(name=self.id())
-        general, _ = await General.ConstructorWriter(context)
+        general, _ = await General.factory.ConstructorWriter(context)
         await (await general.spawn().Workflow(context))
 
         self.assertEqual(1, _DIRECT_CALLS)
@@ -394,7 +394,7 @@ class EffectValidationTestCase(unittest.IsolatedAsyncioTestCase):
         with mock.patch.dict(os.environ):
             os.environ.pop('RBT_VALIDATE_TRUSTED_EFFECTS', None)
             context = await self.up_trusted(EffectValidation.ENABLED)
-            await TrustedLibrary.ConstructorWriter(context)
+            await TrustedLibrary.factory.ConstructorWriter(context)
 
         self.assert_effects("ConstructorWriter")
 
@@ -408,7 +408,7 @@ class EffectValidationTestCase(unittest.IsolatedAsyncioTestCase):
             os.environ, {'RBT_VALIDATE_TRUSTED_EFFECTS': 'true'}
         ):
             context = await self.up_trusted(EffectValidation.ENABLED)
-            await TrustedLibrary.ConstructorWriter(context)
+            await TrustedLibrary.factory.ConstructorWriter(context)
 
         self.assert_effects("ConstructorWriter", "ConstructorWriter")
 

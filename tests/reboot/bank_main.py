@@ -17,7 +17,7 @@ from tests.reboot.bank_rbt import Bank
 async def initialize(context: InitializeContext):
     """Create the singleton bank in our application."""
     print("🏦🏦🏦 Creating Bank if it hasn't already been created.... 🏦🏦🏦")
-    await Bank.Create(context, SINGLETON_BANK_ID)
+    await Bank.factory.Create(context, SINGLETON_BANK_ID)
     print("💰💰💰 Bank is ready for business! 💰💰💰")
 
 

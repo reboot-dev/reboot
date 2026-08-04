@@ -162,7 +162,7 @@ class ServicerTest(_WikiTestBase):
     async def test_page_crud(self) -> None:
         """`Page.create` / `get` / `update` round-trip the
         title and markdown body."""
-        page, _ = await Page.create(
+        page, _ = await Page.factory.create(
             self.context,
             title="My Page",
             content="Initial body.",
@@ -188,7 +188,7 @@ class ServicerTest(_WikiTestBase):
             TranscriptMessage(role="user", content="Hello"),
             TranscriptMessage(role="assistant", content="Hi!"),
         ]
-        transcript, _ = await Transcript.create(
+        transcript, _ = await Transcript.factory.create(
             self.context,
             messages=messages,
             owner_id=self.user_id,

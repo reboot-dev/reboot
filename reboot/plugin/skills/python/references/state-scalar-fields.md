@@ -125,7 +125,7 @@ class IntegrationState(Model):
 ```
 
 ```python
-ciphertext, _ = await Ciphertext.encrypt(
+ciphertext, _ = await Ciphertext.factory.encrypt(
     context,
     plaintext=raw_api_key.encode(),
     associated_data=make_associated_data(tenant_id=tenant_id, purpose="api-key"),

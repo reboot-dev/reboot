@@ -22,7 +22,7 @@ async def hello_greeter(
     context: ExternalContext = InjectExternalContext,
 ):
     body = await request.json()
-    greeter, _ = await Greeter.create(
+    greeter, _ = await Greeter.factory.create(
         context,
         title=body['title'],
         name=body['name'],

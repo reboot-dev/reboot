@@ -76,7 +76,7 @@ class UserServicer(User.Servicer):
         this method), and is recorded on the cart so only
         this session can mutate it."""
         owner_id = context.auth.user_id if context.auth else ""
-        cart, _ = await Cart.create(context, owner_id=owner_id)
+        cart, _ = await Cart.factory.create(context, owner_id=owner_id)
         return User.CreateCartResponse(
             cart_id=cart.state_id,
         )
@@ -272,7 +272,7 @@ class CartServicer(Cart.Servicer):
         variant_ids = [item.variant_id for item in self.state.items]
         quantities = [item.quantity for item in self.state.items]
 
-        order, _ = await Order.create(
+        order, _ = await Order.factory.create(
             context,
             order_id,
             Order.CreateRequest(

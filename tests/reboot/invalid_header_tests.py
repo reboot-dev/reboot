@@ -85,7 +85,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
             context = ExternalContext(name='test', url='http://test')
             # Intentionally create a type error, as might happen when the user
             # doesn't use mypy.
-            await Greeter.Create(
+            await Greeter.factory.Create(
                 context, 123
             )  # type: ignore[arg-type, call-overload]
         self.assertEqual(
@@ -113,7 +113,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
         # Constructor.
         with self.assertRaises(InvalidStateRefError) as e:
             context = ExternalContext(name='test', url='http://test')
-            await Greeter.Create(context, '😾')
+            await Greeter.factory.Create(context, '😾')
         self.assertEqual(
             str(e.exception),
             "The 'state_id' option must be an ASCII string; the given value "
@@ -137,7 +137,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
         # Constructor.
         with self.assertRaises(InvalidStateRefError) as e:
             context = ExternalContext(name='test', url='http://test')
-            await Greeter.Create(context, '')
+            await Greeter.factory.Create(context, '')
         self.assertEqual(
             str(e.exception),
             "The 'state_id' option must be at least 1 character(s) long; the "
@@ -161,7 +161,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
         # Constructor.
         with self.assertRaises(InvalidStateRefError) as e:
             context = ExternalContext(name='test', url='http://test')
-            await Greeter.Create(context, 'x' * 129)
+            await Greeter.factory.Create(context, 'x' * 129)
         self.assertEqual(
             str(e.exception),
             "The 'state_id' option must be at most 128 characters long; the "
@@ -192,7 +192,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
         # Constructor.
         with self.assertRaises(InvalidStateRefError) as e:
             context = ExternalContext(name='test', url='http://test')
-            await Greeter.Create(context, 'hello \x00?')
+            await Greeter.factory.Create(context, 'hello \x00?')
         self.assertEqual(
             str(e.exception),
             "The 'state_id' option contained illegal characters: ['\\x00']. "
@@ -205,7 +205,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
         header serialization, so that the user gets a friendlier stack trace.
         """
         with self.assertRaises(TypeError) as e:
-            await Greeter.Create(
+            await Greeter.factory.Create(
                 ExternalContext(name='test', url='http://test'),
                 # Intentionally create a type error, as might happen when the user
                 # doesn't use mypy.
@@ -222,7 +222,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
         header serialization, so that the user gets a friendlier stack trace.
         """
         with self.assertRaises(InvalidBearerTokenError) as e:
-            await Greeter.Create(
+            await Greeter.factory.Create(
                 ExternalContext(name='test', url='http://test'),
                 None,
                 Options(bearer_token='😾'),
@@ -234,7 +234,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
         with self.assertRaises(InvalidBearerTokenError) as e:
-            await Greeter.Create(
+            await Greeter.factory.Create(
                 ExternalContext(name='test', url='http://test'),
                 None,
                 Options(bearer_token='test\n'),
@@ -246,7 +246,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
         with self.assertRaises(InvalidBearerTokenError) as e:
-            await Greeter.Create(
+            await Greeter.factory.Create(
                 ExternalContext(name='test', url='http://test'),
                 None,
                 Options(bearer_token='x' * 4097),
@@ -264,7 +264,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
         trace.
         """
         with self.assertRaises(TypeError) as e:
-            await Greeter.idempotently(
+            await Greeter.factory.idempotently(
                 # Intentionally create a type error, as might happen
                 # when the user doesn't use mypy.
                 key=1337,  # type: ignore[call-overload]
@@ -283,7 +283,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
         header serialization, so that the user gets a friendlier stack trace.
         """
         with self.assertRaises(InvalidIdempotencyKeyError) as e:
-            await Greeter.idempotently(
+            await Greeter.factory.idempotently(
                 # Intentionally create a type error, as might happen
                 # when the user doesn't use mypy.
                 key='😾'  # type: ignore[call-overload]
@@ -300,7 +300,7 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(InvalidIdempotencyKeyError) as e:
             # Intentionally create a type error, as might happen
             # when the user doesn't use mypy.
-            await Greeter.idempotently(
+            await Greeter.factory.idempotently(
                 key='x' * 129,
             ).Create(  # type: ignore[call-overload]
                 ExternalContext(name='test', url='http://test'),

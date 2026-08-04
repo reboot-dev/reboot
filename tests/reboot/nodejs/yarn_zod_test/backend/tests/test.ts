@@ -32,7 +32,7 @@ test("Bank test", async (t) => {
 
     // Calling a constructor transaction method, which will call a
     // writer method from inside the transaction.
-    const [bank] = await Bank.create(context);
+    const [bank] = await Bank.factory.create(context);
 
     // Calling a common transaction method, which will call a writer
     // method from inside the transaction.

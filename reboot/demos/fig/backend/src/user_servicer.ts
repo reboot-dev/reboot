@@ -52,7 +52,7 @@ export class UsersServicer extends Users.Servicer {
 
     this.state.userIds.push(request.userId);
 
-    await User.create(context, request.userId);
+    await User.factory.create(context, request.userId);
 
     return {};
   }

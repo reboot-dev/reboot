@@ -7,9 +7,9 @@ import { FigBoardServicer, FigServicer } from "./fig_servicer.js";
 import { UserServicer, UsersServicer } from "./user_servicer.js";
 
 const initialize = async (context) => {
-  await FigBoard.create(context, FIG_BOARD_ID);
+  await FigBoard.factory.create(context, FIG_BOARD_ID);
 
-  await Users.create(context, USERS_ID);
+  await Users.factory.create(context, USERS_ID);
 };
 
 new Application({
