@@ -90,15 +90,17 @@ message Blob {
   // MIME type served on download, e.g. `image/png`.
   string content_type = 2;
 
-  // Expected total size in bytes, when known at `Create` time;
-  // enables definite progress tracking and is enforced at `Commit`.
-  // Independent of `max_size`: either, both, or neither may be set.
-  optional uint64 size = 3;
+  // The ceiling on this blob's total size, in bytes. Whichever form
+  // is set is enforced as parts are reported and again at `Commit`.
+  oneof size_limit {
+    // The exact total the committed bytes must add up to, when it is
+    // known at `Create` time. Also enables definite progress
+    // tracking.
+    uint64 size = 3;
 
-  // Upper bound on the total size in bytes, enforced as parts are
-  // reported and at `Commit`. Independent of `size`; when both are
-  // set both constraints apply.
-  optional uint64 max_size = 4;
+    // An upper bound, when the exact total is not known up front.
+    uint64 max_size = 4;
+  }
 
   // The ID of the user that may upload into this blob. Empty means
   // anyone who knows this blob's ID may upload; see the authorizer
@@ -137,19 +139,20 @@ message CreateRequest {
   // MIME type served on download, e.g. `image/png`.
   string content_type = 1;
 
-  // Expected exact total size in bytes, if known. Enables definite
-  // progress bars, and is enforced at `Commit`: the committed bytes
-  // must total exactly `size`. Optional and independent of
-  // `max_size`; see `max_size` for how the two interact.
-  optional uint64 size = 2;
+  // The ceiling on this blob's total size, in bytes. Set at most one
+  // form; leave both unset for no limit at all. Either way the
+  // running total is enforced as parts are reported (via
+  // `PartUploaded`) and again at `Commit`.
+  oneof size_limit {
+    // The exact total in bytes, when known up front. Enables definite
+    // progress bars, and the committed bytes must add up to exactly
+    // this — so it doubles as the ceiling during upload.
+    uint64 size = 2;
 
-  // Upper bound on the total size in bytes. Enforced as parts are
-  // reported (via `PartUploaded`) and again at `Commit`: the running
-  // total must never exceed `max_size`. `size` and `max_size` are
-  // each optional and may be set together or independently. When
-  // both are set both constraints apply, so a sensible caller keeps
-  // `size <= max_size`.
-  optional uint64 max_size = 3;
+    // An upper bound in bytes, when the exact total is not known up
+    // front.
+    uint64 max_size = 3;
+  }
 
   // The ID of the user that may upload into this blob. Leave empty to
   // allow anyone who knows this blob's ID to upload.
@@ -248,8 +251,13 @@ message InfoRequest {}
 message InfoResponse {
   Blob.Status status = 1;
   string content_type = 2;
-  optional uint64 size = 3;
-  optional uint64 max_size = 4;
+
+  // Mirrors `Blob.size_limit`.
+  oneof size_limit {
+    uint64 size = 3;
+    uint64 max_size = 4;
+  }
+
   string uploader_id = 5;
 
   // Total bytes across the parts reported uploaded so far. Together

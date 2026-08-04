@@ -13,20 +13,20 @@ report.
 
 Authorization model: blob *creation* is application-mediated — only
 application code may call `Create`, which is where size and quota
-policy belongs (enforced directly or via `max_size`). The blob's
-framework-generated random id then acts as a capability. Upload-side
-calls (`UploadInstructions`, `PartUploaded`, `Commit`) and `Remove` are
-restricted to the `uploader_id` recorded at `Create` — unless
-`uploader_id` is left empty, which deliberately allows anyone who knows
-the blob's id to upload (for applications without end-user
+policy belongs (enforced directly or via `size`/`max_size`). The
+blob's framework-generated random ID then acts as a capability.
+Upload-side calls (`UploadInstructions`, `PartUploaded`, `Commit`) and
+`Remove` are restricted to the `uploader_id` recorded at `Create` —
+unless `uploader_id` is left empty, which deliberately allows anyone
+who knows the blob's ID to upload (for applications without end-user
 authentication). Downloads (`DownloadUrl`) are open to anyone who knows
-the id by default, but if `Create` (or a later `SetDownloaders`)
+the ID by default, but if `Create` (or a later `SetDownloaders`)
 records a `downloader_ids` allow-list only the listed users may download;
 an empty list restricts downloads to app-internal callers, and the
 uploader is *not* implicitly a downloader. `Info` (metadata and upload
 progress, watchable reactively) is visible to anyone who may upload or
 download the blob: the `uploader_id` and listed `downloader_ids`, plus
-anyone who knows the id whenever either side is left open.
+anyone who knows the ID whenever either side is left open.
 """
 
 import asyncio
@@ -113,11 +113,22 @@ DEFAULT_UPLOAD_EXPIRATION = timedelta(hours=24)
 _PART_ETAG_PATTERN = re.compile(r'^"?[0-9a-fA-F]{32}"?$')
 
 
+def _size_ceiling(state: Blob.State) -> Optional[int]:
+    """The most bytes this blob may hold, or `None` when unlimited. An
+    exact `size` is its own ceiling: bytes beyond it could never be
+    committed, so there is no reason to accept them."""
+    if state.HasField("size"):
+        return state.size
+    if state.HasField("max_size"):
+        return state.max_size
+    return None
+
+
 def _uploader_or_open(*, context, state=None, request=None, **kwargs):
     """Allow app-internal callers and the blob's recorded uploader to
     make upload-side calls, or anyone when no uploader was recorded. An
     empty `uploader_id` means the blob was created without end-user
-    authentication, so anyone who knows the blob's id may upload into
+    authentication, so anyone who knows the blob's ID may upload into
     it. This handles the app-internal case itself (rather than
     composing `is_app_internal` via `any=[...]`) so that an
     unauthenticated non-uploader still surfaces as `Unauthenticated`
@@ -138,7 +149,7 @@ def _uploader_or_open(*, context, state=None, request=None, **kwargs):
 def _downloader_or_open(*, context, state=None, request=None, **kwargs):
     """Allow app-internal callers, and gate `DownloadUrl` on the blob's
     download allow-list. When no `downloader_ids` list was recorded (the
-    field is unset) anyone who knows the blob's id may download; when
+    field is unset) anyone who knows the blob's ID may download; when
     one was recorded only the listed users may (an empty list means no
     one but app-internal callers). Like `_uploader_or_open`, this
     handles app-internal itself so that an unauthenticated non-listed
@@ -329,7 +340,8 @@ class BlobServicer(Blob.Servicer):
         parts.sort(key=lambda part: part.number)
 
         total = sum(part.size for part in parts)
-        if self.state.HasField("max_size") and total > self.state.max_size:
+        ceiling = _size_ceiling(self.state)
+        if ceiling is not None and total > ceiling:
             raise Blob.PartUploadedAborted(SizeMismatch(bytes_uploaded=total))
 
         del self.state.parts[:]
@@ -355,7 +367,8 @@ class BlobServicer(Blob.Servicer):
         total = sum(part.size for part in self.state.parts)
         if self.state.HasField("size") and total != self.state.size:
             raise Blob.CommitAborted(SizeMismatch(bytes_uploaded=total))
-        if self.state.HasField("max_size") and total > self.state.max_size:
+        ceiling = _size_ceiling(self.state)
+        if ceiling is not None and total > ceiling:
             raise Blob.CommitAborted(SizeMismatch(bytes_uploaded=total))
 
         self.state.status = Blob.State.COMMITTING
@@ -389,8 +402,9 @@ class BlobServicer(Blob.Servicer):
                 ) for part in state.parts
             ],
         )
-        if state.HasField("max_size"):
-            complete_request.max_size = state.max_size
+        ceiling = _size_ceiling(state)
+        if ceiling is not None:
+            complete_request.max_size = ceiling
 
         async def attempt() -> tuple:
             # A response `error` is a *permanent* failure (e.g. an ETag

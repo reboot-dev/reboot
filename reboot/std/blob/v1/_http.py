@@ -67,7 +67,7 @@ def _make_put_part(store: FilesystemBlobStore):
             not _ENCODED_BLOB_ID_PATTERN.match(blob) or
             not _UPLOAD_ID_PATTERN.match(upload)
         ):
-            return Response(status_code=400, content="Invalid blob id")
+            return Response(status_code=400, content="Invalid blob ID")
         if _expired(request):
             return Response(status_code=403, content="URL expired")
         expiration = int(request.query_params.get("exp", "0"))
@@ -127,7 +127,7 @@ def _make_get_blob(store: FilesystemBlobStore):
     async def get_blob(request: Request) -> Response:
         blob = request.path_params["blob"]
         if not _ENCODED_BLOB_ID_PATTERN.match(blob):
-            return Response(status_code=400, content="Invalid blob id")
+            return Response(status_code=400, content="Invalid blob ID")
         if _expired(request):
             return Response(status_code=403, content="URL expired")
         expiration = int(request.query_params.get("exp", "0"))

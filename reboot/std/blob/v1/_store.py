@@ -64,7 +64,7 @@ class UploadedPart:
 
 
 def _encode_blob_id(blob_id: str) -> str:
-    """Encodes a blob id into a string safe for use as both a directory
+    """Encodes a blob ID into a string safe for use as both a directory
     name and a URL path segment."""
     return base64.urlsafe_b64encode(blob_id.encode()).decode()
 

@@ -207,6 +207,19 @@ class TestBlobs(unittest.IsolatedAsyncioTestCase):
             etag="0" * 32,
             size=3,
         )
+
+        # A declared `size` is its own ceiling: a part that overshoots
+        # it is rejected as it is reported, rather than being stored
+        # only to be refused at commit time.
+        with self.assertRaises(Blob.PartUploadedAborted) as raised:
+            await sized_blob.part_uploaded(
+                self.context,
+                part_number=2,
+                etag="0" * 32,
+                size=100,
+            )
+        self.assertIsInstance(raised.exception.error, SizeMismatch)
+
         with self.assertRaises(Blob.CommitAborted) as commit_raised:
             await sized_blob.commit(self.context)
         self.assertIsInstance(commit_raised.exception.error, SizeMismatch)
