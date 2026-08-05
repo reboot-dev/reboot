@@ -37,6 +37,15 @@ async def main():
             # to start until one is chosen.
             prod=None,
         ),
+        # The redirect URI of our own mobile app (see
+        # `frontend/mobile/`), which tells Reboot that a client
+        # registering it is first-party and can sign a user in
+        # directly. Without this the mobile app would be treated like
+        # any other dynamically registered client and its users would
+        # have to approve a consent screen first. Expo's development
+        # redirect URI is trusted automatically under `rbt dev run`,
+        # so this entry is what a standalone build needs.
+        native_redirect_uris=["bankpydanticmobile://redirect"],
         # Include `SortedMap` library.
         libraries=[sorted_map_library()],
         initialize=initialize,
