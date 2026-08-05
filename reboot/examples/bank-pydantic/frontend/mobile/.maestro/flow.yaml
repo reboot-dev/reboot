@@ -6,17 +6,20 @@
 # so this flow does not `launchApp`; it drives the foreground app.
 # `appId` is Expo Go's package because the app runs inside it.
 #
-# What it proves: two customers are created, an account is opened for
-# each, and a transfer between them round-trips through the backend so
-# the reactive balances re-render — i.e. the Reboot client's native
-# reads and mutations actually work. Assertions target elements by
-# `testID` (see `App.tsx`), not arbitrary on-screen text.
+# What it proves: the native OAuth sign-in completes and yields a
+# usable session, the signed-in user opens two accounts, and a transfer
+# between them round-trips through the backend so the reactive balances
+# re-render — i.e. the Reboot client's native reads and mutations
+# actually work, carrying the bearer that the OAuth flow produced.
+# Assertions target elements by `testID` (see `App.tsx`), not arbitrary
+# on-screen text, except inside the sign-in browser tab, which the app
+# does not render and so cannot label.
 appId: host.exp.exponent
 ---
 # Wait for the app to finish mounting before driving it.
 - extendedWaitUntil:
     visible:
-      id: "customer-id-input"
+      id: "sign-in-button"
     timeout: 30000
 
 # On a fresh Expo Go install, the first project open shows Expo Go's
@@ -59,17 +62,42 @@ appId: host.exp.exponent
           timeout: 10000
 - waitForAnimationToEnd
 
-# The app loads with an empty bank.
+# The app loads signed out.
 - assertVisible: "Rebank"
 
-# Create two customers. The input and button are in the first section,
-# so no scrolling is needed yet. Crucially, wait for each customer to
-# register before creating the next: `signUp` clears the input
-# asynchronously, so without the wait the next `inputText` appends onto
-# the previous value (e.g. "alicebob") and the second customer is never
-# created. A customer's chip appearing in the "Add Account" picker below
-# confirms its `signUp` landed (and the input has cleared).
+# Sign in. Tapping "Sign in" hands off to an in-app browser tab on the
+# backend's OAuth server, so the next steps drive Chrome rather than
+# the app: the tab belongs to a different package, but Maestro matches
+# against whatever is on screen, so plain text selectors reach it.
 #
+# The tab goes straight to the `Development` provider's fake account
+# picker, with no consent screen on the way: `main.py` claims this
+# app's redirect URI through `Application(native_redirect_uris=...)`,
+# and Expo Go's development redirect URI is trusted automatically
+# under `rbt dev run`. The picker is served by the backend, not the
+# app, hence no testIDs to target.
+- tapOn:
+    id: "sign-in-button"
+
+# Pick a fixed identity so the run is reproducible. The user id behind
+# it is derived from the app's root keys, so it is not predictable
+# here — only the display name is. Chrome's first run can put its own
+# onboarding in front of the page, so wait generously.
+- extendedWaitUntil:
+    visible: "Alice"
+    timeout: 60000
+- tapOn: "Alice"
+
+# The redirect closes the tab and returns to the app, which exchanges
+# the authorization code for tokens and re-renders signed in.
+# Auto-construction of the user's `User` signs them up as a bank
+# customer along the way, so the signed-in view is ready to use.
+- extendedWaitUntil:
+    visible:
+      id: "signed-in-as"
+    timeout: 60000
+
+# Open the signed-in user's first account with a $1000 initial deposit.
 # To dismiss the soft keyboard after typing we tap the field's `Label`
 # (a plain, non-pressable `Text`) rather than `hideKeyboard`. On Android
 # `hideKeyboard` issues a Back press, and in Expo Go a Back press pops
@@ -82,56 +110,30 @@ appId: host.exp.exponent
 # dismissal otherwise races and swallows the very next tap meant for a
 # button, flakily dropping the mutation it would have fired.
 - tapOn:
-    id: "customer-id-input"
-- inputText: "alice"
-- tapOn:
-    id: "customer-id-label"
-- waitForAnimationToEnd
-- tapOn:
-    id: "create-customer-button"
-- extendedWaitUntil:
-    visible:
-      id: "open-account-customer-alice"
-    timeout: 30000
-- tapOn:
-    id: "customer-id-input"
-- inputText: "bob"
-- tapOn:
-    id: "customer-id-label"
-- waitForAnimationToEnd
-- tapOn:
-    id: "create-customer-button"
-- extendedWaitUntil:
-    visible:
-      id: "open-account-customer-bob"
-    timeout: 30000
-
-# Open an account for alice with a $1000 initial deposit. The customer
-# chips are a reactive read of `useAllCustomerIds`, so they appear once
-# `signUp` lands; `scrollUntilVisible` doubles as "wait for + scroll to"
-# the chip.
-- scrollUntilVisible:
-    element:
-      id: "open-account-customer-alice"
-    direction: DOWN
-- tapOn:
-    id: "open-account-customer-alice"
-- tapOn:
     id: "initial-deposit-input"
 - inputText: "1000"
 - tapOn:
     id: "initial-deposit-label"
 - waitForAnimationToEnd
 - tapOn:
-    id: "add-account-button"
+    id: "open-account-button"
 
-# Open an account for bob with a $500 initial deposit.
+# Wait for the account to land before opening the next one: the
+# transfer pickers are a reactive read of `useBalances`, and each
+# account's chip appears once its `openAccount` has landed. The chips
+# are addressed by the position of their account in the user's list, so
+# `transfer-from-0` appearing confirms the first account exists.
 - scrollUntilVisible:
     element:
-      id: "open-account-customer-bob"
+      id: "transfer-from-0"
     direction: DOWN
-- tapOn:
-    id: "open-account-customer-bob"
+
+# Open a second account with a $500 initial deposit, so there is
+# somewhere to transfer to.
+- scrollUntilVisible:
+    element:
+      id: "initial-deposit-input"
+    direction: UP
 - tapOn:
     id: "initial-deposit-input"
 - inputText: "500"
@@ -139,25 +141,23 @@ appId: host.exp.exponent
     id: "initial-deposit-label"
 - waitForAnimationToEnd
 - tapOn:
-    id: "add-account-button"
+    id: "open-account-button"
+- scrollUntilVisible:
+    element:
+      id: "transfer-from-1"
+    direction: DOWN
 
-# Transfer $100 from alice's account to bob's. Each test customer has a
-# single account, so the chips are addressable by owning customer
-# (`transfer-from-<customer>` / `transfer-to-<customer>`), with no
-# dependence on chip order. `scrollUntilVisible` brings each control
-# into view before tapping it; the form is taller than the viewport.
+# Transfer $100 from the first account to the second.
+# `scrollUntilVisible` brings each control into view before tapping it;
+# the form is taller than the viewport.
+- tapOn:
+    id: "transfer-from-0"
 - scrollUntilVisible:
     element:
-      id: "transfer-from-alice"
+      id: "transfer-to-1"
     direction: DOWN
 - tapOn:
-    id: "transfer-from-alice"
-- scrollUntilVisible:
-    element:
-      id: "transfer-to-bob"
-    direction: DOWN
-- tapOn:
-    id: "transfer-to-bob"
+    id: "transfer-to-1"
 - scrollUntilVisible:
     element:
       id: "transfer-amount-input"
@@ -178,15 +178,16 @@ appId: host.exp.exponent
 # The reactive balances re-render. Accounts also accrue $1 of interest
 # every few seconds (see `account_servicer.py`), so the exact amount
 # drifts upward — assert the hundreds range, not an exact value. After
-# the transfer alice is in the $900s ($1000 - $100) and bob in the
-# $600s ($500 + $100); neither was in those ranges beforehand, so this
-# also confirms the transfer landed.
+# the transfer the first account is in the $900s ($1000 - $100) and the
+# second in the $600s ($500 + $100); neither was in those ranges
+# beforehand, so this also confirms the transfer landed.
 - scrollUntilVisible:
     element:
       id: "account-balance"
       text: "\\$9\\d\\d"
     direction: DOWN
-# bob's account row is below alice's in the table, so scroll to it too.
+# The second account's row is below the first in the table, so scroll
+# to it too.
 - scrollUntilVisible:
     element:
       id: "account-balance"

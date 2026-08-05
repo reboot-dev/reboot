@@ -5,6 +5,7 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "scheme": "bankpydanticmobile",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
@@ -14,6 +15,7 @@
     },
     "web": {
       "bundler": "metro"
-    }
+    },
+    "plugins": ["expo-web-browser", "expo-secure-store"]
   }
 }
