@@ -73,6 +73,7 @@ ts_project(
         ":internal/McpConnector.tsx",
         ":internal/index.ts",
         ":internal/useAppSafe.ts",
+        ":native/index.ts",
     ],
     declaration = True,
     tsconfig = ":tsconfig",
