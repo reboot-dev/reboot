@@ -100,9 +100,21 @@ pick (or make up) a `Development` identity. Signing in auto-constructs
 your `User`, which signs you up as a customer of the bank (see
 `backend/src/user_servicer.py`), so the web app shows only your own
 accounts. The web app and the MCP surface share sign-on: signing in on
-one signs you in on the other. The mobile app does not sign in: the
-browser-redirect OAuth flow (and its cookie-backed session) is not
-available on native React Native.
+one signs you in on the other.
+
+The mobile app signs in too, against the same OAuth server, and with
+the same `useSignIn()` / `useSignOut()` / `useUser()` hooks. It cannot
+use the browser-redirect flow the web app uses — React Native has no
+page to redirect and no cookie jar to hold the session — so it passes
+`nativeAuth({...})` from `@reboot-dev/reboot-react/native` to its
+`RebootClientProvider`, and Reboot runs the standard
+authorization-code flow with PKCE that native apps use instead,
+keeping the resulting tokens in the device keychain. Because
+`backend/src/main.py` claims the app's redirect URI through
+`Application(native_redirect_uris=...)`, Reboot recognizes it as a
+first-party app and signs the user straight in, with no consent
+screen — the same treatment the web app gets. A client that registers
+some *other* redirect URI still gets one.
 
 #### MCP
 
