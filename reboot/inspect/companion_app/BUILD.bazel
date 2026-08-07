@@ -1,0 +1,34 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "servicers_py",
+    srcs = ["servicers.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reboot/aio:servicers_py",
+        "//reboot/std/presence/v1:presence_py",
+    ],
+)
+
+py_library(
+    name = "main_py",
+    srcs = ["main.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":servicers_py",
+        "//reboot/aio:applications_py",
+    ],
+)
+
+py_binary(
+    name = "companion_app",
+    srcs = ["main.py"],
+    main = "main.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":servicers_py",
+        "//reboot/aio:applications_py",
+    ],
+)

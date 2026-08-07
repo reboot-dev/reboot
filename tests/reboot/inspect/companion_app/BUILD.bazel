@@ -1,0 +1,12 @@
+load("@rules_python//python:defs.bzl", "py_test")
+
+py_test(
+    name = "companion_app_tests_py",
+    srcs = [":companion_app_tests.py"],
+    main = "companion_app_tests.py",
+    deps = [
+        "//reboot/aio:tests_py",
+        "//reboot/inspect/companion_app:servicers_py",
+        "//reboot/std/presence/v1:presence_py",
+    ],
+)
