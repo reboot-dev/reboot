@@ -24,6 +24,7 @@ from opentelemetry.sdk.environment_variables import (
     OTEL_EXPORTER_OTLP_TRACES_INSECURE,
 )
 from pathlib import Path
+from rbt.inspect.companion_app.v1.dashboard_rbt import Dashboard
 from rbt.v1alpha1.errors_pb2 import StateNotConstructed
 from reboot.aio.aborted import Aborted
 from reboot.aio.backoff import Backoff
@@ -56,8 +57,11 @@ from reboot.cli.common.transpile import (
 )
 from reboot.cli.common.watch import FileWatcher, file_watcher
 from reboot.controller.plan_makers import validate_num_servers
-from reboot.inspect.companion_app.constants import DASHBOARD_ID, DASHBOARD_PATH
-from reboot.inspect.companion_app.dashboard_api_rbt import Dashboard
+from reboot.inspect.companion_app.constants import (
+    DASHBOARD_ID,
+    DASHBOARD_PATH,
+    ENVVAR_RBT_APPLICATION_URL,
+)
 from reboot.server.local_envoy_factory import LocalEnvoyFactory
 from reboot.settings import (
     DEFAULT_SECURE_PORT,
@@ -458,6 +462,7 @@ def _companion_app_env(
     parser: ArgumentParser,
     *,
     companion_app_port: int,
+    application_url: str,
 ) -> dict[str, str]:
     """The environment for the companion application.
 
@@ -492,6 +497,10 @@ def _companion_app_env(
     # set above because one server otherwise turns Envoy off, and
     # the browser has to reach this application.
     composed[ENVVAR_RBT_SERVERS] = '1'
+
+    # The dashboard is served by the companion, so this is the only way
+    # it can learn where the application it describes is.
+    composed[ENVVAR_RBT_APPLICATION_URL] = application_url
 
     if args.application_name is not None:
         composed[ENVVAR_RBT_NAME] = f'{args.application_name}-companion'
@@ -550,7 +559,7 @@ async def _open_dashboard_once(
         backoff = Backoff(initial_backoff_seconds=0.1, max_backoff_seconds=1)
         while True:
             try:
-                if (await dashboard.opened(context)).opened:
+                if (await dashboard.Opened(context)).opened:
                     return
                 break
             except Aborted as aborted:
@@ -572,7 +581,7 @@ async def _open_dashboard_once(
         )
         return
 
-    await Dashboard.ref(DASHBOARD_ID).record_opened(
+    await Dashboard.ref(DASHBOARD_ID).RecordOpened(
         ExternalContext(name="dev-run-record-dashboard", url=companion_url)
     )
 
@@ -1725,6 +1734,9 @@ async def __dev_run(
             args,
             parser,
             companion_app_port=companion_app_port,
+            application_url=(
+                f'http://127.0.0.1:{args.port or DEFAULT_LOCAL_ENVOY_PORT}'
+            ),
         )
         background_command_tasks.append(
             asyncio.create_task(

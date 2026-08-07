@@ -8,10 +8,16 @@ process, with its own state store, alongside the application being
 developed.
 """
 import asyncio
+import os
 from pathlib import Path
 from reboot.aio.applications import Application
-from reboot.inspect.companion_app.constants import DASHBOARD_PATH
+from reboot.inspect.companion_app.constants import (
+    DASHBOARD_PATH,
+    ENVVAR_RBT_APPLICATION_URL,
+)
 from reboot.inspect.companion_app.servicers import servicers
+from reboot.inspect.companion_app.watcher import watch
+from reboot.settings import ENVVAR_REBOOT_LOCAL_ENVOY_PORT
 from starlette.staticfiles import StaticFiles
 
 # The built page, beside this module -- the same arrangement
@@ -47,7 +53,34 @@ def application() -> Application:
 
 
 async def main():
-    await application().run()
+    running = application()
+
+    application_url = os.environ.get(ENVVAR_RBT_APPLICATION_URL)
+
+    if application_url is None:
+        # Nothing told us where the application is, so there is nothing
+        # to describe. Serve the dashboard anyway; it will say so.
+        await running.run()
+        return
+
+    # Watch the application for as long as we serve. Deliberately a
+    # plain task rather than a servicer or a workflow: both are
+    # servicer code, which may not call another application.
+    watcher = asyncio.create_task(
+        watch(
+            application_url=application_url,
+            companion_url=(
+                'http://127.0.0.1:'
+                f'{os.environ.get(ENVVAR_REBOOT_LOCAL_ENVOY_PORT, "9871")}'
+            ),
+        ),
+        name=f'watch() in {__name__}',
+    )
+
+    try:
+        await running.run()
+    finally:
+        watcher.cancel()
 
 
 if __name__ == '__main__':

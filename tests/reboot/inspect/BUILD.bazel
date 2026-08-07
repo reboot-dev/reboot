@@ -18,3 +18,18 @@ py_test(
         "//tests/reboot:echo_servicers_py",
     ],
 )
+
+py_test(
+    name = "schema_tests_py",
+    srcs = [
+        ":schema_tests.py",
+    ],
+    main = "schema_tests.py",
+    deps = [
+        "//rbt/v1alpha1/inspect:inspect_py_grpc",
+        "//rbt/v1alpha1/inspect:inspect_py_proto",
+        "//reboot/aio:tests_py",
+        "//reboot/inspect:servicer_py",
+        "//reboot/inspect/companion_app:servicers_py",
+    ],
+)

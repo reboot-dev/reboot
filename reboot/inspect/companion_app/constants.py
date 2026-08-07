@@ -14,10 +14,21 @@ DASHBOARD_PATH = '/dashboard'
 # id if that ever changes.
 DASHBOARD_ID = 'dashboard'
 
+# The `Schema` state holding the shape of the application under
+# development, as the companion last saw it.
+SCHEMA_ID = 'schema'
+
+# Carries the address of the application under development into the
+# companion, which serves it to the dashboard. The dashboard is served
+# by the companion, so it has no other way to learn where the
+# application it describes actually is.
+ENVVAR_RBT_APPLICATION_URL = 'RBT_APPLICATION_URL'
+
 # The `Presence` state the dashboard page subscribes to, recording who
 # is looking at a dashboard right now. Not currently used to decide
 # whether to open one -- see `DashboardServicer`.
 #
-# The page names this same value independently, in `main.tsx`, since
-# TypeScript cannot read it from here.
+# The page names this and `CONFIG_PATH` independently, in
+# `frontend/src/constants.ts`, since TypeScript cannot read them from
+# here. Keep the two in step.
 PRESENCE_ID = 'dashboard'

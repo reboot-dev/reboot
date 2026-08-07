@@ -7,10 +7,10 @@ does not through a forwarded port, where a departed viewer looks
 present indefinitely.
 """
 import unittest
+from rbt.inspect.companion_app.v1.dashboard_rbt import Dashboard
 from reboot.aio.tests import Reboot
 from reboot.cli.commands.dev import _open_dashboard_once
 from reboot.inspect.companion_app.constants import DASHBOARD_ID, DASHBOARD_PATH
-from reboot.inspect.companion_app.dashboard_api_rbt import Dashboard
 from reboot.inspect.companion_app.main import application
 from unittest.mock import patch
 
@@ -30,7 +30,7 @@ class OpenDashboardTest(unittest.IsolatedAsyncioTestCase):
     async def _opened(self) -> bool:
         context = self.rbt.create_external_context(name=self.id())
         try:
-            return (await Dashboard.ref(DASHBOARD_ID).opened(context)).opened
+            return (await Dashboard.ref(DASHBOARD_ID).Opened(context)).opened
         except Exception:
             return False
 

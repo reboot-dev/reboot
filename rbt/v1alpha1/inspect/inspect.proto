@@ -66,6 +66,68 @@ message GetStateResponse {
 
 ////////////////////////////////////////////////////////////////////////
 
+// A field of a state, or an argument of a method.
+message FieldInfo {
+  string name = 1;
+
+  // Rendered for a reader, e.g. "str", "float", "AccountState".
+  string type = 2;
+}
+
+message MethodInfo {
+  string name = 1;
+
+  // One of "reader", "writer", "transaction" or "workflow".
+  string kind = 2;
+
+  // The request message's fields, flattened. A method taking no
+  // request has none.
+  repeated FieldInfo arguments = 3;
+
+  // The response message's name; empty when the method returns
+  // nothing.
+  string returns = 4;
+
+  // Names of the error types the method declares it may raise.
+  repeated string errors = 5;
+
+  // The description its author wrote, when there is one.
+  //
+  // Only methods that are also exposed to MCP can carry one today:
+  // the sole `description` in the schema belongs to
+  // `McpMethodOptions`, so a `description=` on a method with no `mcp=`
+  // is dropped before it reaches us.
+  optional string description = 6;
+
+  // Whether this method constructs the state, rather than requiring
+  // it to already exist.
+  bool constructor = 7;
+
+  // Whether the method is exposed as an MCP tool or resource.
+  bool mcp = 8;
+}
+
+message StateTypeInfo {
+  // Fully qualified, e.g. "bank.v1.Account".
+  string name = 1;
+
+  // The file this was generated from, e.g. "bank/v1/account.proto",
+  // which maps back to the source the developer wrote.
+  string file = 2;
+
+  repeated FieldInfo fields = 3;
+
+  repeated MethodInfo methods = 4;
+}
+
+message GetSchemaRequest {}
+
+message GetSchemaResponse {
+  repeated StateTypeInfo state_types = 1;
+}
+
+////////////////////////////////////////////////////////////////////////
+
 service Inspect {
   // The list of state types in an application is static, however, we
   // make this a streaming RPC so that the client can hear when it
@@ -81,6 +143,15 @@ service Inspect {
 
   // Get the data for a single state.
   rpc GetState(GetStateRequest) returns (stream GetStateResponse) {}
+
+  // Describe the shape of this application: its state types, their
+  // fields, and the methods on them. `GetStateTypes` answers which
+  // state types exist; this answers what they are.
+  //
+  // Streaming for the same reason `GetStateTypes` streams: the schema
+  // is static, but a redeployed application may have a different one,
+  // and a disconnect is how the client learns to read it again.
+  rpc GetSchema(GetSchemaRequest) returns (stream GetSchemaResponse) {}
 
   // Serve a web dashboard. Uses `HttpBody` to return arbitrary content (HTML,
   // JS) to callers; see `httpbody.proto` for more details.

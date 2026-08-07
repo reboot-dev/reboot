@@ -6,19 +6,27 @@ import os
 import re
 import traceback
 from google.api.httpbody_pb2 import HttpBody
+from google.protobuf import descriptor_pool
+from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.struct_pb2 import Struct
 from log.log import get_logger
 from pathlib import Path
+from rbt.v1alpha1 import options_pb2
 from rbt.v1alpha1.application import application_rbt
 from rbt.v1alpha1.inspect import inspect_pb2_grpc
 from rbt.v1alpha1.inspect.inspect_pb2 import (
+    FieldInfo,
+    GetSchemaRequest,
+    GetSchemaResponse,
     GetStateRequest,
     GetStateResponse,
     GetStateTypesRequest,
     GetStateTypesResponse,
     ListStatesRequest,
     ListStatesResponse,
+    MethodInfo,
     StateInfo,
+    StateTypeInfo,
     WebDashboardRequest,
 )
 from reboot.aio.auth.admin_auth import (
@@ -74,6 +82,115 @@ async def chunks_get_state(
             total=total,
             data=data[offset:offset + chunk_size_bytes],
         )
+
+
+# Proto scalar types, rendered the way the developer wrote them rather
+# than as protobuf spellings.
+_TYPE_NAMES = {
+    FieldDescriptor.TYPE_DOUBLE: 'float',
+    FieldDescriptor.TYPE_FLOAT: 'float',
+    FieldDescriptor.TYPE_INT64: 'int',
+    FieldDescriptor.TYPE_UINT64: 'int',
+    FieldDescriptor.TYPE_INT32: 'int',
+    FieldDescriptor.TYPE_FIXED64: 'int',
+    FieldDescriptor.TYPE_FIXED32: 'int',
+    FieldDescriptor.TYPE_BOOL: 'bool',
+    FieldDescriptor.TYPE_STRING: 'str',
+    FieldDescriptor.TYPE_BYTES: 'bytes',
+    FieldDescriptor.TYPE_UINT32: 'int',
+    FieldDescriptor.TYPE_SFIXED32: 'int',
+    FieldDescriptor.TYPE_SFIXED64: 'int',
+    FieldDescriptor.TYPE_SINT32: 'int',
+    FieldDescriptor.TYPE_SINT64: 'int',
+}
+
+
+def _type_name(field) -> str:
+    """How to render `field`'s type."""
+    if field.type in (
+        FieldDescriptor.TYPE_MESSAGE, FieldDescriptor.TYPE_GROUP
+    ):
+        name = field.message_type.name
+    elif field.type == FieldDescriptor.TYPE_ENUM:
+        name = field.enum_type.name
+    else:
+        name = _TYPE_NAMES.get(field.type, 'unknown')
+
+    if field.label == FieldDescriptor.LABEL_REPEATED:
+        return f'list[{name}]'
+    return name
+
+
+def _fields_of(message) -> list[FieldInfo]:
+    return [
+        FieldInfo(name=field.name, type=_type_name(field))
+        for field in message.fields
+    ]
+
+
+def _describe_method(method) -> MethodInfo:
+    options = method.GetOptions().Extensions[options_pb2.method]
+    kind = options.WhichOneof('kind') or ''
+
+    info = MethodInfo(
+        name=method.name,
+        kind=kind,
+        arguments=_fields_of(method.input_type),
+        errors=list(options.errors),
+        mcp=options.HasField('mcp'),
+    )
+
+    # An empty response means the method returns nothing; saying
+    # "Empty" would be an implementation detail leaking out.
+    if method.output_type.full_name != 'google.protobuf.Empty':
+        info.returns = method.output_type.name
+
+    # Only a method exposed to MCP can carry a description today; see
+    # `McpMethodOptions`. A `description=` written on any other method
+    # never reaches us.
+    if options.HasField('mcp') and options.mcp.description:
+        info.description = options.mcp.description
+
+    # Only writers and transactions can construct.
+    if kind in ('writer', 'transaction'):
+        info.constructor = getattr(options, kind).HasField('constructor')
+
+    return info
+
+
+def _describe_state_type(
+    state_type_name: StateTypeName,
+    middleware: Middleware,
+) -> Optional[StateTypeInfo]:
+    """Describes one state type, or `None` when its descriptors can't
+    be found -- a state type we can't describe shouldn't stop us
+    describing the rest."""
+    pool = descriptor_pool.Default()
+
+    try:
+        state = pool.FindMessageTypeByName(state_type_name)
+    except KeyError:
+        logger.warning(
+            f"No descriptor for state type '{state_type_name}'; "
+            "omitting it from the schema"
+        )
+        return None
+
+    info = StateTypeInfo(
+        name=state_type_name,
+        file=state.file.name,
+        fields=_fields_of(state),
+    )
+
+    for service_name in middleware.service_names:
+        try:
+            service = pool.FindServiceByName(service_name)
+        except KeyError:
+            continue
+        for method in service.methods:
+            info.methods.append(_describe_method(method))
+
+    return info
 
 
 class InspectServicer(
@@ -280,6 +397,32 @@ class InspectServicer(
             )
             await grpc_context.abort(grpc.StatusCode.INTERNAL)
             raise RuntimeError('This code is unreachable')  # For mypy.
+
+    async def GetSchema(
+        self,
+        request: GetSchemaRequest,
+        grpc_context: grpc.aio.ServicerContext,
+    ) -> AsyncIterator[GetSchemaResponse]:
+        await self.ensure_admin_auth_or_fail(grpc_context)
+
+        # Everything below comes out of the descriptors the generated
+        # code already registered, so it describes exactly the
+        # application that is running.
+        response = GetSchemaResponse()
+        for state_type_name, middleware in (
+            self._middleware_by_state_type_name.items()
+        ):
+            if state_type_name in INTERNAL_STATE_TYPE_NAMES:
+                continue
+            state_type = _describe_state_type(state_type_name, middleware)
+            if state_type is not None:
+                response.state_types.append(state_type)
+        yield response
+
+        # Sleep forever, so that the connection stays open and the
+        # client can notice when the application restarts (meaning the
+        # schema may have changed).
+        await asyncio.Event().wait()
 
     async def GetState(
         self,

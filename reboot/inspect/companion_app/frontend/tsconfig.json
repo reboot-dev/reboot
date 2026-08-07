@@ -5,6 +5,12 @@
     "jsx": "react-jsx",
     "moduleResolution": "bundler",
     "skipLibCheck": true,
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": true,
+    "baseUrl": ".",
+    "paths": {
+      // The generated bindings for the companion's own state, which
+      // `dashboard_js_reboot_react` emits beside its proto.
+      "@dashboard/*": ["../../../../rbt/inspect/companion_app/v1/*"]
+    }
   }
 }

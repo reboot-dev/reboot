@@ -1,0 +1,139 @@
+syntax = "proto3";
+
+package rbt.inspect.companion_app.v1;
+
+import "rbt/v1alpha1/options.proto";
+
+////////////////////////////////////////////////////////////////////////
+
+message Dashboard {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  // Whether a dashboard has ever been opened for this application.
+  // `rbt dev run` opens one the first time and then leaves the
+  // developer alone, so that a restart doesn't put a tab in front of
+  // them again.
+  bool opened = 1;
+}
+
+message OpenedRequest {}
+
+message OpenedResponse {
+  bool opened = 1;
+}
+
+message RecordOpenedRequest {}
+
+message RecordOpenedResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+service DashboardMethods {
+  option (rbt.v1alpha1.service).state = "Dashboard";
+
+  rpc Opened(OpenedRequest) returns (OpenedResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc RecordOpened(RecordOpenedRequest) returns (RecordOpenedResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// The shape of the application under development, as the companion
+// last saw it.
+//
+// Declared here rather than reusing `rbt.v1alpha1.inspect`'s messages
+// deliberately: this is the companion's contract with its dashboard,
+// and should not be pinned to the wire format of the RPC it happens to
+// read today -- which also carries HTTP annotations that have nothing
+// to do with a schema.
+
+message FieldInfo {
+  string name = 1;
+  string type = 2;
+}
+
+message MethodInfo {
+  string name = 1;
+  string kind = 2;
+  repeated FieldInfo arguments = 3;
+  string returns = 4;
+  repeated string errors = 5;
+  optional string description = 6;
+  bool constructor = 7;
+  bool mcp = 8;
+}
+
+message StateTypeInfo {
+  string name = 1;
+  string file = 2;
+  repeated FieldInfo fields = 3;
+  repeated MethodInfo methods = 4;
+}
+
+////////////////////////////////////////////////////////////////////////
+
+// What the companion has learned about the application under
+// development, so that a browser can read it without reaching that
+// application itself.
+//
+// Held as state rather than fetched on demand so the dashboard can
+// read it reactively: the companion watches the application across
+// restarts and writes here when what it sees changes, and every open
+// dashboard is pushed the update.
+message Schema {
+  option (rbt.v1alpha1.state) = {
+  };
+
+  repeated StateTypeInfo state_types = 1;
+
+  // Whether the companion is currently connected to the application.
+  // False means `state_types` is the last thing we saw, not what is
+  // running now -- worth saying out loud rather than showing history
+  // as though it were current.
+  bool connected = 2;
+
+  // When the companion last got an answer from the application, as
+  // milliseconds since the epoch. The dashboard shows the age of this
+  // so that a page which has stopped receiving updates says so,
+  // instead of presenting old state types as current.
+  int64 read_at_ms = 3;
+}
+
+message SchemaGetRequest {}
+
+message SchemaGetResponse {
+  repeated StateTypeInfo state_types = 1;
+  bool connected = 2;
+  int64 read_at_ms = 3;
+}
+
+message SchemaRecordRequest {
+  repeated StateTypeInfo state_types = 1;
+  bool connected = 2;
+  int64 read_at_ms = 3;
+}
+
+message SchemaRecordResponse {}
+
+////////////////////////////////////////////////////////////////////////
+
+service SchemaMethods {
+  option (rbt.v1alpha1.service).state = "Schema";
+
+  rpc Get(SchemaGetRequest) returns (SchemaGetResponse) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
+  rpc Record(SchemaRecordRequest) returns (SchemaRecordResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+}

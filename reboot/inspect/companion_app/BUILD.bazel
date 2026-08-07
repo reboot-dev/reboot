@@ -1,28 +1,5 @@
-load(
-    "@com_github_reboot_dev_reboot//reboot:pydantic_to_proto.bzl",
-    "py_reboot_library_from_pydantic",
-)
 load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-
-py_library(
-    name = "dashboard_api_py",
-    srcs = ["dashboard_api.py"],
-    srcs_version = "PY3",
-    visibility = ["//visibility:public"],
-    deps = [
-        "@com_github_reboot_dev_reboot//reboot:api_py",
-    ],
-)
-
-py_reboot_library_from_pydantic(
-    name = "dashboard_py_reboot",
-    py_deps = [
-        ":dashboard_api_py",
-    ],
-    pydantic = ":dashboard_api.py",
-    visibility = ["//visibility:public"],
-)
 
 py_library(
     name = "constants_py",
@@ -37,7 +14,7 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
-        ":dashboard_py_reboot",
+        "//rbt/inspect/companion_app/v1:dashboard_py_reboot",
         "//reboot/aio:servicers_py",
         "//reboot/std/presence/v1:presence_py",
     ],
@@ -65,7 +42,10 @@ genrule(
 
 py_library(
     name = "main_py",
-    srcs = ["main.py"],
+    srcs = [
+        "main.py",
+        "watcher.py",
+    ],
     data = [
         ":dashboard_dist",
     ],
@@ -74,14 +54,22 @@ py_library(
     deps = [
         ":constants_py",
         ":servicers_py",
+        "//rbt/v1alpha1/inspect:inspect_py_grpc",
+        "//rbt/v1alpha1/inspect:inspect_py_proto",
         "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:headers_py",
+        "//reboot/aio/backoff:python",
         requirement("starlette"),
     ],
 )
 
 py_binary(
     name = "companion_app",
-    srcs = ["main.py"],
+    srcs = [
+        "main.py",
+        "watcher.py",
+    ],
     data = [
         ":dashboard_dist",
     ],
@@ -90,7 +78,12 @@ py_binary(
     deps = [
         ":constants_py",
         ":servicers_py",
+        "//rbt/v1alpha1/inspect:inspect_py_grpc",
+        "//rbt/v1alpha1/inspect:inspect_py_proto",
         "//reboot/aio:applications_py",
+        "//reboot/aio:external_py",
+        "//reboot/aio:headers_py",
+        "//reboot/aio/backoff:python",
         requirement("starlette"),
     ],
 )

@@ -13,6 +13,8 @@ from tests.reboot.cli.mock_exit import (
 )
 from unittest.mock import Mock, patch
 
+APPLICATION_URL = 'http://127.0.0.1:9991'
+
 
 @patch('argparse.ArgumentParser.exit', mock_raise_instead_of_exit)
 class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
@@ -154,6 +156,7 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
                     args,
                     parser,
                     companion_app_port=dev.DEFAULT_COMPANION_APP_PORT,
+                    application_url=APPLICATION_URL,
                 )
 
             self.assertEqual(env['RBT_NAME'], 'app-companion')
@@ -205,6 +208,7 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
                     args,
                     parser,
                     companion_app_port=dev.DEFAULT_COMPANION_APP_PORT,
+                    application_url=APPLICATION_URL,
                 )
 
             self.assertNotEqual(env['REBOOT_CRYPTO_ROOT_KEYS'], 'v1:theirs')
@@ -216,6 +220,7 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
                     args,
                     parser,
                     companion_app_port=dev.DEFAULT_COMPANION_APP_PORT,
+                    application_url=APPLICATION_URL,
                 )
             self.assertEqual(
                 env['REBOOT_CRYPTO_ROOT_KEYS'],
@@ -244,6 +249,7 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
                 args,
                 parser,
                 companion_app_port=dev.DEFAULT_COMPANION_APP_PORT,
+                application_url=APPLICATION_URL,
             )
 
             # An application run without a name keeps its state in a

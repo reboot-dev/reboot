@@ -40,9 +40,9 @@ py_test(
     srcs = ["open_dashboard_tests.py"],
     main = "open_dashboard_tests.py",
     deps = [
+        "//rbt/inspect/companion_app/v1:dashboard_py_reboot",
         "//reboot/aio:tests_py",
         "//reboot/cli/commands:dev_py",
-        "//reboot/inspect/companion_app:dashboard_py_reboot",
         "//reboot/inspect/companion_app:main_py",
     ],
 )
