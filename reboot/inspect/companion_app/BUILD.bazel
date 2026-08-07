@@ -1,4 +1,35 @@
+load(
+    "@com_github_reboot_dev_reboot//reboot:pydantic_to_proto.bzl",
+    "py_reboot_library_from_pydantic",
+)
+load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "dashboard_api_py",
+    srcs = ["dashboard_api.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//reboot:api_py",
+    ],
+)
+
+py_reboot_library_from_pydantic(
+    name = "dashboard_py_reboot",
+    py_deps = [
+        ":dashboard_api_py",
+    ],
+    pydantic = ":dashboard_api.py",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "constants_py",
+    srcs = ["constants.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+)
 
 py_library(
     name = "servicers_py",
@@ -6,29 +37,60 @@ py_library(
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        ":dashboard_py_reboot",
         "//reboot/aio:servicers_py",
         "//reboot/std/presence/v1:presence_py",
     ],
 )
 
+# Inline the JS bundle into the page's HTML, producing one
+# self-contained file. `dashboard/index.html` must be *this* package's
+# output, because the application serves it from beside its own module
+# rather than from a project root; a `genrule` can only write within
+# its own package.
+genrule(
+    name = "dashboard_dist",
+    srcs = [
+        "//reboot/inspect/companion_app/frontend:dashboard_bundle.js",
+        "//reboot/inspect/companion_app/frontend:index.html",
+    ],
+    outs = ["dashboard/index.html"],
+    cmd = "$(location //reboot/ping:inline_bundle) " +
+          "$(location //reboot/inspect/companion_app/frontend:index.html) " +
+          "$(location //reboot/inspect/companion_app/frontend:dashboard_bundle.js) " +
+          "$@ " +
+          "--marker '<script type=\"module\" src=\"./src/main.tsx\"></script>'",
+    tools = ["//reboot/ping:inline_bundle"],
+)
+
 py_library(
     name = "main_py",
     srcs = ["main.py"],
+    data = [
+        ":dashboard_dist",
+    ],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],
     deps = [
+        ":constants_py",
         ":servicers_py",
         "//reboot/aio:applications_py",
+        requirement("starlette"),
     ],
 )
 
 py_binary(
     name = "companion_app",
     srcs = ["main.py"],
+    data = [
+        ":dashboard_dist",
+    ],
     main = "main.py",
     visibility = ["//visibility:public"],
     deps = [
+        ":constants_py",
         ":servicers_py",
         "//reboot/aio:applications_py",
+        requirement("starlette"),
     ],
 )

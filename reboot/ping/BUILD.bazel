@@ -112,6 +112,7 @@ py_binary(
     name = "inline_bundle",
     srcs = ["frontend/inline_bundle.py"],
     main = "frontend/inline_bundle.py",
+    visibility = ["//visibility:public"],
 )
 
 genrule(

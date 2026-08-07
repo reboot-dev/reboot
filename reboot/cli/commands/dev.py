@@ -12,6 +12,7 @@ import signal
 import sys
 import termios
 import tty
+import webbrowser
 from colorama import Fore
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -23,9 +24,12 @@ from opentelemetry.sdk.environment_variables import (
     OTEL_EXPORTER_OTLP_TRACES_INSECURE,
 )
 from pathlib import Path
+from rbt.v1alpha1.errors_pb2 import StateNotConstructed
+from reboot.aio.aborted import Aborted
 from reboot.aio.backoff import Backoff
 from reboot.aio.contexts import EffectValidation
 from reboot.aio.exceptions import InputError
+from reboot.aio.external import ExternalContext
 from reboot.cli.commands.generate import generate_direct
 # We import the whole `terminal` module (as opposed to the methods it contains)
 # to allow us to mock these methods out in tests.
@@ -52,6 +56,8 @@ from reboot.cli.common.transpile import (
 )
 from reboot.cli.common.watch import FileWatcher, file_watcher
 from reboot.controller.plan_makers import validate_num_servers
+from reboot.inspect.companion_app.constants import DASHBOARD_ID, DASHBOARD_PATH
+from reboot.inspect.companion_app.dashboard_api_rbt import Dashboard
 from reboot.server.local_envoy_factory import LocalEnvoyFactory
 from reboot.settings import (
     DEFAULT_SECURE_PORT,
@@ -239,6 +245,18 @@ def _register_dev_run(parser: ArgumentParser):
         default=True,
         help='whether or not to run the companion application, which holds '
         'the state behind the inspect dashboard',
+    )
+
+    parser.subcommand('dev run').add_argument(
+        '--open-dashboard',
+        type=bool,
+        # Three states: unset checks whether a dashboard is already
+        # open and opens one if not; '--no-open-dashboard' never
+        # opens; '--open-dashboard' opens even when one appears to be
+        # open already.
+        default=None,
+        help='whether or not to open a dashboard in your browser when '
+        'your application starts serving',
     )
 
     parser.subcommand('dev run').add_argument(
@@ -505,10 +523,66 @@ def _companion_app_env(
     return composed
 
 
+async def _open_dashboard_once(
+    *,
+    companion_url: str,
+    forced: bool,
+) -> None:
+    """Opens the companion's dashboard the first time, and not again.
+
+    The companion records that it opened one, so a restart leaves the
+    developer alone rather than putting a tab in front of them again.
+    `--open-dashboard` overrides the record when they want it back.
+
+    Deliberately not "is anyone looking right now?", which `Presence`
+    would answer: that depends on a browser's disconnect reaching the
+    server, and it does not through a forwarded port -- a departed
+    viewer looks present forever, so a dashboard would never open
+    again. Worth revisiting once presence has a liveness signal that
+    doesn't rely on transport cancellation alone.
+    """
+    context = ExternalContext(name="dev-run-open-dashboard", url=companion_url)
+    dashboard = Dashboard.ref(DASHBOARD_ID)
+
+    if not forced:
+        # The companion is still starting: it has to bring up its own
+        # Envoy and wait for that to accept its configuration.
+        backoff = Backoff(initial_backoff_seconds=0.1, max_backoff_seconds=1)
+        while True:
+            try:
+                if (await dashboard.opened(context)).opened:
+                    return
+                break
+            except Aborted as aborted:
+                if isinstance(aborted.error, StateNotConstructed):
+                    # Never opened one, which is the first run.
+                    break
+                await backoff()
+            except Exception:
+                await backoff()
+
+    # `webbrowser` honors `$BROWSER`, which is what makes this work in
+    # Codespaces and devcontainers, and returns `False` rather than
+    # raising when there is no browser to open.
+    dashboard_url = f'{companion_url}{DASHBOARD_PATH}/'
+
+    if not await asyncio.to_thread(webbrowser.open, dashboard_url):
+        terminal.warn(
+            f"Could not open a browser; your dashboard is at {dashboard_url}"
+        )
+        return
+
+    await Dashboard.ref(DASHBOARD_ID).record_opened(
+        ExternalContext(name="dev-run-record-dashboard", url=companion_url)
+    )
+
+
 async def _run_companion_app(
     *,
     env: dict[str, str],
     state_directory: Optional[Path],
+    companion_url: str,
+    open_dashboard: Optional[bool],
     subprocesses: Subprocesses,
     application_serving_event: asyncio.Event,
 ) -> None:
@@ -530,6 +604,7 @@ async def _run_companion_app(
     backoff = Backoff()
     failures = 0
     reported = False
+    opened = False
 
     while True:
         async with subprocesses.exec(
@@ -543,6 +618,24 @@ async def _run_companion_app(
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         ) as process:
+            if not opened and open_dashboard is not False:
+                # At most once per `rbt dev run`, so a hot reload or a
+                # companion restart never opens a second tab.
+                opened = True
+                try:
+                    await _open_dashboard_once(
+                        companion_url=companion_url,
+                        forced=open_dashboard is True,
+                    )
+                except Exception as e:
+                    # Never let this take down `rbt dev run`; the
+                    # developer's application is unaffected and the
+                    # dashboard is still reachable by hand.
+                    terminal.warn(
+                        f"Could not open a dashboard ({e}); it is at "
+                        f"{companion_url}{DASHBOARD_PATH}/"
+                    )
+
             await process.wait()
             failed = process.returncode != 0
 
@@ -1644,6 +1737,8 @@ async def __dev_run(
                         ) if ENVVAR_RBT_STATE_DIRECTORY
                         in companion_app_environment else None
                     ),
+                    companion_url=(f'http://127.0.0.1:{companion_app_port}'),
+                    open_dashboard=args.open_dashboard,
                     subprocesses=subprocesses,
                     application_serving_event=application_serving_event,
                 ),
