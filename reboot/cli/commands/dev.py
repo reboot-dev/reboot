@@ -234,6 +234,21 @@ def _register_dev_run(parser: ArgumentParser):
     )
 
     parser.subcommand('dev run').add_argument(
+        '--companion-app',
+        type=bool,
+        default=True,
+        help='whether or not to run the companion application, which holds '
+        'the state behind the inspect dashboard',
+    )
+
+    parser.subcommand('dev run').add_argument(
+        '--companion-app-port',
+        type=int,
+        help='port on which the companion application will serve traffic; '
+        f'defaults to {DEFAULT_COMPANION_APP_PORT}',
+    )
+
+    parser.subcommand('dev run').add_argument(
         '--watch',
         type=str,
         repeatable=True,
@@ -420,6 +435,139 @@ async def _run(
     application_started_event.clear()
 
 
+def _companion_app_env(
+    args,
+    parser: ArgumentParser,
+    *,
+    companion_app_port: int,
+) -> dict[str, str]:
+    """The environment for the companion application.
+
+    Built from the ambient environment rather than from the
+    developer's application environment, so that nothing naming
+    their application -- its name, state directory, port, launcher
+    or frontend -- reaches an application that shares none of it.
+    """
+    composed = os.environ.copy()
+
+    for name in (
+        ENVVAR_RBT_NAME,
+        ENVVAR_RBT_STATE_DIRECTORY,
+        ENVVAR_REBOOT_LOCAL_ENVOY_PORT,
+        ENVVAR_RBT_NODEJS,
+        ENVVAR_RBT_FRONTEND_HOST,
+        ENVVAR_RBT_FRONTEND_DIST_PATH,
+        ENVVAR_RBT_FRONTEND_ROOT_PATH,
+        ENVVAR_REBOOT_CRYPTO_ROOT_KEYS,
+        ENVVAR_REBOOT_OAUTH_SIGNING_SECRET,
+    ):
+        composed.pop(name, None)
+
+    composed[ENVVAR_RBT_DEV] = 'true'
+    composed[ENVVAR_REBOOT_EXPECTED_VERSION] = REBOOT_VERSION
+    composed[ENVVAR_REBOOT_LOCAL_ENVOY] = 'true'
+    composed[ENVVAR_REBOOT_LOCAL_ENVOY_PORT] = str(companion_app_port)
+
+    # A single server, so that a subscriber's `Connect` and
+    # `Toggle` always land on the same process; presence tracks its
+    # connections in memory there. `ENVVAR_REBOOT_LOCAL_ENVOY` is
+    # set above because one server otherwise turns Envoy off, and
+    # the browser has to reach this application.
+    composed[ENVVAR_RBT_SERVERS] = '1'
+
+    if args.application_name is not None:
+        composed[ENVVAR_RBT_NAME] = f'{args.application_name}-companion'
+        state_directory = (
+            dot_rbt_dev_directory(args, parser) / args.application_name /
+            COMPANION_APP_STATE_DIRECTORY_NAME
+        )
+        composed[ENVVAR_RBT_STATE_DIRECTORY] = str(state_directory)
+
+        root_keys_path = state_directory / 'crypto-root-keys'
+        if root_keys_path.exists():
+            composed[ENVVAR_REBOOT_CRYPTO_ROOT_KEYS
+                    ] = root_keys_path.read_text()
+        else:
+            root_keys = f'v1:{secrets.token_urlsafe(32)}'
+            root_keys_path.parent.mkdir(parents=True, exist_ok=True)
+            root_keys_path.write_text(root_keys)
+            composed[ENVVAR_REBOOT_CRYPTO_ROOT_KEYS] = root_keys
+    else:
+        # An application run without a name keeps its state in a
+        # temporary directory that doesn't survive a restart. The
+        # companion does the same, so its keys are fresh each time.
+        composed[ENVVAR_REBOOT_CRYPTO_ROOT_KEYS
+                ] = f'v1:{secrets.token_urlsafe(32)}'
+
+    composed[ENVVAR_REBOOT_OAUTH_SIGNING_SECRET] = composed[
+        ENVVAR_REBOOT_CRYPTO_ROOT_KEYS]
+
+    return composed
+
+
+async def _run_companion_app(
+    *,
+    env: dict[str, str],
+    state_directory: Optional[Path],
+    subprocesses: Subprocesses,
+    application_serving_event: asyncio.Event,
+) -> None:
+    """Runs the companion application, restarting it if it exits.
+
+    Waits for the developer's own application to be serving traffic
+    before starting, so that nothing the developer waits on is ever
+    waiting on this.
+
+    The companion's schema changes whenever Reboot's does, so the
+    expected reason for it to fail at startup is a backwards
+    incompatibility after an upgrade. Its state is ours and is
+    disposable, so the first failure deletes it and tries again
+    without asking. A second failure is something else, and gets
+    reported once rather than silently retried forever.
+    """
+    await application_serving_event.wait()
+
+    backoff = Backoff()
+    failures = 0
+    reported = False
+
+    while True:
+        async with subprocesses.exec(
+            sys.executable,
+            '-m',
+            'reboot.inspect.companion_app.main',
+            env=env,
+            # The companion's output would interleave with the
+            # developer's application on the same stream, with no way
+            # to tell which wrote what.
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        ) as process:
+            await process.wait()
+            failed = process.returncode != 0
+
+        if not failed:
+            failures = 0
+        else:
+            failures += 1
+
+            if failures == 1 and state_directory is not None:
+                await asyncio.to_thread(
+                    shutil.rmtree, state_directory, ignore_errors=True
+                )
+            elif not reported:
+                reported = True
+                terminal.warn(
+                    "The companion application, which powers the inspect "
+                    "dashboard, keeps failing to start. Your application is "
+                    "unaffected, and the dashboard is still available at the "
+                    "address printed above. Pass '--no-companion-app' to stop "
+                    "trying to run it."
+                )
+
+        await backoff()
+
+
 def try_and_become_child_subreaper_on_linux():
     if sys.platform == 'linux':
         # The 'pyprctl' module is available on Linux only.
@@ -542,6 +690,7 @@ async def _check_local_envoy_status(
     port: int,
     terminate_after_health_check: bool,
     application_started_event: asyncio.Event,
+    application_serving_event: Optional[asyncio.Event],
     tls_certificate: Optional[str],
     root_certificate: Optional[str],
     tracing: Tracing,
@@ -650,6 +799,9 @@ async def _check_local_envoy_status(
             was_application_serving = is_application_serving
 
             if is_application_serving:
+                if application_serving_event is not None:
+                    application_serving_event.set()
+
                 terminal.info("Application is serving traffic ...\n")
                 # MCP server and endpoint is not supported for Nodejs currently.
                 mcp_line = (
@@ -846,6 +998,23 @@ async def induce_chaos() -> Optional[int]:
 
 
 DEFAULT_LOCAL_ENVOY_PORT: int = DEFAULT_SECURE_PORT
+
+# The companion application's port. Deliberately not adjacent to
+# `DEFAULT_LOCAL_ENVOY_PORT`: VS Code forwards a port upward when the
+# one it wants is already taken on the developer's machine, so a
+# second dev container serving on 9991 arrives on 9992. A companion
+# sitting there could be reached in place of somebody else's backend,
+# which half-works and is far more confusing than not working at all.
+# 9871 is below 9991 so upward forwarding never reaches it, outside
+# the 999x band (9990 k3d and WildFly, 9993 ZeroTier, 9997 Splunk),
+# clear of 9000/9090/9200/9222/9229, hard to confuse with 9991 when
+# reading logs, and outside the Linux ephemeral range.
+DEFAULT_COMPANION_APP_PORT: int = 9871
+
+# Where the companion's state lives, relative to the application's own
+# state directory. Nesting it means `rbt dev expunge` and the in-run
+# `x` expunge remove it along with everything else.
+COMPANION_APP_STATE_DIRECTORY_NAME = 'companion'
 
 
 def _check_common_args(args):
@@ -1358,12 +1527,32 @@ async def __dev_run(
     await check_local_envoy_mode(subprocesses)
     env[ENVVAR_REBOOT_LOCAL_ENVOY] = 'true'
 
+    # The companion application holds the state behind the inspect
+    # dashboard, and serves the dashboard itself, in its own
+    # application so that both stay out of the developer's state store.
+    companion_app_port = args.companion_app_port or DEFAULT_COMPANION_APP_PORT
+
+    if args.companion_app and companion_app_port == (
+        args.port or DEFAULT_LOCAL_ENVOY_PORT
+    ):
+        terminal.fail(
+            f"The companion application's port ({companion_app_port}) is the "
+            "same as your application's port. Pass a different "
+            "'--companion-app-port', or '--companion-app=false' to run "
+            "without it."
+        )
+
+    application_serving_event = (
+        asyncio.Event() if args.companion_app else None
+    )
+
     health_check_task = asyncio.create_task(
         _check_local_envoy_status(
             port=args.port or DEFAULT_LOCAL_ENVOY_PORT,
             terminate_after_health_check=args.terminate_after_health_check or
             False,
             application_started_event=application_started_event,
+            application_serving_event=application_serving_event,
             tls_certificate=args.tls_certificate,
             root_certificate=args.tls_root_certificate,
             tracing=tracing,
@@ -1436,6 +1625,31 @@ async def __dev_run(
         root_keys_path.parent.mkdir(parents=True, exist_ok=True)
         root_keys_path.write_text(root_keys)
         return root_keys
+
+    if args.companion_app:
+        assert application_serving_event is not None
+        companion_app_environment = _companion_app_env(
+            args,
+            parser,
+            companion_app_port=companion_app_port,
+        )
+        background_command_tasks.append(
+            asyncio.create_task(
+                _run_companion_app(
+                    env=companion_app_environment,
+                    state_directory=(
+                        Path(
+                            companion_app_environment[
+                                ENVVAR_RBT_STATE_DIRECTORY]
+                        ) if ENVVAR_RBT_STATE_DIRECTORY
+                        in companion_app_environment else None
+                    ),
+                    subprocesses=subprocesses,
+                    application_serving_event=application_serving_event,
+                ),
+                name=f'_run_companion_app(...) in {__name__}',
+            )
+        )
 
     if tracing == Tracing.JAEGER:
         # TODO: dynamic port. See comment in `_run_jaeger()`.

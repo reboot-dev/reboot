@@ -119,6 +119,139 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
             [['E1', 'V1'], ['E2', 'V2'], ['E3', 'V3']],
         )
 
+    async def test_companion_app_env_is_isolated_from_the_application(
+        self
+    ) -> None:
+        with tempfile.TemporaryDirectory() as state_directory:
+            parser: ArgumentParser = cli.create_parser(
+                argv=[
+                    'rbt',
+                    f'--state-directory={state_directory}',
+                    'dev',
+                    'run',
+                    '--application-name=app',
+                    '--working-directory=.',
+                    '--application=some.py',
+                    '--python',
+                ]
+            )
+
+            args, _ = parser.parse_args()
+
+            # Values naming the developer's application must not survive
+            # into the companion's environment; if any did, the companion
+            # would collide with their state directory or port.
+            with patch.dict(
+                os.environ,
+                {
+                    'RBT_NAME': 'app',
+                    'RBT_STATE_DIRECTORY': '/somewhere/app',
+                    'RBT_NODEJS': 'true',
+                    'REBOOT_LOCAL_ENVOY_PORT': '9991',
+                },
+            ):
+                env = dev._companion_app_env(
+                    args,
+                    parser,
+                    companion_app_port=dev.DEFAULT_COMPANION_APP_PORT,
+                )
+
+            self.assertEqual(env['RBT_NAME'], 'app-companion')
+            self.assertNotIn('RBT_NODEJS', env)
+            self.assertEqual(
+                env['REBOOT_LOCAL_ENVOY_PORT'],
+                str(dev.DEFAULT_COMPANION_APP_PORT),
+            )
+
+            # One server, and Envoy explicitly on: one server would
+            # otherwise turn Envoy off, and the browser has to reach the
+            # companion.
+            self.assertEqual(env['RBT_SERVERS'], '1')
+            self.assertEqual(env['REBOOT_LOCAL_ENVOY'], 'true')
+
+            # Nested inside the application's own state directory, so that
+            # `rbt dev expunge` removes it along with everything else.
+            self.assertEqual(
+                env['RBT_STATE_DIRECTORY'],
+                str(
+                    dot_rbt_dev_directory(args, parser) / 'app' /
+                    dev.COMPANION_APP_STATE_DIRECTORY_NAME
+                ),
+            )
+
+    async def test_companion_app_keys_differ_from_the_application(
+        self
+    ) -> None:
+        with tempfile.TemporaryDirectory() as state_directory:
+            parser: ArgumentParser = cli.create_parser(
+                argv=[
+                    'rbt',
+                    f'--state-directory={state_directory}',
+                    'dev',
+                    'run',
+                    '--application-name=app',
+                    '--working-directory=.',
+                    '--application=some.py',
+                    '--python',
+                ]
+            )
+
+            args, _ = parser.parse_args()
+
+            with patch.dict(
+                os.environ, {'REBOOT_CRYPTO_ROOT_KEYS': 'v1:theirs'}
+            ):
+                env = dev._companion_app_env(
+                    args,
+                    parser,
+                    companion_app_port=dev.DEFAULT_COMPANION_APP_PORT,
+                )
+
+            self.assertNotEqual(env['REBOOT_CRYPTO_ROOT_KEYS'], 'v1:theirs')
+
+            # Stable across restarts, so tokens the companion mints stay
+            # valid until its state is expunged.
+            with patch.dict(os.environ, {}, clear=False):
+                again = dev._companion_app_env(
+                    args,
+                    parser,
+                    companion_app_port=dev.DEFAULT_COMPANION_APP_PORT,
+                )
+            self.assertEqual(
+                env['REBOOT_CRYPTO_ROOT_KEYS'],
+                again['REBOOT_CRYPTO_ROOT_KEYS'],
+            )
+
+    async def test_companion_app_without_a_name_gets_no_state_directory(
+        self
+    ) -> None:
+        with tempfile.TemporaryDirectory() as state_directory:
+            parser: ArgumentParser = cli.create_parser(
+                argv=[
+                    'rbt',
+                    f'--state-directory={state_directory}',
+                    'dev',
+                    'run',
+                    '--working-directory=.',
+                    '--application=some.py',
+                    '--python',
+                ]
+            )
+
+            args, _ = parser.parse_args()
+
+            env = dev._companion_app_env(
+                args,
+                parser,
+                companion_app_port=dev.DEFAULT_COMPANION_APP_PORT,
+            )
+
+            # An application run without a name keeps its state in a
+            # temporary directory that doesn't survive a restart; the
+            # companion follows.
+            self.assertNotIn('RBT_STATE_DIRECTORY', env)
+            self.assertNotIn('RBT_NAME', env)
+
     async def test_dev_expunge_requires_name(self) -> None:
         parser: ArgumentParser = cli.create_parser(
             argv=[
