@@ -12,7 +12,7 @@ you to start your servicer, create a context, and call the method you want to
 test.
 
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../reboot/examples/chat-room/backend/tests/chat_room_servicer_test.py&lines=10-40) -->
+(CODE:src=../../../reboot/examples/chat-room/backend/tests/chat_room_servicer_test.py&lines=10-42) -->
 <!-- The below code snippet is automatically added from ../../../reboot/examples/chat-room/backend/tests/chat_room_servicer_test.py -->
 
 ```py
@@ -33,13 +33,16 @@ async def test_chat_room(self) -> None:
     await chat_room.send(context, message="Hello, World")
 
     response: ChatRoom.MessagesResponse = await chat_room.messages(context)
-    self.assertEqual(response.messages, ["Hello, World"])
+    self.assertEqual(
+        [message.text for message in response.messages],
+        ["Hello, World"],
+    )
 
     await chat_room.send(context, message="Hello, Reboot!")
     await chat_room.send(context, message="Hello, Peace of Mind!")
     response = await chat_room.messages(context)
     self.assertEqual(
-        response.messages,
+        [message.text for message in response.messages],
         [
             "Hello, World",
             "Hello, Reboot!",
