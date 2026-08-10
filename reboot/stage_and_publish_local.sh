@@ -71,6 +71,13 @@ echo "==> Published to local registry."
 echo "Set the following to use your local packages:"
 echo
 echo "  export NPM_CONFIG_REGISTRY='$VERDACCIO_URL'"
+# `always` makes npm rewrite the host AND scheme of lockfile-pinned
+# tarball URLs to the local registry's. npm's default (`npmjs`) swaps
+# only the host and keeps the lockfile's `https`, so it fetches
+# tarballs from `https://localhost:...`, which the registry serves as
+# plain http — failing every download with
+# `ERR_SSL_WRONG_VERSION_NUMBER`.
+echo "  export NPM_CONFIG_REPLACE_REGISTRY_HOST='always'"
 echo "  export UV_FIND_LINKS='$STAGE_DIR/wheels'"
 echo
 echo "Then update:"
