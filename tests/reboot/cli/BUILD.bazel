@@ -34,6 +34,20 @@ py_test(
 )
 
 py_test(
+    name = "dashboard_tests_py",
+    srcs = [
+        "dashboard_tests.py",
+    ],
+    main = "dashboard_tests.py",
+    deps = [
+        ":mock_exit_py",
+        "//reboot/cli/common:cli_py",
+        "//reboot/cli/common:rc_py",
+        "//reboot/dashboard:constants_py",
+    ],
+)
+
+py_test(
     name = "dev_tests_py",
     srcs = [
         "dev_tests.py",

@@ -12,6 +12,7 @@ import signal
 import sys
 import termios
 import tty
+import webbrowser
 from colorama import Fore
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -23,9 +24,12 @@ from opentelemetry.sdk.environment_variables import (
     OTEL_EXPORTER_OTLP_TRACES_INSECURE,
 )
 from pathlib import Path
+from rbt.dashboard.v1.dashboard_rbt import Preferences
+from rbt.std.presence.v1.presence_rbt import Presence
 from reboot.aio.backoff import Backoff
 from reboot.aio.contexts import EffectValidation
 from reboot.aio.exceptions import InputError
+from reboot.aio.external import ExternalContext
 from reboot.cli.commands.generate import generate_direct
 # We import the whole `terminal` module (as opposed to the methods it contains)
 # to allow us to mock these methods out in tests.
@@ -52,6 +56,12 @@ from reboot.cli.common.transpile import (
 )
 from reboot.cli.common.watch import FileWatcher, file_watcher
 from reboot.controller.plan_makers import validate_num_servers
+from reboot.dashboard.constants import (
+    DASHBOARD_PATH,
+    DEFAULT_DASHBOARD_PORT,
+    PREFERENCES_ID,
+    PRESENCE_ID,
+)
 from reboot.server.local_envoy_factory import LocalEnvoyFactory
 from reboot.settings import (
     DEFAULT_SECURE_PORT,
@@ -231,6 +241,28 @@ def _register_dev_run(parser: ArgumentParser):
         type=int,
         help='port on which the Reboot app will serve traffic; defaults to '
         f'{DEFAULT_LOCAL_ENVOY_PORT}',
+    )
+
+    parser.subcommand('dev run').add_argument(
+        '--open-dashboard',
+        type=bool,
+        # Three states, two of which currently agree:
+        # '--open-dashboard' opens one; unset and
+        # '--no-open-dashboard' both leave the browser alone while
+        # `_AUTO_OPEN_DASHBOARD` is off. Unset regains a meaning of
+        # its own once that is turned on: open one unless somebody
+        # is already looking at one, or the banner said not to.
+        default=None,
+        help='open a dashboard in your browser once your application '
+        'is serving',
+    )
+
+    parser.subcommand('dev run').add_argument(
+        '--dashboard-port',
+        type=int,
+        help='port on which the developer dashboard, started separately '
+        f'with `rbt dashboard`, is serving; defaults to '
+        f'{DEFAULT_DASHBOARD_PORT}',
     )
 
     parser.subcommand('dev run').add_argument(
@@ -420,6 +452,138 @@ async def _run(
     application_started_event.clear()
 
 
+async def _viewers(dashboard_url: str) -> list[str]:
+    """The subscriber ids of everyone looking at a dashboard.
+
+    The dashboard constructs the `Presence` instance, empty, when it
+    initializes, so there is an answer from the moment it is up.
+    """
+    context = ExternalContext(name="dev-run-open-dashboard", url=dashboard_url)
+    response = await Presence.ref(PRESENCE_ID).List(context)
+    return list(response.subscriber_ids)
+
+
+async def _open_on_restart(dashboard_url: str) -> bool:
+    """Whether the developer still wants a dashboard opened for them.
+
+    The dashboard's banner writes this when they click it, and it
+    outlives the `rbt dev run` they clicked it in. The dashboard
+    writes the default when it initializes, so nobody ever clicking
+    means a dashboard opens.
+    """
+    context = ExternalContext(name="dev-run-open-dashboard", url=dashboard_url)
+    response = await Preferences.ref(PREFERENCES_ID).Get(context)
+    return not response.suppress_open_on_restart
+
+
+# Whether `rbt dev run` may open a dashboard nobody asked it for.
+#
+# False while the dashboard is still being built, so that the only way
+# to see one is `--open-dashboard`. Everything that decides when to
+# open one by itself, the `Presence` subscribers and the banner's
+# choice, is covered by `open_dashboard_tests`; turning auto-open on
+# is this constant and nothing else.
+_AUTO_OPEN_DASHBOARD = False
+
+
+async def _open_dashboard_once(
+    *,
+    dashboard_url: str,
+    forced: bool,
+) -> None:
+    """Opens a dashboard, unless the developer would rather it didn't.
+
+    They would rather it didn't in two cases. One is that somebody is
+    already looking at one: the page subscribes to `Presence` for as
+    long as it is open, so a tab left up from an earlier run keeps a
+    second one from appearing, and a tab they closed is replaced. The
+    other is that they clicked the dashboard's "Don't reopen this
+    dashboard on restart" banner, which is remembered until they click
+    the banner that undoes it.
+
+    `Presence` learns that a viewer has gone from the cancellation of
+    the page's `Connect` RPC, and nothing else. A proxy that holds its
+    server-side socket open after the browser goes away therefore
+    leaves a viewer listed who is not there, and the effect is that no
+    dashboard opens, which `--open-dashboard` overrides, as it
+    overrides the banner.
+    """
+    if not forced:
+        if not await _open_on_restart(dashboard_url):
+            terminal.info(
+                'You asked for this dashboard not to be reopened; run '
+                'with `--open-dashboard` to see it anyway, or visit '
+                f'{dashboard_url}{DASHBOARD_PATH}/'
+            )
+            return
+
+        if len(await _viewers(dashboard_url)) > 0:
+            # Say why nothing opened, since a run that opens nothing
+            # and explains nothing is indistinguishable from a broken
+            # one, particularly when the tab being counted is behind
+            # another window, or on another screen.
+            terminal.info(
+                'A dashboard is already open for this application; run '
+                'with `--open-dashboard` for another, or visit '
+                f'{dashboard_url}{DASHBOARD_PATH}/'
+            )
+            return
+
+    # `webbrowser` honors `$BROWSER`, which is what makes this work in
+    # Codespaces and devcontainers, and returns `False` rather than
+    # raising when there is no browser to open.
+    page_url = f'{dashboard_url}{DASHBOARD_PATH}/'
+
+    if not await asyncio.to_thread(webbrowser.open, page_url):
+        terminal.warn(
+            f"Could not open a browser; your dashboard is at {page_url}"
+        )
+
+
+async def _dashboard_reachable(port: int) -> bool:
+    """Whether something is accepting connections on the dashboard's
+    port."""
+    try:
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection('127.0.0.1', port),
+            timeout=2.0,
+        )
+    except (OSError, asyncio.TimeoutError):
+        return False
+    writer.close()
+    try:
+        await writer.wait_closed()
+    except OSError:
+        pass
+    return True
+
+
+async def _open_dashboard(
+    *,
+    dashboard_url: str,
+    forced: bool,
+    application_serving_event: asyncio.Event,
+) -> None:
+    """Opens a dashboard once the developer's application is serving
+    traffic, so that nothing the developer waits on is ever waiting on
+    this."""
+    await application_serving_event.wait()
+
+    try:
+        await _open_dashboard_once(
+            dashboard_url=dashboard_url,
+            forced=forced,
+        )
+    except Exception as e:
+        # Never let this take down `rbt dev run`; the developer's
+        # application is unaffected and the dashboard is still
+        # reachable by hand.
+        terminal.warn(
+            f"Could not open a dashboard ({e}); it is at "
+            f"{dashboard_url}{DASHBOARD_PATH}/"
+        )
+
+
 def try_and_become_child_subreaper_on_linux():
     if sys.platform == 'linux':
         # The 'pyprctl' module is available on Linux only.
@@ -542,6 +706,7 @@ async def _check_local_envoy_status(
     port: int,
     terminate_after_health_check: bool,
     application_started_event: asyncio.Event,
+    application_serving_event: Optional[asyncio.Event],
     tls_certificate: Optional[str],
     root_certificate: Optional[str],
     tracing: Tracing,
@@ -650,6 +815,9 @@ async def _check_local_envoy_status(
             was_application_serving = is_application_serving
 
             if is_application_serving:
+                if application_serving_event is not None:
+                    application_serving_event.set()
+
                 terminal.info("Application is serving traffic ...\n")
                 # MCP server and endpoint is not supported for Nodejs currently.
                 mcp_line = (
@@ -1358,12 +1526,32 @@ async def __dev_run(
     await check_local_envoy_mode(subprocesses)
     env[ENVVAR_REBOOT_LOCAL_ENVOY] = 'true'
 
+    # The developer dashboard runs separately, started by
+    # `rbt dashboard`; this run only decides whether to open a window
+    # on it.
+    dashboard_port = args.dashboard_port or DEFAULT_DASHBOARD_PORT
+
+    open_dashboard = (
+        args.open_dashboard is True or
+        (_AUTO_OPEN_DASHBOARD and args.open_dashboard is not False)
+    )
+
+    if open_dashboard and not await _dashboard_reachable(dashboard_port):
+        terminal.fail(
+            'You asked for a dashboard, but no developer dashboard is '
+            f'serving on port {dashboard_port}. Start one with '
+            '`rbt dashboard`, then run this again.'
+        )
+
+    application_serving_event = (asyncio.Event() if open_dashboard else None)
+
     health_check_task = asyncio.create_task(
         _check_local_envoy_status(
             port=args.port or DEFAULT_LOCAL_ENVOY_PORT,
             terminate_after_health_check=args.terminate_after_health_check or
             False,
             application_started_event=application_started_event,
+            application_serving_event=application_serving_event,
             tls_certificate=args.tls_certificate,
             root_certificate=args.tls_root_certificate,
             tracing=tracing,
@@ -1419,9 +1607,9 @@ async def __dev_run(
         protect, so that a JWT signed with them dies with the state it
         refers to (pushing clients back through the OAuth flow, whose
         fresh mint re-constructs per-user state): a named application
-        persists a random value in its state directory — stable across
-        restarts, deleted by `rbt dev expunge` and by the in-run `x`
-        expunge — while an anonymous application, whose state doesn't
+        persists a random value in its state directory, stable across
+        restarts and deleted by `rbt dev expunge` and by the in-run `x`
+        expunge, while an anonymous application, whose state doesn't
         survive a restart, gets fresh random keys on every (re)start.
         """
         if args.application_name is None:
@@ -1436,6 +1624,19 @@ async def __dev_run(
         root_keys_path.parent.mkdir(parents=True, exist_ok=True)
         root_keys_path.write_text(root_keys)
         return root_keys
+
+    if open_dashboard:
+        assert application_serving_event is not None
+        background_command_tasks.append(
+            asyncio.create_task(
+                _open_dashboard(
+                    dashboard_url=f'http://127.0.0.1:{dashboard_port}',
+                    forced=args.open_dashboard is True,
+                    application_serving_event=application_serving_event,
+                ),
+                name=f'_open_dashboard(...) in {__name__}',
+            )
+        )
 
     if tracing == Tracing.JAEGER:
         # TODO: dynamic port. See comment in `_run_jaeger()`.

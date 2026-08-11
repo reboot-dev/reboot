@@ -145,6 +145,7 @@ py_library(
     deps = [
         ":rc_py",
         ":update_check_py",
+        "//reboot/cli/commands:dashboard_py",
         "//reboot/cli/commands:dev_py",
         "//reboot/cli/commands:export_import_py",
         "//reboot/cli/commands:generate_py",

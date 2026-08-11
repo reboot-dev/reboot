@@ -7,6 +7,11 @@ from reboot.cli.commands.cloud import (
     handle_cloud_subcommand,
     register_cloud,
 )
+from reboot.cli.commands.dashboard import (
+    dashboard_subcommands,
+    handle_dashboard_subcommand,
+    register_dashboard,
+)
 from reboot.cli.commands.dev import (
     dev_subcommands,
     handle_dev_subcommand,
@@ -71,7 +76,7 @@ def create_parser(
         program='rbt',
         filename='.rbtrc',
         subcommands=(
-            cloud_subcommands() + dev_subcommands() +
+            cloud_subcommands() + dashboard_subcommands() + dev_subcommands() +
             export_and_import_subcommands() + generate_subcommands() +
             init_subcommands() + inspect_subcommands() + serve_subcommands() +
             task_subcommands()
@@ -83,6 +88,7 @@ def create_parser(
     add_global_options(parser)
 
     register_cloud(parser)
+    register_dashboard(parser)
     register_dev(parser)
     register_export_and_import(parser)
     register_generate(parser)
@@ -123,6 +129,10 @@ async def cli() -> int:
     args, argv_after_dash_dash = parser.parse_args()
 
     if (result := await handle_cloud_subcommand(args)) is not None:
+        return result
+    elif (
+        result := await handle_dashboard_subcommand(args, parser=parser)
+    ) is not None:
         return result
     elif (
         result := await handle_dev_subcommand(

@@ -1,0 +1,18 @@
+<!-- The dashboard's page. Vite serves this directly in
+     development, loading `./src/main.tsx` below; the Bazel build
+     rewrites that entry point to the `esbuild` bundle it builds
+     beside this file. See `dashboard_dist` in the `BUILD.bazel` one
+     directory up. -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reboot dashboard</title>
+    <link rel="stylesheet" href="./dashboard.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./src/main.tsx"></script>
+  </body>
+</html>

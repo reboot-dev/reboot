@@ -1,0 +1,681 @@
+/* Tokens from the Reboot Cloud design system the mockup imports
+   (`_ds/reboot-cloud-design-system-.../_ds_bundle.css`), as HSL
+   triplets so they compose with `hsl(var(--token) / alpha)` the
+   way the source does. Light only: the system has `.dark:`
+   utilities but the design never opts in. */
+:root {
+  --background: 47 36% 95%;
+  --foreground: 211.1 71.7% 22.2%;
+  --card: 0 0% 100%;
+  --primary: 211 72% 22%;
+  --primary-foreground: 355.7 100% 97.3%;
+  --secondary: 115 49% 76%;
+  --muted: 240 4.8% 95.9%;
+  --muted-foreground: 240 3.8% 46.1%;
+  --accent: 166 47% 61%;
+  --destructive: 0 84.2% 60.2%;
+  --border: 240 5.9% 90%;
+  --radius: 0.5rem;
+
+  /* Values the design uses directly, alongside the tokens. */
+  --sidebar: 47 30% 92%;
+  --border-strong: 240 5.9% 86%;
+  --border-soft: 240 5.9% 94%;
+  --surface-sunken: 240 4.8% 97%;
+  --prose: 211 40% 30%;
+  --returns: 166 47% 33%;
+  --errors: 0 62% 45%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: hsl(var(--primary));
+  text-decoration: none;
+}
+a:hover {
+  color: hsl(166 47% 41%);
+}
+::selection {
+  background: hsl(var(--accent) / 0.35);
+}
+
+main {
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 40px 48px;
+}
+
+.muted {
+  color: hsl(var(--muted-foreground));
+}
+
+.error {
+  color: hsl(var(--errors));
+  background: hsl(var(--destructive) / 0.08);
+  border: 1px solid hsl(var(--destructive) / 0.3);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  /* The reader subprocess's stderr, so line breaks are meaningful. */
+  white-space: pre-wrap;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+}
+
+/* The banner sits above whatever the page is showing, and the
+   rest of the page takes what is left. `min-height: 0` so the
+   sidebar and the document pane scroll themselves instead of
+   growing the page. */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 250px 1fr;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* --- Banner --- */
+
+.banner {
+  display: flex;
+  justify-content: center;
+  padding: 5px 20px;
+  background: hsl(var(--card));
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+/* A button, because it acts rather than navigates, dressed as a
+   link so it asks for as little of the page as it is worth. */
+.banner-link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 11.5px;
+  color: hsl(var(--muted-foreground));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.banner-link:hover {
+  color: hsl(var(--foreground));
+}
+
+/* --- Sidebar --- */
+
+nav {
+  background: hsl(var(--sidebar));
+  border-right: 1px solid hsl(var(--border));
+  overflow-y: auto;
+  padding: 14px 8px;
+}
+
+.eyebrow {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+
+nav > .eyebrow {
+  padding: 0 8px 8px;
+}
+
+.namespace-head {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  align-items: center;
+  gap: 0 7px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.namespace-head:hover {
+  background: hsl(var(--card) / 0.6);
+}
+
+.caret {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  color: hsl(240 3.8% 55%);
+}
+
+.namespace-name {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+nav a {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0 8px;
+  padding: 5px 10px 5px 34px;
+  border-radius: 5px;
+  color: inherit;
+}
+
+nav a:hover {
+  background: hsl(var(--card) / 0.6);
+  color: inherit;
+}
+
+.nav-name {
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+/* The counts name what they count, since a namespace's number and a
+   state type's number sit in the same column and mean different
+   things. `nowrap` because the sidebar is narrow enough that "12
+   state types" would otherwise break across two lines. */
+.nav-count {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+}
+
+/* --- Document pane --- */
+
+.pane {
+  overflow-y: auto;
+  background: hsl(var(--background));
+}
+
+header {
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 40px 48px 28px;
+}
+
+header h1 {
+  font-size: 34px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  margin: 6px 0 0;
+}
+
+.state-type {
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 0 48px 48px;
+}
+
+.state-type > .eyebrow:first-child {
+  display: block;
+}
+
+.state-type {
+  border-top: 1px solid hsl(var(--border-strong));
+  padding-top: 36px;
+}
+
+.state-type h2 {
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  margin: 6px 0 4px;
+}
+
+.file {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  color: hsl(var(--muted-foreground));
+}
+
+.eyebrow.section {
+  margin: 26px 0 10px;
+}
+
+/* --- Expanding a state type --- */
+
+/* The heading and its count on the left, the button pushed to
+   the right edge. Aligned on the baseline rather than centred,
+   so the button's label sits on the same line as the 28px
+   heading beside it. When the row is too narrow to hold both,
+   the button wraps to its own line and `space-between` has
+   nothing left to spread. */
+.state-type-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 20px;
+  flex-wrap: wrap;
+}
+
+.state-type-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* Solid while closed and outlined while open, so the one that
+   has something left to offer is the one that draws the eye. */
+.expand-button {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 8px;
+  padding: 9px 18px;
+  border: 1px solid hsl(var(--primary));
+  border-radius: calc(var(--radius) - 2px);
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  box-shadow: 0 1px 2px hsl(240 10% 40% / 0.2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.expand-button:hover {
+  opacity: 0.88;
+}
+
+.expand-button:active {
+  transform: translateY(1px);
+}
+
+.state-type.is-expanded .expand-button {
+  border-color: hsl(240 5.9% 78%);
+  background: hsl(var(--muted));
+  color: hsl(var(--primary));
+  box-shadow: none;
+}
+
+.expand-button .caret {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+}
+
+.summary-line {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  color: hsl(240 3.8% 55%);
+}
+
+.empty {
+  border: 1px dashed hsl(var(--border-strong));
+  border-radius: calc(var(--radius) - 2px);
+  padding: 12px 14px;
+  font-size: 12.5px;
+  color: hsl(var(--muted-foreground));
+  line-height: 1.5;
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  border: 1px solid hsl(240 5.9% 92%);
+  border-radius: calc(var(--radius) - 2px);
+  padding: 10px 14px;
+  background: hsl(var(--card) / 0.6);
+}
+
+.field-name {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.field-type {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  color: hsl(var(--muted-foreground));
+}
+
+.methods {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.method {
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+  overflow: hidden;
+}
+
+.method-head {
+  padding: 14px 18px 12px;
+}
+
+.method-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Closed, the methods of one state type share a single set of
+   columns, so every kind pill starts at the same x and so does every
+   tag: the eye can run down the list and see which methods write and
+   which are reachable over MCP without reading any of them. Open,
+   this all reverts to the flex row above, where each row packs its
+   pills against its own name and the reader is looking at one method
+   rather than comparing several.
+
+   `subgrid` passes the columns down from `.methods` through the card
+   and its head, so the tracks are sized once across every row rather
+   than per row. Each element is pinned to a column by name, because
+   `factory` and `mcp` are optional: auto-placement would slide a
+   method's `mcp` tag into the empty `factory` column and lose the
+   alignment that is the whole point.
+
+   Behind `@supports` because a browser without subgrid drops that one
+   declaration and keeps the rest, which would leave the cards as
+   plain grids whose columns are sized per row: worse than the flex
+   row it replaced. Chrome has had subgrid since 117; anything older
+   keeps the flex row and simply does not line up. */
+@supports (grid-template-columns: subgrid) {
+  .state-type:not(.is-expanded) .methods {
+    display: grid;
+    grid-template-columns: max-content max-content 1fr;
+    /* The 14px is the gap between methods; the columns want the 8px
+       that `.method-title` uses when it is laid out as flex. */
+    row-gap: 14px;
+    column-gap: 8px;
+  }
+
+  .state-type:not(.is-expanded) .method,
+  .state-type:not(.is-expanded) .method-head,
+  .state-type:not(.is-expanded) .method-title {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: center;
+  }
+
+  /* A scroll container cannot be a subgrid, so the columns would stop
+     propagating at the card. `.method` is one only because of the
+     `overflow: hidden` that clips the detail to the card's rounded
+     corners, and a closed method has no detail drawn to clip. */
+  .state-type:not(.is-expanded) .method {
+    overflow: visible;
+  }
+
+  .state-type:not(.is-expanded) .method-detail {
+    grid-column: 1 / -1;
+  }
+
+  .state-type:not(.is-expanded) .method-name {
+    grid-column: 1;
+  }
+
+  .state-type:not(.is-expanded) .kind {
+    grid-column: 2;
+  }
+
+  .state-type:not(.is-expanded) .tags {
+    grid-column: 3;
+  }
+}
+
+/* Whatever tags a method has, side by side. Taken out of the
+   layout when it has none, so an open section has no gap to an
+   empty box in its title's flex row. */
+.tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tags:empty {
+  display: none;
+}
+
+/* Two families of pill. A `kind` is what the method does to
+   state, tinted along a scale from a read that changes nothing
+   to a workflow that runs over time; every method has exactly
+   one. A `tag` is something else that is true of the method,
+   and is solid rather than tinted so that it never reads as a
+   fifth kind. Both have a 1px border so the two families sit
+   at the same height beside each other.
+
+   The neutral base below is what a `saga`, or a method whose kind
+   is unset, gets, since only the four kinds that exist today have a
+   colour. */
+/* Both pills are one width with the label centred in it, so a
+   column of them reads as a column rather than as ragged text.
+   `min-width` rather than `width`: a label longer than any we
+   have today widens its own pill instead of being clipped. 92px
+   fits the longest, `transaction`. */
+.kind,
+.tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+}
+
+.kind {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+  border: 1px solid hsl(240 5.9% 84%);
+  color: hsl(var(--muted-foreground));
+}
+
+/* Teal: reads state and changes nothing. */
+.kind-reader {
+  background: hsl(166 47% 61% / 0.18);
+  border-color: hsl(166 40% 55% / 0.45);
+  color: hsl(166 55% 27%);
+}
+
+/* Blue: writes the one state it is called on. */
+.kind-writer {
+  background: hsl(211 72% 45% / 0.14);
+  border-color: hsl(211 60% 50% / 0.4);
+  color: hsl(211 72% 32%);
+}
+
+/* Violet: writes across states, atomically. */
+.kind-transaction {
+  background: hsl(275 55% 55% / 0.14);
+  border-color: hsl(275 45% 55% / 0.4);
+  color: hsl(275 50% 40%);
+}
+
+/* Amber: runs past the call that started it. */
+.kind-workflow {
+  background: hsl(32 90% 55% / 0.18);
+  border-color: hsl(32 75% 50% / 0.42);
+  color: hsl(28 80% 33%);
+}
+
+.tag {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: hsl(0 0% 100%);
+}
+
+/* Navy: brings the state into existence. */
+.tag-factory {
+  background: hsl(211 72% 26%);
+}
+
+/* Magenta: reachable by an agent over MCP. */
+.tag-mcp {
+  background: hsl(318 55% 38%);
+}
+
+/* A pill that carries a definition. The mark is the invitation to
+   hover; the tooltip is the answer. `cursor: help` says the same
+   thing the mark does, for whoever reads cursors first. */
+.defined {
+  position: relative;
+  cursor: help;
+}
+
+/* Small and translucent so it reads as an aside rather than as part
+   of the label. */
+.define-mark {
+  margin-left: 4px;
+  font-size: 8px;
+  opacity: 0.55;
+}
+
+/* Above the pill, centred, and inert to the mouse so that moving
+   toward it never flickers it away. The pill styles it sits in are
+   undone piece by piece: pills are bold, tight and centred, and a
+   sentence is none of those. */
+.definition {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: normal;
+  text-align: left;
+  text-transform: none;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease;
+  z-index: 10;
+}
+
+.defined:hover .definition {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* The section eyebrow sits at the pane's left edge, and the pane
+   clips whatever leaves it, so a centred tooltip loses its left
+   half. Open rightward from the label instead. */
+.eyebrow .definition {
+  left: 0;
+  transform: none;
+}
+
+/* The height animation. A grid row interpolates from `0fr` to
+   `1fr`, which is how the detail can grow to whatever height it
+   happens to need without anything measuring it first, since there
+   is no height to read while it is closed. The inner element
+   owns `overflow: hidden`, because a grid row can only shrink
+   below its content when the content itself is willing to be
+   clipped.
+
+   Opacity is on a shorter, later curve than the height so that
+   text fades in against a box that has already begun to open,
+   rather than appearing at full strength in a 1px slot. */
+.method-detail {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 240ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 120ms ease-out;
+}
+
+.method-detail-inner {
+  overflow: hidden;
+}
+
+.state-type.is-expanded .method-detail {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows 240ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 180ms ease-in 60ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .method-detail,
+  .state-type.is-expanded .method-detail {
+    transition-duration: 1ms;
+  }
+}
+
+.method-description {
+  font-size: 13px;
+  line-height: 1.55;
+  color: hsl(var(--prose));
+  margin: 0;
+  padding: 0 18px 12px;
+  text-wrap: pretty;
+}
+
+.method-signature {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 18px;
+  background: hsl(var(--surface-sunken));
+  border-top: 1px solid hsl(var(--border-soft));
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  color: hsl(var(--muted-foreground));
+}
+
+.arrow {
+  color: hsl(240 3.8% 65%);
+}
+.returns {
+  color: hsl(var(--returns));
+}
+.errors {
+  color: hsl(var(--errors));
+}

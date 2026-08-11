@@ -25,6 +25,15 @@ message Presence {
  */
 service PresenceMethods {
   /**
+   * Constructs the `Presence` instance, empty, so that `List`
+   * answers before the first `Subscribe`.
+   */
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  /**
    * Registers a subscriber as present.
    *
    * The `Watch` workflow is also scheduled to detect when this
@@ -51,6 +60,13 @@ service PresenceMethods {
     };
   }
 }
+
+////////////////////////////////////////////////////////////////////////
+
+// See `Create`.
+message CreateRequest {}
+
+message CreateResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
