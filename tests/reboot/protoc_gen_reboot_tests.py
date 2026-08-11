@@ -4,6 +4,7 @@ from google.api import annotations_pb2
 from google.protobuf.compiler import plugin_pb2
 from google.protobuf.descriptor_pb2 import FileDescriptorSet
 from google.protobuf.descriptor_pool import DescriptorPool
+from rbt.v1alpha1 import options_pb2
 from reboot.protoc_gen_reboot_generic import (
     BaseFile,
     ProtocPlugin,
@@ -172,6 +173,66 @@ class GeneratorTest(unittest.TestCase):
         )
         map_field_type = fields['metadata']
         self.assertEqual(map_field_type, "dict[str, str]")
+
+    def _greet_method_options(self):
+        test_plugin(self.plugin, self.descriptor_set)
+
+        template_data = self.plugin.proto_to_template_data[
+            'tests/reboot/greeter.proto']
+        methods = {
+            method.proto.name: method
+            for method in template_data.clients[0].services[0].methods
+        }
+        return methods['Greet'].options.proto
+
+    def _greet_method_descriptor(self):
+        file = self.descriptor_set.file[-1]
+        self.assertEqual(file.name, 'tests/reboot/greeter.proto')
+
+        service = file.service[0]
+        self.assertEqual(service.name, 'GreeterMethods')
+
+        methods = {method.name: method for method in service.method}
+        return methods['Greet']
+
+    def test_method_description_reaches_the_template(self) -> None:
+        method = self._greet_method_descriptor()
+        method.options.Extensions[options_pb2.method
+                                 ].description = 'Greet someone.'
+
+        self.assertEqual(
+            self._greet_method_options().description,
+            'Greet someone.',
+        )
+
+    def test_deprecated_mcp_description_still_reaches_the_template(
+        self
+    ) -> None:
+        # An application that was created before
+        # `MethodOptions.description` will have the deprecated `mcp`
+        # description, which is permitted for backward compatibility.
+        method = self._greet_method_descriptor()
+        method.options.Extensions[options_pb2.method
+                                 ].mcp.description = 'Greet someone.'
+
+        self.assertEqual(
+            self._greet_method_options().description,
+            'Greet someone.',
+        )
+
+    def test_method_description_wins_over_the_deprecated_one(self) -> None:
+        method = self._greet_method_descriptor()
+        options = method.options.Extensions[options_pb2.method]
+        options.description = 'What the author wrote.'
+        options.mcp.description = 'The deprecated spelling.'
+
+        self.assertEqual(
+            self._greet_method_options().description,
+            'What the author wrote.',
+        )
+
+    def test_method_without_a_description_has_none(self) -> None:
+        self.assertIsNone(self._greet_method_options().description)
 
 
 class ToLowerCamelTest(unittest.TestCase):
