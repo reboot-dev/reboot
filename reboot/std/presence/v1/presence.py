@@ -19,6 +19,7 @@ from rbt.std.presence.subscriber.v1.subscriber_rbt import (
     WaitForDisconnectRequest,
     WaitForDisconnectResponse,
 )
+from rbt.std.presence.v1 import presence_rbt
 from rbt.std.presence.v1.presence_rbt import (
     ListRequest,
     ListResponse,
@@ -66,6 +67,14 @@ class PresenceServicer(Presence.singleton.Servicer):
 
     def authorizer(self):
         return allow()
+
+    async def Create(
+        self,
+        context: WriterContext,
+        state: Presence.State,
+        request: presence_rbt.CreateRequest,
+    ) -> presence_rbt.CreateResponse:
+        return presence_rbt.CreateResponse()
 
     async def Subscribe(
         self,

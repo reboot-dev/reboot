@@ -1,0 +1,83 @@
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tests/reboot/react:py_web_test_suite_env.bzl", "py_web_test_suite_env")
+
+py_test(
+    name = "api_reader_tests_py",
+    srcs = ["api_reader_tests.py"],
+    data = glob(["api/**"]),
+    main = "api_reader_tests.py",
+    deps = [
+        "//reboot/dashboard:api_reader_py",
+    ],
+)
+
+py_test(
+    name = "api_watcher_tests_py",
+    srcs = ["api_watcher_tests.py"],
+    main = "api_watcher_tests.py",
+    deps = [
+        "//reboot/aio:tests_py",
+        "//reboot/dashboard:api_watcher_py",
+        "//reboot/dashboard:main_py",
+    ],
+)
+
+py_test(
+    name = "application_tests_py",
+    srcs = [":application_tests.py"],
+    main = "application_tests.py",
+    deps = [
+        "//reboot/aio:tests_py",
+        "//reboot/dashboard:servicers_py",
+        "//reboot/std/presence/v1:presence_py",
+    ],
+)
+
+py_web_test_suite_env(
+    name = "dashboard_tests_py",
+    srcs = ["dashboard_tests.py"],
+    browsers = [
+        "@io_bazel_rules_webtesting//browsers:chromium-local",
+    ],
+    main = "dashboard_tests.py",
+    py_test_tags = [
+        "macos_not_supported",
+        "requires-linux-x86",
+    ],
+    tags = [
+        "macos_not_supported",
+        "requires-linux-x86",
+    ],
+    deps = [
+        "//reboot/aio:tests_py",
+        "//reboot/dashboard:api_watcher_py",
+        "//reboot/dashboard:main_py",
+        "//reboot/std/presence/v1:presence_py",
+        "@io_bazel_rules_webtesting//testing/web",
+    ],
+)
+
+py_test(
+    name = "preferences_tests_py",
+    srcs = ["preferences_tests.py"],
+    main = "preferences_tests.py",
+    deps = [
+        "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//reboot/aio:tests_py",
+        "//reboot/dashboard:main_py",
+    ],
+)
+
+py_test(
+    name = "open_dashboard_tests_py",
+    srcs = ["open_dashboard_tests.py"],
+    main = "open_dashboard_tests.py",
+    deps = [
+        "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//rbt/std/presence/subscriber/v1:subscriber_py_reboot",
+        "//rbt/std/presence/v1:presence_py_reboot",
+        "//reboot/aio:tests_py",
+        "//reboot/cli/commands:dev_py",
+        "//reboot/dashboard:main_py",
+    ],
+)

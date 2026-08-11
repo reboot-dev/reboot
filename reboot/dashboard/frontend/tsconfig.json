@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "es2018",
+    "module": "esnext",
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "baseUrl": ".",
+    "paths": {
+      // The generated bindings for the dashboard's own state, which
+      // `dashboard_js_reboot_react` emits beside its proto.
+      "@dashboard/*": ["../../../rbt/dashboard/v1/*"]
+    }
+  }
+}
