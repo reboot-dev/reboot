@@ -921,6 +921,16 @@ async def generate_proto_file_from_api(
                         f"      errors: [\"{type_name}{to_pascal_case(method_name)}Errors\"],\n"
                     )
 
+                # What the author said the method does, written
+                # whether or not the method is exposed to MCP.
+                if method_spec.description is not None:
+                    # The description can contain `\` character, so we
+                    # need to escape it for proto string literal.
+                    await proto.write(
+                        "      description: "
+                        f'"{_escape_string_for_proto(method_spec.description)}",\n'
+                    )
+
                 # MCP options for exposing method as tool/resource.
                 if method_spec.mcp is not None:
                     mcp = method_spec.mcp
@@ -934,13 +944,6 @@ async def generate_proto_file_from_api(
                         # to escape it for proto string literal.
                         mcp_fields.append(
                             f'name: "{_escape_string_for_proto(mcp.name)}"'
-                        )
-                    if method_spec.description is not None:
-                        # The description can contain `\` character, so
-                        # we need to escape it for proto string literal.
-                        mcp_fields.append(
-                            "description: "
-                            f'"{_escape_string_for_proto(method_spec.description)}"'
                         )
                     if mcp.title is not None:
                         # The title can contain `\` character, so we need
