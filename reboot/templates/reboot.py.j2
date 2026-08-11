@@ -2697,7 +2697,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% set tool_name = method.options.proto.mcp.name if method.options.proto.mcp.name else mcp_name_prefix + (method.proto.name | to_snake) %}
 {% set tool_title = method.options.proto.mcp.title if method.options.proto.mcp.title else method.proto.name %}
 {% set tool_description_suffix = "" if state.proto.auto_construct != AUTO_CONSTRUCT_UNSPECIFIED else " on " + state.proto.name %}
-{% set tool_description = method.options.proto.mcp.description if method.options.proto.mcp.description else "Invoke " + method.proto.name + tool_description_suffix + "." %}
+{% set tool_description = method.options.proto.description if method.options.proto.description else "Invoke " + method.proto.name + tool_description_suffix + "." %}
 {% set request_type = state.proto.name + "." + method.proto.name + "Request" %}
 
         # Tool for '{{ method.proto.full_name }}'.
@@ -2746,7 +2746,7 @@ class {{ state.proto.name }}BaseServicer(IMPORT_reboot_aio_servicers.Servicer):
 {% set method_path = method.proto.name | to_snake %}
 {% set resource_name = method.options.proto.mcp.name if method.options.proto.mcp.name else mcp_name_prefix + method_path %}
 {% set resource_title = method.options.proto.mcp.title if method.options.proto.mcp.title else method.proto.name %}
-{% set resource_description = method.options.proto.mcp.description if method.options.proto.mcp.description else state.proto.name + " state." %}
+{% set resource_description = method.options.proto.description if method.options.proto.description else state.proto.name + " state." %}
 {% set request_type = state.proto.name + "." + method.proto.name + "Request" %}
 
         # Resource for '{{ method.proto.full_name }}'.
