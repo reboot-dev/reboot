@@ -119,6 +119,22 @@ class RbtDevTestCase(unittest.IsolatedAsyncioTestCase):
             [['E1', 'V1'], ['E2', 'V2'], ['E3', 'V3']],
         )
 
+    async def test_open_dashboard_requires_a_reachable_dashboard(self) -> None:
+        # `rbt dev run --open-dashboard` refuses to start when nothing
+        # is serving on the dashboard's port, telling the developer to
+        # run `rbt dashboard`.
+        server = await asyncio.start_server(
+            lambda reader, writer: writer.close(), '127.0.0.1', 0
+        )
+        port = server.sockets[0].getsockname()[1]
+
+        self.assertTrue(await dev._dashboard_reachable(port))
+
+        server.close()
+        await server.wait_closed()
+
+        self.assertFalse(await dev._dashboard_reachable(port))
+
     async def test_dev_expunge_requires_name(self) -> None:
         parser: ArgumentParser = cli.create_parser(
             argv=[
