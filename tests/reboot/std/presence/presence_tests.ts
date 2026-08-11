@@ -6,6 +6,7 @@ import {
   TokenVerifier,
   allow,
 } from "@reboot-dev/reboot";
+import { fork } from "child_process";
 import { errors_pb } from "@reboot-dev/reboot-api";
 import { MousePosition } from "@reboot-dev/reboot-std/presence/mouse_tracker/v1";
 import { Subscriber } from "@reboot-dev/reboot-std/presence/subscriber/v1";
@@ -14,6 +15,7 @@ import { Presence } from "@reboot-dev/reboot-std/presence/v1";
 import { presenceLibrary } from "@reboot-dev/reboot-std/presence/v1";
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
+import * as uuid from "uuid";
 
 class EmptyTokenVerifier extends TokenVerifier {
   async verifyToken(
@@ -171,4 +173,81 @@ test("Use Presence Servicers", async (t) => {
       });
     }
   );
+
+  await t.test("Subscriber connection", async (t) => {
+    await rbt.up(
+      new Application({
+        libraries: [presenceLibrary()],
+        tokenVerifier: new EmptyTokenVerifier(),
+      }),
+      {
+        // needed so URL starts with http:
+        localEnvoy: true,
+      }
+    );
+
+    let context = rbt.createExternalContext("test-connect");
+    let subscriberRef = Subscriber.ref("connect-test-subscriber");
+
+    await subscriberRef.idempotently().create(context);
+    let nonce = uuid.v4();
+
+    // Connect the subscriber. The following would work if we could cancel
+    // the promise/RPC so the test could end. However, because we can't, we use
+    // a subprocess instead. Left here to grab for documentation.
+
+    // let connectFailed = false;
+    // const promise = subscriberRef
+    //   .connect(context, { nonce })
+    //   .catch((_) => {
+    //     connectFailed = true;
+    //   });
+
+    const subprocess = fork(
+      "./tests/reboot/std/presence/subscriber_connect.js",
+      [rbt.url(), subscriberRef.stateId, nonce]
+    );
+
+    let attempt = 0;
+    while (true) {
+      try {
+        await subscriberRef
+          .idempotently(`attempt-${attempt}`)
+          .toggle(context, { nonce });
+      } catch (e) {
+        if (
+          e instanceof Subscriber.ToggleAborted &&
+          e.error instanceof errors_pb.NotFound
+        ) {
+          attempt++;
+          continue;
+        } else {
+          break;
+        }
+      }
+
+      await Presence.ref("connect-test").subscribe(context, {
+        subscriberId: subscriberRef.stateId,
+      });
+      break;
+    }
+
+    let { present } = await subscriberRef.status(context);
+    assert(present);
+
+    // Tell the child process it can exit.
+    subprocess.send("");
+
+    await new Promise<void>((resolve, reject) => {
+      subprocess.on("exit", (code, signal) => {
+        if (code === 0) {
+          resolve();
+        } else if (signal === null) {
+          reject(new Error(`Child exited with code ${code}`));
+        } else {
+          reject(new Error(`Child exited with signal ${signal}`));
+        }
+      });
+    });
+  });
 });

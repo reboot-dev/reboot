@@ -16,6 +16,7 @@ ts_project(
     name = "presence_tests_ts",
     srcs = [
         "presence_tests.ts",
+        "subscriber_connect.ts",
         ":package.json",
     ],
     declaration = True,
@@ -33,6 +34,8 @@ ts_project(
         "//:node_modules/@reboot-dev/reboot-api",
         "//:node_modules/@reboot-dev/reboot-std",
         "//:node_modules/@types/node",
+        # Required to get uuid package.
+        "//tests/reboot:greeter_js_reboot",
     ],
 )
 

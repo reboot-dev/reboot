@@ -43,7 +43,7 @@ import { presenceLibrary } from "@reboot-dev/reboot-std/presence/v1";
 
 new Application({
   servicers: [MyServicer],
-  libraries: [presenceLibrary()]
+  libraries: [presenceLibrary()],
   initialize,
 }).run();
 ```
@@ -52,25 +52,47 @@ new Application({
 
 ### Authorizer
 
-By default, `Presence` allows all calls coming internally (e.g. from
-your Reboot backend) or externally (e.g. from your React app). However,
-this can be overridden by providing your own
-[authorizer](/learn_more/auth#authorizers).
+By default, `Presence` allows internal calls (e.g. from your Reboot backend)
+and external calls with a [verified token](/learn_more/auth#token-verification).
+However, this can be overridden by providing an
+[authorizer rule](/learn_more/auth#authorizer-rules) for all servicers in the
+presence library:
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 ```py
-presence_authorizer = Presence.Authorizer(
-    ... # !!! TODO: FILL OUT, also, which of these are actually necessary for react?
+application = Application(
+    servicers=[MyServicer],
+    libraries=[presence_library(
+        authorizer=allow_if(any=[has_verified_token])
+    )],
 )
+```
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+```ts
+const application = new Application({
+  servicers: [MyServicer],
+  libraries: [presenceLibrary({
+    authorizer: allowIf({ all: [hasVerifiedToken] })
+  })],
+  initialize,
+});
 
-subscriber_authorizer = Subscriber.Authorizer(
-    ...
-)
+```
+  </TabItem>
+</Tabs>
 
-mouse_position_authorizer = MousePosition.Authorizer(
-    ...
-)
+or by providing specific service [authorizers](/learn_more/auth#authorizers):
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+```py
+presence_authorizer = Presence.Authorizer( ... )
+
+subscriber_authorizer = Subscriber.Authorizer( ... )
+
+mouse_position_authorizer = MousePosition.Authorizer( ... )
 
 application = Application(
     servicers=[MyServicer],
@@ -84,17 +106,11 @@ application = Application(
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 ```ts
-const presenceAuthorizer = new Presence.Authorizer({
-  ... // !!! TODO: FILL OUT, also, which of these are actually necessary for react?
-});
+const presenceAuthorizer = new Presence.Authorizer({ ... });
 
-const subscriberAuthorizer = new Subscriber.Authorizer({
-  ...
-});
+const subscriberAuthorizer = new Subscriber.Authorizer({ ... });
 
-const mousePositionAuthorizer = new MousePosition.Authorizer({
-  ...
-});
+const mousePositionAuthorizer = new MousePosition.Authorizer({ ... });
 
 const application = new Application({
   servicers: [MyServicer],
@@ -112,17 +128,18 @@ const application = new Application({
 
 ## React
 
-Once you've [set up](/learn_more/call/from_react) your React app to call
-into your Reboot API, you can use the `Presence` React library to quickly
-add presence tracking in your React app.
+The `Presence` library can be easily dropped into your React app to quicklly
+add presence tracking.
 
-First, add `@reboot-dev/reboot-std-api` and
-`@reboot-dev/reboot-std-react` to your `package.json`.
+Once you've [set up](/learn_more/call/from_react) your app to call
+into your Reboot API, install `@reboot-dev/reboot-std`,
+`@reboot-dev/reboot-std-api`, and `@reboot-dev/reboot-std-react` to your
+`package.json`.
 
 ```bash
-!!! TODO: what about reboot-react or reboot-std
+npm install -S @reboot-dev/reboot-std
 npm install -S @reboot-dev/reboot-std-api
-npm install -S reboot-dev/reboot-std-react
+npm install -S @reboot-dev/reboot-std-react
 ```
 
 You may also want to, in defining your Reboot application, wish to [override
@@ -145,7 +162,7 @@ The children components can then call `usePresenceContext()` to get
 the list of online subscribers by ID.
 
 #### Properties of &lt;Presence&gt;
-* `presenceId` is the `string` ID of the `Presence` instance you want to track
+* `id` is the `string` ID of the `Presence` instance you want to track
 the subscriber for.
 * `subscriberId` is the `string` ID of the `Subscriber` who is connecting.
 
@@ -213,7 +230,7 @@ you would like to use it.
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../tests/reboot/std/presence/presence_tests.py&lines=11-15) -->
+(CODE:src=../../../tests/reboot/std/presence/presence_tests.py&lines=20-24) -->
 <!-- The below code snippet is automatically added from ../../../tests/reboot/std/presence/presence_tests.py -->
 
 ```py
@@ -228,7 +245,7 @@ from reboot.std.presence.v1.presence import (
   </TabItem>
   <TabItem value="typescript" label="TypeScript">
 <!-- MARKDOWN-AUTO-DOCS:START
-(CODE:src=../../../tests/reboot/std/presence/presence_tests.ts&lines=3-5) -->
+(CODE:src=../../../tests/reboot/std/presence/presence_tests.ts&lines=11-13) -->
 <!-- The below code snippet is automatically added from ../../../tests/reboot/std/presence/presence_tests.ts -->
 
 ```ts
@@ -341,6 +358,7 @@ const subscriber = Subscriber.ref("user-abc");
 Creates the `Subscriber` or ensures that it has already been created.
 This needs to be called before calling [`connect()`](#connect), and it is
 recommended to make this call before any [`connect()`](#connect) attempt.
+It is safe to call this method multiple times.
 
 <Tabs groupId="language">
   <TabItem value="python" label="Python" default>
@@ -358,44 +376,12 @@ await subscriber.create(context);
 
 ### Connect
 
-Used to initiate a subscription and detects when the subscriber is no longer
-present.
+Used to initiate a subscription. This method runs indefinitely and determines
+when the subscriber is no longer present due to a dropped connection (e.g. when
+a user closes the browser tab).
 
-This method runs indefinitely, that is, it does return. It also requires a
-unique nonce for every call.
+See the [example code](#complete-example) below for how to use `connect()`.
 
-<Tabs groupId="language">
-  <TabItem value="python" label="Python" default>
-```py
-nonce = uuid.uuid4().hex
-
-# TODO !!! CHECK THIS
-
-# connect() runs indefinitely; run it concurrently with toggle().
-asyncio.gather(
-    subscriber.connect(context, nonce=nonce),
-    subscriber.toggle(context, nonce=nonce),
-)
-```
-  </TabItem>
-  <TabItem value="typescript" label="TypeScript">
-```ts
-// TODO !!! CHECK THIS
-
-const nonce = uuidv4();
-
-// connect() runs indefinitely; run it concurrently with toggle().
-const abortController = new AbortController();
-Promise.all([
-  subscriber.connect(
-    { signal: abortController.signal },
-    { nonce },
-  ),
-  subscriber.toggle(context, { nonce }),
-]);
-```
-  </TabItem>
-</Tabs>
 
 ### Toggle
 
@@ -405,7 +391,7 @@ is made.
 
 Requires the same `nonce` that was used for the [`connect()`](#connect) call.
 
-See [`connect()`](#connect) for concurrent call example.
+See the [example code](#complete-example) below for how to use `toggle()`.
 
 ### Status
 
@@ -424,6 +410,97 @@ print(response.present)  # True if connected
 ```ts
 const { present } = await subscriber.status(context);
 console.log(present); // true if connected
+```
+  </TabItem>
+</Tabs>
+
+### Complete Example 
+
+The following is a complete example of how to create and connect a `Subscriber`
+to a `Presence` instance.
+
+<Tabs groupId="language">
+  <TabItem value="python" label="Python" default>
+<!-- MARKDOWN-AUTO-DOCS:START
+(CODE:src=../../../tests/reboot/std/presence/presence_tests.py&lines=71-102) -->
+<!-- The below code snippet is automatically added from ../../../tests/reboot/std/presence/presence_tests.py -->
+
+```py
+connect_failed = False
+
+async def connect():
+    nonlocal connect_failed
+    try:
+        await subscriber_ref.Connect(context, nonce=nonce)
+    except:
+        connect_failed = True
+
+connect_task = asyncio.create_task(connect())
+
+# Retry `Toggle` and `Subscribe` as long as connection hasn't failed.
+attempt_num = 0
+while not connect_failed:
+    try:
+        print(f"Testing attempt: {attempt_num}")
+        await subscriber_ref.idempotently(
+            f"Attempt {attempt_num}",
+        ).Toggle(context, nonce=nonce)
+    except Subscriber.ToggleAborted as aborted:
+        if isinstance(aborted.error, NotFound):
+            print("Retrying Toggle")
+            attempt_num += 1
+            continue
+        raise
+
+    await presence_ref.Subscribe(
+        context, subscriber_id=subscriber_ref.state_id
+    )
+
+    # We've successfully subscribed and don't need to retry!
+    break
+```
+
+<!-- MARKDOWN-AUTO-DOCS:END -->
+  </TabItem>
+  <TabItem value="typescript" label="TypeScript">
+<!-- Based on "Subscriber connect" test in 
+../../../tests/reboot/std/presence/presence_tests.ts
+-->
+```ts
+const nonce = uuidv4();
+let connectFailed = false;
+
+await subscriberRef.idempotently().create(context);
+
+subscriberRef
+  .connect(context, { nonce })
+  .catch((_) => {
+    connectFailed = true;
+  });
+
+let attempt = 0;
+while (!connectFailed) {
+  try {
+    await subscriberRef
+      .idempotently(`attempt-${attempt}`)
+      .toggle(context, { nonce });
+  } catch (e) {
+    if (
+      e instanceof Subscriber.ToggleAborted &&
+      e.error instanceof errors_pb.NotFound
+    ) {
+      attempt++;
+      continue;
+    } else {
+      break;
+    }
+  }
+    
+  await presenceRef.subscribe(context, {
+    subscriberId: subscriberRef.stateId,
+  });
+  break;
+}
 ```
   </TabItem>
 </Tabs>
