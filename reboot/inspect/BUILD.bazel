@@ -50,6 +50,19 @@ esbuild(
 )
 
 py_library(
+    name = "describe_state_type_py",
+    srcs = ["describe_state_type.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//log:log_py",
+        "//rbt/v1alpha1:options_py_proto",
+        "//rbt/v1alpha1/inspect:inspect_py_proto",
+        "//reboot/aio:types_py",
+    ],
+)
+
+py_library(
     name = "servicer_py",
     srcs = ["servicer.py"],
     data = [

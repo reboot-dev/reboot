@@ -1,0 +1,51 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config", "ts_project")
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+ts_project(
+    name = "dashboard_ts",
+    srcs = [
+        "src/constants.ts",
+        "src/main.tsx",
+    ],
+    tsconfig = ":tsconfig",
+    deps = [
+        "//:node_modules/@reboot-dev/reboot-react",
+        "//:node_modules/@reboot-dev/reboot-std",
+        "//:node_modules/@reboot-dev/reboot-std-api",
+        "//:node_modules/@reboot-dev/reboot-std-react",
+        "//:node_modules/@reboot-dev/reboot-web",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/uuid",
+        "//rbt/dashboard/v1:dashboard_js_reboot_react",
+    ],
+)
+
+# The `tsconfig` is passed so the bundle uses the automatic JSX
+# runtime; without it the bundle crashes with `React is not defined`.
+esbuild(
+    name = "dashboard_bundle",
+    srcs = [
+        ":dashboard_ts",
+    ],
+    bazel_sandbox_plugin = False,
+    entry_point = "src/main.js",
+    format = "esm",
+    output = "dashboard_bundle.js",
+    platform = "browser",
+    tsconfig = "tsconfig.json",
+    visibility = ["//reboot/dashboard:__pkg__"],
+)
+
+exports_files(
+    [
+        "dashboard.css",
+        "index.html",
+    ],
+    visibility = ["//reboot/dashboard:__pkg__"],
+)

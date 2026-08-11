@@ -1,0 +1,67 @@
+load(
+    "@com_github_reboot_dev_reboot//reboot:rules.bzl",
+    "js_proto_library",
+    "js_reboot_library",
+    "js_reboot_react_library",
+    "py_reboot_library",
+)
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+
+proto_library(
+    name = "dashboard_proto",
+    srcs = [
+        ":dashboard.proto",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+    ],
+)
+
+py_reboot_library(
+    name = "dashboard_py_reboot",
+    proto = "dashboard.proto",
+    proto_library = ":dashboard_proto",
+    visibility = ["//visibility:public"],
+)
+
+js_proto_library(
+    name = "dashboard_js_proto",
+    package_json = ":package.json",
+    proto = "dashboard.proto",
+    proto_deps = [
+        ":dashboard_proto",
+        # ISSUE(https://github.com/reboot-dev/mono/issues/3218): Until we can
+        # use `create_protoc_plugin_rule` we need to repeat the dependencies of
+        # the `proto_libraries` here.
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+js_reboot_library(
+    name = "dashboard_js_reboot",
+    srcs = [
+        ":dashboard_proto",
+    ],
+    proto = "dashboard.proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":dashboard_js_proto",
+    ],
+)
+
+js_reboot_react_library(
+    name = "dashboard_js_reboot_react",
+    srcs = [
+        ":dashboard_js_proto",
+    ],
+    proto = "dashboard.proto",
+    proto_deps = [
+        ":dashboard_proto",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:options_proto",
+        "@com_google_protobuf//:descriptor_proto",
+    ],
+    visibility = ["//visibility:public"],
+)

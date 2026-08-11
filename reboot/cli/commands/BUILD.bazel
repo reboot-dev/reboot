@@ -2,6 +2,27 @@ load("@rbt_pypi//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
+    name = "dashboard_py",
+    srcs = ["dashboard.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":dev_py",
+        "//reboot:version_py",
+        "//reboot/cli/common:directories_py",
+        "//reboot/cli/common:rc_py",
+        "//reboot/cli/common:subprocesses_py",
+        "//reboot/cli/common:terminal_py",
+        "//reboot/dashboard:constants_py",
+        # The application this command spawns as a subprocess, so
+        # that it is importable from the CLI's own interpreter.
+        "//reboot/dashboard:main_py",
+        "@com_github_reboot_dev_reboot//reboot:settings_py",
+        "@com_github_reboot_dev_reboot//reboot/aio/backoff:python",
+    ],
+)
+
+py_library(
     name = "dev_py",
     srcs = ["dev.py"],
     srcs_version = "PY3",
@@ -12,6 +33,10 @@ py_library(
         requirement("cryptography"),
         requirement("python-dotenv"),
         ":generate_py",
+        "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//rbt/std/presence/v1:presence_py_reboot",
+        "//reboot/aio:aborted_py",
+        "//reboot/aio:external_py",
         "//reboot/cli/common:directories_py",
         "//reboot/cli/common:frontend_py",
         "//reboot/cli/common:monkeys_py",
@@ -20,6 +45,7 @@ py_library(
         "//reboot/cli/common:transpile_py",
         "//reboot/cli/common:watch_py",
         "//reboot/controller:plan_makers_py",
+        "//reboot/dashboard:constants_py",
         "//reboot/server:local_envoy_factory_py",
         "@com_github_reboot_dev_reboot//reboot:settings_py",
         "@com_github_reboot_dev_reboot//reboot/aio:exceptions_py",
