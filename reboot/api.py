@@ -1027,12 +1027,14 @@ class Type(pydantic.BaseModel):
 
     state: typing.Type[Model]
     methods: Methods
+    description: Optional[str] = None
 
     def __init__(
         self,
         *,
         state: typing.Type[Model],
         methods: Methods,
+        description: Optional[str] = None,
     ):
 
         def validate_all_fields_are_reboot_base_classes(
@@ -1187,6 +1189,7 @@ class Type(pydantic.BaseModel):
         super().__init__(
             state=state,
             methods=methods,
+            description=description,
         )
 
 

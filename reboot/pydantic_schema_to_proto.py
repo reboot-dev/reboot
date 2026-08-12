@@ -173,6 +173,8 @@ async def generate(
     # Auto-construct enum value name for this state type,
     # or None for non-auto-constructed types.
     auto_construct: Optional[str] = None,
+    # What the state type does, in the author's own words.
+    description: Optional[str] = None,
 ):
     origin = get_origin(schema)
     args = get_args(schema)
@@ -183,12 +185,19 @@ async def generate(
         await proto.write(f"message {name} {{\n")
 
         if state:
-            if uis or auto_construct:
-                # Generate state option with UIs and/or
-                # auto-construct annotation. Proto text
+            if uis or auto_construct or description is not None:
+                # Generate state option with UIs, a description
+                # and/or auto-construct annotation. Proto text
                 # format uses repeated field names, not
                 # array syntax.
                 await proto.write("  option (rbt.v1alpha1.state) = {\n")
+                if description is not None:
+                    # The description can contain `\` character, so we
+                    # need to escape it for proto string literal.
+                    await proto.write(
+                        "    description: "
+                        f'"{_escape_string_for_proto(description)}"\n'
+                    )
                 if auto_construct is not None:
                     await proto.write(
                         f"    auto_construct: "
@@ -811,6 +820,7 @@ async def generate_proto_file_from_api(
                 uis=uis if uis else None,
                 auto_construct=_PER_USER_ID
                 if type_name == AUTO_CONSTRUCT_STATE_TYPE else None,
+                description=type_obj.description,
             )
             await proto.write('\n')
 

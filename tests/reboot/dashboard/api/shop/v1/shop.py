@@ -45,4 +45,10 @@ ShopMethods = Methods(
     ),
 )
 
-api = API(Shop=Type(state=ShopState, methods=ShopMethods))
+api = API(
+    Shop=Type(
+        state=ShopState,
+        methods=ShopMethods,
+        description="A shop, and the stock it has to sell.",
+    )
+)

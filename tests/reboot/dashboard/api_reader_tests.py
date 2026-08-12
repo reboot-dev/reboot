@@ -42,6 +42,11 @@ class APIReaderTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(
+            shop['description'],
+            'A shop, and the stock it has to sell.',
+        )
+
+        self.assertEqual(
             [field['name'] for field in shop['fields']],
             ['name', 'open'],
         )

@@ -163,6 +163,12 @@ message StateOptions {
   // `RBT_VALIDATE_TRUSTED_EFFECTS` is set. See
   // https://github.com/reboot-dev/mono/issues/4499.
   bool trusted_effects = 4;
+
+  // What the state type does, in the author's own words. Worth
+  // writing about the parts a reader cannot derive, such as what it
+  // is the consistency boundary for, rather than restating the
+  // methods listed beside it.
+  optional string description = 5;
 }
 
 extend google.protobuf.MessageOptions {
