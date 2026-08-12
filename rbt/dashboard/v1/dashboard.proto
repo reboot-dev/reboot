@@ -33,6 +33,9 @@ message StateTypeInfo {
   string file = 2;
   repeated FieldInfo fields = 3;
   repeated MethodInfo methods = 4;
+
+  // What the state type does, in the author's own words.
+  optional string description = 5;
 }
 
 ////////////////////////////////////////////////////////////////////////

@@ -66,57 +66,6 @@ message GetStateResponse {
 
 ////////////////////////////////////////////////////////////////////////
 
-// A field of a state, or an argument of a method.
-message FieldInfo {
-  string name = 1;
-
-  // Rendered for a reader, e.g. "str", "float", "AccountState".
-  string type = 2;
-}
-
-message MethodInfo {
-  string name = 1;
-
-  // One of "reader", "writer", "transaction" or "workflow".
-  string kind = 2;
-
-  // The request message's fields, flattened. A method taking no
-  // request has none.
-  repeated FieldInfo arguments = 3;
-
-  // The response's fields; empty when the method returns
-  // nothing.
-  repeated FieldInfo returns = 4;
-
-  // Names of the error types the method declares it may raise.
-  repeated string errors = 5;
-
-  // The description its author wrote, when there is one.
-  optional string description = 6;
-
-  // Whether this method is a factory, constructing the state
-  // rather than requiring it to already exist.
-  bool factory = 7;
-
-  // Whether the method is exposed as an MCP tool or resource.
-  bool mcp = 8;
-}
-
-message StateTypeInfo {
-  // Fully qualified, e.g. "bank.v1.Account".
-  string name = 1;
-
-  // The file the developer declared it in, e.g.
-  // "bank/v1/account.py".
-  string file = 2;
-
-  repeated FieldInfo fields = 3;
-
-  repeated MethodInfo methods = 4;
-}
-
-////////////////////////////////////////////////////////////////////////
-
 service Inspect {
   // The list of state types in an application is static, however, we
   // make this a streaming RPC so that the client can hear when it
