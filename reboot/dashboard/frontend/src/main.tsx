@@ -75,6 +75,30 @@ const Kind: FC<{ kind: string }> = ({ kind }) => (
   />
 );
 
+// A description, with the spans its author wrote in `backticks`
+// rendered as code rather than shown with their backticks. An
+// unpaired backtick is kept as text, since it opens nothing.
+const Description: FC<{ className: string; text: string }> = ({
+  className,
+  text,
+}) => {
+  const parts = text.split("`");
+  return (
+    <p className={className}>
+      {parts.map((part, index) => {
+        // `split` alternates text and code, so odd indexes are code,
+        // except a last part at an odd index, whose backtick was
+        // never closed.
+        const unclosed = index === parts.length - 1 && parts.length % 2 === 0;
+        if (index % 2 === 1 && !unclosed) {
+          return <code key={index}>{part}</code>;
+        }
+        return <span key={index}>{unclosed ? "`" + part : part}</span>;
+      })}
+    </p>
+  );
+};
+
 // A state type's namespace is its proto package: `bank.v1.Account`
 // lives in `bank.v1`, which is the developer's `api/bank/v1/`.
 const namespaceOf = (name: string): string =>
@@ -171,7 +195,10 @@ const Method: FC<{ method: MethodInfo }> = ({ method }) => {
       <div className="method-detail">
         <div className="method-detail-inner">
           {method.description !== undefined && (
-            <p className="method-description">{method.description}</p>
+            <Description
+              className="method-description"
+              text={method.description}
+            />
           )}
           <div className="method-signature">
             <span>
@@ -295,6 +322,12 @@ const StateType: FC<{
         </button>
       </div>
       <div className="file">{stateType.file}</div>
+      {stateType.description !== undefined && (
+        <Description
+          className="state-type-description"
+          text={stateType.description}
+        />
+      )}
 
       <div className="eyebrow section">state</div>
       {stateType.fields.length === 0 ? (
