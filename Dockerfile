@@ -797,11 +797,25 @@ RUN dnf install -y clang gcc-c++ && dnf clean all \
     && mkdir -p /usr/lib/llvm-${CLANG_VERSION}/lib \
     && ln -sf /usr/lib/clang /usr/lib/llvm-${CLANG_VERSION}/lib/clang
 
-# The `manylinux` image comes with multiple Python versions. We'll use
-# 3.10 to match our main build environment. Set up symlinks so `python`
-# and `python3` point to Python 3.10.
-RUN ln -sf /opt/python/cp310-cp310/bin/python /usr/local/bin/python \
-    && ln -sf /opt/python/cp310-cp310/bin/python /usr/local/bin/python3 \
+# The `manylinux` image comes with multiple Python versions, but all
+# of them are built `--disable-shared` with no `libpython` installed,
+# and embedding Python — which building `reboot_native.node` does —
+# needs `-lpython3.10` at link time. Point `python` and `python3` at a
+# python-build-standalone CPython 3.10 instead, which ships
+# `libpython3.10.so`; it is the same build
+# `reboot/nodejs/prepare_environment.sh` uses. `pip` and `pip3` stay
+# on the manylinux 3.10, whose layout `auditwheel` and the wheel
+# builds expect, so `python3` and `pip` deliberately name different
+# installations.
+RUN set -e; \
+    if [ "${TARGETARCH}" = "amd64" ]; then ARCH=x86_64; else ARCH=aarch64; fi; \
+    mkdir /tmp/python-build-standalone; \
+    wget -qO- "https://github.com/indygreg/python-build-standalone/releases/download/20240814/cpython-3.10.14+20240814-${ARCH}-unknown-linux-gnu-install_only.tar.gz" \
+    | tar -xzf - -C /tmp/python-build-standalone \
+    && mv /tmp/python-build-standalone/python /opt/reboot-python \
+    && rmdir /tmp/python-build-standalone \
+    && ln -sf /opt/reboot-python/bin/python3 /usr/local/bin/python \
+    && ln -sf /opt/reboot-python/bin/python3 /usr/local/bin/python3 \
     && ln -sf /opt/python/cp310-cp310/bin/pip /usr/local/bin/pip \
     && ln -sf /opt/python/cp310-cp310/bin/pip /usr/local/bin/pip3
 
