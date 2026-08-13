@@ -42,6 +42,19 @@ COLLECTION_TYPE = Union[
     typing.Type[Dict[str, Any]],
 ]
 
+
+def is_annotation_any(annotation: object) -> bool:
+    """Whether `annotation` is the `typing.Any` special form.
+
+    `get_args` on an annotation such as `dict[str, Any]` hands back the
+    `typing.Any` object itself, so converters that recurse into
+    annotations meet it as a value. Comparing through an `object`-typed
+    parameter keeps the comparison legal under `strict_equality` for
+    callers whose declared parameter types do not mention `Any`.
+    """
+    return annotation is Any
+
+
 # We don't allow passing arbitrary default values, only these empty
 # defaults, which also matches with Protobuf semantics.
 ALLOWED_DEFAULT_BY_FIELD_TYPE = {
@@ -638,7 +651,7 @@ def _proto_to_pydantic(
         # 'None' directly.
         return None
 
-    if output_type is Any:
+    if is_annotation_any(output_type):
         # Reverse of the `Any` case in `_pydantic_to_proto`: a
         # `google.protobuf.Value` becomes the JSON value it holds.
         assert isinstance(input, Value)
