@@ -16,6 +16,7 @@ from reboot.api import (
     Model,
     UserPydanticError,
     get_field_tag,
+    is_annotation_any,
     snake_to_camel,
 )
 from reboot.fail import fail
@@ -208,7 +209,7 @@ def pydantic_to_zod(
         # Currently only used for methods with no response.
         return 'z.void()'
 
-    if input is Any:
+    if is_annotation_any(input):
         # `Any` — e.g. a `dict[str, Any]` map value — accepts any JSON
         # value. `z.json()` is the schema our `zod-to-proto` converts
         # to a `google.protobuf.Value`.
