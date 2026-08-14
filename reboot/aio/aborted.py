@@ -105,17 +105,43 @@ REBOOT_ERROR_TYPES: list[type[Message]] = [
 FROM_BACKEND_AND_RECOVERABLE_ERROR_TYPES: tuple[type[Message], ...] = (
     rbt.v1alpha1.errors_pb2.StateNotConstructed,
     rbt.v1alpha1.errors_pb2.StateAlreadyConstructed,
+    # Status codes that the gRPC library never generates, only user
+    # code: https://grpc.io/docs/guides/status-codes/
+    #
+    # A backend raising one of these persisted nothing, so nothing
+    # about the transaction is doomed: a developer can branch on the
+    # error and go on to finish the transaction some other way.
+    rbt.v1alpha1.errors_pb2.InvalidArgument,
+    rbt.v1alpha1.errors_pb2.NotFound,
+    rbt.v1alpha1.errors_pb2.AlreadyExists,
+    rbt.v1alpha1.errors_pb2.FailedPrecondition,
+    rbt.v1alpha1.errors_pb2.Aborted,
+    rbt.v1alpha1.errors_pb2.OutOfRange,
+    rbt.v1alpha1.errors_pb2.DataLoss,
 )
 
-# Errors that only Reboot generates, never a proxy or other component,
-# but which require the transaction to abort and be retried rather
-# than commit.
+# Errors that tell us a backend raised them, and thus that no mutation
+# happened, but which a transaction can not commit through.
 FROM_BACKEND_AND_UNRECOVERABLE_ERROR_TYPES: tuple[type[Message], ...] = (
-    # Raised when a participant joins a transaction that started
-    # before the participant last recovered, i.e., before the
-    # participant ran any of the transaction's code.
+    # Raised by a participant refusing to take part in a transaction
+    # which started before the participant last recovered, i.e.,
+    # before the participant ran any of the transaction's code.
     rbt.v1alpha1.errors_pb2.TransactionShouldRetryWithoutBackoff,
 )
+
+# Every error that tells us a backend raised it. The recoverable and
+# unrecoverable types above partition this: each error belongs to
+# exactly one of them, and together they are every error we know a
+# backend to be the source of.
+FROM_BACKEND_ERROR_TYPES: tuple[type[Message], ...] = (
+    FROM_BACKEND_AND_RECOVERABLE_ERROR_TYPES +
+    FROM_BACKEND_AND_UNRECOVERABLE_ERROR_TYPES
+)
+
+assert len(
+    set(FROM_BACKEND_ERROR_TYPES)
+) == len(FROM_BACKEND_ERROR_TYPES
+        ), ("An error is either recoverable or it is not, never both")
 
 # Any possible error type, i.e., possibly a `GrpcError`, a
 # `RebootError`, or a user declared error.
@@ -457,15 +483,13 @@ class Aborted(Exception):
 
         This is a weaker property than
         `is_from_backend_and_recoverable()`: an error may tell us that
-        no mutation happened while still requiring the transaction to
-        abort and be retried.
+        no mutation happened while still leaving the transaction
+        unable to commit.
         """
         return (
-            cls.is_from_backend_and_recoverable(exception) or (
-                isinstance(exception, Aborted) and isinstance(
-                    exception.error,
-                    FROM_BACKEND_AND_UNRECOVERABLE_ERROR_TYPES,
-                )
+            isinstance(exception, Aborted) and (
+                cls.is_declared_error(exception.error) or
+                isinstance(exception.error, FROM_BACKEND_ERROR_TYPES)
             )
         )
 

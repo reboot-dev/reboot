@@ -1,8 +1,16 @@
 import unittest
 from google.protobuf.message import Message
 from rbt.v1alpha1.errors_pb2 import (
+    Aborted,
+    AlreadyExists,
+    DataLoss,
+    FailedPrecondition,
+    InvalidArgument,
+    NotFound,
+    OutOfRange,
     StateAlreadyConstructed,
     StateNotConstructed,
+    TransactionParticipantFailedToCommit,
     TransactionShouldRetryWithoutBackoff,
     Unavailable,
     Unknown,
@@ -56,6 +64,39 @@ class AbortedClassificationTest(unittest.TestCase):
                 self.assertTrue(
                     DeclaresNothingAborted.is_from_backend(aborted),
                 )
+
+    def test_user_code_only_status_codes_are_recoverable(self):
+        # The gRPC library never generates these, only user code, so
+        # one of them reaching us means a backend raised it and
+        # persisted nothing:
+        # https://grpc.io/docs/guides/status-codes/
+        for error in (
+            InvalidArgument(),
+            NotFound(),
+            AlreadyExists(),
+            FailedPrecondition(),
+            Aborted(),
+            OutOfRange(),
+            DataLoss(),
+        ):
+            with self.subTest(error=type(error).__name__):
+                aborted = SystemAborted(error)
+                self.assertTrue(
+                    DeclaresNothingAborted.is_from_backend(aborted),
+                )
+                # Nothing about the transaction is doomed, so a
+                # developer can catch one and still finish it.
+                self.assertTrue(
+                    DeclaresNothingAborted.
+                    is_from_backend_and_recoverable(aborted),
+                )
+
+    def test_failed_to_commit_is_not_from_backend(self):
+        # Raised once other participants may already have committed, so
+        # it does not tell us whether a mutation happened.
+        aborted = SystemAborted(TransactionParticipantFailedToCommit())
+
+        self.assertFalse(DeclaresNothingAborted.is_from_backend(aborted))
 
     def test_transport_errors_are_neither(self):
         # These may be raised by a proxy or the network before or after

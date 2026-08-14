@@ -107,11 +107,11 @@ class UncertainMutationTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIs(raised.exception, second_exception)
 
         # The first mutation to fail is the one we report as uncertain.
-        with self.assertRaises(IdempotencyUncertainError) as raised:
+        with self.assertRaises(IdempotencyUncertainError) as uncertain:
             with self._idempotently(manager, state_id="later"):
                 pass
 
-        self.assertIn("'first'", str(raised.exception))
+        self.assertIn("'first'", str(uncertain.exception))
 
     def test_transport_failure_reports_uncertainty(self):
         # An `Unavailable` may or may not have mutated, so it makes the
