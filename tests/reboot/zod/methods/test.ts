@@ -57,7 +57,9 @@ test("Test Zod Service", async (t) => {
       await test.transaction(context);
     } catch (aborted) {
       assert.ok(aborted instanceof Error);
-      assert.ok(aborted.message.includes("Transaction must abort"));
+      assert.ok(
+        aborted.message.includes("Simulated failure in transactionWriter")
+      );
     }
   });
 });
