@@ -1,0 +1,63 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("//reboot/nodejs:rules.bzl", "js_reboot_test")
+load("//tests:zod_to_proto.bzl", "js_reboot_library_from_zod")
+
+js_reboot_library_from_zod(
+    name = "servicer_js_reboot",
+    package_json = ":package.json",
+    visibility = ["//tests/reboot:__subpackages__"],
+    zod = "servicer_api.ts",
+)
+
+ts_project(
+    name = "servicer_ts",
+    srcs = [
+        "servicer.ts",
+        "servicer_api.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    deps = [
+        ":servicer_js_reboot",
+        "//:node_modules/@reboot-dev/reboot",
+        "//:node_modules/@reboot-dev/reboot-api",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_project(
+    name = "test_ts",
+    srcs = [
+        "test.ts",
+        ":package.json",
+    ],
+    declaration = True,
+    tsconfig = {
+        "compilerOptions": {
+            "declaration": True,
+            "module": "nodenext",
+            "moduleResolution": "nodenext",
+            "target": "es2020",
+        },
+    },
+    deps = [
+        ":servicer_ts",
+    ],
+)
+
+js_reboot_test(
+    name = "test",
+    data = [
+        ":test_ts",
+    ],
+    entry_point = "test.js",
+    visibility = ["//visibility:public"],
+)

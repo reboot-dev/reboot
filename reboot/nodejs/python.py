@@ -315,6 +315,10 @@ class NodeAdaptorAuthorizer(Authorizer[Message, Message]):
                             None if context.workflow_id is None else
                             str(context.workflow_id)
                         ),
+                        transaction_root_id=(
+                            None if context.transaction_root_id is None else
+                            str(context.transaction_root_id)
+                        ),
                     ),
                     state=(
                         None if state is None else state.SerializeToString()
@@ -384,6 +388,10 @@ class NodeAdaptorTokenVerifier(TokenVerifier):
                         workflow_id=(
                             None if context.workflow_id is None else
                             str(context.workflow_id)
+                        ),
+                        transaction_root_id=(
+                            None if context.transaction_root_id is None else
+                            str(context.transaction_root_id)
                         ),
                     ),
                     token=token,

@@ -312,6 +312,7 @@ export class Context {
   readonly appInternal: boolean;
   readonly auth: Auth | null;
   readonly workflowId: string | null;
+  readonly transactionRootId: string | null;
 
   constructor({
     external,
@@ -323,6 +324,7 @@ export class Context {
     appInternal,
     auth,
     workflowId,
+    transactionRootId,
     cancelled,
   }: {
     external: any;
@@ -334,6 +336,7 @@ export class Context {
     appInternal: boolean;
     auth: Auth | null;
     workflowId: string | null;
+    transactionRootId: string | null;
     cancelled: Promise<void>;
   }) {
     if (!Context.#isInternalConstructing) {
@@ -351,6 +354,7 @@ export class Context {
     this.appInternal = appInternal;
     this.auth = auth;
     this.workflowId = workflowId;
+    this.transactionRootId = transactionRootId;
     this.cancelled = cancelled;
   }
 
@@ -685,6 +689,10 @@ export abstract class TokenVerifier {
       auth: null,
       workflowId:
         call.context.workflowId !== undefined ? call.context.workflowId : null,
+      transactionRootId:
+        call.context.transactionRootId !== undefined
+          ? call.context.transactionRootId
+          : null,
       cancelled,
     }) as ReaderContext;
 

@@ -28961,6 +28961,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                             None if context.workflow_id is None
                             else str(context.workflow_id)
                         ),
+                        transaction_root_id=(
+                            None if context.transaction_root_id is None
+                            else str(context.transaction_root_id)
+                        ),
                     ),
                     state=state.SerializeToString(),
                     request=request.SerializeToString(),
@@ -29081,6 +29085,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                 workflow_id=(
                     None if context.workflow_id is None
                     else str(context.workflow_id)
+                ),
+                transaction_root_id=(
+                    None if context.transaction_root_id is None
+                    else str(context.transaction_root_id)
                 ),
             ),
             state=state.SerializeToString(),
@@ -29218,6 +29226,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                             None if context.workflow_id is None
                             else str(context.workflow_id)
                         ),
+                        transaction_root_id=(
+                            None if context.transaction_root_id is None
+                            else str(context.transaction_root_id)
+                        ),
                     ),
                     state=state.SerializeToString(),
                     request=request.SerializeToString(),
@@ -29353,6 +29365,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                             None if context.workflow_id is None
                             else str(context.workflow_id)
                         ),
+                        transaction_root_id=(
+                            None if context.transaction_root_id is None
+                            else str(context.transaction_root_id)
+                        ),
                     ),
                     state=state.SerializeToString(),
                     request=request.SerializeToString(),
@@ -29474,6 +29490,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                     None if context.workflow_id is None
                     else str(context.workflow_id)
                 ),
+                transaction_root_id=(
+                    None if context.transaction_root_id is None
+                    else str(context.transaction_root_id)
+                ),
             ),
             request=request.SerializeToString(),
         ).SerializeToString()
@@ -29586,6 +29606,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                         workflow_id=(
                             None if context.workflow_id is None
                             else str(context.workflow_id)
+                        ),
+                        transaction_root_id=(
+                            None if context.transaction_root_id is None
+                            else str(context.transaction_root_id)
                         ),
                     ),
                     state=state.SerializeToString(),
@@ -29708,6 +29732,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                     None if context.workflow_id is None
                     else str(context.workflow_id)
                 ),
+                transaction_root_id=(
+                    None if context.transaction_root_id is None
+                    else str(context.transaction_root_id)
+                ),
             ),
             request=request.SerializeToString(),
         ).SerializeToString()
@@ -29806,6 +29834,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                 workflow_id=(
                     None if context.workflow_id is None
                     else str(context.workflow_id)
+                ),
+                transaction_root_id=(
+                    None if context.transaction_root_id is None
+                    else str(context.transaction_root_id)
                 ),
             ),
             request=request.SerializeToString(),
@@ -29906,6 +29938,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                     None if context.workflow_id is None
                     else str(context.workflow_id)
                 ),
+                transaction_root_id=(
+                    None if context.transaction_root_id is None
+                    else str(context.transaction_root_id)
+                ),
             ),
             request=request.SerializeToString(),
         ).SerializeToString()
@@ -30005,6 +30041,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                     None if context.workflow_id is None
                     else str(context.workflow_id)
                 ),
+                transaction_root_id=(
+                    None if context.transaction_root_id is None
+                    else str(context.transaction_root_id)
+                ),
             ),
             request=request.SerializeToString(),
         ).SerializeToString()
@@ -30103,6 +30143,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                 workflow_id=(
                     None if context.workflow_id is None
                     else str(context.workflow_id)
+                ),
+                transaction_root_id=(
+                    None if context.transaction_root_id is None
+                    else str(context.transaction_root_id)
                 ),
             ),
             request=request.SerializeToString(),
@@ -30216,6 +30260,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                         workflow_id=(
                             None if context.workflow_id is None
                             else str(context.workflow_id)
+                        ),
+                        transaction_root_id=(
+                            None if context.transaction_root_id is None
+                            else str(context.transaction_root_id)
                         ),
                     ),
                     state=state.SerializeToString(),
@@ -30352,6 +30400,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                             None if context.workflow_id is None
                             else str(context.workflow_id)
                         ),
+                        transaction_root_id=(
+                            None if context.transaction_root_id is None
+                            else str(context.transaction_root_id)
+                        ),
                     ),
                     state=state.SerializeToString(),
                     request=request.SerializeToString(),
@@ -30472,6 +30524,10 @@ class EchoServicerNodeAdaptor(Echo.singleton.Servicer):
                 workflow_id=(
                     None if context.workflow_id is None
                     else str(context.workflow_id)
+                ),
+                transaction_root_id=(
+                    None if context.transaction_root_id is None
+                    else str(context.transaction_root_id)
                 ),
             ),
             request=request.SerializeToString(),

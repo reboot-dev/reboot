@@ -112,14 +112,22 @@ ongoing_transaction_states: dict[str, IMPORT_reboot_api.Model] = {}
 
 
 # Helper to get the `ongoing_transaction_states` dictionary key.
-# The key should contain both the state ID and the state type name
-# to avoid conflicts when multiple states share the same ID.
+# The key contains the state type name and the state ID to avoid
+# conflicts when multiple states share the same ID, and the root
+# transaction ID because several transactions may be joined to one
+# state at the same time (they join it "shared", and only upgrade to
+# "exclusive" once they write). Without the transaction ID they would
+# share a single entry, and whichever registered last would receive
+# the others' writer updates, silently losing their effects.
 def ongoing_transaction_state_key(
     context: IMPORT_reboot_aio_contexts.ReaderContext
     | IMPORT_reboot_aio_contexts.WriterContext
     | IMPORT_reboot_aio_contexts.TransactionContext,
 ) -> str:
-    return f"{context.state_type_name}/{context.state_id}"
+    return (
+        f"{context.state_type_name}/{context.state_id}/"
+        f"{context.transaction_root_id}"
+    )
 
 class Unset:
     pass
