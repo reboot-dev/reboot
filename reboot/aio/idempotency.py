@@ -456,7 +456,7 @@ class IdempotencyManager:
                 )
             else:
                 yield None
-        # TODO(benh): differentiate errors so that we only set
+        # TODO(benh): differentiate more errors so that we only set
         # uncertainty when we are truly uncertain.
         except BaseException as exception:
             # The `yield` threw an exception, which means the user
@@ -469,7 +469,7 @@ class IdempotencyManager:
 
             if (
                 aborted_type is not None and
-                aborted_type.is_from_backend_and_recoverable(exception)
+                aborted_type.is_from_backend(exception)
             ):
                 # We are not uncertain because we _must_ have gotten
                 # this from the backend, so just let it propagate.

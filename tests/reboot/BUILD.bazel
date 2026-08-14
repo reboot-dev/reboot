@@ -756,6 +756,29 @@ py_test(
 )
 
 py_test(
+    name = "aborted_tests_py",
+    size = "small",
+    srcs = [":aborted_tests.py"],
+    main = "aborted_tests.py",
+    deps = [
+        "//reboot/aio:aborted_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+    ],
+)
+
+py_test(
+    name = "idempotency_uncertainty_tests_py",
+    size = "small",
+    srcs = [":idempotency_uncertainty_tests.py"],
+    main = "idempotency_uncertainty_tests.py",
+    deps = [
+        "//reboot/aio:aborted_py",
+        "//reboot/aio:idempotency_py",
+        "@com_github_reboot_dev_reboot//rbt/v1alpha1:errors_py_proto",
+    ],
+)
+
+py_test(
     name = "type_annotation_inference_tests_py",
     srcs = [":type_annotation_inference_tests.py"],
     main = "type_annotation_inference_tests.py",
