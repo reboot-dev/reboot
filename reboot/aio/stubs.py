@@ -333,6 +333,16 @@ class Stub:
         doing so correctly depending on whether or not we are reactive
         or in a transaction.
         """
+        if self._context is not None and self._context.transaction_id is not None:
+            unrecoverable_abort = self._context.transaction_unrecoverable_abort
+            if unrecoverable_abort is not None:
+                # The transaction can only abort at this point, so
+                # refuse to do any more work on its behalf: every
+                # state we'd touch would take a lock and provisionally
+                # mutate only to be rolled back, and the failure would
+                # not surface until the method returned.
+                raise unrecoverable_abort
+
         if metadata is None:
             metadata = ()
 

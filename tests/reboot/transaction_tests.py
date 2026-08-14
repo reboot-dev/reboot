@@ -1906,6 +1906,33 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn('Jazz hands!', str(aborted.exception))
 
+    async def test_transaction_refuses_calls_after_catching_abort(self):
+        """Test that once a caught error has doomed the transaction any
+        further call is refused before being dispatched, rather than
+        doing work that will only be rolled back.
+        """
+
+        await self.rbt.up(
+            Application(servicers=[AccountServicer, BankServicer]),
+        )
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+        await bank.SignUp(context, account_id='jonathan')
+
+        AccountServicer.ping_calls = 0
+
+        with self.assertRaises(Bank.TryCatchThenCallAborted) as aborted:
+            await bank.TryCatchThenCall(context, account_id='jonathan')
+
+        # The abort that doomed the transaction is what propagates ...
+        self.assertIn('Jazz hands!', str(aborted.exception))
+
+        # ... and `Ping` never ran.
+        self.assertEqual(AccountServicer.ping_calls, 0)
+
     async def test_transaction_retried_when_catching_unavailable(self):
         """Test that catching a retryable error still propagates it, so
         that the whole transaction gets retried rather than failing

@@ -44,6 +44,10 @@ class AccountServicer(Account.singleton.Servicer):
     # would not observe a count kept in the state itself.
     mimic_unavailable_once_calls = 0
 
+    # How many times `Ping` has been called. Kept out of the state for
+    # the same reason as `mimic_unavailable_once_calls`.
+    ping_calls = 0
+
     def authorizer(self):
         return allow()
 
@@ -159,6 +163,15 @@ class AccountServicer(Account.singleton.Servicer):
         if AccountServicer.mimic_unavailable_once_calls == 1:
             raise Account.MimicUnavailableOnceAborted(Unavailable())
 
+        return Empty()
+
+    async def ping(
+        self,
+        context: ReaderContext,
+        state: Account.State,
+        request: bank_rbt.PingRequest,
+    ) -> Empty:
+        AccountServicer.ping_calls += 1
         return Empty()
 
     async def fail(
@@ -464,6 +477,31 @@ class BankServicer(Bank.Servicer):
             assert context.transaction_unrecoverable_abort
         else:
             raise RuntimeError('Expecting to abort!')
+
+        return Empty()
+
+    async def try_catch_then_call(
+        self,
+        context: TransactionContext,
+        request: bank_rbt.TryCatchThenCallRequest,
+    ) -> Empty:
+
+        account = Account.ref(request.account_id)
+
+        try:
+            await account.throw_exception(
+                context,
+                Options(bearer_token=context.caller_bearer_token),
+            )
+        except Account.ThrowExceptionAborted:
+            pass
+
+        # The transaction can only abort now, so this call must be
+        # refused before it is ever dispatched.
+        await account.ping(
+            context,
+            Options(bearer_token=context.caller_bearer_token),
+        )
 
         return Empty()
 
