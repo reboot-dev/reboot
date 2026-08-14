@@ -169,6 +169,14 @@ class NodeServicer(Node.singleton.Servicer):
                     keys=[],
                 ),
             )
+        elif state.degree == 0:
+            # Due to a bug in an older version of `OrderedMap.Create`
+            # that passed the root `Node` a request with an unset
+            # `degree` instead of the default a `Node` can be
+            # persisted without a `degree`. Such a node can not be
+            # split, so adopt the `degree` the `OrderedMap` recorded,
+            # which is the one the map was created with.
+            state.degree = request.degree or DEFAULT_DEGREE
 
         if state.is_leaf:
             return await self._insert_leaf(

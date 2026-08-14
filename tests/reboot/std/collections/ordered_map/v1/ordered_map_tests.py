@@ -1,6 +1,10 @@
 import unittest
 from google.protobuf.any_pb2 import Any
 from google.protobuf.struct_pb2 import Value
+from rbt.std.collections.ordered_map.v1.ordered_map_rbt import (
+    Node,
+    NodeInsertRequest,
+)
 from rbt.std.item.v1.item_pb2 import Item
 from rbt.v1alpha1.errors_pb2 import (
     InvalidArgument,
@@ -13,9 +17,11 @@ from reboot.aio.tests import Reboot
 from reboot.protobuf import as_str, from_str
 from reboot.std.collections.ordered_map.v1.ordered_map import (
     InvalidRangeError,
+    NodeServicer,
     OrderedMap,
     ordered_map_library,
 )
+from unittest.mock import MagicMock
 
 
 class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
@@ -2023,6 +2029,36 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
             response.value,
             "Inner: ['y']\n  Leaf: ['b', 'm']\n  Leaf: ['y', 'z']\n",
         )
+
+    async def test_insert_repairs_unusable_persisted_degree(self) -> None:
+        """
+        Due to a bug in an older version of `OrderedMap.Create` that passed
+        the root `Node` a request with an unset `degree` instead of
+        the default a `Node` can be persisted without a `degree`. Such
+        a node can not be split. This test checks that we can "fix" a
+        persisted instance of an `OrderedMap` if an app has one.
+
+        Calls `NodeServicer` directly because such a node can no longer
+        be created through `OrderedMap`, which is the point; only
+        already-persisted nodes are in this state.
+        """
+        servicer = NodeServicer()
+
+        state = Node.State()
+        state.is_leaf = True
+        state.degree = 0
+
+        context = MagicMock()
+        context.constructor = False
+
+        await servicer.Insert(
+            context,
+            state,
+            NodeInsertRequest(entries={"a": b""}, degree=16),
+        )
+
+        self.assertEqual(state.degree, 16)
+        self.assertEqual(list(state.keys), ["a"])
 
 
 if __name__ == '__main__':
