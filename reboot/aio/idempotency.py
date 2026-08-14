@@ -485,8 +485,14 @@ class IdempotencyManager:
             # manually _retry_ another call that did not have an
             # idempotency key and accidentally perform a mutation more
             # than once.
-            if self._mutations_without_idempotency:
-                assert not self._uncertain_mutation
+            #
+            # Concurrent mutations may fail together, in which case
+            # they all end up here; keep the first one, which is the
+            # one a later mutation will be told about.
+            if (
+                self._mutations_without_idempotency and
+                not self._uncertain_mutation
+            ):
                 self._uncertain_mutation = True
                 self._uncertain_mutation_state_type_name = state_type_name
                 self._uncertain_mutation_state_ref = state_ref
