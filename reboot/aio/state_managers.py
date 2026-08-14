@@ -286,9 +286,15 @@ class StateManager(ABC):
                 # A `writer` is always exclusive; a `reader` is
                 # shared, and a `transaction` starts shared and may
                 # upgrade later if it requires exclusive.
+                #
+                # An idempotency key is itself something to persist,
+                # so a transaction carrying one starts exclusive to
+                # ensure it is persisted properly.
                 mode=(
-                    Lock.Mode.EXCLUSIVE
-                    if isinstance(context, WriterContext) else Lock.Mode.SHARED
+                    Lock.Mode.EXCLUSIVE if (
+                        isinstance(context, WriterContext) or
+                        context.idempotency_key is not None
+                    ) else Lock.Mode.SHARED
                 ),
                 idempotency_key=context.idempotency_key,
                 using_restart_detection=using_restart_detection,
