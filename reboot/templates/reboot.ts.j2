@@ -110,12 +110,17 @@ import { api } from "{{ options.proto.zod }}{% if nodejs_extensions %}.js{% endi
 const ongoingTransactionStates: { [id: string] : any; } = {};
 
 // Helper to get the `ongoingTransactionStates` dictionary key.
-// The key should contain both the state ID and the state type name
-// to avoid conflicts when multiple states share the same ID.
+// The key contains the state type name and the state ID to avoid
+// conflicts when multiple states share the same ID, and the root
+// transaction ID because several transactions may be joined to one
+// state at the same time (they join it "shared", and only upgrade to
+// "exclusive" once they write). Without the transaction ID they would
+// share a single entry, and whichever registered last would receive
+// the others' writer updates, silently losing their effects.
 const ongoingTransactionStateKey = (
   context: Context
 ): string => {
-  return `${context.stateTypeName}/${context.stateId}`;
+  return `${context.stateTypeName}/${context.stateId}/${context.transactionRootId}`;
 };
 
 // Track state IDs that are being _constructed_ in a transaction
@@ -750,6 +755,11 @@ export abstract class {{ state.proto.name }}BaseServicer extends reboot.Servicer
           ? call.context.workflowId
           : null
       ),
+      transactionRootId: (
+        call.context.transactionRootId !== undefined
+          ? call.context.transactionRootId
+          : null
+      ),
       cancelled,
     });
 
@@ -1343,6 +1353,11 @@ export class {{ state.proto.name }}Authorizer extends reboot.Authorizer<{{ state
       workflowId: (
         call.context.workflowId !== undefined
           ? call.context.workflowId
+          : null
+      ),
+      transactionRootId: (
+        call.context.transactionRootId !== undefined
+          ? call.context.transactionRootId
           : null
       ),
       cancelled,
