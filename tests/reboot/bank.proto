@@ -114,6 +114,15 @@ service AccountMethods {
     };
   }
 
+  // Mimics an `Unavailable` the first time it is called and succeeds
+  // every time after, so that a transaction which aborts because of it
+  // can succeed once retried.
+  rpc MimicUnavailableOnce(MimicUnavailableOnceRequest)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).reader = {
+    };
+  }
+
   // Test method for testing behaviour where users raises/throws one
   // of their own defined errors.
   rpc Fail(FailRequest) returns (FailResponse) {
@@ -214,7 +223,13 @@ message AssetsUnderManagementResponse {
   uint32 num_accounts = 2;
 }
 
+message MimicUnavailableOnceRequest {}
+
 message TryCatchUndeclaredErrorRequest {
+  string account_id = 1;
+}
+
+message TryCatchUnavailableRequest {
   string account_id = 1;
 }
 
@@ -349,6 +364,14 @@ service BankMethods {
   // Test method for testing behaviour in case user catches an
   // undeclared error from a stub method call.
   rpc TryCatchUndeclaredError(TryCatchUndeclaredErrorRequest)
+      returns (google.protobuf.Empty) {
+    option (rbt.v1alpha1.method).transaction = {
+    };
+  }
+
+  // Test method for testing behaviour in case user catches a
+  // retryable `Unavailable` from a stub method call.
+  rpc TryCatchUnavailable(TryCatchUnavailableRequest)
       returns (google.protobuf.Empty) {
     option (rbt.v1alpha1.method).transaction = {
     };
