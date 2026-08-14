@@ -107,6 +107,10 @@ message NodeInsertRequest {
   reserved "key", "value";
   // Map of key to serialized `Value` bytes.
   map<string, bytes> entries = 3;
+  // The degree to construct the node with when this `Insert` is what
+  // implicitly constructs it, i.e., when the `OrderedMap` itself is
+  // being implicitly constructed.
+  uint32 degree = 4;
 }
 
 message NodeInsertResponse {

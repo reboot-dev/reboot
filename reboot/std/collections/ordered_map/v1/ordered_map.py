@@ -99,6 +99,10 @@ class NodeServicer(Node.singleton.Servicer):
         state: Node.State,
         request: NodeCreateRequest,
     ) -> None:
+        # A node of degree < 2 can not be split, which `_insert_leaf`
+        # and `_insert_inner` would spin forever trying to do.
+        assert request.degree >= 2, f"Invalid `degree` {request.degree}"
+
         state.degree = request.degree
         state.is_leaf = request.is_leaf
         state.keys.extend(request.keys)
@@ -153,13 +157,14 @@ class NodeServicer(Node.singleton.Servicer):
         request: NodeInsertRequest,
     ) -> NodeInsertResponse:
         # Implicit construction of root. This should only happen on
-        # implicit construction of the `OrderedMap`.
+        # implicit construction of the `OrderedMap`, which tells us
+        # what `degree` it was configured with.
         if context.constructor:
             self._create(
                 context,
                 state,
                 NodeCreateRequest(
-                    degree=DEFAULT_DEGREE,
+                    degree=request.degree or DEFAULT_DEGREE,
                     is_leaf=True,
                     keys=[],
                 ),
@@ -351,6 +356,7 @@ class NodeServicer(Node.singleton.Servicer):
                     response = await Node.ref(child_id).Insert(
                         context,
                         entries=entries,
+                        degree=state.degree,
                     )
                     return j, response
 
@@ -701,6 +707,16 @@ class OrderedMapServicer(OrderedMap.singleton.Servicer):
         else:
             return allow_if(all=[is_app_internal])
 
+    def _check_degree(self, degree: Optional[int]) -> Optional[str]:
+        """
+        Check that `degree` is a degree a node can actually be split
+        at. Returns an error message if it is not, or `None` if it is
+        (or was not specified).
+        """
+        if degree is not None and degree < 2:
+            return f"`degree` must be >= 2, but got {degree}"
+        return None
+
     def _check_construction_options(
         self,
         context,
@@ -838,19 +854,22 @@ class OrderedMapServicer(OrderedMap.singleton.Servicer):
         state: OrderedMap.State,
         request: OrderedMapCreateRequest,
     ) -> OrderedMapCreateResponse:
-        if context.constructor:
-            if request.HasField("degree") and request.degree < 2:
-                raise OrderedMap.CreateAborted(
-                    InvalidArgument(),
-                    message="`degree` must be >= 2",
-                )
-        else:
+        degree = request.degree if request.HasField("degree") else None
+
+        message = self._check_degree(degree)
+        if message is not None:
+            raise OrderedMap.CreateAborted(
+                InvalidArgument(),
+                message=message,
+            )
+
+        if not context.constructor:
             # Already constructed. Allow if the configuration matches;
             # reject if it differs.
             message = self._check_construction_options(
                 context,
                 state,
-                degree=request.degree if request.HasField("degree") else None,
+                degree=degree,
                 maintain_size=request.maintain_size,
             )
             if message is not None:
@@ -860,15 +879,13 @@ class OrderedMapServicer(OrderedMap.singleton.Servicer):
                 )
             return OrderedMapCreateResponse()
 
-        state.degree = (
-            request.degree if request.HasField("degree") else DEFAULT_DEGREE
-        )
+        state.degree = degree if degree is not None else DEFAULT_DEGREE
 
         state.maintain_size = request.maintain_size
         state.root_id = str(uuid.uuid4())
         await Node.ref(state.root_id).Create(
             context,
-            degree=request.degree,
+            degree=state.degree,
             is_leaf=True,
             keys=[],
         )
@@ -911,18 +928,18 @@ class OrderedMapServicer(OrderedMap.singleton.Servicer):
         state: OrderedMap.State,
         request: OrderedMapInsertRequest,
     ) -> OrderedMapInsertResponse:
+        degree = request.degree if request.HasField("degree") else None
+
+        message = self._check_degree(degree)
+        if message is not None:
+            raise OrderedMap.InsertAborted(
+                InvalidArgument(),
+                message=message,
+            )
+
         # Construct the map if not yet constructed.
         if context.constructor:
-            if request.HasField("degree") and request.degree < 2:
-                raise OrderedMap.InsertAborted(
-                    InvalidArgument(),
-                    message="`degree` must be >= 2",
-                )
-
-            state.degree = (
-                request.degree
-                if request.HasField("degree") else DEFAULT_DEGREE
-            )
+            state.degree = degree if degree is not None else DEFAULT_DEGREE
             state.maintain_size = (
                 request.maintain_size
                 if request.HasField("maintain_size") else False
@@ -938,9 +955,7 @@ class OrderedMapServicer(OrderedMap.singleton.Servicer):
             message = self._check_construction_options(
                 context,
                 state,
-                degree=(
-                    request.degree if request.HasField("degree") else None
-                ),
+                degree=degree,
                 maintain_size=(
                     request.maintain_size
                     if request.HasField("maintain_size") else None
@@ -992,6 +1007,7 @@ class OrderedMapServicer(OrderedMap.singleton.Servicer):
         response = await root.Insert(
             context,
             entries=entries,
+            degree=state.degree,
         )
 
         if state.maintain_size:

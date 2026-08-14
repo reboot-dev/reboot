@@ -1886,6 +1886,144 @@ class TestOrderedMap(unittest.IsolatedAsyncioTestCase):
         response = await ordered_map.Range(context, limit=1)
         self.assertFalse(response.HasField("total_size"))
 
+    async def test_create_without_degree_then_insert(self) -> None:
+        """
+        Test that a `Create` without an explicit `degree` gives the
+        root node the default degree, rather than no degree at all.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-map")
+
+        await ordered_map.Create(context)
+
+        await ordered_map.Insert(context, key="a", value=from_str("A"))
+
+        response = await ordered_map.Search(context, key="a")
+        self.assertTrue(response.found)
+        self.assertEqual(as_str(response.value), "A")
+
+        # The default degree is far more than one key, so the root is
+        # still a single leaf.
+        response = await ordered_map.Stringify(context)
+        self.assertEqual(response.value, "Leaf: ['a']\n")
+
+    async def test_invalid_degree_on_create(self) -> None:
+        """
+        Test that a `Create` with a `degree` a node could never be
+        split at is refused with an `InvalidArgument`.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-map")
+
+        with self.assertRaises(OrderedMap.CreateAborted) as raised:
+            await ordered_map.Create(context, degree=1)
+
+        self.assertIsInstance(raised.exception.error, InvalidArgument)
+        self.assertIn("`degree` must be >= 2", str(raised.exception))
+
+    async def test_invalid_degree_on_implicit_construction(self) -> None:
+        """
+        Test that an `Insert` which would implicitly construct the map
+        with a `degree` a node could never be split at is refused with
+        an `InvalidArgument`.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-map")
+
+        with self.assertRaises(OrderedMap.InsertAborted) as raised:
+            await ordered_map.Insert(
+                context,
+                key="a",
+                value=from_str("A"),
+                degree=1,
+            )
+
+        self.assertIsInstance(raised.exception.error, InvalidArgument)
+        self.assertIn("`degree` must be >= 2", str(raised.exception))
+
+    async def test_invalid_degree_when_already_created(self) -> None:
+        """
+        Test that an invalid `degree` for a map that already exists is
+        refused as invalid, rather than as a mismatch with the degree
+        the map was created with.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-map")
+
+        await ordered_map.Create(context, degree=4)
+
+        with self.assertRaises(OrderedMap.CreateAborted) as raised:
+            await ordered_map.Create(context, degree=1)
+
+        self.assertIsInstance(raised.exception.error, InvalidArgument)
+        self.assertIn("`degree` must be >= 2", str(raised.exception))
+
+    async def test_implicit_construction_uses_requested_degree(self) -> None:
+        """
+        Test that an `Insert` which implicitly constructs the map gives
+        the root node the `degree` that was asked for, rather than the
+        default degree.
+        """
+        await self.rbt.up(Application(
+            libraries=[ordered_map_library()],
+        ))
+
+        context = self.rbt.create_external_context(
+            name=f"test-{self.id()}",
+            app_internal=True,
+        )
+
+        ordered_map = OrderedMap.ref("test-map")
+
+        # No `Create`, so the first `Insert` constructs the map.
+        for key in ["b", "m", "z", "y"]:
+            await ordered_map.Insert(
+                context,
+                key=key,
+                value=from_str(key.upper()),
+                degree=4,
+            )
+
+        # A degree of 4 splits on the fourth key; had the root node
+        # been given the default degree it would still be one leaf.
+        response = await ordered_map.Stringify(context)
+        self.assertEqual(
+            response.value,
+            "Inner: ['y']\n  Leaf: ['b', 'm']\n  Leaf: ['y', 'z']\n",
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
