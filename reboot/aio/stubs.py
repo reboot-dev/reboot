@@ -532,17 +532,23 @@ class Stub:
             )
 
             if not aborted_type.is_from_backend_and_recoverable(aborted):
-                # TODO(benh): considering stringifying the exception to
-                # include in the error we raise when doing the prepare
-                # stage of two phase commit.
-                self._context.transaction_unrecoverable_abort = True
+                # Keep the first abort, which is the one that would
+                # have propagated had the caller not caught it.
+                if self._context.transaction_unrecoverable_abort is None:
+                    self._context.transaction_unrecoverable_abort = aborted
 
             raise aborted
         except:
+            # We don't know what went wrong, so we can't hand the
+            # caller anything better than a generic error.
+            #
             # TODO(benh): considering stringifying the exception to
             # include in the error we raise when doing the prepare
             # stage of two phase commit.
-            self._context.transaction_unrecoverable_abort = True
+            if self._context.transaction_unrecoverable_abort is None:
+                self._context.transaction_unrecoverable_abort = RuntimeError(
+                    'Transaction must abort'
+                )
 
             raise
         finally:
@@ -562,8 +568,7 @@ class Stub:
             # `Unavailable` so that it can be retried, hopefully after
             # all servers have been upgraded.
             if saw_legacy_to_abort:
-                self._context.transaction_unrecoverable_abort = True
-                raise SystemAborted(
+                aborted = SystemAborted(
                     errors_pb2.Unavailable(),
                     message=(
                         "A transaction participant was marked to abort "
@@ -571,3 +576,5 @@ class Stub:
                         "retry required."
                     ),
                 )
+                self._context.transaction_unrecoverable_abort = aborted
+                raise aborted

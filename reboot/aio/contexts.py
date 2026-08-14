@@ -856,9 +856,18 @@ class Context(ABC, IdempotencyManager):
     # opt out.
     outstanding_rpcs: int
 
-    # Whether or not the transaction enclosing this context should
-    # abort.
-    transaction_unrecoverable_abort: bool
+    # The abort that made the transaction enclosing this context
+    # unrecoverable, or `None` if it does not have to abort. Truthy
+    # exactly when the transaction must abort, so it also reads as the
+    # "should abort" flag it replaced.
+    #
+    # Holding the abort rather than a bool lets us re-raise it instead
+    # of a generic "must abort" error, so that a caller which catches
+    # and discards an abort still gets the same outcome as one which
+    # lets it propagate, e.g., an `Unavailable` or a
+    # `TransactionShouldRetryWithoutBackoff` still asks the
+    # coordinator for a retry.
+    transaction_unrecoverable_abort: Optional[BaseException]
 
     # Extra machinery for handling reactive contexts. Set when using
     # the `StateManager.reactively()` helper.
@@ -920,7 +929,7 @@ class Context(ABC, IdempotencyManager):
 
         self.participants = Participants()
         self.outstanding_rpcs = 0
-        self.transaction_unrecoverable_abort = False
+        self.transaction_unrecoverable_abort = None
 
         self.react = None
 

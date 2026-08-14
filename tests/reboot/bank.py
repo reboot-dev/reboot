@@ -39,6 +39,11 @@ retain_read_lock_release = asyncio.Event()
 # support state streaming.
 class AccountServicer(Account.singleton.Servicer):
 
+    # How many times `MimicUnavailableOnce` has been called. A
+    # transaction's state is rolled back when it aborts, so a retry
+    # would not observe a count kept in the state itself.
+    mimic_unavailable_once_calls = 0
+
     def authorizer(self):
         return allow()
 
@@ -139,6 +144,22 @@ class AccountServicer(Account.singleton.Servicer):
         # Mimic calling `Balance` on another account which was
         # `Unavailable` which should propagate.
         raise Account.BalanceAborted(Unavailable())
+
+    async def mimic_unavailable_once(
+        self,
+        context: ReaderContext,
+        state: Account.State,
+        request: bank_rbt.MimicUnavailableOnceRequest,
+    ) -> Empty:
+        AccountServicer.mimic_unavailable_once_calls += 1
+
+        # Only mimic the `Unavailable` the first time so that a
+        # transaction which aborts because of it succeeds once
+        # retried.
+        if AccountServicer.mimic_unavailable_once_calls == 1:
+            raise Account.MimicUnavailableOnceAborted(Unavailable())
+
+        return Empty()
 
     async def fail(
         self,
@@ -443,6 +464,27 @@ class BankServicer(Bank.Servicer):
             assert context.transaction_unrecoverable_abort
         else:
             raise RuntimeError('Expecting to abort!')
+
+        return Empty()
+
+    async def try_catch_unavailable(
+        self,
+        context: TransactionContext,
+        request: bank_rbt.TryCatchUnavailableRequest,
+    ) -> Empty:
+
+        account = Account.ref(request.account_id)
+
+        try:
+            await account.mimic_unavailable_once(
+                context,
+                Options(bearer_token=context.caller_bearer_token),
+            )
+        except Account.MimicUnavailableOnceAborted:
+            # Even though we caught it the transaction still aborts,
+            # and the `Unavailable` must still be what propagates so
+            # that the transaction gets retried.
+            assert context.transaction_unrecoverable_abort
 
         return Empty()
 

@@ -1842,8 +1842,9 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(Bank.TryCatchUndeclaredErrorAborted) as aborted:
             await bank.TryCatchUndeclaredError(context, account_id='jonathan')
 
-        # TODO: better error message than just 'Transaction must abort'.
-        self.assertIn('Transaction must abort', str(aborted.exception))
+        # The abort that doomed the transaction is what propagates, so
+        # the caller is told what actually went wrong.
+        self.assertIn('Jazz hands!', str(aborted.exception))
 
     async def test_nested_catch_undeclared_aborts_root(self):
         """Test that a nested transaction which catches an undeclared
@@ -1870,7 +1871,7 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
                 context, account_id='jonathan'
             )
 
-        self.assertIn('Transaction must abort', str(aborted.exception))
+        self.assertIn('Jazz hands!', str(aborted.exception))
 
     async def test_nested_read_only_doomed_subtree_aborts_root(self):
         """Test that a three-level, entirely read-only tree where the
@@ -1903,7 +1904,31 @@ class TransactionTestCase(unittest.IsolatedAsyncioTestCase):
                 thrower_account_id='thrower',
             )
 
-        self.assertIn('Transaction must abort', str(aborted.exception))
+        self.assertIn('Jazz hands!', str(aborted.exception))
+
+    async def test_transaction_retried_when_catching_unavailable(self):
+        """Test that catching a retryable error still propagates it, so
+        that the whole transaction gets retried rather than failing
+        with an error the caller can not act on.
+        """
+
+        await self.rbt.up(
+            Application(servicers=[AccountServicer, BankServicer]),
+        )
+
+        context = self.rbt.create_external_context(name=self.id())
+
+        bank, _ = await Bank.Create(context, SINGLETON_BANK_ID)
+
+        await bank.SignUp(context, account_id='jonathan')
+
+        AccountServicer.mimic_unavailable_once_calls = 0
+
+        # `MimicUnavailableOnce` only aborts the first time, so once
+        # the transaction is retried it succeeds.
+        await bank.TryCatchUnavailable(context, account_id='jonathan')
+
+        self.assertEqual(AccountServicer.mimic_unavailable_once_calls, 2)
 
     async def test_transaction_not_aborts_when_catching_declared_errors(self):
         """Test that catching a declared error will not abort the transaction.

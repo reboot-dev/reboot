@@ -3782,9 +3782,9 @@ class SidecarStateManager(
                 # stub, marks the caller unrecoverable too, and
                 # cascades up to the coordinator to abort the whole
                 # transaction.
-                if context.transaction_unrecoverable_abort:
+                if context.transaction_unrecoverable_abort is not None:
                     transaction.unrecoverable_abort = True
-                    raise RuntimeError('Transaction must abort')
+                    raise context.transaction_unrecoverable_abort
             except BaseException as exception:
                 # Transaction doesn't need to abort if this is from
                 # the backend and recoverable, i.e., declared or
@@ -3794,11 +3794,11 @@ class SidecarStateManager(
                     aborted_type is not None and
                     aborted_type.is_from_backend_and_recoverable(exception)
                 ):
-                    if context.transaction_unrecoverable_abort:
+                    if context.transaction_unrecoverable_abort is not None:
                         # We have a recoverable abort, but the
                         # transaction is already doomed.
                         transaction.unrecoverable_abort = True
-                        raise RuntimeError('Transaction must abort')
+                        raise context.transaction_unrecoverable_abort
 
                     # We don't need to abort, but we do need to validate
                     # the user is following the transaction requirements.
@@ -4681,7 +4681,9 @@ class SidecarStateManager(
             # abort phase of two phase commit by raising an error here
             # which will "goto" the `except` block below to actually
             # run the abort.
-            if context.transaction_unrecoverable_abort or transaction.unrecoverable_abort:
+            if context.transaction_unrecoverable_abort is not None:
+                raise context.transaction_unrecoverable_abort
+            elif transaction.unrecoverable_abort:
                 raise RuntimeError('Transaction must abort')
 
             await self._transaction_coordinator_complete(

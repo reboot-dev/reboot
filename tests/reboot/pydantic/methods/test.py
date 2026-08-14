@@ -317,8 +317,10 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
                 make_unauthorized_call=True,
             )
 
+        # The abort that doomed the transaction is what propagates, so
+        # the caller is told what actually went wrong.
         self.assertIn(
-            "Transaction must abort",
+            "You are not authorized to call",
             str(aborted.exception),
         )
 
@@ -382,8 +384,10 @@ class RebootTestCase(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(Test.TransactionAborted) as aborted:
             await test.transaction(context)
 
+        # The abort that doomed the transaction is what propagates, so
+        # the caller is told what actually went wrong.
         self.assertIn(
-            "Transaction must abort",
+            "Simulated failure in transaction_writer",
             str(aborted.exception),
         )
 
