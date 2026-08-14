@@ -857,9 +857,7 @@ class Context(ABC, IdempotencyManager):
     outstanding_rpcs: int
 
     # The abort that made the transaction enclosing this context
-    # unrecoverable, or `None` if it does not have to abort. Truthy
-    # exactly when the transaction must abort, so it also reads as the
-    # "should abort" flag it replaced.
+    # unrecoverable, or `None` if it does not have to abort.
     #
     # Holding the abort rather than a bool lets us re-raise it instead
     # of a generic "must abort" error, so that a caller which catches
