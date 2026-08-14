@@ -970,11 +970,10 @@ class OrderedMapServicer(OrderedMap.singleton.Servicer):
                 request.maintain_size
                 if request.HasField("maintain_size") else False
             )
+            # Need an ID for the root `Node`; the node itself is
+            # constructed by the `Insert` below, which is passed the
+            # `degree` to construct it with.
             state.root_id = str(uuid.uuid4())
-            # Must allow `Node.Insert` to perform the implicit construction
-            # of the `Node` because it is a transaction, and nested transactions
-            # cannot touch the data a parent touches. However, we do need
-            # to give it an ID.
 
         # Build node entries from either the bulk `entries` field or
         # the single-key fields.
