@@ -24,6 +24,15 @@ from typing import Optional, Union
 # one is a state type, and the package it came from qualifies it.
 GENERATED_SUFFIX = '_rbt'
 
+# The standard library's states are declared under `rbt.std.` and
+# generated into `..._rbt` like any other, but an application imports
+# them from the `reboot.std.` module that wraps each one and re-exports
+# it -- `from reboot.std.collections.v1.sorted_map import SortedMap`.
+# The two paths run in step, so a name imported from the wrapper names
+# the state its generated module would.
+STANDARD_LIBRARY_MODULE = 'reboot.std.'
+STANDARD_LIBRARY_PACKAGE = 'rbt.std.'
+
 # Chain methods that say when or how a call happens without changing
 # what is called, so a call written through them still names a state
 # type and a method.
@@ -58,6 +67,18 @@ _STATE_TERMINALS: dict[str, 'Call.How.ValueType'] = {
 # What a servicer class defines that is not one of its state's
 # methods.
 _NOT_A_METHOD = frozenset(['authorizer'])
+
+# Decorators that say the same: a Reboot method is a plain `def`, or a
+# `classmethod` when it is a workflow. A property is how an
+# application names a state it uses throughout, not a method of its
+# own.
+_NOT_A_METHOD_DECORATORS = frozenset(
+    [
+        'property',
+        'cached_property',
+        'staticmethod',
+    ]
+)
 
 
 class _Context:
@@ -109,6 +130,27 @@ def method_key(state_type: str, method: str) -> str:
     return f'{state_type}.{method}'
 
 
+def _docstring_stripped(body: list[ast.stmt]) -> list[ast.stmt]:
+    match body:
+        case [ast.Expr(value=ast.Constant(value=str())), *rest]:
+            return rest
+        case _:
+            return body
+
+
+def _strip_docstrings(tree: ast.AST) -> None:
+    """Drops every docstring, so that what is left is what the code
+    does. Prose is no more a part of that than a comment is, and both
+    would otherwise make a method look changed when it is not."""
+    for node in ast.walk(tree):
+        match node:
+            case (
+                ast.Module() | ast.ClassDef() | ast.FunctionDef() |
+                ast.AsyncFunctionDef()
+            ):
+                node.body = _docstring_stripped(node.body)
+
+
 @dataclass
 class Module:
     """One of the developer's source files, parsed."""
@@ -139,20 +181,32 @@ def _state_type(module_name: str, name: str) -> Optional[str]:
     `bank.v1.account_rbt` and `Account` give `bank.v1.Account`: the
     package qualifies the name, exactly as the directory of an API
     file qualifies what it declares.
+
+    A standard-library wrapper qualifies it the same way, through the
+    `rbt.std.` package its module stands in for:
+    `reboot.std.collections.v1.sorted_map` and `SortedMap` give
+    `rbt.std.collections.v1.SortedMap`.
     """
-    if not module_name.endswith(GENERATED_SUFFIX):
+    if '.' not in module_name:
+        return name if module_name.endswith(GENERATED_SUFFIX) else None
+
+    package = module_name.rsplit('.', 1)[0]
+
+    if module_name.startswith(STANDARD_LIBRARY_MODULE):
+        package = STANDARD_LIBRARY_PACKAGE + package[
+            len(STANDARD_LIBRARY_MODULE):]
+    elif not module_name.endswith(GENERATED_SUFFIX):
         return None
 
-    if '.' not in module_name:
-        return name
-
-    return f'{module_name.rsplit(".", 1)[0]}.{name}'
+    return f'{package}.{name}'
 
 
 def parse(name: str, source: str) -> Module:
     """Reads one source file. Raises `SyntaxError` on a file that is
     half written, which is for the caller to report."""
     tree = ast.parse(source)
+
+    _strip_docstrings(tree)
 
     module = Module(
         name=name,
@@ -175,8 +229,16 @@ def parse(name: str, source: str) -> Module:
                 for alias in names:
                     bound = alias.asname or alias.name
                     state_type = _state_type(imported, alias.name)
+                    within = f'{imported}.{alias.name}'
                     if state_type is not None:
                         module.state_classes[bound] = state_type
+                    elif _is_generated(within):
+                        # A generated module imported as a whole, as
+                        # `from rbt.thirdparty.mailgun.v1 import
+                        # mailgun_rbt as mailgun`, so that the states
+                        # in it are reached through the name it was
+                        # bound to.
+                        module.modules[bound] = within
                     else:
                         module.imports[bound] = (imported, alias.name)
 
@@ -189,7 +251,77 @@ def parse(name: str, source: str) -> Module:
     return module
 
 
+def _is_generated(module_name: str) -> bool:
+    """Whether a module is one the states are reached through."""
+    return (
+        module_name.endswith(GENERATED_SUFFIX) or
+        module_name.startswith(STANDARD_LIBRARY_MODULE)
+    )
+
+
+def _module_named(
+    modules: dict[str, Module],
+    name: str,
+) -> Optional[Module]:
+    """The parsed file an import names.
+
+    A file is keyed by where it sits under the source directory, but is
+    imported by whatever `sys.path` makes it -- flatly as
+    `account_servicer` when the directory is itself on the path, and as
+    `backend.src.account_servicer` when a directory above it is. Trying
+    each suffix in turn reads both the same way.
+    """
+    module = modules.get(name)
+    if module is not None:
+        return module
+
+    parts = name.split('.')
+
+    for index in range(1, len(parts)):
+        module = modules.get('.'.join(parts[index:]))
+        if module is not None:
+            return module
+
+    return None
+
+
+def _state_class(
+    modules: dict[str, Module],
+    module: Module,
+    name: str,
+) -> Optional[str]:
+    """The state type a name stands for in one file.
+
+    A file may import one from its generated module, or from another of
+    the developer's files that imported it first -- both name the same
+    state, so a re-export is followed until a generated module answers
+    or nothing does.
+    """
+    seen: set[str] = set()
+
+    while True:
+        state_type = module.state_classes.get(name)
+        if state_type is not None:
+            return state_type
+
+        imported = module.imports.get(name)
+        if imported is None:
+            return None
+
+        key = f'{module.name}:{name}'
+        if key in seen:
+            return None
+        seen.add(key)
+
+        other = _module_named(modules, imported[0])
+        if other is None:
+            return None
+
+        module, name = other, imported[1]
+
+
 def _servicer_state_type(
+    modules: dict[str, Module],
     class_definition: ast.ClassDef,
     module: Module,
 ) -> Optional[str]:
@@ -208,7 +340,7 @@ def _servicer_state_type(
                     attr='Servicer',
                 )
             ):
-                state_type = module.state_classes.get(name)
+                state_type = _state_class(modules, module, name)
                 if state_type is not None:
                     return state_type
 
@@ -416,14 +548,26 @@ class _MethodAnalyzer:
             case ast.Name(id=name):
                 if name in environment:
                     return environment[name]
-                state_type = module.state_classes.get(name)
+                state_type = _state_class(self._modules, module, name)
                 return None if state_type is None else _StateClass(state_type)
 
             case ast.Call():
                 return self._call(node, module, environment)
 
-            case ast.Attribute(value=value_node):
-                self._expression(value_node, module, environment)
+            case ast.Attribute(value=value_node, attr=attribute):
+                # A state reached through the module it was bound to,
+                # as `mailgun.Message`.
+                match value_node:
+                    case ast.Name(id=name) if name in module.modules:
+                        state_type = _state_type(
+                            module.modules[name], attribute
+                        )
+                        if state_type is not None:
+                            return _StateClass(state_type)
+
+                match self._expression(value_node, module, environment):
+                    case _Servicer() as servicer:
+                        return self._servicer_attribute(servicer, attribute)
                 return None
 
             case ast.Subscript(value=value_node, slice=index):
@@ -610,6 +754,10 @@ class _MethodAnalyzer:
             case _Servicer(state_type=state_type):
                 if attribute == 'ref':
                     return _Reference(state_type, Call.CALL)
+                if not arguments.has_context:
+                    # Nothing it could call, but it may still hand back
+                    # a reference, as `self._index()` does.
+                    return self._servicer_attribute(receiver, attribute)
                 self._follow_servicer_method(
                     node, receiver, attribute, arguments
                 )
@@ -632,7 +780,7 @@ class _MethodAnalyzer:
         module: Module,
         environment: dict[str, _Value],
     ) -> _Value:
-        if name in module.state_classes:
+        if _state_class(self._modules, module, name) is not None:
             # Calling a state class itself is not something the
             # generated code offers; nothing to say about it.
             return None
@@ -694,7 +842,7 @@ class _MethodAnalyzer:
         match node.func:
             case ast.Attribute(value=ast.Name(id=name),
                                attr=attribute) if (name in module.modules):
-                other = self._modules.get(module.modules[name])
+                other = _module_named(self._modules, module.modules[name])
                 if other is not None:
                     function = other.functions.get(attribute)
                     if function is not None:
@@ -711,27 +859,92 @@ class _MethodAnalyzer:
         arguments: '_Arguments',
     ) -> None:
         """Follows a helper a servicer keeps on itself."""
-        if not arguments.has_context:
+        found = self._servicer_function(servicer, attribute)
+
+        if found is None:
+            self._unfollowable(node)
             return
 
+        module, function = found
+
+        self._follow(module, function, arguments, servicer=servicer)
+
+    def _servicer_function(
+        self,
+        servicer: _Servicer,
+        name: str,
+    ) -> Optional[tuple[Module, _Function]]:
+        """A function a servicer class defines, and the file it is
+        written in."""
         module = self._modules.get(servicer.module)
+
         class_definition = (
             None if module is None else module.classes.get(servicer.name)
         )
 
-        if module is not None and class_definition is not None:
-            for statement in class_definition.body:
-                match statement:
-                    case (
-                        ast.FunctionDef(name=defined) |
-                        ast.AsyncFunctionDef(name=defined)
-                    ) if defined == attribute:
-                        self._follow(
-                            module, statement, arguments, servicer=servicer
-                        )
-                        return
+        if module is None or class_definition is None:
+            return None
 
-        self._unfollowable(node)
+        for statement in class_definition.body:
+            match statement:
+                case (
+                    ast.FunctionDef(name=defined) |
+                    ast.AsyncFunctionDef(name=defined)
+                ) if defined == name:
+                    return (module, statement)
+
+        return None
+
+    def _servicer_attribute(
+        self,
+        servicer: _Servicer,
+        name: str,
+    ) -> _Value:
+        """What a helper a servicer keeps on itself hands back.
+
+        Naming a state an application uses throughout by keeping it
+        behind a property is the ordinary way to write it:
+
+            @property
+            def _applications_index(self):
+                return SortedMap.ref(APPLICATIONS_INDEX_ID)
+
+        so `self._applications_index.insert(context, ...)` is as much a
+        call as writing the reference out would have been. Only a body
+        that is a single `return` is read this way; a longer one is not
+        something one value can stand for, and is left unanalyzed
+        rather than guessed at.
+        """
+        found = self._servicer_function(servicer, name)
+
+        if found is None:
+            return None
+
+        module, function = found
+
+        match function.body:
+            case [ast.Return(value=ast.expr() as returned)]:
+                pass
+            case _:
+                return None
+
+        key = _function_key(module, function, servicer.name)
+
+        if key in self._following:
+            return None
+
+        self._following.add(key)
+        try:
+            return self._expression(
+                returned,
+                module,
+                {
+                    'self': servicer,
+                    'cls': servicer
+                },
+            )
+        finally:
+            self._following.discard(key)
 
     def _unfollowable(self, node: ast.Call) -> None:
         self._unanalyzed.append(
@@ -752,7 +965,7 @@ class _MethodAnalyzer:
 
         imported = module.imports.get(name)
         if imported is not None:
-            other = self._modules.get(imported[0])
+            other = _module_named(self._modules, imported[0])
             if other is not None:
                 function = other.functions.get(imported[1])
                 if function is not None:
@@ -844,6 +1057,21 @@ def _followed_environment(
     return environment
 
 
+def _decorated(function: _Function, names: frozenset) -> bool:
+    """Whether a function carries any of `names` as a decorator,
+    however it was spelled: `property` or `functools.cached_property`
+    alike."""
+    for decorator in function.decorator_list:
+        match decorator:
+            case (
+                ast.Call(func=ast.Name(id=name)) | ast.Name(id=name) |
+                ast.Call(func=ast.Attribute(attr=name)) |
+                ast.Attribute(attr=name)
+            ) if name in names:
+                return True
+    return False
+
+
 def _function_key(
     module: Module,
     function: _Function,
@@ -880,7 +1108,9 @@ def analyze(modules: dict[str, Module]) -> dict[str, MethodCalls]:
 
     for module in modules.values():
         for class_definition in module.classes.values():
-            state_type = _servicer_state_type(class_definition, module)
+            state_type = _servicer_state_type(
+                modules, class_definition, module
+            )
             if state_type is None:
                 continue
 
@@ -896,7 +1126,9 @@ def analyze(modules: dict[str, Module]) -> dict[str, MethodCalls]:
                         ast.FunctionDef(name=name) |
                         ast.AsyncFunctionDef(name=name)
                     ) if (
-                        name not in _NOT_A_METHOD and not name.startswith('_')
+                        name not in _NOT_A_METHOD and
+                        not name.startswith('_') and
+                        not _decorated(statement, _NOT_A_METHOD_DECORATORS)
                     ):
                         pass
                     case _:

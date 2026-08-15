@@ -211,6 +211,89 @@ class CallAnalysisTest(unittest.TestCase):
             [('bank.v1.Account', 'balance', 'CALL')],
         )
 
+    def test_a_reference_kept_behind_a_property(self) -> None:
+        """Naming a state an application uses throughout by keeping a
+        reference behind a property is the ordinary way to write it, so
+        a call through one is as much a call as writing the reference
+        out would have been."""
+        analyses = _analyze(
+            servicer=_servicer(
+                '''
+    @property
+    def index(self):
+        return Bank.ref('index')
+
+    async def record(self, context, request):
+        await self.index.note(context, what=request.what)
+'''
+            )
+        )
+
+        self.assertEqual(
+            _calls(analyses, 'bank.v1.Account.record'),
+            [('bank.v1.Bank', 'note', 'CALL')],
+        )
+
+        # And the property is not itself one of the state's methods.
+        self.assertNotIn('bank.v1.Account.index', analyses)
+
+    def test_a_state_from_the_standard_library(self) -> None:
+        """Its states are declared under `rbt.std.` but imported from
+        the `reboot.std.` module that wraps each one."""
+        analyses = _analyze(
+            servicer=_servicer(
+                '''
+    async def record(self, context, request):
+        await SortedMap.ref('index').insert(context, entries={})
+'''
+            ).replace(
+                'from bank.v1.bank_rbt import Bank',
+                'from reboot.std.collections.v1.sorted_map import SortedMap',
+            )
+        )
+
+        self.assertEqual(
+            _calls(analyses, 'bank.v1.Account.record'),
+            [('rbt.std.collections.v1.SortedMap', 'insert', 'CALL')],
+        )
+
+    def test_a_state_class_another_file_imported_first(self) -> None:
+        analyses = _analyze(
+            servicer=_servicer(
+                '''
+    async def look(self, context, request):
+        await Depot.ref(request.id).stock(context)
+'''
+            ).replace(
+                'from bank.v1.bank_rbt import Bank',
+                'from depot_servicer import Depot',
+            ),
+            depot_servicer='from bank.v1.depot_rbt import Depot\n',
+        )
+
+        self.assertEqual(
+            _calls(analyses, 'bank.v1.Account.look'),
+            [('bank.v1.Depot', 'stock', 'CALL')],
+        )
+
+    def test_a_generated_module_imported_whole(self) -> None:
+        analyses = _analyze(
+            servicer=_servicer(
+                '''
+    async def notify(self, context, request):
+        await mail.Message.Send(context, request.id, recipient=request.to)
+'''
+            ).replace(
+                'from bank.v1.bank_rbt import Bank',
+                'from bank.v1 import mail_rbt as mail',
+            )
+        )
+
+        self.assertEqual(
+            _calls(analyses, 'bank.v1.Account.notify'),
+            [('bank.v1.Message', 'Send', 'CONSTRUCT')],
+        )
+
     def test_a_helper_in_the_same_file(self) -> None:
         analyses = _analyze(
             servicer=_servicer(
