@@ -10,12 +10,16 @@ import unittest
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_rbt import API
 from reboot.aio.tests import Reboot
+from reboot.dashboard import servicer_reader
+from reboot.dashboard.call_analysis import VERSION
 from reboot.dashboard.constants import (
     API_ID,
     ENVVAR_RBT_API_DIRECTORY,
     ENVVAR_RBT_SOURCE_DIRECTORY,
 )
 from reboot.dashboard.main import application
+from reboot.dashboard.servicer_reader import Sources, method_calls, read
+from reboot.dashboard.servicer_watcher import _restored
 from typing import Optional
 from unittest.mock import patch
 
@@ -114,6 +118,63 @@ class ServicerWatcherTest(unittest.IsolatedAsyncioTestCase):
             [one.calls[0].method for one in response.method_calls],
             ['deposit'],
         )
+
+    async def test_a_dashboard_starting_again_reads_nothing(self) -> None:
+        """What one dashboard worked out is written down beside the
+        answer, so the next one against an untouched tree has nothing
+        to read, parse or analyze."""
+        self._write('account_servicer.py', SERVICER)
+        self._write('helpers.py', HELPERS.format(method='withdraw'))
+
+        await self._wait_for(lambda api: len(api.method_calls) == 1)
+
+        # What a dashboard starting again would find, taken from the
+        # state the running one wrote.
+        context = self.rbt.create_external_context(name=self.id())
+        analysis = await API.ref(API_ID).Analysis(context)
+
+        self.assertEqual(analysis.analyzer_version, VERSION)
+        self.assertEqual(
+            sorted(state.filename for state in analysis.file_states),
+            ['account_servicer.py', 'helpers.py'],
+        )
+
+        restored = _restored(analysis)
+
+        parsed: list[str] = []
+        real = servicer_reader.parse
+
+        def counted(name: str, source: str):
+            parsed.append(name)
+            return real(name, source)
+
+        with patch.object(servicer_reader, 'parse', counted):
+            sources, error = read(str(self.source), restored)
+
+        self.assertEqual(parsed, [])
+        self.assertEqual(error, '')
+        self.assertEqual(
+            [
+                (one.state_type, one.method, one.calls[0].method)
+                for one in method_calls(sources.analyses)
+            ],
+            [('bank.v1.Account', 'move', 'withdraw')],
+        )
+
+    async def test_an_analysis_that_has_changed_is_not_trusted(self) -> None:
+        """Results are only worth keeping if the analysis that wrote
+        them is the one about to use them."""
+        self._write('account_servicer.py', SERVICER)
+        self._write('helpers.py', HELPERS.format(method='withdraw'))
+
+        await self._wait_for(lambda api: len(api.method_calls) == 1)
+
+        context = self.rbt.create_external_context(name=self.id())
+        analysis = await API.ref(API_ID).Analysis(context)
+
+        analysis.analyzer_version = 'some other analysis'
+
+        self.assertEqual(_restored(analysis), Sources())
 
     async def test_a_half_written_file_is_reported(self) -> None:
         self._write('account_servicer.py', SERVICER)

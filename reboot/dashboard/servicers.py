@@ -2,6 +2,8 @@
 import os
 import reboot.std.presence.v1.presence
 from rbt.dashboard.v1.dashboard_pb2 import (
+    APIAnalysisRequest,
+    APIAnalysisResponse,
     APIGetRequest,
     APIGetResponse,
     APIUpdateCallsRequest,
@@ -93,6 +95,19 @@ class APIServicer(API.Servicer):
         self.state.error = request.error
         return APIUpdateResponse()
 
+    async def Analysis(
+        self,
+        context: ReaderContext,
+        request: APIAnalysisRequest,
+    ) -> APIAnalysisResponse:
+        return APIAnalysisResponse(
+            method_calls=self.state.method_calls,
+            error=self.state.calls_error,
+            file_states=self.state.file_states,
+            method_hashes=self.state.method_hashes,
+            analyzer_version=self.state.analyzer_version,
+        )
+
     async def UpdateCalls(
         self,
         context: WriterContext,
@@ -101,6 +116,15 @@ class APIServicer(API.Servicer):
         del self.state.method_calls[:]
         self.state.method_calls.extend(request.method_calls)
         self.state.calls_error = request.error
+
+        del self.state.file_states[:]
+        self.state.file_states.extend(request.file_states)
+
+        del self.state.method_hashes[:]
+        self.state.method_hashes.extend(request.method_hashes)
+
+        self.state.analyzer_version = request.analyzer_version
+
         return APIUpdateCallsResponse()
 
 

@@ -3,11 +3,15 @@
 Nothing is imported and nothing is generated: `rbt generate` has not
 run, there is no application, and the files are read as they are.
 """
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import Call
+from reboot.dashboard import servicer_reader
 from reboot.dashboard.servicer_reader import method_calls, read
+from typing import Optional
+from unittest.mock import patch
 
 SERVICER = '''
 from bank.v1.account_rbt import Account
@@ -45,18 +49,28 @@ class ServicerReaderTest(unittest.TestCase):
     def tearDown(self) -> None:
         self._directory.cleanup()
 
-    def _write(self, name: str, source: str) -> None:
-        (self.directory / name).write_text(source)
+    def _write(
+        self,
+        name: str,
+        source: str,
+        modified_ns: Optional[int] = None,
+    ) -> None:
+        path = self.directory / name
+        path.write_text(source)
+        if modified_ns is not None:
+            # Said outright, so that what a timestamp catches is not
+            # left to how fast the test happens to run.
+            os.utime(path, ns=(modified_ns, modified_ns))
 
     def test_describes_what_a_method_calls(self) -> None:
         self._write('account_servicer.py', SERVICER)
         self._write('helpers.py', HELPERS)
 
-        analyses, error = read(str(self.directory))
+        sources, error = read(str(self.directory))
 
         self.assertEqual(error, '')
 
-        described = method_calls(analyses)
+        described = method_calls(sources.analyses)
 
         self.assertEqual(
             [(one.state_type, one.method) for one in described],
@@ -76,11 +90,11 @@ class ServicerReaderTest(unittest.TestCase):
         self._write('account_servicer.py', SERVICER)
         self._write('helpers.py', HELPERS)
 
-        analyses, _ = read(str(self.directory))
+        sources, _ = read(str(self.directory))
 
         self.assertNotIn(
             'quiet',
-            [one.method for one in method_calls(analyses)],
+            [one.method for one in method_calls(sources.analyses)],
         )
 
     def test_generated_files_are_not_read(self) -> None:
@@ -99,19 +113,113 @@ class ServicerReaderTest(unittest.TestCase):
         self._write('helpers.py', HELPERS)
         self._write('halfway.py', 'async def transfer(context,')
 
-        analyses, error = read(str(self.directory))
+        sources, error = read(str(self.directory))
 
         self.assertIn('halfway.py', error)
         self.assertEqual(
-            [one.method for one in method_calls(analyses)],
+            [one.method for one in method_calls(sources.analyses)],
             ['move'],
         )
 
     def test_a_directory_that_is_not_there_is_said_so(self) -> None:
-        analyses, error = read(str(self.directory / 'nowhere'))
+        sources, error = read(str(self.directory / 'nowhere'))
 
-        self.assertEqual(analyses, {})
+        self.assertEqual(sources.analyses, {})
         self.assertIn('no such directory', error)
+
+    ###################################################################
+    # Reading again only what changed.
+
+    def _counting_parse(self):
+        """Records the name of every file actually parsed."""
+        parsed: list[str] = []
+        real = servicer_reader.parse
+
+        def counted(name: str, source: str):
+            parsed.append(name)
+            return real(name, source)
+
+        return parsed, patch.object(servicer_reader, 'parse', counted)
+
+    def test_an_untouched_tree_is_not_read_again(self) -> None:
+        self._write('account_servicer.py', SERVICER)
+        self._write('helpers.py', HELPERS)
+
+        first, _ = read(str(self.directory))
+
+        parsed, counting = self._counting_parse()
+        with counting:
+            second, _ = read(str(self.directory), first)
+
+        self.assertEqual(parsed, [])
+        self.assertEqual(
+            method_calls(second.analyses), method_calls(first.analyses)
+        )
+
+    def test_only_the_file_that_changed_is_read_again(self) -> None:
+        self._write('account_servicer.py', SERVICER)
+        self._write('helpers.py', HELPERS)
+
+        first, _ = read(str(self.directory))
+
+        self._write('helpers.py', HELPERS.replace('withdraw', 'pay'))
+
+        parsed, counting = self._counting_parse()
+        with counting:
+            second, _ = read(str(self.directory), first)
+
+        self.assertEqual(parsed, ['helpers'])
+        self.assertEqual(
+            [call.method for call in method_calls(second.analyses)[0].calls],
+            ['pay'],
+        )
+
+    def test_an_edit_of_the_same_size_is_noticed(self) -> None:
+        """Two file names of a length are what a timestamp is for."""
+        self._write('account_servicer.py', SERVICER)
+        self._write('helpers.py', HELPERS, modified_ns=1_000_000_000)
+
+        first, _ = read(str(self.directory))
+
+        self._write(
+            'helpers.py',
+            HELPERS.replace('withdraw', 'deposit'),
+            modified_ns=2_000_000_000,
+        )
+
+        parsed, counting = self._counting_parse()
+        with counting:
+            second, _ = read(str(self.directory), first)
+
+        self.assertEqual(parsed, ['helpers'])
+        self.assertEqual(
+            [call.method for call in method_calls(second.analyses)[0].calls],
+            ['deposit'],
+        )
+
+    def test_a_file_whose_time_went_backwards_is_noticed(self) -> None:
+        """Checking out an older branch moves a file's time backwards,
+        which is as much an edit as any other."""
+        self._write('account_servicer.py', SERVICER)
+        self._write('helpers.py', HELPERS, modified_ns=2_000_000_000)
+
+        first, _ = read(str(self.directory))
+
+        self._write(
+            'helpers.py',
+            HELPERS.replace('withdraw', 'deposit'),
+            modified_ns=1_000_000_000,
+        )
+
+        parsed, counting = self._counting_parse()
+        with counting:
+            second, _ = read(str(self.directory), first)
+
+        self.assertEqual(parsed, ['helpers'])
+        self.assertEqual(
+            [call.method for call in method_calls(second.analyses)[0].calls],
+            ['deposit'],
+        )
 
     def test_reading_twice_says_the_same_thing(self) -> None:
         self._write('account_servicer.py', SERVICER)
@@ -120,7 +228,9 @@ class ServicerReaderTest(unittest.TestCase):
         first, _ = read(str(self.directory))
         second, _ = read(str(self.directory), first)
 
-        self.assertEqual(method_calls(first), method_calls(second))
+        self.assertEqual(
+            method_calls(first.analyses), method_calls(second.analyses)
+        )
 
 
 if __name__ == '__main__':

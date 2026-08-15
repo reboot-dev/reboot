@@ -105,6 +105,33 @@ message Unanalyzed {
   string expression = 2;
 }
 
+// One source file as the analysis last saw it, so that a dashboard
+// starting again can tell which files it need not read.
+message FileState {
+  // Relative to the source directory, e.g. `bank_servicer.py`.
+  string filename = 1;
+
+  // Compared for being different rather than for being newer:
+  // checking out an older branch moves a file's time backwards, and
+  // that is as much an edit as any other.
+  uint64 modified_ns = 2;
+
+  uint64 size = 3;
+}
+
+// What one method's analysis depended on, so that it can be kept when
+// none of those things has changed.
+message MethodHashes {
+  string state_type = 1;
+  string method = 2;
+
+  // The method's own hash and that of every function the analysis
+  // followed into, by `<file>:<qualified name>`. A change anywhere in
+  // that set, however many calls away it is, is what makes the method
+  // worth analyzing again.
+  map<string, string> hashes = 3;
+}
+
 // The calls one method's implementation makes.
 message MethodCalls {
   // The state type and method whose implementation this describes,
@@ -145,6 +172,17 @@ message API {
 
   // Why the source files could not be read, if they could not be.
   string calls_error = 4;
+
+  // What the analysis last read, so that a dashboard starting again
+  // reads only what has changed since. Deliberately not in
+  // `APIGetResponse`: a browser has no use for any of it.
+  repeated FileState file_states = 5;
+  repeated MethodHashes method_hashes = 6;
+
+  // What produced all of the above. A dashboard whose analysis is not
+  // the one that wrote this cannot trust it, however untouched the
+  // developer's source is, so it reads everything again.
+  string analyzer_version = 7;
 }
 
 message APIGetRequest {}
@@ -166,9 +204,22 @@ message APIUpdateResponse {}
 message APIUpdateCallsRequest {
   repeated MethodCalls method_calls = 1;
   string error = 2;
+  repeated FileState file_states = 3;
+  repeated MethodHashes method_hashes = 4;
+  string analyzer_version = 5;
 }
 
 message APIUpdateCallsResponse {}
+
+message APIAnalysisRequest {}
+
+message APIAnalysisResponse {
+  repeated MethodCalls method_calls = 1;
+  string error = 2;
+  repeated FileState file_states = 3;
+  repeated MethodHashes method_hashes = 4;
+  string analyzer_version = 5;
+}
 
 message APIWatchRequest {}
 
@@ -248,6 +299,15 @@ service APIMethods {
 
   rpc UpdateCalls(APIUpdateCallsRequest) returns (APIUpdateCallsResponse) {
     option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
+  // What the last analysis read and concluded, which is what lets a
+  // dashboard starting again pick up where the one before it left
+  // off. Apart from `Get` because this is for the analysis to read,
+  // not for a browser.
+  rpc Analysis(APIAnalysisRequest) returns (APIAnalysisResponse) {
+    option (rbt.v1alpha1.method).reader = {
     };
   }
 
