@@ -55,6 +55,21 @@ py_library(
 )
 
 py_library(
+    name = "servicer_watcher_py",
+    srcs = ["servicer_watcher.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":call_analysis_py",
+        ":constants_py",
+        ":servicer_reader_py",
+        "//rbt/dashboard/v1:dashboard_py_reboot",
+        "//reboot/aio:external_py",
+        "//reboot/cli/common:watch_py",
+    ],
+)
+
+py_library(
     name = "servicers_py",
     srcs = ["servicers.py"],
     srcs_version = "PY3",
@@ -62,6 +77,7 @@ py_library(
     deps = [
         ":api_watcher_py",
         ":constants_py",
+        ":servicer_watcher_py",
         "//rbt/dashboard/v1:dashboard_py_reboot",
         "//reboot/aio:servicers_py",
         "//reboot/std/presence/v1:presence_py",

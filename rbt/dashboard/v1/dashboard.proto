@@ -133,6 +133,18 @@ message API {
   // half-written file is the normal case while someone is typing, and
   // saying so beats showing nothing.
   string error = 2;
+
+  // What each method's implementation calls, read from the
+  // developer's source files rather than from their API files.
+  //
+  // Held beside `state_types` rather than inside them, with its own
+  // writer, because a different watcher on a different directory
+  // produces it; one writer replacing the other's field would lose
+  // whichever wrote first.
+  repeated MethodCalls method_calls = 3;
+
+  // Why the source files could not be read, if they could not be.
+  string calls_error = 4;
 }
 
 message APIGetRequest {}
@@ -140,6 +152,8 @@ message APIGetRequest {}
 message APIGetResponse {
   repeated StateTypeInfo state_types = 1;
   string error = 2;
+  repeated MethodCalls method_calls = 3;
+  string calls_error = 4;
 }
 
 message APIUpdateRequest {
@@ -149,9 +163,20 @@ message APIUpdateRequest {
 
 message APIUpdateResponse {}
 
+message APIUpdateCallsRequest {
+  repeated MethodCalls method_calls = 1;
+  string error = 2;
+}
+
+message APIUpdateCallsResponse {}
+
 message APIWatchRequest {}
 
 message APIWatchResponse {}
+
+message APIWatchCallsRequest {}
+
+message APIWatchCallsResponse {}
 
 ////////////////////////////////////////////////////////////////////////
 
@@ -221,9 +246,24 @@ service APIMethods {
     };
   }
 
+  rpc UpdateCalls(APIUpdateCallsRequest) returns (APIUpdateCallsResponse) {
+    option (rbt.v1alpha1.method).writer = {
+    };
+  }
+
   // Watches the developer's API files for as long as the dashboard
   // application runs, reading each one that changes.
   rpc Watch(APIWatchRequest) returns (APIWatchResponse) {
+    option (rbt.v1alpha1.method).workflow = {
+    };
+  }
+
+  // Watches the developer's source files the same way, analyzing what
+  // their methods call. Its own workflow rather than more of `Watch`
+  // because a workflow may only have one loop, and because a source
+  // directory the developer never named leaves this one with nothing
+  // to do while `Watch` still has its files.
+  rpc WatchCalls(APIWatchCallsRequest) returns (APIWatchCallsResponse) {
     option (rbt.v1alpha1.method).workflow = {
     };
   }

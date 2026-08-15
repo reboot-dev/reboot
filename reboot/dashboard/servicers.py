@@ -4,6 +4,8 @@ import reboot.std.presence.v1.presence
 from rbt.dashboard.v1.dashboard_pb2 import (
     APIGetRequest,
     APIGetResponse,
+    APIUpdateCallsRequest,
+    APIUpdateCallsResponse,
     APIUpdateRequest,
     APIUpdateResponse,
     PreferencesGetRequest,
@@ -18,7 +20,11 @@ from reboot.aio.auth.authorizers import allow
 from reboot.aio.contexts import ReaderContext, WorkflowContext, WriterContext
 from reboot.aio.servicers import Servicer
 from reboot.dashboard.api_watcher import watch
-from reboot.dashboard.constants import ENVVAR_RBT_API_DIRECTORY
+from reboot.dashboard.constants import (
+    ENVVAR_RBT_API_DIRECTORY,
+    ENVVAR_RBT_SOURCE_DIRECTORY,
+)
+from reboot.dashboard.servicer_watcher import watch as watch_calls
 
 
 class APIServicer(API.Servicer):
@@ -35,6 +41,8 @@ class APIServicer(API.Servicer):
         return APIGetResponse(
             state_types=self.state.state_types,
             error=self.state.error,
+            method_calls=self.state.method_calls,
+            calls_error=self.state.calls_error,
         )
 
     @classmethod
@@ -56,6 +64,25 @@ class APIServicer(API.Servicer):
 
         return API.WatchResponse()
 
+    @classmethod
+    async def WatchCalls(
+        cls,
+        context: WorkflowContext,
+        request: API.WatchCallsRequest,
+    ) -> API.WatchCallsResponse:
+        """Analyzes what the developer's methods call when they change.
+
+        A developer who named no source directory gets no analysis;
+        there is nowhere to read the implementations from, which is the
+        normal case for a Node.js application.
+        """
+        source_directory = os.environ.get(ENVVAR_RBT_SOURCE_DIRECTORY)
+
+        if source_directory is not None:
+            await watch_calls(context, source_directory=source_directory)
+
+        return API.WatchCallsResponse()
+
     async def Update(
         self,
         context: WriterContext,
@@ -65,6 +92,16 @@ class APIServicer(API.Servicer):
         self.state.state_types.extend(request.state_types)
         self.state.error = request.error
         return APIUpdateResponse()
+
+    async def UpdateCalls(
+        self,
+        context: WriterContext,
+        request: APIUpdateCallsRequest,
+    ) -> APIUpdateCallsResponse:
+        del self.state.method_calls[:]
+        self.state.method_calls.extend(request.method_calls)
+        self.state.calls_error = request.error
+        return APIUpdateCallsResponse()
 
 
 class PreferencesServicer(Preferences.Servicer):
