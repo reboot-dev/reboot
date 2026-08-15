@@ -1,4 +1,9 @@
-import type { MethodInfo, StateTypeInfo } from "@dashboard/dashboard_pb";
+import type {
+  MethodCalls,
+  MethodInfo,
+  StateTypeInfo,
+} from "@dashboard/dashboard_pb";
+import { Call_How, Unanalyzed_Why } from "@dashboard/dashboard_pb";
 import { useAPI, usePreferences } from "@dashboard/dashboard_rbt_react";
 import { RebootClientProvider } from "@reboot-dev/reboot-react";
 import { Presence } from "@reboot-dev/reboot-std-react/presence";
@@ -146,7 +151,64 @@ const Namespace: FC<{ namespace: string; types: StateTypeInfo[] }> = ({
   );
 };
 
-const Method: FC<{ method: MethodInfo }> = ({ method }) => {
+// How a call is written, as the verb to put in front of it. What the
+// developer wrote is a chain; what they meant is one of these.
+const HOW: Record<Call_How, string> = {
+  [Call_How.UNKNOWN]: "calls",
+  [Call_How.CALL]: "calls",
+  [Call_How.CONSTRUCT]: "constructs",
+  [Call_How.SCHEDULE]: "schedules",
+  [Call_How.SPAWN]: "spawns",
+  [Call_How.REACTIVELY]: "watches",
+  [Call_How.UNTIL]: "waits on",
+  [Call_How.READ]: "reads",
+  [Call_How.WRITE]: "writes",
+};
+
+// What could not be followed, said as what it means for the list it
+// sits under: not that nothing is called, but that this is not all of
+// it.
+const WHY: Record<Unanalyzed_Why, string> = {
+  [Unanalyzed_Why.UNKNOWN]: "could not be read",
+  [Unanalyzed_Why.CONTEXT_PASSED_TO_UNKNOWN_FUNCTION]:
+    "calls something this could not read",
+  [Unanalyzed_Why.REFERENCE_ESCAPED]: "keeps a reference this cannot follow",
+  [Unanalyzed_Why.UNKNOWN_METHOD]: "names its method only when it runs",
+};
+
+// What a method's implementation calls, read from the developer's
+// source rather than declared in their API.
+const Calls: FC<{ calls: MethodCalls }> = ({ calls }) => (
+  <div className="method-calls">
+    {calls.calls.map((call) => (
+      <div
+        className="call"
+        key={`${call.how}.${call.stateType}.${call.method}`}
+      >
+        <span className="call-how">{HOW[call.how]}</span>{" "}
+        {/* The section a state type is rendered in carries its full
+            name as an id, so a call is a link to what it calls. */}
+        <a className="call-target" href={`#${call.stateType}`}>
+          <span title={call.stateType}>{typeNameOf(call.stateType)}</span>
+          {call.method !== "" && (
+            <span className="call-method">.{call.method}</span>
+          )}
+        </a>
+      </div>
+    ))}
+    {calls.unanalyzed.map((entry) => (
+      <div className="call call-unanalyzed" key={entry.expression}>
+        <code className="call-expression">{entry.expression}</code>{" "}
+        <span className="call-why">{WHY[entry.why]}</span>
+      </div>
+    ))}
+  </div>
+);
+
+const Method: FC<{ method: MethodInfo; calls?: MethodCalls }> = ({
+  method,
+  calls,
+}) => {
   const args = method.arguments
     .map((argument) => `${argument.name}: ${argument.type}`)
     .join(", ");
@@ -211,6 +273,10 @@ const Method: FC<{ method: MethodInfo }> = ({ method }) => {
               <span className="errors">raises {method.errors.join(", ")}</span>
             )}
           </div>
+          {/* After the signature, which is what comes in and out;
+              this is what goes back out to the rest of the
+              application. */}
+          {calls !== undefined && <Calls calls={calls} />}
         </div>
       </div>
     </div>
@@ -283,7 +349,8 @@ const StateType: FC<{
   stateType: StateTypeInfo;
   expanded: boolean;
   onToggle: () => void;
-}> = ({ stateType, expanded, onToggle }) => {
+  callsOf: (method: string) => MethodCalls | undefined;
+}> = ({ stateType, expanded, onToggle, callsOf }) => {
   const section = useSlidingPills(expanded);
 
   return (
@@ -348,7 +415,11 @@ const StateType: FC<{
       <div className="eyebrow section">methods</div>
       <div className="methods">
         {stateType.methods.map((method) => (
-          <Method method={method} key={method.name} />
+          <Method
+            method={method}
+            calls={callsOf(method.name)}
+            key={method.name}
+          />
         ))}
       </div>
     </section>
@@ -400,6 +471,25 @@ const Overview: FC<{
   // that was: a half-written file is the normal case while someone is
   // typing, and saying so beats showing nothing.
   const error = response?.error ?? "";
+
+  // What the developer's servicers call, read from their source files.
+  // Kept across a reconnect the same way the shape is, so a restart
+  // does not empty the calls out from under a page that still shows
+  // the methods making them.
+  const analyzed = response?.methodCalls;
+  const seenCalls = useRef<MethodCalls[]>([]);
+
+  if (analyzed !== undefined && analyzed.length > 0) {
+    seenCalls.current = analyzed;
+  }
+
+  const calls = useMemo(() => {
+    const byMethod = new Map<string, MethodCalls>();
+    for (const one of analyzed?.length ? analyzed : seenCalls.current) {
+      byMethod.set(`${one.stateType}.${one.method}`, one);
+    }
+    return byMethod;
+  }, [analyzed]);
 
   const namespaces = useMemo(() => {
     const byNamespace = new Map<string, StateTypeInfo[]>();
@@ -472,6 +562,7 @@ const Overview: FC<{
             stateType={stateType}
             expanded={isExpanded(stateType.name)}
             onToggle={() => onToggle(stateType.name)}
+            callsOf={(method) => calls.get(`${stateType.name}.${method}`)}
             key={stateType.name}
           />
         ))}
