@@ -10,21 +10,27 @@ from tests.reboot.cli.mock_exit import (
     MockExitException,
     mock_raise_instead_of_exit,
 )
+from typing import Optional
 from unittest.mock import patch
 
 
 @patch('argparse.ArgumentParser.exit', mock_raise_instead_of_exit)
 class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
 
-    def _parse(self, state_directory: str):
-        parser: ArgumentParser = cli.create_parser(
-            argv=[
-                'rbt',
-                f'--state-directory={state_directory}',
-                'dashboard',
-                '--api-directory=api',
-            ]
-        )
+    def _parse(
+        self,
+        state_directory: str,
+        source_directory: Optional[str] = None,
+    ):
+        argv = [
+            'rbt',
+            f'--state-directory={state_directory}',
+            'dashboard',
+            '--api-directory=api',
+        ]
+        if source_directory is not None:
+            argv.append(f'--source-directory={source_directory}')
+        parser: ArgumentParser = cli.create_parser(argv=argv)
         args, _ = parser.parse_args()
         return args, parser
 
@@ -55,6 +61,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                     parser,
                     port=DEFAULT_DASHBOARD_PORT,
                     api_directory=args.api_directory,
+                    source_directory=args.source_directory,
                 )
 
             self.assertEqual(env['RBT_NAME'], 'dashboard')
@@ -89,6 +96,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                     parser,
                     port=DEFAULT_DASHBOARD_PORT,
                     api_directory=args.api_directory,
+                    source_directory=args.source_directory,
                 )
 
             self.assertNotEqual(env['REBOOT_CRYPTO_ROOT_KEYS'], 'v1:theirs')
@@ -100,6 +108,7 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                 parser,
                 port=DEFAULT_DASHBOARD_PORT,
                 api_directory=args.api_directory,
+                source_directory=args.source_directory,
             )
             self.assertEqual(
                 env['REBOOT_CRYPTO_ROOT_KEYS'],
@@ -115,12 +124,44 @@ class RbtDashboardTestCase(unittest.IsolatedAsyncioTestCase):
                 parser,
                 port=DEFAULT_DASHBOARD_PORT,
                 api_directory=args.api_directory,
+                source_directory=args.source_directory,
             )
 
             # As the developer spelled it, so files can be shown as
             # `api/bank/v1/account.py`; the dashboard runs in the
             # working directory where that spelling resolves.
             self.assertEqual(env['RBT_API_DIRECTORY'], 'api')
+
+    async def test_is_told_where_the_servicers_are(self) -> None:
+        with tempfile.TemporaryDirectory() as state_directory:
+            args, parser = self._parse(state_directory, 'backend/src')
+
+            env = dashboard._dashboard_env(
+                args,
+                parser,
+                port=DEFAULT_DASHBOARD_PORT,
+                source_directory=args.source_directory,
+                api_directory=args.api_directory,
+            )
+
+            self.assertEqual(env['RBT_SOURCE_DIRECTORY'], 'backend/src')
+
+    async def test_a_source_directory_is_not_required(self) -> None:
+        """Somebody who names none gets a dashboard without calls,
+        rather than an error; a Node.js application has no directory
+        this could read."""
+        with tempfile.TemporaryDirectory() as state_directory:
+            args, parser = self._parse(state_directory)
+
+            env = dashboard._dashboard_env(
+                args,
+                parser,
+                port=DEFAULT_DASHBOARD_PORT,
+                source_directory=args.source_directory,
+                api_directory=args.api_directory,
+            )
+
+            self.assertNotIn('RBT_SOURCE_DIRECTORY', env)
 
 
 if __name__ == '__main__':
