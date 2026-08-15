@@ -15,10 +15,32 @@ What the analysis cannot follow it records, as `Unanalyzed`, so that
 what it does not know is visible rather than merely missing.
 """
 import ast
+import hashlib
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from rbt.dashboard.v1.dashboard_pb2 import Call, MethodCalls, Unanalyzed
 from typing import Optional, Union
+
+
+def _version() -> str:
+    """What this analysis is, as a hash of the code that performs it.
+
+    Results an older dashboard wrote are only worth keeping if the
+    analysis that wrote them was this one; hashing the source is what
+    makes that true without anyone having to remember to raise a
+    number when they change how the analysis works.
+
+    Empty when the source cannot be read, which no result matches, so
+    everything is read again rather than trusted.
+    """
+    try:
+        return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    except OSError:
+        return ''
+
+
+VERSION = _version()
 
 # The suffix a generated Python module carries. A name imported from
 # one is a state type, and the package it came from qualifies it.
@@ -125,6 +147,18 @@ _Value = Union[_StateClass, _Reference, _Constructed, _Servicer, _Context,
 _Function = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 
 
+@dataclass(frozen=True)
+class Analysis:
+    """What one method calls, and what that answer depended on.
+
+    `hashes` holds the method's own hash and that of every function the
+    analysis followed into, so that a change to a helper in another
+    file invalidates this as surely as a change to the method itself.
+    """
+    method_calls: MethodCalls
+    hashes: dict[str, str]
+
+
 def method_key(state_type: str, method: str) -> str:
     """Names one method the way `Analysis`es are keyed."""
     return f'{state_type}.{method}'
@@ -149,6 +183,25 @@ def _strip_docstrings(tree: ast.AST) -> None:
                 ast.AsyncFunctionDef()
             ):
                 node.body = _docstring_stripped(node.body)
+
+
+def hash_function(function: _Function) -> str:
+    """What a function does, as a hash.
+
+    `include_attributes=False` leaves out line and column numbers, so
+    reflowing an argument list or moving a method down a file gives
+    back the same hash; comments never reach the tree at all, and
+    docstrings are stripped when the file is parsed.
+    """
+    parts = [
+        function.name,
+        ast.dump(function.args, include_attributes=False),
+    ]
+    parts.extend(
+        ast.dump(statement, include_attributes=False)
+        for statement in function.body
+    )
+    return hashlib.sha256('\n'.join(parts).encode()).hexdigest()
 
 
 @dataclass
@@ -354,6 +407,7 @@ class _MethodAnalyzer:
         self._modules = modules
         self._calls: list[Call] = []
         self._unanalyzed: list[Unanalyzed] = []
+        self._hashes: dict[str, str] = {}
 
         # Functions being followed right now, so that a helper that
         # calls itself, or two that call each other, stop rather than
@@ -365,16 +419,22 @@ class _MethodAnalyzer:
         module: Module,
         servicer: _Servicer,
         method: _Function,
-    ) -> MethodCalls:
+    ) -> Analysis:
+        self._hashes[_function_key(module, method,
+                                   servicer.name)] = hash_function(method)
+
         environment = self._parameters(method, servicer)
 
         self._statements(method.body, module, environment)
 
-        return MethodCalls(
-            state_type=servicer.state_type,
-            method=method.name,
-            calls=_unique(self._calls),
-            unanalyzed=_unique(self._unanalyzed),
+        return Analysis(
+            method_calls=MethodCalls(
+                state_type=servicer.state_type,
+                method=method.name,
+                calls=_unique(self._calls),
+                unanalyzed=_unique(self._unanalyzed),
+            ),
+            hashes=dict(self._hashes),
         )
 
     def _parameters(
@@ -933,6 +993,8 @@ class _MethodAnalyzer:
         if key in self._following:
             return None
 
+        self._hashes[key] = hash_function(function)
+
         self._following.add(key)
         try:
             return self._expression(
@@ -988,6 +1050,8 @@ class _MethodAnalyzer:
 
         if key in self._following:
             return
+
+        self._hashes[key] = hash_function(function)
 
         self._following.add(key)
         try:
@@ -1102,9 +1166,22 @@ def _unique(messages: list) -> list:
     return unique
 
 
-def analyze(modules: dict[str, Module]) -> dict[str, MethodCalls]:
-    """Analyzes every servicer method in a tree of parsed files."""
-    analyses: dict[str, MethodCalls] = {}
+def analyze(
+    modules: dict[str, Module],
+    cache: Optional[dict[str, Analysis]] = None,
+) -> dict[str, Analysis]:
+    """Analyzes every servicer method in a tree of parsed files.
+
+    A method whose own hash and whose followed functions' hashes are
+    all as `cache` last saw them is taken from `cache` rather than
+    analyzed again, which is what keeps a keystroke from costing a
+    whole tree.
+    """
+    cache = cache or {}
+
+    hashes = _tree_hashes(modules)
+
+    analyses: dict[str, Analysis] = {}
 
     for module in modules.values():
         for class_definition in module.classes.values():
@@ -1136,11 +1213,41 @@ def analyze(modules: dict[str, Module]) -> dict[str, MethodCalls]:
 
                 key = method_key(state_type, name)
 
+                cached = cache.get(key)
+                if cached is not None and _unchanged(cached, hashes):
+                    analyses[key] = cached
+                    continue
+
                 analyses[key] = _MethodAnalyzer(modules).analyze(
                     module, servicer, statement
                 )
 
     return analyses
+
+
+def _tree_hashes(modules: dict[str, Module]) -> dict[str, str]:
+    """Every function in the tree, hashed, so that what changed can be
+    told from what did not."""
+    hashes: dict[str, str] = {}
+
+    for module in modules.values():
+        for function in module.functions.values():
+            hashes[_function_key(module, function)] = hash_function(function)
+        for class_definition in module.classes.values():
+            for statement in class_definition.body:
+                match statement:
+                    case ast.FunctionDef() | ast.AsyncFunctionDef():
+                        hashes[_function_key(
+                            module, statement, class_definition.name
+                        )] = hash_function(statement)
+
+    return hashes
+
+
+def _unchanged(analysis: Analysis, hashes: dict[str, str]) -> bool:
+    return all(
+        hashes.get(key) == value for key, value in analysis.hashes.items()
+    )
 
 
 def module_name(filename: str) -> str:

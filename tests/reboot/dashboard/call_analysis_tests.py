@@ -4,8 +4,8 @@ Without importing it: `rbt generate` may not have run, no servicer has
 to exist, and the file may be half written. Only the source.
 """
 import unittest
-from rbt.dashboard.v1.dashboard_pb2 import Call, MethodCalls, Unanalyzed
-from reboot.dashboard.call_analysis import analyze, parse
+from rbt.dashboard.v1.dashboard_pb2 import Call, Unanalyzed
+from reboot.dashboard.call_analysis import Analysis, analyze, parse
 
 # Every servicer below is written against this, so that the tests read
 # as the developer's files do: a state class imported from a generated
@@ -20,24 +20,24 @@ def _modules(**sources: str) -> dict:
     return {name: parse(name, source) for name, source in sources.items()}
 
 
-def _analyze(**sources: str) -> dict[str, MethodCalls]:
+def _analyze(**sources: str) -> dict[str, Analysis]:
     return analyze(_modules(**sources))
 
 
-def _calls(analyses: dict[str, MethodCalls],
+def _calls(analyses: dict[str, Analysis],
            key: str) -> list[tuple[str, str, str]]:
     """What one method calls, as tuples that read like the source."""
     return [
         (call.state_type, call.method, Call.How.Name(call.how))
-        for call in analyses[key].calls
+        for call in analyses[key].method_calls.calls
     ]
 
 
-def _unanalyzed(analyses: dict[str, MethodCalls],
+def _unanalyzed(analyses: dict[str, Analysis],
                 key: str) -> list[tuple[str, str]]:
     return [
         (Unanalyzed.Why.Name(entry.why), entry.expression)
-        for entry in analyses[key].unanalyzed
+        for entry in analyses[key].method_calls.unanalyzed
     ]
 
 
@@ -508,6 +508,153 @@ async def _sweep(context, id):
 
         self.assertEqual(_calls(analyses, 'bank.v1.Account.ordinary'), [])
         self.assertEqual(_unanalyzed(analyses, 'bank.v1.Account.ordinary'), [])
+
+    ###################################################################
+    # Analyzing again only what changed.
+
+    def _cached(self, first: dict, second: dict, key: str) -> bool:
+        return second[key] is first[key]
+
+    def _servicer_calling(self, method: str) -> tuple[str, str]:
+        """A servicer whose method calls a helper in another file,
+        and that other file."""
+        return _servicer(
+            '''
+    async def move(self, context, request):
+        await transfer(context, request.amount)
+'''
+        ).replace(
+            'from bank.v1.bank_rbt import Bank',
+            'from helpers import transfer',
+        ), IMPORTS + f'''
+
+async def transfer(context, amount):
+    await Account.ref('a').{method}(context, amount=amount)
+'''
+
+    def test_a_comment_or_a_reflow_changes_nothing(self) -> None:
+        servicer, helpers = self._servicer_calling('withdraw')
+
+        first = analyze(_modules(servicer=servicer, helpers=helpers))
+
+        rewritten = servicer.replace(
+            'await transfer(context, request.amount)',
+            '# Move the money.\n        await transfer(\n'
+            '            context,\n            request.amount,\n        )',
+        )
+
+        second = analyze(
+            _modules(servicer=rewritten, helpers=helpers), cache=first
+        )
+
+        self.assertTrue(self._cached(first, second, 'bank.v1.Account.move'))
+
+    def test_a_docstring_changes_nothing(self) -> None:
+        servicer, helpers = self._servicer_calling('withdraw')
+
+        first = analyze(_modules(servicer=servicer, helpers=helpers))
+
+        documented = servicer.replace(
+            'async def move(self, context, request):',
+            'async def move(self, context, request):\n'
+            '        """Moves money between two accounts."""',
+        )
+
+        second = analyze(
+            _modules(servicer=documented, helpers=helpers), cache=first
+        )
+
+        self.assertTrue(self._cached(first, second, 'bank.v1.Account.move'))
+
+    def test_a_helper_in_another_file_changing_is_noticed(self) -> None:
+        """The method itself is untouched, so its own hash is no help;
+        what invalidates it is the hash of what it followed into."""
+        servicer, helpers = self._servicer_calling('withdraw')
+
+        first = analyze(_modules(servicer=servicer, helpers=helpers))
+
+        _, changed = self._servicer_calling('deposit')
+
+        second = analyze(
+            _modules(servicer=servicer, helpers=changed), cache=first
+        )
+
+        self.assertFalse(self._cached(first, second, 'bank.v1.Account.move'))
+        self.assertEqual(
+            _calls(second, 'bank.v1.Account.move'),
+            [('bank.v1.Account', 'deposit', 'CALL')],
+        )
+
+    def test_a_change_two_helpers_away_is_noticed(self) -> None:
+        """A method's answer depends on everything the analysis walked
+        through to reach it, however far that went, so what is recorded
+        is the hash of each of those in turn rather than only the ones
+        the method names itself."""
+        servicer = _servicer(
+            '''
+    async def move(self, context, request):
+        await f(context)
+'''
+        ).replace('from bank.v1.bank_rbt import Bank', 'from middle import f')
+
+        middle = 'from deep import g\n\n\nasync def f(context):\n' \
+            '    await g(context)\n'
+
+        def deep(method: str) -> str:
+            return IMPORTS + f'''
+
+async def g(context):
+    await Account.ref('a').{method}(context)
+'''
+
+        def modules(method: str) -> dict:
+            return _modules(
+                servicer=servicer, middle=middle, deep=deep(method)
+            )
+
+        first = analyze(modules('withdraw'))
+
+        self.assertEqual(
+            _calls(first, 'bank.v1.Account.move'),
+            [('bank.v1.Account', 'withdraw', 'CALL')],
+        )
+
+        # Everything walked through is recorded, not just what the
+        # method names.
+        self.assertEqual(
+            sorted(first['bank.v1.Account.move'].hashes),
+            ['deep:g', 'middle:f', 'servicer:AccountServicer.move'],
+        )
+
+        # `deep` is two hops from the method, and neither the method
+        # nor `middle` is touched.
+        second = analyze(modules('deposit'), cache=first)
+
+        self.assertFalse(self._cached(first, second, 'bank.v1.Account.move'))
+        self.assertEqual(
+            _calls(second, 'bank.v1.Account.move'),
+            [('bank.v1.Account', 'deposit', 'CALL')],
+        )
+
+    def test_changing_what_a_method_calls_is_noticed(self) -> None:
+        servicer, helpers = self._servicer_calling('withdraw')
+
+        first = analyze(_modules(servicer=servicer, helpers=helpers))
+
+        changed = servicer.replace(
+            'await transfer(context, request.amount)',
+            'await Account.ref(request.id).deposit(context)',
+        )
+
+        second = analyze(
+            _modules(servicer=changed, helpers=helpers), cache=first
+        )
+
+        self.assertFalse(self._cached(first, second, 'bank.v1.Account.move'))
+        self.assertEqual(
+            _calls(second, 'bank.v1.Account.move'),
+            [('bank.v1.Account', 'deposit', 'CALL')],
+        )
 
 
 if __name__ == '__main__':
