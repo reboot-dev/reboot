@@ -44,6 +44,17 @@ py_library(
 )
 
 py_library(
+    name = "servicer_reader_py",
+    srcs = ["servicer_reader.py"],
+    srcs_version = "PY3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":call_analysis_py",
+        "//rbt/dashboard/v1:dashboard_py_reboot",
+    ],
+)
+
+py_library(
     name = "servicers_py",
     srcs = ["servicers.py"],
     srcs_version = "PY3",

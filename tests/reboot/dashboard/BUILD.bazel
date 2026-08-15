@@ -32,6 +32,15 @@ py_test(
 )
 
 py_test(
+    name = "servicer_reader_tests_py",
+    srcs = ["servicer_reader_tests.py"],
+    main = "servicer_reader_tests.py",
+    deps = [
+        "//reboot/dashboard:servicer_reader_py",
+    ],
+)
+
+py_test(
     name = "application_tests_py",
     srcs = [":application_tests.py"],
     main = "application_tests.py",
